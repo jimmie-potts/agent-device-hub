@@ -16,7 +16,7 @@ test('Pixoo extension preserves native mode/view guards and sanitizes conflicts'
   const request={apiVersion:snapshot.apiVersion,controllerId:'pixoo-controller',deviceId:'pixoo',requestId:ticket,expectedConfigurationRevision:0,expectedGeneration:0,action:{operation:'view',filter:{projectId:'chosen',provider:'codex'},cadenceMs:2000}};
   const commandResult={...snapshot};delete commandResult.identity;value=commandResult;
   assert.deepEqual(await client.integrationCommand(request),{status:200,body:commandResult});
-  assert.equal(seen[0].url,'/controller/pixoo-integration/v1/snapshot');assert.deepEqual(seen[1].body,request);
+  assert.equal(seen[0].url,'/controller/pixoo-integration/v1/snapshot?apiVersion=pixoo-integration%2F1.1');assert.deepEqual(seen[1].body,request);
   status=409;value={error:{code:'revision-conflict',message:'PRIVATE_CANARY'}};
   await assert.rejects(client.integrationCommand(request),e=>e.code==='revision-conflict'&&e.status===409&&!e.message.includes('PRIVATE_CANARY'));
   const count=seen.length;await assert.rejects(client.integrationCommand({...request,action:{operation:'view',filter:{prompt:'private'},cadenceMs:2000}}),e=>e.code==='invalid-request');assert.equal(seen.length,count);
@@ -34,4 +34,11 @@ test('pinned owning-service Pixoo examples match the strict projection',async()=
  assert.equal(createHash('sha256').update(bytes).digest('hex'),pin.fixtureSha256);
  const examples=JSON.parse(bytes);assert.equal(validatePixooSnapshot(examples.snapshot,true),true);
  for(const c of examples.cases){assert.equal(validatePixooRequest(c.request),true);assert.equal(validatePixooSnapshot(c.result),true);}
+ const {validateCatalogReply,validateManifest}=await import('../dist/pixoo-catalog.js');
+ assert.equal(validatePixooSnapshot(examples.catalog.snapshot,true),true);
+ assert.equal(validateCatalogReply(examples.catalog.renditions,{kind:'renditions',offset:0,limit:25}),true);
+ assert.equal(validateCatalogReply(examples.catalog.playlists,{kind:'playlists',offset:0,limit:25}),true);
+ assert.equal(validateCatalogReply(examples.catalog.playlist,{kind:'playlist',id:examples.catalog.playlist.playlist.id}),true);
+ assert.equal(validateManifest(examples.catalog.manifest,examples.catalog.renditions.items[0].renditionId),true);
+ assert.equal(examples.catalog.manifest.frameCount,20);
 });

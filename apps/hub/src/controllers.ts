@@ -1,5 +1,6 @@
 import {validate, type Request, type Receipt, type RequestV1_1, type ReceiptV1_1, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
+import {pixooCatalogPath,validateCatalogReply,previewReply,type CatalogOperation,type Representation} from './pixoo-catalog.js';
 import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
 import {validateIntegrationSnapshot,validateIntegrationReceipt,validateIntegrationGeometry} from './integration.js';
 import {validateRequest as validateIntegrationRequest,ticket as integrationTicket,apiVersion as integrationVersion,type Ticket} from './vendor/nanoleaf-integration.js';
@@ -196,7 +197,9 @@ export class ControllerClient {
   async integrationSnapshot(): Promise<unknown> {
     if (this.config.kind !== 'pixoo') this.requireIntegration();
     if (this.config.kind === 'pixoo') {
-      const {value} = await this.request('/snapshot',undefined,true);
+      let value:unknown;
+      try { value=(await this.request('/snapshot?apiVersion=pixoo-integration%2F1.1',undefined,true)).value; }
+      catch(error) { if (!(error instanceof HttpError) || !['invalid-input','invalid-request'].includes(error.code) || error.status!==400) throw error; value=(await this.request('/snapshot',undefined,true)).value; }
       if (!validatePixooSnapshot(value,true) || !object(value) || !object(value.identity) || value.identity.controllerId !== this.config.controllerId || value.identity.deviceId !== this.config.deviceId) {this.health='unavailable';throw new HttpError('incompatible-controller',502);}
       this.health='ready';return value;
     }
@@ -205,6 +208,28 @@ export class ControllerClient {
       this.health = 'unavailable';throw new HttpError('incompatible-controller',502);
     }
     this.health = 'ready';return value;
+  }
+  /** Pixoo-only typed catalog reads share the existing slot; no tickets or commands. */
+  async pixooCatalog(operation:CatalogOperation,etag?:string):Promise<Representation> {
+    if(this.config.kind!=='pixoo')throw new HttpError('unsupported-capability',422);
+    const path=pixooCatalogPath(operation);
+    return this.exclusive(async()=>{
+      const abort=new AbortController();this.abort=abort;const timer=setTimeout(()=>abort.abort(),this.timeoutMs);
+      try {
+        const response=await fetch(this.config.endpoint.replace(/\/controller\/v1$/,'/controller/pixoo-integration/v1')+path,{redirect:'error',signal:abort.signal,headers:{authorization:`Bearer ${this.config.token}`,...(etag?{'if-none-match':etag}:{})}});
+        if(!response.ok&&response.status!==304){
+          const body=await responseJson(response,65536);
+          const codes:Record<string,number>={'not-found':404,'invalid-request':400,'timeout':504,'cancelled':409,'invalid-input':400,'unauthenticated':401,'forbidden':403,'capacity':429,'unsupported-capability':422,'catalog-corrupt':503,'storage-error':503};
+          if(object(body)&&object(body.error)&&typeof body.error.code==='string'&&codes[body.error.code]===response.status)throw new HttpError(body.error.code,response.status);
+          throw new HttpError('controller-unavailable',503);
+        }
+        if(operation.kind==='preview'||operation.kind==='frame'||operation.kind==='manifest')return await previewReply(response,operation,etag);
+        const value=await responseJson(response,1024*1024);
+        if(!validateCatalogReply(value,operation))throw new HttpError('incompatible-controller',502);
+        return {status:200,headers:{'content-type':'application/json','cache-control':'no-store'},body:Buffer.from(JSON.stringify(value))};
+      }catch(error){if(error instanceof HttpError)throw error;throw new HttpError('controller-unavailable',503);}
+      finally{clearTimeout(timer);this.abort=undefined;}
+    });
   }
   /** Nanoleaf's saved element geometry for this device; a read that never changes the owner. */
   async integrationGeometry(): Promise<unknown> {

@@ -199,5 +199,202 @@
         "lastOutcome": null
       }
     }
-  ]
+  ],
+  "catalog": {
+    "snapshot": {
+      "apiVersion": "pixoo-integration/1.1",
+      "serverId": "d9806a21-d780-464d-b5a4-362b85e996e0",
+      "nextRequestId": "d9806a21-d780-464d-b5a4-362b85e996e0:1",
+      "configurationRevision": 0,
+      "capabilities": {
+        "modes": [
+          "monitor",
+          "media"
+        ],
+        "filters": [
+          "provider",
+          "projectId",
+          "session",
+          "q"
+        ],
+        "minimumCadenceMs": 1000,
+        "maximumCadenceMs": 10000,
+        "catalog": {
+          "supported": true,
+          "preview": "png-frames",
+          "maximumPageSize": 100
+        }
+      },
+      "configuration": {
+        "version": 1,
+        "mode": "media",
+        "filter": {},
+        "cadenceMs": 1000
+      },
+      "sourceRevision": 0,
+      "sourceConnection": "current",
+      "renditionGeneration": 1,
+      "generation": 0,
+      "pendingMode": null,
+      "participating": false,
+      "inFlight": 0,
+      "lastOutcome": null,
+      "catalogRevision": 5,
+      "currentMedia": null,
+      "identity": {
+        "controllerId": "pixoo-controller",
+        "deviceId": "pixoo-local",
+        "sourceId": "pixoo"
+      }
+    },
+    "renditions": {
+      "apiVersion": "pixoo-integration/1.1",
+      "items": [
+        {
+          "assetId": "e463e4ce-83d5-4dde-8dd2-9237c5b683c6",
+          "renditionId": "9789c1f69e59b5d117d4fcf59fed9f14544158b5c93803f46f90d264238fe024",
+          "name": "Complete 20-frame fixture.gif",
+          "format": "gif",
+          "frameCount": 20,
+          "durationMs": 1900,
+          "compatible": true
+        }
+      ],
+      "total": 1,
+      "offset": 0,
+      "limit": 25,
+      "catalogRevision": 5
+    },
+    "playlists": {
+      "apiVersion": "pixoo-integration/1.1",
+      "items": [
+        {
+          "id": "a577448a-8fc5-4d85-bbb8-d1c5bc199449",
+          "name": "Fixture playlist",
+          "revision": 2,
+          "itemCount": 1,
+          "repeat": true,
+          "shuffle": false
+        }
+      ],
+      "total": 1,
+      "offset": 0,
+      "limit": 25,
+      "catalogRevision": 5
+    },
+    "playlist": {
+      "apiVersion": "pixoo-integration/1.1",
+      "catalogRevision": 5,
+      "playlist": {
+        "id": "a577448a-8fc5-4d85-bbb8-d1c5bc199449",
+        "name": "Fixture playlist",
+        "revision": 2,
+        "repeat": true,
+        "shuffle": false,
+        "createdAt": "2026-10-01T02:35:15.511Z",
+        "updatedAt": "2026-10-01T02:35:15.519Z",
+        "items": [
+          {
+            "id": "4f330533-fc69-4a0c-a7f9-b7bbb26a8f16",
+            "renditionId": "9789c1f69e59b5d117d4fcf59fed9f14544158b5c93803f46f90d264238fe024",
+            "playback": {
+              "mode": "plays",
+              "totalPlays": 3
+            }
+          }
+        ]
+      }
+    },
+    "manifest": {
+      "apiVersion": "pixoo-integration/1.1",
+      "renditionId": "9789c1f69e59b5d117d4fcf59fed9f14544158b5c93803f46f90d264238fe024",
+      "width": 64,
+      "height": 64,
+      "frameCount": 20,
+      "durationMs": 1900,
+      "frames": [
+        {
+          "index": 0,
+          "delayMs": 70
+        },
+        {
+          "index": 1,
+          "delayMs": 120
+        },
+        {
+          "index": 2,
+          "delayMs": 70
+        },
+        {
+          "index": 3,
+          "delayMs": 120
+        },
+        {
+          "index": 4,
+          "delayMs": 70
+        },
+        {
+          "index": 5,
+          "delayMs": 120
+        },
+        {
+          "index": 6,
+          "delayMs": 70
+        },
+        {
+          "index": 7,
+          "delayMs": 120
+        },
+        {
+          "index": 8,
+          "delayMs": 70
+        },
+        {
+          "index": 9,
+          "delayMs": 120
+        },
+        {
+          "index": 10,
+          "delayMs": 70
+        },
+        {
+          "index": 11,
+          "delayMs": 120
+        },
+        {
+          "index": 12,
+          "delayMs": 70
+        },
+        {
+          "index": 13,
+          "delayMs": 120
+        },
+        {
+          "index": 14,
+          "delayMs": 70
+        },
+        {
+          "index": 15,
+          "delayMs": 120
+        },
+        {
+          "index": 16,
+          "delayMs": 70
+        },
+        {
+          "index": 17,
+          "delayMs": 120
+        },
+        {
+          "index": 18,
+          "delayMs": 70
+        },
+        {
+          "index": 19,
+          "delayMs": 120
+        }
+      ],
+      "warnings": []
+    }
+  }
 }

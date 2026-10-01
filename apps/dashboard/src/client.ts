@@ -140,9 +140,24 @@ export class Api {
    return value as T;
   }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}finally{if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);}
  }
+ /** PNG representations use the same authenticated device queue as JSON reads. The caller owns the bounded cache. */
+ png(path:string,signal?:AbortSignal,cached?:{etag:string;blob:Blob}):Promise<{etag:string;blob:Blob}> {
+  const device=/^\/api\/controllers\/v1\/([^/]+)\//.exec(path)?.[1];
+  if(!device)return Promise.reject(new ApiError('invalid-request',400));
+  return this.schedule(device,false,async()=>{
+   try {
+    const response=await fetch(path,{redirect:'error',cache:'no-store',headers:{authorization:`Bearer ${this.token}`,...(cached?{'if-none-match':cached.etag}:{})},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
+    if(response.status===304){if(!cached||response.headers.get('etag')!==cached.etag)throw new ApiError('invalid-preview');return cached;}
+    if(!response.ok){const value=await response.json();throw new ApiError(value.error?.code??'unavailable',response.status);}
+    const etag=response.headers.get('etag');if(response.headers.get('content-type')!=='image/png'||!etag)throw new ApiError('invalid-preview');
+    const blob=await response.blob();if(blob.size>65536)throw new ApiError('invalid-preview');
+    return {etag,blob};
+   }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(signal?.aborted?'request-cancelled':'connection-unavailable');}
+  },signal);
+ }
  /** Ends this browser session as the page unloads. The request outlives the page, so its result is never observed. */
  release(){void fetch('/api/dashboard/v1/logout',{method:'POST',keepalive:true,cache:'no-store',redirect:'error',headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json','x-pixoo-request':'1'},body:'{}'}).catch(()=>{});}
- async feed(signal:AbortSignal,onChange:()=>void,onStatus:(connected:boolean)=>void){
+ async feed(signal:AbortSignal,onChange:(event?:'state'|'resync')=>void,onStatus:(connected:boolean)=>void){
   let cursor='',delay=500;
   while(!signal.aborted){
    let reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
@@ -153,7 +168,7 @@ export class Api {
     if(!response.ok||!response.body)throw new Error('feed-unavailable');
     onStatus(true);delay=500;reader=response.body.getReader();let buffer='';const decoder=new TextDecoder();
     while(!signal.aborted){const chunk=await reader.read();if(chunk.done)break;touch();buffer+=decoder.decode(chunk.value,{stream:true});if(buffer.length>65536)throw new Error('feed-capacity');let end;
-     while((end=buffer.indexOf('\n\n'))>=0){const event=buffer.slice(0,end);buffer=buffer.slice(end+2);const id=/^id: (.+)$/m.exec(event)?.[1];if(id)cursor=id;if(/^event: (state|resync)$/m.test(event))onChange();}
+     while((end=buffer.indexOf('\n\n'))>=0){const event=buffer.slice(0,end);buffer=buffer.slice(end+2);const id=/^id: (.+)$/m.exec(event)?.[1];if(id)cursor=id;const kind=/^event: (state|resync)$/m.exec(event)?.[1];if(kind==='state'||kind==='resync')onChange(kind);}
     }
    }catch{}finally{clearTimeout(timer);await reader?.cancel().catch(()=>{});}
    if(signal.aborted)return;onStatus(false);
