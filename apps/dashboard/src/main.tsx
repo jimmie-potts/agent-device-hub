@@ -1,3 +1,4 @@
+import {PixooCatalog,PixooNowShowing,type PlaylistSummary} from './pixoo-media';
 import React, {useEffect,useId,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import placesManifest from '../../../docs/skins/places.json';
@@ -62,6 +63,7 @@ const health=(d:DeviceControls)=><Badge warning={!!d.device.error}>{d.device.err
 /** One component's page: identity and health, the status strip, the rare facts behind Details, every control as a card, and the device's own panels. */
 function ComponentView({component,device,context,api,refresh,now,sessions,visible}:{component:Component;device:Device;context:Context;api:Api;refresh:Refresh;now:number;sessions:SessionSnapshot[];visible:boolean}){
  const d=deviceControls(component,device,context,api,refresh);
+ const [playlistNames,setPlaylistNames]=useState<PlaylistSummary[]>([]);
  const {snapshot,integr,local}=d;
  // The shared device art keeps its own selection; picking an element there also selects it in the Assignments panel.
  const [pickedElement,setPickedElement]=useState<string>(),artSelection=useMemo(()=>pickedElement?[pickedElement]:[],[pickedElement]);
@@ -86,7 +88,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions,visibl
  {component.kind==='nanoleaf'&&<NanoleafArt title={component.id} read={device.geometry} snapshot={nano(integr)?integr:undefined} stale={!!device.error} selection={artSelection} onSelect={setPickedElement}/>}
  {component.kind==='tidbyt'&&<p className="hint">The local controller host publishes the agent status and now-playing tiles to this Tidbyt. They follow agent activity and what is playing; this view has nothing to change on the display.</p>}
  <p className="eyebrow general">CONTROLS</p>
- {(cards||moments)&&<div className="cards">{cards&&<><ModeCard d={d}/><PowerCard d={d}/><BrightnessCard d={d}/><MediaCard d={d}/><SceneCard d={d}/>{component.kind==='lifx'&&<LightingCards d={d}/>}</>}<MomentsCard d={d} now={now} visible={visible}/></div>}
+ {(cards||moments)&&<div className="cards">{cards&&<><ModeCard d={d}/><PowerCard d={d}/><BrightnessCard d={d}/><MediaCard d={d} playlistNames={playlistNames}/><SceneCard d={d}/>{component.kind==='lifx'&&<LightingCards d={d}/>}</>}<MomentsCard d={d} now={now} visible={visible}/></div>}
  {snapshot?<>
   {!local&&!hasModeControl(d)&&<p className="hint">Mode control unavailable: no supported integration mode declared.</p>}
   {undeclaredText&&<p className="hint undeclared">{undeclaredText}</p>}
@@ -95,7 +97,8 @@ function ComponentView({component,device,context,api,refresh,now,sessions,visibl
  {!local&&!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
  {nano(integr)&&<NanoAssignments d={d} integration={integr} picked={pickedElement} onPick={setPickedElement}/>}
  {pixoo(integr)&&<PixooMonitor d={d} integration={integr} sessions={sessions}/>}
- {!local&&<p className="hint">{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:'Advanced editor unavailable: no validated link configured.'} Rendition selection is not part of this view. Exact previews are not available.</p>}
+ {component.kind==='pixoo'&&<><PixooNowShowing api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} stale={!!device.error||elapsed>10000} size="medium"/><PixooCatalog api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} onNames={setPlaylistNames}/></>}
+ {!local&&<p className="hint">{editor?<a href={editor} target="_blank" rel="noopener noreferrer">{component.kind==='pixoo'?'Open Pixoo app':'Open advanced wall editor'} ↗</a>:'Advanced editor unavailable: no validated link configured.'}</p>}
  </>;
 }
 type PlaybackRead={snapshot?:PlaybackSnapshot;error?:string;received?:number};
@@ -233,7 +236,7 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
   }
   refreshRef.current=refresh;deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);return c?refreshDevice(c):Promise.resolve(undefined);};
   void refresh().then(()=>current?.components.forEach(c=>void refreshDevice(c)));
-  void api.feed(stop.signal,()=>void refresh(),value=>{if(!stop.signal.aborted)setFeed(value);});
+  void api.feed(stop.signal,event=>{void refresh();if(event==='resync')current?.components.filter(c=>c.kind==='pixoo').forEach(c=>void refreshDevice(c));},value=>{if(!stop.signal.aborted)setFeed(value);});
   const interval=setInterval(()=>{void refresh();current?.components.forEach(c=>void refreshDevice(c));},5000),clock=setInterval(()=>setNow(Date.now()),1000);
   return ()=>{stop.abort();clearInterval(interval);clearInterval(clock);};
  },[api]);
@@ -245,7 +248,7 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
  {components.map(c=><section key={c.id} hidden={!(route.kind==='component'&&route.id===c.id)} aria-label={c.id}>{view.control&&<ComponentView component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions} visible={route.kind==='component'&&route.id===c.id}/>}</section>)}
  {playback&&<section key={'playback:'+playback.sourceId} hidden={!(route.kind==='playback'&&route.sourceId===playback.sourceId)} aria-label="Now playing"><PlaybackView api={api} sourceId={playback.sourceId} control={!!context?.control&&!error} now={now}/></section>}
  <section hidden={route.kind!=='home'} aria-label="Home"><header className="page"><h1>Home</h1><div className="home-status"><span>{sessions.filter(s=>s.activity==='active').length} active · {components.length} components</span><CollectorIndicator monitor={monitor} feed={feed} received={received} now={now} error={error}/></div></header>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}
- <div className="home-columns"><div className="home-sessions"><SessionsWidget sessions={sessions} monitor={monitor} context={context} api={api} refresh={()=>refreshRef.current()} stale={stale} elapsed={elapsed} size="medium"/><AttentionWidget sessions={sessions} size="small"/></div><div className="home-devices">{homeLayout(components).filter(p=>p.widget==='component-status').map(p=>{const c=components.find(c=>c.id===p.instance);return c&&view.control?<ComponentWidget key={'component:'+c.id} component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} size={p.size}/>:null;})}</div></div></section>
+ <div className="home-columns"><div className="home-sessions"><SessionsWidget sessions={sessions} monitor={monitor} context={context} api={api} refresh={()=>refreshRef.current()} stale={stale} elapsed={elapsed} size="medium"/><AttentionWidget sessions={sessions} size="small"/></div><div className="home-devices">{homeLayout(components).filter(p=>p.widget==='component-status').map(p=>{const c=components.find(c=>c.id===p.instance);return c&&view.control?<ComponentWidget key={'component:'+c.id} component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} size={p.size}/>:null;})}{homeLayout(components).filter(p=>p.widget==='pixoo-now-showing').map(p=>{const c=components.find(c=>c.id===p.instance)!;return <PixooNowShowing key={'pixoo-now:'+c.id} size={p.size} api={api} alias={c.id} snapshot={pixoo(devices[c.id]?.integration)?devices[c.id].integration as Pixoo:undefined} visible={route.kind==='home'} stale={!!devices[c.id]?.error||!devices[c.id]?.received||now-(devices[c.id]?.received??0)>10000}/>;})}</div></div></section>
  {route.kind==='connections'&&<section aria-label="Connections"><header className="page"><h1>Connections</h1></header><div className="cards two"><div className="card"><h2>Connection</h2><Facts items={[
  ['Collector',monitor?.snapshot.collector??'Unknown'],['State owner',monitor?.ownerId??'Unknown'],['Feed',feed?'Connected':'Reconnecting'],['Snapshot age',received?age(now-received):'Unknown'],['Lost observations',monitor?.snapshot.lossCount??'Unknown'],['Connection error',error||'None observed']
  ]}/></div><div className="card"><h2>Observed sources</h2>{[...new Set(sessions.map(s=>`${s.identity.provider} / ${s.identity.hostId} / ${s.identity.sourceId}`))].map(s=><p key={s}>{s}</p>)}{!sessions.length&&<p>No source evidence yet.</p>}<p className="hint">A connected collector does not prove a fresh session, successful task, read chat or physical device result.</p></div></div></section>}

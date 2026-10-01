@@ -1,18 +1,24 @@
 {
   "repository": "https://github.com/jimmie-potts/divoom-app-upgrade",
-  "revision": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
-  "contract": "pixoo-integration/1.0",
+  "revision": "5444e5efd8a00e70e134d729c06a837010fe7237",
+  "contract": "pixoo-integration/1.1 (snapshots and catalog); pixoo-integration/1.0 (legacy snapshots, commands and events)",
   "sourceFiles": {
     "packages/core/src/integration.ts": "6012ccaf65cb97e3663a1a1084f831b8ecc221f6364342cfc9f0ebbadbcedfd7",
     "packages/core/src/api.ts": "234730fb5c9cdbe025e2685024e5e51342579818fe34011f5c2e5e9b6035ccbb",
-    "apps/server/src/controller.ts": "88f77411be8d4a85e0a0510204872cfa020ad28c6fadde705a136eac0376e401",
-    "apps/server/src/control-service.ts": "6c55c994fd5146cb3ad8d77d1921d8ea10d21e4fb5a2a455a08da1665581086c",
-    "apps/server/src/monitor-source.ts": "b656732ddefcdb787884322705490c66cd8dc8543093741ba58886714ee0b453",
-    "apps/server/src/monitor.ts": "2e0ef03325c74da6c5bc90ce010940dbd27acd87ea048b96756cb79d6e4e3354",
+    "apps/server/src/controller.ts": "0475c661d3b3661e93c9b04944ca14135e1faef179154ee05d3c8914b4f6ac42",
+    "apps/server/src/control-service.ts": "ef332ded91065760910340f8d9f5bc7b79713791b9a8d8b9b3c5e042df2bd1e5",
+    "apps/server/src/monitor-source.ts": "a770cef7ee91ac36f1126da1b9be151892887267bd1326f3f9cdc808937859f7",
+    "apps/server/src/monitor.ts": "d672262deb62f0d6afb07c38c5390d53a2a0dc533dd058af4fa01e3c01ff5221",
     "apps/server/src/monitor-storage.ts": "610d7904d81fe3b11639a33b70571148fdb6046312c8559ebdb52725eb1b3883",
-    "apps/server/src/mcp-config.ts": "6353f5ba9559442cfdc8e2f690617690c27a6b310bcdbd467322e9acf7a8ff01",
+    "apps/server/src/mcp-config.ts": "1a80a7f6e1fd05ec7704d679428e127809921561f8bf94eeb45df07f95fd64a2",
     "apps/server/src/monitor-cli.ts": "8e6bb05f5241f0de3310df82801a308641840fb7202380839c08ebe557c949db",
-    "apps/server/src/agent-dashboard.ts": "8d51abd355d8a78fc0e0ff92be0262264b15b9f682320c5b7560d1f0f8e8fdb5"
+    "apps/server/src/agent-dashboard.ts": "aee250bc96c3f3871b213814c82dafbbe1886ee16ef5647e85778a5e5fe806f7",
+    "packages/core/src/catalog-integration.ts": "2e6d73a38bbe951eb497b0b205af31fa2fa3aaf6a6824f979b00cc33e1cfda08",
+    "apps/server/src/catalog-integration.ts": "04e1c1e415e68eb4af587c4f80fabd65715ca4b917772e1aae92d448d57f4c9c",
+    "apps/server/src/security.ts": "b98620095a22e5f162a9b0aefa03f0a4ec937c4dda9e9ab1818547989efdd80b",
+    "packages/library/src/library.ts": "a51012f61562694232fb6d0f59dd5d2c5426870827ca2cf743524c45338084ce",
+    "packages/library/src/migrations.ts": "9de303cecc369710e783df28b3670dbffd4eb52855c94a45703cb823c32a5462",
+    "packages/media/src/store.ts": "9cecc7af4e9aab18721a66c594bfd3852c2e9f88bcf28e99b426398f919bc0b9"
   },
-  "fixtureSha256": "6fb0387ec76ef3088004dabcc876fcf4169eb202c847249d00aba7d9c179cf14"
+  "fixtureSha256": "d96620907042d433b247743debda5cfdd81aaa66f7bb58e785ef62f459976804"
 }

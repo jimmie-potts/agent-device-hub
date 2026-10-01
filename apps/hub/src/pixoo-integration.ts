@@ -1,3 +1,4 @@
+import {catalogCapabilities,currentMedia} from './pixoo-catalog.js';
 import {object,id} from './common.js';
 type Check=(value:unknown)=>boolean;
 const shape=(value:unknown,required:Record<string,Check>,optional:Record<string,Check>={}):boolean=>object(value)&&Object.keys(required).every(k=>Object.hasOwn(value,k))&&Object.keys(value).every(k=>Object.hasOwn(required,k)||Object.hasOwn(optional,k))&&Object.entries(value).every(([k,v])=>(required[k]??optional[k])(v));
@@ -16,10 +17,11 @@ export function validatePixooRequest(value:unknown):value is Record<string,unkno
 }
 /** Strict projection of the owning service's IntegrationSnapshot, including optional native identity. */
 export function validatePixooSnapshot(value:unknown,native=false):boolean{
+ const catalog=object(value)&&value.apiVersion==='pixoo-integration/1.1';
  return shape(value,{
- apiVersion:one(pixooVersion),serverId:v=>typeof v==='string'&&/^[a-f0-9-]{36}(?![\s\S])/.test(v),nextRequestId:ticket,configurationRevision:count,
+ ...(catalog?{catalogRevision:count,currentMedia}:{}),apiVersion:one(pixooVersion,'pixoo-integration/1.1'),serverId:v=>typeof v==='string'&&/^[a-f0-9-]{36}(?![\s\S])/.test(v),nextRequestId:ticket,configurationRevision:count,
  configuration:v=>shape(v,{version:one(1),mode,filter,cadenceMs:cadence}),sourceRevision:nullableCount,sourceConnection:one('current','stale','unavailable'),renditionGeneration:nullableCount,generation:count,pendingMode:one(null,'monitor','media'),participating:v=>typeof v==='boolean',inFlight:v=>v===0||v===1,
  lastOutcome:v=>v===null||shape(v,{generation:count,renditionGeneration:count,status:one('sent','failed','uncertain','cancelled')},{code:id}),
- capabilities:v=>shape(v,{modes:a=>JSON.stringify(a)==='["monitor","media"]',filters:a=>Array.isArray(a)&&a.length===4&&new Set(a).size===4&&a.every(v=>['provider','projectId','session','q'].includes(v)),minimumCadenceMs:one(1000),maximumCadenceMs:one(10000)})
+ capabilities:v=>shape(v,{...(catalog?{catalog:catalogCapabilities}:{}),modes:a=>JSON.stringify(a)==='["monitor","media"]',filters:a=>Array.isArray(a)&&a.length===4&&new Set(a).size===4&&a.every(v=>['provider','projectId','session','q'].includes(v)),minimumCadenceMs:one(1000),maximumCadenceMs:one(10000)})
  },{identity:v=>shape(v,{controllerId:id,deviceId:id,sourceId:id})})&&(!native||(object(value)&&Object.hasOwn(value,'identity')));
 }

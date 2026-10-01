@@ -198,3 +198,19 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 /* Hub #336: the Moments card's "Play over agent status" switch, a native checkbox with the switch role. */
 label.check{display:flex;align-items:center;gap:var(--space-s);color:var(--text)}
 label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--accent)}
+/* Prepared Pixoo media: exact native pixels, independently scrollable filmstrip. */
+.pixoo-catalog{display:grid;gap:var(--space-m);margin-block:var(--space-m)}
+.pixoo-widget{min-width:0;margin-block:var(--space-s)}
+.pixoo-frame{width:128px;height:128px;image-rendering:pixelated;flex-shrink:0;background:var(--inset);border:1px solid var(--edge-dense)}
+.pixoo-media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--space-m);padding:0;list-style:none}
+.pixoo-media-grid li{min-width:0;display:grid;align-content:start;gap:var(--space-xs)}
+.pixoo-media-grid button{display:grid;justify-items:start;gap:var(--space-xs);width:100%;text-align:left;overflow-wrap:anywhere}
+.pixoo-media-grid button[aria-pressed=true]{border-color:var(--focus)}
+.pixoo-media-grid small,.pixoo-filmstrip small{color:var(--muted-dense);font-weight:400}
+.pixoo-media-grid .hint,.pixoo-media-grid .warning{font-size:var(--type-small)}
+.pixoo-animation{display:flex;gap:var(--space-m);align-items:center;flex-wrap:wrap}
+.pixoo-selection{padding:var(--space-m);border:1px solid var(--edge-dense);margin-block:var(--space-m)}
+.pixoo-pagination{align-items:center;flex-wrap:wrap}
+.pixoo-filmstrip{display:flex;gap:var(--space-m);padding:var(--space-s);overflow-x:auto;list-style:none;max-width:100%}
+.pixoo-filmstrip li{display:grid;gap:var(--space-xs);flex:0 0 128px}
+.pixoo-widget>p,.pixoo-widget h4{overflow-wrap:anywhere}
