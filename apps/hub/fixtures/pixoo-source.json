@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/jimmie-potts/divoom-app-upgrade",
-  "revision": "5444e5efd8a00e70e134d729c06a837010fe7237",
+  "revision": "47c0fb2681ee27807f88a3a07bd713ab05bcdc81",
   "contract": "pixoo-integration/1.1 (snapshots and catalog); pixoo-integration/1.0 (legacy snapshots, commands and events)",
   "sourceFiles": {
     "packages/core/src/integration.ts": "6012ccaf65cb97e3663a1a1084f831b8ecc221f6364342cfc9f0ebbadbcedfd7",

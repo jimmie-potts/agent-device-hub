@@ -12,6 +12,14 @@ The dashboard SHALL register media-grid and playlist widgets at medium/large siz
 - **WHEN** the owner selects a playlist or views now showing
 - **THEN** ordered items show their playback policy and current-media evidence remains distinguished from optical observation without sending any device command
 
+#### Scenario: Names across catalog pages
+- **WHEN** the controller declares saved playlists spanning multiple catalog pages
+- **THEN** general playback controls retain every declared playlist's available name independently of the catalog page being viewed
+
+#### Scenario: Profile change across restart
+- **WHEN** the controller restarts with the same catalog revision and a different playback profile
+- **THEN** catalog metadata refreshes for the new server identity and compatibility labels reflect that profile while valid immutable frames remain reusable
+
 #### Scenario: Revision and legacy handling
 - **WHEN** a polled integration catalogRevision changes or the connection resynchronizes
 - **THEN** affected catalog reads refresh once through the per-device scheduler, cross-read mismatches are rejected, and valid immutable frames remain bound to their rendition
@@ -25,4 +33,3 @@ Each user-facing component SHALL use common identity, navigation, status, settin
 #### Scenario: Heterogeneous components
 - **WHEN** Nanoleaf, Pixoo and a third synthetic component declare different capabilities
 - **THEN** each appears in common navigation with only supported authorized actions and explanations for unavailable operations
-

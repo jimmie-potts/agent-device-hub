@@ -51,20 +51,30 @@ function MediaWidget({id,size,children}:{id:string;size:WidgetSize;children:Reac
 function Unavailable(){return <p className="hint">Not available on this Pixoo version. Existing controls remain available.</p>;}
 function Pages({offset,total,onChange}:{offset:number;total:number;onChange:(n:number)=>void}){return <div className="actions pixoo-pagination"><button className="secondary" disabled={offset===0} onClick={()=>onChange(Math.max(0,offset-25))}>Previous page</button><span className="hint">{total?`${offset+1}–${Math.min(offset+25,total)} of ${total}`:'0 items'}</span><button className="secondary" disabled={offset+25>=total} onClick={()=>onChange(offset+25)}>Next page</button></div>;}
 function Compatibility({compatible}:{compatible:boolean}){return <span className={compatible?'hint':'warning'}>{compatible?'Fits configured profile · physical output unverified':'Preview available · playback outside configured profile'}</span>;}
-type CatalogProps={api:Api;alias:string;snapshot?:Pixoo;visible:boolean;onNames?:(names:PlaylistSummary[])=>void;size?:'medium'|'large'};
-function CatalogWidget({api,alias,snapshot,visible,onNames,size='large',part}:CatalogProps&{part:'media'|'playlists'}){
- const enabled=available(snapshot),revision=snapshot?.catalogRevision;
+type CatalogProps={api:Api;alias:string;snapshot?:Pixoo;visible:boolean;onNames?:(names:PlaylistSummary[])=>void;declaredPlaylistIds?:readonly string[];size?:'medium'|'large'};
+function CatalogWidget({api,alias,snapshot,visible,onNames,declaredPlaylistIds=[],size='large',part}:CatalogProps&{part:'media'|'playlists'}){
+ const enabled=available(snapshot),revision=snapshot?.catalogRevision,epoch=snapshot?.serverId,declaredKey=declaredPlaylistIds.join(',');
  const [media,setMedia]=useState<CatalogPage<Rendition>>(),[playlists,setPlaylists]=useState<CatalogPage<PlaylistSummary>>(),[offset,setOffset]=useState(0),[playlistOffset,setPlaylistOffset]=useState(0),[selected,setSelected]=useState(''),[selectedPlaylist,setSelectedPlaylist]=useState(''),[detail,setDetail]=useState<PlaylistReply>(),[error,setError]=useState(''),[detailError,setDetailError]=useState(''),[reload,setReload]=useState(0),[itemOffset,setItemOffset]=useState(0);
- useEffect(()=>{const stop=new AbortController();setError('');if(!enabled){setMedia(undefined);setPlaylists(undefined);}if(visible&&enabled)void(async()=>{
+ useEffect(()=>{const stop=new AbortController();setError('');if(!enabled){setMedia(undefined);setPlaylists(undefined);onNames?.([]);}if(visible&&enabled)void(async()=>{
   if(part==='media'){
    const page=await api.request<CatalogPage<Rendition>>(`${prefix(alias)}/catalog/renditions?offset=${offset}&limit=25`,undefined,stop.signal);
    if(page.catalogRevision!==revision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setMedia(page);
   }else{
-   const page=await api.request<CatalogPage<PlaylistSummary>>(`${prefix(alias)}/catalog/playlists?offset=${playlistOffset}&limit=25`,undefined,stop.signal);
-   if(page.catalogRevision!==revision)throw new ApiError('catalog-changed');if(!stop.signal.aborted){setPlaylists(page);onNames?.(page.items);}
+   // Resolve the controller's bounded discovery list before publishing names; catalog paging cannot replace that lookup.
+   const first=await api.request<CatalogPage<PlaylistSummary>>(`${prefix(alias)}/catalog/playlists?offset=0&limit=100`,undefined,stop.signal);
+   if(first.catalogRevision!==revision)throw new ApiError('catalog-changed');
+   const found=new Map(first.items.map(p=>[p.id,p]));
+   if(onNames)for(const id of declaredPlaylistIds.slice(0,100))if(!found.has(id)){
+    const value=await api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${encodeURIComponent(id)}`,undefined,stop.signal);
+    if(value.catalogRevision!==revision)throw new ApiError('catalog-changed');
+    const {items,...playlist}=value.playlist;found.set(id,{...playlist,itemCount:items.length});
+   }
+   const page=playlistOffset===0?{...first,limit:25,items:first.items.slice(0,25)}:await api.request<CatalogPage<PlaylistSummary>>(`${prefix(alias)}/catalog/playlists?offset=${playlistOffset}&limit=25`,undefined,stop.signal);
+   if(page.catalogRevision!==revision)throw new ApiError('catalog-changed');
+   if(!stop.signal.aborted){setPlaylists(page);onNames?.(declaredPlaylistIds.flatMap(id=>found.has(id)?[found.get(id)!]:[]));}
   }
- })().catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,offset,playlistOffset,reload,part]);
- useEffect(()=>{const stop=new AbortController();setDetail(undefined);setDetailError('');if(visible&&enabled&&selectedPlaylist)void api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${selectedPlaylist}`,undefined,stop.signal).then(value=>{if(value.catalogRevision!==revision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setDetail(value);}).catch(e=>{if(!stop.signal.aborted)setDetailError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,selectedPlaylist,reload]);
+ })().catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,epoch,offset,playlistOffset,reload,part,declaredKey]);
+ useEffect(()=>{const stop=new AbortController();setDetail(undefined);setDetailError('');if(visible&&enabled&&selectedPlaylist)void api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${selectedPlaylist}`,undefined,stop.signal).then(value=>{if(value.catalogRevision!==revision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setDetail(value);}).catch(e=>{if(!stop.signal.aborted)setDetailError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,epoch,selectedPlaylist,reload]);
  const mediaThumbs=useThumbnails(api,alias,media?.items.map(r=>r.renditionId)??[],visible&&enabled),itemThumbs=useThumbnails(api,alias,detail?.playlist.items.slice(itemOffset,itemOffset+25).map(i=>i.renditionId)??[],visible&&enabled);
  const selectedItem=media?.items.find(r=>r.renditionId===selected);
  return <div className="pixoo-catalog">
@@ -89,7 +99,7 @@ export function PixooPlaylists(props:CatalogProps){return <CatalogWidget {...pro
 export function PixooCatalog(props:CatalogProps){return <><PixooMediaGrid {...props}/><PixooPlaylists {...props}/></>;}
 export function PixooNowShowing({api,alias,snapshot,visible,stale,size='small'}:{api:Api;alias:string;snapshot?:Pixoo;visible:boolean;stale:boolean;size?:WidgetSize}){
  const media=snapshot?.currentMedia,[playlist,setPlaylist]=useState<PlaylistReply>(),[error,setError]=useState('');
- useEffect(()=>{const stop=new AbortController();setPlaylist(undefined);setError('');if(visible&&media?.playlistId)void api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${media.playlistId}`,undefined,stop.signal).then(value=>{if(value.catalogRevision!==snapshot?.catalogRevision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setPlaylist(value);}).catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>stop.abort();},[api,alias,visible,media?.playlistId,snapshot?.catalogRevision]);
+ useEffect(()=>{const stop=new AbortController();setPlaylist(undefined);setError('');if(visible&&media?.playlistId)void api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${media.playlistId}`,undefined,stop.signal).then(value=>{if(value.catalogRevision!==snapshot?.catalogRevision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setPlaylist(value);}).catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>stop.abort();},[api,alias,visible,media?.playlistId,snapshot?.catalogRevision,snapshot?.serverId]);
  return <MediaWidget id="pixoo-now-showing" size={size}>{!available(snapshot)?<Unavailable/>:!media?<p className="hint">No current media selection reported.</p>:<>
  <p>{playlist?.playlist.name??media.playlistId??'Single rendition'} · reported item {media.itemIndex+1} of {media.itemCount}</p>{playlist&&playlist.playlist.revision!==media.playlistRevision&&<p className="warning">Playlist changed since this playback selection was captured.</p>}
  <p className={stale||media.uncertain?'warning':'hint'}>{stale?'Stale: last reported selection':media.uncertain?'Transmission uncertain':`Player ${media.state} · requested ${media.intent}`}. Physical display unverified.</p>

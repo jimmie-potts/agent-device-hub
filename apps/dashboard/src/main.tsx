@@ -63,8 +63,8 @@ const health=(d:DeviceControls)=><Badge warning={!!d.device.error}>{d.device.err
 /** One component's page: identity and health, the status strip, the rare facts behind Details, every control as a card, and the device's own panels. */
 function ComponentView({component,device,context,api,refresh,now,sessions,visible}:{component:Component;device:Device;context:Context;api:Api;refresh:Refresh;now:number;sessions:SessionSnapshot[];visible:boolean}){
  const d=deviceControls(component,device,context,api,refresh);
- const [playlistNames,setPlaylistNames]=useState<PlaylistSummary[]>([]);
  const {snapshot,integr,local}=d;
+ const [playlistNames,setPlaylistNames]=useState<PlaylistSummary[]>([]);
  // The shared device art keeps its own selection; picking an element there also selects it in the Assignments panel.
  const [pickedElement,setPickedElement]=useState<string>(),artSelection=useMemo(()=>pickedElement?[pickedElement]:[],[pickedElement]);
  const editor=safeEditorUrl(component.editorUrl);
@@ -97,7 +97,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions,visibl
  {!local&&!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
  {nano(integr)&&<NanoAssignments d={d} integration={integr} picked={pickedElement} onPick={setPickedElement}/>}
  {pixoo(integr)&&<PixooMonitor d={d} integration={integr} sessions={sessions}/>}
- {component.kind==='pixoo'&&<><PixooNowShowing api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} stale={!!device.error||elapsed>10000} size="medium"/><PixooCatalog api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} onNames={setPlaylistNames}/></>}
+ {component.kind==='pixoo'&&<><PixooNowShowing api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} stale={!!device.error||elapsed>10000} size="medium"/><PixooCatalog api={api} alias={component.id} snapshot={pixoo(integr)?integr:undefined} visible={visible} onNames={setPlaylistNames} declaredPlaylistIds={snapshot?.capabilities.media.supported?snapshot.capabilities.media.playlistIds:[]}/></>}
  {!local&&<p className="hint">{editor?<a href={editor} target="_blank" rel="noopener noreferrer">{component.kind==='pixoo'?'Open Pixoo app':'Open advanced wall editor'} ↗</a>:'Advanced editor unavailable: no validated link configured.'}</p>}
  </>;
 }

@@ -1446,3 +1446,5 @@ into its disposable simulator, then compares the native cached frame with the
 Hub client's manifest/PNG routes and checks conditional 304. No live catalog,
 installation or device is touched. Retain all ordinary Hub, dashboard, shared
 contract/state/MCP and workflow checks.
+
+The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.
