@@ -60,6 +60,14 @@ Ask request, decision and state contracts.
 - Guide routes are computed from placement with a fixed grammar; GitHub links
   come only from record URLs.
 
+- Review correction (final round 1, PR #645): the publication gate follows the
+  whole ancestor chain of every open and recently completed issue, including
+  closed ancestors kept for resolution. Recently done also appears on Not in an
+  epic for standalone and unplaceable completions and reports itself partial
+  when a completion cannot be placed, so no completion disappears silently.
+  Dependency lists differ by direction and scope. This changed the approved
+  bundle and needs renewed owner approval.
+
 ## Retain, change and defer (from PR #645)
 
 | Asset | Disposition |

@@ -193,11 +193,12 @@ gaps and leaves every issue browsable.
 | --- | --- | --- |
 | The dataset fails validation (schema, required fields, identity, private Project values) | Fatal | `records-invalid` |
 | A primary repository's open-issue inventory is incomplete or not fresh | Fatal | `inventory-incomplete` |
-| An open primary issue's parent or blocker read failed (unknown list) | Fatal | `relationship-read-failed` |
-| A parent or blocker points into a primary repository but is missing from the dataset | Fatal | `reference-missing` |
-| Public fields are selected without a policy, or the projection differs from its allowlist | Fatal | `projection-unsafe` |
-| A parent or blocker is in a repository outside the Guide and was not collected | Gap; the reference stays unknown and withholds dependent claims | `reference-unresolved` |
+| A required relationship read failed (unknown list): the blockers of an open primary issue, or a parent anywhere in the ancestor chain of an open or recently completed primary issue, including closed ancestors kept only for resolution | Fatal | `relationship-read-failed` |
+| Such a required parent or blocker points into a primary repository but is missing from the dataset | Fatal | `reference-missing` |
+| Public fields are selected without a policy | Fatal | `projection-unsafe` |
+| Such a required parent or blocker is in a repository outside the Guide and was not collected | Gap; the reference stays unknown and withholds dependent claims | `reference-unresolved` |
 | A repository's seven-day closed-issue read is incomplete | Gap; Recently done shows as partial | `recent-closures-incomplete` |
+| A recently done issue cannot be placed in an epic | Shown on Not in an epic; every Recently done section reports partial with `recent-placement-unresolved` | `reference-unresolved` when its parent is outside the Guide |
 | An optional story section (Implementation, Protections, Deferrals) is malformed | Gap | `optional-section-malformed` |
 | An execution recommendation exists but is stale, unknown, unsupported or duplicated | Gap; briefs use the generic commands | `recommendation-unusable` |
 | The Project is not public | Gap; Project values unknown | `project-not-public` |
@@ -258,7 +259,7 @@ reference for validation and resolution.
 | `dependency-list` | View producer | `prerequisites` or `dependents`, `direct` or `transitive`; code computes the list. |
 | `board.by` | View producer | `commitment`, `phase` or `workflow`; code places each child in a column. |
 | `task-brief.record` | View producer | Only as the root of an `issue` page for the same record. |
-| `reasons[]` | View producer | 1-3 reasons with distinct codes. Required on every card and summary in a composed view; optional on ordinary pages. |
+| `reasons[]` | View producer | 1-3 reasons with distinct codes. Required on every issue card and every epic component, summary or full, in a composed view; optional on ordinary pages. |
 
 ### Pages, groups and coverage
 
@@ -273,9 +274,11 @@ Coverage makes ordinary pages complete, never truncated:
 
 - **Epic and Not in an epic pages** (`primary` coverage) list every open issue
   whose primary page they are exactly once, as a primary card or, for a nested
-  epic, as a sub-epic. A primary card for any other issue is `coverage`. An epic
-  page also lists every recently done issue whose nearest epic it is, exactly
-  once, in Recently done.
+  epic, as a sub-epic. A primary card for any other issue is `coverage`. Each
+  also lists, exactly once in its Recently done section, every recently done
+  issue whose page it is: an epic page its own completions, and Not in an epic
+  the standalone ones and any that could not be placed. A completion is
+  therefore always shown somewhere.
 - **All issues** (`complete` coverage) lists every open issue exactly once, with
   no primary cards.
 - **Other pages** may repeat cards but may not mark any as primary. Composed
@@ -317,8 +320,9 @@ model. Each node has its instance ID, kind, parent, depth, position and record
 reference. Cards and epics add the GitHub link, Guide route, workflow labels,
 state, closure reason and time, placement, Phase, Commitment, resolved reasons
 and actions; epics add their presentation and counts. Sections add their
-template heading and `total`, and Recently done adds its window and whether the
-closed-issue reads were complete. Dependency lists add computed IDs and
+template heading and `total`, and Recently done adds its window and whether it is
+complete: every closed-issue read finished and every recent completion was
+placed. Dependency lists add computed IDs and
 completeness, boards add their columns, and briefs add their commands and
 recommendation state. The consumer supplies the freshness policy, as in 1.0.
 
@@ -403,7 +407,7 @@ then page rules and the tree walk, then records and evidence, then coverage.
 | `page-not-allowed` | The origin, page record or a section group does not fit the page kind. |
 | `size-exceeded`, `depth-exceeded` | A composed bound or the depth bound is exceeded. |
 | `duplicate-instance`, `unknown-component`, `cycle`, `multiple-parents`, `orphan` | Broken tree identity or structure. |
-| `nesting-not-allowed`, `duplicate-sibling` | A kind under a parent or group that does not allow it, or the same record twice under one parent. |
+| `nesting-not-allowed`, `duplicate-sibling` | A kind under a parent or group that does not allow it, or two components under one parent (or at the root) that would show the same thing: the same kind, record, group and board field, and for dependency lists the same direction and scope. |
 | `unknown-record`, `group-requirement` | A missing record, or a record that fails its group's predicate or required reason, or a non-epic in an `epic` component. |
 | `membership` | An issue inside an `epic` component whose nearest epic is a different one. |
 | `reason-required`, `reason-not-allowed`, `duplicate-reason` | Reason rules for the component and origin. |

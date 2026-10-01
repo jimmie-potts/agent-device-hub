@@ -45,6 +45,10 @@ dependencies need them.
 - **WHEN** an open issue's parent or blocker closed long before the window
 - **THEN** the closed record is retained for placement and prerequisites without appearing as recently done
 
+#### Scenario: Unplaceable recent completion
+- **WHEN** a recently completed issue cannot be placed in an epic
+- **THEN** it appears in Recently done on Not in an epic, and Recently done is reported as partial
+
 #### Scenario: Incomplete closed-issue read
 - **WHEN** a repository's closed-in-window read is incomplete
 - **THEN** Recently done is shown as partial with a source-linked reason
@@ -65,7 +69,8 @@ Unreadable or private Project data SHALL be unknown, never empty.
 
 ### Requirement: Publication boundary
 A new release SHALL require complete, fresh open-issue inventories, readable
-relationship lists for open issues, collected references into the primary
+blocker lists for open issues, readable parent lists along the ancestor chain of
+every open or recently completed issue, collected references into the primary
 repositories, valid records and a safe projection. Optional enrichment failures
 SHALL become visible gaps that keep every issue browsable.
 

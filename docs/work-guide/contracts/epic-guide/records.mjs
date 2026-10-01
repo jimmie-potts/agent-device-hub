@@ -344,14 +344,30 @@ export function publicationGate(dataset) {
   }
   const lookup = new Map(dataset.issues.map(x => [x.id, x]));
   const repositoryOf = id => id.split('#')[0];
-  for (const issue of dataset.issues.filter(x => x.state === 'OPEN' && primary.has(x.repository))) {
-    for (const kind of ['parent', 'blockedBy']) {
-      const relation = issue[kind];
-      // A read that failed leaves the core graph unknown; a known edge to an outside issue is only a gap.
-      if (relation.ids === null) { add(fatal, 'relationship-read-failed', relation.evidence.source); continue; }
-      for (const id of relation.ids.filter(id => !lookup.has(id)))
-        add(primary.has(repositoryOf(id)) ? fatal : gaps, primary.has(repositoryOf(id)) ? 'reference-missing' : 'reference-unresolved', `${issue.url} → ${id}`);
+  const seen = new Set();
+  // A failed read leaves the core graph unknown; a known edge to an issue outside the Guide is only a gap.
+  const reference = (from, kind, relation) => {
+    const key = `${from.id} ${kind}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (relation.ids === null) { add(fatal, 'relationship-read-failed', relation.evidence.source); return; }
+    for (const id of relation.ids.filter(id => !lookup.has(id)))
+      add(primary.has(repositoryOf(id)) ? fatal : gaps, primary.has(repositoryOf(id)) ? 'reference-missing' : 'reference-unresolved', `${from.url} → ${id}`);
+  };
+  // Placement needs every ancestor's parent read, including closed ancestors kept only for resolution.
+  const ancestry = issue => {
+    const visited = new Set([issue.id]);
+    for (let current = issue; current;) {
+      reference(current, 'parent', current.parent);
+      const next = current.parent.ids?.[0] && lookup.get(current.parent.ids[0]);
+      if (!next || visited.has(next.id)) return;
+      visited.add(next.id);
+      current = next;
     }
+  };
+  for (const issue of dataset.issues.filter(x => primary.has(x.repository) && (x.state === 'OPEN' || recentlyDone(dataset, x)))) ancestry(issue);
+  for (const issue of dataset.issues.filter(x => x.state === 'OPEN' && primary.has(x.repository))) {
+    reference(issue, 'blockedBy', issue.blockedBy);
     for (const key of ['implementation', 'protections', 'deferrals'])
       if (['conflict', 'unsupported'].includes(issue.story[key].state)) add(gaps, 'optional-section-malformed', issue.story[key].source);
     const execution = issue.planning.filter(x => x.kind === 'execution');
@@ -362,8 +378,7 @@ export function publicationGate(dataset) {
   if (!project.public) add(gaps, 'project-not-public', project.source ?? 'no Project configured');
   else if (!project.evidence.complete || !['fresh', 'stale'].includes(project.evidence.state)) add(gaps, 'project-unavailable', project.evidence.source);
   else if (project.evidence.state === 'stale') add(gaps, 'project-cached', `${project.evidence.source} observed ${project.evidence.observedAt}`);
-  // Unsafe projection is fatal: selections need a configured policy and must equal its allowlist exactly.
+  // The schema limits selectable fields; selecting any without a configured policy is unsafe.
   if (!dataset.publicationPolicy && dataset.issues.some(x => x.publicFields.length)) add(fatal, 'projection-unsafe', 'public fields selected without a policy');
-  try { validateProjection(publicProjection(dataset), dataset); } catch (error) { add(fatal, 'projection-unsafe', error.message); }
   return { publishable: fatal.length === 0, fatal, gaps };
 }

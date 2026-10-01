@@ -50,6 +50,8 @@ export const PREDICATES = {
   'not-in-epic': issue => ['standalone', 'unresolved'].includes(issue.placement.state),
 };
 
+const identityKey = x => [x.kind, x.group ?? '', x.record ?? '', x.by ?? '', x.direction ?? '', x.scope ?? ''].join(':');
+
 function hasEdge(issue, relation, other) {
   const field = { blocks: other.blockedBy, 'blocked-by': issue.blockedBy,
     'parent-of': issue.children, 'child-of': issue.parent }[relation];
@@ -113,13 +115,14 @@ export function validateView(value, { dataset, catalog = CATALOG } = {}) {
     if (parent) check(catalog.components[parent.kind].children.includes(component.kind), 'nesting-not-allowed', `${component.kind} in ${parent.kind}`);
     const children = component.children ?? [];
     if (composed) check(children.length <= limits.maxChildren, 'size-exceeded', id);
-    const siblings = children.map(child => byId.get(child)).filter(Boolean)
-      .map(child => child.kind + ':' + (child.record ?? child.group ?? child.by) + ':' + (child.kind === 'section' ? child.record ?? '' : ''));
+    // Two components are duplicates only when they would show the same thing; a dependency list
+    // differs by direction and scope, and a section by its group and record.
+    const siblings = children.map(child => byId.get(child)).filter(Boolean).map(identityKey);
     check(new Set(siblings).size === siblings.length, 'duplicate-sibling', id);
     const next = new Set([...path, id]);
     for (const child of children) visit(child, component, component.kind === 'epic' ? component.record : epic, depth + 1, next);
   };
-  const rootKeys = value.root.map(id => byId.get(id)).filter(Boolean).map(x => x.kind + ':' + (x.group ?? x.record) + ':' + (x.record ?? ''));
+  const rootKeys = value.root.map(id => byId.get(id)).filter(Boolean).map(identityKey);
   check(new Set(rootKeys).size === rootKeys.length, 'duplicate-sibling', 'root');
   for (const id of value.root) visit(id, null, null, 1, new Set());
   for (const id of byId.keys()) check(visited.has(id), 'orphan', id);
@@ -177,9 +180,10 @@ export function validateView(value, { dataset, catalog = CATALOG } = {}) {
     same(placed.map(x => x.record), dataset.issues.filter(x => open(x) && x.id !== value.page.record
       && (page.coverage === 'complete' || primaryPage(x) === target)).map(x => x.id), 'placements');
     if (page.coverage === 'complete') check(placed.every(x => !x.primary), 'coverage', 'All issues repeats placements');
-    // An epic page also shows every issue it completed in the seven-day window.
-    if (value.page.kind === 'epic') same(value.components.filter(x => x.kind === 'issue-card' && inGroup(x, 'recently-done')).map(x => x.record),
-      dataset.issues.filter(x => recentlyDone(dataset, x) && x.placement.epic === value.page.record).map(x => x.id), 'recently done');
+    // Epic and Not in an epic pages also show every issue whose page they are that was completed in
+    // the seven-day window, so a completion that cannot be placed in an epic is still shown.
+    if (page.coverage === 'primary') same(value.components.filter(x => x.kind === 'issue-card' && inGroup(x, 'recently-done')).map(x => x.record),
+      dataset.issues.filter(x => recentlyDone(dataset, x) && x.id !== value.page.record && primaryPage(x) === target).map(x => x.id), 'recently done');
   } else check(value.components.every(x => !x.primary), 'coverage', `${value.page.kind} cannot hold primary placements`);
   return value;
 }
@@ -222,7 +226,7 @@ function dependencyList(dataset, component, policy) {
   }
   if (component.scope === 'direct') {
     const complete = issue.blockedBy.ids !== null && isFresh(issue.blockedBy.evidence, policy);
-    return { ids: issue.blockedBy.ids, complete,
+    return { ids: issue.blockedBy.ids === null ? null : [...issue.blockedBy.ids].sort(), complete,
       reasons: complete ? [] : [{ code: 'dependency-evidence-unavailable', source: issue.blockedBy.evidence.source }] };
   }
   // Observed transitive edges stop at closed prerequisites, as in guide-records.
@@ -257,10 +261,13 @@ function resolveReason(dataset, record, reason, policy) {
   return result;
 }
 
-// The seven-day list is complete only when every primary repository's closed-in-window read is complete.
+// The seven-day list is complete only when every primary repository's closed-in-window read is
+// complete and every recent completion could be placed.
 function recentEvidence(dataset) {
-  const reasons = dataset.repositories.filter(x => x.scope === 'primary' && !x.recentClosures.complete)
-    .map(x => ({ code: 'recent-closures-incomplete', source: x.recentClosures.source }));
+  const reasons = [...dataset.repositories.filter(x => x.scope === 'primary' && !x.recentClosures.complete)
+    .map(x => ({ code: 'recent-closures-incomplete', source: x.recentClosures.source })),
+  ...dataset.issues.filter(x => recentlyDone(dataset, x) && x.placement.state === 'unresolved')
+    .map(x => ({ code: 'recent-placement-unresolved', source: x.url }))];
   return { window: recentWindow(dataset), complete: reasons.length === 0, reasons };
 }
 

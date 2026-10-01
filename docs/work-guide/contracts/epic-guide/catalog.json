@@ -45,6 +45,7 @@
       "groups": [
         "not-in-epic",
         "backlog",
+        "recently-done",
         "parent-group"
       ],
       "coverage": "primary",
@@ -380,15 +381,14 @@
     "open": "The issue is open.",
     "active": "The issue is open with status:in-progress or status:review.",
     "open-bug": "The issue is open with the bug label.",
-    "blocked": "The issue is open with the blocked label, an open or missing native blocker, or an unknown blocker list.",
+    "blocked": "The issue is open with the blocked label, an open, missing or unknown native blocker, or a closed prerequisite whose outcome is not accepted.",
     "later": "The issue is open with the deferred or idea label.",
     "closed": "The issue is closed, with its closure reason kept.",
     "descendant": "The section's record appears in the issue's placement path.",
     "root-epic": "The epic has root placement.",
     "nested-epic": "The epic's nearest containing epic is the enclosing epic.",
     "not-in-epic": "The issue's placement is standalone or unresolved.",
-    "recent": "The issue is closed as completed within the seven days ending at the dataset's as-of time.",
-    "member": "Inside an epic component, the issue's nearest epic is that epic."
+    "recent": "The issue is closed as completed within the seven days ending at the dataset's as-of time."
   },
   "sequences": {
     "none": "No order is claimed.",

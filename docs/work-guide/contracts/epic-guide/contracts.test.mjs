@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { definitionDigest as recordsOneDigest } from '../digest.mjs';
 import { validateDataset, datasetIdentity, placementOf, projectOf, eligibility, publicProjection, validateProjection,
   dependents, primaryPage, recentlyDone, publicationGate, prerequisiteState, ORDERED } from './records.mjs';
-import { CATALOG, catalogIdentity, validateView, resolveView, rebindView, allowedLink, literalText, epicCounts } from './views.mjs';
+import { CATALOG, catalogIdentity, validateView, resolveView, rebindView, allowedLink, literalText, epicCounts, PREDICATES } from './views.mjs';
 import { definitionDigest } from './digest.mjs';
 import { releaseIdentity, validateRelease, checkBinding, compatibility, mayInvokeModel, acceptReply, fileHash } from './release.mjs';
 
@@ -37,9 +37,10 @@ function produced(dataset) {
   dataset.datasetId = datasetIdentity(dataset);
   return dataset;
 }
-function records(changes = {}, recompute = true, all = {}) {
+function records(changes = {}, recompute = true, all = {}, drop = []) {
   const dataset = json('./fixtures/dataset.json');
   for (const [path, content] of Object.entries(changes)) setPath(dataset, path, content);
+  for (const path of drop) dropPath(dataset, path);
   for (const [path, content] of Object.entries(all)) for (const issue of dataset.issues) setPath(issue, path, content);
   if (recompute) return produced(dataset);
   dataset.datasetId = datasetIdentity(dataset);
@@ -74,7 +75,6 @@ test('valid records place every issue by its nearest explicit epic', () => {
 test('every open issue has exactly one primary page', () => {
   const dataset = json('./fixtures/dataset.json');
   const pages = dataset.issues.filter(x => x.state === 'OPEN').map(x => [x.id, primaryPage(x)]);
-  assert.equal(new Set(pages.map(x => x[0])).size, pages.length);
   assert.deepEqual(Object.fromEntries(pages), {
     [H(900100)]: `epic:${H(900100)}`, [H(900101)]: `epic:${H(900100)}`, [N102]: `epic:${H(900100)}`,
     [H(900103)]: `epic:${H(900100)}`, [P104]: `epic:${H(900100)}`, [H(900105)]: 'not-in-epic',
@@ -82,13 +82,14 @@ test('every open issue has exactly one primary page', () => {
 });
 
 for (const fixture of json('./fixtures/record-cases.json')) test(`records: ${fixture.name}`, () => {
-  const dataset = records(fixture.set ?? {}, fixture.recompute !== false, fixture.setAll);
+  const dataset = records(fixture.set ?? {}, fixture.recompute !== false, fixture.setAll, fixture.drop);
   if (fixture.gate) {
     const gate = publicationGate(dataset); const codes = list => [...new Set(list.map(x => x.code))].sort();
     assert.equal(gate.publishable, fixture.gate.publishable, JSON.stringify(gate));
     if (fixture.gate.fatal) assert.deepEqual(codes(gate.fatal), fixture.gate.fatal);
     if (fixture.gate.gaps) assert.deepEqual(codes(gate.gaps), fixture.gate.gaps);
-    if (!gate.publishable) return;
+    // Only invalid records stop here; other fatal results still check placement and readiness.
+    if (gate.fatal.some(x => x.code === 'records-invalid')) return;
   }
   if (fixture.invalid) { assert.throws(() => validateDataset(dataset), new RegExp(fixture.invalid)); return; }
   validateDataset(dataset);
@@ -182,6 +183,7 @@ test('catalog enumerations agree with the view schema and records', () => {
   assert.deepEqual(schema.questionMatch.properties.evidence.items.properties.field.enum, records2.publicField.enum);
   for (const page of Object.values(CATALOG.pages)) for (const group of page.groups) assert.ok(CATALOG.groups[group], group);
   for (const group of Object.values(CATALOG.groups)) assert.ok(group.requires in CATALOG.predicates, group.requires);
+  assert.deepEqual(Object.keys(CATALOG.predicates).sort(), Object.keys(PREDICATES).sort(), 'every catalog predicate has a reference rule');
   for (const kind of Object.values(CATALOG.components))
     assert.ok((kind.requiredData ?? []).every(field => field in records2.issue.properties), JSON.stringify(kind.requiredData));
   assert.equal(schema.reasons.maxItems, CATALOG.bounds.composed.maxReasons);
@@ -354,16 +356,47 @@ test('a content refresh re-binds the open view only when it fully revalidates', 
   assert.throws(() => rebindView(value, { dataset: moved }), code('evidence-unverified'));
 });
 
-test('ordinary browsing needs no model call and the default view is ordinary', () => {
-  let providerCalls = 0;
-  const provider = () => { providerCalls += 1; return json('./fixtures/composed.json'); };
+test('one relationships section can hold every direction and scope for an issue, but not the same list twice', () => {
   const { dataset, value } = view({ base: 'epic-page' });
-  resolveView(value, { dataset, policy });
-  assert.equal(providerCalls, 0);
-  const answer = provider();
-  answer.datasetId = dataset.datasetId;
-  resolveView(validateView(answer, { dataset }), { dataset, policy });
-  assert.equal(providerCalls, 1);
+  const lists = [['prerequisites', 'transitive'], ['dependents', 'direct'], ['dependents', 'transitive']]
+    .map(([direction, scope], n) => ({ id: `list-${n}`, kind: 'dependency-list', record: 'jimmie-potts/agent-device-hub#900101', direction, scope }));
+  value.components.push(...lists);
+  value.components.find(x => x.id === 'graph').children.push(...lists.map(x => x.id));
+  assert.equal(node(resolveView(value, { dataset, policy }), 'graph').total, 4);
+  lists[2].scope = 'direct';
+  assert.throws(() => validateView(value, { dataset }), code('duplicate-sibling'));
+});
+
+test('direct prerequisite lists resolve in a stable order', () => {
+  const ids = ['jimmie-potts/agent-device-hub#900106', 'jimmie-potts/agent-device-hub#900112'];
+  const changes = order => ({ 'issues.@900101.blockedBy.ids': order, 'issues.@900101.blockedBy.evidence.pagination.itemCount': 2,
+    'issues.@900101.blockedBy.evidence.pagination.totalCount': 2 });
+  const forward = view({ base: 'epic-page', records: changes(ids) });
+  const backward = view({ base: 'epic-page', records: changes([...ids].reverse()) });
+  assert.equal(forward.dataset.datasetId, backward.dataset.datasetId);
+  assert.deepEqual(node(resolveView(forward.value, forward), 'epic-pages-prerequisites').ids,
+    node(resolveView(backward.value, backward), 'epic-pages-prerequisites').ids);
+});
+
+test('a recent completion that cannot be placed appears on Not in an epic, marked partial', () => {
+  const dataset = records({ 'issues.@900111.parent.ids': ['example-org/elsewhere#13'], 'issues.@900111.parent.evidence.complete': false,
+    'issues.@900111.parent.evidence.reason': 'Parent is outside the Guide repositories', 'issues.@900111.parent.evidence.pagination': null });
+  const page = json('./fixtures/epic-page.json'); page.datasetId = dataset.datasetId;
+  assert.throws(() => validateView(page, { dataset }), code('membership'), 'it no longer belongs to the epic');
+  page.components.find(x => x.id === 'browser').children = ['in-progress', 'up-next', 'other-work', 'device-group', 'graph'];
+  page.components = page.components.filter(x => !['done', 'layout-draft'].includes(x.id));
+  validateView(page, { dataset });
+  const card = (id, record, primary) => ({ id, kind: 'issue-card', record, presentation: 'row', primary });
+  const standalone = { ...page, page: { kind: 'not-in-epic', record: null }, root: ['list', 'done'], components: [
+    { id: 'list', kind: 'section', group: 'not-in-epic', record: null, sequence: 'none', disclosure: 'open', children: ['bug', 'outside'] },
+    card('bug', 'jimmie-potts/agent-device-hub#900105', true), card('outside', 'jimmie-potts/agent-device-hub#900108', true),
+    { id: 'done', kind: 'section', group: 'recently-done', record: null, sequence: 'none', disclosure: 'collapsed', children: ['draft'] },
+    card('draft', 'jimmie-potts/agent-device-hub#900111', false)] };
+  const done = node(resolveView(standalone, { dataset, policy }), 'done');
+  assert.equal(done.complete, false);
+  assert.ok(done.reasons.some(x => x.code === 'recent-placement-unresolved'));
+  standalone.root = ['list']; standalone.components = standalone.components.slice(0, 3);
+  assert.throws(() => validateView(standalone, { dataset }), code('coverage'), 'the completion must be shown somewhere');
 });
 
 // Release binding

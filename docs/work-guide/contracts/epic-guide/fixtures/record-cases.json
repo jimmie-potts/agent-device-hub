@@ -690,5 +690,123 @@
         false
       ]
     }
+  },
+  {
+    "name": "a closed ancestor's missing parent inside the Guide blocks publication",
+    "set": {
+      "issues.@900110.parent.ids": [
+        "jimmie-potts/agent-device-hub#1"
+      ],
+      "issues.@900110.parent.evidence.complete": false,
+      "issues.@900110.parent.evidence.reason": "Ancestor not collected",
+      "issues.@900110.parent.evidence.pagination": null
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "reference-missing"
+      ]
+    },
+    "placement": {
+      "jimmie-potts/agent-device-hub#900105": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900110"
+        ],
+        "reason": "ancestor-missing"
+      }
+    }
+  },
+  {
+    "name": "a closed ancestor's failed parent read blocks publication",
+    "set": {
+      "issues.@900110.parent.ids": null,
+      "issues.@900110.parent.evidence.state": "failed",
+      "issues.@900110.parent.evidence.complete": false,
+      "issues.@900110.parent.evidence.reason": "Parent read failed",
+      "issues.@900110.parent.evidence.pagination": null
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "relationship-read-failed"
+      ]
+    },
+    "placement": {
+      "jimmie-potts/agent-device-hub#900105": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900110"
+        ],
+        "reason": "parent-unknown"
+      }
+    }
+  },
+  {
+    "name": "a recent completion's failed parent read blocks publication",
+    "set": {
+      "issues.@900111.parent.ids": null,
+      "issues.@900111.parent.evidence.state": "failed",
+      "issues.@900111.parent.evidence.complete": false,
+      "issues.@900111.parent.evidence.reason": "Parent read failed",
+      "issues.@900111.parent.evidence.pagination": null
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "relationship-read-failed"
+      ]
+    },
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ],
+    "placement": {
+      "jimmie-potts/agent-device-hub#900111": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [],
+        "reason": "parent-unknown"
+      }
+    }
+  },
+  {
+    "name": "a recent completion with a parent outside the Guide is a visible gap",
+    "set": {
+      "issues.@900111.parent.ids": [
+        "example-org/elsewhere#13"
+      ],
+      "issues.@900111.parent.evidence.complete": false,
+      "issues.@900111.parent.evidence.reason": "Parent is outside the Guide repositories",
+      "issues.@900111.parent.evidence.pagination": null
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ]
+  },
+  {
+    "name": "a completion exactly at the as-of time counts",
+    "set": {
+      "issues.@900111.closedAt": "2026-09-30T12:00:00Z",
+      "issues.@900111.updatedAt": "2026-09-30T12:00:00Z"
+    },
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ]
+  },
+  {
+    "name": "a record missing a required field is rejected",
+    "drop": [
+      "issues.@900101.title"
+    ],
+    "invalid": "must have required property 'title'"
   }
 ]
