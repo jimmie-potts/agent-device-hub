@@ -106,6 +106,56 @@ print(json.dumps(sorted(PATHS)))
   assert.deepEqual(JSON.parse(result.stdout), [...TOPICS].sort());
 });
 
+test('new-story openings preserve parsed sections and existing stories remain valid without one', () => {
+  const value = read('valid');
+  const baseline = eligibility(identified(value), id, 'ready', policy);
+  const samples = ['feature', 'investigation'].map(name => readFileSync(
+    new URL(`../../../tests/fixtures/story-openings/${name}.md`, import.meta.url), 'utf8'));
+  const opening = samples[0].split('## Outcome and real setup')[0];
+  const original = value.issues[0].body;
+  const bodies = [original, opening + original, ...samples];
+  const result = spawnSync('python3', ['-B', '-c', `
+import json, sys
+from guide_section import read
+from story_sections import _sections
+names = ('Outcome and real setup', 'Smallest useful implementation',
+         'Behavior and protections to preserve',
+         'Observable acceptance and planned evidence', 'Meaningful deferrals')
+parsed = []
+for body in json.load(sys.stdin):
+    lines = body.split('\\n')
+    sections = {}
+    previous = -1
+    for name in names:
+        spans = _sections(lines, (name,))
+        assert len(spans) == 1, (name, spans)
+        start, end = spans[0]
+        assert start > previous
+        previous = start
+        sections[name] = '\\n'.join(lines[start+1:end]).strip()
+        assert sections[name]
+    guide = read(body)
+    assert guide['state'] == 'assigned', guide
+    assert _sections(lines, ('Guide',))[0][0] > previous
+    parsed.append(dict(sections=sections, guide=guide))
+print(json.dumps(parsed))
+`], { cwd: fileURLToPath(new URL('../work/', import.meta.url)), input: JSON.stringify(bodies), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.deepEqual(parsed[1], parsed[0], 'opening does not change any detailed section or Guide field');
+  for (let index = 0; index < samples.length; index++) {
+    for (const section of samples[index].split(/^## .+$/m).slice(2, 7)) {
+      assert.ok(Object.values(parsed[index + 2].sections).includes(section.trim()));
+    }
+    assert.equal(parsed[index + 2].guide.topic, 'desktop-controls');
+  }
+  validateDataset(value); // The legacy body has no opening and still validates.
+  value.issues[0].body = opening + original;
+  validateDataset(identified(value));
+  assert.deepEqual(eligibility(value, id, 'ready', policy), baseline,
+    'summary prose neither adds a wire field nor changes readiness');
+});
+
 test('open native blockers and cycles withhold readiness while traversal terminates', () => {
   const value = read('valid');
   const second = value.issues[1];
