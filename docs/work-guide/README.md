@@ -86,6 +86,12 @@ dependency reads without claiming readiness. Contract fixture validation is
 change the snapshot builder or establish human approval; its delivery PR owns
 approval evidence for the exact definition.
 
+The [epic Guide contract](contracts/epic-guide/README.md) defines
+`guide-records/2.0` and the component catalog for the epic-based browser that
+will replace this guide (#509). It does not change this guide or its inputs:
+this generator keeps using the Guide sections and topics below, and
+`guide-records/1.0`, until the separate cutover.
+
 A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
 one of the twelve ids `guide_paths.py` defines), `**Note:** ...` (optional,
 one-line reading note), `**Workaround:** ...` (optional; shown only where a

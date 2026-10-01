@@ -35,6 +35,8 @@ jobs:
       - run: npm run test:workflow
       - name: Validate guide record contract fixtures
         run: node --test docs/work-guide/contracts/records.test.mjs
+      - name: Validate epic Guide contract fixtures
+        run: node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs
       - run: npm run test:preflight
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'

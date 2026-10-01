@@ -1,0 +1,2040 @@
+{
+  "schemaVersion": "guide-records/2.0",
+  "datasetId": "sha256:13754f97c33a4b87dcb5ab29f7bf9e2b741916732290c6d7c574679a66a80a61",
+  "asOf": "2026-09-30T12:00:00Z",
+  "repositories": [
+    {
+      "name": "jimmie-potts/agent-device-hub",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues?state=open",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 6,
+          "totalCount": 6,
+          "hasNextPage": false
+        }
+      },
+      "recentClosures": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues?state=closed&since=2026-09-23T12:00:00Z",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 2,
+          "totalCount": 2,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "name": "jimmie-potts/codex-nanoleaf",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues?state=open",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 1,
+          "totalCount": 1,
+          "hasNextPage": false
+        }
+      },
+      "recentClosures": {
+        "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues?state=closed&since=2026-09-23T12:00:00Z",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 0,
+          "totalCount": 0,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "name": "jimmie-potts/divoom-app-upgrade",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 1,
+          "totalCount": 1,
+          "hasNextPage": false
+        }
+      },
+      "recentClosures": {
+        "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues?state=closed&since=2026-09-23T12:00:00Z",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 0,
+          "totalCount": 0,
+          "hasNextPage": false
+        }
+      }
+    }
+  ],
+  "issues": [
+    {
+      "id": "jimmie-potts/agent-device-hub#900100",
+      "nodeId": "FIXTURE_I_900100",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900100,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+      "title": "Epic: Browse synthetic work by epic",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900100.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900100.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "epic",
+        "enhancement",
+        "status:in-progress"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900100",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900100.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900100.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900100",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900100/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900101",
+          "jimmie-potts/codex-nanoleaf#900102",
+          "jimmie-potts/agent-device-hub#900103",
+          "jimmie-potts/agent-device-hub#900107",
+          "jimmie-potts/agent-device-hub#900109",
+          "jimmie-potts/agent-device-hub#900111"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900100/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 6,
+            "totalCount": 6,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900100/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "root",
+        "epic": null,
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "assigned",
+          "value": "Ask the guide",
+          "recorded": "Ask the guide",
+          "from": null
+        },
+        "commitment": {
+          "state": "selected",
+          "value": "Now"
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900101",
+      "nodeId": "FIXTURE_I_900101",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900101,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+      "title": "Show epic pages from normalized records",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900101.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900101.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "enhancement",
+        "status:ready"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900101",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900101.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900101.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900101/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900101/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900106"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900101/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [
+        {
+          "kind": "execution",
+          "state": "stale",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+          "parser": "recommendations/1",
+          "sourceUpdatedAt": "2026-09-25T12:00:00Z"
+        }
+      ],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "selected",
+          "value": "Next"
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/codex-nanoleaf#900102",
+      "nodeId": "FIXTURE_I_900102",
+      "repository": "jimmie-potts/codex-nanoleaf",
+      "number": 900102,
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+      "title": "Report wall task titles to the Guide",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900102.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900102.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "enhancement",
+        "status:in-progress"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues/900102",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900102.",
+          "source": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900102.",
+          "source": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/codex-nanoleaf/issues/900102",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues/900102/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues/900102/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues/900102/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "conflict",
+          "value": null,
+          "recorded": "Development activity at a glance",
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900103",
+      "nodeId": "FIXTURE_I_900103",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900103,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+      "title": "Group device follow-ups",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900103.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900103.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "maintenance",
+        "status:backlog"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900103",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900103.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900103.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900103",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900103/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [
+          "jimmie-potts/divoom-app-upgrade#900104"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900103/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900103/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/divoom-app-upgrade#900104",
+      "nodeId": "FIXTURE_I_900104",
+      "repository": "jimmie-potts/divoom-app-upgrade",
+      "number": 900104,
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+      "title": "Explore animated previews on Pixoo",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900104.\n\n## Observable acceptance and planned evidence\n\nTBD",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "enhancement",
+        "idea",
+        "deferred",
+        "status:backlog"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues/900104",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900104.",
+          "source": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "TBD",
+          "source": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/900104",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900103"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues/900104/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues/900104/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues/900104/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [
+          "jimmie-potts/agent-device-hub#900103"
+        ],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900105",
+      "nodeId": "FIXTURE_I_900105",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900105,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+      "title": "Fix a search result that loses focus",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900105.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900105.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-29T08:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "bug",
+        "status:ready"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900105",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900105.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900105.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900110"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900105/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900105/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900112"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900105/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "standalone",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900110"
+        ],
+        "reason": null
+      },
+      "project": {
+        "member": false,
+        "phase": {
+          "state": "unassigned",
+          "value": null,
+          "recorded": null,
+          "from": null
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900106",
+      "nodeId": "FIXTURE_I_900106",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900106,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+      "title": "Normalize parent links",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900106.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900106.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "CLOSED",
+      "stateReason": "completed",
+      "createdAt": "2026-08-01T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-09-01T12:00:00Z",
+      "labels": [
+        "enhancement"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900106",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900106.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900106.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900106",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900106/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900106/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900106/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "standalone",
+        "epic": null,
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": false,
+        "phase": {
+          "state": "unassigned",
+          "value": null,
+          "recorded": null,
+          "from": null
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900107",
+      "nodeId": "FIXTURE_I_900107",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900107,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+      "title": "Reproduce the retired topic layout",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900107.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900107.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "CLOSED",
+      "stateReason": "not_planned",
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-09-28T12:00:00Z",
+      "labels": [
+        "enhancement"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900107",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900107.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900107.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900107",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900107/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900107/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900107/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900108",
+      "nodeId": "FIXTURE_I_900108",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900108,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+      "title": "Follow a parent outside the Guide",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900108.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900108.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "maintenance",
+        "status:backlog"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900108",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900108.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900108.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "example-org/elsewhere#12"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900108/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": false,
+          "reason": "Parent is outside the Guide repositories",
+          "pagination": null
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900108/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900108/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [],
+        "reason": "ancestor-missing"
+      },
+      "project": {
+        "member": false,
+        "phase": {
+          "state": "unknown",
+          "value": null,
+          "recorded": null,
+          "from": null
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900110",
+      "nodeId": "FIXTURE_I_900110",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900110,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+      "title": "Group search fixes",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900110.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900110.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "CLOSED",
+      "stateReason": "completed",
+      "createdAt": "2026-08-01T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-08-20T12:00:00Z",
+      "labels": [
+        "maintenance"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900110",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900110.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900110.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900110",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900110/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900105"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900110/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900110/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "standalone",
+        "epic": null,
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": false,
+        "phase": {
+          "state": "unassigned",
+          "value": null,
+          "recorded": null,
+          "from": null
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900111",
+      "nodeId": "FIXTURE_I_900111",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900111,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+      "title": "Draft the epic page layout",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900111.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900111.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "CLOSED",
+      "stateReason": "completed",
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-09-23T12:00:00Z",
+      "labels": [
+        "enhancement"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900111",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900111.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900111.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900111",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900111/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900111/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900111/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900112",
+      "nodeId": "FIXTURE_I_900112",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900112,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+      "title": "Record search focus steps",
+      "body": "## Outcome and real setup\n\nSynthetic outcome for 900112.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900112.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
+      "state": "CLOSED",
+      "stateReason": "completed",
+      "createdAt": "2026-08-01T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-09-23T11:59:59Z",
+      "labels": [
+        "bug"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900112",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Synthetic outcome for 900112.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Synthetic implementation for 900112.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900112",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900112/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900112/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900112/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "standalone",
+        "epic": null,
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": false,
+        "phase": {
+          "state": "unassigned",
+          "value": null,
+          "recorded": null,
+          "from": null
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900109",
+      "nodeId": "FIXTURE_I_900109",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900109,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+      "title": "Legacy story kept during migration",
+      "body": "## Outcome and scope\n\nSynthetic outcome for 900109.\n\n## Acceptance criteria\n\nAn observable synthetic check passes.\n\n## Guide\n\n**Topic:** work-guide\n**Note:** Legacy placement is ignored by records 2.0.\n",
+      "state": "OPEN",
+      "stateReason": "reopened",
+      "createdAt": "2026-09-20T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "enhancement",
+        "status:review"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900109",
+        "observedAt": "2026-09-30T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and scope",
+          "text": "Synthetic outcome for 900109.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "protections": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Acceptance criteria",
+          "text": "An observable synthetic check passes.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "missing",
+          "heading": null,
+          "text": null,
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900109",
+          "parser": "story-sections/1",
+          "reason": "Section absent"
+        }
+      },
+      "parent": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900109/parent",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900109/sub_issues",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900109/dependencies/blocked_by",
+          "observedAt": "2026-09-30T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.acceptance.text",
+        "labels",
+        "state"
+      ],
+      "placement": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "project": {
+        "member": true,
+        "phase": {
+          "state": "inherited",
+          "value": "Ask the guide",
+          "recorded": null,
+          "from": "jimmie-potts/agent-device-hub#900100"
+        },
+        "commitment": {
+          "state": "unselected",
+          "value": null
+        }
+      }
+    }
+  ],
+  "publicationPolicy": {
+    "id": "fixture-public-planning/1",
+    "source": "https://github.com/example/planning/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-policy.md"
+  },
+  "project": {
+    "source": "https://github.com/users/jimmie-potts/projects/1",
+    "public": true,
+    "evidence": {
+      "source": "https://api.github.com/graphql#project-items",
+      "observedAt": "2026-09-30T12:00:00Z",
+      "state": "fresh",
+      "complete": true,
+      "reason": null,
+      "pagination": {
+        "pages": 1,
+        "itemCount": 8,
+        "totalCount": 8,
+        "hasNextPage": false
+      }
+    },
+    "phases": [
+      "Ask the guide",
+      "Development activity at a glance"
+    ],
+    "commitments": [
+      "Now",
+      "Next",
+      "Later",
+      "Ideas"
+    ]
+  }
+}

@@ -1,0 +1,739 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:bunny:guide-records:2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "datasetId",
+    "repositories",
+    "issues",
+    "publicationPolicy",
+    "project",
+    "asOf"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "guide-records/2.0"
+    },
+    "datasetId": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/repository"
+      },
+      "uniqueItems": true
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      },
+      "uniqueItems": true
+    },
+    "producerRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "publicationPolicy": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "source"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          }
+        }
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "public",
+        "evidence",
+        "phases",
+        "commitments"
+      ],
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/source"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "$ref": "#/$defs/observation"
+        },
+        "phases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/phaseName"
+          }
+        },
+        "commitments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "Now",
+              "Next",
+              "Later",
+              "Ideas"
+            ]
+          }
+        }
+      }
+    },
+    "asOf": {
+      "$ref": "#/$defs/time"
+    }
+  },
+  "$defs": {
+    "time": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^https://(?:api\\.)?github\\.com/[^\\s]+$"
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "observedAt",
+        "state",
+        "complete",
+        "reason",
+        "pagination"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unknown",
+            "failed"
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pagination": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pages",
+                "itemCount",
+                "totalCount",
+                "hasNextPage"
+              ],
+              "properties": {
+                "pages": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "itemCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalCount": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                },
+                "hasNextPage": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "heading",
+        "text",
+        "source",
+        "parser",
+        "reason"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "present",
+            "missing",
+            "conflict",
+            "unsupported"
+          ]
+        },
+        "heading": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "parser": {
+          "enum": [
+            "story-sections/1"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "implementation",
+        "protections",
+        "acceptance",
+        "deferrals"
+      ],
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/section"
+        },
+        "implementation": {
+          "$ref": "#/$defs/section"
+        },
+        "protections": {
+          "$ref": "#/$defs/section"
+        },
+        "acceptance": {
+          "$ref": "#/$defs/section"
+        },
+        "deferrals": {
+          "$ref": "#/$defs/section"
+        }
+      }
+    },
+    "edgeSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids",
+        "evidence"
+      ],
+      "properties": {
+        "ids": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/observation"
+        }
+      }
+    },
+    "planning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "state",
+        "source",
+        "parser",
+        "sourceUpdatedAt"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "assessment",
+            "execution",
+            "delivery",
+            "installation",
+            "physical"
+          ]
+        },
+        "state": {
+          "enum": [
+            "current",
+            "stale",
+            "unknown",
+            "unsupported"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "parser": {
+          "anyOf": [
+            {
+              "enum": [
+                "recommendations/1",
+                "explicit-link/1"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceUpdatedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "publicField": {
+      "enum": [
+        "title",
+        "story.outcome.text",
+        "story.implementation.text",
+        "story.protections.text",
+        "story.acceptance.text",
+        "story.deferrals.text",
+        "labels",
+        "state",
+        "stateReason"
+      ]
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodeId",
+        "repository",
+        "number",
+        "url",
+        "title",
+        "body",
+        "state",
+        "stateReason",
+        "createdAt",
+        "updatedAt",
+        "closedAt",
+        "labels",
+        "facts",
+        "story",
+        "parent",
+        "children",
+        "blockedBy",
+        "planning",
+        "publicFields",
+        "placement",
+        "project"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "$ref": "#/$defs/repo"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "$ref": "#/$defs/source"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "OPEN",
+            "CLOSED"
+          ]
+        },
+        "stateReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "completed",
+                "not_planned",
+                "reopened",
+                "duplicate"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/$defs/time"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/time"
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "facts": {
+          "$ref": "#/$defs/observation"
+        },
+        "story": {
+          "$ref": "#/$defs/story"
+        },
+        "parent": {
+          "$ref": "#/$defs/edgeSet"
+        },
+        "children": {
+          "$ref": "#/$defs/edgeSet"
+        },
+        "blockedBy": {
+          "$ref": "#/$defs/edgeSet"
+        },
+        "planning": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/planning"
+          },
+          "uniqueItems": true
+        },
+        "publicFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/publicField"
+          }
+        },
+        "placement": {
+          "$ref": "#/$defs/placement"
+        },
+        "project": {
+          "$ref": "#/$defs/issueProject"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "scope",
+        "inventory",
+        "recentClosures"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/repo"
+        },
+        "scope": {
+          "enum": [
+            "primary",
+            "reference"
+          ]
+        },
+        "inventory": {
+          "$ref": "#/$defs/observation"
+        },
+        "recentClosures": {
+          "$ref": "#/$defs/observation"
+        }
+      }
+    },
+    "phaseName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "epic",
+        "path",
+        "reason"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "root",
+            "epic",
+            "standalone",
+            "unresolved"
+          ]
+        },
+        "epic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "parent-unknown",
+                "ancestor-missing",
+                "parent-cycle"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "issueProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "member",
+        "phase",
+        "commitment"
+      ],
+      "properties": {
+        "member": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "phase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value",
+            "recorded",
+            "from"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "assigned",
+                "inherited",
+                "unassigned",
+                "conflict",
+                "unknown"
+              ]
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/phaseName"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/phaseName"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "from": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "commitment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "selected",
+                "unselected",
+                "unknown"
+              ]
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "Now",
+                    "Next",
+                    "Later",
+                    "Ideas"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
