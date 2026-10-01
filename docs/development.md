@@ -1423,3 +1423,28 @@ disposable Node subprocess; supervisor fixtures start no systemd units.
 These source checks do not qualify the named host or Windows browser. Keep
 shared build/type, controller-contract and workflow checks for this source
 change; unchanged app lifecycle/consumer behavior keeps its existing CI checks.
+
+## Pixoo catalog and preview checks
+
+Hub #353 adds `apps/hub/tests/pixoo-catalog.test.mjs` to the existing Hub and
+packaged Hub suites. It covers minor-version negotiation and fallback, scoped
+catalog reads, pagination, exact frame bytes and hashes, conditional membership,
+malformed responses and zero command writes. Its reusable synthetic catalog and
+PNG generator live in `apps/hub/tests/pixoo-catalog-fixture.mjs`.
+
+`apps/dashboard/tests/pixoo-client.test.mjs` covers authenticated PNG scheduling;
+`apps/dashboard/tests/pixoo-media.mjs` runs in `test:dashboard:browser` and the
+existing Dashboard CI job. It checks a 20-frame variable-delay animation,
+full-color pixels, reduced motion, ordered/unnamed playlists, pagination, catalog
+revision refresh, hidden-widget cancellation, accessibility and mobile overflow.
+The shared dashboard fixture changed, so run `npm run test:hub:verify` too.
+`DASHBOARD_RECEIPTS` selects a disk-backed screenshot and receipt directory.
+
+After updating the producer pin, run `node scripts/check-hub-pixoo.mjs
+/absolute/prepared/pixoo` against the built producer. It uploads a synthetic PNG
+into its disposable simulator, then compares the native cached frame with the
+Hub client's manifest/PNG routes and checks conditional 304. No live catalog,
+installation or device is touched. Retain all ordinary Hub, dashboard, shared
+contract/state/MCP and workflow checks.
+
+The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.

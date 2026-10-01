@@ -230,7 +230,7 @@ test('Pixoo integration extension preserves native view request and string ticke
  const {createServer}=await import('node:http'),{readFile}=await import('node:fs/promises');
  const sample=JSON.parse(await readFile(new URL('../fixtures/pixoo-integration.json',import.meta.url),'utf8'));
  const request=sample.cases[0].request,result=sample.cases[0].result,seen=[];
- const native=createServer(async(req,res)=>{let text='';for await(const chunk of req)text+=chunk;seen.push(text?JSON.parse(text):null);res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url.endsWith('/snapshot')?sample.snapshot:result));});
+ const native=createServer(async(req,res)=>{let text='';for await(const chunk of req)text+=chunk;seen.push(text?JSON.parse(text):null);res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(new URL(req.url,'http://native.invalid').pathname.endsWith('/snapshot')?sample.snapshot:result));});
  await new Promise(resolve=>native.listen(0,'127.0.0.1',resolve));t.after(async()=>new Promise(resolve=>{native.close(resolve);native.closeAllConnections();}));
  const hub=await fixture(t,{controllers:[{id:'desk',kind:'pixoo',controllerId:request.controllerId,deviceId:request.deviceId,endpoint:`http://127.0.0.1:${native.address().port}/controller/v1`,token:'n'.repeat(43)}],credentials:[{...credential,devices:['desk']}]});
  const c=client(hub);await c.initialize();const name=await prefix(c,'desk');

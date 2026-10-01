@@ -29,11 +29,27 @@ try{
  pixoo=await launchPixoo();
  client=new ControllerClient({id:'desk',kind:'pixoo',controllerId:'pixoo-controller',deviceId:'pixoo-local',endpoint:pixoo.url+'/controller/v1',token:controllerToken});
  await client.snapshot();let settings=await client.integrationSnapshot();
+ assert.equal(settings.apiVersion,'pixoo-integration/1.1');
+ // Import into this disposable simulator's private library, then compare its native cached PNG with the typed Hub client.
+ const {framePng}=await import('../apps/hub/tests/pixoo-catalog-fixture.mjs');
+ const upload=new FormData();upload.set('file',new Blob([framePng(0)],{type:'image/png'}),'Exact preview.png');
+ const imported=await fetch(pixoo.url+'/api/assets',{method:'POST',headers:{authorization:`Bearer ${monitorToken}`,'x-pixoo-request':'1'},body:upload});
+ assert.equal(imported.status,201,await imported.clone().text());const {rendition}=await imported.json();
+ const media=JSON.parse((await client.pixooCatalog({kind:'renditions',offset:0,limit:25})).body.toString());
+ assert.ok(media.items.some(item=>item.renditionId===rendition.id));
+ const manifestReply=await client.pixooCatalog({kind:'manifest',id:rendition.id}),manifest=JSON.parse(manifestReply.body.toString());
+ assert.equal(manifest.renditionId,rendition.id);assert.equal(manifest.frameCount,1);
+ const frame=await client.pixooCatalog({kind:'frame',id:rendition.id,index:0});
+ const native=await fetch(pixoo.url+`/api/renditions/${rendition.id}/frames/0.png`,{headers:headers(monitorToken)});
+ assert.equal(native.status,200);assert.deepEqual(frame.body,Buffer.from(await native.arrayBuffer()));
+ assert.equal((await client.pixooCatalog({kind:'frame',id:rendition.id,index:0},frame.headers.etag)).status,304);
+ settings=await client.integrationSnapshot();assert.equal(settings.catalogRevision,media.catalogRevision);
+
  for(const action of [{operation:'view',filter:{projectId:'project'},cadenceMs:2000},{operation:'mode',mode:'monitor'},{operation:'mode',mode:'media'}]){
-  const command={apiVersion:settings.apiVersion,controllerId:'pixoo-controller',deviceId:'pixoo-local',requestId:settings.nextRequestId,expectedConfigurationRevision:settings.configurationRevision,expectedGeneration:settings.generation,action};
+  const command={apiVersion:'pixoo-integration/1.0',controllerId:'pixoo-controller',deviceId:'pixoo-local',requestId:settings.nextRequestId,expectedConfigurationRevision:settings.configurationRevision,expectedGeneration:settings.generation,action};
   const result=await client.integrationCommand(command);assert.deepEqual(await client.integrationCommand(command),result);settings=await client.integrationSnapshot();
  }
- await assert.rejects(client.integrationCommand({apiVersion:settings.apiVersion,controllerId:'pixoo-controller',deviceId:'pixoo-local',requestId:settings.nextRequestId,expectedConfigurationRevision:0,expectedGeneration:settings.generation,action:{operation:'mode',mode:'monitor'}}),error=>error.code==='revision-conflict');client.close();client=undefined;
+ await assert.rejects(client.integrationCommand({apiVersion:'pixoo-integration/1.0',controllerId:'pixoo-controller',deviceId:'pixoo-local',requestId:settings.nextRequestId,expectedConfigurationRevision:0,expectedGeneration:settings.generation,action:{operation:'mode',mode:'monitor'}}),error=>error.code==='revision-conflict');client.close();client=undefined;
  const identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',sessionId:'session'};
  const event={apiVersion:'1.0',identity,projectId:'project',turn:{status:'known',id:'turn'},parent:{status:'unknown'},ordering:{status:'known',epoch:'epoch',sequence:1},observedAtMs:Date.now(),event:{kind:'turn.ended'}};
  assert.equal((await request(pixoo.url,'/api/monitor/v1/events',monitorToken,event)).ok,true);
