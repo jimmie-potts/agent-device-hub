@@ -1,7 +1,8 @@
 import { request, Agent } from 'node:http';
 import { resolve } from 'node:path';
 import { backendCreateRequests } from './backend-create.mjs';
-import { LGTM_IMAGE } from './backend-plan.mjs';
+import { LGTM_IMAGE, assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
+import { stackSnapshot } from './stack-measurement.mjs';
 
 const API = '/v1.47';
 const maximum = 1024 * 1024;
@@ -80,6 +81,26 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       value.Os !== 'linux' || value.Arch !== 'amd64') throw error('docker-api-incompatible');
   } catch (failure) { close(); throw failure; }
   return {
+    async sampleStack(plan, receipt, options = {}) {
+      backendCreateRequests(plan);
+      const base = API + resourcePath('container', receipt?.containerId);
+      const started = process.hrtime.bigint(), budget = options.timeoutMs ?? 5000;
+      if (!Number.isInteger(budget) || budget < 1 || budget > 30000) throw error('docker-timeout-invalid');
+      async function get(path) {
+        const remaining = budget - Math.ceil(Number(process.hrtime.bigint() - started) / 1e6);
+        if (remaining < 1) throw error('docker-timeout');
+        const result = await send('GET', base + path, { signal: options.signal, timeoutMs: remaining });
+        if (result.status !== 200) throw error('docker-http-status');
+        return json(result);
+      }
+      const stats = await get('/stats?stream=false&one-shot=true');
+      const cpuObservedNs = String(process.hrtime.bigint());
+      const top = await get('/top?ps_args=-eo%20pid%2Crss');
+      const inspect = await get('/json?size=true');
+      assertOwnedBackend(inspect, plan, receipt); assertBackendIsolation(inspect, plan);
+      return stackSnapshot({ stats, top, inspect, cpuObservedNs, startedNs: String(started),
+        finishedNs: String(process.hrtime.bigint()) }, receipt.containerId);
+    },
     async inspectImage(options) {
       const result = await send('GET', API + '/images/' + encodeURIComponent(LGTM_IMAGE) + '/json', options);
       if (result.status === 404) { json(result); return null; }

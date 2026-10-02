@@ -143,3 +143,28 @@ test('image and planned-name probes are pinned and missing resources do not trig
   await assert.rejects(backend.create('container', plan, options), /docker-http-status/);
   assert.equal(calls.filter(call => call.method === 'POST').length, 1, 'failed creation is never retried');
 });
+
+test('stack sampling requests process RSS and cgroup CPU only for the verified owned container', async t => {
+  const plan = backendPlan({ runId: 'sample', ownerToken: '12345678-1234-4123-8123-123456789012',
+    configDirectory: '/workspace/.local/scratch/sample/config',
+    ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
+  const imageId = 'sha256:' + 'b'.repeat(64), config = backendCreateRequests(plan).container.body;
+  let foreign = false;
+  const { backend, calls } = await fixture(t, (req, res) => {
+    if (req.url.includes('/stats?')) res.end(JSON.stringify({ id, cpu_stats: { cpu_usage: { total_usage: 1000000 } },
+      memory_stats: { usage: 10000000, limit: 4294967296 } }));
+    else if (req.url.includes('/top?')) res.end(JSON.stringify({ Titles: ['PID', 'RSS'], Processes: [['12', '1024']] }));
+    else res.end(JSON.stringify({ Id: id, Name: '/' + plan.containerName, Image: foreign ? 'sha256:' + 'c'.repeat(64) : imageId,
+      Config: config, HostConfig: config.HostConfig, State: { Running: true, OOMKilled: false }, SizeRw: 4096,
+      Mounts: config.HostConfig.Mounts.map(m => ({ ...m, Name: m.Type === 'volume' ? m.Source : undefined,
+        Destination: m.Target, RW: !m.ReadOnly })) }));
+  });
+  const sample = await backend.sampleStack(plan, { containerId: id, imageId }, options);
+  assert.equal(sample.rssBytes, 1024 * 1024);
+  assert.equal(sample.writableLayerBytes, 4096);
+  assert.deepEqual(calls.slice(1).map(call => call.path), [
+    `/v1.47/containers/${id}/stats?stream=false&one-shot=true`,
+    `/v1.47/containers/${id}/top?ps_args=-eo%20pid%2Crss`, `/v1.47/containers/${id}/json?size=true`]);
+  foreign = true;
+  await assert.rejects(backend.sampleStack(plan, { containerId: id, imageId }, options), /ownership/);
+});

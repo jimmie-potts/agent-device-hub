@@ -1759,3 +1759,25 @@ is historical evidence: start and cleanup still require fresh engine inspection.
 Malformed or truncated files, symlinked paths, missing predecessors and forged
 receipt fields are retained and refused. These consistency checks do not make
 local files tamper-proof against a privileged editor.
+
+`sampleStack` requests one-shot cgroup statistics, `ps -eo pid,rss` process
+inventory and container inspection with writable-layer size through the local
+Engine adapter. It validates the recorded container/image identity and isolation
+before returning a projected sample. The three requests share one deadline.
+Raw Docker configuration, process command lines and environment values are not
+included in the sample.
+
+`stack-measurement.mjs` sums each process's RSS in KiB converted to bytes, keeps
+cgroup memory usage separate, and computes mean CPU cores from the cumulative
+CPU-nanosecond delta divided by monotonic elapsed nanoseconds. Samples retain
+process IDs, per-process RSS, writable-layer size, OOM status, collection duration
+and timestamp bounds. Missing values, foreign IDs, duplicate PIDs, unsafe
+integers, counter rollback and invalid time order are failures. The summary
+retains peak measurements and maximum sampling gaps; it does not establish
+benchmark-window coverage or a pass result.
+
+The runtime driver must qualify the required 100 ms sampling cadence and record
+missed or slow samples. Summed RSS includes shared pages in each process, as the
+accepted metric requires. Writable-layer size alone excludes the data volume
+and Docker logs, so it cannot prove the total run-data cap. Volume/log accounting
+and the continuous cap watchdog remain required before qualification.
