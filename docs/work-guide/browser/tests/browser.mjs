@@ -98,6 +98,9 @@ try {
  await writeFile(output+'/index.html',entry.replace('guide-records/2.0','guide-records/99.0'));
  const second=await context.newPage();await second.goto(origin+'/index.html');await second.waitForFunction(()=>document.getElementById('content').textContent.includes('unavailable'));
  assert.match(await second.locator('#content').textContent(),/unsupported release/);
+ await writeFile(output+'/index.html',entry.replace(manifest.releaseId,'sha256:'+'0'.repeat(64)));
+ await second.reload();await second.waitForFunction(()=>document.getElementById('content').textContent.includes('unavailable'));
+ assert.match(await second.locator('#content').textContent(),/manifest identity/);
  await writeFile(output+'/index.html',entry);await writeFile(join(output,'releases',manifest.releaseId.slice(7),'records.json'),'{}');
  await second.reload();await second.waitForFunction(()=>document.getElementById('content').textContent.includes('unavailable'));assert.match(await second.locator('#content').textContent(),/mixed-release asset/);
  assert.deepEqual(errors,[]);

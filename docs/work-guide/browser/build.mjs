@@ -25,6 +25,11 @@ async function boot(){
  if(manifest.schemaVersion!=='guide-release/1.0'||manifest.recordsVersion!=='guide-records/2.0'||manifest.viewsVersion!=='guide-views/1.0')throw Error('unsupported release');
  const base=new URL('releases/'+manifest.releaseId.slice(7)+'/',location.href);
  const hash=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');
+ const canonical=x=>Array.isArray(x)?'['+x.map(canonical).join(',')+']':x!==null&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canonical(x[k])).join(',')+'}':JSON.stringify(x);
+ const content=structuredClone(manifest);delete content.releaseId;delete content.builtAt;content.artifacts.sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
+ if('sha256:'+await hash(new TextEncoder().encode(canonical(content)))!==manifest.releaseId)throw Error('mixed-release manifest identity');
+ const paths=manifest.artifacts.map(x=>x.path);
+ if(new Set(paths).size!==paths.length||['records.json','catalog.json','pages.json','app.js','style.css'].some(x=>!paths.includes(x)))throw Error('incomplete release');
  const loaded={};
  await Promise.all(manifest.artifacts.map(async artifact=>{
    if(!/^[a-zA-Z0-9._-]+$/.test(artifact.path))throw Error('unsafe asset path');
@@ -34,6 +39,7 @@ async function boot(){
  }));
  const records=JSON.parse(loaded['records.json']),catalog=JSON.parse(loaded['catalog.json']),pages=JSON.parse(loaded['pages.json']);
  if(records.schemaVersion!==manifest.recordsVersion||records.datasetId!==manifest.datasetId||records.asOf!==manifest.asOf||pages.datasetId!==manifest.datasetId||pages.catalogId!==manifest.catalogId||catalog.catalogVersion!==manifest.viewsVersion)throw Error('mixed-release identities');
+ if('sha256:'+await hash(new TextEncoder().encode(canonical(catalog)))!==manifest.catalogId)throw Error('mixed-release catalog identity');
  const css=document.createElement('style');css.textContent=loaded['style.css'];document.head.append(css);
  const blob=URL.createObjectURL(new Blob([loaded['app.js']],{type:'text/javascript'}));
  try{const app=await import(blob);app.start(records,pages,manifest,base);}finally{URL.revokeObjectURL(blob);}
