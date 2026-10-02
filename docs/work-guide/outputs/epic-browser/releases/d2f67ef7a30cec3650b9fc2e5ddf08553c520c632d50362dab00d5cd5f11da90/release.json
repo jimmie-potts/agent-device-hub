@@ -1,6 +1,6 @@
 {
   "schemaVersion": "guide-release/1.0",
-  "releaseId": "sha256:73f5ea763b0a1c1a4fbc47833532cb2e478637733579a029054bb00ca123b642",
+  "releaseId": "sha256:d2f67ef7a30cec3650b9fc2e5ddf08553c520c632d50362dab00d5cd5f11da90",
   "recordsVersion": "guide-records/2.0",
   "viewsVersion": "guide-views/1.0",
   "datasetId": "sha256:3813cece05943267e2d66989634552547a9e97f575da2c9a66be28991b55c194",
@@ -8,7 +8,7 @@
   "asOf": "2026-10-02T04:33:27.660Z",
   "generator": {
     "repository": "jimmie-potts/agent-device-hub",
-    "revision": "33f90d291a2122979739068fd14757b60efc88cc"
+    "revision": "fd00e772ba85062bd82bbbdb7b3d0da571fd0b4d"
   },
   "builtAt": "2026-10-02T04:33:27.660Z",
   "artifacts": [
