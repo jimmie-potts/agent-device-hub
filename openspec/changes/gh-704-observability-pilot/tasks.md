@@ -8,7 +8,7 @@
 
 - [x] 2.1 Add opt-in Hub and controller-client diagnostic seams through a focused red-green loop; verify unchanged authentication, wire envelopes and disabled behavior, including callback invocation exactly once when telemetry fails.
 - [ ] 2.2 Add authenticated context adoption and exact-origin outgoing propagation; verify malformed/untrusted context, baggage/tracestate exclusion and concurrent context isolation.
-- [ ] 2.3 Extend the fake controller with a bounded execution queue and independent side-effect oracle; verify success, rejection, duplicate admission, concurrency and timeout-after-admission without automatic retry.
+- [x] 2.3 Extend the fake controller with a bounded execution queue and independent side-effect oracle; verify success, rejection, duplicate admission, concurrency and timeout-after-admission without automatic retry.
 - [ ] 2.4 Emit canonical manual and narrowly instrumented spans and Pino records through released mappings; verify Node 24 ESM startup, parentage, strict field validation and secret exclusion before sinks.
 
 ## 3. Bounded disposable harness

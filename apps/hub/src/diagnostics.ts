@@ -17,6 +17,7 @@ const outcome:Record<string,string> = {queued:'queued',sent:'transport-acknowled
 const failure = (error:unknown):Attributes => {
   const code = error instanceof HttpError ? error.code : undefined;
   if (code === 'uncertain-result') return {'bunny.outcome':'uncertain','bunny.reason':'transport-error','bunny.write.possible':true};
+  if (code === 'unauthenticated' || code === 'forbidden') return {'bunny.outcome':'rejected','bunny.reason':'unauthorized','bunny.write.possible':false};
   if (code === 'capacity') return {'bunny.outcome':'rejected','bunny.reason':'busy','bunny.write.possible':false};
   if (['invalid-request','invalid-input','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','unsupported-capability'].includes(code ?? '')) {
     return {'bunny.outcome':'rejected','bunny.reason':'invalid-input','bunny.write.possible':false};

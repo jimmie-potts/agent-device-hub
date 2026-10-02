@@ -24,6 +24,8 @@ Telemetry start/end failures are contained separately from domain execution. Nev
 
 Keep reference ticket admission and replay in the existing fake controller. Add a bounded synthetic queue, explicit execution records and a side-effect counter independent of telemetry. A queued response remains queued; execution and terminal observations require separate evidence. Exercise success, rejection, duplicate tickets, concurrent requests, queue admission and a timeout after admission. The latter remains uncertain to the caller even when the independent oracle later observes execution.
 
+The opt-in fake executor supports synthetic brightness writes, with at most 32 queued jobs and 256 retained oracle records/settled receipts. The driver must drain oracle records into bounded run evidence. Overflow is reported and prevents a complete per-ticket result; it is not erased when records are drained. Restart and close cancel pending synthetic work. Legacy fixture behavior remains available without execution enabled.
+
 A fixture that merely relabels admission as execution was rejected because it cannot prove duplicate-side-effect safety.
 
 ### One log path and restricted span projection

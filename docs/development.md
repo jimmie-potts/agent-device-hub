@@ -1519,3 +1519,12 @@ or context manager fails. Set `TMPDIR` outside every checkout for Hub state,
 for example the parent workspace's `.local/scratch/o704`. The
 released Hub package bundles observability 1.0.0; the pilot SDK stays in the
 evaluation host rather than the Hub runtime dependency closure.
+
+`apps/hub/tests/fake-execution.test.mjs` qualifies the pilot's opt-in synthetic
+brightness executor in the existing fake controller. It uses native ticket
+admission, a queue of at most 32 jobs, terminal receipt replay and an independent
+effect counter. Tests cover rejection, concurrent duplicate submission, full
+queues, timeout after admission, restart cancellation and bounded histories.
+The oracle retains 256 records and reports overflow; the runtime harness must
+drain it and retain the evidence. An overflow prevents a complete per-ticket
+claim. These tests run through the existing Hub and packaged Hub suites.

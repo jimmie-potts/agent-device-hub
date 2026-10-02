@@ -135,3 +135,16 @@ test('telemetry does not let a later snapshot overtake command slot admission', 
   assert.equal(settled.value?.body.outcome, 'queued');
   assert.equal(fake.commands.length, 1);
 });
+
+test('controller authentication refusals remain rejected observations, not uncertain writes', async () => {
+  for (const code of ['unauthenticated', 'forbidden']) {
+    const records = [];
+    const diagnostics = createCommandDiagnostics({ resource, emit: value => records.push(value), tracer: tracer() });
+    const error = new HttpError(code, code === 'unauthenticated' ? 401 : 403);
+    await assert.rejects(diagnostics.run('bunny.controller', { ...metadata, 'bunny.observed.service': 'local-controllers' },
+      async () => { throw error; }), value => value === error);
+    assert.equal(records[0].attributes['bunny.outcome'], 'rejected');
+    assert.equal(records[0].attributes['bunny.reason'], 'unauthorized');
+    assert.equal(records[0].attributes['bunny.write.possible'], false);
+  }
+});

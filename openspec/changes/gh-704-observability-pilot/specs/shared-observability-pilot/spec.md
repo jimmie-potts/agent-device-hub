@@ -70,7 +70,7 @@ The pilot SHALL use pinned backend inputs, loopback-only listeners, fake credent
 
 ### Requirement: Benchmarks use frozen acceptance rules
 
-Before measurement, the pilot SHALL freeze and checksum its protocol, revisions and thresholds. It SHALL run three disabled/enabled pairs for each of healthy and unavailable collection, using 20 operations per second, concurrency at most eight, 30 seconds warm-up and 60 seconds measurement. Every pair MUST meet added p50 latency ≤max(2 ms, 10% baseline), added p95 ≤max(5 ms, 15%), throughput ≥95% baseline, application CPU increase ≤0.25 core and peak RSS increase ≤64 MiB. Stack peak RSS MUST be ≤3 GiB and mean CPU ≤1 core. Healthy expected loss, privacy failures, context isolation failures and duplicate side effects MUST each be zero.
+Before measurement, the pilot SHALL freeze and checksum its protocol, revisions and thresholds. It SHALL run three disabled/enabled pairs for each of healthy and unavailable collection, using 20 operations per second, concurrency at most eight, 30 seconds warm-up and 60 seconds measurement. For the pilot to support adoption, every pair MUST meet added p50 latency ≤max(2 ms, 10% baseline), added p95 ≤max(5 ms, 15%), throughput ≥95% baseline, application CPU increase ≤0.25 core and peak RSS increase ≤64 MiB. Stack peak RSS MUST be ≤3 GiB and mean CPU ≤1 core. Healthy expected loss, privacy failures, context isolation failures and duplicate side effects MUST each be zero.
 
 #### Scenario: Complete paired result
 - **WHEN** a pair completes with all required measurements
