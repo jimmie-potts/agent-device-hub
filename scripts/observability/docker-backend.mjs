@@ -5,6 +5,7 @@ import { backendCreateRequests } from './backend-create.mjs';
 import { LGTM_IMAGE, assertOwnedBackend } from './backend-plan.mjs';
 import { stackSnapshot } from './stack-measurement.mjs';
 import { STORAGE_PROBE_COMMAND, decodeStorageExec, storageSnapshot } from './storage-measurement.mjs';
+import { collectorCommand, readCollectorState } from './collector-control.mjs';
 import { isDeepStrictEqual } from 'node:util';
 
 const API = '/v1.47';
@@ -85,6 +86,44 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       value.Os !== 'linux' || value.Arch !== 'amd64') throw error('docker-api-incompatible');
   } catch (failure) { close(); throw failure; }
   return {
+    async collector(plan, receipt, action, identity, options = {}) {
+      backendCreateRequests(plan);
+      const command = collectorCommand(action, identity), base = API + resourcePath('container', receipt?.containerId);
+      const started = process.hrtime.bigint(), budget = options.timeoutMs ?? 5000;
+      if (!Number.isInteger(budget) || budget < 1 || budget > 5000) throw error('docker-timeout-invalid');
+      async function call(method, path, status, body, binary = false) {
+        const remaining = budget - Math.ceil(Number(process.hrtime.bigint() - started) / 1e6);
+        if (remaining < 1) throw error('docker-timeout');
+        const response = await send(method, path, { signal: options.signal, timeoutMs: remaining }, body, binary);
+        if (response.status !== status) throw error('docker-http-status');
+        if (!binary) return json(response);
+        if (!['application/vnd.docker.raw-stream', 'application/vnd.docker.multiplexed-stream'].includes(response.contentType) ||
+          (response.encoding && response.encoding !== 'identity')) throw error('docker-exec-framing');
+        return response.body;
+      }
+      const container = await call('GET', base + '/json', 200);
+      assertOwnedBackend(container, plan, receipt); await verifyBackendIsolation(container, plan);
+      if (container.State?.Running !== true || container.State.OOMKilled !== false) throw error('docker-collector-container-invalid');
+      const created = await call('POST', base + '/exec', 201, { AttachStdin: false, AttachStdout: true,
+        AttachStderr: true, Tty: false, Privileged: false, WorkingDir: '/', Cmd: command, Env: ['LC_ALL=C'] });
+      if (typeof created.Id !== 'string' || !/^[a-f0-9]{64}$/.test(created.Id)) throw error('docker-exec-identity');
+      const execPath = API + '/exec/' + created.Id;
+      async function inspectExec() {
+        const value = await call('GET', execPath + '/json', 200);
+        if (value.ID !== created.Id || value.ContainerID !== receipt.containerId ||
+          value.ProcessConfig?.entrypoint !== command[0] || !isDeepStrictEqual(value.ProcessConfig?.arguments, command.slice(1)) ||
+          value.ProcessConfig?.privileged !== false || value.ProcessConfig?.tty !== false) throw error('docker-exec-identity');
+        return value;
+      }
+      if ((await inspectExec()).Running !== false) throw error('docker-exec-already-running');
+      const bytes = await call('POST', execPath + '/start', 200, { Detach: false, Tty: false }, true);
+      const ended = await inspectExec();
+      if (ended.Running !== false || ended.ExitCode !== 0) throw error('docker-collector-exit');
+      const stdout = decodeStorageExec(bytes);
+      if (action === 'inspect') return readCollectorState(stdout);
+      if (stdout !== 'signalled\n') throw error('docker-collector-response-invalid');
+      return { signalled: true, action, identity: { ...identity }, execId: created.Id };
+    },
     async sampleStorage(plan, receipt, options = {}) {
       backendCreateRequests(plan);
       if (!Number.isSafeInteger(options.hostRunBytes) || options.hostRunBytes < 0) throw error('docker-host-storage-missing');

@@ -50,7 +50,7 @@ process.on('disconnect', () => { void stop().catch(() => { process.exitCode = 2;
 process.once('message', async input => {
   try {
     if (!input || Object.keys(input).sort().join(',') !== 'directory,enabled,purpose' ||
-      typeof input.directory !== 'string' || typeof input.enabled !== 'boolean' || !['workload','command-faults'].includes(input.purpose) || !process.send) throw new Error('Input invalid');
+      typeof input.directory !== 'string' || typeof input.enabled !== 'boolean' || !['workload','command-faults','collection-faults'].includes(input.purpose) || !process.send) throw new Error('Input invalid');
     const { plan } = await readPreparedBackend(input.directory), roots = await readHostRoots(input.directory);
     stage = 'contract';
     const installed = join(roots.roots.state.path, 'contract/node_modules/@jimmie-potts/bunny-observability');
@@ -88,11 +88,11 @@ process.once('message', async input => {
     stage = 'application';
     const { startHub } = await import('../../apps/hub/dist/server.js');
     const { startFakeController } = await import('../../apps/hub/tests/fake-controller.mjs');
-    const fakeOptions={ execution: { autoDrain: input.purpose==='workload' }, diagnostics: worker };
+    const fakeOptions={ execution: { autoDrain: input.purpose!=='command-faults' }, diagnostics: worker };
     fake = await startFakeController(fakeOptions);
     origins = [new URL(fake.endpoint).origin];
     const token = 's'.repeat(43), directory = join(roots.roots.state.path,
-      input.purpose==='workload'?'hub':`hub-faults-${input.enabled?'enabled':'disabled'}`);
+      input.purpose==='workload'?'hub':`hub-${input.purpose==='command-faults'?'faults':'collection-faults'}-${input.enabled?'enabled':'disabled'}`);
     await mkdir(directory, { mode: 0o700 });
     hub = await startHub({ directory, ownerId: 'synthetic-pilot', consumers: [], diagnostics,
       credentials: [{ id: 'pilot', digest: createHash('sha256').update(token).digest('hex'), scopes: ['read','control'], devices: ['wall'] }],

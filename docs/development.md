@@ -2255,3 +2255,20 @@ log/span structure, preserve uncertainty after timeout, reject untrusted context
 exclude the private canary and match real Loki/Tempo queries. This qualifies
 command-path faults with collection available; Collector pause/absence, exporter
 failure, saturation and paired overhead remain separate gates.
+
+`paused-collector` and `absent-collector` use the same qualification arguments
+and a fresh owned backend per run. They verify the pinned Collector executable,
+PID and start time before sending STOP or TERM inside that container. Paused
+runs resume the same process and verify health afterward. The whole-container
+resource watchdog remains active throughout; container teardown is the fallback
+if restoration cannot be confirmed. No effect is retried after an ambiguous
+response.
+
+Each condition runs 200 sequential synthetic brightness commands in separate
+telemetry-disabled and telemetry-enabled applications. This fixed saturation
+sequence is distinct from the 20/s paired overhead benchmark. It requires
+identical command outcomes, exactly one fake effect per command, complete
+prequeue identity accounting, failed exports with no false acknowledgments,
+queue drops under paused collection, and the accepted shutdown bounds. All
+attempts retain their results, including a sequence that fails to establish
+saturation. A passing fault check alone does not establish pilot acceptance.

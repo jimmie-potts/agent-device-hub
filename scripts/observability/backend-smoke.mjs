@@ -1,3 +1,4 @@
+import { performCollectionFaults } from './collection-faults.mjs';
 import { prepareReleasedContract } from './released-contract.mjs';
 import { performIngestion } from './ingestion-session.mjs';
 import { performRecordedCommands,performCommandFaults } from './recorded-commands.mjs';
@@ -24,7 +25,12 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
     if (ingestion) await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
     await allocateBackend({ directory, backend, signal });
     return await withReadyBackend({ directory, backend, monitorBackend, signal,
-      ...(ingestion ? { action: async ({ plan, signal }) => {
+      ...(ingestion ? { action: async ({ plan, receipt, signal }) => {
+        if(['paused','absent'].includes(ingestion)) {
+          const result=await performCollectionFaults({directory,plan,receipt,backend,condition:ingestion,signal});
+          if(result.failure)throw new Error('Collection qualification incomplete');
+          return result;
+        }
         if(['delivery','command-faults'].includes(ingestion)) {
           const run=ingestion==='delivery'?performRecordedCommands:performCommandFaults;
           const result=await run({directory,plan,signal});
@@ -40,3 +46,6 @@ export const smokeBackend = input => runBackend(input, false);
 export const qualifyIngestionBackend = input => runBackend(input, true);
 export const qualifyDeliveryBackend = input => runBackend(input, 'delivery');
 export const qualifyCommandFaults = input => runBackend(input, 'command-faults');
+
+export const qualifyPausedCollector = input => runBackend(input, 'paused');
+export const qualifyAbsentCollector = input => runBackend(input, 'absent');

@@ -220,3 +220,39 @@ test('storage exec uses the fixed read-only command and requires matching comple
   stream = 1; oversized = true;
   await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-response-limit/);
 });
+
+test('Collector control rejects foreign containers and exec identity before any signal; retains failed effects without retry',async t=>{
+  const plan=backendPlan({runId:'collector',ownerToken:'12345678-1234-4123-8123-123456789012',
+    configDirectory:'/workspace/.local/scratch/collector/config',ports:{grafana:43000,otlp:43001,loki:43002,tempo:43003,health:43004}});
+  const imageId='sha256:'+'b'.repeat(64),execId='d'.repeat(64),config=backendCreateRequests(plan).container.body;
+  let command,started=false,foreign=false,foreignExec=false,exitCode=0,output='42 12345 S\n';
+  const {backend,calls}=await fixture(t,(req,res)=>{
+    const chunks=[];req.on('data',chunk=>chunks.push(chunk));req.on('end',()=>{
+      if(req.url.endsWith('/exec')) {
+        const body=JSON.parse(Buffer.concat(chunks));command=body.Cmd;
+        assert.equal(body.Privileged,false);assert.equal(body.Tty,false);assert.equal(body.AttachStdin,false);
+        started=false;res.statusCode=201;res.end(JSON.stringify({Id:execId}));
+      }else if(req.url===`/v1.47/exec/${execId}/start`) {
+        started=true;const data=Buffer.from(output),header=Buffer.alloc(8);header[0]=1;header.writeUInt32BE(data.length,4);
+        res.setHeader('content-type','application/vnd.docker.multiplexed-stream');res.end(Buffer.concat([header,data]));
+      }else if(req.url===`/v1.47/exec/${execId}/json`) {
+        res.end(JSON.stringify({ID:execId,ContainerID:foreignExec?'e'.repeat(64):id,Running:false,ExitCode:started?exitCode:null,
+          ProcessConfig:{entrypoint:command[0],arguments:command.slice(1),privileged:false,tty:false}}));
+      }else res.end(JSON.stringify({Id:id,Name:'/'+plan.containerName,Image:foreign?'sha256:'+'c'.repeat(64):imageId,
+        Config:config,HostConfig:config.HostConfig,State:{Running:true,OOMKilled:false},
+        Mounts:config.HostConfig.Mounts.map(m=>({...m,Name:m.Type==='volume'?m.Source:undefined,Destination:m.Target,RW:!m.ReadOnly}))}));
+    });
+  });
+  const receipt={containerId:id,imageId},identity={pid:42,startTicks:'12345'};
+  assert.deepEqual(await backend.collector(plan,receipt,'inspect'),{present:true,...identity,state:'S'});
+  output='signalled\n';await backend.collector(plan,receipt,'pause',identity);
+  assert.deepEqual(command.slice(-3),['pause','42','12345']);
+  const effects=()=>calls.filter(call=>call.path.endsWith('/start')).length;
+  const before=effects();foreign=true;
+  await assert.rejects(backend.collector(plan,receipt,'pause',identity),/ownership/);assert.equal(effects(),before);
+  foreign=false;foreignExec=true;
+  await assert.rejects(backend.collector(plan,receipt,'pause',identity),/docker-exec-identity/);assert.equal(effects(),before);
+  foreignExec=false;exitCode=24;
+  await assert.rejects(backend.collector(plan,receipt,'pause',identity),/docker-collector-exit/);assert.equal(effects(),before+1);
+  await assert.rejects(backend.collector(plan,receipt,'restart',identity));assert.equal(effects(),before+1);
+});

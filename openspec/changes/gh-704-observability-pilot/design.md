@@ -111,3 +111,21 @@ There is no live migration. Source delivery adds opt-in seams and disposable qua
 ## Open Questions
 
 Docker engine availability remains an external execution prerequisite. It does not change the design or authorize enabling integration, installing infrastructure or changing security settings. Actual backend overhead and ingestion behavior are deliberately unresolved until measured.
+
+### Collector fault qualification
+
+Qualify paused and absent collection in separate fresh backends before paired
+benchmarks. Verify the pinned Collector executable and its PID/start time inside
+the owned container before sending STOP or TERM. Do not pause the container:
+its storage/resource watchdog must continue. Restore a paused Collector with
+CONT and health readback; otherwise retain the failure and use bounded container
+teardown. Never retry an ambiguous signal.
+
+Each condition uses two fresh applications, disabled then enabled, with 200
+sequential brightness commands and no retries. This saturation sequence is
+separate from the frozen performance workload. Require identical domain
+outcomes, exactly 200 effects per mode, expected diagnostic structure, complete
+identity accounting, zero falsely acknowledged exports, exporter failures and
+the accepted shutdown bounds. Paused collection must also demonstrate queue
+drops. Failure to establish any required observation retains a failed result;
+it does not authorize increasing the sequence until it passes.

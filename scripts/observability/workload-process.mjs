@@ -8,7 +8,7 @@ import { applicationSnapshot } from './application-measurement.mjs';
  * No retries; caller retains returned evidence and cleans only registered state. */
 export async function startWorkloadProcess(directory, { enabled, signal, onStart = () => {}, onEvidence = () => {}, purpose='workload' } = {}) {
   if (typeof enabled !== 'boolean' || signal?.aborted || typeof onStart !== 'function' || typeof onEvidence !== 'function' ||
-    !['workload','command-faults'].includes(purpose)) throw new Error('Application invocation invalid');
+    !['workload','command-faults','collection-faults'].includes(purpose)) throw new Error('Application invocation invalid');
   await readPreparedBackend(directory); await readHostRoots(directory);
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [new URL('./workload-entry.mjs', import.meta.url).pathname],
