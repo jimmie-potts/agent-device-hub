@@ -58,6 +58,9 @@ export function snapshotV1_1(overrides={}){
  * executionState() is an independent oracle. takeExecutions() drains its bounded 256-entry history; any
  * historyDropped makes complete per-ticket qualification unavailable. Commands/requests and settled receipts
  * are also bounded to 256 in this mode. Restart/close cancels pending synthetic work, never executes it.
+ * Optional diagnostics.request(allowlistedAttributes,traceparent) is called only after authentication. Its queued,
+ * execute, finish and cancel observers receive no domain callback, request body or mutable receipt. Exceptions
+ * increment diagnosticFailures and never repeat domain work; queued context handles are released at settlement.
  *
  * answerNext takes {receipt:{...fields},status} to change the admitted receipt, for example a device's moment-missed;
  * {failure:code,status} for a typed refusal without admission; {body,status} for a raw answer; {mode:'timeout'} to admit
@@ -77,6 +80,16 @@ export async function startFakeController(options={}){
   const capacity=executionOptions.capacity??32;
   assert.ok(Number.isInteger(capacity)&&capacity>=1&&capacity<=32,'invalid execution capacity');
   assert.ok(executionOptions.autoDrain===undefined||typeof executionOptions.autoDrain==='boolean','invalid autoDrain');
+  // Diagnostic observers never wrap domain work or receive mutable requests/receipts.
+  let diagnosticFailures=0;
+  const diagnosticFailure=()=>{diagnosticFailures=Math.min(Number.MAX_SAFE_INTEGER,diagnosticFailures+1);};
+  const notify=(target,method,...args)=>{
+    try {
+      const value=target?.[method]?.(...args);
+      if(value&&typeof value.then==='function'){void Promise.resolve(value).catch(diagnosticFailure);return undefined;}
+      return value;
+    } catch {diagnosticFailure();return undefined;}
+  };
   const queue=[],history=[];
   let effects=0,executed=0,cancelled=0,historyDropped=0,brightness=null,desiredBrightness=null,drainScheduled=false,closed=false;
   const retain=(list,value)=>{list.push(value);if(executionEnabled&&list.length>256)list.shift();};
@@ -89,13 +102,14 @@ export async function startFakeController(options={}){
     }
   };
   const cancelQueued=()=>{
-    while(queue.length){const job=queue.shift();cancelled++;remember({requestId:structuredClone(job.request.requestId),outcome:'cancelled',effects});}
+    while(queue.length){const job=queue.shift();notify(job.diagnostics,'cancel');delete job.diagnostics;cancelled++;remember({requestId:structuredClone(job.request.requestId),outcome:'cancelled',effects});}
   };
   const executeQueued=()=>{
     assert.ok(executionEnabled,'execution is not enabled');
     const result=[];
     while(queue.length){
       const job=queue.shift();
+      const execution=notify(job.diagnostics,'execute');delete job.diagnostics;
       const supported=job.request.command.kind==='brightness.set';
       if(supported){brightness=job.request.command.percent;effects++;}
       executed++;
@@ -106,6 +120,7 @@ export async function startFakeController(options={}){
       const evidence={requestId:structuredClone(job.request.requestId),receipt:structuredClone(job.receipt),effects,
         queuedAtMs:job.queuedAtMs,completedAtMs:performance.now()};
       remember(evidence);result.push(structuredClone(evidence));
+      notify(execution,'finish',{outcome:supported?'transport-acknowledged':'rejected'});
     }
     trimReceipts();return result;
   };
@@ -134,7 +149,7 @@ export async function startFakeController(options={}){
     assert.ok(validate('snapshotV1_1',value),'fake 1.1 snapshot must validate');
     return version==='1.1'?value:downgradeSnapshot(value);
   };
-  const admitted=(request,bodyBytes)=>{
+  const admitted=(request,bodyBytes,diagnostics)=>{
     const snapshot=document('1.1');
     const result=admit({request,bodyBytes,auth:{credential:{kind:'machine',status:'active',declared:true,devices:[snapshot.identity.deviceId],scopes:['read','control']},
       deviceId:snapshot.identity.deviceId,scope:'control',hostAllowed:true,originPresent:false,originAllowed:true,fetchMetadataAllowed:true},
@@ -148,6 +163,7 @@ export async function startFakeController(options={}){
       current.cache.push(entry);
       if(executionEnabled&&result.scheduled){
         entry.queuedAtMs=performance.now();queue.push(entry);
+        entry.diagnostics=notify(diagnostics,'queued');
         if(request.command.kind==='brightness.set')desiredBrightness=request.command.percent;
         scheduleDrain();
       }
@@ -170,7 +186,19 @@ export async function startFakeController(options={}){
       const answer=answers.shift()??{};
       if(answer.failure)return reply(res,answer.status??HTTP_STATUS[answer.failure],{failure:{code:answer.failure}});
       if('body' in answer)return reply(res,answer.status??200,answer.body);
-      const result=admitted(body,Buffer.byteLength(text));
+      let diagnostics;
+      if(options.diagnostics){
+        const attributes={'bunny.controller.id':base.identity.controllerId,'bunny.device.id':base.identity.deviceId,
+          'bunny.operation':'verification'};
+        if(validate(body?.apiVersion==='1.1'?'requestV1_1':'request',body)){
+          attributes['bunny.ticket.epoch']=body.requestId.epoch;attributes['bunny.ticket.sequence']=body.requestId.sequence;
+          if(body.command.kind==='brightness.set')attributes['bunny.operation']='brightness';
+        }
+        diagnostics=notify(options.diagnostics,'request',attributes,req.headers.traceparent);
+      }
+      const result=admitted(body,Buffer.byteLength(text),diagnostics);
+      notify(diagnostics,'finish',{outcome:result.decision==='queued'?(result.scheduled?'queued':'duplicate'):
+        result.receipt?.outcome==='sent'?'duplicate':'rejected'});
       if(answer.mode==='timeout')return;
       if(answer.mode==='drop')return res.destroy();
       if(!result.receipt)return reply(res,HTTP_STATUS[result.decision],{failure:{code:result.decision}});
@@ -204,7 +232,7 @@ export async function startFakeController(options={}){
     executeQueued,
     takeExecutions:()=>history.splice(0).map(entry=>structuredClone(entry)),
     executionState:()=>({enabled:executionEnabled,queued:queue.length,capacity,executed,effects,cancelled,brightness,
-      history:history.length,historyDropped,retainedReceipts:current.cache.length}),
+      history:history.length,historyDropped,retainedReceipts:current.cache.length,diagnosticFailures}),
     moments:()=>commands.filter(body=>body?.command?.kind==='moment'),
     reads:Object.assign(()=>count(()=>true),{versioned:()=>count(r=>r.versioned),unversioned:()=>count(r=>!r.versioned)}),
     snapshot10:()=>document('1.0'),snapshot11:()=>document('1.1'),

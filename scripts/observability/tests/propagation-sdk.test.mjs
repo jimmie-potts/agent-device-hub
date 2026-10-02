@@ -19,3 +19,12 @@ test('actual authenticated Hub command routes preserve OTel parentage and isolat
   assert.equal(run.status, 0, run.stderr + run.stdout);
   assert.match(run.stdout, /Hub SDK context verified/);
 });
+
+test('fake workers retain SDK context across deferred reverse-order execution', () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = spawnSync(process.execPath, [new URL('./fixtures/worker-sdk.mjs', import.meta.url).pathname],
+    { env, encoding: 'utf8', timeout: 20_000 });
+  assert.equal(run.status, 0, run.stderr + run.stdout);
+  assert.match(run.stdout, /worker SDK handoff verified/);
+});

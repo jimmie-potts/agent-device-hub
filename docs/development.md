@@ -1541,3 +1541,18 @@ log mapping. Span projection uses canonical resource/scope/typed attributes
 and preserves nanosecond timestamps; raw SDK URLs, events, links, resource
 detection and error messages are excluded. These tests do not yet qualify
 worker handoff, bounded streaming export or backend ingestion.
+
+The fake controller's optional diagnostic observer receives validated machine
+metadata and traceparent only after authentication. It cannot invoke domain
+work. Exceptions and rejected observer promises increment a bounded failure
+counter; queue settlement releases its diagnostic handle. Source tests cover
+replay and failures at request, queue, admission, execution and terminal steps.
+
+`worker-diagnostics.mjs` captures context explicitly for queue and execution
+spans, emits source records under controller/worker identities, and links
+deferred execution to its original admission. A real SDK test drains two
+controllers in reverse order outside their request contexts and checks
+parentage, links, isolated tickets, canonical records and independent effects.
+Cancellation ends queued diagnostics without reporting an execution success.
+The combined process harness and bounded network export remain separate
+qualification requirements.

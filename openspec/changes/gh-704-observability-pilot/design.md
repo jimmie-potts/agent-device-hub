@@ -26,6 +26,10 @@ Keep reference ticket admission and replay in the existing fake controller. Add 
 
 The opt-in fake executor supports synthetic brightness writes, with at most 32 queued jobs and 256 retained oracle records/settled receipts. The driver must drain oracle records into bounded run evidence. Overflow is reported and prevents a complete per-ticket result; it is not erased when records are drained. Restart and close cancel pending synthetic work. Legacy fixture behavior remains available without execution enabled.
 
+The fake controller's optional diagnostic observer receives only machine metadata and traceparent after authentication. It never wraps a domain callback. Observer exceptions and rejected promises increment a bounded counter; they cannot repeat admission or effects. Queue settlement releases the diagnostic handle. The disabled path does not build diagnostic metadata.
+
+Capture context explicitly when admission queues work. The queue span uses that captured parent; execution uses the queue parent and a causal link to the original admission span, even after the request has ended. Controller and worker records use separate resource identities. Cancellation ends the queue without creating an execution success. Projection must retain only these validated causal link identities, never arbitrary SDK link attributes.
+
 A fixture that merely relabels admission as execution was rejected because it cannot prove duplicate-side-effect safety.
 
 ### One log path and restricted span projection

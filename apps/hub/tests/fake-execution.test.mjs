@@ -131,3 +131,64 @@ test('invalid execution options are rejected before listening', async () => {
     }, /invalid/);
   }
 });
+
+test('owned diagnostic handoff follows authenticated admission, queue, execution and terminal receipt', async t => {
+  const events = [];
+  const fake = await startFakeController({ execution: {}, diagnostics: {
+    request(attributes, parent) {
+      events.push(['request', attributes, parent]);
+      return {
+        queued() { events.push(['queued']); return {
+          execute() { events.push(['execute']); return { finish(value) { events.push(['terminal', value]); } }; },
+          cancel() { events.push(['cancel']); },
+        }; },
+        finish(value) { events.push(['admission', value]); },
+      };
+    },
+  } });
+  t.after(() => fake.close());
+  const config = fake.config(), body = command(fake);
+  const traceparent = '00-' + '1'.repeat(32) + '-' + '2'.repeat(16) + '-01';
+  const post = async token => {
+    const response = await fetch(fake.endpoint + '/commands', { method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', traceparent,
+        baggage: 'SYNTHETIC_SECRET', tracestate: 'SYNTHETIC_SECRET' }, body: JSON.stringify(body) });
+    await response.json(); return response.status;
+  };
+  assert.equal(await post('wrong'), 401);
+  assert.equal(events.length, 0);
+  assert.equal(await post(config.token), 202);
+  assert.deepEqual(events.map(value => value[0]), ['request', 'queued', 'admission']);
+  assert.equal(events[0][2], traceparent);
+  assert.equal(events[0][1]['bunny.ticket.sequence'], body.requestId.sequence);
+  assert.equal(JSON.stringify(events).includes('SYNTHETIC_SECRET'), false);
+  assert.equal(fake.executionState().effects, 0);
+  fake.executeQueued();
+  assert.deepEqual(events.map(value => value[0]), ['request', 'queued', 'admission', 'execute', 'terminal']);
+  assert.equal(events.at(-1)[1].outcome, 'transport-acknowledged');
+  assert.equal(fake.executionState().effects, 1);
+  await post(config.token);
+  assert.equal(events.filter(value => value[0] === 'queued').length, 1, 'replay does not enqueue telemetry or work again');
+  assert.equal(fake.executionState().effects, 1);
+});
+
+test('diagnostic failures at every handoff preserve admission and exactly one fake effect', async t => {
+  for (const phase of ['request', 'queued', 'admission', 'execute', 'terminal']) {
+    const fault = name => { if (name === phase) throw Error('SYNTHETIC_SECRET'); };
+    const fake = await startFakeController({ execution: {}, diagnostics: {
+      request() { fault('request'); return {
+        queued() { fault('queued'); return { execute() { fault('execute'); return { finish() { fault('terminal'); } }; } }; },
+        finish() { fault('admission'); },
+      }; },
+    } });
+    const client = new ControllerClient(fake.config(), 2000);
+    t.after(async () => { client.close(); await fake.close(); });
+    const body = command(fake);
+    assert.equal((await client.command(body)).body.outcome, 'queued', phase);
+    fake.executeQueued();
+    assert.equal(fake.executionState().effects, 1, phase);
+    assert.equal((await client.command(body)).body.outcome, 'sent', phase);
+    assert.equal(fake.executionState().effects, 1, phase);
+    assert.ok(fake.executionState().diagnosticFailures > 0, phase);
+  }
+});
