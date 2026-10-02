@@ -13,11 +13,11 @@ export function createBoundedSink(sink, options = {}) {
   const flushMs = limit(options.flushMs, MAX_FLUSH_MS);
   const queue = [];
   let bytes = 0, attempted = 0, accepted = 0, rejected = 0, dropped = 0, failed = 0, exported = 0;
-  let active, closed = false, closing, finishClose;
+  let active, closed = false, closing, finishClose, flushing, finishFlush;
   function drain() {
     if (active || closed) return;
     const item = queue[0];
-    if (!item) { finishClose?.(); return; }
+    if (!item) { finishFlush?.(true); finishClose?.(); return; }
     active = new AbortController();
     const signal = active.signal;
     // Neither synchronous network setup nor a throwing sink runs in the producer call.
@@ -44,6 +44,18 @@ export function createBoundedSink(sink, options = {}) {
       drain(); return true;
     },
     counts: () => ({ attempted, accepted, rejected, dropped, failed, exported, queued: queue.length, bytes }),
+    flush() {
+      if (flushing) return flushing;
+      flushing = Promise.resolve().then(() => new Promise(resolve => {
+        let timer;
+        finishFlush = success => {
+          clearTimeout(timer); finishFlush = undefined; flushing = undefined; resolve(success);
+        };
+        if (!queue.length) finishFlush(true);
+        else timer = setTimeout(() => finishFlush?.(false), flushMs);
+      }));
+      return flushing;
+    },
     close() {
       if (closing) return closing;
       // Defer finalization so the same promise is installed even for an empty queue.
@@ -52,6 +64,7 @@ export function createBoundedSink(sink, options = {}) {
         finishClose = () => {
           if (closed) return;
           closed = true; clearTimeout(timer);
+          finishFlush?.(queue.length === 0);
           dropped = add(dropped, queue.length);
           queue.length = 0; bytes = 0;
           active?.abort(); active = undefined; finishClose = undefined;

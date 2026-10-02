@@ -1570,3 +1570,19 @@ Span projection accepts up to eight separately approved causal link identities.
 It exports only validated trace/span IDs and sampling flags, without reading
 SDK links or their attributes. The host must supply these identities from owned
 handoffs; arbitrary links and detected resource metadata remain excluded.
+
+`span-pipeline.mjs` associates manual spans with canonical metadata through the
+host-injected tracer and inherits only that metadata for approved HTTP/Undici
+children. Active associations have separate limits of 1,024 entries and 4 MiB;
+completed associations are released before enqueueing export. Unsampled spans
+are not retained. Canonical terminal records may update attributes but cannot
+change the registered resource or scope. Registration failure leaves the domain
+span intact and increments safe counters.
+
+The real SDK fixtures exercise this streaming pipeline, including worker causal
+links. The HTTP privacy check first proves its secret fixture reached raw SDK
+attributes, then proves it is absent from exported output. No raw SDK attributes,
+events, detected resources or links are read for export. A bounded nonclosing
+flush reports timeout as failure; shutdown counts unfinished associations and
+closes the transport queue. Backend ingestion and the combined runtime harness
+remain separate acceptance checks.

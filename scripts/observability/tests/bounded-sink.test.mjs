@@ -72,3 +72,16 @@ test('configuration cannot raise owner-approved ceilings or create zero/invalid 
     assert.throws(() => createBoundedSink(() => {}, options), /limit/);
   }
 });
+
+test('nonclosing flush is bounded, coalesces waiters and leaves later export enabled', async () => {
+  const gate = deferred(); let first = true;
+  const queue = createBoundedSink(() => { if (first) { first = false; return gate.promise; } }, { flushMs: 10 });
+  queue.push('first');
+  const flushing = queue.flush(); assert.equal(queue.flush(), flushing);
+  assert.equal(await flushing, false, 'a timeout is not successful flush');
+  assert.equal(queue.counts().queued, 1);
+  gate.resolve(); await tick();
+  assert.equal(queue.push('second'), true);
+  assert.equal(await queue.flush(), true);
+  await queue.close(); accounted(queue);
+});

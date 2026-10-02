@@ -4,13 +4,16 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { AlwaysOnSampler, ParentBasedSampler } from '@opentelemetry/sdk-trace-base';
 import { createWorkerDiagnostics } from '../../worker-diagnostics.mjs';
 import { traceparentOnly } from '../../propagation.mjs';
+import { trace } from '@opentelemetry/api';
+import { createSpanPipeline } from '../../span-pipeline.mjs';
 import { validateRecord } from '@jimmie-potts/bunny-observability';
 const resource = { 'service.namespace': 'bunny', 'service.name': 'nanoleaf-controller', 'service.version': '1.0.0',
   'service.instance.id': '00000000-0000-4000-8000-000000000002', 'deployment.environment.name': 'test' };
-const records = [], spans = [];
+const records = [], spans = [], streamed = [];
+const pipeline = createSpanPipeline({ sink: line => { streamed.push(JSON.parse(line)); } });
 const sdk = new NodeSDK({ autoDetectResources: false, resource: resourceFromAttributes(resource),
   sampler: new ParentBasedSampler({ root: new AlwaysOnSampler() }),
-  spanProcessors: [{ onStart() {}, onEnd(span) { spans.push(span); }, async forceFlush() {}, async shutdown() {} }],
+  spanProcessors: [pipeline.processor, { onStart() {}, onEnd(span) { spans.push(span); }, async forceFlush() {}, async shutdown() {} }],
   logRecordProcessors: [], textMapPropagator: traceparentOnly, instrumentations: [],
 });
 sdk.start();
@@ -19,7 +22,11 @@ const fakes = [];
 try {
   for (let index = 0; index < 2; index++) {
     const diagnostics = createWorkerDiagnostics({ resource,
-      workerResource: { ...resource, 'service.name': 'nanoleaf-worker' }, emit: record => records.push(record) });
+      workerResource: { ...resource, 'service.name': 'nanoleaf-worker' },
+      tracer: pipeline.wrapTracer(trace.getTracer('bunny.pilot.worker'), {
+        resource: name => name === 'bunny.command.execute' ? { ...resource, 'service.name': 'nanoleaf-worker' } : resource,
+        scope: name => name === 'bunny.command.queue' ? 'bunny.queue' : 'bunny.controller',
+      }), emit: record => { pipeline.observe(record); records.push(record); } });
     fakes.push(await startFakeController({ controllerId: `controller-${index}`, deviceId: `device-${index}`,
       execution: {}, diagnostics }));
   }
@@ -60,6 +67,20 @@ try {
   }
   assert.ok(records.every(record => validateRecord(record).ok));
   assert.equal(JSON.stringify(records).includes('SYNTHETIC_SECRET'), false);
+  await pipeline.processor.forceFlush();
+  assert.equal(streamed.length, 6);
+  const exportedExecutions = streamed.flatMap(value => value.resourceSpans.flatMap(group =>
+    group.scopeSpans.flatMap(scope => scope.spans.filter(span => span.name === 'bunny.command.execute'))));
+  assert.equal(exportedExecutions.length, 2);
+  for (const execution of exportedExecutions) {
+    const original = spans.find(span => span.name === 'bunny.command.request' && span.spanContext().traceId === execution.traceId);
+    assert.equal(execution.links[0].spanId, original.spanContext().spanId);
+    assert.deepEqual(Object.keys(execution.links[0]).sort(), ['flags', 'spanId', 'traceId']);
+  }
+  assert.equal(JSON.stringify(streamed).includes('SYNTHETIC_SECRET'), false);
+  for (const field of ['active', 'activeBytes', 'associationDropped', 'unassociated', 'invalid', 'unfinished', 'failures']) {
+    assert.equal(pipeline.counts()[field], 0, field);
+  }
   process.stdout.write('worker SDK handoff verified\n');
 } finally {
   await Promise.all(fakes.map(fake => fake.close()));

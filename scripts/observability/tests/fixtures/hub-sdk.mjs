@@ -6,13 +6,16 @@ const { resourceFromAttributes } = await import('@opentelemetry/resources');
 const { AlwaysOnSampler, ParentBasedSampler } = await import('@opentelemetry/sdk-trace-base');
 const { createOutgoingInstrumentation } = await import('../../instrumentation.mjs');
 const { traceparentOnly } = await import('../../propagation.mjs');
+const { createSpanPipeline } = await import('../../span-pipeline.mjs');
+const { trace } = await import('@opentelemetry/api');
 const resource = { 'service.namespace': 'bunny', 'service.name': 'hub', 'service.version': '0.4.2',
   'service.instance.id': '00000000-0000-4000-8000-000000000001', 'deployment.environment.name': 'test' };
 let origins = [];
-const spans = [], records = [];
+const spans = [], records = [], streamed = [];
+const pipeline = createSpanPipeline({ sink: line => { streamed.push(JSON.parse(line)); } });
 const sdk = new NodeSDK({ autoDetectResources: false, resource: resourceFromAttributes(resource),
   sampler: new ParentBasedSampler({ root: new AlwaysOnSampler() }),
-  spanProcessors: [{ onStart() {}, onEnd(span) { spans.push(span); }, async forceFlush() {}, async shutdown() {} }],
+  spanProcessors: [pipeline.processor, { onStart() {}, onEnd(span) { spans.push(span); }, async forceFlush() {}, async shutdown() {} }],
   logRecordProcessors: [], textMapPropagator: traceparentOnly,
   instrumentations: createOutgoingInstrumentation(() => origins),
 });
@@ -35,7 +38,10 @@ try {
     controllerId: `controller-${index}`, deviceId: `device-${index}`, execution: { autoDrain: false },
   }));
   origins = fakes.map(fake => new URL(fake.endpoint).origin);
-  const diagnostics = createCommandDiagnostics({ resource, emit: record => records.push(record) });
+  const diagnostics = createCommandDiagnostics({ resource,
+    tracer: pipeline.wrapTracer(trace.getTracer('bunny.pilot.hub'), { resource,
+      scope: (_name, options) => options.kind === 1 ? 'bunny.http' : 'bunny.controller' }),
+    emit: record => { pipeline.observe(record); records.push(record); } });
   const token = 'h'.repeat(43);
   hub = await startHub({ directory, ownerId: 'owner', consumers: [], diagnostics,
     credentials: [{ id: 'pilot', digest: createHash('sha256').update(token).digest('hex'),
@@ -125,6 +131,14 @@ try {
   for (const span of exported.map(value => value.resourceSpans[0].scopeSpans[0].spans[0])) {
     assert.ok(logIds.has(span.spanId) || logIds.has(span.parentSpanId));
   }
+  await pipeline.processor.forceFlush();
+  assert.equal(streamed.length, spans.length);
+  assert.equal(JSON.stringify(streamed).includes('SYNTHETIC_SECRET'), false);
+  assert.equal(pipeline.counts().registered, spans.length);
+  for (const field of ['active', 'activeBytes', 'associationDropped', 'unassociated', 'invalid', 'unfinished', 'failures']) {
+    assert.equal(pipeline.counts()[field], 0, field);
+  }
+  assert.equal(pipeline.counts().output.exported, spans.length);
   process.stdout.write('Hub SDK context verified\n');
 } finally {
   await hub?.close();
