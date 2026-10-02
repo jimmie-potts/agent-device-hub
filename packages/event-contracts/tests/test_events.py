@@ -9,6 +9,7 @@ CORPUS = json.loads((Path(__file__).resolve().parents[1] / 'fixtures/events-v1.j
 class EventTests(unittest.TestCase):
     def test_inventory(self):
         cases = CORPUS['validation'] + CORPUS['reference']
+        self.assertTrue(CORPUS['validation'])
         self.assertTrue(CORPUS['reference'])
         self.assertTrue(cases)
         self.assertEqual(len(cases), len({case['id'] for case in cases}))
