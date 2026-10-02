@@ -60,7 +60,8 @@ export function taskBrief(record,node,ctx) {
 
 function matches(record,ctx) {
   const {q='',repo='',status='',kind=''}=ctx.filters;
-  return (!q||[record.title,record.id,record.body??''].join(' ').toLowerCase().includes(q.toLowerCase()))
+  const canonicalQuery=/^[\w.-]+\/[\w.-]+#[1-9]\d*$/.test(q);
+  return (!q||(canonicalQuery?record.id.toLowerCase()===q.toLowerCase():[record.title,record.id,record.body??''].join(' ').toLowerCase().includes(q.toLowerCase())))
     &&(!repo||record.repository===repo)&&(!status||record.labels.includes(status))&&(!kind||record.labels.includes(kind));
 }
 
