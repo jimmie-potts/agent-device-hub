@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import {buildCandidate} from '../build.mjs';
+import {parseMetadata} from '../collector.mjs';
 import {datasetIdentity,placementOf} from '../runtime/records.mjs';
 import {routeFor} from '../renderer.mjs';
 const output=resolve('.local/scratch/gh-511-browser');
@@ -19,6 +20,14 @@ function largeFixture(d){
 }
 const base=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/dataset.json',import.meta.url),'utf8'));
 const {d,sample}=largeFixture(base);
+const bodies=JSON.parse(await readFile(new URL('./brief-bodies.json',import.meta.url),'utf8'));
+const briefIds={};
+for(const [index,[state,body]] of Object.entries(bodies).entries()) {
+ const issue=d.issues.filter(x=>x.state==='OPEN'&&!x.labels.includes('epic'))[index];issue.body=body;
+ const [parsed]=await parseMetadata([issue]);issue.story=parsed.story;issue.planning=parsed.planning;briefIds[state]=issue.id;
+}
+d.repositories[0].recentClosures.complete=false;d.repositories[0].recentClosures.reason='Fixture partial history';
+d.datasetId=datasetIdentity(d);
 let manifest=await buildCandidate(d,{output});
 const server=createServer(async(req,res)=>{try{const path=resolve(output,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));if(!path.startsWith(output+'/'))throw Error('invalid path');const bytes=await readFile(path.endsWith('/')?join(path,'index.html'):path);res.setHeader('content-type',path.endsWith('.json')?'application/json':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');res.end(bytes);}catch{res.statusCode=404;res.end('missing');}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -31,6 +40,15 @@ try {
  await page.goto(origin+'/index.html');await page.waitForFunction(()=>window.guide);
  const pinned=await page.evaluate(()=>window.guide.releaseId);
  assert.ok(requests.every(url=>url.startsWith(origin)||url.startsWith('blob:')),'fresh open made an external/model request');
+ for(const [state,id] of Object.entries(briefIds)) {
+  await page.goto(origin+'/index.html?page=all%2F#'+id.replace('#','/'));await page.waitForFunction(()=>window.guide);
+  assert.equal(await page.locator('textarea').count(),4);
+    if(state==='current')assert.ok((await page.locator('textarea').first().inputValue()).includes('Execution guidance:'));
+  else {assert.match(await page.locator('.brief > .evidence').textContent(),/Generic commands/);assert.ok(!(await page.locator('textarea').first().inputValue()).includes('Execution guidance:'));}
+ }
+ await page.goto(origin+'/index.html?page=not-in-epic%2F');await page.waitForFunction(()=>window.guide);
+ assert.match(await page.locator('#content').textContent(),/partial history|Partial history/);
+ await page.goto(origin+'/index.html');await page.waitForFunction(()=>window.guide);
  await page.getByRole('link',{name:'All issues',exact:true}).click();
  await page.getByRole('searchbox').fill('Large epic work 239'); // global search includes last, initially unrendered record
  await page.getByRole('searchbox').fill('Literal unsafe title');

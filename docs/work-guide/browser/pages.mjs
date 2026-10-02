@@ -76,7 +76,7 @@ export function inventoryAudit(dataset) {
     if(issue.placement.state==='unresolved') add('placement',issue.placement.reason,'Issue owner: reconcile the native parent chain');
     const statuses=issue.labels.filter(x=>WORKFLOW.includes(x));
     if(statuses.length!==1) add('workflow','Missing or conflicting status','Issue owner: select exactly one workflow label');
-    if(issue.planning.some(x=>x.kind==='execution'&&x.state!=='current')) add('execution','Recommendation unusable','Issue owner: reassess; briefs use generic commands');
+    if(!issue.planning.some(x=>x.kind==='execution'&&x.state==='current')) add('execution',issue.planning.some(x=>x.kind==='execution')?'Recommendation unusable':'Recommendation missing','Issue owner: reassess; briefs use generic commands');
   }
   return {asOf:dataset.asOf,datasetId:dataset.datasetId,count,placements:dataset.issues.filter(x=>x.state==='OPEN'&&count[x.repository]).map(x=>({id:x.id,primaryPage:primaryPage(x)})),epicCount:dataset.issues.filter(isEpic).length,findings,gaps:publicationGate(dataset).gaps};
 }
