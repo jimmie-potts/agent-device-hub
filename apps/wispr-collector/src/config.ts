@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, opendirSync, type Dirent } from 'node:fs';
 import { win32 } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -81,4 +81,34 @@ export function loadConfig(path: string): CollectorConfig {
   for(const suffix of ['-wal','-shm'])if(existsSync(config.sourcePath+suffix))paths.push(config.sourcePath+suffix);
   qualifyWindowsPaths(paths);
   return config;
+}
+
+function boundedEntries(path:string,limit:number):Dirent[] {
+  const directory=opendirSync(path),entries:Dirent[]=[];
+  try{for(let entry=directory.readSync();entry;entry=directory.readSync()){if(entries.length>=limit)throw new Error('store-capacity');entries.push(entry);}return entries;}finally{directory.closeSync();}
+}
+
+/** Existing children can have explicit ACLs; qualification of only their parent is insufficient. */
+export function qualifyState(config:CollectorConfig,exportPath?:string):void {
+  const paths=[config.stateDirectory];
+  if(existsSync(config.stateDirectory)){
+    const entries=boundedEntries(config.stateDirectory,256);
+    if(entries.length>256)throw new Error('store-capacity');
+    for(const entry of entries){
+      const path=win32.join(config.stateDirectory,entry.name);paths.push(path);
+      if(entry.isDirectory()){
+        if(entry.name!=='backups')throw new Error('unsafe-path');
+        const backups=boundedEntries(path,128);if(backups.length>128)throw new Error('store-capacity');
+        for(const backup of backups){if(!backup.isFile())throw new Error('unsafe-path');paths.push(win32.join(path,backup.name));}
+      }
+    }
+  }
+  if(exportPath){
+    windowsPath(exportPath);
+    if(!contained(config.ownerDirectory,exportPath)||contained(config.stateDirectory,exportPath)||exportPath.toLowerCase()===config.stateDirectory.toLowerCase()||[config.sourcePath,config.sourcePath+'-wal',config.sourcePath+'-shm'].some(p=>p.toLowerCase()===exportPath.toLowerCase()))throw new Error('unsafe-path');
+    paths.push(exportPath);
+  }
+  // Windows has a per-environment-variable limit; fail explicitly instead of truncating checks.
+  if(JSON.stringify(paths).length>24000)throw new Error('store-capacity');
+  qualifyWindowsPaths(paths);
 }

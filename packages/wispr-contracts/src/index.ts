@@ -141,6 +141,16 @@ export function validateSnapshot(input: unknown): Validation {
   } catch { return invalid(); }
 }
 
+export const FAILURE_CODES = ['source-unavailable','source-schema','source-busy','source-capacity','source-deadline','source-read','source-changed','store-capacity','aggregate-capacity','publication-capacity','publication-failed','run-deadline','run-cancelled','binding-mismatch'] as const;
+export type FailureCode = typeof FAILURE_CODES[number];
+export type CollectorStatus = {schemaVersion:'1.0';namespace:string;generation:string;revision:number;lastAttemptAt:string;lastSuccessAt:string|null;latestSourceDate:string|null;health:Snapshot['health']|FailureCode;languageEnabled:boolean};
+export const statusSchema = {$schema:'https://json-schema.org/draft/2020-12/schema',$id:'urn:bunny:wispr-status:1.0',...object({schemaVersion:{const:'1.0'},namespace:{type:'string',format:'uuid'},generation:{type:'string',format:'uuid'},revision:count,lastAttemptAt:instant,lastSuccessAt:nullable(instant),latestSourceDate:nullable(date),health:enumeration(['ok','empty','cleared',...FAILURE_CODES]),languageEnabled:{type:'boolean'}})};
+const checkStatus=ajv.compile(statusSchema);
+export function validateStatus(input:unknown):{ok:true;value:CollectorStatus}|{ok:false;code:'invalid-wispr-status'} {
+  const invalid=()=>({ok:false as const,code:'invalid-wispr-status' as const});
+  try{const encoded=JSON.stringify(input);if(typeof encoded!=='string'||new TextEncoder().encode(encoded).length>4096)return invalid();const value=JSON.parse(encoded) as CollectorStatus;if(!checkStatus(value)||(value.lastSuccessAt!==null&&value.lastSuccessAt>value.lastAttemptAt))return invalid();return {ok:true,value};}catch{return invalid();}
+}
+
 export function localDate(instant: string | number, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(instant));
 }

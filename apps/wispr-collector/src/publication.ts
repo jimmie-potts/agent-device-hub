@@ -1,19 +1,16 @@
-import { closeSync, fsyncSync, lstatSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, lstatSync, readFileSync, statSync, existsSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
-import { MAX_SNAPSHOT_BYTES, validateSnapshot, type Snapshot } from '@jimmie-potts/wispr-contracts';
+import { MAX_SNAPSHOT_BYTES, validateSnapshot, validateStatus, type CollectorStatus, type FailureCode, type Snapshot } from '@jimmie-potts/wispr-contracts';
 
 export type PublicationPaths = { aggregate: string; status: string };
-export type FailureCode = 'source-unavailable' | 'source-schema' | 'source-busy' | 'source-capacity' | 'source-deadline' | 'source-read' | 'store-capacity' | 'publication-failed' | 'run-deadline' | 'binding-mismatch';
-export type CollectorStatus = {
-  schemaVersion: '1.0'; namespace: string; generation: string; revision: number;
-  lastAttemptAt: string; lastSuccessAt: string | null; latestSourceDate: string | null;
-  health: Snapshot['health'] | FailureCode; languageEnabled: boolean;
-};
+export type { CollectorStatus, FailureCode } from '@jimmie-potts/wispr-contracts';
 
 /** Caller must qualify owner paths/ACLs and hold the single collector lease. */
 export function atomicJson(path: string, value: unknown, maxBytes = MAX_SNAPSHOT_BYTES): void {
-  const encoded=JSON.stringify(value)+'\n';
+  atomicText(path,JSON.stringify(value)+'\n',maxBytes);
+}
+export function atomicText(path:string,encoded:string,maxBytes=MAX_SNAPSHOT_BYTES):void {
   if(Buffer.byteLength(encoded)>maxBytes)throw new Error('publication-capacity');
   const temporary=join(dirname(path),`.${basename(path)}.${randomUUID()}.pending`);
   let descriptor:number|undefined;
@@ -50,4 +47,14 @@ export function publishSnapshot(paths: PublicationPaths, input: unknown): void {
 
 export function recordFailure(paths: PublicationPaths, snapshot: Snapshot, code: FailureCode, attemptedAt: string): void {
   atomicJson(paths.status,status(snapshot,code,attemptedAt),4096);
+}
+
+export function readStatus(path:string,snapshot:Snapshot):CollectorStatus|null {
+  if(!existsSync(path))return null;
+  if(statSync(path).size>4096)throw new Error('invalid-status');
+  const result=validateStatus(JSON.parse(readFileSync(path,'utf8')));
+  if(!result.ok)throw new Error('invalid-status');
+  const value=result.value;
+  if(value.namespace!==snapshot.namespace||value.generation!==snapshot.generation||value.revision!==snapshot.revision||value.lastSuccessAt!==snapshot.lastSuccessAt||value.latestSourceDate!==snapshot.latestSourceDate)throw new Error('invalid-status');
+  return value;
 }

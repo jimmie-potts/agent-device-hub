@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { atomicJson } from './publication.js';
@@ -10,6 +10,7 @@ export type Control = {
 const uuid = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(v);
 const controlPath = (directory: string) => join(directory, 'control.json');
 export function readControl(directory: string): Control {
+  if(statSync(controlPath(directory)).size>4096)throw new Error('invalid-control');
   const raw=readFileSync(controlPath(directory),'utf8');
   if(Buffer.byteLength(raw)>4096)throw new Error('invalid-control');
   const c=JSON.parse(raw) as Control;

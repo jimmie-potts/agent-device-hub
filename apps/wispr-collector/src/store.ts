@@ -23,10 +23,23 @@ export class NumericStore {
     const path=join(directory,'analytics.sqlite');if(!existsSync(path))return null;
     const db=new DatabaseSync(path,{readOnly:true,allowExtension:false,timeout:1000});
     try{
-      const row=db.prepare("SELECT value FROM metadata WHERE key='state'").get();
+      const row=db.prepare("SELECT value FROM metadata WHERE key='state' AND length(value)<=16777216").get();
       if(typeof row?.value!=='string')throw new Error('invalid-store');
       const meta=JSON.parse(row.value);if(typeof meta.sourceIdentity!=='string')throw new Error('invalid-store');return meta.sourceIdentity;
     }finally{db.close();}
+  }
+  static savedTimezone(directory:string):string|null {
+    const path=join(directory,'analytics.sqlite');if(!existsSync(path))return null;
+    const db=new DatabaseSync(path,{readOnly:true,allowExtension:false,timeout:1000});
+    try{const row=db.prepare("SELECT value FROM metadata WHERE key='state' AND length(value)<=16777216").get();if(typeof row?.value!=='string')throw new Error('invalid-store');const meta=JSON.parse(row.value);if(typeof meta.timezone!=='string')throw new Error('invalid-store');return meta.timezone;}finally{db.close();}
+  }
+  static backupBinding(directory:string,name:string):{namespace:string;sourceIdentity:string} {
+    if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name))throw new Error('invalid-backup-name');
+    const path=join(directory,'backups',name+'.sqlite');
+    if(!existsSync(path))throw new Error('backup-unavailable');
+    if(!lstatSync(path).isFile()||statSync(path).size>MAX_STORE_BYTES)throw new Error('invalid-backup');
+    const db=new DatabaseSync(path,{readOnly:true,allowExtension:false,timeout:1000});
+    try{db.exec('PRAGMA trusted_schema=OFF; PRAGMA hard_heap_limit=67108864');const row=db.prepare("SELECT value FROM metadata WHERE key='state' AND length(value)<=16777216").get();if(typeof row?.value!=='string')throw new Error('invalid-backup');const meta=JSON.parse(row.value);if(!validateSnapshot(meta.snapshot).ok||meta.namespace!==meta.snapshot.namespace||typeof meta.sourceIdentity!=='string'||meta.sourceIdentity.length>256)throw new Error('invalid-backup');return {namespace:meta.namespace,sourceIdentity:meta.sourceIdentity};}finally{db.close();}
   }
   constructor(options: StoreOptions) {
     this.directory=options.directory;
@@ -36,11 +49,11 @@ export class NumericStore {
     if(control.namespace!==options.namespace)throw new Error('binding-mismatch');
     this.db = new DatabaseSync(join(options.directory, 'analytics.sqlite'), { timeout: 1000, allowExtension: false });
     try {
-      this.db.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA cache_size=-8192');
+      this.db.exec('PRAGMA hard_heap_limit=67108864; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA cache_size=-8192');
       const pageSize = this.db.prepare('PRAGMA page_size').get()!.page_size as number;
       this.db.exec(`PRAGMA max_page_count=${Math.floor(this.maxStoreBytes/pageSize)}`);
       this.db.exec('CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS contributions(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,value TEXT NOT NULL,archived INTEGER NOT NULL CHECK(archived IN (0,1)),capture_exempt INTEGER NOT NULL DEFAULT 0 CHECK(capture_exempt IN (0,1))); CREATE TABLE IF NOT EXISTS language(id TEXT PRIMARY KEY,value TEXT NOT NULL)');
-      const existing = this.db.prepare("SELECT value FROM metadata WHERE key='state'").get();
+      const existing = this.db.prepare("SELECT value FROM metadata WHERE key='state' AND length(value)<=16777216").get();
       if (existing) {
         const meta = this.metadata();
         if (meta.namespace !== options.namespace || meta.sourceIdentity !== options.sourceIdentity) throw new Error('binding-mismatch');
@@ -60,7 +73,7 @@ export class NumericStore {
     return this.readMetadata(this.db);
   }
   private readMetadata(db: DatabaseSync): Metadata {
-    const row=db.prepare("SELECT value FROM metadata WHERE key='state'").get();
+    const row=db.prepare("SELECT value FROM metadata WHERE key='state' AND length(value)<=16777216").get();
     if(!row||typeof row.value!=='string')throw new Error('invalid-store');
     const value=JSON.parse(row.value) as Metadata;
     if(value.format!==1||typeof value.dataEpoch!=='string'||!Number.isSafeInteger(value.textEpoch)||!validateSnapshot(value.snapshot).ok||value.revision!==value.snapshot.revision||value.generation!==value.snapshot.generation)throw new Error('invalid-store');
@@ -112,7 +125,7 @@ export class NumericStore {
   }
 
   /** Only call after a complete qualified read. A rejected scan must never call this method. */
-  ingest(rows: SourceRow[], observedAt: string): Snapshot {
+  ingest(rows: SourceRow[], observedAt: string, options:{failedAttempt?:boolean}={}): Snapshot {
     return this.transaction(()=>{
       const meta=this.metadata();
       if(meta.pending)throw new Error('publication-pending');
@@ -122,7 +135,12 @@ export class NumericStore {
       const exemption=this.db.prepare('SELECT capture_exempt FROM contributions WHERE id=?');
       const upsert=this.db.prepare('INSERT INTO contributions(id,fingerprint,value,archived,capture_exempt) VALUES(?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,value=excluded.value,archived=0');
       for(const row of rows){const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);}
-      const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone:meta.timezone,now:observedAt,gaps:meta.snapshot.coverage.gaps});
+      const gaps=structuredClone(meta.snapshot.coverage.gaps),previous=meta.snapshot.lastSuccessAt;
+      if(previous&&previous<observedAt&&(options.failedAttempt||Date.parse(observedAt)-Date.parse(previous)>300_000)){
+        const reason=options.failedAttempt?'failed-attempt' as const:'not-observed' as const;
+        const last=gaps.at(-1);if(last&&last.to===previous&&last.reason===reason)last.to=observedAt;else gaps.push({from:previous,to:observedAt,reason});
+      }
+      const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone:meta.timezone,now:observedAt,gaps});
       this.save({...meta,revision:snapshot.revision,snapshot,pending:true});
       return snapshot;
     });
@@ -170,7 +188,7 @@ export class NumericStore {
     try{
       await sqliteBackup(this.db,temporary);
       if(statSync(temporary).size>MAX_STORE_BYTES)throw new Error('backup-capacity');
-      const fd=openSync(temporary,'r');try{fsyncSync(fd);}finally{closeSync(fd);}
+      const fd=openSync(temporary,'r+');try{fsyncSync(fd);}finally{closeSync(fd);}
       renameSync(temporary,path);
     }catch(error){try{unlinkSync(temporary);}catch{}throw error;}
   }

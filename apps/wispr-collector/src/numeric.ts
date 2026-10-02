@@ -96,6 +96,6 @@ export function aggregate(contributions: Iterable<Contribution>, options: {
   }
   snapshot.health=snapshot.coverage.sourceRows===0?'empty':'ok';
   snapshot.numeric.cells=[...groups.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.hour-b.hour||a.app.localeCompare(b.app)||Number(a.archived)-Number(b.archived));
-  if(!validateSnapshot(snapshot).ok)throw new Error('aggregate-capacity-or-invalid');
+  if(!validateSnapshot(snapshot).ok)throw new Error('aggregate-capacity');
   return snapshot;
 }

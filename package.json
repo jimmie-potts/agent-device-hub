@@ -95,7 +95,7 @@
     "test:wispr:package": "npm run build && npm run test:wispr:package:built",
     "test:wispr:package:built": "node scripts/package-wispr.mjs --test",
     "package:wispr": "npm run build && node scripts/package-wispr.mjs",
-    "test:wispr:native:built": "node apps/wispr-collector/tests/native.mjs && node apps/wispr-collector/tests/native-privacy.mjs"
+    "test:wispr:native:built": "node apps/wispr-collector/tests/native.mjs && node apps/wispr-collector/tests/native-privacy.mjs && node apps/wispr-collector/tests/native-cli.mjs && node apps/wispr-collector/tests/native-locked-output.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

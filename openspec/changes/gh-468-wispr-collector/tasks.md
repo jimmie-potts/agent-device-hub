@@ -6,7 +6,7 @@
 
 ## 2. Numeric contract and retained reports
 
-- [ ] 2.1 Add strict shared versioned aggregate types/validator and synthetic fixtures including optional language/dictionary availability; verify unknown-field/version/content rejection and an isolated consumer import.
+- [x] 2.1 Add strict shared versioned aggregate types/validator and synthetic fixtures including optional language/dictionary availability; verify unknown-field/version/content rejection and an isolated consumer import.
 - [x] 2.2 Implement pure eligibility, coverage, weighted rates, date/hour/weekday buckets, app/category mapping and rollups; verify hand-calculated mixed/null/invalid-status fixtures, zoned timestamps, midnight, both DST transitions, runs and preset expiration.
 - [x] 2.3 Implement private retained contributions with stable binding and complete-scan replacement/archive semantics; verify retries, late edits, pruning, reappearance, failed scans, independent coverage and explicit timezone rebuild without duplicate counts.
 

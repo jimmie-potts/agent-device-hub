@@ -59,3 +59,21 @@ This introduces a new private store format; no live migration is performed by so
 ## Open Questions
 
 Installed source field semantics, real-data counts, ACL integration and scheduled task behavior require the separately authorized installation trial. Synthetic source acceptance does not answer those questions.
+
+
+The CLI now runs each operation in one direct worker. The parent owns the run lease
+until that child exits; the child also holds an independent worker lease so a
+supervisor crash cannot release a still-running writer's ownership. IPC disconnect
+ends the child, with connection checks at read, commit and publication boundaries.
+Clear uses a generation-specific cancellation token and waits for both leases.
+A failed attempt remains in the strict shared status envelope; the next complete
+scan records its gap. An interval longer than the planned five-minute cadence is
+reported as not observed, without asserting absent dictations or zero usage.
+
+Offline packaging copies only the collector, synthetic tests, the pure contract and
+its installed JavaScript dependency closure. It normalizes archive ownership,
+permissions and timestamps, includes file hashes, and never runs an installation
+script or registry lookup. Backup flushing uses a writable handle to the
+collector-owned temporary backup, as required by native Windows; source connections
+remain read-only. Fresh-directory restore requires explicit historical approval,
+retains the selected source namespace and establishes a current capture fence.
