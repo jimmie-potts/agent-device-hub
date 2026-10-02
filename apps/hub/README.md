@@ -17,7 +17,7 @@ the hub package.
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop`, optional [`playback`](#playback) and optional [`browserAccess`](#open-bunny-from-a-bookmark). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop`, optional [`playback`](#playback), optional [`wispr`](#private-wispr-aggregates) and optional [`browserAccess`](#open-bunny-from-a-bookmark). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 
 Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
@@ -601,3 +601,75 @@ The registered controller token stays private. Authorization and upstream
 membership checks precede 304 responses, including for deleted renditions.
 Pixoo owns storage, imports, renditions and playback; preview support does not
 qualify an animation for physical output.
+
+## Private Wispr aggregates
+
+The optional `wispr` block adds read-only analytics from the Windows collector's
+published JSON files. The Hub never opens a Wispr or collector SQLite database.
+Configure an opaque `sourceId`, absolute `aggregatePath` and `diagnosticsPath`,
+with optional `freshnessMs` (default 600000), `exposeToDashboard` and
+`shareTextAggregates` (both default false). The paths must name distinct regular
+JSON files outside Git/cloud folders, without symlink or hard-link aliases.
+Mounted Windows files retain the producer's Windows ACL qualification; Linux
+files require owner-only permissions. Paths and filesystem errors never leave
+the server. Changing configuration requires the normal owner-authorized restart.
+
+Every `/api/wispr/v1/` read requires `read` scope and the configured source ID in
+`devices`. Generic read permission grants no analytics access. The ID must differ
+from controller aliases, playback and `hub-service`. Launcher and trusted-loopback
+sessions receive it only with `exposeToDashboard: true`; configured tokens still
+need their explicit grant. Responses use the existing same-origin protections
+and `Cache-Control: no-store`. No analytics enter MCP or agent-session snapshots.
+
+| GET route | Selection and result |
+| --- | --- |
+| `status` | Identity, reporting zone, producer times, coverage, health, presets and bounds |
+| `summary` | Totals, matched duration/rate denominators, observed active days/runs and dictionary counter snapshots |
+| `series` | `bucket=day\|week\|month`, default day |
+| `heatmap` | Local weekday/hour cells |
+| `apps` | Safe app totals and category totals |
+| `language` | `period=today\|7d\|30d\|all`, default today; `corpus=raw\|cleaned\|observed`, default cleaned |
+| `export` | `format=json\|csv`, default JSON; `includeText=false\|true`, default false |
+
+Numeric routes accept inclusive `from`/`to` dates inside captured coverage and
+`app`/`category` IDs from the producer's fixed mapping. Omitted dates select the
+captured range. App and category combine as an intersection. Language accepts
+those app/category filters and only exact precomputed presets, never custom dates
+or sums of daily top-N lists. Unknown/repeated filters reject. A missing subgroup
+is unavailable. Language support is `english-1` with stopword policy
+`english-stop-1`; other versions remain unavailable without blocking numeric data.
+`cleaned` selects the producer's `formatted` corpus; observed
+edits retain unknown finality and never imply finally sent text or accuracy.
+Dictionary usage is an unfiltered snapshot with an unknown counter window.
+
+Text needs both Hub sharing and a valid producer manifest with language enabled.
+Text exports also need `includeText=true`; select period/corpus instead of custom
+numeric dates so numeric and text exports cover the same period. CSV is a quoted
+`field,value` table including identity and coverage, with formula-like strings
+neutralized. JSON is inert data served with the JSON MIME type and nosniff; a
+consumer must render strings as text, never HTML, and remove its copies on logout.
+Already downloaded exports cannot be recalled by later opt-out.
+
+A single worker reads/validates files and projects responses outside the HTTP
+loop. Numeric file refreshes coalesce for 30 seconds; the small manifest is read
+for every request and rechecked before the worker replies. Maximum input is
+16 MiB, diagnostics 4 KiB, response 1 MiB and numeric rows 10000. Oversized results
+return a typed capacity error; choose a narrower range or coarser series bucket.
+The HTTP worker wait is bounded to 2.5 seconds. A timed-out worker is retired
+before another starts, without retrying a request automatically.
+The Hub retains the accepted namespace, generation and revision across worker
+replacement. A replacement starts without cached data and must pass those same
+identity checks before serving files; a worker failure cannot undo an observed clear.
+
+Missing, malformed, older or unsupported input retains last-good numeric data
+with its true observation time and a failure reason. A first failure returns
+unavailable. A new-generation manifest immediately retires the old dataset,
+even if its replacement file is unavailable. Missing permission evidence removes
+text from the cache and pending exports. Expired language presets keep their
+actual as-of dates and are unavailable for the requested current period. The
+first valid manifest binds a namespace for this Hub process; deliberately rebind
+configuration and restart after a producer namespace replacement. File reads
+observe a point in time, not changes made after the final manifest check.
+
+Source tests and offline-package checks use synthetic data. Installation,
+personal-data comparison, recurring collection and UI acceptance remain separate.
