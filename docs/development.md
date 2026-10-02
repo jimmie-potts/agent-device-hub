@@ -1535,4 +1535,9 @@ It checks concurrent parentage, exclusion of other origins, sampling flags and
 absence of baggage/tracestate. Register the OpenTelemetry ESM hook and start
 the SDK before importing the application. Automatic incoming extraction stays
 disabled; the authenticated application boundary owns incoming context. This
-SDK test does not yet qualify worker handoff, canonical export or ingestion.
+SDK tests also exercise the actual authenticated Hub route with two concurrent
+controllers, malformed and unsampled parents, and the released Pino-to-OTLP
+log mapping. Span projection uses canonical resource/scope/typed attributes
+and preserves nanosecond timestamps; raw SDK URLs, events, links, resource
+detection and error messages are excluded. These tests do not yet qualify
+worker handoff, bounded streaming export or backend ingestion.
