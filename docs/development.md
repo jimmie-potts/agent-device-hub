@@ -1744,3 +1744,18 @@ directory synchronization. The result is `allocated-stopped` and qualification
 remains `unexecuted`. This allocation flow does not start the backend. Daemon
 storage checks, the continuous run-data watchdog, readiness probes and launch
 authorization from those technical gates still need integration before a run.
+
+`readAllocation` reads allocation evidence without changing it. It distinguishes
+an absent attempt, an interrupted attempt and a complete recorded allocation.
+Every file is bounded to 16 KiB and opened without following symlinks. Readback
+checks the fixed file sequence, exact record fields, run identity, returned IDs,
+verified resource receipts and their agreement with the final receipt. The
+allocator performs this readback before returning success.
+
+An intent without a returned ID remains ambiguous. The loader reports the last
+recorded phase for each resource and does not synthesize a completed receipt,
+repeat a creation request or adopt an object by name. A recorded stopped state
+is historical evidence: start and cleanup still require fresh engine inspection.
+Malformed or truncated files, symlinked paths, missing predecessors and forged
+receipt fields are retained and refused. These consistency checks do not make
+local files tamper-proof against a privileged editor.

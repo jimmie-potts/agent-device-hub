@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareBackendDirectory } from '../backend-files.mjs';
 import { backendCreateRequests } from '../backend-create.mjs';
 import { allocateBackend } from '../backend-allocation.mjs';
+import { readAllocation } from '../allocation-readback.mjs';
 
 async function fixture(t) {
   const parent = await mkdtemp(join(tmpdir(), 'al-'));
@@ -49,6 +50,9 @@ test('allocation saves each intent before creation and verifies stopped resource
   assert.equal(receipt.qualification, 'unexecuted');
   assert.equal(receipt.containerId, f.states.container.Id);
   assert.deepEqual(JSON.parse(await readFile(join(f.directory, 'allocation', 'receipt.json'), 'utf8')), receipt);
+  const saved = await readAllocation(f.directory);
+  assert.equal(saved.status, 'allocated-stopped');
+  assert.deepEqual(saved.receipt, receipt);
   await assert.rejects(allocateBackend(f));
   assert.equal(f.created.length, 3, 'existing attempt cannot repeat creation');
 });
@@ -67,6 +71,10 @@ test('ambiguous creation preserves its intent and cannot be rerun in the same at
   await assert.rejects(allocateBackend(f), /lost response/);
   assert.deepEqual(f.created, ['network']);
   assert.equal(JSON.parse(await readFile(join(f.directory, 'allocation', 'network-intent.json'))).kind, 'network');
+  const saved = await readAllocation(f.directory);
+  assert.equal(saved.status, 'interrupted');
+  assert.deepEqual(saved.resources, { network: { phase: 'intent', id: null } });
+  assert.equal(saved.receipt, null);
   await assert.rejects(allocateBackend(f));
   assert.deepEqual(f.created, ['network']);
 });
@@ -95,4 +103,39 @@ test('network replacement between allocations prevents creation of a dependent c
   };
   await assert.rejects(allocateBackend(f), /network/);
   assert.deepEqual(f.created, ['network', 'volume']);
+});
+
+test('allocation readback refuses forged receipts, missing predecessors and symlinks without repair', async t => {
+  const f = await fixture(t); await allocateBackend(f);
+  const path = join(f.directory, 'allocation', 'receipt.json');
+  const original = await readFile(path, 'utf8');
+  const changed = JSON.stringify({ ...JSON.parse(original), containerId: 'e'.repeat(64) }) + '\n';
+  await writeFile(path, changed);
+  await assert.rejects(readAllocation(f.directory), /receipt/);
+  assert.equal(await readFile(path, 'utf8'), changed);
+  await writeFile(path, original);
+  const network = join(f.directory, 'allocation', 'network-returned.json');
+  const returned = await readFile(network, 'utf8');
+  await rm(network);
+  await assert.rejects(readAllocation(f.directory), /sequence/);
+  await writeFile(network, returned);
+  await rm(path); await symlink(network, path);
+  await assert.rejects(readAllocation(f.directory));
+});
+
+test('readback distinguishes no attempt from a stopped prerequisite check with no resource intents', async t => {
+  const f = await fixture(t);
+  assert.equal((await readAllocation(f.directory)).status, 'not-attempted');
+  f.hostProbe = async () => ({ ready: false });
+  await assert.rejects(allocateBackend(f));
+  const result = await readAllocation(f.directory);
+  assert.equal(result.status, 'interrupted');
+  assert.deepEqual(result.resources, {});
+  assert.equal(result.receipt, null);
+});
+
+test('a dangling allocation symlink is refused rather than reported as an unattempted run', async t => {
+  const f = await fixture(t);
+  await symlink(join(f.directory, 'missing'), join(f.directory, 'allocation'));
+  await assert.rejects(readAllocation(f.directory), /directory/);
 });

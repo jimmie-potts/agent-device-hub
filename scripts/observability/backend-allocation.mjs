@@ -7,6 +7,7 @@ import { inspectHost } from './preflight.mjs';
 import { assertPinnedImage } from './backend-create.mjs';
 import { assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
 import { networkReceipt, volumeReceipt, assertOwnedNetwork, assertOwnedVolume } from './backend-resources.mjs';
+import { readAllocation } from './allocation-readback.mjs';
 
 async function syncDirectory(path) {
   const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -93,5 +94,7 @@ export async function allocateBackend({ directory, backend, signal, hostProbe = 
   await checkPlan();
   options();
   await save(evidence, 'receipt', receipt);
-  return receipt;
+  const saved = await readAllocation(directory);
+  if (saved.status !== 'allocated-stopped' || !isDeepStrictEqual(saved.receipt, receipt)) throw new Error('Allocation receipt readback failed');
+  return saved.receipt;
 }
