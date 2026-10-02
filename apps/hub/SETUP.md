@@ -64,61 +64,161 @@ Before an owner move, stop configuration edits, inspect every producer and consu
 
 For legacy Nanoleaf rollback, call `rollbackNanoleaf(command)`. It selects and verifies `legacy` through the owning CLI, preserving the latest legacy configuration. It does not restore a backup hook file or resurrect entries the user removed. Before a state-owner rollback, remove the current setup while its owner can confirm revocation, stop its facade, export the **latest** state, verify that owner's exit, and import into another empty host store. Install a fresh receipt and repeat consumer readiness/activation. The original occupied embedded store is never restarted as an automatic fallback. Pixoo remains a remote facade of the selected fresh host, and Nanoleaf's explicit legacy path is restored when requested.
 
-## Update the current-status package
+## Upgrade and roll back the installed Hub
 
-Hub 0.2.0 bundles agent-state 2.0.0 for [Hub #137](https://github.com/jimmie-potts/agent-device-hub/issues/137).
-Lifecycle, snapshot and durable export formats remain 1.0. This update changes
-current-turn selection and needs no database reset, new installer or owner move.
-Perform these steps only under a separate installed-update request with a named
-owner and the actual installation paths.
+This command implements the [installed runtime contract at contracts 1.2.0](https://github.com/jimmie-potts/agent-device-hub/blob/96710bba52054c381035a6afabe8348d2b9bbd93/docs/install-contract.md).
+Before planning, running or checking an installed Hub upgrade or rollback, read
+this section and run `plan`. Source delivery and CI do not authorize installation.
+The installation owner approves the saved plan's exact target, included changes,
+baseline, configuration, outage, first adoption and recovery route before effects.
+Changed approval inputs require a new plan. The command has no force option.
 
-1. Obtain the new Hub archive, SHA-256 sidecar and source receipt from the
-   [Hub 0.2.0 release](https://github.com/jimmie-potts/agent-device-hub/releases/tag/hub-v0.2.0).
-   Verify `sha256sum -c jimmie-potts-hub-0.2.0.tgz.sha256` in the download directory.
-   The receipt must name the merged source revision and bundled state 2.0.0.
-   Keep the prior program artifact and its receipt. Never replace an older release asset.
-2. Inventory the existing executable/service, hook command, producer receipt,
-   owner/source IDs, consumer policies, credentials and private store location.
-   Keep the same values. Do not route a second owner to the store or alter
-   Nanoleaf/Pixoo selection or device workers for this code update.
-3. Stop the one monitor host through its existing service manager and verify
-   process exit. Retain a private consistent backup of its state directory and
-   configuration. Include SQLite sidecars where present. Stop concurrent setup
-   edits; hooks may fail open while the host is unavailable. Do not delete or
-   edit the database, lease/fence records or setup receipts.
-4. Replace the program package using the installation's existing mechanism and
-   Node 24. Keep hook/service executable paths consistent with the reviewed
-   installation. Verify the installed package manifest and bundled state version.
-   Run the packaged synthetic `tests/setup-hook.test.mjs` in disposable state
-   before exposing the updated host to the existing store.
-5. Restart that same owner against the same store. Verify authenticated health,
-   owner/source/consumer identity and retained labels/notices/attention. Restored
-   sessions should remain uncertain until accepted fresh evidence. A valid start
-   for a new known turn must recover old activity/turn ambiguity in place.
-6. Under the separate [Pixoo #34](https://github.com/jimmie-potts/divoom-app-upgrade/issues/34)
-   acceptance request, record actual Desktop start A, stop A, start B and matching
-   identity in the shared feed. Expect active, idle, active and configured notice
-   clearing. Provider ordering stays unknown; success and readership remain
-   unproven. The named owner records the installed versions, source/hash receipt,
-   retained-state checks and real-client observations. Physical display evidence
-   has its own authorized sequence.
+### Prepare and review the plan
 
-An unseen delayed start can temporarily select the wrong turn and clear a notice.
-Recent retired IDs are protected within the 256-entry FIFO; retained completed
-turn notices add protection. Very old evicted IDs and identities absent from an
-old export cannot be rejected reliably. This release adds no full event history.
+Use a clean, merged checkout of this repository on Linux/WSL, Node 24 from
+`.nvmrc`, and the existing installation owner's account. Refresh Git's remote
+objects before planning when needed. `plan` reads remote main without fetching or
+changing a checkout. A missing object or failed remote lookup is not proof of a
+merged target. Prepare the source command with `npm ci` and `npm run build` under
+`fnm exec --using=.nvmrc --` from the repository root.
 
-For an authorized program rollback, stop the new owner first, retain the latest
-store and reinstall the prior verified program artifact. It can read format 1.0
-but restores the older conservative status behavior. A program before Hub 0.3.4
-fails closed on a store holding a Claude Code or Codex CLI retirement guard
-written by 0.3.4, however old that guard is. A guard expires 24 hours after its
-retirement, but only a running or reopened 0.3.4 owner prunes it. Before such a
-rollback, keep 0.3.4 running, or reopen it once, at least 24 hours after the
-last Claude or CLI retirement, then stop it; otherwise use the export/import
-handoff with an explicitly reconciled export. Do not overwrite new notices or acknowledgments with the pre-update
-database backup. A failed reopen requires inspection by the installation owner,
-not a live database reset.
+The supported installation has its existing configuration at
+`~/.local/share/codex-nanoleaf/shared-monitor/host.json`, its Hub entrypoint at
+`~/.local/share/codex-nanoleaf/runtime/hub-gh30`, and the shared Node executable at
+`~/.local/share/codex-nanoleaf/runtime/node/bin/node`. The command controls only
+`codex-nanoleaf-monitor.service`. An unknown service contract, link layout or
+configuration is refused. Other installation layouts need their own reviewed
+qualification.
+
+Choose an existing private token file whose credential has Hub `read` scope.
+Do not create, print or replace a credential for this operation. Keep plan files
+private (mode 0600) and outside tracked source. With the owner's actual values:
+
+```bash
+umask 077
+fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs plan main \
+  --owner <installation-owner> --token-file /absolute/private/read-token \
+  > /absolute/private/hub-upgrade-plan.json
+```
+
+`plan` and `status` have no service or installation writes. The saved plan binds
+its `digest` to the resolved full target SHA, source comparison, installed program
+inventory, configuration files, shared paths, service contract, backup scope and
+recovery procedure. Process observations and remote-main freshness remain
+separate from those approval inputs. Normal state revisions can advance while the
+owner reviews the plan.
+
+Review `bound.source.comparison`, the commits and changed paths, the previous
+identity, configuration/protected-path hashes, migration flag and outage/recovery
+fields. An unavailable baseline comparison is **unknown**, not an empty change
+bundle. Present that gap at the checkpoint and establish the complete target
+bundle from trusted source and installation evidence. Do not infer an installed
+SHA from a version number or an old issue comment.
+
+A first adoption without trustworthy source provenance uses a verified
+`legacy/<content-hash>/` copy of the existing program and dependency closure.
+Its source revision stays `unknown`. When a trusted prior release identity receipt
+is available, `--baseline-receipt /absolute/private/prior-identity.json` accepts
+its release identity only after the existing manifest and complete dependency
+inventory verify. This option never supplies provenance for a new target.
+
+### Approved upgrade
+
+At the checkpoint, name the installation owner, full target SHA and complete
+included changes, installed baseline, configuration, expected monitoring outage,
+backup/state scope and recovery route. Account for existing automation resuming
+when the Hub restarts and obtain any device authority the selected sequence needs.
+The upgrader itself sends no device commands and changes no credentials, hooks,
+`host.json`, unit or shared Node executable.
+
+Only after approval, use the full SHA from `bound.source.target` and the saved
+plan's exact `digest`:
+
+```bash
+fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs upgrade <full-sha> \
+  --plan /absolute/private/hub-upgrade-plan.json --approve <plan-digest>
+```
+
+The command builds the exact clean merged revision in an isolated checkout,
+checks the extracted package and complete file/dependency inventories, and stages
+an immutable release before stopping anything. Conflicting bytes at an existing
+SHA refuse. This first compatibility qualification requires the same known
+durable implementations plus a synthetic target-write/previous-reopen probe.
+Unknown or incompatible recovery refuses before outage; a future state-format
+change needs separate reviewed qualification.
+
+Under its installation lock, the command rechecks approval inputs, persists
+validated intent, stops the monitor and verifies process exit. It backs up the
+named private state/configuration, switches only the Hub current anchor, starts
+the same unit and verifies process/build identity, owner, collector, admission,
+served assets, browser protections, launch socket and durable-state preservation.
+Stop/start and health attempts are bounded; a failed stop or backup can leave the
+service needing owner inspection. Offline downstream controllers are reported
+separately from Hub health.
+
+First adoption retains the original `hub-gh30` at a unique `.prev-op-*` history
+path and creates `hub-gh30 -> H/current`, where
+`H=~/.local/share/agent-device-hub/hub`. It never moves the shared runtime parent.
+Hub releases, verified legacy copies, archives, build evidence, operation receipts
+and backups stay under H. Backups and state evidence are private; never publish
+or commit them.
+
+Success requires exit zero and a durable, read-back `install-receipt/1.0` receipt
+whose semantic validator passes. Its running identity must match the target,
+health must be healthy and state-preservation evidence must be present. Read-only
+`status` distinguishes the installed selection, service/process evidence and
+remote main; an inactive service has no running-build claim. Source tests and
+fake service receipts remain separate from this installed acceptance.
+
+### Approved rollback and re-upgrade
+
+Rollback uses the same plan and approval gate. The default target is the previous
+recoverable identity recorded by the latest successful operation for the current
+selection. It is not chosen by directory age and is never fetched implicitly.
+For an explicit full SHA, put that SHA after `plan` and after `rollback` below.
+
+```bash
+fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs plan --rollback \
+  --owner <installation-owner> --token-file /absolute/private/read-token \
+  > /absolute/private/hub-rollback-plan.json
+# Review and approve this exact rollback plan before the next command.
+fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs rollback \
+  --plan /absolute/private/hub-rollback-plan.json --approve <rollback-plan-digest>
+```
+
+Recovery always reopens the **latest** durable state. It never restores an older
+database over newer notices, acknowledgments, labels, rules, settings or consumed
+events. Legacy health without build metadata uses a newly started process,
+executable/entrypoint resolution and served-asset evidence. After rollback,
+prepare and approve a new upgrade plan for the exact desired SHA; do not reuse a
+plan bound to the baseline that preceded rollback.
+
+For initial installed acceptance, retain the migration/upgrade receipt, a real
+rollback receipt and a re-upgrade receipt, with correct running identity,
+operational health and preserved newer state. Keep the installation issue open
+until that sequence passes. A source-only issue must name its reason and the
+installation issue that batches this step.
+
+### Failure, inspection and retention
+
+A candidate health failure attempts one qualified program rollback. A successful
+recovery reports `failed-rolled-back` and exits nonzero: the requested upgrade
+still failed. Failed stop, backup, interrupted adoption or unverifiable recovery
+retain an inspection barrier. Inspect the receipt, phase evidence, current link,
+processes, original history and latest state with the named owner. Do not clear a
+lock or repeat a migration just because its original process exited.
+
+If final receipt persistence fails, the command returns an attempted
+`receipt-finalization-failed` document and, when possible, a private diagnostic
+file. The durable receipt may still say `in-progress`. No pruning or automatic
+retry follows. Backup restoration is a separate owner-reviewed recovery procedure
+that must account for newer writes and possible data loss.
+
+After verified success and durable receipt readback, retention keeps the current
+release plus three previous successful releases and protects recovery references.
+It never follows another runtime's links or prunes legacy copies, receipts,
+backups, original `.prev-*` history or Nanoleaf files. An incomplete retention
+result is reported separately; inspect it instead of deleting directories by age.
 
 ## Failure recovery and evidence
 

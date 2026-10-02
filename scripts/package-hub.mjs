@@ -108,7 +108,7 @@ try {
     assert.equal(manifest.sourceRevision,revision,'packaged source identity');
     assert.deepEqual(await files(installed),[...Object.keys(manifest.files),'manifest.json'].sort());
     for(const [path,expected] of Object.entries(manifest.files))assert.equal(sha(await readFile(join(installed,path))),expected,path);
-    assert.deepEqual(await files(installed,'node_modules'),Object.keys(manifest.dependencyFiles).sort());
+    assert.deepEqual((await files(installed,'node_modules')).sort(),Object.keys(manifest.dependencyFiles).sort());
     for(const [path,expected] of Object.entries(manifest.dependencyFiles))assert.equal(sha(await readFile(join(installed,path))),expected,path);
     const tests=(await readdir(join(installed,'tests'))).filter(name=>name.endsWith('.test.mjs')).map(name=>join(installed,'tests',name));
     assert.match(run(['--test',...tests],installed),/fail 0/);
