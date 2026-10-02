@@ -14,6 +14,7 @@ test('read-only source resolution proves merged reachability, includes every com
   await writeFile(join(root,'file'),'second');git('commit','-am','Second (#13)');const second=git('rev-parse','HEAD');git('remote','add','origin',root);
   const before=git('status','--porcelain=v1');const result=inspectSource(root,'main',first);
   assert.equal(result.target,second);assert.equal(result.comparison.status,'complete');assert.deepEqual(result.commits.map(x=>x.sha),[second]);assert.deepEqual(result.commits[0].pullRequests,[13]);assert.deepEqual(result.components,['file']);assert.equal(git('status','--porcelain=v1'),before);
+  const rollback=inspectSource(root,first,second);assert.deepEqual(rollback.commits,[]);assert.deepEqual(rollback.removedCommits.map(x=>x.sha),[second]);assert.deepEqual(rollback.components,['file']);
   assert.equal(inspectSource(root,'main',null).comparison.status,'unknown');
   git('checkout','-b','unmerged');await writeFile(join(root,'unmerged'),'bad');git('add','.');git('commit','-m','Unmerged');
   assert.throws(()=>inspectSource(root,'HEAD',first),/unmerged-install-source/);

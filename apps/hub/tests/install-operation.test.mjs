@@ -119,3 +119,47 @@ test('Hub-first and Nanoleaf-first adoption preserve the shared parent, Node and
   assert.equal(await realpath(f.layout.entry),f.target);assert.equal(await readFile(f.layout.node,'utf8'),'shared-node');
  }finally{await rm(f.root,{recursive:true,force:true});}}
 });
+test('candidate data loss cannot be reported as verified recovery of the latest state',async()=>{
+ const f=await fixture();try{
+  const health=f.service.health;
+  f.service.health=async(path,id)=>{
+   if(id.kind==='release')await writeFile(join(f.layout.state,'state.sqlite'),'["new-notice"]');
+   return health(path,id);
+  };
+  const result=await executeOperation(f.input);valid(result);
+  assert.equal(result.receipt.outcome,'rollback-failed');
+  assert.equal(result.receipt.failure.code,'install-state-not-preserved');
+  assert.equal(result.receipt.statePreservation.evidence,null);
+  assert.deepEqual(await f.stateReader.capture(),['new-notice']);
+  assert.equal((await lstat(join(f.layout.root,'install.lock'))).isDirectory(),true);
+  assert.match(await realpath(f.layout.entry),/\/legacy\/legacy-/);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+test('first adoption with trusted release provenance retains a verified full-SHA recovery release',async()=>{
+ const f=await fixture();try{
+  const sha='d'.repeat(40),manifest=JSON.stringify({artifact:'@jimmie-potts/hub',version:'old',sourceRevision:sha,files:{'app.js':sha256('old')},dependencyFiles:{}});
+  await writeFile(join(f.layout.entry,'manifest.json'),manifest);
+  const identity={kind:'release',version:'old',sourceRevision:sha,archiveSha256:'e'.repeat(64),manifestSha256:sha256(manifest)};
+  f.layout.baselineReceipt=join(f.root,'baseline.json');await writeFile(f.layout.baselineReceipt,JSON.stringify(identity),{mode:0o600});
+  f.input.approvedDigest=(await f.plan()).digest;
+  const result=await executeOperation(f.input);valid(result);assert.equal(result.receipt.outcome,'succeeded');assert.deepEqual(result.receipt.previous,identity);
+  assert.equal(await readFile(join(f.layout.root,'releases',sha,'app.js'),'utf8'),'old');
+  assert.deepEqual(JSON.parse(await readFile(join(f.layout.root,'provenance',sha+'.json'),'utf8')),identity);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+test('each first-adoption interruption retains durable evidence and blocks automatic retry',async()=>{
+ for(const boundary of ['legacy-rename-intent','legacy-renamed','legacy-forwarded']){
+  const f=await fixture();try{
+   f.input.checkpoint=async phase=>{if(phase===boundary)throw new Error('injected-interruption');};
+   const result=await executeOperation(f.input);valid(result);
+   assert.equal(result.receipt.outcome,boundary==='legacy-rename-intent'?'failed-before-switch':'interrupted');
+   assert.equal((await lstat(join(f.layout.root,'install.lock'))).isDirectory(),true);
+   assert.deepEqual(f.calls,['stop']);assert.deepEqual(await f.stateReader.capture(),['old']);
+   const evidence=JSON.parse(await readFile(result.path.replace('.json','-evidence.json'),'utf8'));
+   assert(evidence.observations.recovery.path.includes('/legacy/legacy-'));
+   const entry=await lstat(f.layout.entry).catch(()=>null);
+   assert.equal(entry?.isSymbolicLink()??false,boundary==='legacy-forwarded');
+   assert.equal(entry===null,boundary==='legacy-renamed');
+  }finally{await rm(f.root,{recursive:true,force:true});}
+ }
+});

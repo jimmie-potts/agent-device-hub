@@ -4,7 +4,7 @@ import {canonical,sha256,readRegular,inventory,verifyRelease,fullRevision,type I
 
 export type Layout={root:string;entry:string;state:string;config:string;node:string;protectedPaths:string[];unit:'codex-nanoleaf-monitor.service';baselineReceipt?:string};
 export type ServiceObservation={state:'active'|'inactive'|'unknown';pid:number|null;start:string|null;executable:string|null;entry:string|null;build:{sourceRevision:string;version:string}|null};
-export type Source={repository:string;head:string;target:string;mergedMain:string;clean:boolean;comparison:{status:'complete'}|{status:'unknown';reason:string};commits:{sha:string;subject:string;pullRequests:number[]}[];components:string[]};
+export type Source={repository:string;head:string;target:string;mergedMain:string;clean:boolean;comparison:{status:'complete'}|{status:'unknown';reason:string};commits:{sha:string;subject:string;pullRequests:number[]}[];removedCommits?:{sha:string;subject:string;pullRequests:number[]}[];components:string[]};
 export type ProtectedPath={path:string;resolved:string;link:string|null;sha256:string;mode:number;uid:number};
 export type Installed={path:string;identity:Identity;inventorySha256:string;adopted:boolean};
 

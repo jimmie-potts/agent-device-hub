@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,readdir} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {gzipSync} from 'node:zlib';
@@ -32,6 +32,7 @@ test('durable write replaces a whole document and refuses linked destinations',a
  const root=await mkdtemp(join(tmpdir(),'hi-write-'));try{
   const path=join(root,'receipt.json');await writeDurable(path,{value:1});await writeDurable(path,{value:2});
   assert.deepEqual(JSON.parse(await readFile(path,'utf8')),{value:2});assert.deepEqual(await readdir(root),['receipt.json']);
+  await symlink(path,join(root,'linked.json'));await assert.rejects(writeDurable(join(root,'linked.json'),{value:3}),/unsafe-install-file/);assert.deepEqual(JSON.parse(await readFile(path,'utf8')),{value:2});
  }finally{await rm(root,{recursive:true,force:true});}
 });
 test('adoption never replaces an existing SHA directory whose provenance is missing',async()=>{

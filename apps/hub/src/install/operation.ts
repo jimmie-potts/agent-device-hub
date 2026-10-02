@@ -138,7 +138,9 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
     await bounded(input.service.start,initial.bound.outage.stopTimeoutMs);
     const health=await bounded(()=>input.service.health(previousPath,initial.bound.previous),initial.bound.outage.healthTimeoutMs);
     assertHealth(health,initial,previousPath,initial.bound.previous,recoveringFrom);
-    const after=await input.state.capture();if(!input.state.preserved(latest,after))throw new Error('install-state-not-preserved');await protectedUnchanged(initial);
+    const after=await input.state.capture();
+    // Recovery must retain both the original records and writes made by the candidate.
+    if(!input.state.preserved(stateBefore,after)||!input.state.preserved(latest,after))throw new Error('install-state-not-preserved');await protectedUnchanged(initial);
     observations.recovered={health,after};receipt.running={identity:initial.bound.previous,verification:initial.bound.previous.kind==='release'?'build-health':'legacy-process-artifacts',evidence};
     receipt.health={status:'healthy',evidence};receipt.statePreservation.evidence=evidence;receipt.rollback={status:'succeeded',evidence};receipt.outcome='failed-rolled-back';releaseLock=true;
     receipt.failure.phase=['switch','start','health'].includes(originalPhase)?originalPhase:'health';
