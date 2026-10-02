@@ -592,3 +592,41 @@ HTML SHA-256 was `0aa3a2c0786d951b348b3e12d4dd505151a0a471e5e77d38e2d2a1fd069d66
 The original backlog snapshot is retained. Hosting receipts, personal handoffs,
 ZIPs and screenshots are excluded from source control. This repository copy is
 the maintenance target once its PR is merged.
+
+## Epic browser candidate
+
+Hub #511's source browser lives in `browser/` alongside the legacy generator.
+It consumes the owner-approved #545 contracts without changing their definition.
+The old Guide remains the published entry until the separate publication and
+cutover work is accepted.
+
+After Node 24 `npm ci`, collect public issues and generate a candidate with
+`node docs/work-guide/browser/build.mjs --collect`. Validate the saved candidate
+with `node docs/work-guide/browser/build.mjs --check`. Adapter and browser commands
+are in [development checks](../development.md#epic-guide-browser).
+
+The candidate is `outputs/epic-browser/index.html`, with canonical records,
+component catalog, resolved page models and renderer assets under a
+content-addressed release directory. Serve the directory over HTTP for browser
+verification. Its source snapshot date and collection gaps stay visible.
+`audit.json` names missing/conflicting metadata, issue URLs and owner actions;
+these findings do not edit source issues or manufacture readiness.
+
+A complete public/cached Project snapshot may enter the collector through #540's
+interface. The default is unavailable; it never reads private Project content.
+The inference projection remains disabled (`publicationPolicy: null`, empty
+`publicFields`) until the protected query consumer supplies an approved policy.
+Ordinary browsing, literal source text and generic brief commands need no model.
+The collector screens credential-shaped text and refuses an unsafe candidate.
+
+The shared renderer's `renderView(dataset, resolvedView, container, context)`
+entry handles ordinary and composed configurations. Consumers validate references
+and resolve the approved view before calling it. They supply records, filters,
+trusted navigation and optional brief metadata, never HTML or invented facts.
+The browser loads and verifies every release asset before showing records, then
+keeps the validated release in memory. Navigation and briefs use those same
+records even if a newer deployment removes old assets. The update control offers
+a reload without replacing individual parts of the displayed release.
+
+This source candidate does not establish hosted acceptance (#654), public
+publication (#317), Project visibility/enrichment (#540) or root cutover (#656).

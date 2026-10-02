@@ -38,6 +38,13 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0
           node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Check epic browser adapters and generated fixtures
+        run: |
+          npm ci
+          node --test docs/work-guide/browser/tests/*.test.mjs
+          GUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs
+          node docs/work-guide/browser/build.mjs --check
+          GUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs
       - name: Check the guide and capture review evidence
         run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs
       - name: Check system design navigation and print output
@@ -53,5 +60,6 @@ jobs:
             docs/work-guide/work/guide-verification.json
             ${{ runner.temp }}/bunny-places-review/
             ${{ runner.temp }}/bunny-design-review
+            ${{ runner.temp }}/epic-browser-review/
           if-no-files-found: error
           retention-days: 14

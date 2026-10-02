@@ -401,6 +401,8 @@ test('guide CI retains its validation and review artifacts', () => {
           { name: 'Prepare the pinned browser checker',
             run:
              'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Check epic browser adapters and generated fixtures',
+            run: 'npm ci\nnode --test docs/work-guide/browser/tests/*.test.mjs\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs\nnode docs/work-guide/browser/build.mjs --check\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs\n' },
           { name: 'Check the guide and capture review evidence',
             run:
              'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
@@ -414,7 +416,7 @@ test('guide CI retains its validation and review artifacts', () => {
             with:
              { name: 'work-guide-review',
                path:
-                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n',
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n${{ runner.temp }}/epic-browser-review/\n',
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });
