@@ -1,24 +1,36 @@
 import { createHash } from 'node:crypto';
-import { appCategory, emptySnapshot, emptyTotals, localDate, safeApp, TOTAL_KEYS, validDate, validateSnapshot, type App, type NumericCell, type Snapshot, type Totals } from '@jimmie-potts/wispr-contracts';
+import { APPS, appCategory, emptySnapshot, emptyTotals, localDate, safeApp, TOTAL_KEYS, validDate, validateSnapshot, type App, type NumericCell, type Snapshot, type Totals } from '@jimmie-potts/wispr-contracts';
 import type { SourceRow } from './reader-types.js';
 
 type Status = 'formatted' | 'raw' | 'empty' | 'dismissed' | 'unknown';
 export type Contribution = {
   id: string; fingerprint: string; algorithmVersion: 'numeric-1';
-  sourceTime: number | null; sourceOffset: string | null; status: Status; app: App;
+  sourceTime: number | null; sourceSubmillisNanos: number; sourceOffset: string | null; status: Status; app: App;
   exclusion: 'status' | 'words' | 'timestamp' | 'before-capture' | null;
   archived: boolean; totals: Totals;
 };
 
-export function sourceTimestamp(input: string | null): { time: number; offset: string } | null {
+export function validContribution(value: unknown): value is Contribution {
+  if(!value||typeof value!=='object')return false;
+  const c=value as Contribution;
+  if(Object.keys(c).sort().join(',')!=='algorithmVersion,app,archived,exclusion,fingerprint,id,sourceOffset,sourceSubmillisNanos,sourceTime,status,totals'||typeof c.id!=='string'||!c.id||c.id.length>1024||c.algorithmVersion!=='numeric-1'||!APPS.includes(c.app)||!['formatted','raw','empty','dismissed','unknown'].includes(c.status)||typeof c.archived!=='boolean'||![null,'status','words','timestamp','before-capture'].includes(c.exclusion)||!c.totals||typeof c.totals!=='object')return false;
+  if(!Number.isSafeInteger(c.sourceSubmillisNanos)||c.sourceSubmillisNanos<0||c.sourceSubmillisNanos>=1_000_000)return false;
+  if((c.sourceTime!==null&&(!Number.isSafeInteger(c.sourceTime)||!Number.isFinite(new Date(c.sourceTime).getTime())))||(c.sourceOffset!==null&&(typeof c.sourceOffset!=='string'||!/^[-+]\d{2}:\d{2}$/.test(c.sourceOffset))))return false;
+  if(Object.keys(c.totals).sort().join(',')!==[...TOTAL_KEYS].sort().join(',')||TOTAL_KEYS.some(k=>typeof c.totals[k]!=='number'||!Number.isFinite(c.totals[k])||c.totals[k]<0||(!k.endsWith('Seconds')&&!Number.isSafeInteger(c.totals[k]))))return false;
+  const data={algorithmVersion:c.algorithmVersion,sourceTime:c.sourceTime,sourceSubmillisNanos:c.sourceSubmillisNanos,sourceOffset:c.sourceOffset,status:c.status,app:c.app,exclusion:c.exclusion,totals:c.totals};
+  return c.fingerprint===createHash('sha256').update(JSON.stringify(data)).digest('hex');
+}
+
+export function sourceTimestamp(input: string | null): { time: number; submillisNanos: number; offset: string } | null {
   if (!input) return null;
-  const match=/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))? ?(Z|[+-]\d{2}:\d{2})$/.exec(input);
+  const match=/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))? ?(Z|[+-]\d{2}:\d{2})$/.exec(input);
   if (!match || !validDate(match[1]) || +match[2]>23 || +match[3]>59 || +match[4]>59) return null;
   const offset=match[6]==='Z'?'+00:00':match[6];
   if (+offset.slice(1,3)>23 || +offset.slice(4,6)>59) return null;
-  const value=`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${(match[5]??'').padEnd(3,'0')}${offset}`;
+  const fraction=(match[5]??'').padEnd(9,'0');
+  const value=`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${fraction.slice(0,3)}${offset}`;
   const time=Date.parse(value);
-  return Number.isFinite(time)?{time,offset}:null;
+  return Number.isFinite(time)?{time,submillisNanos:Number(fraction.slice(3)),offset}:null;
 }
 
 /** Retains only allowlisted numeric metadata; original strings are never copied. */
@@ -26,7 +38,8 @@ export function contribution(row: SourceRow, captureAfter: number | null = null)
   const stamp=sourceTimestamp(row.timestamp);
   const status:Status=['formatted','raw','empty','dismissed'].includes(row.status??'')?row.status as Status:'unknown';
   const totals=emptyTotals();
-  const exclusion: Contribution['exclusion']=stamp&&captureAfter!==null&&stamp.time<=captureAfter?'before-capture':status!=='formatted'?'status':
+  const beforeCapture=stamp&&captureAfter!==null&&(stamp.time<captureAfter||(stamp.time===captureAfter&&stamp.submillisNanos===0));
+  const exclusion: Contribution['exclusion']=beforeCapture?'before-capture':status!=='formatted'?'status':
     row.numWords===null||!Number.isSafeInteger(row.numWords)||row.numWords<=0?'words':!stamp?'timestamp':null;
   if(exclusion===null){
     totals.dictations=1;totals.words=row.numWords!;
@@ -46,7 +59,7 @@ export function contribution(row: SourceRow, captureAfter: number | null = null)
       else if(value!==null){totals[sum]=value;totals[samples]=1;}
     }
   }
-  const data={algorithmVersion:'numeric-1' as const,sourceTime:stamp?.time??null,sourceOffset:stamp?.offset??null,status,app:safeApp(row.appName),exclusion,totals};
+  const data={algorithmVersion:'numeric-1' as const,sourceTime:stamp?.time??null,sourceSubmillisNanos:stamp?.submillisNanos??0,sourceOffset:stamp?.offset??null,status,app:safeApp(row.appName),exclusion,totals};
   return {id:row.id,...data,archived:false,fingerprint:createHash('sha256').update(JSON.stringify(data)).digest('hex')};
 }
 

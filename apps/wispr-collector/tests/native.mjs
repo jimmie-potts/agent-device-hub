@@ -48,7 +48,7 @@ if (process.argv[2] === 'writer') {
     }
     writer.send({stop:true}); assert.equal(await exit,0); writer = undefined;
     assert.equal(db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get().busy,0);
-    const portable = spawnSync(process.execPath,['--test',join(dirname(self),'reader.test.mjs')],{encoding:'utf8',timeout:30000});
+    const portable = spawnSync(process.execPath,['--test',...['reader.test.mjs','lease.test.mjs','config.test.mjs'].map(name=>join(dirname(self),name))],{encoding:'utf8',timeout:30000});
     assert.equal(portable.status,0,portable.stdout+portable.stderr);
     process.stdout.write(portable.stdout);
     console.log(JSON.stringify({result:'passed',scope:'native implemented reader; full collector/package qualification pending',node:process.versions.node,sqlite:process.versions.sqlite,coherentScans:4,rowsPerScan:1000,sourcePreserved:true,readerReleased:true}));

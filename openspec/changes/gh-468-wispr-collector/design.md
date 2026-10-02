@@ -24,6 +24,10 @@ Use a private collector-owned SQLite database for numeric contributions keyed by
 
 Keep a small durable control record outside restorable backups: current generation, clear/capture watermark and language-clear epoch. All mutations share one lease. Backups are bounded, owner-managed snapshots of collector state, never copies of Wispr. Restore validates both store format and control epochs; old data cannot override newer clear decisions. No silent retention eviction or automatic backup rotation.
 
+Default restore rejects a backup from before a clear. Explicit historical restore imports only that backup's captured numeric contributions; a private per-key exemption lets those contributions receive later source updates without lowering the capture boundary for other old rows. A subsequent clear removes the exemptions. Numeric restore never reenables language. The control record also retains pending cleanup so restart completes removal of text-bearing managed backups and pending publications before exposing recovered state.
+
+The collector lease uses an exclusive transaction in a separate private SQLite lock database. Kernel locks release on process death, avoiding stale PID recovery. The outer run supervisor will hold this lease while one direct worker performs source read, private-store commit and publication; phase messages let the supervisor enforce both the source-read and whole-run deadlines. Clear requests stop the active worker before taking the lease. No nested worker may outlive that supervisor.
+
 ### A bounded aggregate contract
 
 Add `packages/wispr-contracts` as a pure schema/validator package and `apps/wispr-collector` as its producer. Export strict typed envelopes, fixtures and validation usable by the Hub without loading SQLite or filesystem code. Keep one versioned app/category mapping and algorithm identity. Daily/hour/app cells carry matching numerator/denominator sums, known/unknown coverage, retained/archive counts and safe categories. Consumers derive selected date/app/category totals from these groups rather than combining incompatible precomputed filters.

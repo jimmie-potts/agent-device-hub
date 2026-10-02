@@ -60,3 +60,12 @@ test('capture boundaries and archival are independent of current source presence
   assert.equal(snapshot.coverage.retained.from,null);assert.equal(snapshot.health,'empty');
   assert.equal(contribution(row('a'),Date.parse('2026-03-08T06:30:00Z')).exclusion,'before-capture');
 });
+test('submillisecond source precision stays private and respects an exact millisecond clear boundary',()=>{
+  const instant=Date.parse('2026-10-02T04:00:00.000Z');
+  const after=contribution(row('a',{timestamp:'2026-10-02 04:00:00.000001 +00:00'}),instant);
+  const boundary=contribution(row('b',{timestamp:'2026-10-02 04:00:00.000000 +00:00'}),instant);
+  assert.equal(after.exclusion,null);assert.equal(boundary.exclusion,'before-capture');
+  const snapshot=build([row('a',{timestamp:'2026-10-02 03:59:59.999999999 +00:00'})],{now:'2026-10-02T16:00:00.000Z'});
+  assert.equal(snapshot.numeric.cells[0].date,'2026-10-01');assert.equal(snapshot.numeric.cells[0].hour,23);
+  assert.equal('sourceSubmillisNanos' in snapshot.numeric.cells[0],false);
+});
