@@ -2,7 +2,7 @@
 
 See proposal.md for motivation. The Hub authenticates requests before its controller-command route. Its controller client validates native envelopes, holds one request slot and times out without retrying. The existing fake controller uses reference ticket admission and replay, but a queued receipt does not prove execution. Observability 1.0.0 is released at Hub revision `673a297ad1225cd18b611de8969dea10b28d33f2`.
 
-The owner accepted the initial numerical budgets and a later review policy in [the decision record](https://github.com/jimmie-potts/agent-device-hub/issues/706#issuecomment-5945109256). Docker is currently unavailable. Source preparation can proceed, but backend qualification and benchmark results remain unexecuted.
+The owner accepted the initial numerical budgets and a later review policy in [the decision record](https://github.com/jimmie-potts/agent-device-hub/issues/706#issuecomment-5945109256). Docker availability is a checked prerequisite for each runtime attempt. Preserve ingestion, viewer, fault and benchmark evidence separately; an ingestion result alone cannot support adoption.
 
 ## Goals / Non-Goals
 
@@ -63,6 +63,10 @@ Before any measured run, save a machine-readable protocol, thresholds, exact sou
 Compute nearest-rank p50/p95 from actual dispatch to response, using unrounded values for decisions. Also report scheduled-slot latency and dispatch lag. Throughput counts completions within the measurement interval; report late completions separately. Retain original outcomes and compare a documented projection removing only run-local identifiers and timestamps.
 
 Measure application CPU and peak RSS across the Hub, fake controller and telemetry workers, excluding the driver and query sampler. Record user/system CPU delta divided by elapsed wall time and RSS samples at 100 ms. Measure stack cgroup CPU and the peak summed RSS of all container processes, recording the process inventory and sampling source; do not substitute an undocumented Docker memory display. Missing or unreliable required metrics make the result inconclusive.
+
+The workload application runs in a fresh detached child containing the Hub, fake controller and telemetry threads. The external driver checks PID, parent, process group and start time, reads process CPU ticks and `smaps_rollup` RSS, and refuses an observed child process or waited-child CPU. This fixed process inventory excludes driver and query work. Use one monotonic start for workload and sampling; retain every missed sample slot, collection duration and dispatch/completion timestamp. A valid numeric summary without coverage evidence is insufficient.
+
+Each dispatched command consumes one sequential native ticket and configuration revision, even if its response fails. Omitted schedule slots consume no ticket. Never replay a failed attempt. Retain bounded validated receipt projections and reconcile every dispatched ticket with the fake's independent execution history after quiescence. Missing, duplicate or unexpected executions, history overflow, failed responses and omissions prevent a complete workload result.
 
 Every pair must meet p50 added latency ≤max(2 ms, 10% baseline), p95 ≤max(5 ms, 15%), throughput ≥95% baseline, application CPU increase ≤0.25 core and peak RSS increase ≤64 MiB. Stack peak RSS must be ≤3 GiB and mean CPU ≤1 core. After workload quiescence, application shutdown is ≤2 seconds, including the ≤1 second telemetry flush. Container teardown has a separate 30-second bound.
 

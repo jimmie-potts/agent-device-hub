@@ -45,6 +45,8 @@ export async function freezeProtocol(directory, inputs) {
       requestLatency: 'actual-dispatch-to-response-milliseconds',
       scheduling: 'monotonic-slots-no-catch-up-no-retry',
       schedulingEvidence: 'retain-dispatch-lag-omitted-slots-and-scheduled-to-completion-latency',
+      measurementCoverage: '601-fixed-100ms-sample-slots-including-both-boundaries-no-omitted-or-failed-slots',
+      workloadEvidence: 'all-1800-slots-dispatched-once-with-valid-responses-and-exact-independent-execution-reconciliation',
       throughput: 'completions-within-measurement-window-per-second-late-completions-separate',
       applicationCpu: 'sum-process-user-and-system-cpu-delta-divided-by-wall-time',
       applicationRss: 'peak-summed-process-rss-sampled-every-100ms',

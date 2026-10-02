@@ -2204,4 +2204,27 @@ The workload slot scheduler uses the accepted 20 operations/second, 30-second
 warm-up and 60-second measurement window. It records expired slots as driver-lag
 omissions and capacity-limited slots as concurrency omissions. It dispatches at
 most one current slot per observation and never retries an omission. These source
-checks do not qualify the process sampler or constitute a measured workload.
+checks do not constitute a measured workload.
+
+The workload process tests start fresh disabled/enabled Hub and fake-controller
+children using the verified released contract, send sequential brightness commands
+and reconcile queued receipts with independent execution records. The external
+Linux sampler checks process identity and the fixed no-child-process inventory,
+then reads CPU ticks and `smaps_rollup` RSS. Driver and query work stay outside
+application measurements. Sampling includes both 60-second window boundaries at
+100 ms intervals; missed slots and collection failures remain explicit evidence.
+Source tests cover stalled scheduling, failed responses, bounded body reads,
+duplicate or missing execution evidence and sampler identity mismatch. They do
+not replace the frozen paired runtime evaluation or the real-backend fault gates.
+
+`collectWorkloadWindow` combines these helpers for one application run inside the
+caller's monitored backend session. It is internal to the evaluation harness:
+the caller must freeze the protocol and satisfy prerequisites before measured
+execution. It records each command, sample and execution separately, stops the
+owned application after failure, and labels its result `single-workload-only`.
+The driver journal is exclusive, limited to 20,000 events/32 MiB and refuses
+records larger than 64 KiB. Persist and sync the child identity through `onStart`
+before initialization. A journal failure prevents startup or stops further work;
+it cannot resume the same evidence file. Missing sampling coverage or incomplete
+workload evidence makes pair evaluation inconclusive even when numeric summaries
+meet their limits. Retain known failed limits alongside that missing evidence.

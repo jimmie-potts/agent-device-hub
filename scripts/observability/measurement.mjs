@@ -65,6 +65,13 @@ export function evaluatePair(pair) {
   }
   flag('commandOutcomes', pair.evidence?.identicalCommandOutcomes);
   flag('boundedQueues', pair.evidence?.boundedQueues);
+  // A numeric summary from incomplete sampling or a reduced offered workload
+  // is not a qualified measurement. Retain known numerical failures alongside
+  // the missing evidence; never turn an incomplete run into a supported pair.
+  for (const name of ['measurementCoverage', 'workloadEvidence']) {
+    checks[name] = pair.evidence?.[name] === true ? { status: 'pass', value: true, expected: true }
+      : { status: 'missing', expected: true };
+  }
   if (pair.condition === 'unavailable') flag('faultAccounting', pair.evidence?.accountedFaultLoss);
   const statuses = Object.values(checks).map(check => check.status);
   return {

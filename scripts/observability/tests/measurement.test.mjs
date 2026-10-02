@@ -10,7 +10,8 @@ const pair = () => ({
   stack: { peakRssBytes: 3 * 1024 ** 3, meanCpuCores: 1 },
   shutdown: { applicationSeconds: 2, flushSeconds: 1, containerSeconds: 30 },
   evidence: { healthyRecordsLost: 0, privacyFailures: 0, contextIsolationFailures: 0,
-    duplicateSideEffects: 0, identicalCommandOutcomes: true, boundedQueues: true, accountedFaultLoss: true },
+    duplicateSideEffects: 0, identicalCommandOutcomes: true, boundedQueues: true, accountedFaultLoss: true,
+    measurementCoverage: true, workloadEvidence: true },
 });
 
 test('nearest-rank latency retains precision and does not mutate raw samples', () => {
@@ -93,6 +94,15 @@ test('each mandatory protection independently prevents support', () => {
   }
   const input = pair(); input.condition = 'unknown';
   assert.throws(() => evaluatePair(input), /condition/);
+});
+
+test('incomplete workload or sampling evidence remains inconclusive even with passing numbers', () => {
+  for (const name of ['measurementCoverage', 'workloadEvidence']) {
+    const input=pair();input.evidence[name]=false;
+    assert.equal(evaluatePair(input).disposition,'inconclusive');
+    input.enabled.p50Ms=100;
+    assert.equal(evaluatePair(input).disposition,'refuted');
+  }
 });
 
 test('every numerical bound fails independently and missing evidence stays inconclusive', () => {
