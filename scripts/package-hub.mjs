@@ -5,8 +5,10 @@ import {cp,mkdir,mkdtemp,readFile,readdir,rm,writeFile,copyFile,lstat} from 'nod
 import {tmpdir} from 'node:os';
 import {join,resolve,dirname,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {sourceRevision} from './hub-build-identity.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const initialRevision=sourceRevision(root);
 function run(args,cwd){const result=spawnSync(process.execPath,args,{cwd,encoding:'utf8',maxBuffer:8*1024*1024});if(result.error||result.status!==0)throw new Error(result.error?.message??result.stdout+'\n'+result.stderr);return result.stdout;}
 function npm(args,cwd){if(!process.env.npm_execpath)throw new Error('npm-execpath-unavailable');return run([process.env.npm_execpath,...args],cwd);}
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -63,7 +65,8 @@ try {
     await cp(source,join(stage,path),{recursive:true});
   }
   const hashes={};for(const name of await files(stage))hashes[name]=sha(await readFile(join(stage,name)));
-  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:metadata.name,version:metadata.version,files:hashes},null,2)+'\n');
+  const revision=sourceRevision(root)===initialRevision?initialRevision:'unknown';
+  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:metadata.name,version:metadata.version,sourceRevision:revision,files:hashes},null,2)+'\n');
   async function pack(folder){await mkdir(folder);const result=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',folder],stage));return join(folder,result[0].filename);}
   const first=await pack(join(scratch,'first')),second=await pack(join(scratch,'second')),bytes=await readFile(first);
   assert.deepEqual(bytes,await readFile(second),'repeated package bytes');
@@ -84,15 +87,17 @@ try {
 
   const output=join(root,'artifacts',basename(first));await copyFile(first,output);await writeFile(output+'.sha256',sha(bytes)+'  '+basename(output)+'\n');
   if(process.argv.includes('--test')){
+    assert.match(run(['--test',join(root,'scripts/hub-build-identity.test.mjs')],root),/fail 0/);
     const consumer=join(scratch,'consumer');await mkdir(consumer);await writeFile(join(consumer,'package.json'),'{"name":"isolated-hub-consumer","private":true,"type":"module"}');
     npm(['install','--offline','--cache',join(scratch,'empty-cache'),'--ignore-scripts','--no-audit','--no-fund',output],consumer);
     const installed=join(consumer,'node_modules/@jimmie-potts/hub');
     const manifest=JSON.parse(await readFile(join(installed,'manifest.json'),'utf8'));
+    assert.equal(manifest.sourceRevision,revision,'packaged source identity');
     assert.deepEqual(await files(installed),[...Object.keys(manifest.files),'manifest.json'].sort());
     for(const [path,expected] of Object.entries(manifest.files))assert.equal(sha(await readFile(join(installed,path))),expected,path);
     const tests=(await readdir(join(installed,'tests'))).filter(name=>name.endsWith('.test.mjs')).map(name=>join(installed,'tests',name));
     assert.match(run(['--test',...tests],installed),/fail 0/);
     assert.equal(run(['--input-type=module','-e','import {startHub} from "@jimmie-potts/hub"; import {launchOwner} from "@jimmie-potts/hub/migration"; import {stageProducer} from "@jimmie-potts/hub/migration-routes"; if([startHub,launchOwner,stageProducer].some(value=>typeof value!=="function"))process.exit(1);'],consumer),'');
   }
-  console.log(JSON.stringify({archive:output,sha256:sha(bytes),reproducible:true,isolatedTests:process.argv.includes('--test')}));
+  console.log(JSON.stringify({archive:output,sha256:sha(bytes),sourceRevision:revision,reproducible:true,isolatedTests:process.argv.includes('--test')}));
 }finally{await rm(scratch,{recursive:true,force:true});}

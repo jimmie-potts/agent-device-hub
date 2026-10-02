@@ -1,4 +1,5 @@
 import {catalogOperation} from './pixoo-catalog.js';
+import {readBuild} from './build.js';
 import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
 import {enrichCodexTitle} from '@jimmie-potts/agent-state/providers';
 import {readFile} from 'node:fs/promises';
@@ -97,6 +98,7 @@ function lifecycleEvent(envelope:Envelope) {
 }
 
 export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}, previewProof?:PreviewProof, automationDependencies?:AutomationDependencies) {
+  const build = readBuild();
   if (migration !== undefined && (!object(migration) || migration.staged !== true || Object.keys(migration).some(key=>!['staged','released'].includes(key)))) throw new Error('invalid-migration');
   const imported = migration?.released ? consumeReleasedState(migration.released) : undefined;
   let staged = migration?.staged === true;
@@ -374,7 +376,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',build,control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
@@ -387,7 +389,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           else {const {matches,...envelope}=view;json(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
           const current = snapshot();
-          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
+          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',build,ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
           if (staged) throw new HttpError('owner-quiesced',503);
           let input=await admitted(2048);
