@@ -49,6 +49,9 @@ try {
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);
     if(released[name])assert.equal(sha(await readFile(join(target,'manifest.json'))),released[name].manifest,`published manifest: ${name}`);
   }
+  // Bundle the same workspace validator used by the collector; the runtime closure is locked below.
+  const wisprTarget=join(stage,'node_modules/@jimmie-potts/wispr-contracts');await mkdir(wisprTarget,{recursive:true});
+  for(const name of ['package.json','dist','README.md'])await cp(join(root,'packages/wispr-contracts',name),join(wisprTarget,name),{recursive:true});
   async function hoistPublic(directory){
     const modules=join(directory,'node_modules');
     let entries;try{entries=await readdir(modules,{withFileTypes:true});}catch(error){if(error.code==='ENOENT')return;throw error;}

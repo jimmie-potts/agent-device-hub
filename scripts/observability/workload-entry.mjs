@@ -1,3 +1,4 @@
+import hubPackage from '../../apps/hub/package.json' with {type:'json'};
 import { register, registerHooks } from 'node:module';
 import { randomUUID, createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -65,7 +66,7 @@ process.once('message', async input => {
     const resolved = new URL(import.meta.resolve('@jimmie-potts/bunny-observability'));
     if (resolved.pathname !== pathToFileURL(join(installed, 'dist/index.js')).pathname ||
       !['', '?iitm=true'].includes(resolved.search) || resolved.hash) throw new Error('Contract resolution invalid');
-    const resource = { 'service.namespace': 'bunny', 'service.name': 'hub', 'service.version': '0.4.2',
+    const resource = { 'service.namespace': 'bunny', 'service.name': 'hub', 'service.version': hubPackage.version,
       'service.instance.id': randomUUID(), 'deployment.environment.name': 'test' };
     let origins = [], diagnostics, worker;
     if (input.enabled) {

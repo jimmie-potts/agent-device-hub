@@ -1,3 +1,4 @@
+import hubPackage from '../../apps/hub/package.json' with {type:'json'};
 import { register, registerHooks } from 'node:module';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -43,7 +44,7 @@ try {
   const origin = `http://127.0.0.1:${plan.ports.otlp}`;
   logTransport = createOtlpTransport({ origin, signal: 'logs' });
   traceTransport = createOtlpTransport({ origin, signal: 'traces' });
-  const resource = { 'service.namespace': 'bunny', 'service.name': 'hub', 'service.version': '0.4.2',
+  const resource = { 'service.namespace': 'bunny', 'service.name': 'hub', 'service.version': hubPackage.version,
     'service.instance.id': randomUUID(), 'deployment.environment.name': 'test' };
   let origins = [];
   const append = (rows, value, maximum) => { if (rows.length >= maximum) throw new Error('Fixture output limit'); rows.push(value); };
