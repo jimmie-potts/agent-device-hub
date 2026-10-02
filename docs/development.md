@@ -1726,3 +1726,21 @@ resources, check warnings and fresh ownership/isolation, and establish storage
 and readiness gates before workload execution. A missing or malformed response
 leaves creation ambiguous until readback. These launcher steps remain pending;
 transport methods alone do not establish readiness or safe resource adoption.
+
+`allocateBackend` in `backend-allocation.mjs` creates an exclusive allocation
+record directory and checks current host capacity, the pinned local image and
+absence of all planned resource names. It saves and synchronizes each creation
+intent before calling the adapter, then preserves the returned ID and warning
+count before verifying ownership. Warnings stop dependent work. Verified network
+and volume receipts are checked again before container creation; the final
+receipt requires current ownership/isolation checks and a stopped container.
+Configuration and the launch plan are reread between mutations.
+
+The allocation directory cannot be reused. An interrupted or ambiguous effect
+leaves its records and resources available for readback, without automatic
+retry, adoption or deletion. Records contain only projected IDs, resource
+receipts and host/image measurements, with exclusive private files and file plus
+directory synchronization. The result is `allocated-stopped` and qualification
+remains `unexecuted`. This allocation flow does not start the backend. Daemon
+storage checks, the continuous run-data watchdog, readiness probes and launch
+authorization from those technical gates still need integration before a run.
