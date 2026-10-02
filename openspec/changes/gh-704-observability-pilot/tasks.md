@@ -1,12 +1,12 @@
 ## 1. Reproducible inputs and validation commands
 
-- [ ] 1.1 Add source-only pilot validation and Docker-dependent qualification commands to development documentation and CI; verify command discovery and CI coverage before product behavior changes.
+- [x] 1.1 Add source-only pilot validation and Docker-dependent qualification commands to development documentation and CI; verify command discovery and CI coverage before product behavior changes.
 - [x] 1.2 Vendor the released observability 1.0.0 archive and source receipt, pin host instrumentation inputs, and verify checksum rejection plus clean external packaged-consumer installation.
 - [x] 1.3 Encode the accepted thresholds and frozen protocol, including workload schedule, metric definitions and query deadline; verify deterministic calculations with passing, failing and missing-metric fixtures.
 
 ## 2. Command instrumentation and execution evidence
 
-- [ ] 2.1 Add opt-in Hub and controller-client diagnostic seams through a focused red-green loop; verify unchanged authentication, wire envelopes and disabled behavior, including callback invocation exactly once when telemetry fails.
+- [x] 2.1 Add opt-in Hub and controller-client diagnostic seams through a focused red-green loop; verify unchanged authentication, wire envelopes and disabled behavior, including callback invocation exactly once when telemetry fails.
 - [ ] 2.2 Add authenticated context adoption and exact-origin outgoing propagation; verify malformed/untrusted context, baggage/tracestate exclusion and concurrent context isolation.
 - [ ] 2.3 Extend the fake controller with a bounded execution queue and independent side-effect oracle; verify success, rejection, duplicate admission, concurrency and timeout-after-admission without automatic retry.
 - [ ] 2.4 Emit canonical manual and narrowly instrumented spans and Pino records through released mappings; verify Node 24 ESM startup, parentage, strict field validation and secret exclusion before sinks.

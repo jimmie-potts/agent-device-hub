@@ -86,7 +86,8 @@
     "test:observability:package:built": "node scripts/package-observability.mjs --test",
     "test:observability:query": "node packages/observability/tests/query.mjs",
     "test:observability:browser": "node --test packages/observability/tests/contract.browser.mjs",
-    "test:observability:pilot": "node --test scripts/observability/tests/*.test.mjs"
+    "test:observability:pilot": "node --test scripts/observability/tests/*.test.mjs",
+    "qualify:observability": "node scripts/observability/qualify.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

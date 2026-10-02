@@ -25,6 +25,21 @@ Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must 
 
 Each controller has `id`, `kind` of `pixoo`, `nanoleaf`, `tidbyt` or `lifx`, `controllerId`, `deviceId`, numeric IPv4 loopback `endpoint` ending `/controller/v1`, and its dedicated `token`. Tidbyt and LIFX devices are served by the [local controller host](../local-controllers/README.md); register each device as its own entry, with the host's endpoint and a token it accepts for that device. There is at most one active HTTP request per device and no automatic retry. A capacity rejection does not reserve a controller ticket. Explicit commands retain the owning controller's request ID and revision guards. A timeout after submission is uncertain, never proof of no effects. `sent` is transport evidence only. To connect an installed Pixoo or Nanoleaf controller, follow [Connect device controllers for B.U.N.N.Y.](SETUP.md#connect-device-controllers-for-bunny).
 
+## Opt-in pilot diagnostics
+
+An in-process host can supply `HubOptions.diagnostics`, created by the packaged
+`@jimmie-potts/hub/diagnostics` adapter. The host supplies a neutral resource,
+a bounded canonical emitter and its tracer. The adapter imports no SDK or
+exporter and the normal CLI configuration does not enable it. With no adapter,
+command behavior is unchanged.
+
+The controller command route adopts validated trace context only after
+authentication. It emits canonical request records and controller-client
+observations with validated ticket metadata; it never records request bodies,
+credentials or exception text. Telemetry errors preserve domain results and
+never retry a command. Pilot qualification and broader adoption remain separate
+from these source checks; see [the development checks](../../docs/development.md#shared-observability-pilot-checks).
+
 ## Credentials
 
 Every authenticated request carries a bearer token in `Authorization: Bearer <token>`. The hub stores only each token's SHA-256 digest, in the `credentials` list of the private configuration, together with what that token may do:

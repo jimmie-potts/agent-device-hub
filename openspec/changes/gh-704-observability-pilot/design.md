@@ -40,7 +40,7 @@ Use `grafana/otel-lgtm:0.34.0` at Linux amd64 digest `sha256:c6a56be719990e78b1d
 
 Restrict Loki index labels to stable service namespace/name/environment. Preserve request, ticket, trace and span identifiers as queryable metadata rather than indexed labels. Document Loki dot-to-underscore and numeric conversion mappings. Verify the existing Grafana Explore log/trace links without adding a dashboard or changing product UI. Python fixtures must reach the same field queries as Node records.
 
-Keep at least 8 GiB host-available RAM. Hard-limit the stack to two CPUs and 4 GiB RAM; permit at most 10 GiB image storage and 2 GiB run data. Stop on a cap breach and retain evidence. Use task-owned disk storage under the main checkout's `.local/`, isolated state and fake credentials. Run heavy builds and measurements serially. An unbounded default upstream launcher was rejected because its network and resource settings do not meet this experiment's constraints.
+Keep at least 8 GiB host-available RAM. Hard-limit the stack to two CPUs and 4 GiB RAM; permit at most 10 GiB image storage and 2 GiB run data. Stop on a cap breach and retain evidence. Keep durable evidence under the main checkout's `.local/evidence/`. The Hub refuses state inside any Git checkout, so put its disposable state in the parent workspace's `.local/scratch/o704` (or a run-owned sibling), outside every checkout. Other task-owned files use disk-backed `.local/`; all credentials are synthetic. Run heavy builds and measurements serially. An unbounded default upstream launcher was rejected because its network and resource settings do not meet this experiment's constraints.
 
 ### Frozen paired measurement protocol
 

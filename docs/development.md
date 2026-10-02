@@ -1499,3 +1499,23 @@ task-owned state and the pinned development image within the recorded caps.
 Retain all failed/inconclusive runs and cleanup evidence in the main checkout's
 `.local/evidence/`. No command in this procedure authorizes live installation,
 personal settings, state migration or physical devices.
+
+Run the read-only runtime preflight with
+`npm run qualify:observability -- preflight --evidence-dir <new-run-directory>`.
+Use a new directory under the main checkout's `.local/evidence/` for each attempt.
+It writes an exclusive `preflight.json`, refuses remote Docker endpoints, checks
+Linux/amd64 and Node 24, reserves eight GiB after the four GiB stack allocation,
+and checks Docker's memory/CPU limit support. Exit 2 means a prerequisite failed
+or evidence could not be created. Exit 0 establishes preflight readiness only;
+the receipt still says `qualification: unexecuted`. Image size, launch bindings,
+continuous resource limits and every runtime acceptance check remain separate.
+The command installs nothing and never launches or changes an existing service.
+
+The opt-in Hub adapter is covered by `apps/hub/tests/diagnostics.test.mjs` in
+`test:hub:built` and the external packaged Hub suite. Its tests check canonical
+records, authenticated request ordering, controller observations, unchanged
+receipts, error privacy and exactly one domain invocation when a tracer, sink
+or context manager fails. Set `TMPDIR` outside every checkout for Hub state,
+for example the parent workspace's `.local/scratch/o704`. The
+released Hub package bundles observability 1.0.0; the pilot SDK stays in the
+evaluation host rather than the Hub runtime dependency closure.

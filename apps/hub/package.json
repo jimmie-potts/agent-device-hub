@@ -1,6 +1,6 @@
 {
   "name": "@jimmie-potts/hub",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,6 +10,8 @@
     "@jimmie-potts/agent-state": "3.4.0",
     "@jimmie-potts/device-contracts": "1.1.0",
     "@jimmie-potts/device-mcp": "1.0.1",
-    "@jimmie-potts/agent-lifecycle-contracts": "1.1.0"
+    "@jimmie-potts/agent-lifecycle-contracts": "1.1.0",
+    "@jimmie-potts/bunny-observability": "1.0.0",
+    "@opentelemetry/api": "1.9.1"
   }
 }
