@@ -72,6 +72,8 @@ Every pair must meet p50 added latency ≤max(2 ms, 10% baseline), p95 ≤max(5 
 
 Healthy runs require zero lost expected records. Compare expected and queried multisets by canonical identity rather than counts alone. Allow a fixed 30-second query-visibility deadline after flush; record each bounded poll and its response. An exporter acknowledgment alone is not proof of ingestion. Fault runs must account for pending, exported, dropped and failed records, remain bounded and preserve command outcomes. Privacy leaks, context crossover and duplicate side effects each allow zero failures.
 
+Capture expected log identities before queue admission and span identities before association admission. Retain canonical span projections before export admission, with terminal exported/failed/dropped/pending events. Stream bounded batches to the parent, which validates them before durable recording and reconciles identities against queue counters. Observer failures cannot alter commands; missing evidence prevents qualification. The enabled application measurement includes this evidence-streaming overhead. Existing Grafana Explore checks use the documented manual log/trace lookup with retained screenshots; no custom viewer or automated browser harness is required.
+
 Retain every failed and inconclusive attempt. A correction requires a written hypothesis, changed input and fresh evidence. Never rerun an unchanged experiment to obtain a pass or revise thresholds retroactively. Queue drops, resource-cap failures, growth in component/event volume and material runtime/host changes trigger budget review. These are initial pilot targets, not permanent product limits.
 
 ### Pinned backend query mapping
