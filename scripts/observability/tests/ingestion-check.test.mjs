@@ -49,3 +49,14 @@ test('stalled evidence cannot outlive the visibility deadline or claim a saved q
     record: async (_event, { signal }) => { await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })); } });
   assert.equal(result.disposition, 'inconclusive'); assert.equal(result.evidenceSaved, false);
 });
+
+test('failed query retains only an allowlisted failure code and HTTP status, never exception text', async () => {
+  const events = [];
+  const result = await verifyIngestion({ expectedLogs: [log], expectedSpans: [span], startNs: '1', endNs: '2000000000',
+    queries: { async logs() { return receipt([]); }, async trace() { throw Object.assign(new Error('SYNTHETIC_PRIVATE_CANARY'), { code: 'http-status', status: 400 }); } },
+    record: async event => events.push(event) });
+  assert.equal(result.disposition, 'inconclusive');
+  const failure = events.find(event => event.kind === 'query-failure');
+  assert.equal(failure.code, 'http-status'); assert.equal(failure.status, 400);
+  assert.equal(JSON.stringify({ events, result }).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});

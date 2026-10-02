@@ -52,7 +52,7 @@ export async function prepareReleasedContract(directory) {
     name: 'isolated-observability-pilot-consumer', private: true, type: 'module',
   }));
   const result = spawnSync(process.execPath, [process.env.npm_execpath, 'install',
-    '--offline', '--ignore-scripts', '--no-audit', '--no-fund', fileURLToPath(archive)],
+    '--offline', '--ignore-scripts', '--bin-links=false', '--no-audit', '--no-fund', fileURLToPath(archive)],
   { cwd: directory, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`released contract installation failed: ${result.error?.message ?? result.stderr}`);
   const installed = join(directory, 'node_modules/@jimmie-potts/bunny-observability');

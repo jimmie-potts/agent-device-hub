@@ -9,7 +9,7 @@ test('backend plan pins resources, isolated network and loopback listeners witho
   const plan = backendPlan(input());
   assert.equal(plan.image, LGTM_IMAGE);
   assert.equal(plan.networkArgs.includes('--internal'), false);
-  assert.equal(plan.version, '1.1');
+  assert.equal(plan.version, '1.2');
   assert.ok(plan.containerArgs.includes('4294967296'));
   assert.ok(plan.containerArgs.includes('--cap-drop=ALL'));
   assert.ok(plan.containerArgs.includes('--security-opt=no-new-privileges'));
@@ -74,4 +74,11 @@ test('running backend requires actual loopback mappings, not only requested bind
     { ...ports, '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '44000' }] }]) {
     assert.throws(() => assertPublishedPorts({ NetworkSettings: { Ports: changed } }, plan), /published/);
   }
+});
+
+test('pinned pilot cannot replace bundled datasource plugins with unpinned startup downloads', () => {
+  const plan = backendPlan(input());
+  const env = plan.containerArgs.filter((_, index, all) => all[index - 1] === '--env');
+  assert.ok(env.includes('GF_PLUGINS_PREINSTALL_DISABLED=true'));
+  assert.ok(env.includes('GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false'));
 });

@@ -50,3 +50,11 @@ test('Tempo v2 base64 and OTLP hexadecimal IDs normalize to the same identity wi
   const foreign = make(true); foreign.trace.resourceSpans[0].scopeSpans[0].spans[0].traceId = 'a'.repeat(32);
   assert.throws(() => readTempoSpans(foreign, trace), /query/);
 });
+
+test('Tempo empty trace envelope is missing visibility, not malformed or successful identity evidence', () => {
+  const result = readTempoSpans({ trace: {}, metrics: {} }, trace);
+  assert.deepEqual(result, []);
+  assert.equal(compareRecords([{ traceId: trace, spanId: span }], result).equal, false);
+  assert.throws(() => readTempoSpans({ trace: { unexpected: true } }, trace));
+  assert.throws(() => readTempoSpans({ trace: {}, status: 'PARTIAL' }, trace));
+});

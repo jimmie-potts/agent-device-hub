@@ -46,3 +46,14 @@ test('entry limits and cancellation reject incomplete measurements', async t => 
   await assert.rejects(measureHostRunFiles([f.identity], { maximumEntries: 1 }), /limit/);
   await assert.rejects(measureHostRunFiles([f.identity], { signal: AbortSignal.abort() }), /aborted/);
 });
+
+test('owned Unix socket metadata is counted without opening or connecting to the application socket', async t => {
+  const { createServer } = await import('node:net');
+  const f = await fixture(t); let connections = 0;
+  const server = createServer(socket => { connections++; socket.destroy(); });
+  await new Promise(resolve => server.listen(join(f.root, 'app.sock'), resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const result = await measureHostRunFiles([f.identity]);
+  assert.equal(result.socketCount, 1); assert.equal(connections, 0);
+  assert.equal(result.entriesVisited, 2);
+});

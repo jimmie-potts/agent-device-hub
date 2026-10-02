@@ -24,13 +24,15 @@ export function backendPlan(input) {
     '--log-driver', 'none', ...labelArgs,
     '--env', 'ENABLE_OBI=false', '--env', 'OTEL_COLLECTOR_DEBUG_EXPORTER=false',
     '--env', 'GF_ANALYTICS_REPORTING_ENABLED=false', '--env', 'GF_ANALYTICS_CHECK_FOR_UPDATES=false',
-    '--env', 'GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false', '--env', 'LGTM_SHUTDOWN_TIMEOUT_SECONDS=5',
+    '--env', 'GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false',
+    '--env', 'GF_PLUGINS_PREINSTALL_DISABLED=true', '--env', 'GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false',
+    '--env', 'LGTM_SHUTDOWN_TIMEOUT_SECONDS=5',
     '--mount', `type=volume,source=${volumeName},target=/data`,
     ...['otelcol-config.yaml', 'loki-config.yaml'].flatMap(name =>
       ['--mount', `type=bind,source=${configDirectory}/${name},target=/otel-lgtm/${name},readonly`]),
     ...Object.entries(destinations).flatMap(([name, internal]) => ['--publish', `127.0.0.1:${ports[name]}:${internal}/tcp`]),
     LGTM_IMAGE];
-  return { version: '1.1', runId, ownerToken, image: LGTM_IMAGE, containerName, volumeName, networkName,
+  return { version: '1.2', runId, ownerToken, image: LGTM_IMAGE, containerName, volumeName, networkName,
     labels, configDirectory, ports: { ...ports }, networkArgs, volumeArgs, containerArgs,
     limits: { imageBytes: 10 * 1024 ** 3, runDataBytes: 2 * 1024 ** 3, teardownMs: 30000 } };
 }

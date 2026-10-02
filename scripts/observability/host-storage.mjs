@@ -1,4 +1,4 @@
-import { open, opendir, realpath } from 'node:fs/promises';
+import { open, opendir, realpath, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -38,28 +38,31 @@ export async function measureHostRunFiles(roots, { signal, maximumEntries = 1000
   if (roots.some((root, i) => roots.some((other, j) => i !== j &&
     (root.path === other.path || root.path.startsWith(other.path + '/'))))) fail('Host storage roots overlap');
   const started = performance.now(), seen = new Set();
-  let entries = 0, files = 0, directories = 0, apparent = 0n, allocated = 0n;
+  let entries = 0, files = 0, directories = 0, sockets = 0, apparent = 0n, allocated = 0n;
   function check() {
     if (signal?.aborted) fail('Host storage measurement aborted');
     if (performance.now() - started >= timeoutMs) fail('Host storage measurement deadline exceeded');
   }
-  async function walk(handle, depth, device) {
+  async function walk(handle, depth, device, socketStat) {
     check();
     if (++entries > maximumEntries || depth > 64) fail('Host storage traversal limit exceeded');
-    const stat = await handle.stat({ bigint: true });
+    const stat = socketStat ?? await handle.stat({ bigint: true });
     if (String(stat.dev) !== device || stat.size < 0n || stat.blocks < 0n) fail('Host storage filesystem metadata invalid');
-    if (!stat.isFile() && !stat.isDirectory()) fail('Host storage entry type refused');
+    if (!stat.isFile() && !stat.isDirectory() && !(stat.isSocket() && stat.uid === BigInt(process.getuid()))) fail('Host storage entry type refused');
     const identity = `${stat.dev}:${stat.ino}`;
     if (seen.has(identity)) return;
     seen.add(identity); apparent += stat.size; allocated += stat.blocks * 512n;
     if (apparent > BigInt(Number.MAX_SAFE_INTEGER) || allocated > BigInt(Number.MAX_SAFE_INTEGER)) fail('Host storage size unsafe');
     if (stat.isFile()) { files++; return; }
+    if (stat.isSocket()) { sockets++; return; }
     directories++;
     // Each child is resolved against an already-open directory, not a mutable ancestor path.
     const base = `/proc/self/fd/${handle.fd}`;
     const directory = await opendir(base);
     for await (const entry of directory) {
       check();
+      const metadata = await lstat(`${base}/${entry.name}`, { bigint: true });
+      if (metadata.isSocket()) { await walk(null, depth + 1, device, metadata); continue; }
       const child = await open(`${base}/${entry.name}`, flags);
       try { await walk(child, depth + 1, device); } finally { await child.close(); }
     }
@@ -83,7 +86,7 @@ export async function measureHostRunFiles(roots, { signal, maximumEntries = 1000
     if (error.code) fail('Host storage inspection failed');
     throw error;
   }
-  return { source: 'owned-host-tree-stat', fileCount: files, directoryCount: directories, entriesVisited: entries,
+  return { source: 'owned-host-tree-stat', fileCount: files, directoryCount: directories, socketCount: sockets, entriesVisited: entries,
     apparentBytes: Number(apparent), allocatedBytes: Number(allocated), hostRunBytes: Number(apparent > allocated ? apparent : allocated),
     elapsedMs: performance.now() - started };
 }

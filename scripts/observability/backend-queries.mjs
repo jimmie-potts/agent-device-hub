@@ -21,10 +21,10 @@ export function createBackendQueries(inputPlan, { forbidden = [] } = {}) {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) return Promise.reject(failure('deadline'));
     if (signal?.aborted) return Promise.reject(failure('aborted'));
     return new Promise((resolve, reject) => {
-      let req, timer, ended = false;
+      let req, timer, ended = false, status = null;
       const finish = (code, value) => {
         if (ended) return; ended = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); req?.destroy();
-        if (code) reject(failure(code)); else resolve(value);
+        if (code) reject(Object.assign(failure(code), { status })); else resolve(value);
       };
       const abort = () => finish('aborted');
       signal?.addEventListener('abort', abort, { once: true });
@@ -32,6 +32,7 @@ export function createBackendQueries(inputPlan, { forbidden = [] } = {}) {
       req = request({ hostname: '127.0.0.1', port, path, method: 'GET', agent: false, maxHeaderSize: 8192,
         headers: { accept: 'application/json', 'accept-encoding': 'identity',
           ...(!isTrace ? { 'x-loki-response-encoding-flags': 'categorize-labels' } : {}) } }, res => {
+        status = res.statusCode;
         const missing = isTrace && res.statusCode === 404;
         if (res.statusCode !== 200 && !missing) { res.resume(); return finish('http-status'); }
         if ((!missing && !/^application\/json(?:;|$)/i.test(res.headers['content-type'] ?? '')) ||
@@ -67,12 +68,15 @@ export function createBackendQueries(inputPlan, { forbidden = [] } = {}) {
       }
       const params = new URLSearchParams({ query, start: startNs, end: endNs, direction: 'forward', limit: '5000' });
       const { value, ...receipt } = await get(plan.ports.loki, '/loki/api/v1/query_range?' + params, options);
-      return { ...receipt, records: readLokiRecords(value) };
+      try { return { ...receipt, records: readLokiRecords(value) }; }
+      catch { throw Object.assign(failure('record-invalid'), { status: 200 }); }
     },
     async trace(traceId, options) {
       if (!trace(traceId)) throw failure('trace-id');
       const { value, ...receipt } = await get(plan.ports.tempo, '/api/v2/traces/' + traceId + '?span_pruning=false', options, true);
-      return { ...receipt, records: receipt.found ? readTempoSpans(value, traceId) : [] };
+      try { const records = receipt.found ? readTempoSpans(value, traceId) : [];
+        return { ...receipt, found: records.length > 0, records }; }
+      catch { throw Object.assign(failure('record-invalid'), { status: 200 }); }
     },
   };
 }

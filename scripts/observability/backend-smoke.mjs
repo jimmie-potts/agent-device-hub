@@ -1,4 +1,6 @@
-import { basename } from 'node:path';
+import { prepareReleasedContract } from './released-contract.mjs';
+import { performIngestion } from './ingestion-session.mjs';
+import { basename, join } from 'node:path';
 import { prepareBackendDirectory } from './backend-files.mjs';
 import { inspectHost, inspectDocker } from './preflight.mjs';
 import { createDockerBackend } from './docker-backend.mjs';
@@ -6,8 +8,8 @@ import { allocateBackend } from './backend-allocation.mjs';
 import { registerHostRoots } from './host-roots.mjs';
 import { withReadyBackend } from './backend-session.mjs';
 
-/** Prerequisite smoke only: no telemetry workload, benchmark, installation or image pull. */
-export async function smokeBackend({ directory, stateParent, endpoint, ports, signal }) {
+/** Fresh synthetic backend only; ingestion mode adds the released fixture. No image pull or live installation. */
+async function runBackend({ directory, stateParent, endpoint, ports, signal }, ingestion) {
   if (typeof endpoint !== 'string' || !/^unix:\/\/\/[\w./-]+$/.test(endpoint)) throw new Error('Local Docker endpoint required');
   const env = { ...process.env, DOCKER_HOST: endpoint };
   delete env.DOCKER_CONTEXT; delete env.DOCKER_TLS_VERIFY; delete env.DOCKER_CERT_PATH;
@@ -17,8 +19,13 @@ export async function smokeBackend({ directory, stateParent, endpoint, ports, si
     monitorBackend = await createDockerBackend({ endpoint, signal });
     await prepareBackendDirectory(directory, { runId: basename(directory), ports });
     if (!(await inspectHost(directory)).ready) throw new Error('Host preflight failed');
-    await registerHostRoots(directory, stateParent);
+    const roots = await registerHostRoots(directory, stateParent);
+    if (ingestion) await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
     await allocateBackend({ directory, backend, signal });
-    return await withReadyBackend({ directory, backend, monitorBackend, signal });
+    return await withReadyBackend({ directory, backend, monitorBackend, signal,
+      ...(ingestion ? { action: ({ plan, signal }) => performIngestion({ directory, plan, signal }) } : {}) });
   } finally { backend.close(); monitorBackend?.close(); }
 }
+
+export const smokeBackend = input => runBackend(input, false);
+export const qualifyIngestionBackend = input => runBackend(input, true);

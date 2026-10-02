@@ -1823,7 +1823,8 @@ establish ownership. Roots must be canonical disk-backed `.local` directories
 and must not overlap. Measurement checks the root identity before and after
 walking and resolves children relative to open directory descriptors.
 
-The walker reads metadata only. It rejects symlinks, unsupported file types and
+The walker reads metadata only. It counts same-UID Unix-socket metadata without
+opening or connecting to sockets. It rejects symlinks, other unsupported types and
 filesystem crossings, deduplicates hard links, and counts directory metadata as
 well as files. The larger of apparent and allocated bytes becomes `hostRunBytes`.
 No filenames or file contents enter the result. Traversal is bounded to 10,000
@@ -2015,7 +2016,7 @@ these observations are sequential, not an atomic filesystem quota. The parser
 accepts the exact POSIX headings produced by `df -P -B1`. Runtime smoke evidence
 must qualify this path before benchmark measurements.
 
-Pilot network profile 1.1 uses an ordinary task-owned bridge, as approved after
+Pilot profile 1.2 retains the profile 1.1 ordinary bridge. It uses an ordinary task-owned bridge, as approved after
 the internal-bridge smoke produced no actual host mappings. Outbound connectivity
 is possible. All five published ports must map only to the selected `127.0.0.1`
 ports in both the requested configuration and running-container readback. Missing
@@ -2023,3 +2024,59 @@ or expanded mappings stop the session before workloads. Host HTTP readiness is
 also required. This profile changes no daemon, firewall or host security setting.
 Prior profile receipts remain evidence; regenerate them with their recorded
 source revision rather than rewriting them to the new profile.
+
+### Single-command ingestion qualification
+
+Use the startup command above with `ingestion` in place of `backend-smoke` to
+run one real Hub command against the fake controller, plus a Python contract
+fixture. The runner installs the pinned bundled archive offline in fresh synthetic
+state with command symlinks disabled. A fresh Node process verifies its manifest
+and resolves the contract imports to that archive before starting instrumentation.
+Python uses the same verified archive. The fixture preserves one fake side effect,
+seven Node logs and six spans; Python adds one log and an explicitly synthetic
+associated span. It does not qualify Python runtime instrumentation.
+
+The producer has bounded output and a 20-second deadline. Failure retains its
+stage, canonical partial output and process exit evidence; stderr is represented
+only by its byte count and hash. A failed producer is never retried. The runner
+saves expected canonical identities, then queries Loki and Tempo within the
+unchanged 30-second visibility deadline. An empty Tempo trace envelope counts
+as missing evidence. Query failures retain allowlisted codes and HTTP status,
+never arbitrary exception text. Full identity multisets and log/span correlation
+must match; acknowledgements or equal counts alone do not pass.
+
+This command proves only the single-command ingestion case. It does not run the
+paired workload, qualify every fault case, capture viewer evidence or establish
+the adoption gate. Like the startup smoke, it retains stopped resources and
+state for explicit receipt-based cleanup.
+
+The observability pilot disables Grafana plugin preinstallation and automatic
+plugin updates. Explore uses the datasource plugins bundled in the pinned image;
+startup downloads must not change the measured software. Verify Loki and Tempo
+registration in `/api/frontend/settings` as well as direct backend queries.
+
+
+For the existing viewer, keep the backend inside a monitored `withReadyBackend`
+action while inspecting it; the standalone `ingestion` command stops it on return.
+Do not restart a stopped qualification allocation merely to inspect its UI.
+
+1. Read the run's canonical `trace_id` and ticket from `ingestion-producer.json`.
+   Open its selected loopback Grafana port and choose **Explore → Loki**.
+2. Select a time range covering the recorded fixture timestamps. Query
+   `{service_namespace="bunny",deployment_environment_name="test"} | trace_id="<trace_id>"`.
+   The Node fixture has seven rows. Inspect the structured `event_name`,
+   `severity_text`, `bunny_operation`, `bunny_outcome`, `bunny_ticket_epoch`,
+   `bunny_ticket_sequence`, `span_id` and service fields.
+3. Choose **Explore → Tempo**, select TraceQL and enter that exact trace ID.
+   The Node fixture has six spans across Hub, controller and worker, including
+   queue and execution. Manual trace-ID lookup is the initial operator workflow;
+   this does not assert an automatically configured log-to-trace link.
+4. Save the query, time range, screenshots and expected-identity comparison before
+   closing the browser and completing the monitored action. The Python fixture
+   has a separate synthetic trace; verify it through the same field mappings.
+
+The workload slot scheduler uses the accepted 20 operations/second, 30-second
+warm-up and 60-second measurement window. It records expired slots as driver-lag
+omissions and capacity-limited slots as concurrency omissions. It dispatches at
+most one current slot per observation and never retries an omission. These source
+checks do not qualify the process sampler or constitute a measured workload.

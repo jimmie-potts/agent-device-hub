@@ -89,6 +89,7 @@ export function readLokiRecords(value, { limit = 5000 } = {}) {
 export function readTempoSpans(value, traceId) {
   traceId = hex(traceId, 16);
   if (value?.status != null && !['COMPLETE', 0].includes(value.status)) return fail();
+  if (object(value?.trace) && Object.keys(value.trace).length === 0) return [];
   const groups = value?.trace?.resourceSpans;
   if (!Array.isArray(groups)) return fail();
   const spans = [], kinds = ['SPAN_KIND_UNSPECIFIED', 'SPAN_KIND_INTERNAL', 'SPAN_KIND_SERVER', 'SPAN_KIND_CLIENT', 'SPAN_KIND_PRODUCER', 'SPAN_KIND_CONSUMER'];

@@ -71,7 +71,13 @@ export async function verifyIngestion({ expectedLogs: inputLogs, expectedSpans: 
           await save({ kind: 'query', round, type, index, selector, receipt });
           remaining(); rows.push(...receipt.records);
           if (rows.length > 20000) throw new Error('Query result count exceeded');
-        } catch (error) { failures.push(error); }
+        } catch (error) {
+          failures.push(error);
+          const allowed = ['deadline', 'aborted', 'timeout', 'http-status', 'format', 'response-limit', 'network', 'privacy', 'json', 'upgrade', 'record-invalid'];
+          await save({ kind: 'query-failure', round, type, index, selector,
+            code: allowed.includes(error?.code) ? error.code : 'unknown',
+            status: Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599 ? error.status : null });
+        }
       }
     }));
     if (failures.length) throw failures[0];
