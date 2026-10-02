@@ -31,6 +31,19 @@ export async function readRegular(path:string,maximum=64*1024*1024):Promise<Buff
  }finally{await file.close();}
 }
 
+/** Shared executables exceed the release-file read bound; hash them with bounded memory. */
+export async function hashRegular(path:string,maximum=256*1024*1024):Promise<string>{
+ const file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+ try{
+  const before=await file.stat();if(!before.isFile()||before.nlink!==1||before.size>maximum)throw new Error('unsafe-install-file');
+  const hash=createHash('sha256'),buffer=Buffer.alloc(64*1024);let total=0;
+  for(;;){const {bytesRead}=await file.read(buffer,0,buffer.length,null);if(!bytesRead)break;total+=bytesRead;if(total>maximum)throw new Error('install-file-changed');hash.update(buffer.subarray(0,bytesRead));}
+  const after=await file.stat();
+  if(total!==before.size||before.size!==after.size||before.mtimeMs!==after.mtimeMs||before.ctimeMs!==after.ctimeMs)throw new Error('install-file-changed');
+  return hash.digest('hex');
+ }finally{await file.close();}
+}
+
 /** Sorted relative names, types, permission modes, bytes and link targets form the legacy digest. */
 export async function inventory(directory:string):Promise<Inventory>{
  const root=resolve(directory);const stat=await lstat(root);

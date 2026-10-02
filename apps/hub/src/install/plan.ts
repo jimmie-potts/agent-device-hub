@@ -1,6 +1,6 @@
 import {lstat,realpath,readlink,readdir} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
-import {canonical,sha256,readRegular,inventory,verifyRelease,fullRevision,type Identity,type ReleaseIdentity} from './files.js';
+import {canonical,sha256,readRegular,hashRegular,inventory,verifyRelease,fullRevision,type Identity,type ReleaseIdentity} from './files.js';
 
 export type Layout={root:string;entry:string;state:string;config:string;node:string;protectedPaths:string[];unit:'codex-nanoleaf-monitor.service';baselineReceipt?:string};
 export type ServiceObservation={state:'active'|'inactive'|'unknown';pid:number|null;start:string|null;executable:string|null;entry:string|null;build:{sourceRevision:string;version:string}|null};
@@ -16,7 +16,7 @@ export async function privateRoot(path:string,allowMissing=false):Promise<void>{
 }
 export async function protectedPath(path:string):Promise<ProtectedPath>{
  const info=await lstat(path),resolved=await realpath(path),actual=await lstat(resolved);
- const hash=actual.isDirectory()?(await inventory(resolved)).sha256:sha256(await readRegular(resolved));
+ const hash=actual.isDirectory()?(await inventory(resolved)).sha256:await hashRegular(resolved);
  return {path,resolved,link:info.isSymbolicLink()?await readlink(path):null,sha256:hash,mode:actual.mode&0o777,uid:actual.uid};
 }
 export async function inspectInstalled(layout:Layout):Promise<Installed>{

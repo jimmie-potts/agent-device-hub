@@ -108,7 +108,7 @@ recovery procedure. Process observations and remote-main freshness remain
 separate from those approval inputs. Normal state revisions can advance while the
 owner reviews the plan.
 
-Review `bound.source.comparison`, the commits and changed paths, the previous
+Review `bound.source.comparison`, the added and removed commits and changed paths, the previous
 identity, configuration/protected-path hashes, migration flag and outage/recovery
 fields. An unavailable baseline comparison is **unknown**, not an empty change
 bundle. Present that gap at the checkpoint and establish the complete target

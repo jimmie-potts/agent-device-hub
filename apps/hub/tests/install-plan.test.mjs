@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,symlink,open} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createPlan,assertApproval,installationStatus} from '../dist/install/plan.js';
+import {createPlan,assertApproval,installationStatus,protectedPath} from '../dist/install/plan.js';
 import {inventory,sha256} from '../dist/install/files.js';
 
 async function fixture(){
@@ -50,4 +50,13 @@ test('first adoption uses a trusted full prior release identity only after compl
   assert.deepEqual((await createPlan(f.options)).bound.previous,identity);
   await writeFile(join(f.layout.entry,'app.js'),'changed');await assert.rejects(createPlan(f.options),/install-file-hash/);
  }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('protected executable fingerprints support the installed Node binary size without relaxing release reads',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'hi-node-'));try{
+  const path=join(root,'node'),handle=await open(path,'wx',0o700);await handle.truncate(126458664);await handle.close();
+  const first=await protectedPath(path);assert.match(first.sha256,/^[a-f0-9]{64}$/);
+  const changed=await open(path,'r+');await changed.write(Buffer.from('changed'),0,7,100000000);await changed.close();
+  assert.notEqual((await protectedPath(path)).sha256,first.sha256);
+ }finally{await rm(root,{recursive:true,force:true});}
 });

@@ -58,8 +58,9 @@ async function plan(repository:string,request:string,owner:string,tokenFile:stri
  if(pinned&&selected&&canonical(selected.identity)!==canonical(pinned))throw new Error('install-target-changed');
  const target=selected?.identity.kind==='release'?selected.identity.sourceRevision:rollback?'main':request;
  const source=inspectSource(repository,target,installed.identity.kind==='release'?installed.identity.sourceRevision:null);
- if(selected?.identity.kind==='legacy'){source.comparison={status:'unknown',reason:'legacy-recovery-source-unknown'};source.commits=[];source.components=[];}
- return createPlan({layout:paths,source,service:await observeService(paths),owner,operation:rollback?'rollback':'upgrade',requestedTarget:request,...(selected?{rollbackTarget:selected.identity}:{}),serviceContractSha256:contract.sha256,health});
+ if(selected?.identity.kind==='legacy'){source.comparison={status:'unknown',reason:'legacy-recovery-source-unknown'};source.commits=[];source.removedCommits=[];source.components=[];}
+ const service=await observeRunningBuild({...health,state:paths.state,observe:()=>observeService(paths)});
+ return createPlan({layout:paths,source,service,owner,operation:rollback?'rollback':'upgrade',requestedTarget:request,...(selected?{rollbackTarget:selected.identity}:{}),serviceContractSha256:contract.sha256,health});
 }
 /** Source-checkout command. Only the two explicit mutation verbs compose service control. */
 export async function runInstallCli(args:string[]):Promise<void>{
