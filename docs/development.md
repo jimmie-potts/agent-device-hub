@@ -1635,3 +1635,20 @@ ID, resolved image ID, name and ownership labels. These source checks do not yet
 validate config syntax in the image, network reachability, volume ownership,
 image size or the continuous 2 GiB run-data cap. The launcher must establish
 those gates before measured work and preserve resources until evidence is saved.
+
+`backend-config.mjs` generates fixed Collector and Loki profiles. Collector has
+only HTTP OTLP log/trace pipelines, bounded batches, a memory limiter, and one
+local exporter per signal with retries and exporter queues disabled. Loki uses
+TSDB v13 and explicitly indexes only service namespace/name/environment. Other
+resource attributes, including instance and ticket identities, remain structured
+metadata under the [Loki OTLP mapping](https://grafana.com/docs/loki/latest/send-data/otel/).
+No configuration value expands host environment variables.
+
+`backend-files.mjs` prepares an exclusive private run directory with immutable
+synthetic config files and a checksum manifest. Config files are readable by the
+capability-dropped container; their parent directory remains private. Readback
+uses bounded reads without following file symlinks, regenerates the expected
+launch plan, and checks exact configuration bytes and receipts. Corruption or
+partial preparation is retained for diagnosis. These checks establish file and
+profile consistency; pinned-image binary validation and runtime readiness are
+still required before qualification.
