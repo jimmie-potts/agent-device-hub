@@ -558,6 +558,16 @@ host terminates and verifies its own namespace init through a Linux PID handle;
 Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
 
+## Status stream checks
+
+`npm run test:agent-status` covers incremental SSE parsing, authenticated owner
+checks, reconnect/idle deadlines, bounded notices, stop and the fixed recovery
+poll under storms. `npm run test:lifx` and `npm run test:tidbyt` cover notice-driven
+reevaluation, stop during reads, retained write outcomes and the existing device
+policies. `npm run test:local-controllers` verifies their owning host consumers.
+These existing commands run in CI's contracts matrix; source fakes establish
+notice-to-evaluation timing, not installed or physical latency.
+
 ## Tidbyt controller checks
 
 The runner tests in the same `test:tidbyt` suite cover authenticated loopback

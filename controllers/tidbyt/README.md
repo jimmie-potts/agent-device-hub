@@ -228,7 +228,7 @@ serves the controller's v1 snapshot to the hub. Run either the host or this
 runner, never both; they take the same lease. `@jimmie-potts/tidbyt-controller/runner`
 exports the runner for that host, and `startStatusRunner` returns its controller.
 
-The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. With the optional `nowPlaying` block it also reads `/api/playback/v1/snapshot` every 5 seconds, with a 2.5-second deadline and a 64 KiB bound; another source ID, an invalid envelope, a redirect or a failed read counts as a failed read. All pushes and removals still use the existing controller queue.
+The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener, subscribes to Hub status changes and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. With the optional `nowPlaying` block it also reads `/api/playback/v1/snapshot` every 5 seconds, with a 2.5-second deadline and a 64 KiB bound; another source ID, an invalid envelope, a redirect or a failed read counts as a failed read. All pushes and removals still use the existing controller queue.
 
 Build a pinned reviewed revision in a separate release directory outside your working checkout. Use that revision's `package-lock.json` with `npm ci`, then `npm run build` on Node 24. Keep the release after stopping so its revision and installed bytes remain inspectable. Installing a release does not require restarting the hub or changing provider hooks.
 
@@ -264,3 +264,13 @@ Run the command once as the installation owner. `tidbyt-status-started` reports 
 For the separately authorized display check, record the installed revision, Node/client versions, selected owner and sole-writer confirmation privately. Start one real agent session and hold each state long enough for the 30-second poll and 15-second write gate. Observe `RUN`, `ASK` and `DONE`, whether other apps continue rotating, and the `?`/`FEED ?` state during a controlled feed interruption. Interrupt only this consumer's feed for the stale test; do not stop the shared state owner or change other consumers. Record shutdown behavior. Existing sessions retain their normal priority, so an old attention row can precede the test session. Do not acknowledge unrelated notices merely to make the test visible.
 
 The user's visual confirmation closes the installation issue. Source tests, a running process and cloud transport receipts do not establish display correctness or real-client attention coverage. Missing provider signals remain an acceptance gap.
+
+## Status change subscriptions
+
+The shared Hub status feed also consumes authenticated SSE notices. Each valid
+state/resync requests prompt reevaluation; heartbeats do not. A fixed 30-second
+recovery poll continues during stream failure and notice storms. Stop aborts the
+subscription and pending read wait, rejects late submissions and retains outcomes
+for already admitted writes. See the [shared status guide](../../packages/agent-status/README.md)
+for stream bounds and source-test limits. Existing modes, manual control,
+transition/cadence rules and unavailable-feed presentation still apply.
