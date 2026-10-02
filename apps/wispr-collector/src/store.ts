@@ -1,16 +1,20 @@
+import { dictionarySnapshot } from './dictionary.js';
 import { DatabaseSync, backup as sqliteBackup } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
-import { emptySnapshot, validateSnapshot, type Snapshot } from '@jimmie-potts/wispr-contracts';
+import { emptySnapshot, presetWindows, validateSnapshot, type Snapshot } from '@jimmie-potts/wispr-contracts';
 import { aggregate, contribution, validContribution, type Contribution } from './numeric.js';
+import { aggregateLanguage, analyzeStages, languagePolicy, type LanguageFeatures, type RetainedLanguage } from './language.js';
+import type { LanguageOptions } from './config.js';
 import type { SourceRow } from './reader-types.js';
+import { publishTextRevocation } from './publication.js';
 import { initializeControl, readControl, writeControl, type Control } from './control.js';
 
 export const MAX_STORE_BYTES = 1024 * 1024 * 1024;
 type Metadata = {
   format: 1; namespace: string; sourceIdentity: string; timezone: string; generation: string;
-  dataEpoch: string; textEpoch: number; revision: number; captureAfter: number | null; snapshot: Snapshot; pending: boolean;
+  dataEpoch: string; textEpoch: number; revision: number; captureAfter: number | null; snapshot: Snapshot; pending: boolean; languagePolicy?:string; dictionaryBaseline?:Snapshot['dictionary'];dictionaryResetPending?:boolean;
 };
 export type StoreOptions = { directory: string; namespace: string; sourceIdentity: string; timezone: string; maxStoreBytes?:number; maxMemoryBytes?:number };
 
@@ -96,6 +100,15 @@ export class NumericStore {
       yield {...value,archived:row.archived===1};
     }
   }
+  private *languageContributions(policy:string):Iterable<RetainedLanguage> {
+    const get=this.db.prepare('SELECT value FROM language WHERE id=?');
+    for(const contribution of this.contributions()){
+      if(contribution.exclusion!==null||contribution.sourceTime===null)continue;
+      const row=get.get(contribution.id);
+      const stored=row?JSON.parse(String(row.value)) as {policy:string;features:LanguageFeatures|null}:null;
+      yield {sourceTime:contribution.sourceTime,app:contribution.app,features:stored?.policy===policy?stored.features:null};
+    }
+  }
   private transaction<T>(body:()=>T):T {
     this.guardMemory();
     this.db.exec('BEGIN IMMEDIATE');
@@ -116,6 +129,7 @@ export class NumericStore {
     const control=readControl(this.directory),meta=this.metadata();
     if(meta.namespace!==control.namespace)throw new Error('binding-mismatch');
     if(meta.generation===control.generation&&meta.dataEpoch===control.dataEpoch&&meta.textEpoch===control.textEpoch)return;
+    publishTextRevocation(join(this.directory,'status.json'),meta.snapshot,control.generation,Math.max(meta.revision+1,control.revisionFloor),control.changedAt);
     this.transaction(()=>{
       const all=meta.dataEpoch!==control.dataEpoch;
       if(all)this.db.exec('DELETE FROM contributions');
@@ -123,17 +137,30 @@ export class NumericStore {
       const revision=Math.max(meta.revision+1,control.revisionFloor);
       const snapshot=all?emptySnapshot({namespace:meta.namespace,generation:control.generation,now:control.changedAt,timezone:meta.timezone}):aggregate(this.contributions(),{namespace:meta.namespace,generation:control.generation,revision,timezone:meta.timezone,now:control.changedAt,gaps:meta.snapshot.coverage.gaps});
       snapshot.revision=revision;snapshot.lastSuccessAt=meta.snapshot.lastSuccessAt;
-      this.save({...meta,dataEpoch:control.dataEpoch,textEpoch:control.textEpoch,generation:control.generation,captureAfter:control.captureAfter,revision,snapshot,pending:true});
+      if(!all)snapshot.dictionary=meta.snapshot.dictionary;
+      this.save({...meta,dictionaryBaseline:all?undefined:meta.dictionaryBaseline,dataEpoch:control.dataEpoch,textEpoch:control.textEpoch,generation:control.generation,captureAfter:control.captureAfter,revision,snapshot,pending:true});
     });
   }
+  /** Revoke old policy rankings before retrying any pending publication. */
+  applyLanguagePolicy(options:LanguageOptions,at:string):void {
+    const meta=this.metadata(),policy=languagePolicy(options);
+    if(!options.enabled||!meta.languagePolicy||meta.languagePolicy===policy||meta.snapshot.language.availability!=='available')return;
+    publishTextRevocation(join(this.directory,'status.json'),meta.snapshot,meta.generation,meta.revision+1,at);
+    this.transaction(()=>{
+      const snapshot={...meta.snapshot,revision:meta.revision+1,generatedAt:at,presets:presetWindows(at,meta.timezone)};
+      snapshot.language=aggregateLanguage(this.languageContributions(policy),snapshot.presets,meta.timezone);
+      this.save({...meta,languagePolicy:policy,revision:snapshot.revision,snapshot,pending:true});
+    });
+  }
+  hasLanguage():boolean {return this.metadata().snapshot.language.availability==='available'||Number(this.db.prepare('SELECT count(*) AS n FROM language').get()!.n)>0;}
   snapshot(): Snapshot { return this.metadata().snapshot; }
   pending(): Snapshot | null {const meta=this.metadata();return meta.pending?meta.snapshot:null;}
   bindSource(identity:string,confirmSameSource=false):void {
-    this.transaction(()=>{const meta=this.metadata();if(meta.sourceIdentity===identity)return;if(meta.sourceIdentity!=='unbound'&&!confirmSameSource)throw new Error('binding-mismatch');this.save({...meta,sourceIdentity:identity});});
+    this.transaction(()=>{const meta=this.metadata();if(meta.sourceIdentity===identity)return;if(meta.sourceIdentity!=='unbound'&&!confirmSameSource)throw new Error('binding-mismatch');this.save({...meta,sourceIdentity:identity,dictionaryResetPending:meta.sourceIdentity!=='unbound'});});
   }
 
   /** Only call after a complete qualified read. A rejected scan must never call this method. */
-  ingest(rows: SourceRow[], observedAt: string, options:{failedAttempt?:boolean}={}): Snapshot {
+  ingest(rows: SourceRow[], observedAt: string, options:{failedAttempt?:boolean;language?:LanguageOptions;dictionary?:Snapshot['dictionary']}={}): Snapshot {
     return this.transaction(()=>{
       const meta=this.metadata();
       if(meta.pending)throw new Error('publication-pending');
@@ -143,14 +170,29 @@ export class NumericStore {
       const exemption=this.db.prepare('SELECT capture_exempt FROM contributions WHERE id=?');
       const upsert=this.db.prepare('INSERT INTO contributions(id,fingerprint,value,archived,capture_exempt) VALUES(?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,value=excluded.value,archived=0');
       let processed=0;
-      for(const row of rows){if(processed++%128===0)this.guardMemory();const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);}
+      const policy=options.language?.enabled?languagePolicy(options.language):undefined;
+      const putLanguage=this.db.prepare('INSERT INTO language(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value');
+      const deleteLanguage=this.db.prepare('DELETE FROM language WHERE id=?');
+      for(const row of rows){
+        if(processed++%128===0)this.guardMemory();
+        const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);
+        upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);
+        if(policy&&value.exclusion===null){
+          const features=options.language!.excludedApps?.includes(value.app)?null:analyzeStages(row.language??{raw:null,formatted:null,observed:null,language:null,observation:null},options.language!.excludedTerms);
+          putLanguage.run(value.id,JSON.stringify({policy,features}));
+        }else deleteLanguage.run(value.id);
+      }
       const gaps=structuredClone(meta.snapshot.coverage.gaps),previous=meta.snapshot.lastSuccessAt;
       if(previous&&previous<observedAt&&(options.failedAttempt||Date.parse(observedAt)-Date.parse(previous)>300_000)){
         const reason=options.failedAttempt?'failed-attempt' as const:'not-observed' as const;
         const last=gaps.at(-1);if(last&&last.to===previous&&last.reason===reason)last.to=observedAt;else gaps.push({from:previous,to:observedAt,reason});
       }
       const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone:meta.timezone,now:observedAt,gaps});
-      this.save({...meta,revision:snapshot.revision,snapshot,pending:true});
+      if(policy)snapshot.language=aggregateLanguage(this.languageContributions(policy),snapshot.presets,meta.timezone);
+      const baseline=meta.dictionaryBaseline??meta.snapshot.dictionary;
+      snapshot.dictionary=dictionarySnapshot(baseline,options.dictionary??snapshot.dictionary,meta.dictionaryResetPending);
+      const dictionaryBaseline={...snapshot.dictionary,localUsage:snapshot.dictionary.localUsage??baseline.localUsage,remoteUsage:snapshot.dictionary.remoteUsage??baseline.remoteUsage};
+      this.save({...meta,languagePolicy:policy,dictionaryBaseline,dictionaryResetPending:false,revision:snapshot.revision,snapshot,pending:true});
       return snapshot;
     });
   }
@@ -165,7 +207,8 @@ export class NumericStore {
     return this.transaction(()=>{
       const meta=this.metadata();if(meta.pending)throw new Error('publication-pending');
       const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone,now:generatedAt,gaps:meta.snapshot.coverage.gaps});
-      snapshot.lastSuccessAt=meta.snapshot.lastSuccessAt;
+      snapshot.lastSuccessAt=meta.snapshot.lastSuccessAt;snapshot.dictionary=meta.snapshot.dictionary;
+      if(meta.languagePolicy&&meta.snapshot.language.availability==='available')snapshot.language=aggregateLanguage(this.languageContributions(meta.languagePolicy),snapshot.presets,timezone);
       if(!validateSnapshot(snapshot).ok)throw new Error('invalid-zone-rebuild');
       this.save({...meta,timezone,revision:snapshot.revision,snapshot,pending:true});return snapshot;
     });
@@ -250,9 +293,9 @@ export class NumericStore {
         }
         const revision=Math.max(current.revision,control.revisionFloor)+1;
         const snapshot=aggregate(this.contributions(),{namespace:current.namespace,generation:control.generation,revision,timezone:current.timezone,now:generatedAt,gaps:backup.snapshot.coverage.gaps});
-        snapshot.lastSuccessAt=backup.snapshot.lastSuccessAt;
+        snapshot.lastSuccessAt=backup.snapshot.lastSuccessAt;snapshot.dictionary=dictionarySnapshot(current.snapshot.dictionary,backup.snapshot.dictionary,true);
         // Numeric restore cannot reenable language or reuse its old publication tables.
-        this.save({...current,dataEpoch:control.dataEpoch,textEpoch:control.textEpoch,generation:control.generation,revision,snapshot,pending:true});return snapshot;
+        this.save({...current,dictionaryBaseline:snapshot.dictionary,dataEpoch:control.dataEpoch,textEpoch:control.textEpoch,generation:control.generation,revision,snapshot,pending:true});return snapshot;
       });
     }finally{saved.close();}
   }

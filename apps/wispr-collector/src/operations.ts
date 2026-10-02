@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { emptySnapshot } from '@jimmie-potts/wispr-contracts';
+import { emptySnapshot, type Snapshot } from '@jimmie-potts/wispr-contracts';
 import { sourceIdentity,type CollectorConfig } from './config.js';
 import { NumericStore } from './store.js';
 import { publishSnapshot,recordFailure,readStatus,atomicJson,atomicText,type FailureCode } from './publication.js';
-import { scanNumeric } from './reader-engine.js';
+import { scanSource } from './reader-engine.js';
 import { SOURCE_LIMITS,type SourceRow } from './reader-types.js';
 import { initializeControl,writeControl } from './control.js';
 import { safeCode } from './supervisor.js';
@@ -14,7 +14,6 @@ export type OperationHooks = {maxMemoryBytes?:number;phase:(phase:'reading'|'pro
 const failureCodes=new Set<FailureCode>(['source-unavailable','source-schema','source-busy','source-capacity','source-deadline','source-read','store-capacity','aggregate-capacity','publication-capacity','publication-failed','run-deadline','binding-mismatch','source-changed','run-cancelled']);
 /** Internal core: caller qualifies paths and holds both supervisor and worker ownership. */
 export async function executeOperation(config:CollectorConfig,operation:Operation,hooks:OperationHooks):Promise<unknown> {
-  if(operation.command==='collect'&&!config.collectionEnabled)throw new Error('collection-disabled');
   const paths={aggregate:join(config.stateDirectory,'aggregate.json'),status:join(config.stateDirectory,'status.json')};
   let identity=NumericStore.savedIdentity(config.stateDirectory)??'unbound';
   if(operation.command==='restore'&&!existsSync(join(config.stateDirectory,'analytics.sqlite'))){
@@ -26,12 +25,16 @@ export async function executeOperation(config:CollectorConfig,operation:Operatio
     // Recovery in a fresh directory approves backup records, not blanket source history.
     writeControl(config.stateDirectory,{...control,captureAfter:control.captureAfter??Date.now()});
   }
-  const timezone=operation.command==='zone'?(NumericStore.savedTimezone(config.stateDirectory)??config.timezone):config.timezone;
+  const timezone=NumericStore.savedTimezone(config.stateDirectory)??config.timezone;
   const store=new NumericStore({directory:config.stateDirectory,namespace:config.namespace,sourceIdentity:identity,timezone,maxMemoryBytes:hooks.maxMemoryBytes});
   const publish=()=>{const pending=store.pending();if(pending){publishSnapshot(paths,pending);hooks.checkpoint?.('published');store.markPublished(pending.revision);}};
   const now=()=>new Date().toISOString();
   try{
     hooks.phase('processing');
+    if(!config.language.enabled&&store.hasLanguage()&&!['clear','clear-text','reset'].includes(operation.command)){store.clearText(now());publish();}
+    if(config.language.enabled&&!['clear','clear-text','reset'].includes(operation.command))store.applyLanguagePolicy(config.language,now());
+    if(timezone!==config.timezone&&!['zone','clear','clear-text','reset'].includes(operation.command))throw new Error('zone-change-required');
+    if(operation.command==='collect'&&!config.collectionEnabled)throw new Error('collection-disabled');
     // Clear must never republish the generation it is about to revoke.
     if(!['clear','clear-text','reset'].includes(operation.command))publish();
     switch(operation.command){
@@ -39,13 +42,13 @@ export async function executeOperation(config:CollectorConfig,operation:Operatio
         if(!existsSync(config.sourcePath))throw new Error('source-unavailable');
         const before=sourceIdentity(config.sourcePath);store.bindSource(before);
         const priorAttempt=readStatus(paths.status,store.snapshot());
-        const rows:SourceRow[]=[];hooks.checkpoint?.('before-read');hooks.phase('reading');
+        const rows:SourceRow[]=[];let dictionary:Snapshot['dictionary'];hooks.checkpoint?.('before-read');hooks.phase('reading');
         try{
-          await scanNumeric(config.sourcePath,SOURCE_LIMITS,async batch=>{rows.push(...batch);hooks.memory?.(process.memoryUsage().rss);});
+          ({dictionary}=await scanSource(config.sourcePath,SOURCE_LIMITS,async batch=>{rows.push(...batch);hooks.memory?.(process.memoryUsage().rss);},{language:config.language.enabled}));
         }catch(error){const code=(error as {errcode?:number}).errcode;if(code===5||code===6)throw new Error('source-busy');if(code===14)throw new Error('source-unavailable');throw new Error(safeCode(error)==='run-failed'?'source-read':safeCode(error));}
         hooks.phase('processing');
         if(sourceIdentity(config.sourcePath)!==before)throw new Error('source-changed');
-        hooks.checkpoint?.('before-commit');store.ingest(rows,now(),{failedAttempt:priorAttempt!==null&&failureCodes.has(priorAttempt.health as FailureCode)});hooks.checkpoint?.('committed');publish();
+        hooks.checkpoint?.('before-commit');store.ingest(rows,now(),{failedAttempt:priorAttempt!==null&&failureCodes.has(priorAttempt.health as FailureCode),language:config.language,dictionary});hooks.checkpoint?.('committed');publish();
         break;
       }
       case 'clear': {const receipt=store.clearAll(now());publish();return {generation:receipt.snapshot.generation,revision:receipt.snapshot.revision,removedManagedBackups:receipt.removedManagedBackups,unmanagedCopiesRecallable:false};}

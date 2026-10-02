@@ -83,3 +83,73 @@ test('SQLite rescans replace delayed formatting and nullable counters without du
  update("UPDATE History SET numWords=30,duration=6,speechDuration=3,numWordsCorrected=NULL,numDictionaryReplacements=NULL WHERE id='late'");
  await capture({...formatted,words:50,recordingSeconds:6,recordingWords:30,speechSeconds:5,speechWords:50},statuses);
 });
+
+function enableLanguage(config){
+ const db=new DatabaseSync(config.sourcePath);
+ db.exec('ALTER TABLE History ADD COLUMN asrText TEXT; ALTER TABLE History ADD COLUMN formattedText TEXT; ALTER TABLE History ADD COLUMN editedText TEXT; ALTER TABLE History ADD COLUMN detectedLanguage TEXT; ALTER TABLE History ADD COLUMN editedTextStatus TEXT; ALTER TABLE History ADD COLUMN editObservationEnd TEXT; DELETE FROM History');
+ const insert=db.prepare('INSERT INTO History(id,timestamp,status,numWords,asrText,formattedText,editedText,detectedLanguage,editedTextStatus,editObservationEnd) VALUES(?,?,?,?,?,?,?,?,?,?)');
+ for(const id of ['a','b','c'])insert.run(id,'2026-10-01T12:00:00Z','formatted',2,'hello there','hello world','hello friend','en','complete','2026-10-01T12:01:00Z');db.close();config.language={enabled:true};
+}
+test('opt-in pipeline publishes text and opt-out clears pending revisions and managed text backups before disabled collect',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});
+ let snapshot=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.equal(snapshot.language.availability,'available');assert.ok(snapshot.language.tables.some(t=>t.words.some(w=>w.text==='friend')));
+ await run({command:'backup',name:'text'});
+ await assert.rejects(run({command:'collect'},{checkpoint:phase=>{if(phase==='committed')throw Error('run-failed');}}),/run-failed/);
+ config.language.enabled=false;config.collectionEnabled=false;renameSync(config.sourcePath,config.sourcePath+'.offline');
+ await assert.rejects(run({command:'collect'}),/collection-disabled/);
+ const disabled=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.equal(disabled.language.availability,'disabled');assert.equal(disabled.numeric.totals.words,6);assert.notEqual(disabled.generation,snapshot.generation);assert.ok(!JSON.stringify(disabled).includes('friend'));
+ const {existsSync}=await import('node:fs');assert.equal(existsSync(join(config.stateDirectory,'backups/text.sqlite')),false);
+ const privateDb=new DatabaseSync(join(config.stateDirectory,'analytics.sqlite'),{readOnly:true});assert.equal(privateDb.prepare('SELECT count(*) AS n FROM language').get().n,0);privateDb.close();
+ await run({command:'status'});assert.equal(JSON.parse(readFileSync(join(config.stateDirectory,'status.json'))).languageEnabled,false);
+});
+
+test('opt-out publishes a denial fence even when replacing the aggregate file fails',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});
+ const path=join(config.stateDirectory,'aggregate.json'),statusPath=join(config.stateDirectory,'status.json');
+ const old=JSON.parse(readFileSync(statusPath));assert.equal(old.languageEnabled,true);
+ renameSync(path,path+'.locked');mkdirSync(path);config.language.enabled=false;
+ await assert.rejects(run({command:'status'}),/publication-failed/);
+ const fence=JSON.parse(readFileSync(statusPath));assert.equal(fence.languageEnabled,false);assert.notEqual(fence.generation,old.generation);
+ rmSync(path,{recursive:true});await run({command:'status'});assert.equal(JSON.parse(readFileSync(path)).language.availability,'disabled');
+});
+
+test('opt-out denial survives a malformed managed backup that blocks cleanup',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});await run({command:'backup',name:'broken'});
+ const backup=new DatabaseSync(join(config.stateDirectory,'backups/broken.sqlite'));backup.exec("UPDATE metadata SET value='{}' WHERE key='state'");backup.close();
+ config.language.enabled=false;await assert.rejects(run({command:'status'}));
+ assert.equal(JSON.parse(readFileSync(join(config.stateDirectory,'status.json'))).languageEnabled,false);
+});
+
+test('opt-out clears text before a reporting-zone mismatch rejects collection',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});
+ config.language.enabled=false;config.timezone='America/New_York';await assert.rejects(run({command:'collect'}),/zone-change-required/);
+ assert.equal(JSON.parse(readFileSync(join(config.stateDirectory,'status.json'))).languageEnabled,false);
+});
+
+test('reenabling cannot recreate pruned text and numeric restore cannot revive backup text',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});await run({command:'backup',name:'text'});
+ await run({command:'restore',name:'text'});assert.equal(JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json'))).language.availability,'disabled');
+ await run({command:'collect'});assert.equal(JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json'))).language.availability,'available');
+ config.language.enabled=false;await run({command:'status'});
+ const db=new DatabaseSync(config.sourcePath);db.exec('DELETE FROM History');db.close();config.language.enabled=true;await run({command:'collect'});
+ const snapshot=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.equal(snapshot.numeric.totals.words,6);assert.ok(snapshot.language.tables.every(t=>t.words.length===0));
+});
+
+test('dictionary counters are snapshots in numeric mode and decreases start a new segment',async t=>{
+ const {config,run}=setup(t);const db=new DatabaseSync(config.sourcePath);db.exec('CREATE TABLE Dictionary(isDeleted INTEGER,isSnippet INTEGER,frequencyUsed INTEGER,remoteFrequencyUsed INTEGER,phrase TEXT)');db.exec("INSERT INTO Dictionary VALUES(0,1,5,8,'NEVER_EXPORT_DICTIONARY_LABEL')");db.close();
+ const capture=async()=>{await run({command:'collect'});return JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json'))).dictionary;};
+ const first=await capture();assert.equal(first.localUsage,5);assert.equal(first.activeSnippets,1);assert.deepEqual(await capture(),first);
+ const update=sql=>{const db=new DatabaseSync(config.sourcePath);db.exec(sql);db.close();};
+ update('UPDATE Dictionary SET frequencyUsed=NULL');assert.equal((await capture()).localUsage,null);
+ update('UPDATE Dictionary SET frequencyUsed=1');const reset=await capture();assert.equal(reset.localUsage,1);assert.equal(reset.segment,first.segment+1);
+ config.timezone='America/New_York';await run({command:'zone'});assert.deepEqual(JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json'))).dictionary,reset);
+ assert.ok(!readFileSync(join(config.stateDirectory,'aggregate.json'),'utf8').includes('NEVER_EXPORT_DICTIONARY_LABEL'));
+});
+
+test('a changed exclusion policy replaces old pending rankings before status publication',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});
+ await assert.rejects(run({command:'collect'},{checkpoint:phase=>{if(phase==='committed')throw Error('run-failed');}}),/run-failed/);
+ config.language.excludedTerms=['friend'];renameSync(config.sourcePath,config.sourcePath+'.offline');await run({command:'status'});
+ const snapshot=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.ok(snapshot.language.tables.every(t=>t.words.length===0));assert.equal(snapshot.numeric.totals.words,6);
+ assert.equal(snapshot.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='raw').coverage.uncertain,3);
+});

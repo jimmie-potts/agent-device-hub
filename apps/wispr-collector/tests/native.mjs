@@ -48,10 +48,10 @@ if (process.argv[2] === 'writer') {
     }
     writer.send({stop:true}); assert.equal(await exit,0); writer = undefined;
     assert.equal(db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get().busy,0);
-    const portable = spawnSync(process.execPath,['--test',...['reader.test.mjs','lease.test.mjs','config.test.mjs'].map(name=>join(dirname(self),name))],{encoding:'utf8',timeout:30000});
+    const portable = spawnSync(process.execPath,['--test',...['reader.test.mjs','lease.test.mjs','config.test.mjs','language.test.mjs','language-reader.test.mjs','language-aggregate.test.mjs','dictionary.test.mjs','operations.test.mjs','store.test.mjs','recovery.test.mjs'].map(name=>join(dirname(self),name))],{encoding:'utf8',timeout:60000});
     assert.equal(portable.status,0,portable.stdout+portable.stderr);
     process.stdout.write(portable.stdout);
-    console.log(JSON.stringify({result:'passed',scope:'native implemented reader; full collector/package qualification pending',node:process.versions.node,sqlite:process.versions.sqlite,coherentScans:4,rowsPerScan:1000,sourcePreserved:true,readerReleased:true}));
+    console.log(JSON.stringify({result:'passed',scope:'native synthetic reader and language/state suites; CLI/package checks separate',node:process.versions.node,sqlite:process.versions.sqlite,coherentScans:4,rowsPerScan:1000,sourcePreserved:true,readerReleased:true}));
   } finally {
     writer?.kill(); db.close(); rmSync(dir,{recursive:true,force:true});
   }

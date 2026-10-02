@@ -829,6 +829,13 @@ atomic publication and bounded failures. The package suite extracts the offline
 collector and exercises a synthetic collect/status/export flow and an isolated
 contract consumer. No check reads personal Wispr data.
 
+The language extension adds opted-in synthetic stage, tokenizer, alignment,
+exact-preset, sensitivity and private-recovery cases to the same collector test
+glob and extracted package. Native qualification must cover the extended reader
+and opt-out before pending publication. Cross-consumer fixtures must validate
+real collector tables through the shared contract and the Hub language routes;
+unknown source language, edit finality and counter windows remain explicit.
+
 Run `npm run test:wispr:native:built` separately under native Windows Node 24,
 with its synthetic database/output directory on a local Windows drive. The
 native check rejects other platforms and verifies concurrent WAL writes,

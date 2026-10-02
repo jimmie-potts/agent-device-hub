@@ -38,6 +38,13 @@ function status(snapshot: Snapshot, health: CollectorStatus['health'], lastAttem
     health,languageEnabled:snapshot.language.availability==='available'};
 }
 
+/** Fence cached text before cleanup or aggregate replacement can fail. */
+export function publishTextRevocation(path:string,snapshot:Snapshot,generation:string,revision:number,at:string):void {
+  const value={...status(snapshot,snapshot.health,at),generation,revision,languageEnabled:false};
+  if(!validateStatus(value).ok)throw new Error('invalid-status');
+  atomicJson(path,value,4096);
+}
+
 export function publishSnapshot(paths: PublicationPaths, input: unknown): void {
   const result=validateSnapshot(input);
   if(!result.ok)throw new Error('invalid-snapshot');

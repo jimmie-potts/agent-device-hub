@@ -67,3 +67,31 @@ test('an aggregation memory budget failure preserves contributions and the previ
  try{assert.throws(()=>store.ingest([row('a',99)],'2026-10-03T16:00:00.000Z'),/source-capacity/);}finally{store.close();}
  store=open();assert.deepEqual(store.snapshot(),before);assert.equal(store.pending(),null);store.close();
 });
+
+test('language derivatives replace late edits and survive retry restart pruning and zone rebuild',t=>{
+ const {open}=setup(t);let store=open();
+ const rows=['a','b','c'].map(id=>({...row(id),language:{raw:'hello world',formatted:'hello world',observed:'hello friend',language:'en',observation:'complete'}}));
+ const ingest=(items)=>{const s=store.ingest(items,'2026-10-02T16:00:00.000Z',{language:{enabled:true}});store.markPublished(s.revision);return s;};
+ const words=s=>s.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='observed').words;
+ assert.equal(ingest(rows).language.availability,'available');assert.deepEqual(words(ingest(rows)),[{text:'friend',occurrences:3,dictations:3},{text:'hello',occurrences:3,dictations:3}]);
+ store.close();store=open();assert.deepEqual(words(ingest([])),[{text:'friend',occurrences:3,dictations:3},{text:'hello',occurrences:3,dictations:3}]);
+ rows[0].language.observed='hello changed';assert.deepEqual(words(ingest(rows)),[{text:'hello',occurrences:3,dictations:3}]);
+ const zone=store.rebuildZone('UTC','2026-10-03T12:00:00.000Z');assert.deepEqual(words(zone),[{text:'hello',occurrences:3,dictations:3}]);store.close();
+});
+
+test('changed exclusion policy does not reinterpret archived language contributions',t=>{
+ const {open}=setup(t);const store=open();
+ const rows=['a','b','c'].map(id=>({...row(id),language:{raw:'hello world',formatted:'hello world',observed:null,language:'en',observation:null}}));
+ const first=store.ingest(rows,'2026-10-02T16:00:00.000Z',{language:{enabled:true}});store.markPublished(first.revision);
+ const next=store.ingest([],'2026-10-02T16:01:00.000Z',{language:{enabled:true,excludedTerms:['hello']}});
+ const table=next.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='raw');assert.deepEqual(table.words,[]);assert.equal(table.coverage.uncertain,3);assert.equal(next.numeric.totals.words,30);store.close();
+});
+
+test('archived derivatives with an unknown algorithm identity remain unavailable',async t=>{
+ const {open,options}=setup(t);let store=open();
+ const rows=['a','b','c'].map(id=>({...row(id),language:{raw:'hello world',formatted:'hello world',observed:null,language:'en',observation:null}}));
+ const first=store.ingest(rows,'2026-10-02T16:00:00.000Z',{language:{enabled:true}});store.markPublished(first.revision);store.close();
+ const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(join(options.directory,'analytics.sqlite'));
+ for(const r of db.prepare('SELECT id,value FROM language').all()){const value=JSON.parse(r.value);value.policy='unknown-future-algorithm';db.prepare('UPDATE language SET value=? WHERE id=?').run(JSON.stringify(value),r.id);}db.close();
+ store=open();const next=store.ingest([],'2026-10-02T16:01:00.000Z',{language:{enabled:true}});assert.ok(next.language.tables.every(t=>t.words.length===0));assert.equal(next.numeric.totals.words,30);store.close();
+});

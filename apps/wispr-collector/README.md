@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.0.0.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.0.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
@@ -58,9 +58,9 @@ Example config (paths are placeholders, not discovered Wispr locations):
 ```
 
 Generate a new UUID for the source namespace at authorized setup, then keep it
-stable. Set `collectionEnabled` explicitly before collecting. This numeric
-collector rejects `language.enabled: true`; the language extension owns that
-separate opt-in. The config must stay outside the state directory. State uses
+stable. Set `collectionEnabled` explicitly before collecting. Language analysis requires the separate `language.enabled: true` opt-in.
+Optional `excludedApps` contains safe app IDs; `excludedTerms` contains up to
+100 owner-selected literal terms or phrases, each at most 100 characters. The config must stay outside the state directory. State uses
 fixed filenames `analytics.sqlite`, `control.json`, `aggregate.json` and
 `status.json`; only the last two are intended for the authorized Hub reader.
 Never open either SQLite database from WSL.
@@ -154,3 +154,85 @@ fixture. Native tests require `WISPR_TEST_TMPDIR` on a local Windows drive and
 must use the qualified Windows Node 24 executable. They never discover or read
 an installed Wispr database. Source tests and package checks do not establish
 installed field semantics, recurring collection or the owner's dashboard acceptance.
+
+## Language profile and interpretation
+
+The optional profile reads `asrText`, `formattedText` and `editedText` only when
+language collection is enabled and their declared types are textual. It uses
+`detectedLanguage`, falling back to `language` only when the detected-language
+column is absent, and accepts English
+language tags (`en` and `en-*`). Unrecognized or missing language is excluded
+from lexical analysis; numeric contributions remain intact.
+
+The controlled observation profile requires textual `editedTextStatus` equal to
+`complete` and a valid `editObservationEnd` timestamp at or after the record's
+source timestamp. `partial`, unknown status, missing/invalid end metadata and
+absent text have separate exclusion behavior. These are synthetic adapter
+qualification rules, not a claim that the installed Wispr version exposes this
+profile. Unknown profiles remain excluded from observed-edit measures. Even a
+qualified complete observation has **unknown finality**: it does not establish
+that text was sent or that an edit corrected a mistake. No context JSON, screen
+content, audio or URL columns are selected.
+
+Public schema investigations identify the text and language columns, but do not
+establish this Windows installation's edit-end semantics: see the
+[WisprMCP schema analysis](https://github.com/pedramamini/WisprMCP/blob/main/wispr_flow_database_schema.md)
+and the [source reader in wispr-flow-analysis](https://github.com/Ideaplaces/wispr-flow-analysis/blob/main/scripts/analytics.py).
+Installed field meanings require the separately authorized validation trial.
+
+`english-1` uses NFKC normalization, upper-then-lower English caseless spelling,
+and straight internal apostrophes (curly variants normalize to straight).
+Letter/mark tokens exclude punctuation and numbers. All-word counts and the
+`english-stop-1` useful-word filter stay separate. Two-to-five-token phrases
+never cross records or excluded-term boundaries. Raw-to-formatted cleanup and
+formatted-to-observed changes have separate compared/changed denominators.
+
+Stages exceeding 65,536 UTF-8 bytes, 2,000 tokens, or the 200-character bound for
+any possible five-token endpoint are excluded rather than truncated. Alignment
+uses unit-cost Levenshtein with deterministic substitution/delete/insert tie
+order and at most 1,000,000 matrix cells. Longer-than-five-token change endpoints
+retain edit counts and a long-change count without publishing their text.
+
+Sensitivity filtering conservatively excludes the entire stage when it detects
+a URL, email, phone, path or token-like secret. Owner term exclusions leave
+boundaries; comparisons crossing these boundaries are uncertain. These rules
+reduce exposure and can exclude harmless text too. They do not make aggregates
+anonymous. Unordered private derivatives can still reveal wording.
+
+Every preset and supported app/category/corpus group is computed from all
+eligible retained contributions. Support requires three distinct dictations in
+that exact group; repetitions count separately. Each ranking is capped at 100
+qualified entries with an omitted count. Up to 250,000 distinct intermediate
+ranking keys are allowed per snapshot; exceeding this or the existing memory,
+store or publication limits fails visibly and preserves the previous commit.
+Coverage reasons can overlap eligible lexical records: for example, formatted
+words may be available while the missing raw stage prevents their comparison.
+
+## Dictionary snapshots and privacy recovery
+
+The numeric dictionary profile reads only `Dictionary.isDeleted` and optional
+`isSnippet`, `frequencyUsed` and `remoteFrequencyUsed` numeric fields. It counts
+active entries (including any flagged snippets), reports active snippets as a
+separate subset, and keeps the two usage counters separate. Unsupported fields
+are null, never zero. Invalid deletion flags make the snapshot unavailable;
+invalid optional counters affect only their measure. The profile is qualified
+with controlled fixtures; it is not a guarantee of installed column availability
+or counter semantics. Entry/replacement text is never selected. Counter windows
+remain unknown. Identical observations replace the snapshot; they are not added.
+A decrease from the last known counter or explicit source rebinding starts a
+new comparison segment. Dictionary scans share the selected-byte budget and
+have their own 100,000-row cap.
+
+Language opt-out runs before pending publication, source access or the
+collection-enabled check, including status/export commands. It advances the
+clear generation, publishes a text-disabled status before cleanup can fail,
+and removes managed text derivatives/backups while preserving numeric history.
+A malformed backup can block cleanup, but cannot preserve Hub text permission.
+Restart completes the pending clear; numeric restore never imports language.
+Reenablement requires an explicit collect and cannot recover pruned text.
+Changing exclusions or algorithm policy suppresses incompatible retained
+rankings before pending publication; compatible source records are recomputed
+on the next collection. Archived incompatible records stay counted as uncertain.
+
+Before rolling back to a numeric-only collector, disable language and complete
+`clear-text`; an older binary is not a supported owner of text-bearing state.
