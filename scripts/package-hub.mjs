@@ -24,6 +24,9 @@ try {
   const stage=join(scratch,'stage');await mkdir(stage);
   for(const name of ['package.json','src','dist','public','tests','fixtures','bin','README.md','SETUP.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
+  // Workspace contracts may advance before the Hub adopts their published archive.
+  // The standalone package must describe the trusted bytes actually bundled below.
+  for(const [name,pin] of Object.entries(released))metadata.dependencies[`@jimmie-potts/${name}`]=pin.version;
   const dependencies=Object.keys(metadata.dependencies);
   metadata.bundleDependencies=dependencies;
   metadata.exports={'./setup-consumer':{types:'./dist/setup-consumer.d.ts',import:'./dist/setup-consumer.js'},'./setup':{types:'./dist/setup.d.ts',import:'./dist/setup.js'},'./setup-authority':{types:'./dist/setup-authority.d.ts',import:'./dist/setup-authority.js'},'./monitor-hook':'./bin/monitor-hook.mjs','.':{types:'./dist/server.d.ts',import:'./dist/server.js'},'./migration':{types:'./dist/migration.d.ts',import:'./dist/migration.js'},'./migration-routes':{types:'./dist/migration-routes.d.ts',import:'./dist/migration-routes.js'}};
