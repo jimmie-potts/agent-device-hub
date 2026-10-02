@@ -79,7 +79,7 @@ def _time(value):
     parsed = datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=timezone.utc)
     delta = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
     milliseconds = delta.days * 86400000 + delta.seconds * 1000 + delta.microseconds // 1000
-    if milliseconds < 0:
+    if milliseconds < 0 or milliseconds > 18446744073709:
         raise ValueError('invalid-record')
     return milliseconds
 
@@ -130,7 +130,7 @@ def create_record(value):
         if type(value) is not dict:
             return _failure()
         catalog, schema, _ = _definitions()
-        selected = {k: v for k, v in value.items() if k in schema['properties'] and k not in (
+        selected = {k: value[k] for k in schema['properties'] if k in value and k not in (
             'attributes', 'resource', 'scope', 'body', 'severity_number')}
         selected.setdefault('schema_version', SCHEMA_VERSION)
         selected['body'] = catalog['events'].get(selected.get('event_name'))

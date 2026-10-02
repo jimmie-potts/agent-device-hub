@@ -59,3 +59,9 @@ test('untrusted, missing and malformed context never becomes a parent',()=>{
  assert.equal(parseTraceparent(header,{authenticated:true,owned:false}),undefined);
  assert.deepEqual(traceHeaders(undefined,{authenticated:true,owned:true}),{});
 });
+
+test('emission rejects an explicit null version instead of defaulting it',async()=>{
+ const lines=[];const emitter=createPinoEmitter(line=>lines.push(line));
+ assert.equal(emitter.emit({...record,schema_version:null}),false);
+ await emitter.close();assert.deepEqual(lines,[]);assert.equal(emitter.counts().dropped,1);
+});

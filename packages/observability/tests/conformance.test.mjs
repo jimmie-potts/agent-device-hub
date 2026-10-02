@@ -44,3 +44,16 @@ test('projection never invokes private getters, serialization or raw errors',()=
  assert.equal(parseRecord('{bad').ok,false);
  assert.equal(projectRecord({...record,attributes:{...record.attributes,'bunny.queue.depth':2}},'1.0').value.attributes['bunny.queue.depth'],undefined);
 });
+
+test('constructors agree on omitted, explicit-null and bounded transport fields',()=>{
+ assert.equal(createRecord({...record,schema_version:null}).ok,false);
+ const omitted={...record};delete omitted.schema_version;
+ assert.equal(createRecord(omitted).value.schema_version,'1.1');
+ const script=`import json,sys\nsys.path.insert(0,sys.argv[1])\nfrom bunny_observability import create_record\nprint(json.dumps([create_record(c['record']) for c in json.load(sys.stdin)]))`;
+ const result=spawnSync(process.env.PYTHON??'python3',['-c',script,fileURLToPath(new URL('../python',import.meta.url))],{input:JSON.stringify(cases),encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+ assert.deepEqual(JSON.parse(result.stdout),cases.map(c=>createRecord(c.record)));
+ const queued=cases.find(c=>c.name==='queue-delay-local-monotonic').record;
+ assert.equal(validateRecord(queued).value.attributes['bunny.queue.wait_ms'],12.5);
+ assert.deepEqual(toOtlp(queued).resourceLogs[0].scopeLogs[0].logRecords[0].attributes.find(a=>a.key==='bunny.queue.wait_ms').value,{doubleValue:12.5});
+});

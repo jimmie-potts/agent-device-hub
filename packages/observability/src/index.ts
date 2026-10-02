@@ -43,7 +43,7 @@ function snapshot(input:unknown, depth=0, budget={nodes:0}):unknown {
 }
 function validTime(value:string):boolean {
   const time=Date.parse(value);
-  return Number.isFinite(time) && time>=0 && new Date(time).toISOString()===value;
+  return Number.isFinite(time) && time>=0 && time<=18446744073709 && new Date(time).toISOString()===value;
 }
 export function validateRecord(input:unknown):Result<DiagnosticRecord> {
   try {
@@ -79,7 +79,7 @@ export function createRecord(input:unknown):Result<DiagnosticRecord> {
       if(['attributes','resource','scope','body','severity_number'].includes(key))continue;
       const raw=own(input,key); if(raw!==undefined)value[key]=raw;
     }
-    value.schema_version ??= SCHEMA_VERSION;
+    if(value.schema_version===undefined)value.schema_version=SCHEMA_VERSION;
     if(typeof value.event_name!=='string' || typeof value.severity_text!=='string')return failure();
     value.body=events[value.event_name];
     value.severity_number=severities[value.severity_text];

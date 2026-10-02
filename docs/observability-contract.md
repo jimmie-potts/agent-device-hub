@@ -37,7 +37,8 @@ serialization; the strict validator rejects them.
 | `trace_flags` | Optional two lowercase hex digits; requires trace ID | Numeric `flags` |
 
 Times use UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, calendar-valid, no earlier than the Unix
-epoch. Milliseconds are preserved exactly as decimal nanosecond strings in OTLP;
+epoch and no later than `2554-07-21T23:34:33.709Z`, the last whole
+millisecond representable by OTLP uint64 nanoseconds. Milliseconds are preserved exactly as decimal nanosecond strings in OTLP;
 JavaScript never holds epoch nanoseconds in a Number. Missing source time stays
 missing even when observed time exists. Durations use the local monotonic clock;
 never subtract unrelated process clocks. OTLP scope groups carry

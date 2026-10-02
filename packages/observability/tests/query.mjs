@@ -5,11 +5,14 @@ import {fileURLToPath} from 'node:url';
 import {createRecord,projectRecord,queryRecords,toOtlp,catalog} from '../dist/index.js';
 import {record} from './sample.mjs';
 const trace='1234567890abcdef1234567890abcdef';
+// One synthetic local monotonic clock: enqueue at 100 ms, dequeue at 112.5 ms.
+// These values are never subtracted across processes or wall clocks.
+const queueWaitMs=112.5-100;
 const ticket={'bunny.ticket.epoch':'synthetic-epoch-1','bunny.ticket.sequence':7,'bunny.request.id':'synthetic-request-1'};
 const hub=createRecord({...record,event_name:'command.admitted',trace_id:trace,span_id:'1234567890abcdef',trace_flags:'01',
  attributes:{...record.attributes,...ticket,'bunny.operation':'brightness','bunny.outcome':'accepted'}}).value;
 const input={...hub,event_name:'command.completed',resource:{...hub.resource,'service.name':'nanoleaf-worker'},span_id:'abcdef1234567890',
- attributes:{...hub.attributes,'bunny.outcome':'uncertain','bunny.reason':'timeout','bunny.write.possible':true}};
+ attributes:{...hub.attributes,'bunny.outcome':'uncertain','bunny.reason':'timeout','bunny.write.possible':true,'bunny.queue.wait_ms':queueWaitMs}};
 const python=spawnSync(process.env.PYTHON??'python3',['-c',
  'import json,sys; sys.path.insert(0,sys.argv[1]); from bunny_observability import create_record; print(json.dumps(create_record(json.load(sys.stdin))["value"]))',
  fileURLToPath(new URL('../python',import.meta.url))],{input:JSON.stringify(input),encoding:'utf8'});
@@ -21,6 +24,7 @@ const spans=[{name:'bunny.command.request',traceId:trace,spanId:hub.span_id,attr
 assert.ok(spans.every(span=>catalog.span_names.includes(span.name)));
 assert.equal(queryRecords(records,ticket).length,2);
 assert.equal(queryRecords(records,{trace_id:trace}).length,2);
+assert.deepEqual(toOtlp(worker).resourceLogs[0].scopeLogs[0].logRecords[0].attributes.find(a=>a.key==='bunny.queue.wait_ms').value,{doubleValue:queueWaitMs});
 assert.equal(queryRecords(records,{'bunny.outcome':'uncertain'})[0].attributes['bunny.write.possible'],true);
 for(const record of records){
  const log=toOtlp(record).resourceLogs[0].scopeLogs[0].logRecords[0];
