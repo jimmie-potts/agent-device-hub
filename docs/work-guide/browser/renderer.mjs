@@ -95,7 +95,7 @@ export function renderView(dataset,resolved,container,ctx) {
     box.append(el('p',`${filtered.length} matching · ${all.length} total`,'total'));
     const list=el('div',undefined,'list');let shown=0;
     const more=el('button','Show more');more.className='more';
-    const expand=()=>{for(const item of filtered.slice(shown,shown+12))list.append(render(item));shown+=12;more.hidden=shown>=filtered.length;};
+    const expand=()=>{const step=shown===0?4:12;for(const item of filtered.slice(shown,shown+step))list.append(render(item));shown+=step;more.hidden=shown>=filtered.length;};
     more.onclick=expand;
     const renderAll=()=>{list.replaceChildren();filtered.forEach(x=>list.append(render(x)));};
     ctx.printHandlers?.push({before:renderAll,after:()=>{list.replaceChildren();shown=0;expand();}});
@@ -106,7 +106,7 @@ export function renderView(dataset,resolved,container,ctx) {
   for(const heading of expected)if(!resolved.nodes.some(x=>x.heading===heading)) {
     const box=el('section',undefined,'group');box.append(el('h2',heading),el('p',heading==='Epics'?'0 epics. No collected issue carries the explicit epic label. Native parents remain grouping records.':'0 issues in this section.'));
     if(heading==='Recently done')box.append(el('p',dataset.repositories.some(x=>x.scope==='primary'&&!x.recentClosures.complete)?'Partial history; the empty display does not establish no completions.':'Complete seven-day history at '+dataset.asOf,'evidence'));
-    container.append(box);
+    if(heading==='Epics')container.prepend(box);else container.append(box);
   }
   if(!resolved.nodes.length&&!expected.length)container.append(el('p','No issues in this view.'));
 }
