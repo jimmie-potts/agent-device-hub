@@ -23,7 +23,7 @@ export function backendCreateRequests(plan) {
       HostConfig: { NetworkMode: plan.networkName, Memory: 4294967296, MemorySwap: 4294967296, NanoCpus: 2000000000,
         Privileged: false, PidMode: '', IpcMode: 'private', CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'],
         Devices: [], PublishAllPorts: false, AutoRemove: false, RestartPolicy: { Name: 'no' },
-        LogConfig: { Type: 'local', Config: { 'max-size': '5m', 'max-file': '2' } }, PortBindings: bindings,
+        LogConfig: { Type: 'none', Config: {} }, PortBindings: bindings,
         Mounts: [{ Type: 'volume', Source: plan.volumeName, Target: '/data', ReadOnly: false },
           ...['otelcol-config.yaml', 'loki-config.yaml'].map(name => ({ Type: 'bind', Source: `${plan.configDirectory}/${name}`,
             Target: `/otel-lgtm/${name}`, ReadOnly: true }))],

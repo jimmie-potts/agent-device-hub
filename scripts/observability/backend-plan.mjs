@@ -21,7 +21,7 @@ export function backendPlan(input) {
   const containerArgs = ['create', '--name', containerName, '--platform', 'linux/amd64', '--pull=never',
     '--network', networkName, '--cpus', '2', '--memory', '4294967296', '--memory-swap', '4294967296',
     '--cap-drop=ALL', '--security-opt=no-new-privileges', '--stop-timeout', '20',
-    '--log-driver', 'local', '--log-opt', 'max-size=5m', '--log-opt', 'max-file=2', ...labelArgs,
+    '--log-driver', 'none', ...labelArgs,
     '--env', 'ENABLE_OBI=false', '--env', 'OTEL_COLLECTOR_DEBUG_EXPORTER=false',
     '--env', 'GF_ANALYTICS_REPORTING_ENABLED=false', '--env', 'GF_ANALYTICS_CHECK_FOR_UPDATES=false',
     '--env', 'GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false', '--env', 'LGTM_SHUTDOWN_TIMEOUT_SECONDS=5',
@@ -54,7 +54,8 @@ export function assertBackendIsolation(inspect, plan) {
     host.NanoCpus !== 2000000000 || (host.CapAdd != null && (!Array.isArray(host.CapAdd) || host.CapAdd.length)) ||
     !Array.isArray(host.CapDrop) || !host.CapDrop.includes('ALL') ||
     !Array.isArray(host.SecurityOpt) || !host.SecurityOpt.includes('no-new-privileges') ||
-    !Array.isArray(host.Devices) || host.Devices.length || host.PublishAllPorts !== false) deny();
+    !Array.isArray(host.Devices) || host.Devices.length || host.PublishAllPorts !== false ||
+    host.LogConfig?.Type !== 'none') deny();
   const bindings = host.PortBindings;
   if (!bindings || Object.keys(bindings).length !== Object.keys(destinations).length) deny();
   for (const [name, port] of Object.entries(destinations)) {

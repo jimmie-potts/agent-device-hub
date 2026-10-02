@@ -1625,8 +1625,8 @@ export requests are not recursively traced. Grafana ingestion remains untested.
 `backend-plan.mjs` generates an argument-only plan for the pinned LGTM image,
 a run-owned internal bridge network, a labeled data volume and five loopback
 listeners. It requests two CPUs, 4 GiB RAM with no extra swap, dropped container
-capabilities, no privilege escalation, disabled eBPF instrumentation and bounded
-Docker logs. It mounts only the owned data volume and two read-only config files.
+capabilities, no privilege escalation, disabled eBPF instrumentation and disabled
+Docker log-driver storage. It mounts only the owned data volume and two read-only config files.
 It does not execute Docker or treat planned flags as verified configuration.
 
 The readback verifier checks actual CPU/memory limits, isolation flags, published
@@ -1779,5 +1779,23 @@ benchmark-window coverage or a pass result.
 The runtime driver must qualify the required 100 ms sampling cadence and record
 missed or slow samples. Summed RSS includes shared pages in each process, as the
 accepted metric requires. Writable-layer size alone excludes the data volume
-and Docker logs, so it cannot prove the total run-data cap. Volume/log accounting
+so it cannot prove the total run-data cap. Volume and host-file accounting
 and the continuous cap watchdog remain required before qualification.
+
+`storage-measurement.mjs` defines a fixed read-only probe for the owned backend:
+allocated and apparent `/data` sizes plus available space on `/data` and `/`.
+The command has an internal two-second timeout; its required utilities still
+need verification in the pinned image. The parser retains only byte counts,
+rejects missing/unsafe fields, and omits filesystem names. Total run data adds
+the larger volume measure, container writable-layer bytes and owned host run
+files (including synthetic app state and evidence).
+
+The backend now uses Docker log driver `none`, verified during isolation
+readback, so daemon-owned console files cannot escape that accounting. This
+does not disable application Pino capture or Collector log ingestion. Backend
+console history will be unavailable; preserve service health/query failures
+and owned file evidence instead. Non-TTY exec output decoding accepts only
+bounded complete stdout frames; stderr or malformed framing fails without
+exposing raw text. The Engine exec connection, host-file measurement and
+watchdog integration remain to implement. No storage cap has been qualified
+by these parser tests.

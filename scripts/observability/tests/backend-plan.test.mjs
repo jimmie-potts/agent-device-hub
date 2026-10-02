@@ -19,6 +19,7 @@ test('backend plan pins resources, isolated network and loopback listeners witho
   assert.equal(plan.containerArgs.includes('--privileged'), false);
   assert.equal(plan.containerArgs.includes('--rm'), false, 'retain stopped resources until evidence and owned cleanup');
   assert.ok(plan.containerArgs.includes('--pull=never'));
+  assert.equal(plan.containerArgs[plan.containerArgs.indexOf('--log-driver') + 1], 'none');
 });
 
 test('unsafe paths, duplicate or privileged ports, ambiguous identities and extra overrides are refused', () => {
@@ -46,6 +47,7 @@ test('resource and listener readback refuses any missing or expanded isolation s
   const inspect = { HostConfig: { NetworkMode: plan.networkName, Privileged: false, PidMode: '', IpcMode: 'private',
     Memory: 4294967296, MemorySwap: 4294967296, NanoCpus: 2000000000,
     CapAdd: null, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], Devices: [], PublishAllPorts: false,
+    LogConfig: { Type: 'none', Config: {} },
     PortBindings: Object.fromEntries(Object.entries({ grafana: 3000, otlp: 4318, loki: 3100, tempo: 3200, health: 13133 })
       .map(([name, port]) => [port + '/tcp', [{ HostIp: '127.0.0.1', HostPort: String(plan.ports[name]) }]])) },
     Mounts: [{ Type: 'volume', Name: plan.volumeName, Destination: '/data', RW: true },
@@ -54,7 +56,7 @@ test('resource and listener readback refuses any missing or expanded isolation s
   assert.equal(assertBackendIsolation(inspect, plan), true);
   for (const field of [{ Memory: 0 }, { NanoCpus: 0 }, { Privileged: true }, { PidMode: 'host' },
     { IpcMode: 'host' }, { CapAdd: ['NET_ADMIN'] }, { PublishAllPorts: true }, { NetworkMode: 'bridge' },
-    { SecurityOpt: [] }, { Devices: [{}] }, { PortBindings: {} }]) {
+    { SecurityOpt: [] }, { Devices: [{}] }, { PortBindings: {} }, { LogConfig: { Type: 'local' } }]) {
     assert.throws(() => assertBackendIsolation({ ...inspect, HostConfig: { ...inspect.HostConfig, ...field } }, plan), /isolation/);
   }
   assert.throws(() => assertBackendIsolation({ ...inspect, Mounts: [...inspect.Mounts, { Destination: '/host' }] }, plan), /isolation/);
