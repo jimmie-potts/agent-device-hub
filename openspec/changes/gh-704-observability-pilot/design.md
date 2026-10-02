@@ -152,3 +152,25 @@ flush, failed), and 003 (pre-allocation prerequisite refusal with incomplete
 diagnostic evidence), together with their correction hypotheses and source
 regressions. They are not passing runs. No paired benchmark or full pilot
 acceptance follows from these fault results.
+
+### Paired execution and evidence ownership
+
+Use twelve fresh backend/application runs in the recorded six-pair order.
+Baseline and enabled modes receive the same synthetic brightness operations;
+compare domain receipts by consumed ordinal, independently verifying each
+concrete ticket against fake execution. Include warm-up records in the loss
+oracle and query them after measured work. Sampling uses a separate Docker
+connection from the watchdog and lifecycle controls.
+
+Freeze the clean source commit/tree, lockfile/harness hashes and runtime
+versions before the first run; verify them before and after each run. Retain
+per-run and per-pair results, including incomplete evidence and threshold
+failures. A metric failure does not authorize a rerun. A failed prerequisite or
+unconfirmed cleanup stops new allocations. Complete resource-removal readback
+precedes deletion of the owned synthetic state. Record full teardown elapsed
+time from stop intent, not just the final remove request.
+
+Request-body byte counters distinguish HTTP submission from acknowledgment;
+headers are outside this metric. Synthetic private headers exercise exclusion
+during both workload modes. The benchmark disposition remains separate from
+the full pilot and source-delivery decision.

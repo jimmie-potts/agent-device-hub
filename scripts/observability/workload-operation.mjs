@@ -37,6 +37,7 @@ export function createBrightnessOperation(ready, { fetchImpl = fetch } = {}) {
     const traceId = randomBytes(16).toString('hex'), parentId = randomBytes(8).toString('hex');
     const response = await fetchImpl(url, { method: 'POST', redirect: 'error', signal,
       headers: { authorization: 'Bearer ' + ready.token, 'content-type': 'application/json', 'x-pixoo-request': '1',
+        baggage:'private=SYNTHETIC_PRIVATE_CANARY','x-pilot-private':'SYNTHETIC_PRIVATE_CANARY',
         traceparent: `00-${traceId}-${parentId}-01` }, body: JSON.stringify(request) });
     const receipt = await receiptBody(response);
     const matches = receipt && receipt.requestId.epoch === request.requestId.epoch &&

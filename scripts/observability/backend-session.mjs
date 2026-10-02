@@ -49,7 +49,7 @@ export async function withReadyBackend({ directory, backend, monitorBackend, act
   await save(directory, 'startup-intent.json', { version: '1.0', runId: plan.runId, ownerToken: plan.ownerToken,
     action: 'start', containerId: receipt.containerId, imageId: receipt.imageId });
   let journal, watchdog, monitor = null, ready = false, actionComplete = false, failure = 'start-unconfirmed',
-    stopConfirmed = false, health = null, monitorSaved = false;
+    stopConfirmed = false, health = null, monitorSaved = false, teardownStartedNs = null;
   const control = new AbortController(), activeSignal = signal ? AbortSignal.any([signal, control.signal]) : control.signal;
   try {
     journal = await createMonitorJournal(directory, receipt, 'session');
@@ -100,6 +100,7 @@ export async function withReadyBackend({ directory, backend, monitorBackend, act
       failure = 'resource-monitor-failed'; stopConfirmed = monitor.stopConfirmed;
     } else {
       try {
+        teardownStartedNs = String(process.hrtime.bigint());
         await save(directory, 'shutdown-intent.json', { containerId: receipt.containerId, action: 'stop' });
         stopConfirmed = (await callbacks.stopOwned({ timeoutMs: 29000 })).confirmed;
       } catch { /* Never retry an ambiguous stop. */ }
@@ -109,7 +110,7 @@ export async function withReadyBackend({ directory, backend, monitorBackend, act
   if (!stopConfirmed) failure = failure ?? 'stop-unconfirmed';
   if (monitor && !monitorSaved) failure = failure ?? 'monitor-evidence-failed';
   const result = { version: '1.0', runId: plan.runId, stage: 'backend-session', qualification: 'unexecuted',
-    ready, actionComplete, failure, stopConfirmed, health, monitor, monitorSaved };
+    ready, actionComplete, failure, stopConfirmed, health, monitor, monitorSaved, teardownStartedNs };
   await save(directory, 'startup-result.json', result);
   return result;
 }

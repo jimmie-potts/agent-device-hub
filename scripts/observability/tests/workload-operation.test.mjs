@@ -23,6 +23,8 @@ test('one attempt per ordinal advances tickets independently of omitted schedule
   assert.equal(JSON.parse(requests[1].body).expectedConfigurationRevision, snapshot.configurationRevision + 1);
   assert.notEqual(first.traceId, second.traceId);
   assert.match(requests[0].headers.traceparent, /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
+  assert.equal(requests[0].headers.baggage,'private=SYNTHETIC_PRIVATE_CANARY');
+  assert.equal(requests[0].headers['x-pilot-private'],'SYNTHETIC_PRIVATE_CANARY');
   assert.equal(requests[0].redirect, 'error');
   assert.deepEqual(initial, ready());
 });

@@ -2292,3 +2292,42 @@ for queue finalization and SDK cleanup: both queues stop waiting at 950 ms.
 Qualification still measures the complete flush and requires it to finish
 within 1,000 ms. The original saturated run exceeded that bound and remains
 failed evidence; this setting does not retroactively change its result.
+
+### Paired pilot evaluation
+
+After contract, ingestion/viewer, fault qualification and applicable source
+checks pass, run `npm run qualify:observability -- benchmarks` with the same
+arguments as the other backend modes. Supply a new evidence directory. This
+command requires a clean owning worktree and records its commit/tree, lockfile
+and harness hashes, Node/Python versions, fixed thresholds, image and contract
+before starting any measured workload. It refuses an existing suite directory.
+
+The suite runs three disabled/enabled pairs each for healthy and unavailable
+collection, in AB/BA/AB order. Each mode gets a fresh backend, state and
+application. The unavailable condition terminates only the verified Collector;
+resource monitoring continues. Each run keeps the fixed 30-second warm-up,
+60-second measurement, 20 operations/s and concurrency bound of eight. Neither
+failed operations nor omitted slots are replayed.
+
+Raw records include all 1,800 offered slots, warm-up telemetry, independent fake
+executions and 601 resource samples. Healthy ingestion reconciles all expected
+12,600 logs and 10,800 spans within the fixed query deadline. The runner compares
+domain outcomes by command ordinal, so valid completion reordering cannot
+create a false mismatch. Transport byte counts distinguish request-body bytes
+submitted to HTTP from acknowledged body bytes; they exclude headers and do not
+claim delivery when the Collector is unavailable.
+
+Cleanup verifies application absence and resource ownership before removing
+only that run's container, network, volume and synthetic state. Container
+teardown timing covers the interval from the session's stop intent through
+resource-removal verification. An unconfirmed stop is not retried by cleanup.
+Unknown state or incomplete cleanup stops further allocations. Known numerical
+failures remain in the report while the remaining prescribed pairs run; there
+is no retry or threshold override. Interrupted suites remain evidence and need
+explicit diagnosis before any new evaluation.
+
+`benchmark-run.json`, each `*-pair.json`, and `benchmark-suite.json` summarize
+the retained journals. Missing samples, workload identities, ingestion or
+cleanup cannot yield a supported pair. The suite's disposition covers paired
+benchmarks only; full pilot acceptance also requires the other issue criteria
+and repository delivery gates. No installation or physical acceptance follows.

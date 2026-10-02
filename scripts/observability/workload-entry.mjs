@@ -42,7 +42,7 @@ async function stop() {
     drain();
     send({ kind: 'closed', complete: stage === 'running' && quiescent && !evidenceFailed,
       stage, evidenceFailed, quiescent, counts: host?.counts() ?? null,
-      oracle: fake?.executionState() ?? null, shutdown: { applicationMs, flushMs } });
+      oracle: fake?.executionState() ?? null, transport: host?{logs:logTransport.counts(),traces:traceTransport.counts()}:null, shutdown: { applicationMs, flushMs } });
     process.disconnect();
   })();
   return closing;

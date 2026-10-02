@@ -10,7 +10,7 @@ export function createOtlpTransport({ origin, signal, timeoutMs = 1000, maxRespo
     !Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 2 || maxResponseBytes > 8192) throw new TypeError('Invalid OTLP transport configuration');
   const endpoint = new URL(`/v1/${signal}`, origin);
   const agent = new Agent({ keepAlive: true, maxSockets: 1, maxFreeSockets: 1 });
-  const counts = { attempted: 0, acknowledged: 0, rejectedRecords: 0, warnings: 0, failed: 0 };
+  const counts = { attempted: 0, acknowledged: 0, rejectedRecords: 0, warnings: 0, failed: 0, submittedBodyBytes: 0, acknowledgedBodyBytes: 0 };
   let closed = false, busy = false, cancel;
   const refuse = code => { counts.failed = add(counts.failed); throw error(code); };
   function singleRecord(line) {
@@ -44,7 +44,7 @@ export function createOtlpTransport({ origin, signal, timeoutMs = 1000, maxRespo
           abortSignal?.removeEventListener('abort', abort);
           if (code) {
             counts.failed = add(counts.failed); incoming?.destroy(); outgoing?.destroy(); reject(error(code));
-          } else { counts.acknowledged = add(counts.acknowledged); resolve(); }
+          } else { counts.acknowledged = add(counts.acknowledged); counts.acknowledgedBodyBytes = add(counts.acknowledgedBodyBytes,Buffer.byteLength(line)); resolve(); }
         }
         abortSignal?.addEventListener('abort', abort, { once: true });
         try {
@@ -80,6 +80,7 @@ export function createOtlpTransport({ origin, signal, timeoutMs = 1000, maxRespo
             });
           });
           outgoing.on('error', () => finish('network'));
+          counts.submittedBodyBytes=add(counts.submittedBodyBytes,Buffer.byteLength(line));
           outgoing.end(line);
         } catch { finish('network'); }
       });

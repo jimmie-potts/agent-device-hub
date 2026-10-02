@@ -24,6 +24,8 @@ test('one JSON request reaches the fixed signal endpoint without credentials or 
   });
   await transport.send(payload('logs'));
   assert.equal(calls, 1); assert.equal(transport.counts().acknowledged, 1);
+  assert.equal(transport.counts().submittedBodyBytes,Buffer.byteLength(payload('logs')));
+  assert.equal(transport.counts().acknowledgedBodyBytes,Buffer.byteLength(payload('logs')));
 });
 
 test('partial rejection is counted and never retried or exposed as a successful acknowledgment', async t => {
