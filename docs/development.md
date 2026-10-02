@@ -1469,3 +1469,24 @@ installation or device is touched. Retain all ordinary Hub, dashboard, shared
 contract/state/MCP and workflow checks.
 
 The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.
+
+## Shared observability contract checks
+
+The source contract in `packages/observability` uses Node 24 and Python 3.12 or
+3.14. From the assigned worktree, run `npm ci`, install
+`requirements-contracts.txt` in an isolated Python environment, then run
+`npm run build`, `npm run typecheck`, `npm run test:observability`,
+`npm run test:observability:python`, `npm run test:observability:query` and
+`npm run test:observability:package` and `npm run test:observability:browser`
+(with Chromium in the shared Playwright cache). The browser check runs in the
+existing Depot dashboard job, where Chromium is already installed. The combined Depot contracts/state matrix
+runs the built conformance, Python, query and archive-consumer checks. Keep
+the shared controller/lifecycle/workflow and affected consumer checks required
+by the final change.
+
+Fixtures cover safe canonical records, exact OTLP mappings, strict version
+projections, privacy, context isolation and bounded sink failures. The package
+check verifies immutable archive contents and independent TypeScript/Python
+consumers. These checks use synthetic records, no collector, device or live
+state. Real ingestion, Grafana queries and paired overhead measurements belong
+to the separately bounded pilot; passing fixtures do not establish adoption.
