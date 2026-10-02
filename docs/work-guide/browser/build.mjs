@@ -79,6 +79,7 @@ export async function checkCandidate(output=defaultOutput){
  const bundle=JSON.parse(files['pages.json']);
  if(bundle.datasetId!==dataset.datasetId||bundle.catalogId!==manifest.catalogId)throw Error('mixed page models');
  const regenerated=pageBundle(dataset);
+ for(const key of ['recentHistory','gaps','policy','recordsVersion','viewsVersion'])if(JSON.stringify(regenerated[key])!==JSON.stringify(bundle[key]))throw Error('page metadata regeneration differs '+key);
  for(const [key,page] of Object.entries(regenerated.pages))if(JSON.stringify(page)!==JSON.stringify(bundle.pages[key]))throw Error('page regeneration differs '+key);
  if(!String(await readFile(join(output,'index.html'))).includes(JSON.stringify(manifest).replaceAll('<','\\u003c')))throw Error('entry release binding differs');
  return {releaseId:manifest.releaseId,datasetId:dataset.datasetId,issues:dataset.issues.length,asOf:dataset.asOf};

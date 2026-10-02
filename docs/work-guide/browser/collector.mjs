@@ -148,15 +148,27 @@ export async function collect({request=ghRequest, project=unknownProject()}={}) 
     closed.items.filter(x=>x.closed_at && Date.parse(x.closed_at)>=Date.parse(start)).forEach(accept);
     repositories.push({name:repo,scope:'primary',inventory:opened.evidence,recentClosures:closed.evidence});
   }
+  const outside=id=>!REPOSITORIES.includes(facts(rawById.get(id)).repository);
+  const discardReference=id=>{unavailable.add(id);rawById.delete(id);relations.delete(id);factReceipts.delete(id);};
+  const readFacts=async(id,path)=>{try{return await request(path);}catch(error){if(!outside(id))throw error;discardReference(id);return null;}};
+  const prime=async batch=>{
+    if(!request.prime)return;
+    const primary=batch.filter(id=>rawById.has(id)&&!outside(id));
+    if(primary.length)await request.prime(primary.map(id=>rawById.get(id)));
+    for(const id of batch.filter(id=>rawById.has(id)&&outside(id))) {
+      try{await request.prime([rawById.get(id)]);}catch{discardReference(id);}
+    }
+  };
   const seen=new Set();
   // Read each retained record's relationships and close the reference graph, including older records.
   while([...rawById.keys()].some(id=>!seen.has(id))) {
     const batch=[...rawById.keys()].filter(id=>!seen.has(id)).slice(0,request.prime?20:6);
     if(request.checkPublic)for(const id of batch){const repo=facts(rawById.get(id)).repository;if(!publicRepos.has(repo)){try{await request.checkPublic(repo);publicRepos.add(repo);}catch(error){if(REPOSITORIES.includes(repo))throw error;unavailable.add(id);rawById.delete(id);}}}
-    if(request.prime)await request.prime(batch.filter(id=>rawById.has(id)).map(id=>rawById.get(id)));
+    await prime(batch);
     await Promise.all(batch.filter(id=>rawById.has(id)).map(async id=> {
       seen.add(id); const raw=rawById.get(id); const base=`repos/${facts(raw).repository}/issues/${raw.number}`;
-      const current=(raw._stub||request.prime)?(await request(base)).data:raw; accept(current);
+      const response=(raw._stub||request.prime)?await readFacts(id,base):{data:raw};
+      if(!response)return;const current=response.data;accept(current);
       const parent=await request(`${base}/parent`);
       const isOpen=current.state==='open';
       const omitted=path=>({items:[],evidence:{source:apiURL(path),observedAt:null,state:'unknown',complete:false,reason:'Closed reference; collection not needed for ancestry or active prerequisites',pagination:null}});
@@ -173,10 +185,10 @@ export async function collect({request=ghRequest, project=unknownProject()}={}) 
   const idsToCheck=[...rawById.keys()];
   for(let offset=0;offset<idsToCheck.length;offset+=(request.prime?20:6)) {
     const batch=idsToCheck.slice(offset,offset+(request.prime?20:6));
-    if(request.prime)await request.prime(batch.map(id=>rawById.get(id)));
-    await Promise.all(batch.map(async id=> {
+    await prime(batch);
+    await Promise.all(batch.filter(id=>rawById.has(id)).map(async id=> {
     const raw=rawById.get(id), base=`repos/${facts(raw).repository}/issues/${raw.number}`;
-    const observed=await request(base); accept(observed.data);
+    const observed=await readFacts(id,base);if(!observed)return;accept(observed.data);
     factReceipts.set(id,receipt(base,1,1,true,null,observed.observedAt??stamp()));
     const parentRead=await request(`${base}/parent`),parent=parentRead.data;
     const children=raw.state==='open'?await pages(`${base}/sub_issues`):null, blockers=raw.state==='open'?await pages(`${base}/dependencies/blocked_by`):null;

@@ -36,3 +36,21 @@ test('partial recent history permits a candidate with explicit gaps', async () =
   assert.equal(result.issues.length,3);
   assert.ok(result.repositories.every(x => !x.recentClosures.complete));
 });
+
+test('unavailable outside-Guide facts remain unresolved while primary reads stay required', async()=> {
+  const base=api();
+  const request=async path=> {
+    if(path==='repos/'+repos[0]+'/issues/1/parent')return {data:{...raw('example/public-reference',7),_stub:true},next:false};
+    if(path==='repos/example/public-reference/issues/7')throw Error('HTTP 404 external issue unavailable');
+    return base(path);
+  };
+  request.checkPublic=async()=>{};
+  const result=await collect({request});
+  assert.equal(result.issues.length,3);assert.equal(result.issues[0].placement.state,'unresolved');
+  assert.equal(result.issues[0].parent.evidence.complete,false);
+  assert.deepEqual(result.issues[0].parent.ids,['example/public-reference#7']);
+  request.prime=async raws=>{if(raws.some(x=>x.html_url.includes('example/public-reference')))throw Error('GraphQL missing external node');};
+  assert.equal((await collect({request})).issues.length,3);
+  await assert.rejects(collect({request:async path=>{if(path==='repos/'+repos[0]+'/issues/1/parent')throw Error('required parent denied');return base(path);}}),/required parent denied/);
+  await assert.rejects(collect({request:async path=>{if(path==='repos/'+repos[0]+'/issues/1')throw Error('HTTP 404 primary unavailable');return base(path);}}),/primary unavailable/);
+});

@@ -8,6 +8,8 @@ import {buildCandidate} from '../build.mjs';
 import {parseMetadata} from '../collector.mjs';
 import {datasetIdentity,placementOf} from '../runtime/records.mjs';
 import {routeFor} from '../renderer.mjs';
+import {pageBundle} from '../pages.mjs';
+import {resolveView} from '../runtime/views.mjs';
 const output=resolve('.local/scratch/gh-511-browser');
 const evidence=resolve(process.env.GUIDE_BROWSER_EVIDENCE??'.local/evidence/gh-511-browser');
 await mkdir(evidence,{recursive:true});
@@ -15,6 +17,14 @@ function largeFixture(d){
  const sample=d.issues.find(x=>x.state==='OPEN'&&x.placement.state==='epic'&&!x.labels.includes('epic'));
  for(let i=0;i<240;i++) {const x=structuredClone(sample);x.number=920000+i;x.id=x.repository+'#'+x.number;x.url=`https://github.com/${x.repository}/issues/${x.number}`;x.nodeId='browser-large-'+i;x.title='Large epic work '+i;x.children.ids=[];x.children.evidence.pagination.itemCount=x.children.evidence.pagination.totalCount=0;d.issues.push(x);}
  d.issues.find(x=>x.number===920239).title='<img src=x onerror="window.injected=true"> Literal unsafe title';
+ for(let i=0;i<240;i++) {
+  const parent=structuredClone(sample),child=structuredClone(sample);
+  for(const [x,number] of [[parent,930000+i],[child,940000+i]]) {x.number=number;x.id=x.repository+'#'+number;x.url=`https://github.com/${x.repository}/issues/${number}`;x.nodeId='grouped-'+number;x.labels=['status:backlog'];x.blockedBy.ids=[];x.blockedBy.evidence.pagination.itemCount=x.blockedBy.evidence.pagination.totalCount=0;}
+  parent.title='Grouping parent '+i;parent.parent.ids=[sample.placement.epic];parent.children.ids=[child.id];parent.children.evidence.pagination.itemCount=parent.children.evidence.pagination.totalCount=1;
+  child.title='Grouped leaf '+i;child.parent.ids=[parent.id];child.children.ids=[];child.children.evidence.pagination.itemCount=child.children.evidence.pagination.totalCount=0;
+  d.issues.push(parent,child);
+ }
+ for(const issue of d.issues)issue.placement=placementOf(d,issue);
  for(const r of d.repositories){r.inventory.pagination.itemCount=r.inventory.pagination.totalCount=d.issues.filter(x=>x.repository===r.name&&x.state==='OPEN').length;}
  d.datasetId=datasetIdentity(d);return {d,sample};
 }
@@ -64,10 +74,12 @@ try {
  const epicPage=routeFor(d.issues.find(x=>x.id===sample.placement.epic)).epic;
  await page.goto(origin+'/index.html?page='+encodeURIComponent(epicPage));await page.waitForFunction(()=>window.guide);
  const total=d.issues.filter(x=>x.state==='OPEN'&&x.placement.epic===sample.placement.epic).length;
- assert.ok(await page.locator('.issue').count()<total,'large epic initial DOM is unbounded');
+ assert.ok(await page.locator('.issue').count()<=48,'large epic must bound rows across distinct grouping parents');
+ assert.ok(await page.locator('.parent-groups .group').count()<=4,'initial grouping sections must be bounded');
  assert.match(await page.locator('.epic').first().textContent(),new RegExp(total+' open'));
- let clicks=0;while(await page.locator('button.more:visible').count()){await page.locator('button.more:visible').first().click();if(++clicks>100)throw Error('pagination did not terminate');}
+ let clicks=0;while(await page.locator('button.more:visible').count()){await page.locator('button.more:visible').first().click();if(++clicks>200)throw Error('pagination did not terminate');}
  assert.equal(await page.locator('.issue[data-record*="#920"]').count(),240);
+ assert.equal(await page.locator('.issue[data-record*="#940"]').count(),240);
  await page.evaluate(()=>dispatchEvent(new Event('beforeprint')));
  assert.equal(await page.locator('.issue[data-record*="#920"]').count(),240);
  await page.pdf({path:join(evidence,'epic-print.pdf'),format:'A4'});
@@ -84,6 +96,24 @@ try {
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:join(evidence,'mobile.png'),fullPage:false});
  const axeMobile=await new AxeBuilder({page}).analyze();assert.deepEqual(axeMobile.violations.map(x=>x.id),[]);
+ // Exercise the approved composed presentation through the exported renderer.
+ const composeDataset=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/dataset.json',import.meta.url),'utf8'));
+ const composed=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/composed.json',import.meta.url),'utf8'));
+ const composedResolved=resolveView(composed,{dataset:composeDataset,policy:{asOf:composeDataset.asOf,maxAgeMs:86400000}});
+ await page.evaluate(({dataset,resolved})=>{const handlers=[];window.guide.renderView(dataset,resolved,document.getElementById('content'),{bundle:{},filters:{},href:()=>'?page=all%2F',printHandlers:handlers});window.composedPrint=handlers;},{dataset:composeDataset,resolved:composedResolved});
+ const collapsed=composedResolved.nodes.find(x=>x.disclosure==='collapsed');const disclosure=page.locator(`details[data-group="${collapsed.id}"]`);
+ assert.equal(await disclosure.evaluate(x=>x.open),false);await disclosure.locator('summary').click();assert.equal(await disclosure.evaluate(x=>x.open),true);
+ assert.deepEqual(await page.locator('ol.list > li').evaluateAll(xs=>xs.map(x=>x.value)),[1,2]);
+ await page.evaluate(()=>window.composedPrint.forEach(x=>x.before()));assert.equal(await disclosure.evaluate(x=>x.open),true);
+ await page.evaluate(()=>window.composedPrint.forEach(x=>x.after()));assert.equal(await disclosure.evaluate(x=>x.open),true);
+ const recent=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/dataset.json',import.meta.url),'utf8'));
+ const unresolved=recent.issues.find(x=>x.number===900108);unresolved.state='CLOSED';unresolved.stateReason='completed';unresolved.closedAt=unresolved.updatedAt=recent.asOf;
+ recent.issues.find(x=>x.number===900111).stateReason='not_planned';
+ for(const r of recent.repositories){r.inventory.pagination.itemCount=r.inventory.pagination.totalCount=recent.issues.filter(x=>x.repository===r.name&&x.state==='OPEN').length;r.recentClosures.pagination.itemCount=r.recentClosures.pagination.totalCount=recent.issues.filter(x=>x.repository===r.name&&x.state==='CLOSED'&&x.closedAt&&Date.parse(x.closedAt)>=Date.parse(recent.asOf)-7*86400000).length;}
+ recent.datasetId=datasetIdentity(recent);const recentBundle=pageBundle(recent);assert.equal(recentBundle.recentHistory.complete,false);
+ const emptyEpic=recentBundle.pages[epicPage];assert.ok(!emptyEpic.resolved.nodes.some(x=>x.heading==='Recently done'));
+ await page.evaluate(({dataset,resolved,bundle})=>window.guide.renderView(dataset,resolved,document.getElementById('content'),{bundle,filters:{},href:()=>'?page=all%2F'}),{dataset:recent,resolved:emptyEpic.resolved,bundle:recentBundle});
+ assert.match(await page.locator('#content').textContent(),/Partial history/);assert.ok(!(await page.locator('#content').textContent()).includes('Complete seven-day history'));
  // Replace the deployment while the client remains open, and remove its old assets.
  const changed=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/dataset.json',import.meta.url),'utf8'));
  changed.issues[0].title='New deployed title';changed.datasetId=datasetIdentity(changed);
@@ -104,6 +134,6 @@ try {
  await writeFile(output+'/index.html',entry);await writeFile(join(output,'releases',manifest.releaseId.slice(7),'records.json'),'{}');
  await second.reload();await second.waitForFunction(()=>document.getElementById('content').textContent.includes('unavailable'));assert.match(await second.locator('#content').textContent(),/mixed-release asset/);
  assert.deepEqual(errors,[]);
- await writeFile(join(evidence,'browser.json'),JSON.stringify({passed:true,totalLargeEpic:total,showMoreClicks:clicks,axeViolations:0,pinnedRelease:pinned,newRelease:manifest.releaseId,externalRequests:requests.filter(x=>!x.startsWith(origin)&&!x.startsWith('blob:')).length},null,2));
+ await writeFile(join(evidence,'browser.json'),JSON.stringify({passed:true,totalLargeEpic:total,showMoreClicks:clicks,axeViolations:0,pinnedRelease:pinned,newRelease:manifest.releaseId,initialArticleLimit:48,groupingParents:240,externalRequests:requests.filter(x=>!x.startsWith(origin)&&!x.startsWith('blob:')).length},null,2));
  console.log('Epic browser checks passed: large epic, literal text, briefs, Back, theme, keyboard, mobile, axe, print, retained release, unsupported/mixed negative controls.');
 } finally {await browser.close();await new Promise(r=>server.close(r));await rm(output,{recursive:true,force:true});}

@@ -263,7 +263,7 @@ function resolveReason(dataset, record, reason, policy) {
 
 // The seven-day list is complete only when every primary repository's closed-in-window read is
 // complete and every recent completion could be placed.
-function recentEvidence(dataset) {
+export function recentEvidence(dataset) {
   const reasons = [...dataset.repositories.filter(x => x.scope === 'primary' && !x.recentClosures.complete)
     .map(x => ({ code: 'recent-closures-incomplete', source: x.recentClosures.source })),
   ...dataset.issues.filter(x => recentlyDone(dataset, x) && x.placement.state === 'unresolved')

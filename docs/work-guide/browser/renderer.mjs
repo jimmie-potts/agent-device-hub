@@ -79,7 +79,15 @@ export function renderView(dataset,resolved,container,ctx) {
       const box=el('section',undefined,'epic');box.dataset.record=record.id;
       const heading=el(node.presentation==='full'?'h2':'h3');heading.append(link(record.title,routeFor(record).epic,ctx));
       append(box,heading,el('p',record.story.outcome.text??'Outcome not recorded'),el('p',`${node.counts.open} open · ${node.counts.active} active · ${node.counts.blocked} blocked · ${node.counts.ready} eligible at snapshot`,'evidence'));
-      if(node.presentation==='full')for(const child of children.get(node.id)??[])box.append(render(child));
+      if(node.presentation==='full') {
+        const all=children.get(node.id)??[],grouped=all.filter(x=>x.kind==='section'&&x.record);
+        for(const child of all.filter(x=>!grouped.includes(x)))box.append(render(child));
+        if(grouped.length){const groupBox=el('section',undefined,'parent-groups');groupBox.append(el('h2','Native grouping'),el('p',`${grouped.length} groups in the complete view`,'total'));
+          const list=el('div'),more=el('button','Show more groups');more.className='more';let shown=0;
+          const expand=()=>{for(const child of grouped.slice(shown,shown+4))list.append(render(child));shown+=4;more.hidden=shown>=grouped.length;};more.onclick=expand;
+          if(ctx.printing){grouped.forEach(x=>list.append(render(x)));more.hidden=true;}else expand();append(groupBox,list,more);box.append(groupBox);
+        }
+      }
       else box.append(link('Open epic',routeFor(record).epic,ctx));
       return box;
     }
@@ -87,29 +95,30 @@ export function renderView(dataset,resolved,container,ctx) {
       const box=el('section',undefined,'board');for(const column of node.columns){const group=el('section');group.append(el('h3',column.name));column.children.forEach(id=>group.append(render(nodes.get(id))));box.append(group);}return box;
     }
     if(node.kind!=='section')throw Error('unsupported component');
-    const box=el('section',undefined,'group');box.dataset.group=node.id;
+    const collapsed=node.disclosure==='collapsed',box=el(collapsed?'details':'section',undefined,'group');box.dataset.group=node.id;
     const heading=node.record?`${records.get(node.record)?.title??node.record} · ${node.heading}`:node.heading;
-    box.append(el('h2',heading));if(node.sequence)box.append(el('p',node.sequence));
+    box.append(el(collapsed?'summary':'h2',heading));if(node.sequence)box.append(el('p',node.sequence));
     if(node.window)box.append(el('p',`UTC ${node.window.start} through ${node.window.end} · ${node.complete?'complete':'partial history'}`,'evidence'));
     const all=children.get(node.id)??[];
     const filtered=all.filter(x=>!x.record||matches(records.get(x.record),ctx));
     box.append(el('p',`${filtered.length} matching · ${all.length} total`,'total'));
-    const list=el('div',undefined,'list');let shown=0;
+    const list=el(node.sequence?'ol':'div',undefined,'list');let shown=0;
+    const itemElement=item=>{const rendered=render(item);if(!node.sequence)return rendered;const li=el('li');li.value=item.position;li.append(rendered);return li;};
     const more=el('button','Show more');more.className='more';
-    const expand=()=>{const step=shown===0?4:12;for(const item of filtered.slice(shown,shown+step))list.append(render(item));shown+=step;more.hidden=shown>=filtered.length;};
+    const expand=()=>{const step=shown===0?4:12;for(const item of filtered.slice(shown,shown+step))list.append(itemElement(item));shown+=step;more.hidden=shown>=filtered.length;};
     more.onclick=expand;
-    const renderAll=()=>{list.replaceChildren();filtered.forEach(x=>list.append(render(x)));};
-    ctx.printHandlers?.push({before:renderAll,after:()=>{list.replaceChildren();shown=0;expand();}});
-    expand();append(box,list,more);return box;
+    const renderAll=()=>{list.replaceChildren();filtered.forEach(x=>list.append(itemElement(x)));};
+    if(ctx.printing){if(collapsed)box.open=true;renderAll();more.hidden=true;}else expand();append(box,list,more);return box;
   };
-  container.replaceChildren();for(const root of children.get(null)??[])container.append(render(root));
+  const draw=()=>{container.replaceChildren();for(const root of children.get(null)??[])container.append(render(root));
   const expected=resolved.page.kind==='home'?['Epics','Current work','Newly added','Open defects']:resolved.page.kind==='epic'?['In progress','Up next','Blocked','Later','Recently done']:resolved.page.kind==='not-in-epic'?['Recently done']:[];
   for(const heading of expected)if(!resolved.nodes.some(x=>x.heading===heading)) {
     const box=el('section',undefined,'group');box.append(el('h2',heading),el('p',heading==='Epics'?'0 epics. No collected issue carries the explicit epic label. Native parents remain grouping records.':'0 issues in this section.'));
-    if(heading==='Recently done')box.append(el('p',dataset.repositories.some(x=>x.scope==='primary'&&!x.recentClosures.complete)?'Partial history; the empty display does not establish no completions.':'Complete seven-day history at '+dataset.asOf,'evidence'));
+    if(heading==='Recently done'){const history=ctx.bundle?.recentHistory??resolved.nodes.find(x=>x.window);box.append(el('p',history?.complete===true?'Complete seven-day history at '+dataset.asOf:history?'Partial history; the empty display does not establish no completions.':'History completeness unknown; check the source evidence.','evidence'));}
     if(heading==='Epics')container.prepend(box);else container.append(box);
   }
-  if(!resolved.nodes.length&&!expected.length)container.append(el('p','No issues in this view.'));
+  if(!resolved.nodes.length&&!expected.length)container.append(el('p','No issues in this view.'));};
+  draw();let saved=null;ctx.printHandlers?.push({before:()=>{if(saved)return;saved=[...container.childNodes];ctx.printing=true;draw();},after:()=>{if(!saved)return;ctx.printing=false;container.replaceChildren(...saved);saved=null;}});
 }
 
 export function start(dataset,bundle,manifest,releaseBase) {

@@ -1,4 +1,4 @@
-import { CATALOG, catalogIdentity, resolveView, PREDICATES, route } from './runtime/views.mjs';
+import { CATALOG, catalogIdentity, resolveView, PREDICATES, route, recentEvidence } from './runtime/views.mjs';
 import { isEpic, primaryPage, recentlyDone, eligibility, publicationGate, WORKFLOW, sealDataset } from './runtime/records.mjs';
 export const snapshotPolicy = dataset => ({name:'guide-source-snapshot/1',asOf:dataset.asOf,maxAgeMs:86400000});
 
@@ -62,7 +62,7 @@ export function pageBundle(dataset) {
   insert('home','home');insert('all/','all');insert('not-in-epic/','not-in-epic');insert('example','answer');
   for(const issue of dataset.issues.filter(isEpic)) insert(route(issue).epic,'epic',issue.id);
   for(const issue of dataset.issues) insert(`issue:${issue.id}`,'issue',issue.id);
-  return {datasetId:dataset.datasetId,catalogId:catalogIdentity(CATALOG),recordsVersion:dataset.schemaVersion,viewsVersion:'guide-views/1.0',pages,gaps:publicationGate(dataset).gaps,policy};
+  return {recentHistory:recentEvidence(dataset),datasetId:dataset.datasetId,catalogId:catalogIdentity(CATALOG),recordsVersion:dataset.schemaVersion,viewsVersion:'guide-views/1.0',pages,gaps:publicationGate(dataset).gaps,policy};
 }
 
 export function inventoryAudit(dataset) {
