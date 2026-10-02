@@ -21,9 +21,13 @@ export class EvaluationLoop {
   #requested = false;
   #running?: Promise<void>;
   #timer?: unknown;
+  #pollTimer?: unknown;
+  readonly #pollMs?: number;
 
   /** `evaluate` returns the delay before the next scheduled evaluation. */
-  constructor(evaluate: () => Promise<number>, timers: PublisherTimers) {
+  constructor(evaluate: () => Promise<number>, timers: PublisherTimers, pollMs?: number) {
+    if (pollMs !== undefined && (!Number.isSafeInteger(pollMs) || pollMs <= 0)) throw new Error('invalid-poll-interval');
+    this.#pollMs = pollMs;
     this.#evaluate = evaluate;
     this.#timers = timers;
   }
@@ -32,6 +36,7 @@ export class EvaluationLoop {
 
   update(): Promise<void> {
     if (this.#stopped) return Promise.resolve();
+    this.#schedulePoll();
     this.#requested = true;
     this.#running ??= this.#loop().finally(() => { this.#running = undefined; });
     return this.#running;
@@ -45,6 +50,17 @@ export class EvaluationLoop {
     this.#stopped = true;
     if (this.#timer !== undefined) this.#timers.clearTimeout(this.#timer);
     this.#timer = undefined;
+    if (this.#pollTimer !== undefined) this.#timers.clearTimeout(this.#pollTimer);
+    this.#pollTimer = undefined;
+  }
+
+  #schedulePoll(): void {
+    if (this.#pollMs === undefined || this.#pollTimer !== undefined || this.#stopped) return;
+    this.#pollTimer = this.#timers.setTimeout(() => {
+      this.#pollTimer = undefined;
+      this.#schedulePoll();
+      void this.update();
+    }, this.#pollMs);
   }
 
   async #loop(): Promise<void> {
@@ -65,24 +81,32 @@ const TIMEOUT = Symbol('timeout');
  * blocks further reads until it settles, so a hung feed never piles up requests.
  */
 export class BoundedReader<T> {
-  readonly #read: () => T | Promise<T>;
+  readonly #read: (signal: AbortSignal) => T | Promise<T>;
   readonly #timeoutMs: number;
   readonly #timers: PublisherTimers;
   #pending?: Promise<unknown>;
+  #stopped = false;
+  #cancel?: () => void;
 
-  constructor(read: () => T | Promise<T>, timeoutMs: number, timers: PublisherTimers) {
+  constructor(read: (signal: AbortSignal) => T | Promise<T>, timeoutMs: number, timers: PublisherTimers) {
     this.#read = read;
     this.#timeoutMs = timeoutMs;
     this.#timers = timers;
   }
 
+  stop(): void { this.#stopped = true; this.#cancel?.(); }
+
   /** The read's value, or undefined when it threw, timed out or an earlier read is still hung. */
   async read(): Promise<T | undefined> {
-    if (this.#pending) return undefined;
+    if (this.#stopped || this.#pending) return undefined;
+    const abort = new AbortController();
     let timer: unknown;
     try {
-      const timeout = new Promise<typeof TIMEOUT>(resolve => { timer = this.#timers.setTimeout(() => resolve(TIMEOUT), this.#timeoutMs); });
-      const read = Promise.resolve().then(() => this.#read());
+      const timeout = new Promise<typeof TIMEOUT>(resolve => {
+        this.#cancel = () => { abort.abort(); resolve(TIMEOUT); };
+        timer = this.#timers.setTimeout(this.#cancel, this.#timeoutMs);
+      });
+      const read = Promise.resolve().then(() => this.#stopped ? undefined : this.#read(abort.signal));
       const value = await Promise.race([read, timeout]);
       if (value === TIMEOUT) {
         const pending: Promise<unknown> = read.catch(() => undefined).finally(() => {
@@ -91,11 +115,12 @@ export class BoundedReader<T> {
         this.#pending = pending;
         return undefined;
       }
-      return value;
+      return this.#stopped ? undefined : value;
     } catch {
       return undefined;
     } finally {
       this.#timers.clearTimeout(timer);
+      this.#cancel = undefined;
     }
   }
 }

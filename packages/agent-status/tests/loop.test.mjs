@@ -90,3 +90,25 @@ test('a hung read times out, and no further read starts until it settles', async
   assert.equal(await reader.read(), 'late', 'once the hung read settles, a fresh read is allowed');
   assert.equal(reads, 2);
 });
+
+
+test('notices cannot move the independent recovery deadline', async () => {
+  const clock = {now:0}, timers = fakeTimers(clock);
+  let calls=0;
+  const loop=new EvaluationLoop(async()=>{calls++;return 30000;},timers,30000);
+  await loop.update();
+  clock.now=29000;
+  for(let i=0;i<100;i++) await loop.update();
+  const due=[...timers.pending].filter(t=>t.at===30000);
+  assert.equal(due.length,1,'recovery still due at 30 seconds');
+  const before=calls;clock.now=30000;timers.pending.delete(due[0]);due[0].callback();await loop.whenIdle();
+  assert.equal(calls,before+1);loop.stop();assert.equal(timers.pending.size,0);
+});
+
+test('stop cancels a read wait even if the optional feed ignores its signal', async () => {
+  const clock={now:0}, timers=fakeTimers(clock);let signal,reads=0;
+  const reader=new BoundedReader(s=>{reads++;signal=s;return new Promise(()=>{});},3000,timers);
+  const pending=reader.read();await Promise.resolve();reader.stop();
+  assert.equal(await pending,undefined);assert.equal(signal.aborted,true);
+  assert.equal(await reader.read(),undefined);assert.equal(reads,1);assert.equal(timers.pending.size,0);
+});

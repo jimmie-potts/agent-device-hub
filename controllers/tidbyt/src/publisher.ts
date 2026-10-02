@@ -1,3 +1,4 @@
+import {FeedListener, type Feed} from '@jimmie-potts/agent-status';
 import { validateSnapshot, type Snapshot } from '@jimmie-potts/agent-state';
 import type { Receipt } from '@jimmie-potts/device-contracts';
 import type { TidbytController } from './controller.js';
@@ -8,14 +9,7 @@ import { statusFrame, statusView, type StatusView } from './status.js';
  * The selected shared agent-state owner's feed. `snapshot()` returns its current
  * calculated state; `subscribe()` yields revision pointers or resync notices.
  */
-export type StatusFeed = {
-  /**
-   * Must settle within a bounded time. A read that outlives the publisher's timeout
-   * blocks further reads until it settles, so an adapter must enforce its own deadline.
-   */
-  snapshot(): Snapshot | Promise<Snapshot>;
-  subscribe?(): AsyncIterable<unknown> & { close?(): void };
-};
+export type StatusFeed = Feed<Snapshot>;
 
 export type StatusTimers = PublisherTimers;
 
@@ -28,7 +22,7 @@ export type StatusPublisherOptions = {
   minIntervalMs?: number;
   /** Push an unchanged frame again after this long. Default 10 minutes. */
   refreshMs?: number;
-  /** Re-read the feed this often without a change notice. Default 30 s. */
+  /** Fixed recovery polling interval, independent of notices. Default 30 s. */
   pollMs?: number;
   /** A feed read slower than this counts as unavailable. Default 3 s. */
   feedTimeoutMs?: number;
@@ -51,7 +45,7 @@ export class TidbytStatusPublisher {
   readonly #reader: BoundedReader<Snapshot>;
   readonly #writer: InstallationWriter;
   #started = false;
-  #subscription?: AsyncIterable<unknown> & { close?(): void };
+  readonly #listener: FeedListener;
   /** The last snapshot that validated, kept for display while the feed is unavailable. */
   #lastGood?: Snapshot;
   #view?: StatusView;
@@ -70,9 +64,11 @@ export class TidbytStatusPublisher {
     const timers = options.timers ?? systemTimers;
     this.#feed = options.feed;
     this.#consumers = options.acknowledgingConsumers ? [...options.acknowledgingConsumers] : undefined;
-    this.#loop = new EvaluationLoop(() => this.#evaluate(), timers);
-    this.#reader = new BoundedReader(() => this.#feed.snapshot(), feedTimeoutMs, timers);
+    this.#loop = new EvaluationLoop(() => this.#evaluate(), timers, pollMs);
+    this.#reader = new BoundedReader(signal => this.#feed.snapshot(signal), feedTimeoutMs, timers);
+    this.#listener = new FeedListener(this.#feed, () => { void this.update(); });
     this.#writer = new InstallationWriter({
+      canSubmit: () => !this.#loop.stopped,
       controller: options.controller, minIntervalMs, refreshMs, pollMs, now: options.now ?? (() => performance.now()),
     });
   }
@@ -86,8 +82,8 @@ export class TidbytStatusPublisher {
   /** Stop publishing. A write already admitted to the controller reports its own result. */
   stop(): void {
     this.#loop.stop();
-    this.#subscription?.close?.();
-    this.#subscription = undefined;
+    this.#listener.stop();
+    this.#reader.stop();
   }
 
   /** Request an evaluation. Requests made while one runs coalesce into a single rerun. */
@@ -109,32 +105,11 @@ export class TidbytStatusPublisher {
     });
   }
 
-  #subscribe(): void {
-    if (this.#subscription || !this.#feed.subscribe) return;
-    let subscription: AsyncIterable<unknown> & { close?(): void };
-    try {
-      subscription = this.#feed.subscribe();
-    } catch {
-      return;
-    }
-    this.#subscription = subscription;
-    void (async () => {
-      try {
-        for await (const _ of subscription) {
-          if (this.#loop.stopped) break;
-          void this.update();
-        }
-      } catch {
-        // The next evaluation resubscribes; the poll keeps reading meanwhile.
-      }
-      if (this.#subscription === subscription) this.#subscription = undefined;
-    })();
-  }
-
   /** One evaluation. Returns the delay before the next scheduled evaluation. */
   async #evaluate(): Promise<number> {
-    this.#subscribe();
+    this.#listener.start();
     const value = await this.#reader.read();
+    if (this.#loop.stopped) return 30_000;
     const valid = value === undefined ? undefined : validateSnapshot(value);
     const current = valid?.ok ? valid.value : undefined;
     if (current) this.#lastGood = current;

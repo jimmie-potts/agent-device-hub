@@ -108,7 +108,7 @@ test('runner consumes a real owner feed through its queue and stops without dele
   assert.equal((await owner.ingest(titled)).ok, true);
   let feedCalls=0,pushes=0,removals=0;
   const requested=[];
-  const server=createServer((req,res)=>{feedCalls++;requested.push(req.url);res.end(JSON.stringify({apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:owner.snapshot('1.2')}));});
+  const server=createServer((req,res)=>{feedCalls++;requested.push(req.url);assert.equal(req.headers.authorization,'Bearer '+'t'.repeat(43));if(req.url==='/api/monitor/v1/changes'){res.writeHead(200,{'content-type':'text/event-stream'});res.write(': heartbeat\n\n');return;}res.end(JSON.stringify({apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:owner.snapshot('1.2')}));});
   server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
   let sent;const pushed=new Promise(resolve=>{sent=resolve;});
   const connection={capabilities:{backend:'tidbyt-cloud',backgroundPush:{supported:true},foregroundPush:{supported:false},installationRead:{supported:true},installationRemove:{supported:true}},
@@ -116,14 +116,14 @@ test('runner consumes a real owner feed through its queue and stops without dele
   const config={...loadRunnerConfig(s.configFile),hubUrl:`http://127.0.0.1:${server.address().port}`};
   const runner=startStatusRunner(config,{connection,leaseRoot:join(s.dir,'locks')});t.after(()=>runner.stop());
   const webp = await pushed;
-  assert.deepEqual(requested, ['/api/monitor/v1/sessions?snapshotVersion=1.2']);
+  assert.deepEqual(requested.sort(), ['/api/monitor/v1/changes','/api/monitor/v1/sessions?snapshotVersion=1.2']);
   const { statusView, statusFrame, renderFrame } = await import('../dist/index.js');
   const view = statusView(owner.snapshot('1.2'));
   assert.equal(view.rows[0].label, 'LAUNCH REV');
   assert.deepEqual(webp, renderFrame(statusFrame(view)).webp);
   assert.throws(()=>startStatusRunner(config,{connection,leaseRoot:join(s.dir,'locks')}),/writer-unavailable/);
   await runner.stop();await runner.stop();
-  assert.equal(pushes,1);assert.equal(removals,0);assert.equal(feedCalls,1);
+  assert.equal(pushes,1);assert.equal(removals,0);assert.equal(feedCalls,2);
   acquireWriterLease('device',join(s.dir,'locks'))();
 });
 
@@ -197,6 +197,7 @@ test('with now-playing configured, the runner writes both tiles through one cont
   const routes=[];
   const server=createServer((req,res)=>{
     routes.push([req.url,req.headers.authorization.slice(-3)]);
+    if(req.url==='/api/monitor/v1/changes'){res.writeHead(200,{'content-type':'text/event-stream'});res.write(': heartbeat\n\n');return;}
     res.end(JSON.stringify(req.url==='/api/playback/v1/snapshot'?playbackSnapshot():{apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:owner.snapshot('1.2')}));
   });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
   const writes=[];let done;const both=new Promise(resolve=>{done=resolve;});
@@ -209,8 +210,8 @@ test('with now-playing configured, the runner writes both tiles through one cont
   await both;
   await runner.stop();
   assert.deepEqual(writes.map(([kind,installation])=>[kind,installation??'default']).sort(),[['push','default'],['push','nowplaying']]);
-  assert.deepEqual(routes.map(([url])=>url).sort(),['/api/monitor/v1/sessions?snapshotVersion=1.2','/api/playback/v1/snapshot']);
-  assert.deepEqual(Object.fromEntries(routes),{'/api/monitor/v1/sessions?snapshotVersion=1.2':'ttt','/api/playback/v1/snapshot':'ppp'},'each route uses its own token');
+  assert.deepEqual(routes.map(([url])=>url).sort(),['/api/monitor/v1/changes','/api/monitor/v1/sessions?snapshotVersion=1.2','/api/playback/v1/snapshot']);
+  assert.deepEqual(Object.fromEntries(routes),{'/api/monitor/v1/changes':'ttt','/api/monitor/v1/sessions?snapshotVersion=1.2':'ttt','/api/playback/v1/snapshot':'ppp'},'each route uses its own token');
   assert.equal(runner.state().nowPlaying.installation,'present');
 });
 
