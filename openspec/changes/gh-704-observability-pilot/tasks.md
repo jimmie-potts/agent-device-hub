@@ -22,7 +22,7 @@
 ## 4. Runtime qualification and disposition
 
 - [ ] 4.1 Once the existing container engine is available, freeze the pre-run manifest and verify real Loki/Tempo ingestion, Python/Node field queries, trace/log correlation and the existing Grafana viewer; retain exact query and viewer evidence.
-- [ ] 4.2 Run privacy, trust, context, queue/drop, exporter failure, timeout and cleanup scenarios against the real stack; verify zero leaks/crossover/duplicate effects and bounded truthful outcomes.
+- [x] 4.2 Run privacy, trust, context, queue/drop, exporter failure, timeout and cleanup scenarios against the real stack; verify zero leaks/crossover/duplicate effects and bounded truthful outcomes.
 - [ ] 4.3 Run the prescribed three pairs for healthy and unavailable collection against the frozen thresholds; retain all raw samples, failed/inconclusive attempts and any correction hypotheses.
 - [ ] 4.4 Publish the evidence-backed supported/refuted/inconclusive pilot report and budget revisit triggers; verify that every mandatory gate is explicit and unsupported adoption remains blocked.
 

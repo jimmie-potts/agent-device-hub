@@ -136,3 +136,19 @@ failed evidence. Pilot application queues now wait at most 950 ms, reserving
 50 ms for drop accounting and SDK cleanup. The measured end-to-end flush bound
 remains 1,000 ms; queue capacities, command timeouts and workload are unchanged.
 This setting must be included in the frozen benchmark source revision.
+
+Runtime fault evidence is retained under the main checkout's
+`.local/evidence/gh-706-observability/`: `704-command-faults-001` matched all 49
+logs and 48 spans for ten command/privacy/context scenarios; `704-paused-collector-004`
+and `704-absent-collector-001` each preserved 200 effects per mode and accounted
+for all 1,400 logs and 1,200 spans. The paused run recorded bounded drops and a
+955.184 ms flush; the absent run classified all records as failed exports and
+flushed in 7.143 ms. Both restored or removed their owned runtime as applicable
+and verified resource/state cleanup. Full-precision measurements remain in the
+raw evidence; these rounded values are descriptive only.
+
+Retain paused attempts 001 (socket-path startup failure), 002 (1,004.608 ms
+flush, failed), and 003 (pre-allocation prerequisite refusal with incomplete
+diagnostic evidence), together with their correction hypotheses and source
+regressions. They are not passing runs. No paired benchmark or full pilot
+acceptance follows from these fault results.
