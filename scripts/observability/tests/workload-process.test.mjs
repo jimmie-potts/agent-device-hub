@@ -11,23 +11,25 @@ import { startWorkloadProcess } from '../workload-process.mjs';
 import { applicationSnapshot } from '../application-measurement.mjs';
 import { createBrightnessOperation } from '../workload-operation.mjs';
 import { reconcileWorkload } from '../workload-oracle.mjs';
+import { createDeliveryRecorder } from '../delivery-records.mjs';
 
 test('fresh baseline and instrumented application processes preserve command outcomes and expose independent CPU/RSS', async t => {
   const parent=await mkdtemp(join(tmpdir(),'wp-')), local=join(parent,'.local');await mkdir(local);
   t.after(()=>rm(parent,{recursive:true,force:true}));
-  let requests=0;
-  const collector=createServer(async(req,res)=>{for await(const chunk of req){} requests++;res.setHeader('content-type','application/json');res.end('{}');});
+  let requests=0,rejectCollection=false;
+  const collector=createServer(async(req,res)=>{for await(const chunk of req){} requests++;res.statusCode=rejectCollection?500:200;res.setHeader('content-type','application/json');res.end('{}');});
   await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port, others=[43000,43002,43003,43004,43005].filter(p=>p!==port);
   const outcomes=[];
-  for(const enabled of [false,true]){
-    const directory=join(local,enabled?'enabled':'baseline');
-    await prepareBackendDirectory(directory,{runId:enabled?'enabled':'baseline',ports:{grafana:others[0],otlp:port,loki:others[1],tempo:others[2],health:others[3]}});
+  for(const mode of ['baseline','enabled','rejected']){
+    const enabled=mode!=='baseline';rejectCollection=mode==='rejected';
+    const directory=join(local,mode);
+    await prepareBackendDirectory(directory,{runId:mode,ports:{grafana:others[0],otlp:port,loki:others[1],tempo:others[2],health:others[3]}});
     const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
     await prepareReleasedContract(join(roots.roots.state.path,'contract'));
-    let ownership;
-    const processHandle=await startWorkloadProcess(directory,{enabled,onStart:identity=>{ownership=identity;}});t.after(()=>processHandle.stop());
+    let ownership;const evidence=createDeliveryRecorder({record:()=>{}});
+    const processHandle=await startWorkloadProcess(directory,{enabled,onStart:identity=>{ownership=identity;},onEvidence:evidence.accept});t.after(()=>processHandle.stop());
     assert.deepEqual(ownership,processHandle.identity);
     const sample=await applicationSnapshot(processHandle.identity);assert.ok(sample.rssBytes>0);
     const operation=createBrightnessOperation(processHandle.ready), receipts=[],events=[];
@@ -46,7 +48,13 @@ test('fresh baseline and instrumented application processes preserve command out
     assert.equal(stopped.code,0);assert.equal(stopped.reason,null);
     assert.ok(stopped.result.shutdown.applicationMs>=stopped.result.shutdown.flushMs);
     assert.throws(()=>process.kill(processHandle.identity.pid,0),{code:'ESRCH'});
-    if(enabled){assert.equal(stopped.result.counts.logs.exported,21);assert.equal(stopped.result.counts.traces.output.exported,18);}
+    if(enabled){
+      const accounting=evidence.finish(stopped.result.counts);assert.equal(accounting.complete,true,JSON.stringify(accounting.counts));
+      assert.equal(accounting.expectedLogs.length,21);assert.equal(accounting.expectedSpans.length,18);
+      const terminal=rejectCollection?'failed':'exported';
+      assert.equal(stopped.result.counts.logs[terminal],21);assert.equal(stopped.result.counts.traces.output[terminal],18);
+      assert.equal(accounting.counts.logs[terminal],21);assert.equal(accounting.counts.traces[terminal],18);
+    }
     else{assert.equal(stopped.result.counts,null);assert.equal(requests,0);}
     let refused;
     await assert.rejects(startWorkloadProcess(directory,{enabled,onStart:identity=>{
@@ -54,5 +62,5 @@ test('fresh baseline and instrumented application processes preserve command out
     }}),/SYNTHETIC_PRIVATE_CANARY/);
     assert.throws(()=>process.kill(refused.pid,0),{code:'ESRCH'});
   }
-  assert.deepEqual(outcomes,Array.from({length:6},()=>[202,'queued']));assert.equal(requests,39);
+  assert.deepEqual(outcomes,Array.from({length:9},()=>[202,'queued']));assert.equal(requests,78);
 });

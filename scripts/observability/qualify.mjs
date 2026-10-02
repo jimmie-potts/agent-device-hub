@@ -1,10 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { inspectHost, inspectDocker } from './preflight.mjs';
-import { smokeBackend, qualifyIngestionBackend } from './backend-smoke.mjs';
+import { smokeBackend, qualifyIngestionBackend, qualifyDeliveryBackend } from './backend-smoke.mjs';
 
 const args = process.argv.slice(2);
-if (['backend-smoke', 'ingestion'].includes(args[0]) && args.length === 9 && args[1] === '--evidence-dir' &&
+if (['backend-smoke', 'ingestion', 'delivery-smoke'].includes(args[0]) && args.length === 9 && args[1] === '--evidence-dir' &&
   args[3] === '--state-parent' && args[5] === '--endpoint' && args[7] === '--ports') {
   const control = new AbortController();
   const abort = () => control.abort();
@@ -15,7 +15,7 @@ if (['backend-smoke', 'ingestion'].includes(args[0]) && args.length === 9 && arg
       throw new Error('Ports invalid');
     }
     const ports = Object.fromEntries(['grafana', 'otlp', 'loki', 'tempo', 'health'].map((name, index) => [name, values[index]]));
-    const run = args[0] === 'ingestion' ? qualifyIngestionBackend : smokeBackend;
+    const run = args[0] === 'delivery-smoke' ? qualifyDeliveryBackend : args[0] === 'ingestion' ? qualifyIngestionBackend : smokeBackend;
     const result = await run({ directory: resolve(args[2]), stateParent: resolve(args[4]),
       endpoint: args[6], ports, signal: control.signal });
     console.log(JSON.stringify(result));
@@ -25,7 +25,7 @@ if (['backend-smoke', 'ingestion'].includes(args[0]) && args.length === 9 && arg
     process.exitCode = 2;
   } finally { process.removeListener('SIGINT', abort); process.removeListener('SIGTERM', abort); }
 } else if (args.length !== 3 || args[0] !== 'preflight' || args[1] !== '--evidence-dir' || !args[2]) {
-  console.error('Usage: npm run qualify:observability -- preflight --evidence-dir <new-run-directory>\n  or <backend-smoke|ingestion> --evidence-dir <new-run-directory> --state-parent <existing-local-directory-outside-git> --endpoint <unix-socket-url> --ports <grafana,otlp,loki,tempo,health>');
+  console.error('Usage: npm run qualify:observability -- preflight --evidence-dir <new-run-directory>\n  or <backend-smoke|ingestion|delivery-smoke> --evidence-dir <new-run-directory> --state-parent <existing-local-directory-outside-git> --endpoint <unix-socket-url> --ports <grafana,otlp,loki,tempo,health>');
   process.exitCode = 2;
 } else {
   try {

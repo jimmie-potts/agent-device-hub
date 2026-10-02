@@ -2,6 +2,7 @@ import { trace } from '@opentelemetry/api';
 import { catalog, createRecord, validateRecord, MAX_QUEUE_RECORDS, MAX_QUEUE_BYTES, MAX_RECORD_BYTES } from '@jimmie-potts/bunny-observability';
 import { createBoundedSink } from './bounded-sink.mjs';
 import { projectSpan } from './span-projection.mjs';
+import { createDeliveryEvidence } from './delivery-evidence.mjs';
 const automaticScopes = new Set(['@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-undici']);
 const key = identity => identity && trace.isSpanContextValid(identity) ? `${identity.traceId}:${identity.spanId}` : undefined;
 const cap = (value, maximum) => {
@@ -10,9 +11,10 @@ const cap = (value, maximum) => {
 };
 
 /** Host-owned association: no SDK attributes, resources, events or links are exported directly. */
-export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES }) {
+export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES, observe }) {
   cap(maxActiveRecords, MAX_QUEUE_RECORDS); cap(maxActiveBytes, MAX_QUEUE_BYTES);
-  const queue = createBoundedSink(sink, queueOptions), active = new Map();
+  const evidence=createDeliveryEvidence('traces',observe);
+  const queue = createBoundedSink(sink, queueOptions,(id,phase)=>evidence.settle(id,phase)), active = new Map();
   const counters = { registered: 0, associationDropped: 0, unassociated: 0, invalid: 0, unfinished: 0, failures: 0 };
   const count = name => { counters[name] = Math.min(Number.MAX_SAFE_INTEGER, counters[name] + 1); };
   let bytes = 0, stopped = false;
@@ -20,8 +22,12 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
     const id = key(span.spanContext());
     const size = Buffer.byteLength(JSON.stringify({ metadata, name, links }));
     if (!id || !catalog.span_names.includes(name) || !validateRecord(metadata).ok || size > MAX_RECORD_BYTES) { count('invalid'); return; }
-    if (stopped || active.has(id) || active.size >= maxActiveRecords || bytes + size > maxActiveBytes) { count('associationDropped'); return; }
-    active.set(id, { metadata, name, links, automatic, size }); bytes += size; count('registered');
+    const evidenceId=evidence.begin({traceId:span.spanContext().traceId,spanId:span.spanContext().spanId,name,
+      resource:metadata.resource,scope:metadata.scope});
+    if (stopped || active.has(id) || active.size >= maxActiveRecords || bytes + size > maxActiveBytes) {
+      count('associationDropped');evidence.settle(evidenceId,'dropped');return;
+    }
+    active.set(id, { metadata, name, links, automatic, size,evidenceId }); bytes += size; count('registered');
   }
   const processor = {
     onStart(span, parentContext) {
@@ -37,8 +43,9 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
         if (!entry) { count('unassociated'); return; }
         active.delete(id); bytes -= entry.size;
         const value = projectSpan(span, entry.metadata, entry.name, entry.links);
-        if (!value) { count('invalid'); return; }
-        queue.push(JSON.stringify(value));
+        if (!value) { count('invalid');evidence.settle(entry.evidenceId,'failed');return; }
+        evidence.project(entry.evidenceId,value);
+        queue.push(JSON.stringify(value),entry.evidenceId);
       } catch { count('failures'); }
     },
     async forceFlush() {
@@ -48,6 +55,7 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
       if (!stopped) {
         stopped = true;
         counters.unfinished = Math.min(Number.MAX_SAFE_INTEGER, counters.unfinished + active.size);
+        for(const entry of active.values())evidence.settle(entry.evidenceId,'pending');
         active.clear(); bytes = 0;
       }
       return queue.close();
@@ -100,6 +108,6 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
         return true;
       } catch { count('failures'); return false; }
     },
-    counts: () => ({ ...counters, active: active.size, activeBytes: bytes, output: queue.counts() }),
+    counts: () => ({ ...counters, active: active.size, activeBytes: bytes, output: queue.counts(),evidence:evidence.counts() }),
   };
 }

@@ -9,6 +9,7 @@ import { verifyInstalledContract } from './released-contract.mjs';
 
 let hub, fake, host, logTransport, traceTransport, drainTimer, closing, pending = 0, evidenceFailed = false;
 let stage = 'input';
+let evidenceBatch=[],evidenceBytes=0;
 function send(value) {
   if (!process.connected || pending >= 128 || Buffer.byteLength(JSON.stringify(value)) > 65536) { evidenceFailed = true; return; }
   pending++;
@@ -17,6 +18,13 @@ function send(value) {
 function drain() {
   const executions = fake?.takeExecutions();
   if (executions?.length) send({ kind: 'executions', executions });
+  if(evidenceBatch.length){send({kind:'telemetry',events:evidenceBatch});evidenceBatch=[];evidenceBytes=0;}
+}
+function observe(event) {
+  const bytes=Buffer.byteLength(JSON.stringify(event));
+  if(bytes>16384){evidenceFailed=true;return;}
+  if(evidenceBytes+bytes>49152 || evidenceBatch.length>=128)drain();
+  evidenceBatch.push(event);evidenceBytes+=bytes;
 }
 async function stop() {
   if (closing) return closing;
@@ -30,6 +38,7 @@ async function stop() {
     const flushStarted = performance.now(); await host?.shutdown();
     const flushMs = performance.now() - flushStarted, applicationMs = performance.now() - started;
     logTransport?.close(); traceTransport?.close();
+    drain();
     send({ kind: 'closed', complete: stage === 'running' && quiescent && !evidenceFailed,
       stage, evidenceFailed, quiescent, counts: host?.counts() ?? null,
       oracle: fake?.executionState() ?? null, shutdown: { applicationMs, flushMs } });
@@ -66,7 +75,7 @@ process.once('message', async input => {
       logTransport = createOtlpTransport({ origin: `http://127.0.0.1:${plan.ports.otlp}`, signal: 'logs' });
       traceTransport = createOtlpTransport({ origin: `http://127.0.0.1:${plan.ports.otlp}`, signal: 'traces' });
       host = await startPilotTelemetry({ resource, readOrigins: () => origins,
-        logSink: (line, signal) => logTransport.send(line, signal), traceSink: (line, signal) => traceTransport.send(line, signal) });
+        logSink: (line, signal) => logTransport.send(line, signal), traceSink: (line, signal) => traceTransport.send(line, signal),observe });
       const { createCommandDiagnostics } = await import('../../apps/hub/dist/diagnostics.js');
       const { createWorkerDiagnostics } = await import('./worker-diagnostics.mjs');
       const controllerResource = { ...resource, 'service.name': 'nanoleaf-controller' }, workerResource = { ...resource, 'service.name': 'nanoleaf-worker' };

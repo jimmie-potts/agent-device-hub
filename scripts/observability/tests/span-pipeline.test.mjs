@@ -98,3 +98,21 @@ test('canonical updates cannot change the registered resource identity', async (
   span.end(); await pipeline.processor.shutdown();
   assert.deepEqual(output[0].resourceSpans[0].resource.attributes.find(item => item.key === 'service.name').value, { stringValue: 'hub' });
 });
+
+test('span identities account for association loss and unfinished spans before export',async()=>{
+  const events=[];const {pipeline,tracer}=fixture({maxActiveRecords:1,observe:event=>events.push(event)});
+  tracer.startSpan('bunny.command.request',{attributes},ROOT_CONTEXT);
+  const dropped=tracer.startSpan('bunny.command.request',{attributes},ROOT_CONTEXT);dropped.end();
+  await pipeline.processor.shutdown();
+  assert.deepEqual(events.map(e=>[e.id,e.phase]),[[1,'expected'],[2,'expected'],[2,'dropped'],[1,'pending']]);
+  assert.deepEqual(pipeline.counts().evidence,{expected:2,exported:0,failed:0,dropped:1,pending:1,inFlight:0,evidenceFailed:0});
+});
+
+test('span projection is retained before queue loss and successful transport settles exactly once',async()=>{
+  const events=[];const {pipeline,tracer}=fixture({observe:event=>events.push(event)});
+  const span=tracer.startSpan('bunny.command.request',{attributes},ROOT_CONTEXT);span.end();
+  await pipeline.processor.shutdown();
+  assert.deepEqual(events.map(e=>e.phase),['expected','projected','exported']);
+  assert.equal(events[1].value.resourceSpans[0].scopeSpans[0].spans[0].spanId,span.spanContext().spanId);
+  assert.equal(pipeline.counts().evidence.inFlight,0);
+});

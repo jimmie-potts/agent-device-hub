@@ -6,8 +6,8 @@ import { applicationSnapshot } from './application-measurement.mjs';
 
 /** One fresh owned application group, separate from workload/query drivers.
  * No retries; caller retains returned evidence and cleans only registered state. */
-export async function startWorkloadProcess(directory, { enabled, signal, onStart = () => {} } = {}) {
-  if (typeof enabled !== 'boolean' || signal?.aborted || typeof onStart !== 'function') throw new Error('Application invocation invalid');
+export async function startWorkloadProcess(directory, { enabled, signal, onStart = () => {}, onEvidence = () => {} } = {}) {
+  if (typeof enabled !== 'boolean' || signal?.aborted || typeof onStart !== 'function' || typeof onEvidence !== 'function') throw new Error('Application invocation invalid');
   await readPreparedBackend(directory); await readHostRoots(directory);
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [new URL('./workload-entry.mjs', import.meta.url).pathname],
@@ -32,11 +32,19 @@ export async function startWorkloadProcess(directory, { enabled, signal, onStart
   child.on('error', () => terminate('spawn-failed'));
   child.on('message', message => {
     messages++;messageBytes += Buffer.byteLength(JSON.stringify(message));
-    if (messages>4000 || messageBytes>8*1024*1024) return terminate('evidence-limit');
+    if (messages>8000 || messageBytes>104*1024*1024) return terminate('evidence-limit');
     if (message?.kind==='ready' && !readyValue && !stopping) {
       readyValue=message;clearTimeout(startup);acceptReady(message);
     } else if (message?.kind==='executions' && Array.isArray(message.executions) && executions.length+message.executions.length<=2000) {
       executions.push(...message.executions);
+    } else if(message?.kind==='telemetry' && enabled && Array.isArray(message.events) && message.events.length<=128 &&
+      Buffer.byteLength(JSON.stringify(message))<=65536) {
+      try {
+        for(const event of message.events) {
+          const returned=onEvidence(event);
+          if(returned && typeof returned.then==='function'){Promise.resolve(returned).catch(()=>{});throw new Error('Synchronous observer required');}
+        }
+      }catch{terminate('telemetry-evidence-failed');}
     } else if (message?.kind==='closed' && !result) result=message;
     else terminate('invalid-message');
   });

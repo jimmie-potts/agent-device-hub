@@ -7,13 +7,22 @@ function limit(value, ceiling) {
 }
 
 /** Serial, drop-newest transport queue. The injected sink must return promptly and honor abort. */
-export function createBoundedSink(sink, options = {}) {
+export function createBoundedSink(sink, options = {}, observe) {
+  if(observe!==undefined && typeof observe!=='function')throw new TypeError('Invalid queue observer');
   const maxRecords = limit(options.maxRecords, MAX_QUEUE_RECORDS);
   const maxBytes = limit(options.maxBytes, MAX_QUEUE_BYTES);
   const flushMs = limit(options.flushMs, MAX_FLUSH_MS);
   const queue = [];
   let bytes = 0, attempted = 0, accepted = 0, rejected = 0, dropped = 0, failed = 0, exported = 0;
   let active, closed = false, closing, finishClose, flushing, finishFlush;
+  let observationFailed=0;
+  function observed(identity,phase) {
+    if(!observe)return;
+    try {
+      const result=observe(identity,phase);
+      if(result && typeof result.then==='function'){Promise.resolve(result).catch(()=>{});observationFailed=add(observationFailed);}
+    }catch{observationFailed=add(observationFailed);}
+  }
   function drain() {
     if (active || closed) return;
     const item = queue[0];
@@ -28,22 +37,23 @@ export function createBoundedSink(sink, options = {}) {
     function settle(error) {
       if (closed) return;
       if (error) failed = add(failed); else exported = add(exported);
+      observed(item.identity,error?'failed':'exported');
       queue.shift(); bytes -= item.bytes; active = undefined;
       drain();
     }
   }
   return {
-    push(line) {
+    push(line, identity) {
       attempted = add(attempted);
       const size = typeof line === 'string' ? Buffer.byteLength(line) : 0;
       if (closed || closing || size === 0 || size > MAX_RECORD_BYTES ||
         queue.length >= maxRecords || bytes + size > maxBytes) {
-        rejected = add(rejected); dropped = add(dropped); return false;
+        rejected = add(rejected); dropped = add(dropped);observed(identity,'dropped'); return false;
       }
-      queue.push({ line, bytes: size }); bytes += size; accepted = add(accepted);
+      queue.push({ line, bytes: size,identity }); bytes += size; accepted = add(accepted);
       drain(); return true;
     },
-    counts: () => ({ attempted, accepted, rejected, dropped, failed, exported, queued: queue.length, bytes }),
+    counts: () => ({ attempted, accepted, rejected, dropped, failed, exported, queued: queue.length, bytes,observationFailed }),
     flush() {
       if (flushing) return flushing;
       flushing = Promise.resolve().then(() => new Promise(resolve => {
@@ -66,6 +76,7 @@ export function createBoundedSink(sink, options = {}) {
           closed = true; clearTimeout(timer);
           finishFlush?.(queue.length === 0);
           dropped = add(dropped, queue.length);
+          for(const item of queue)observed(item.identity,'dropped');
           queue.length = 0; bytes = 0;
           active?.abort(); active = undefined; finishClose = undefined;
           resolve();

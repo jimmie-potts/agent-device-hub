@@ -7,7 +7,7 @@ let initialized = false;
 
 /** Start once in a fresh pilot process, after registering the ESM hook and before application imports. */
 export async function startPilotTelemetry({ resource, readOrigins = () => [], logSink, traceSink, localSink,
-  logOptions, traceOptions }) {
+  logOptions, traceOptions, observe }) {
   // Environment exporters, diagnostic console logging and disabled SDK flags are not pilot inputs.
   // Refuse them instead of mutating personal configuration or silently changing measured behavior.
   if (Object.keys(process.env).some(name => name.startsWith('OTEL_'))) {
@@ -25,8 +25,8 @@ export async function startPilotTelemetry({ resource, readOrigins = () => [], lo
   const { resourceFromAttributes } = await import('@opentelemetry/resources');
   const { ParentBasedSampler, AlwaysOnSampler } = await import('@opentelemetry/sdk-trace-base');
   const { trace } = await import('@opentelemetry/api');
-  const logs = createLogPipeline({ sink: logSink, localSink, options: logOptions });
-  const traces = createSpanPipeline({ sink: traceSink, queueOptions: traceOptions });
+  const logs = createLogPipeline({ sink: logSink, localSink, options: logOptions, observe });
+  const traces = createSpanPipeline({ sink: traceSink, queueOptions: traceOptions, observe });
   const sdk = new NodeSDK({
     autoDetectResources: false, resource: resourceFromAttributes(checked.value.resource),
     sampler: new ParentBasedSampler({ root: new AlwaysOnSampler() }),

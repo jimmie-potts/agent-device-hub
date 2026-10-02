@@ -2228,3 +2228,19 @@ before initialization. A journal failure prevents startup or stops further work;
 it cannot resume the same evidence file. Missing sampling coverage or incomplete
 workload evidence makes pair evaluation inconclusive even when numeric summaries
 meet their limits. Retain known failed limits alongside that missing evidence.
+
+The pilot records log identities before the Pino queue and span identities before
+association admission. It records canonical span projections before the export
+queue, then settles each identity as exported, failed, dropped or unfinished.
+The parent validates and saves these events and reconciles them against queue
+counters. Evidence observers receive copies; observer failure cannot alter the
+command or replay it. Unfinished spans and missing evidence remain explicit.
+
+Use `npm run qualify:observability -- delivery-smoke` with the same
+`--evidence-dir`, `--state-parent`, `--endpoint` and `--ports` arguments as
+`ingestion` to qualify this path with three sequential synthetic commands and
+real Loki/Tempo queries. This is an ingestion prerequisite, not a paired
+measurement. The telemetry journal allows 75,000 events/96 MiB; the query journal
+allows 150,000 rows/128 MiB and splits large result sets into bounded rows.
+Both remain under the monitored run-data cap. This command stops its backend;
+retain evidence and use manifest-owned cleanup afterward.

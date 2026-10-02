@@ -54,3 +54,24 @@ test('shutdown aborts stalled transport within the flush budget and accounts que
   const counts = pipeline.counts(); reject(Error('SYNTHETIC_SECRET')); await tick();
   assert.deepEqual(pipeline.counts(), counts);
 });
+
+test('prequeue evidence distinguishes identical records, saturation, transport failure and shutdown loss', async () => {
+  const events=[];let calls=0;
+  const pipeline=createLogPipeline({observe:event=>events.push(event),options:{maxRecords:2,flushMs:10},
+    sink:()=>{calls++;if(calls===1)throw new Error('SYNTHETIC_SECRET');return new Promise(()=>{});}});
+  pipeline.emit(record());pipeline.emit(record());pipeline.emit(record());
+  await tick();await pipeline.close();
+  assert.deepEqual(events.filter(e=>e.phase==='expected').map(e=>e.id),[1,2,3]);
+  assert.deepEqual(events.filter(e=>e.phase!=='expected').map(e=>[e.id,e.phase]),[[3,'dropped'],[1,'failed'],[2,'dropped']]);
+  assert.equal(JSON.stringify(events).includes('SYNTHETIC_SECRET'),false);
+  assert.deepEqual(pipeline.counts().evidence,{expected:3,exported:0,failed:1,dropped:2,pending:0,inFlight:0,evidenceFailed:0});
+});
+
+test('an evidence observer cannot mutate a record or change the domain emit result',async()=>{
+  const sent=[];
+  const pipeline=createLogPipeline({observe:event=>{if(event.value)event.value.attributes.secret='SYNTHETIC_SECRET';throw new Error('full');},
+    sink:line=>sent.push(line)});
+  assert.equal(pipeline.emit(record()),true);await pipeline.close();
+  assert.equal(sent.length,1);assert.equal(sent[0].includes('SYNTHETIC_SECRET'),false);
+  assert.equal(pipeline.counts().evidence.evidenceFailed,2);
+});
