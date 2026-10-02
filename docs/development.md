@@ -1672,3 +1672,22 @@ resources. Adapter calls must honor cancellation and must not retry mutations.
 The source tests cover foreign resources, replacement, failed intent storage,
 ambiguous command results and deadline cancellation. Real Docker execution,
 the durable adapter journal and measured teardown remain pending.
+
+`docker-backend.mjs` implements inspection, stop and removal over an explicitly
+selected local Unix socket using Docker Engine API v1.47. It first checks that
+the Linux amd64 daemon supports that API version; an incompatible daemon leaves
+qualification pending and does not authorize a daemon upgrade. It does not read
+ambient Docker endpoint settings. Container/network calls require full IDs and
+volume calls require a pilot volume name. Cleanup must still verify receipts
+and ownership before invoking these transport methods.
+
+Requests have a total deadline of at most 30 seconds, an 8 KiB header limit and
+a 1 MiB response limit. Concurrent calls are refused, cancellation closes the
+request, and errors omit raw engine messages. There are no redirects, retries,
+forced removals or image deletion methods. Only a JSON 404 on inspection means
+absence; failures and unexpected status codes remain errors. Source tests use
+an isolated Unix-socket HTTP fixture, including API incompatibility, timeouts,
+oversized output and cancellation. Real-engine compatibility and cleanup remain
+unverified until Docker is available. The
+[Engine API reference](https://docs.docker.com/reference/api/engine/version/v1.47/)
+defines the status codes and request parameters.
