@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, opendirSync, type Dirent } from 'node:fs';
+import { existsSync, readFileSync, statSync, realpathSync, opendirSync, type Dirent } from 'node:fs';
 import { win32 } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -9,8 +9,18 @@ export function sourceIdentity(path:string):string {
   return `${stat.dev}:${stat.ino}:${stat.birthtimeNs}`;
 }
 const contained=(root:string,path:string)=>{const r=win32.relative(root.toLowerCase(),path.toLowerCase());return r!==''&&!r.startsWith('..')&&!win32.isAbsolute(r);};
-function windowsPath(path: unknown): asserts path is string {
-  if(typeof path!=='string'||path.length>240||!/^[A-Za-z]:\\/.test(path)||/[<>"|?*\x00-\x1f]/.test(path)||path.slice(2).includes(':')||path!==win32.normalize(path)||path.split('\\').some(p=>/[ .]$/.test(p)||/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(p))||/(^|\\)(OneDrive[^\\]*|Dropbox|Google Drive|iCloudDrive)(\\|$)/i.test(path))throw new Error('unsafe-path');
+/** Resolve existing ancestors as well as Windows short-name aliases for new output paths. */
+function canonicalWindowsPath(path:string,allowCloud=false):string {
+  windowsPath(path,allowCloud);
+  let ancestor=path;const tail:string[]=[];
+  while(!existsSync(ancestor)){
+    const parent=win32.dirname(ancestor);if(parent===ancestor)throw new Error('unsafe-path');
+    tail.unshift(win32.basename(ancestor));ancestor=parent;
+  }
+  const canonical=win32.join(realpathSync.native(ancestor),...tail);windowsPath(canonical,allowCloud);return canonical;
+}
+function windowsPath(path: unknown,allowCloud=false): asserts path is string {
+  if(typeof path!=='string'||path.length>240||!/^[A-Za-z]:\\/.test(path)||/[<>"|?*\x00-\x1f]/.test(path)||path.slice(2).includes(':')||path!==win32.normalize(path)||path.split('\\').some(p=>/[ .]$/.test(p)||/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(p))||(!allowCloud&&/(^|\\)(OneDrive[^\\]*|Dropbox|Google Drive|iCloudDrive)(\\|$)/i.test(path)))throw new Error('unsafe-path');
 }
 export function parseConfig(value: unknown): CollectorConfig {
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('invalid-config');
@@ -57,10 +67,11 @@ export function qualifyWindowsPaths(paths: string[]): void {
   if(process.platform!=='win32')throw new Error('unsupported-platform');
   for(const path of paths){
     windowsPath(path);
+    const canonical=canonicalWindowsPath(path);
     for(const env of ['OneDrive','OneDriveConsumer','OneDriveCommercial']){
-      const cloud=process.env[env];if(cloud&&(path.toLowerCase()===cloud.toLowerCase()||contained(cloud,path)))throw new Error('unsafe-path');
+      const cloud=process.env[env];if(cloud){const resolved=canonicalWindowsPath(cloud,true);if(canonical.toLowerCase()===resolved.toLowerCase()||contained(resolved,canonical))throw new Error('unsafe-path');}
     }
-    for(let part=path;;part=win32.dirname(part)){
+    for(let part=canonical;;part=win32.dirname(part)){
       if(existsSync(win32.join(part,'.git')))throw new Error('unsafe-path');
       if(win32.dirname(part)===part)break;
     }
@@ -75,10 +86,12 @@ export function loadConfig(path: string): CollectorConfig {
   qualifyWindowsPaths([path]);
   if(statSync(path).size>16*1024)throw new Error('invalid-config');
   let value:unknown;try{value=JSON.parse(readFileSync(path,'utf8'));}catch{throw new Error('invalid-config');}
-  const config=parseConfig(value);
-  if(!contained(config.ownerDirectory,path)||contained(config.stateDirectory,path))throw new Error('unsafe-path');
-  const paths=[config.sourcePath,config.stateDirectory];
-  for(const suffix of ['-wal','-shm'])if(existsSync(config.sourcePath+suffix))paths.push(config.sourcePath+suffix);
+  const parsed=parseConfig(value);
+  const config=parseConfig({...parsed,ownerDirectory:canonicalWindowsPath(parsed.ownerDirectory),sourcePath:canonicalWindowsPath(parsed.sourcePath),stateDirectory:canonicalWindowsPath(parsed.stateDirectory)});
+  const configPath=canonicalWindowsPath(path);
+  if(!contained(config.ownerDirectory,configPath)||contained(config.stateDirectory,configPath))throw new Error('unsafe-path');
+  const paths=[parsed.sourcePath,parsed.stateDirectory];
+  for(const suffix of ['-wal','-shm','-journal'])if(existsSync(parsed.sourcePath+suffix))paths.push(parsed.sourcePath+suffix);
   qualifyWindowsPaths(paths);
   return config;
 }
@@ -89,7 +102,9 @@ function boundedEntries(path:string,limit:number):Dirent[] {
 }
 
 /** Existing children can have explicit ACLs; qualification of only their parent is insufficient. */
-export function qualifyState(config:CollectorConfig,exportPath?:string):void {
+export function qualifyState(config:CollectorConfig,exportPath?:string,configPath?:string):void {
+  // Resolve aliases before testing containment. ACL/reparse checks below still inspect the original paths.
+  const canonical=parseConfig({...config,ownerDirectory:canonicalWindowsPath(config.ownerDirectory),sourcePath:canonicalWindowsPath(config.sourcePath),stateDirectory:canonicalWindowsPath(config.stateDirectory)});
   const paths=[config.stateDirectory];
   if(existsSync(config.stateDirectory)){
     const entries=boundedEntries(config.stateDirectory,256);
@@ -105,8 +120,15 @@ export function qualifyState(config:CollectorConfig,exportPath?:string):void {
   }
   if(exportPath){
     windowsPath(exportPath);
-    if(!contained(config.ownerDirectory,exportPath)||contained(config.stateDirectory,exportPath)||exportPath.toLowerCase()===config.stateDirectory.toLowerCase()||[config.sourcePath,config.sourcePath+'-wal',config.sourcePath+'-shm'].some(p=>p.toLowerCase()===exportPath.toLowerCase()))throw new Error('unsafe-path');
+    const output=canonicalWindowsPath(exportPath);
+    const protectedPaths=[canonical.sourcePath,canonical.sourcePath+'-wal',canonical.sourcePath+'-shm',canonical.sourcePath+'-journal',...(configPath?[canonicalWindowsPath(configPath)]:[])];
+    if(!contained(canonical.ownerDirectory,output)||contained(canonical.stateDirectory,output)||output.toLowerCase()===canonical.stateDirectory.toLowerCase()||protectedPaths.some(p=>p.toLowerCase()===output.toLowerCase()))throw new Error('unsafe-path');
     paths.push(exportPath);
+  }
+  // Writable state and exports must be private files, never hard links to source, config or other data.
+  // Checking every existing child also covers SQLite sidecars, control files and managed backups.
+  for(const path of paths)if(existsSync(path)){
+    const stat=statSync(path);if(!stat.isDirectory()&&(!stat.isFile()||stat.nlink!==1))throw new Error('unsafe-path');
   }
   // Windows has a per-environment-variable limit; fail explicitly instead of truncating checks.
   if(JSON.stringify(paths).length>24000)throw new Error('store-capacity');

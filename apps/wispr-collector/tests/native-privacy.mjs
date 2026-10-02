@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync,mkdtempSync,rmSync,symlinkSync,writeFileSync } from 'node:fs';
+import { mkdirSync,mkdtempSync,rmSync,symlinkSync,writeFileSync,linkSync,readFileSync,copyFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { qualifyWindowsPaths } from '../dist/config.js';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { qualifyWindowsPaths,qualifyState } from '../dist/config.js';
 import { acquireLease } from '../dist/lease.js';
 
 assert.equal(process.platform,'win32');
@@ -53,5 +56,39 @@ try{
   assert.throws(()=>qualifyWindowsPaths([join(target,'output.json')]),{message:'unsafe-path'});
   const lease=acquireLease(directory);
   assert.throws(()=>acquireLease(directory),{message:'collector-busy'});lease.release();acquireLease(directory).release();
+  const stateDirectory=join(directory,'alias-state'),sourcePath=join(directory,'synthetic-source.sqlite'),configPath=join(directory,'config.json');
+  mkdirSync(stateDirectory);mkdirSync(join(stateDirectory,'backups'));
+  const db=new DatabaseSync(sourcePath);db.exec("PRAGMA journal_mode=WAL;CREATE TABLE History(id TEXT,timestamp TEXT,status TEXT,numWords INTEGER);INSERT INTO History VALUES('a','2026-10-01T12:00:00Z','formatted',10)");db.close();
+  const config={schemaVersion:'1.0',namespace:'11111111-1111-4111-8111-111111111111',ownerDirectory:directory,sourcePath,stateDirectory,timezone:'UTC',collectionEnabled:true,language:{enabled:false}};
+  writeFileSync(configPath,JSON.stringify(config));
+  const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex'),before=hash(sourcePath),configBefore=hash(configPath);
+  function rejected(command,args=[]){
+    const result=spawnSync(process.execPath,['--disable-warning=ExperimentalWarning',fileURLToPath(new URL('../dist/cli.js',import.meta.url)),command,'--config',configPath,...args],{encoding:'utf8',timeout:60000,windowsHide:true});
+    assert.equal(result.status,1,result.stdout+result.stderr);assert.equal(JSON.parse(result.stderr).code,'unsafe-path');
+    assert.equal(hash(sourcePath),before);assert.equal(hash(configPath),configBefore);
+  }
+  for(const filename of ['lease.sqlite','worker-lease.sqlite','analytics.sqlite','analytics.sqlite-journal','control.json','aggregate.json','status.json','run.json','stop.json','backups/first.sqlite']){
+    const alias=join(stateDirectory,filename);linkSync(sourcePath,alias);
+    try{assert.throws(()=>qualifyState(config),{message:'unsafe-path'});rejected('collect');}finally{rmSync(alias);}
+  }
+  const configAlias=join(stateDirectory,'status.json');linkSync(configPath,configAlias);
+  try{rejected('status');}finally{rmSync(configAlias);}
+  for(const protectedPath of [sourcePath,configPath]){
+    const alias=join(directory,'export-alias.json');linkSync(protectedPath,alias);
+    try{rejected('export',['--format','json','--output',alias]);}finally{rmSync(alias);}
+    rejected('export',['--format','json','--output',protectedPath]);
+  }
+  // Short-name availability is a filesystem setting; never enable it for a test.
+  const shortResult=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',String.raw`$fso=New-Object -ComObject Scripting.FileSystemObject;[Console]::Out.Write($fso.GetFolder($env:BUNNY_WISPR_FIXTURE).ShortPath)`],{encoding:'utf8',timeout:8000,windowsHide:true,env:{...process.env,BUNNY_WISPR_FIXTURE:stateDirectory}});
+  assert.equal(shortResult.status,0,shortResult.stderr);const shortState=shortResult.stdout;
+  let shortAlias='unavailable on this volume';
+  if(shortState.toLowerCase()!==stateDirectory.toLowerCase()){
+    const containedSource=join(stateDirectory,'contained.sqlite');copyFileSync(sourcePath,containedSource);
+    try{assert.throws(()=>qualifyState({...config,sourcePath:join(shortState,'contained.sqlite')}),{message:'unsafe-path'});shortAlias='rejected';}finally{rmSync(containedSource);}
+    rejected('export',['--format','json','--output',join(shortState,'new.json')]);
+  }
+  for(const suffix of ['-wal','-shm','-journal'])rejected('export',['--format','json','--output',sourcePath+suffix]);
+  const check=new DatabaseSync(sourcePath,{readOnly:true});assert.equal(check.prepare('PRAGMA journal_mode').get().journal_mode,'wal');check.close();
   console.log(JSON.stringify({result:'passed',scope:'native synthetic ACL, reparse, Git-path and lease checks',privatePathsAccepted:true,broadAclRejected:true,junctionRejected:true,gitRejected:true,exclusiveLease:true}));
+  console.log(JSON.stringify({result:'passed',scope:'native synthetic writable aliases',stateAliasesRejected:10,configAliasRejected:true,sourceAndConfigExportsRejected:true,sourceSidecarsProtected:true,shortAlias,sourceUnchanged:true,journalMode:'wal'}));
 }finally{rmSync(directory,{recursive:true,force:true});}

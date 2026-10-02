@@ -6,6 +6,20 @@ import { numericReport, validateSnapshot } from '@jimmie-potts/wispr-contracts';
 const row = (id, overrides={}) => ({ id, timestamp:'2026-03-08 06:30:00 +00:00', status:'formatted', numWords:60, duration:60, speechDuration:30, numWordsCorrected:null, numDictionaryReplacements:null, appName:'Slack', invalid:[], ...overrides });
 const build = (rows,options={}) => aggregate(rows.map(r=>contribution(r)),{namespace:'11111111-1111-4111-8111-111111111111',generation:'22222222-2222-4222-8222-222222222222',revision:1,now:'2026-03-09T00:00:00.000Z',timezone:'America/New_York',...options});
 
+test('fractional durations remain valid across a large retained history and hourly groups', () => {
+  for (const [count,seconds] of [[10000,60.1],[100000,10.1]]) {
+    const snapshot=build(Array.from({length:count},(_,i)=>row(String(i),{timestamp:`2026-03-08T${String(i%24).padStart(2,'0')}:00:00Z`,duration:seconds,speechDuration:seconds})),{timezone:'UTC'});
+    assert.equal(validateSnapshot(snapshot).ok,true);
+    assert.equal(snapshot.numeric.totals.dictations,count);
+    assert.equal(snapshot.numeric.totals.words,count*60);
+    assert.ok(Math.abs(snapshot.numeric.totals.recordingSeconds-count*seconds)<1e-6);
+    assert.ok(Math.abs(snapshot.numeric.totals.speechSeconds-count*seconds)<1e-6);
+    assert.equal(numericReport(snapshot,{}).totals.speechSeconds,snapshot.numeric.totals.speechSeconds);
+    snapshot.numeric.totals.words++;
+    assert.equal(validateSnapshot(snapshot).ok,false);
+  }
+});
+
 test('hand-calculated weighted rates use matching valid rows and retain exclusions', () => {
   const snapshot=build([
     row('a'),row('b',{timestamp:'2026-03-08 07:30:00 +00:00',numWords:40,duration:20,speechDuration:10,numWordsCorrected:0,numDictionaryReplacements:2}),

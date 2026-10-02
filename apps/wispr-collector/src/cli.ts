@@ -14,7 +14,7 @@ try{
   if(operation.command==='collect'&&!config.collectionEnabled)throw new Error('collection-disabled');
   const output=operation.command==='export'?operation.output:undefined;
   if(output&&win32.normalize(output).toLowerCase()===win32.normalize(configPath).toLowerCase())throw new Error('unsafe-path');
-  qualifyState(config,output);mkdirSync(config.stateDirectory,{recursive:true});
+  qualifyState(config,output,configPath);mkdirSync(config.stateDirectory,{recursive:true});
   if(['clear','clear-text','reset'].includes(operation.command))await requestStop(config.stateDirectory,Math.min(10000,Math.max(1,60_000-(Date.now()-started))));
   const remaining=60_000-(Date.now()-started);if(remaining<1)throw new Error('run-deadline');
   const result=await supervise({directory:config.stateDirectory,entry:new URL('./run-worker.js',import.meta.url),payload:{config,operation},runDeadlineMs:remaining,onFailure:code=>recordInterruptedAttempt(config,code)});

@@ -40,3 +40,10 @@ test('validation returns a detached JSON value', () => {
   original.numeric.totals.words=20;
   assert.equal(result.value.numeric.totals.words,0);
 });
+test('positive words require at least one eligible dictation and vice versa',()=>{
+ for(const [words,dictations] of [[10,0],[0,1],[1,2]]){
+  const value=fixture(),totals={...emptyTotals(),words,dictations};
+  value.numeric.cells=[{date:'2026-10-02',hour:12,weekday:5,app:'slack',category:'messaging',archived:false,...totals}];
+  value.numeric.totals=totals;assert.equal(validateSnapshot(value).ok,false);
+ }
+});

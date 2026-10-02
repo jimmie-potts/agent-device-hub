@@ -91,11 +91,13 @@ export function aggregate(contributions: Iterable<Contribution>, options: {
     snapshot.latestSourceDate=snapshot.latestSourceDate===null||date>snapshot.latestSourceDate?date:snapshot.latestSourceDate;
     const key=JSON.stringify([date,hour,c.app,c.archived]);
     const cell=groups.get(key)??{date,hour,weekday:new Date(date).getUTCDay(),app:c.app,category:appCategory(c.app),archived:c.archived,...emptyTotals()};
-    for(const k of TOTAL_KEYS){cell[k]+=c.totals[k];snapshot.numeric.totals[k]+=c.totals[k];}
+    for(const k of TOTAL_KEYS)cell[k]+=c.totals[k];
     groups.set(key,cell);
   }
   snapshot.health=snapshot.coverage.sourceRows===0?'empty':'ok';
   snapshot.numeric.cells=[...groups.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.hour-b.hour||a.app.localeCompare(b.app)||Number(a.archived)-Number(b.archived));
+  // Publish the same reduction consumers validate, avoiding contribution/group rounding drift.
+  for(const cell of snapshot.numeric.cells)for(const k of TOTAL_KEYS)snapshot.numeric.totals[k]+=cell[k];
   if(!validateSnapshot(snapshot).ok)throw new Error('aggregate-capacity');
   return snapshot;
 }

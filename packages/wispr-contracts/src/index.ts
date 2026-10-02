@@ -127,6 +127,7 @@ export function validateSnapshot(input: unknown): Validation {
     const keys=new Set<string>();
     for (const c of value.numeric.cells) {
       const key=JSON.stringify([c.date,c.hour,c.app,c.archived]); if(keys.has(key))return invalid();keys.add(key);
+      if((c.dictations===0&&c.words!==0)||c.words<c.dictations)return invalid();
       if(c.speechSamples>c.dictations||c.recordingSamples>c.dictations||c.correctionSamples>c.dictations||c.replacementSamples>c.dictations||c.speechWords>c.words||c.recordingWords>c.words)return invalid();
     }
     for(const b of [value.coverage.captured,value.coverage.retained])if((b.from===null)!==(b.to===null)||(b.from!==null&&b.to!==null&&b.from>b.to))return invalid();

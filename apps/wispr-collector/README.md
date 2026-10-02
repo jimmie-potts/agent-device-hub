@@ -34,7 +34,10 @@ Run the extracted `package/dist/cli.js` with the selected Node executable.
 Every command needs `--config` pointing to an owner-restricted JSON file outside
 Git and cloud-synced directories. The source, state, config and exports must be
 within the configured owner directory, on a fixed local Windows drive, without
-symlink/junction redirects. Allowed Windows ACL principals are the current user,
+symlink/junction redirects. Existing writable state, backups and export files
+must not have hard links. Containment checks resolve Windows short-name aliases;
+exports cannot replace the source, its SQLite sidecars or the config file.
+Allowed Windows ACL principals are the current user,
 SYSTEM and Administrators. The collector checks permissions; it never repairs
 source permissions. Installation and access to personal data need separate owner
 authorization.

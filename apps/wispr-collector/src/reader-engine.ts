@@ -74,4 +74,3 @@ export async function scanNumeric(path: string, limits: SourceLimits, deliver: (
     return {coverage, selectedBytes: size};
   } finally { db.close(); }
 }
-
