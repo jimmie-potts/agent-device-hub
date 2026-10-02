@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync,mkdtempSync,rmSync,writeFileSync,existsSync } from 'node:fs';
+import { mkdirSync,mkdtempSync,rmSync,writeFileSync,existsSync,readFileSync } from 'node:fs';
 import { join,resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { supervise,requestStop } from '../dist/supervisor.js';
@@ -32,15 +32,23 @@ test('worker errors are sanitized and success waits for process exit',async t=>{
  const good=worker(directory,`process.send({type:'success',result:{revision:3}});process.exit(0);`);
  assert.deepEqual(await supervise({directory,entry:good,payload:{}}),{revision:3});acquireLease(directory).release();
 });
-test('a surviving worker retains ownership after its supervisor dies',async t=>{
+test('supervisor death cannot leave an active unguarded worker',async t=>{
  const {spawn}=await import('node:child_process');
  const directory=setup(t),entry=join(directory,'orphan-worker.mjs'),ready=join(directory,'ready');
- writeFileSync(entry,`import {acquireLease} from ${JSON.stringify(new URL('../dist/lease.js',import.meta.url).href)};import {writeFileSync} from 'node:fs';process.once('disconnect',()=>process.exit(0));process.on('message',m=>{const guard=acquireLease(m.directory,'worker-lease.sqlite');writeFileSync(m.ready,'ready');const end=Date.now()+1500;while(Date.now()<end){};guard.release();});`);
+ writeFileSync(entry,`import {acquireLease} from ${JSON.stringify(new URL('../dist/lease.js',import.meta.url).href)};import {writeFileSync} from 'node:fs';process.once('disconnect',()=>process.exit(0));process.on('message',m=>{const guard=acquireLease(m.directory,'worker-lease.sqlite');writeFileSync(m.ready,String(process.pid));const end=Date.now()+1500;while(Date.now()<end){};writeFileSync(m.ready+'.finished','finished');guard.release();});`);
  const parentFile=join(directory,'parent.mjs');writeFileSync(parentFile,`import {supervise} from ${JSON.stringify(new URL('../dist/supervisor.js',import.meta.url).href)};await supervise({directory:process.argv[2],entry:new URL(process.argv[3]),payload:{directory:process.argv[2],ready:process.argv[4]}});`);
  const parent=spawn(process.execPath,[parentFile,directory,pathToFileURL(entry).href,ready],{stdio:'ignore'}),closed=new Promise(resolve=>parent.once('close',resolve));
  try{
    await waitFor(()=>existsSync(ready));parent.kill();await closed;
-   let unexpected;try{assert.throws(()=>{unexpected=acquireLease(directory,'worker-lease.sqlite');},/collector-busy/);}finally{unexpected?.release();}
+   let probe;
+   try{probe=acquireLease(directory,'worker-lease.sqlite');}
+   catch(error){assert.match(error.message,/collector-busy/);}
+   if(probe){
+     try{
+       let alive=true;try{process.kill(Number(readFileSync(ready,'utf8')),0);}catch(error){if(error.code==='ESRCH')alive=false;else throw error;}
+       assert.ok(!alive||existsSync(ready+'.finished'),'worker lost its guard before exit or completion');
+     }finally{probe.release();}
+   }
    await requestStop(directory,5000);acquireLease(directory).release();acquireLease(directory,'worker-lease.sqlite').release();
  }finally{parent.kill();await closed;await requestStop(directory,5000);}
 });
