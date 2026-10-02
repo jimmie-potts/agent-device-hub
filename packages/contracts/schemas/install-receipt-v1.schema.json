@@ -1,0 +1,1143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-device-hub.local/schemas/install-receipt-v1.schema.json",
+  "title": "Private installation operation receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "install-receipt/1.0"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "operation": {
+      "enum": [
+        "upgrade",
+        "rollback",
+        "migrate"
+      ]
+    },
+    "runtime": {
+      "enum": [
+        "hub",
+        "nanoleaf",
+        "pixoo"
+      ]
+    },
+    "installationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "not": {
+        "pattern": "[\\r\\n]"
+      }
+    },
+    "startedAt": {
+      "$ref": "#/$defs/time"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/time"
+    },
+    "completedAt": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requestedTarget": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "previous": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/identity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/identity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "approval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/approval"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "compatibility": {
+      "$ref": "#/$defs/compatibility"
+    },
+    "backup": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/backup"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "running": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/running"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "health": {
+      "$ref": "#/$defs/health"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/failure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rollback": {
+      "$ref": "#/$defs/rollback"
+    },
+    "statePreservation": {
+      "$ref": "#/$defs/state"
+    },
+    "outcome": {
+      "enum": [
+        "in-progress",
+        "succeeded",
+        "refused",
+        "failed-before-switch",
+        "failed-rolled-back",
+        "rollback-failed",
+        "interrupted",
+        "receipt-finalization-failed"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "operation",
+    "runtime",
+    "installationId",
+    "startedAt",
+    "updatedAt",
+    "completedAt",
+    "requestedTarget",
+    "previous",
+    "target",
+    "approval",
+    "compatibility",
+    "backup",
+    "running",
+    "health",
+    "failure",
+    "rollback",
+    "statePreservation",
+    "outcome"
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$",
+      "minLength": 40,
+      "maxLength": 40
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "release"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/sha"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "archiveSha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "kind",
+        "sourceRevision",
+        "version",
+        "archiveSha256",
+        "manifestSha256"
+      ]
+    },
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "legacy"
+        },
+        "legacyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "sourceRevision": {
+          "const": "unknown"
+        },
+        "contentSha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "kind",
+        "legacyId",
+        "sourceRevision",
+        "contentSha256",
+        "manifestSha256"
+      ]
+    },
+    "identity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/release"
+        },
+        {
+          "$ref": "#/$defs/legacy"
+        }
+      ]
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planSha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "baselineSha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "configurationSha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "planSha256",
+        "baselineSha256",
+        "configurationSha256"
+      ]
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/evidence"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "reference",
+        "sha256"
+      ]
+    },
+    "running": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "verification": {
+          "enum": [
+            "build-health",
+            "legacy-process-artifacts"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      },
+      "required": [
+        "identity",
+        "verification",
+        "evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "build-health"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/release"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/legacy"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "not-checked",
+            "healthy",
+            "unhealthy",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "healthy",
+                  "unhealthy"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "compatible",
+            "incompatible",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "compatible",
+                  "incompatible"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "enum": [
+            "preflight",
+            "stage",
+            "intent",
+            "stop",
+            "backup",
+            "switch",
+            "start",
+            "health",
+            "rollback",
+            "receipt-finalization",
+            "recovery"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "phase",
+        "code",
+        "evidence"
+      ]
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "not-attempted",
+            "succeeded",
+            "failed",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "succeeded",
+                  "failed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "const": "latest-durable-state"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "strategy",
+        "evidence"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "in-progress"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "const": null
+          },
+          "approval": {
+            "$ref": "#/$defs/approval"
+          },
+          "previous": {
+            "$ref": "#/$defs/identity"
+          },
+          "target": {
+            "$ref": "#/$defs/identity"
+          },
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "failure": {
+            "const": null
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-attempted"
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-checked"
+              }
+            }
+          },
+          "running": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "succeeded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "previous": {
+            "$ref": "#/$defs/identity"
+          },
+          "target": {
+            "$ref": "#/$defs/identity"
+          },
+          "approval": {
+            "$ref": "#/$defs/approval"
+          },
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "backup": {
+            "$ref": "#/$defs/backup"
+          },
+          "statePreservation": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          },
+          "completedAt": {
+            "$ref": "#/$defs/time"
+          },
+          "running": {
+            "$ref": "#/$defs/running"
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "healthy"
+              }
+            }
+          },
+          "failure": {
+            "const": null
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-attempted"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "refused"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "$ref": "#/$defs/time"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "preflight",
+                      "stage",
+                      "intent"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-attempted"
+              }
+            }
+          },
+          "backup": {
+            "const": null
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-checked"
+              }
+            }
+          },
+          "running": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "failed-before-switch"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "$ref": "#/$defs/time"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "stop",
+                      "backup",
+                      "switch"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-attempted"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "failed-rolled-back"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "previous": {
+            "$ref": "#/$defs/identity"
+          },
+          "target": {
+            "$ref": "#/$defs/identity"
+          },
+          "approval": {
+            "$ref": "#/$defs/approval"
+          },
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "backup": {
+            "$ref": "#/$defs/backup"
+          },
+          "statePreservation": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          },
+          "completedAt": {
+            "$ref": "#/$defs/time"
+          },
+          "running": {
+            "$ref": "#/$defs/running"
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "healthy"
+              }
+            }
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "switch",
+                      "start",
+                      "health"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "rollback-failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "$ref": "#/$defs/time"
+          },
+          "previous": {
+            "$ref": "#/$defs/identity"
+          },
+          "target": {
+            "$ref": "#/$defs/identity"
+          },
+          "approval": {
+            "$ref": "#/$defs/approval"
+          },
+          "backup": {
+            "$ref": "#/$defs/backup"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "rollback"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "unhealthy",
+                  "unknown",
+                  "not-checked"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "interrupted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "const": null
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "recovery"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "not-attempted"
+                ]
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "not-checked"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "receipt-finalization-failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completedAt": {
+            "const": null
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/failure"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "enum": [
+                      "receipt-finalization"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "upgrade",
+              "migrate"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/release"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "healthy"
+                ]
+              }
+            }
+          },
+          "previous": {
+            "$ref": "#/$defs/identity"
+          },
+          "target": {
+            "$ref": "#/$defs/identity"
+          },
+          "approval": {
+            "$ref": "#/$defs/approval"
+          },
+          "backup": {
+            "$ref": "#/$defs/backup"
+          },
+          "running": {
+            "$ref": "#/$defs/running"
+          },
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "statePreservation": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          },
+          "outcome": {
+            "enum": [
+              "failed-rolled-back",
+              "receipt-finalization-failed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rollback": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "health": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "unhealthy",
+                  "unknown",
+                  "not-checked"
+                ]
+              }
+            }
+          },
+          "outcome": {
+            "enum": [
+              "rollback-failed",
+              "receipt-finalization-failed"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

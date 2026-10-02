@@ -4,7 +4,7 @@
 
 ## Artifact layout
 
-- packages/contracts/package.json: private versioned source artifact `@jimmie-potts/device-contracts`, version `1.1.0`, publishable through explicit artifact packaging without public registry publication.
+- packages/contracts/package.json: private versioned source artifact `@jimmie-potts/device-contracts`, version `1.2.0`, publishable through explicit artifact packaging without public registry publication.
 - packages/contracts/schemas/controller-v1.schema.json: strict Draft 2020-12 envelope schemas using `$defs`. API 1.1 adds separate definitions with a `V1_1` suffix, such as `requestV1_1` and `snapshotV1_1`, plus `momentCommand` and `momentState`. The 1.0 definitions are unchanged.
 - packages/contracts/fixtures/controller-v1.json: all language-neutral schema and semantic cases, with inputs and expected results.
 - packages/contracts/src/index.ts: schema loading/export and pure admission, replay, feed, clock, moment and 1.0-view reference functions only.
@@ -15,9 +15,11 @@
 
 Prefer schema definitions and small explicit reference functions over generated runtime frameworks. Consumers need no database or device to exercise these fixtures.
 
+Contracts 1.2.0 also ships the independent [installation receipt contract](install-contract.md). Its validators and fixtures do not change controller wire values or reference decisions.
+
 ## Wire values and identity
 
-All common objects reject unknown fields. Both consumers reject JSON nested more than 32 levels before schema validation, returning invalid-request without reserving a command. Valid v1 envelopes fit well below this bound. API versions are the literals `"1.0"` and `"1.1"`; the contract artifact is `1.1.0`. IDs are neutral, operator-configured strings, bounded to 128 ASCII letters/digits/underscore/hyphen/dot. Labels are optional, at most 80 Unicode characters, and can originate only from explicit user input. Do not copy media/session titles or paths into labels automatically. Revision and sequence numbers are nonnegative safe integers, at most 9007199254740991, to avoid TypeScript/Python disagreement. Epoch IDs are opaque bounded neutral IDs, never clocks or credentials.
+All common objects reject unknown fields. Both consumers reject JSON nested more than 32 levels before schema validation, returning invalid-request without reserving a command. Valid v1 envelopes fit well below this bound. API versions are the literals `"1.0"` and `"1.1"`; the contract artifact is `1.2.0`. IDs are neutral, operator-configured strings, bounded to 128 ASCII letters/digits/underscore/hyphen/dot. Labels are optional, at most 80 Unicode characters, and can originate only from explicit user input. Do not copy media/session titles or paths into labels automatically. Revision and sequence numbers are nonnegative safe integers, at most 9007199254740991, to avoid TypeScript/Python disagreement. Epoch IDs are opaque bounded neutral IDs, never clocks or credentials.
 
 An identity contains `deviceId`, `controllerId`, `sourceId`, and `controllerEpoch`. Stable configured IDs survive ordinary restarts; the runtime epoch changes whenever replay or clock continuity cannot be preserved. The controller registers device destinations privately. Neither identities nor commands contain destination addresses, credentials, filesystem paths, firmware/reset operations or raw protocol commands. A configuration change that redirects an existing identity requires operator authority; it is not a generic client operation.
 

@@ -82,6 +82,14 @@ and does not replace released lifecycle/controller formats. Current retained
 notices and their recovery limits are assessed in the profile; complete history
 remains distinct from notification delivery.
 
+## Installed release ownership
+
+The [install contract](install-contract.md) separates each runtime's release anchor
+from mutable state and the shared runtime parent/Node executable. It defines
+verified release identity, compatible recovery preserving latest durable state
+and private operation receipts. Consumer commands and live acceptance remain
+separately owned; the contract adds no installer or deployment service.
+
 ## Agent observation and commands
 
 Provider emitters send small validated lifecycle observations to the active state
