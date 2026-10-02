@@ -1888,3 +1888,18 @@ any created state intact for inspection; the same intent cannot be overwritten
 to retry. The launcher must register before starting synthetic applications and
 use these verified roots for monitoring. This adds no live state migration or
 installation. Durable monitor records and startup wiring remain pending.
+
+`monitor-journal.mjs` records watchdog evidence in a new private file per attempt.
+The header pins run, owner, container and image identities. Header creation and
+parent-directory synchronization finish before the record callback is exposed;
+each append is synchronized before resolving. Failed or cancelled writes disable
+further appends. Existing attempts cannot be overwritten or reopened for writing.
+
+The journal permits at most 3,600 ordered samples, one stop intent and one final
+result, within 2 MiB and 1 KiB per record. It recomputes resource assessments,
+checks monotonic sample order and refuses arbitrary fields. A saved cap failure
+cannot become normal completion or a different final failure. Readback rejects
+wrong identities, invalid sequence/state, malformed or truncated lines and
+symlinked files. Missing final results remain incomplete; neither a recorded
+normal finish nor confirmed stopping establishes pilot acceptance. The launcher
+still needs to connect this journal, root readback and watchdog to guarded startup.
