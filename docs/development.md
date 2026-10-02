@@ -1691,3 +1691,20 @@ oversized output and cancellation. Real-engine compatibility and cleanup remain
 unverified until Docker is available. The
 [Engine API reference](https://docs.docker.com/reference/api/engine/version/v1.47/)
 defines the status codes and request parameters.
+
+`cleanup-journal.mjs` supplies the cleanup coordinator's durable record callback.
+Each attempt creates a new private file under the verified run directory using
+exclusive creation. The header pins the run and resource identities. File and
+parent-directory synchronization finish before the callback becomes available;
+each subsequent record is synchronized before its promise resolves. A failed
+write disables further appends. Interrupted files are preserved and never
+reopened for writing; a resumed attempt uses a new name and fresh resource
+inspection.
+
+The journal accepts only cleanup intents, matching returns and completion,
+with exact fields and owned IDs. It is limited to 16 events and 32 KiB. Readback
+refuses symlinks, malformed records, wrong identity, sequence gaps and a partial
+last line. A saved intent or returned operation does not prove removal;
+the coordinator must still verify absence. These records cover cleanup only.
+Creation receipts and the launch journal remain to implement, and no runtime
+teardown result is implied by source journal tests.
