@@ -109,3 +109,29 @@ test('fixed command fault sequence preserves baseline outcomes, counts each side
   }
   assert.deepEqual(outcomes[1],outcomes[0]);
 });
+
+test('stalled collection saturates bounded queues without exceeding the full one-second shutdown flush budget',async t=>{
+  const parent=await mkdtemp(join(tmpdir(),'ws-')),local=join(parent,'.local');await mkdir(local);
+  t.after(()=>rm(parent,{recursive:true,force:true}));
+  const collector=createServer(async req=>{for await(const chunk of req){}});
+  await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
+  const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'stalled');
+  await prepareBackendDirectory(directory,{runId:'stalled',ports:{grafana:other[0],otlp:port,loki:other[1],tempo:other[2],health:other[3]}});
+  const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
+  await prepareReleasedContract(join(roots.roots.state.path,'contract'));
+  const recorder=createDeliveryRecorder({record:()=>{}});
+  const child=await startWorkloadProcess(directory,{enabled:true,purpose:'collection-faults',onEvidence:recorder.accept});t.after(()=>child.stop());
+  const operation=createBrightnessOperation(child.ready),commands=[];
+  for(let ordinal=0;ordinal<200;ordinal++)commands.push(await operation({ordinal,signal:AbortSignal.timeout(2000)}));
+  const closed=await child.stop(),accounting=recorder.finish(closed.result.counts);
+  assert.equal(closed.code,0);assert.equal(closed.result.complete,true);assert.equal(closed.result.oracle.effects,200);
+  assert.ok(commands.every(command=>command.status===202&&command.validReceipt));
+  assert.equal(accounting.complete,true);
+  assert.equal(assessCommandDiagnostics({commands,logs:accounting.expectedLogs,spans:accounting.expectedSpans}).complete,true);
+  for(const counts of Object.values(accounting.counts)) {
+    assert.equal(counts.exported,0);assert.ok(counts.failed>0);assert.ok(counts.dropped>0);assert.equal(counts.inFlight,0);
+  }
+  assert.ok(closed.result.shutdown.flushMs<=1000,JSON.stringify(closed.result.shutdown));
+  assert.ok(closed.result.shutdown.applicationMs<=2000);
+});

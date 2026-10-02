@@ -129,3 +129,10 @@ identity accounting, zero falsely acknowledged exports, exporter failures and
 the accepted shutdown bounds. Paused collection must also demonstrate queue
 drops. Failure to establish any required observation retains a failed result;
 it does not authorize increasing the sequence until it passes.
+
+The saturated runtime exposed 4.6 ms of finalization after the queue's original
+1,000 ms wait, so that attempt failed the accepted flush bound. Retain it as
+failed evidence. Pilot application queues now wait at most 950 ms, reserving
+50 ms for drop accounting and SDK cleanup. The measured end-to-end flush bound
+remains 1,000 ms; queue capacities, command timeouts and workload are unchanged.
+This setting must be included in the frozen benchmark source revision.

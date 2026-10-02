@@ -2272,3 +2272,9 @@ prequeue identity accounting, failed exports with no false acknowledgments,
 queue drops under paused collection, and the accepted shutdown bounds. All
 attempts retain their results, including a sequence that fails to establish
 saturation. A passing fault check alone does not establish pilot acceptance.
+
+The pilot application reserves 50 ms of the accepted one-second flush budget
+for queue finalization and SDK cleanup: both queues stop waiting at 950 ms.
+Qualification still measures the complete flush and requires it to finish
+within 1,000 ms. The original saturated run exceeded that bound and remains
+failed evidence; this setting does not retroactively change its result.

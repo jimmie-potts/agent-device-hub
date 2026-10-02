@@ -75,7 +75,10 @@ process.once('message', async input => {
       logTransport = createOtlpTransport({ origin: `http://127.0.0.1:${plan.ports.otlp}`, signal: 'logs' });
       traceTransport = createOtlpTransport({ origin: `http://127.0.0.1:${plan.ports.otlp}`, signal: 'traces' });
       host = await startPilotTelemetry({ resource, readOrigins: () => origins,
-        logSink: (line, signal) => logTransport.send(line, signal), traceSink: (line, signal) => traceTransport.send(line, signal),observe });
+        logSink: (line, signal) => logTransport.send(line, signal), traceSink: (line, signal) => traceTransport.send(line, signal),observe,
+        // Leave time to account for drops and finish SDK cleanup inside the
+        // accepted 1,000 ms end-to-end flush bound.
+        logOptions:{flushMs:950},traceOptions:{flushMs:950} });
       const { createCommandDiagnostics } = await import('../../apps/hub/dist/diagnostics.js');
       const { createWorkerDiagnostics } = await import('./worker-diagnostics.mjs');
       const controllerResource = { ...resource, 'service.name': 'nanoleaf-controller' }, workerResource = { ...resource, 'service.name': 'nanoleaf-worker' };
