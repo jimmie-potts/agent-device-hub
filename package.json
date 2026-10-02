@@ -12,8 +12,8 @@
     "test:workflow": "node --test tests/workflow_checks.cjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit",
+    "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard",
+    "typecheck": "tsc -p packages/observability/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -77,7 +77,15 @@
     "test:hub:verify": "npm run build && npm run test:hub:verify:built",
     "test:hub:verify:built": "node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs",
     "verify:host": "node scripts/verify-host.mjs",
-    "test:verify-host": "node --test scripts/tests/verify-host.test.mjs"
+    "test:verify-host": "node --test scripts/tests/verify-host.test.mjs",
+    "test:observability": "npm run build && npm run test:observability:built",
+    "test:observability:built": "node --test packages/observability/tests/*.test.mjs",
+    "test:observability:python": "python3 -m unittest discover -s packages/observability/tests -p \"test_*.py\"",
+    "package:observability": "npm run build && node scripts/package-observability.mjs",
+    "test:observability:package": "npm run build && npm run test:observability:package:built",
+    "test:observability:package:built": "node scripts/package-observability.mjs --test",
+    "test:observability:query": "node packages/observability/tests/query.mjs",
+    "test:observability:browser": "node --test packages/observability/tests/contract.browser.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -101,7 +109,8 @@
     "apps/hub",
     "controllers/tidbyt",
     "controllers/lifx",
-    "apps/local-controllers"
+    "apps/local-controllers",
+    "packages/observability"
   ],
   "dependencies": {
     "react": "19.3.0",
