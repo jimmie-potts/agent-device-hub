@@ -30,7 +30,7 @@ test('fresh baseline and instrumented application processes preserve command out
     const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
     await prepareReleasedContract(join(roots.roots.state.path,'contract'));
     let ownership;const evidence=createDeliveryRecorder({record:()=>{}});
-    const processHandle=await startWorkloadProcess(directory,{enabled,onStart:identity=>{ownership=identity;},onEvidence:evidence.accept});t.after(()=>processHandle.stop());
+    const processHandle=await startWorkloadProcess(directory,{enabled,purpose:'collection-faults',onStart:identity=>{ownership=identity;},onEvidence:evidence.accept});t.after(()=>processHandle.stop());
     assert.deepEqual(ownership,processHandle.identity);
     const sample=await applicationSnapshot(processHandle.identity);assert.ok(sample.rssBytes>0);
     const operation=createBrightnessOperation(processHandle.ready), receipts=[],events=[];

@@ -92,7 +92,7 @@ process.once('message', async input => {
     fake = await startFakeController(fakeOptions);
     origins = [new URL(fake.endpoint).origin];
     const token = 's'.repeat(43), directory = join(roots.roots.state.path,
-      input.purpose==='workload'?'hub':`hub-${input.purpose==='command-faults'?'faults':'collection-faults'}-${input.enabled?'enabled':'disabled'}`);
+      input.purpose==='workload'?'hub':input.purpose==='collection-faults'?`hub-cf-${input.enabled?'e':'d'}`:`hub-faults-${input.enabled?'enabled':'disabled'}`);
     await mkdir(directory, { mode: 0o700 });
     hub = await startHub({ directory, ownerId: 'synthetic-pilot', consumers: [], diagnostics,
       credentials: [{ id: 'pilot', digest: createHash('sha256').update(token).digest('hex'), scopes: ['read','control'], devices: ['wall'] }],
