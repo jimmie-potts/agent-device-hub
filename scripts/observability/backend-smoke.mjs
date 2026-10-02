@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { performCollectionFaults } from './collection-faults.mjs';
 import { prepareReleasedContract } from './released-contract.mjs';
 import { performIngestion } from './ingestion-session.mjs';
@@ -20,7 +21,9 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
   try {
     monitorBackend = await createDockerBackend({ endpoint, signal });
     await prepareBackendDirectory(directory, { runId: basename(directory), ports });
-    if (!(await inspectHost(directory)).ready) throw new Error('Host preflight failed');
+    const hostPreflight=await inspectHost(directory);
+    await writeFile(join(directory,'host-preflight.json'),JSON.stringify(hostPreflight,null,2)+'\n',{flag:'wx',mode:0o600});
+    if (!hostPreflight.ready) throw new Error('Host preflight failed');
     const roots = await registerHostRoots(directory, stateParent);
     if (ingestion) await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
     await allocateBackend({ directory, backend, signal });
