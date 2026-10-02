@@ -6,8 +6,8 @@
 ## 2. Connections and source evidence
 
 - [x] 2.1 Display version/short revision, full revision selection/copy and unknown fallback using existing UI components; verify known/unknown/read-only/copy behavior and no commands in browser checks.
-- [ ] 2.2 Document the metadata boundary and run the mandatory Hub, dashboard, shared and workflow checks; retain current-candidate UI evidence and obtain the owner's approval.
+- [x] 2.2 Document the metadata boundary and run the mandatory Hub, dashboard, shared and workflow checks; retain current-candidate UI evidence and obtain the owner's approval.
 
 ## 3. Specification reconciliation
 
-- [ ] 3.1 After applicable acceptance, synchronize both specification deltas and archive this change; verify the actual specification inventory and workflow checks.
+- [x] 3.1 After applicable acceptance, synchronize both specification deltas and archive this change; verify the actual specification inventory and workflow checks.

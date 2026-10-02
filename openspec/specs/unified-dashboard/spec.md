@@ -461,3 +461,15 @@ The dashboard SHALL register media-grid and playlist widgets at medium/large siz
 - **WHEN** a polled integration catalogRevision changes or the connection resynchronizes
 - **THEN** affected catalog reads refresh once through the per-device scheduler, cross-read mismatches are rejected, and valid immutable frames remain bound to their rendition
 - **AND** a 1.0 producer shows the unavailable reason while retaining existing controls
+
+### Requirement: Inspect running Hub build on Connections
+
+Connections SHALL show the running Hub package version and a short source revision from the authenticated dashboard context, with the full known revision copyable. Missing or invalid metadata MUST show `unknown`. Build inspection and copying MUST send no device command and remain available to read-only credentials.
+
+#### Scenario: Known running revision
+- **WHEN** the owner opens Connections with a known Hub identity
+- **THEN** the page displays its version and short revision, and copying yields the full revision
+
+#### Scenario: Unknown or older metadata
+- **WHEN** the context lacks usable build metadata
+- **THEN** Connections displays explicit unknown values without guessing from a version, page path or state revision
