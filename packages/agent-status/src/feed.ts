@@ -1,3 +1,5 @@
+import {HubStatusSubscription, type StatusSubscription} from './stream.js';
+import {systemTimers, type PublisherTimers} from './loop.js';
 import { validateSnapshot, type Snapshot } from '@jimmie-potts/agent-state';
 
 /**
@@ -7,7 +9,7 @@ import { validateSnapshot, type Snapshot } from '@jimmie-potts/agent-state';
  * pointers or resync notices and is optional.
  */
 export type Feed<T> = {
-  snapshot(): T | Promise<T>;
+  snapshot(signal?: AbortSignal): T | Promise<T>;
   subscribe?(): AsyncIterable<unknown> & { close?(): void };
 };
 
@@ -26,11 +28,14 @@ export function hubToken(value: unknown): string {
 }
 
 /** One authenticated GET within 2.5 s and `limit` bytes; anything else is `feed-unavailable`. */
-export async function hubJson(url: string, token: string, limit: number): Promise<unknown> {
+export async function hubJson(url: string, token: string, limit: number, signal?: AbortSignal, fetcher:typeof fetch=fetch): Promise<unknown> {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 2500);
+  const cancel=()=>abort.abort();
+  signal?.addEventListener('abort',cancel,{once:true});
+  if(signal?.aborted)abort.abort();
+  const timer = setTimeout(cancel, 2500);
   try {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: abort.signal });
+    const response = await fetcher(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: abort.signal });
     if (!response.ok || !response.body) return fail('feed-unavailable');
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
@@ -44,17 +49,22 @@ export async function hubJson(url: string, token: string, limit: number): Promis
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch { return fail('feed-unavailable'); }
-  finally { clearTimeout(timer); abort.abort(); }
+  finally { clearTimeout(timer); abort.abort(); signal?.removeEventListener('abort',cancel); }
 }
 
 /** The selected shared agent-state owner's feed, read through the hub's read-only monitor route. */
 export class HubStatusFeed implements Feed<Snapshot> {
   readonly #url: string;
+  readonly #changesUrl: string;
+  readonly #fetch: typeof fetch;
+  readonly #timers: PublisherTimers;
   readonly #owner: string;
   readonly #token: string;
   readonly #snapshotVersion: '1.2' | undefined;
-  constructor(options: { hubUrl: string; ownerId: string; token: string; snapshotVersion?: '1.2' }) {
+  constructor(options: { hubUrl: string; ownerId: string; token: string; snapshotVersion?: '1.2'; fetch?:typeof fetch; timers?:PublisherTimers }) {
     if (options.snapshotVersion !== undefined && options.snapshotVersion !== '1.2') fail('invalid-runner-config');
+    this.#fetch=options.fetch ?? fetch;this.#timers=options.timers ?? systemTimers;
+    this.#changesUrl=hubOrigin(options.hubUrl)+'/api/monitor/v1/changes';
     this.#snapshotVersion = options.snapshotVersion;
     this.#url = hubOrigin(options.hubUrl) + '/api/monitor/v1/sessions'
       + (this.#snapshotVersion ? `?snapshotVersion=${this.#snapshotVersion}` : '');
@@ -62,8 +72,9 @@ export class HubStatusFeed implements Feed<Snapshot> {
     if (typeof options.ownerId !== 'string' || !HUB_ID.test(options.ownerId)) fail('invalid-runner-config');
     this.#owner = options.ownerId;
   }
-  async snapshot(): Promise<Snapshot> {
-    const value = await hubJson(this.#url, this.#token, MAX_FEED) as Record<string, unknown> | null;
+  subscribe():StatusSubscription { return new HubStatusSubscription(this.#changesUrl,this.#token,this.#owner,this.#fetch,this.#timers); }
+  async snapshot(signal?:AbortSignal): Promise<Snapshot> {
+    const value = await hubJson(this.#url, this.#token, MAX_FEED,signal,this.#fetch) as Record<string, unknown> | null;
     if (!value || value.apiVersion !== '1.0' || value.ownerId !== this.#owner || value.connection !== 'current') return fail('feed-unavailable');
     const valid = validateSnapshot(value.snapshot);
     return valid.ok && (!this.#snapshotVersion || valid.value.apiVersion === this.#snapshotVersion)

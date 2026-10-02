@@ -18,6 +18,8 @@ export type InstallationWriterOptions = {
   controller: TidbytController;
   /** An additional installation the controller's connection lists; omitted, the default one. */
   installation?: string;
+  /** Optional owner stop guard, checked again after an installation lookup. */
+  canSubmit?: () => boolean;
   minIntervalMs: number;
   refreshMs: number;
   pollMs: number;
@@ -32,6 +34,7 @@ export type InstallationWriterOptions = {
  */
 export class InstallationWriter {
   readonly #controller: TidbytController;
+  readonly #canSubmit: () => boolean;
   readonly #target: { installation: string } | Record<string, never>;
   readonly #minIntervalMs: number;
   readonly #refreshMs: number;
@@ -47,6 +50,7 @@ export class InstallationWriter {
 
   constructor(options: InstallationWriterOptions) {
     this.#controller = options.controller;
+    this.#canSubmit = options.canSubmit ?? (() => true);
     this.#target = options.installation === undefined ? {} : { installation: options.installation };
     this.#minIntervalMs = options.minIntervalMs;
     this.#refreshMs = options.refreshMs;
@@ -59,6 +63,7 @@ export class InstallationWriter {
 
   /** Show `rgb`, or remove the installation when it is undefined. Returns the delay before the next evaluation. */
   async write(rgb: Uint8Array | undefined): Promise<number> {
+    if (!this.#canSubmit()) return this.#pollMs;
     const now = this.#now();
     let command: DisplayRequest['command'] | undefined;
     if (rgb) {
@@ -84,6 +89,7 @@ export class InstallationWriter {
         return this.#pollMs;
       }
     }
+    if (!this.#canSubmit()) return this.#pollMs;
     const receipt = await this.#submit(command);
     if (receipt) this.#record(command, receipt, rgb, now);
     else this.#failures += 1;

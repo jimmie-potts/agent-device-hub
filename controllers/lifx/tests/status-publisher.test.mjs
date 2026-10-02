@@ -334,3 +334,73 @@ test("stop halts scheduling: no further evaluation runs, even if update is calle
   await flush();
   assert.equal(paints("desk").length, 1, "stop prevents any further evaluation");
 });
+
+test('stop during a pending status read prevents late paints', async t => {
+  let resolveRead;
+  const pending=new Promise(resolve=>{resolveRead=resolve;});
+  const s=await setup(t,{feed:{snapshot:()=>pending}});
+  await setMode(s.controller,'desk','Work');await flush();
+  s.publisher.stop();resolveRead(s.owner.snapshot());
+  await s.publisher.whenIdle();await flush();
+  assert.equal(s.paints('desk').length,0);
+});
+
+import {HubStatusFeed} from '@jimmie-potts/agent-status';
+import {clockTimers,streamFetch,frame} from '../../../packages/agent-status/tests/helpers/streams.mjs';
+
+test('SSE receipt starts evaluation immediately; a storm coalesces pending reads and polling remains independent',async t=>{
+  const c=clockTimers(),stream=streamFetch(),starts=[];let o,hold,release,active=0,maxActive=0;
+  const feed=new HubStatusFeed({hubUrl:'http://127.0.0.1:8788',ownerId:'owner',token:'t'.repeat(43),timers:c.timers,fetch:async(url,options)=>{
+    if(url.endsWith('/changes'))return stream.fetch(url,options);
+    starts.push(c.clock.now);active++;maxActive=Math.max(maxActive,active);
+    if(hold)await new Promise(resolve=>{release=resolve;});active--;
+    return Response.json({apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:o.snapshot()});
+  }});
+  const s=await setup(t,{feed,timers:c.timers});o=s.owner;
+  await setMode(s.controller,'desk','Work');await s.publisher.whenIdle();await flush();
+  assert.equal(stream.connections.length,1);const initial=s.paints('desk').length;
+  await o.ingest(hook('UserPromptSubmit','sse','t1'));
+  c.clock.now=100;hold=true;stream.connections[0].send(frame(1));await flush();
+  assert.equal(starts.at(-1),100,'evaluation begins at receipt, before the read finishes');
+  assert.equal(s.paints('desk').length,initial,'no physical write latency inference');
+  for(let i=2;i<500;i++)stream.connections[0].send(frame(i));await flush();
+  assert.equal(active,1);const count=starts.length;hold=false;release();await s.publisher.whenIdle();await flush();
+  assert.equal(starts.length,count+1,'one latest-state rerun');assert.equal(maxActive,1);assert.equal(s.paints('desk').length,initial+1);
+  c.clock.now=29000;stream.connections[0].send(frame(500));await flush();await s.publisher.whenIdle();
+  const before=starts.length;await c.advance(1000);await s.publisher.whenIdle();
+  assert.equal(starts.length,before+1,'fixed 30-second recovery despite notice at 29 seconds');
+  stream.connections[0].send(': heartbeat\n\n');await flush();assert.equal(s.paints('desk').length,initial+1);
+  s.publisher.stop();assert.equal(c.pending.size,0);assert.equal(stream.connections[0].options.signal.aborted,true);
+});
+
+test('authentication failure leaves LIFX recovery reads operational with no paint from unavailable data',async t=>{
+  const c=clockTimers();let reads=0;
+  const feed=new HubStatusFeed({hubUrl:'http://127.0.0.1:8788',ownerId:'owner',token:'t'.repeat(43),timers:c.timers,fetch:async url=>{
+    if(url.endsWith('/sessions'))reads++;return new Response('',{status:401});
+  }});
+  const s=await setup(t,{feed,timers:c.timers});await setMode(s.controller,'desk','Work');await s.publisher.whenIdle();
+  assert.equal(reads,1);await c.advance(30000);await s.publisher.whenIdle();assert.ok(reads>=2);assert.equal(s.paints('desk').length,0);s.publisher.stop();assert.equal(c.pending.size,0);
+});
+
+test('an admitted LIFX paint retains its terminal receipt after publisher stop',async t=>{
+  let release;
+  const o=await owner(t);const controller=new LifxController({controllerId:'lifx',sourceId:'test',bulbs:[{deviceId:'desk',address:'192.0.2.10',...evidence}],modeStateRoot:tempRoot(t),timeoutMs:10,retries:0,transportFactory:()=>({exchange:()=>new Promise(resolve=>{release=resolve;}),close(){}})});
+  const publisher=new LifxStatusPublisher({feed:{snapshot:()=>o.snapshot()},controller,bulbs:[{deviceId:'desk'}]});t.after(()=>publisher.stop());
+  await setMode(controller,'desk','Work');await publisher.whenIdle();await flush();assert.equal(typeof release,'function');
+  publisher.stop();release(Buffer.alloc(0));await flush();assert.equal(publisher.state().desk.lastReceipt.outcome,'sent');
+});
+
+for(const failure of ['closed','stalled','malformed','oversized'])test(`${failure} SSE leaves the fixed recovery snapshot read operational`,async t=>{
+  const c=clockTimers(),stream=streamFetch();let o,reads=0;
+  const feed=new HubStatusFeed({hubUrl:'http://127.0.0.1:8788',ownerId:'owner',token:'t'.repeat(43),timers:c.timers,fetch:async(url,options)=>{
+    if(url.endsWith('/changes'))return stream.fetch(url,options);
+    reads++;return Response.json({apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:o.snapshot()});
+  }});
+  const s=await setup(t,{feed,timers:c.timers});o=s.owner;await setMode(s.controller,'desk','Work');await s.publisher.whenIdle();await flush();
+  const before=s.paints('desk').length;
+  if(failure==='closed')stream.connections[0].end();
+  if(failure==='malformed')stream.connections[0].send('event: state\ndata: nope\n\n');
+  if(failure==='oversized')stream.connections[0].send('x'.repeat(8193));
+  await flush();await c.advance(30000);await s.publisher.whenIdle();
+  assert.ok(reads>=2);assert.equal(s.paints('desk').length,before,'unchanged snapshot does not repaint');s.publisher.stop();assert.equal(c.pending.size,0);
+});

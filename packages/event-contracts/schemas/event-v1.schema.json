@@ -1,0 +1,616 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/profile/1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "bunnyprofile",
+    "dataschema",
+    "datacontenttype",
+    "deliveryclass",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "type": {
+      "enum": [
+        "org.bunny.lifecycle.observed",
+        "org.bunny.state.changed",
+        "org.bunny.selection.committed",
+        "org.bunny.controller.outcome",
+        "org.bunny.notice.accepted",
+        "org.bunny.effect.available"
+      ]
+    },
+    "bunnyprofile": {
+      "const": "1.0"
+    },
+    "dataschema": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "deliveryclass": {
+      "enum": [
+        "current-state",
+        "actionable-notification",
+        "time-sensitive-effect"
+      ]
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "maxLength": 24
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence",
+        "payload"
+      ],
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+      "maxLength": 128
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^urn:bunny:(provider|state|hub|controller|notification|automation):[A-Za-z0-9_.-]{1,128}$",
+      "maxLength": 151
+    },
+    "counter": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nativeIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "id"
+          ],
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        }
+      ]
+    },
+    "relationship": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "source",
+            "id"
+          ],
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        }
+      ]
+    },
+    "ordering": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "authority",
+            "epoch",
+            "sequence"
+          ],
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "authority": {
+              "$ref": "#/$defs/source"
+            },
+            "epoch": {
+              "$ref": "#/$defs/id"
+            },
+            "sequence": {
+              "$ref": "#/$defs/counter"
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observedAtMs",
+        "occurrence",
+        "ordering",
+        "correlation",
+        "causation"
+      ],
+      "properties": {
+        "observedAtMs": {
+          "$ref": "#/$defs/counter"
+        },
+        "receivedAtMs": {
+          "$ref": "#/$defs/counter"
+        },
+        "occurrence": {
+          "enum": [
+            "known",
+            "unknown"
+          ]
+        },
+        "ordering": {
+          "$ref": "#/$defs/ordering"
+        },
+        "correlation": {
+          "$ref": "#/$defs/relationship"
+        },
+        "causation": {
+          "$ref": "#/$defs/relationship"
+        }
+      }
+    },
+    "lifecycleObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "client",
+        "hostId",
+        "sourceId",
+        "sessionId",
+        "kind",
+        "nativeIdentity"
+      ],
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ]
+        },
+        "client": {
+          "enum": [
+            "cli",
+            "desktop",
+            "code"
+          ]
+        },
+        "hostId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "session.started",
+            "turn.started",
+            "activity.observed",
+            "turn.ended",
+            "turn.interrupted",
+            "runtime.ended",
+            "question.continuing",
+            "attention.input",
+            "attention.approval",
+            "attention.resolved",
+            "notice.acknowledged",
+            "read.observed",
+            "evidence.unavailable"
+          ]
+        },
+        "nativeIdentity": {
+          "$ref": "#/$defs/nativeIdentity"
+        }
+      }
+    },
+    "stateChanged": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownerId",
+        "revision"
+      ],
+      "properties": {
+        "ownerId": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "$ref": "#/$defs/counter"
+        }
+      }
+    },
+    "selectionCommitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectionId",
+        "revision",
+        "mode"
+      ],
+      "properties": {
+        "selectionId": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "$ref": "#/$defs/counter"
+        },
+        "mode": {
+          "enum": [
+            "Work",
+            "Free",
+            "Quiet"
+          ]
+        }
+      }
+    },
+    "controllerOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controllerId",
+        "deviceId",
+        "request",
+        "outcome",
+        "priorEffects"
+      ],
+      "properties": {
+        "controllerId": {
+          "$ref": "#/$defs/id"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/id"
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "epoch",
+            "sequence"
+          ],
+          "properties": {
+            "epoch": {
+              "$ref": "#/$defs/id"
+            },
+            "sequence": {
+              "$ref": "#/$defs/counter"
+            }
+          }
+        },
+        "outcome": {
+          "enum": [
+            "queued",
+            "sent",
+            "failed",
+            "partially-applied",
+            "uncertain",
+            "cancelled"
+          ]
+        },
+        "priorEffects": {
+          "enum": [
+            "none",
+            "possible",
+            "confirmed-transmission"
+          ]
+        }
+      }
+    },
+    "noticeAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "noticeId",
+        "acceptanceId",
+        "policyId"
+      ],
+      "properties": {
+        "noticeId": {
+          "$ref": "#/$defs/id"
+        },
+        "acceptanceId": {
+          "$ref": "#/$defs/id"
+        },
+        "policyId": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "effectAvailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effectId",
+        "policyId",
+        "notBeforeMs",
+        "expiresAtMs"
+      ],
+      "properties": {
+        "effectId": {
+          "$ref": "#/$defs/id"
+        },
+        "policyId": {
+          "$ref": "#/$defs/id"
+        },
+        "notBeforeMs": {
+          "$ref": "#/$defs/counter"
+        },
+        "expiresAtMs": {
+          "$ref": "#/$defs/counter"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.lifecycle.observed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:provider:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/lifecycle-observed/1.0"
+          },
+          "deliveryclass": {
+            "const": "current-state"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/lifecycleObserved"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.state.changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:state:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/state-changed/1.0"
+          },
+          "deliveryclass": {
+            "const": "current-state"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/stateChanged"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.selection.committed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:hub:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/selection-committed/1.0"
+          },
+          "deliveryclass": {
+            "const": "current-state"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/selectionCommitted"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.controller.outcome"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:controller:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/controller-outcome/1.0"
+          },
+          "deliveryclass": {
+            "const": "current-state"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/controllerOutcome"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.notice.accepted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:notification:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/notice-accepted/1.0"
+          },
+          "deliveryclass": {
+            "const": "actionable-notification"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/noticeAccepted"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "org.bunny.effect.available"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "pattern": "^urn:bunny:automation:",
+            "type": "string"
+          },
+          "dataschema": {
+            "const": "https://bunny.invalid/events/effect-available/1.0"
+          },
+          "deliveryclass": {
+            "const": "time-sensitive-effect"
+          },
+          "data": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/effectAvailable"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

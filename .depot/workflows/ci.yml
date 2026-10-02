@@ -79,6 +79,8 @@ jobs:
       - run: npm run test:contracts:python
       - run: npm run test:performance
       - run: npm run test:package:built
+      - run: npm run test:events:built
+      - run: npm run test:events:python
       - run: npm run test:lifecycle:built
       - run: npm run test:lifecycle:python
       - run: npm run test:lifecycle:package:built

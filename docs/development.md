@@ -492,6 +492,24 @@ cross-repository secret. Keep actual MCP release source/hash receipts outside th
 reviewed commit. Read [the module guide](../packages/mcp/README.md) for the API,
 protocol matrix, SDK license and remaining installed-client/physical acceptance.
 
+## Shared event contract checks
+
+Use Node 24 and Python 3.12 or 3.14 with `requirements-contracts.txt`.
+`npm run build` and `npm run typecheck` include `packages/event-contracts`.
+`npm run test:events` builds and runs the TypeScript shared profile/reference
+corpus; `npm run test:events:python` runs the identical cases in Python.
+CI runs `test:events:built` after the shared build and the Python check in both
+supported Python matrix entries. Each runner must reject an empty or duplicate
+case inventory and assert exact expected results.
+
+The corpus covers qualified identity/time/order, safe-integer revisions, closed
+payloads/privacy, finite limits, retry identity, snapshot recovery, confirmed
+notification acceptance, expiry/handling and live-only effects. These are pure
+source-contract/reference checks. They do not qualify a production transport,
+store, producer, installed client or device. Existing lifecycle/controller
+TypeScript/Python/package and affected consumer checks remain required for
+compatibility. See [the event profile](event-contract.md).
+
 ## Agent lifecycle contract checks
 
 Hub #2 adds `packages/lifecycle-contracts`, a private versioned lifecycle schema
@@ -539,6 +557,16 @@ Linux state and temporary files. Parent timeout kills the namespace and the
 host terminates and verifies its own namespace init through a Linux PID handle;
 Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
+
+## Status stream checks
+
+`npm run test:agent-status` covers incremental SSE parsing, authenticated owner
+checks, reconnect/idle deadlines, bounded notices, stop and the fixed recovery
+poll under storms. `npm run test:lifx` and `npm run test:tidbyt` cover notice-driven
+reevaluation, stop during reads, retained write outcomes and the existing device
+policies. `npm run test:local-controllers` verifies their owning host consumers.
+These existing commands run in CI's contracts matrix; source fakes establish
+notice-to-evaluation timing, not installed or physical latency.
 
 ## Tidbyt controller checks
 
