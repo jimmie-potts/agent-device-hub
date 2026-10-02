@@ -10,6 +10,8 @@ if (process.argv[2] === 'environment') {
 } else {
   const local = [], logs = [], traces = [], signals = [];
   const unavailable = process.argv[2] === 'unavailable';
+  const http = process.argv[2] === 'http';
+  let receiver, logTransport, traceTransport;
   const stall = signal => {
     signals.push(signal);
     return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Synthetic transport aborted')), { once: true }));
@@ -17,8 +19,8 @@ if (process.argv[2] === 'environment') {
   let origins = [];
   const host = await startPilotTelemetry({ resource, readOrigins: () => origins,
     localSink: line => local.push(JSON.parse(line)),
-    logSink: (line, signal) => { logs.push(JSON.parse(line)); if (unavailable) return stall(signal); },
-    traceSink: (line, signal) => { traces.push(JSON.parse(line)); if (unavailable) return stall(signal); },
+    logSink: (line, signal) => { if (http) return logTransport.send(line, signal); logs.push(JSON.parse(line)); if (unavailable) return stall(signal); },
+    traceSink: (line, signal) => { if (http) return traceTransport.send(line, signal); traces.push(JSON.parse(line)); if (unavailable) return stall(signal); },
     ...(unavailable ? { logOptions: { flushMs: 20 }, traceOptions: { flushMs: 20 } } : {}) });
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -31,6 +33,21 @@ if (process.argv[2] === 'environment') {
   const directory = await mkdtemp(join(tmpdir(), 'hub-host-'));
   let hub, fake;
   try {
+    if (http) {
+      const { createServer } = await import('node:http');
+      const { createOtlpTransport } = await import('../../otlp-http.mjs');
+      receiver = createServer(async (request, response) => {
+        for (const field of ['authorization', 'traceparent', 'baggage', 'tracestate']) assert.equal(request.headers[field], undefined);
+        let text = ''; for await (const chunk of request) text += chunk;
+        assert.ok(['/v1/logs', '/v1/traces'].includes(request.url));
+        (request.url === '/v1/logs' ? logs : traces).push(JSON.parse(text));
+        response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}');
+      });
+      await new Promise(resolve => receiver.listen(0, '127.0.0.1', resolve));
+      const origin = `http://127.0.0.1:${receiver.address().port}`;
+      logTransport = createOtlpTransport({ origin, signal: 'logs' });
+      traceTransport = createOtlpTransport({ origin, signal: 'traces' });
+    }
     const controllerResource = { ...resource, 'service.name': 'nanoleaf-controller' };
     const workerResource = { ...resource, 'service.name': 'nanoleaf-worker' };
     const worker = createWorkerDiagnostics({ resource: controllerResource, workerResource, emit: host.emit,
@@ -78,10 +95,15 @@ if (process.argv[2] === 'environment') {
     for (const field of ['failed', 'dropped', 'invalid', 'localFailed', 'mappingFailed', 'queued']) assert.equal(counts.logs[field], 0, field);
     for (const field of ['invalid', 'unassociated', 'associationDropped', 'failures', 'unfinished', 'active']) assert.equal(counts.traces[field], 0, field);
     assert.equal(counts.logs.exported, 7); assert.equal(counts.traces.output.exported, 6);
-    process.stdout.write('combined host verified\n');
+    if (http) {
+      assert.equal(logTransport.counts().acknowledged, 7); assert.equal(traceTransport.counts().acknowledged, 6);
+      process.stdout.write('combined HTTP host verified\n');
+    } else process.stdout.write('combined host verified\n');
     }
   } finally {
     await hub?.close(); await fake?.close(); await host.shutdown();
+    logTransport?.close(); traceTransport?.close();
+    if (receiver) await new Promise(resolve => { receiver.close(resolve); receiver.closeAllConnections(); });
     await rm(directory, { recursive: true, force: true });
   }
 }

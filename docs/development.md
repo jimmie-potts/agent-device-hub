@@ -1601,3 +1601,23 @@ shutdown abort without retries. The combined host fixture follows an actual Hub
 command through fake execution: seven logs, six correlated spans, one independent
 effect. Stalled sinks preserve that command and account for all abandoned
 records. These injected-sink tests do not establish Collector ingestion.
+
+`otlp-http.mjs` sends one mapped record per request to a fixed `/v1/logs` or
+`/v1/traces` path on an exact numeric loopback origin. It owns a one-socket agent
+and refuses concurrent calls rather than adding an unbounded agent queue.
+Requests have a one-second maximum total deadline, 8 KiB response-body/header
+limits, and a 64 KiB encoded-request ceiling (canonical records remain bounded
+by their separate 8 KiB limit). It sends no credentials or propagation headers,
+follows no redirects, and never retries. Close cancels the active request and
+destroys only its own agent.
+
+The pilot response parser requires JSON and HTTP 200 and ignores unknown JSON
+fields for OTLP forward compatibility. Partial
+rejection fails the record; a zero-rejection warning increments a counter
+without retaining server text. See the [OTLP response specification](https://opentelemetry.io/docs/specs/otlp/#otlphttp-response).
+The transport records acknowledgment separately from ingestion. Tests cover
+partial rejection for both signals, warnings, malformed/oversized responses,
+redirects, retryable status codes, unavailable/paused receivers, cancellation
+and concurrent callers. The combined Hub/worker fixture also sends its seven
+logs and six spans through an actual synthetic HTTP receiver and checks that
+export requests are not recursively traced. Grafana ingestion remains untested.
