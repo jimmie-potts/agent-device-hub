@@ -1528,3 +1528,11 @@ queues, timeout after admission, restart cancellation and bounded histories.
 The oracle retains 256 records and reports overflow; the runtime harness must
 drain it and retain the evidence. An overflow prevents a complete per-ticket
 claim. These tests run through the existing Hub and packaged Hub suites.
+
+The pilot source suite also starts an isolated Node 24 SDK process to check
+HTTP and `fetch` propagation to exact configured numeric loopback origins.
+It checks concurrent parentage, exclusion of other origins, sampling flags and
+absence of baggage/tracestate. Register the OpenTelemetry ESM hook and start
+the SDK before importing the application. Automatic incoming extraction stays
+disabled; the authenticated application boundary owns incoming context. This
+SDK test does not yet qualify worker handoff, canonical export or ingestion.
