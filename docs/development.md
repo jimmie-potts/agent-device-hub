@@ -1833,3 +1833,26 @@ read is a failure. Files may still grow during a walk, so this is a measured
 snapshot, not an atomic filesystem quota. The runtime watchdog must retain the
 sample timing and stop on missing measurements or cap breaches. Launcher root
 registration and continuous enforcement remain to integrate.
+
+`resource-watchdog.mjs` assesses the accepted hard limits using projected run-data,
+cgroup memory, host-available memory, available disk and OOM observations. It
+requires remaining disk headroom for the unused part of the 2 GiB run-data budget.
+The first valid sample must be saved before its readiness promise resolves true.
+Later failure remains observable through its completion promise; initial readiness
+does not guarantee continued health.
+
+The watchdog serializes samples, waits one second between them by default, bounds
+each sample to five seconds and limits a monitoring session to 3,600 samples.
+It records sequence and monotonic collection bounds, never arbitrary callback
+fields. Cap breaches, missing samples, evidence failures and sample exhaustion
+end monitoring and request one owned stop. Evidence failure still permits the
+stop attempt; it cannot be reported as saved evidence. Stop has a bounded wait
+and must return explicit confirmation, otherwise the result stays unconfirmed.
+Normal `finish()` cancels monitoring without stopping the backend.
+
+The launcher must supply cancellable sampling, durable recording and a stop
+callback that verifies current resource ownership and stopped state. It must
+retain the watchdog result and block workload execution when readiness fails
+or monitoring later fails. This loop is separate from the benchmark's 100 ms RSS
+sampling and does not prove that cadence. Runtime callbacks and startup integration
+remain unfinished; unit tests do not establish cap enforcement on Docker.
