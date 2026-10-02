@@ -151,8 +151,15 @@ export function validateStatus(input:unknown):{ok:true;value:CollectorStatus}|{o
   try{const encoded=JSON.stringify(input);if(typeof encoded!=='string'||new TextEncoder().encode(encoded).length>4096)return invalid();const value=JSON.parse(encoded) as CollectorStatus;if(!checkStatus(value)||(value.lastSuccessAt!==null&&value.lastSuccessAt>value.lastAttemptAt))return invalid();return {ok:true,value};}catch{return invalid();}
 }
 
+const dateFormatters=new Map<string,Intl.DateTimeFormat>();
 export function localDate(instant: string | number, timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(instant));
+  let formatter=dateFormatters.get(timezone);
+  if(!formatter){
+    formatter=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'});
+    if(dateFormatters.size>=8)dateFormatters.delete(dateFormatters.keys().next().value!);
+    dateFormatters.set(timezone,formatter);
+  }
+  return formatter.format(new Date(instant));
 }
 export function offsetDate(date: string, days: number): string { return new Date(Date.parse(date)+days*86_400_000).toISOString().slice(0,10); }
 export function presetWindows(now: string, timezone: string): PresetWindow[] {

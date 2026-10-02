@@ -10,7 +10,7 @@ import { initializeControl,writeControl } from './control.js';
 import { safeCode } from './supervisor.js';
 
 export type Operation = {command:'collect'|'status'|'clear'|'clear-text'|'zone'} | {command:'reset';historicalReimport:true} | {command:'backup';name:string} | {command:'restore';name:string;historicalReimport?:boolean} | {command:'rebind';confirmSameSource:true} | {command:'export';format:'json'|'csv';output:string};
-export type OperationHooks = {phase:(phase:'reading'|'processing')=>void;memory?:(rss:number)=>void;checkpoint?:(phase:'before-read'|'before-commit'|'committed'|'published')=>void};
+export type OperationHooks = {maxMemoryBytes?:number;phase:(phase:'reading'|'processing')=>void;memory?:(rss:number)=>void;checkpoint?:(phase:'before-read'|'before-commit'|'committed'|'published')=>void};
 const failureCodes=new Set<FailureCode>(['source-unavailable','source-schema','source-busy','source-capacity','source-deadline','source-read','store-capacity','aggregate-capacity','publication-capacity','publication-failed','run-deadline','binding-mismatch','source-changed','run-cancelled']);
 /** Internal core: caller qualifies paths and holds both supervisor and worker ownership. */
 export async function executeOperation(config:CollectorConfig,operation:Operation,hooks:OperationHooks):Promise<unknown> {
@@ -27,7 +27,7 @@ export async function executeOperation(config:CollectorConfig,operation:Operatio
     writeControl(config.stateDirectory,{...control,captureAfter:control.captureAfter??Date.now()});
   }
   const timezone=operation.command==='zone'?(NumericStore.savedTimezone(config.stateDirectory)??config.timezone):config.timezone;
-  const store=new NumericStore({directory:config.stateDirectory,namespace:config.namespace,sourceIdentity:identity,timezone});
+  const store=new NumericStore({directory:config.stateDirectory,namespace:config.namespace,sourceIdentity:identity,timezone,maxMemoryBytes:hooks.maxMemoryBytes});
   const publish=()=>{const pending=store.pending();if(pending){publishSnapshot(paths,pending);hooks.checkpoint?.('published');store.markPublished(pending.revision);}};
   const now=()=>new Date().toISOString();
   try{

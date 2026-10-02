@@ -53,7 +53,9 @@ export async function supervise(options:Supervision):Promise<unknown> {
         clearInterval(poll);clearTimeout(runTimer);clearTimeout(readTimer);
         if(failure)reject(new Error(failure));else if(code!==0||!success)reject(new Error('run-failed'));else resolve(result);
       });
-      child.send(options.payload,error=>{if(error)stopWorker('run-failed');});
+      const workerMemoryLimit=Math.max(1,memoryLimit-process.memoryUsage().rss-32*1024*1024);
+      const payload=options.payload&&typeof options.payload==='object'&&!Array.isArray(options.payload)?{...options.payload,workerMemoryLimit}:options.payload;
+      child.send(payload,error=>{if(error)stopWorker('run-failed');});
     }).catch(error=>{try{options.onFailure?.(safeCode(error));}catch{}throw error;});
   }finally{
     try{removeOwned(run,token);removeOwned(stop,token);}finally{lease.release();}

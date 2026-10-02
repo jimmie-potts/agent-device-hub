@@ -92,7 +92,8 @@ permit concurrent writes. A second worker lease prevents a surviving child from
 writing alongside a new run after its supervisor crashes. The source read has a
 10-second deadline and the full command a 60-second budget. Source limits are
 100,000 rows and 256 MiB selected input; combined working memory is bounded at
-512 MiB. The private store cap is 1 GiB and a published snapshot is at most
+512 MiB. The worker budget reserves the parent's RSS and 32 MiB; aggregation
+checks its budget before committing. The private store cap is 1 GiB and a published snapshot is at most
 16 MiB. Capacity failures preserve history. Status reports the store's size and
 whether it has reached 90% of its cap. Resolve capacity deliberately; there is
 no automatic eviction or backup rotation.

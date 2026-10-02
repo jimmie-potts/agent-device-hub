@@ -61,3 +61,9 @@ test('explicit zone rebuild uses retained times without advancing source freshne
   assert.equal(shifted.lastSuccessAt,'2026-10-02T16:05:00.000Z');
   assert.equal(shifted.coverage.archivedRows,1);store.close();
 });
+test('an aggregation memory budget failure preserves contributions and the previous revision',t=>{
+ const {open,options}=setup(t);let store=open();const before=collect(store,[row('a')]);store.close();
+ store=new NumericStore({...options,maxMemoryBytes:1});
+ try{assert.throws(()=>store.ingest([row('a',99)],'2026-10-03T16:00:00.000Z'),/source-capacity/);}finally{store.close();}
+ store=open();assert.deepEqual(store.snapshot(),before);assert.equal(store.pending(),null);store.close();
+});

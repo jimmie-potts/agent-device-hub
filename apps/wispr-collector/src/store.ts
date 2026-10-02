@@ -12,13 +12,14 @@ type Metadata = {
   format: 1; namespace: string; sourceIdentity: string; timezone: string; generation: string;
   dataEpoch: string; textEpoch: number; revision: number; captureAfter: number | null; snapshot: Snapshot; pending: boolean;
 };
-export type StoreOptions = { directory: string; namespace: string; sourceIdentity: string; timezone: string; maxStoreBytes?:number };
+export type StoreOptions = { directory: string; namespace: string; sourceIdentity: string; timezone: string; maxStoreBytes?:number; maxMemoryBytes?:number };
 
 /** Private storage core. The CLI must hold the owner lease and qualify paths/ACLs before opening. */
 export class NumericStore {
   private readonly db: DatabaseSync;
   private readonly directory: string;
   private readonly maxStoreBytes:number;
+  private readonly maxMemoryBytes:number;
   static savedIdentity(directory:string):string|null {
     const path=join(directory,'analytics.sqlite');if(!existsSync(path))return null;
     const db=new DatabaseSync(path,{readOnly:true,allowExtension:false,timeout:1000});
@@ -43,6 +44,8 @@ export class NumericStore {
   }
   constructor(options: StoreOptions) {
     this.directory=options.directory;
+    this.maxMemoryBytes=options.maxMemoryBytes??512*1024*1024;
+    if(!Number.isSafeInteger(this.maxMemoryBytes)||this.maxMemoryBytes<1||this.maxMemoryBytes>512*1024*1024)throw new Error('invalid-config');
     this.maxStoreBytes=options.maxStoreBytes??MAX_STORE_BYTES;
     if(!Number.isSafeInteger(this.maxStoreBytes)||this.maxStoreBytes<32768||this.maxStoreBytes>MAX_STORE_BYTES)throw new Error('invalid-store-capacity');
     const control=initializeControl(options.directory,options.namespace);
@@ -83,17 +86,22 @@ export class NumericStore {
     if(!validateSnapshot(value.snapshot).ok)throw new Error('invalid-store-snapshot');
     this.db.prepare("INSERT INTO metadata(key,value) VALUES('state',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(value));
   }
+  private guardMemory():void {if(process.memoryUsage().rss>this.maxMemoryBytes)throw new Error('source-capacity');}
   private *contributions(): Iterable<Contribution> {
+    let rows=0;
     for(const row of this.db.prepare('SELECT value,archived FROM contributions ORDER BY id').iterate()){
+      if(rows++%128===0)this.guardMemory();
       const value=JSON.parse(row.value as string) as Contribution;
       if(!validContribution(value))throw new Error('invalid-contribution');
       yield {...value,archived:row.archived===1};
     }
   }
   private transaction<T>(body:()=>T):T {
+    this.guardMemory();
     this.db.exec('BEGIN IMMEDIATE');
     try{
       const result=body();
+      this.guardMemory();
       const pages=this.db.prepare('PRAGMA page_count').get()!.page_count as number;
       const size=this.db.prepare('PRAGMA page_size').get()!.page_size as number;
       if(pages*size>this.maxStoreBytes)throw new Error('store-capacity');
@@ -134,7 +142,8 @@ export class NumericStore {
       this.db.exec('UPDATE contributions SET archived=1 WHERE archived=0');
       const exemption=this.db.prepare('SELECT capture_exempt FROM contributions WHERE id=?');
       const upsert=this.db.prepare('INSERT INTO contributions(id,fingerprint,value,archived,capture_exempt) VALUES(?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,value=excluded.value,archived=0');
-      for(const row of rows){const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);}
+      let processed=0;
+      for(const row of rows){if(processed++%128===0)this.guardMemory();const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);}
       const gaps=structuredClone(meta.snapshot.coverage.gaps),previous=meta.snapshot.lastSuccessAt;
       if(previous&&previous<observedAt&&(options.failedAttempt||Date.parse(observedAt)-Date.parse(previous)>300_000)){
         const reason=options.failedAttempt?'failed-attempt' as const:'not-observed' as const;
@@ -229,7 +238,9 @@ export class NumericStore {
       return this.transaction(()=>{
         this.db.exec('DELETE FROM contributions; DELETE FROM language');
         const insert=this.db.prepare('INSERT INTO contributions(id,fingerprint,value,archived,capture_exempt) VALUES(?,?,?,?,?)');
+        let processed=0;
         for(const row of saved.prepare('SELECT id,fingerprint,value,archived,capture_exempt FROM contributions').iterate()){
+          if(processed++%128===0)this.guardMemory();
           const value=JSON.parse(String(row.value));
           if(!validContribution(value)||value.id!==row.id||value.fingerprint!==row.fingerprint||(row.archived!==0&&row.archived!==1)||(row.capture_exempt!==0&&row.capture_exempt!==1))throw new Error('invalid-backup');
           // An explicit historical restore approves only the backed-up contributions,

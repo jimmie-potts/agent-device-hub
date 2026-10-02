@@ -42,23 +42,7 @@ Publication failure and clear failure are visible states. Raw filesystem or SQLi
 
 ### CLI and packaging
 
-Expose one-shot collect, status, numeric JSON/CSV export, backup, restore and explicit clear/reset. Numeric export is the default; text export requires a later separate choice. No timer/service lives inside the CLI. The package includes compiled code, contract assets and runbook; archive tests run without node_modules or repository-relative resolution. Production collect requires Windows; portable pure functions and deliberately named synthetic test adapters support Linux CI without presenting Linux source reads as Windows evidence.
-
-## Risks / Trade-offs
-
-- Source semantics can change → strict required-schema checks, independent coverage, unsupported diagnostics and installed semantic validation; no claims of sent text or accuracy.
-- Full scans may reach configured bounds → explicit capacity status and retained last-good data, with no partial reports or data eviction.
-- Windows rename/ACL behavior differs from Linux → native final-collector tests include locked output, redirects, permission rejection and recovery.
-- Power loss can interrupt clear → authoritative control epochs fence restore and pending publication; replay/fault tests cover each durable boundary.
-- Another coordinator changes shared scripts/CI → isolated worktree, additive changes and current-main reconciliation before integration. No writes to that coordinator's branch.
-
-## Migration Plan
-
-This introduces a new private store format; no live migration is performed by source delivery. The runbook describes owner-authorized first binding, bounded backup, explicit restore and source rebind. Unsupported store versions fail closed. Future format migration requires backup and clear-epoch preservation before conversion. Removing the source package does not delete retained analytics or modify Wispr.
-
-## Open Questions
-
-Installed source field semantics, real-data counts, ACL integration and scheduled task behavior require the separately authorized installation trial. Synthetic source acceptance does not answer those questions.
+Expose one-shot collect, status, numeric JSON/CSV export, backup, restore and explicit clear/reset. Numeric export is the default; text export requires a later separate choice. No timer/service lives inside the CLI. The package includes compiled code, contract assets and runbook; archive tests run without workspace dependencies or repository-relative resolution. Production collect requires Windows; portable pure functions and deliberately named synthetic test adapters support Linux CI without presenting Linux source reads as Windows evidence.
 
 
 The CLI now runs each operation in one direct worker. The parent owns the run lease
@@ -77,3 +61,28 @@ script or registry lookup. Backup flushing uses a writable handle to the
 collector-owned temporary backup, as required by native Windows; source connections
 remain read-only. Fresh-directory restore requires explicit historical approval,
 retains the selected source namespace and establishes a current capture fence.
+
+
+The supervisor reserves its own RSS plus 32 MiB before assigning the worker's
+memory ceiling. The worker checks RSS at phase boundaries; the private store
+checks during contribution iteration and immediately before transaction commit.
+A budget failure rolls back the transaction. A bounded cache of eight date
+formatters avoids allocating one native ICU formatter per source row. Native
+synthetic qualification includes 100,000 rows and rejection of row 100,001 with
+the prior published revision preserved; this is not an installed performance claim.
+
+## Risks / Trade-offs
+
+- Source semantics can change → strict required-schema checks, independent coverage, unsupported diagnostics and installed semantic validation; no claims of sent text or accuracy.
+- Full scans may reach configured bounds → explicit capacity status and retained last-good data, with no partial reports or data eviction.
+- Windows rename/ACL behavior differs from Linux → native final-collector tests include locked output, redirects, permission rejection and recovery.
+- Power loss can interrupt clear → authoritative control epochs fence restore and pending publication; replay/fault tests cover each durable boundary.
+- Another coordinator changes shared scripts/CI → isolated worktree, additive changes and current-main reconciliation before integration. No writes to that coordinator's branch.
+
+## Migration Plan
+
+This introduces a new private store format; no live migration is performed by source delivery. The runbook describes owner-authorized first binding, bounded backup, explicit restore and source rebind. Unsupported store versions fail closed. Future format migration requires backup and clear-epoch preservation before conversion. Removing the source package does not delete retained analytics or modify Wispr.
+
+## Open Questions
+
+Installed source field semantics, real-data counts, ACL integration and scheduled task behavior require the separately authorized installation trial. Synthetic source acceptance does not answer those questions.
