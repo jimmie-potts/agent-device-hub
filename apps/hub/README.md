@@ -356,7 +356,7 @@ release's metadata. This build revision is separate from an agent-state
 
 The package command stamps a full Git commit only when the source checkout is
 clean and its commit is available. Dirty or unavailable source provenance is
-`unknown`. Missing, unreadable or malformed runtime metadata also yields
+`unknown`. Missing, unreadable, linked or malformed runtime metadata also yields
 `unknown`; the Hub does not inspect Git or infer a build from a current link.
 Responses contain no installation paths. Existing read permissions and health
 failure status still apply. Connections shows the version and short revision,

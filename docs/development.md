@@ -714,7 +714,7 @@ work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such
 `npm run test:setup`.
 
 Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
-Hub and extracted-package suites: metadata failures, read authorization,
+Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,
 unhealthy status, manifest replacement and a real process restart across a
 current-link switch. `test:hub:package` also runs
 `scripts/hub-build-identity.test.mjs` against disposable Git repositories to

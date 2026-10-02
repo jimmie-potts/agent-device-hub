@@ -30,6 +30,9 @@ test('metadata failures remain unknown and never expose manifest values or paths
   }
   await writeFile(file,JSON.stringify({...valid,privatePath:'/private/SECRET'}));
   assert.deepEqual(readBuild(pathToFileURL(file)),{sourceRevision:valid.sourceRevision,version:valid.version});
+  const target=join(directory,'another-release.json');await rename(file,target);await symlink(target,file);
+  assert.deepEqual(readBuild(pathToFileURL(file)),empty,'a linked manifest cannot supply another release identity');
+  await rm(file);await rename(target,file);
   await chmod(file,0);
   if(process.getuid?.()!==0)assert.deepEqual(readBuild(pathToFileURL(file)),empty);
  }finally{await chmod(file,0o600).catch(()=>{});await rm(directory,{recursive:true,force:true});}

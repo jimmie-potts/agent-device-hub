@@ -1,4 +1,4 @@
-import {openSync,closeSync,fstatSync,readSync} from 'node:fs';
+import {constants,openSync,closeSync,fstatSync,readSync} from 'node:fs';
 
 export type BuildIdentity = Readonly<{sourceRevision:string;version:string}>;
 const unknown = ():BuildIdentity => Object.freeze({sourceRevision:'unknown',version:'unknown'});
@@ -9,7 +9,8 @@ const version = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[A-
 export function readBuild(manifest = new URL('../manifest.json',import.meta.url)):BuildIdentity {
  let descriptor:number|undefined;
  try {
-  descriptor=openSync(manifest,'r');
+  // Reject linked metadata and avoid blocking on a special file before its type check.
+  descriptor=openSync(manifest,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
   if(!fstatSync(descriptor).isFile())return unknown();
   const bytes=Buffer.alloc(256*1024+1),length=readSync(descriptor,bytes,0,bytes.length,0);
   if(length===bytes.length)return unknown();
