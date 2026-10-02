@@ -1,6 +1,6 @@
 {
   "schemaVersion": "guide-release/1.0",
-  "releaseId": "sha256:c7c8e1bba6925a4f57aaf06cdd4c43267f87ce9e4d1075c6a72db2c6f1c30d13",
+  "releaseId": "sha256:73f5ea763b0a1c1a4fbc47833532cb2e478637733579a029054bb00ca123b642",
   "recordsVersion": "guide-records/2.0",
   "viewsVersion": "guide-views/1.0",
   "datasetId": "sha256:3813cece05943267e2d66989634552547a9e97f575da2c9a66be28991b55c194",
@@ -8,7 +8,7 @@
   "asOf": "2026-10-02T04:33:27.660Z",
   "generator": {
     "repository": "jimmie-potts/agent-device-hub",
-    "revision": "bbf6c27aa4e994917687de9283107221d5cbcc16"
+    "revision": "33f90d291a2122979739068fd14757b60efc88cc"
   },
   "builtAt": "2026-10-02T04:33:27.660Z",
   "artifacts": [
@@ -25,12 +25,12 @@
     {
       "path": "pages.json",
       "kind": "page",
-      "sha256": "94870717a07d131ea8fea501a8a81bbecf05d1423a4056e80bf8ca687d2d0b47"
+      "sha256": "b8d9657ae8f2cc02f01e1425e98ecfbfcb93ef54056e8c0afa0dce799771f7ea"
     },
     {
       "path": "app.js",
       "kind": "asset",
-      "sha256": "a620af38521352c0f5ffb5e91758ec283a631b7183f5b1a17284ac5cfa50ed3b"
+      "sha256": "5b12e05fc35fac8f2dd4dd80a64556fef9d123bb7b6727b843a2c957123df6a6"
     },
     {
       "path": "style.css",

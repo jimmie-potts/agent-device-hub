@@ -1,4 +1,12 @@
 {
+  "recentHistory": {
+    "window": {
+      "start": "2026-09-25T04:33:27.660Z",
+      "end": "2026-10-02T04:33:27.660Z"
+    },
+    "complete": true,
+    "reasons": []
+  },
   "datasetId": "sha256:3813cece05943267e2d66989634552547a9e97f575da2c9a66be28991b55c194",
   "catalogId": "sha256:b594947c7e91af036a7011b0238ccc670ea4796bcea81cd22ad672065a75cbe3",
   "recordsVersion": "guide-records/2.0",
