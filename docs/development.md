@@ -1902,4 +1902,53 @@ cannot become normal completion or a different final failure. Readback rejects
 wrong identities, invalid sequence/state, malformed or truncated lines and
 symlinked files. Missing final results remain incomplete; neither a recorded
 normal finish nor confirmed stopping establishes pilot acceptance. The launcher
-still needs to connect this journal, root readback and watchdog to guarded startup.
+connects this journal, root readback and watchdog through `backend-session.mjs`.
+
+
+### Backend startup smoke
+
+After the pinned image is present and read-only preflight passes, run:
+
+```sh
+npm run qualify:observability -- backend-smoke \
+  --evidence-dir <new-absolute-directory-under-.local> \
+  --state-parent <existing-absolute-.local-directory-outside-all-git-checkouts> \
+  --endpoint unix:///var/run/docker.sock \
+  --ports 43000,43001,43002,43003,43004
+```
+
+The five ports are Grafana, OTLP HTTP, Loki, Tempo and Collector health, in that
+order. Choose free unprivileged ports. The command uses the explicit local endpoint
+for this process; it does not change Docker contexts, start Docker Desktop, pull
+images or install anything. Its Linux CLI and Engine API preflights must both pass.
+The run directory must not exist, and its parent must already exist. Its basename
+is the run ID accepted by `backendPlan`.
+
+The command prepares the fixed configuration, registers fresh synthetic state,
+allocates isolated resources and starts the recorded container once. A durable
+intent precedes startup. Separate Engine API connections keep continuous resource
+sampling independent of lifecycle inspections. A saved valid resource sample and
+successful direct checks of Grafana's database, Loki, Tempo and Collector health
+are required before the session action. Health checks have bounded responses and
+a total 120-second startup deadline. Refused connections, redirects, malformed
+Grafana health, missing metrics and cap breaches cannot qualify readiness.
+
+The upstream image health script skips connection-refused services, so Docker's
+health status is insufficient. Direct checks cover the four required published
+services; they do not qualify Prometheus or Pyroscope, which remain included in
+whole-container resource accounting. OTLP ingestion, queries and viewer evidence
+are later gates.
+
+This smoke runs no telemetry workload. It finishes the monitor journal, verifies
+its readback, normally stops the owned container, and saves `startup-result.json`.
+Exit zero requires no session failure and confirmed stopping; qualification stays
+`unexecuted`. The stopped container, network, volume, synthetic state and evidence
+are retained for explicit receipt-based cleanup. No automatic deletion or force
+stop occurs. A cap-triggered watchdog stop is never repeated by session teardown.
+
+A startup attempt cannot run again in the same directory, even if its response was
+lost. Preserve partial manifests and failed monitor records. Read back recorded
+resource identities before recovery; never infer absence from a failed API call.
+A failed or interrupted action remains incomplete. The reusable session callback
+must honor its AbortSignal, retain bounded evidence and obey the frozen workload
+protocol; the smoke command's empty action is not benchmark acceptance.

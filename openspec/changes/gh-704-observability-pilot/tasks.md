@@ -13,7 +13,7 @@
 
 ## 3. Bounded disposable harness
 
-- [ ] 3.1 Implement isolated backend launch and resource preflight using the pinned image, loopback listeners and task-owned manifests; verify refusal of unavailable prerequisites and unsafe network/resource configuration.
+- [x] 3.1 Implement isolated backend launch and resource preflight using the pinned image, loopback listeners and task-owned manifests; verify refusal of unavailable prerequisites and unsafe network/resource configuration.
 - [x] 3.2 Implement one bounded log path and a bounded trace path with safe drop/error accounting; verify saturation, absent/paused collection, exporter errors and shutdown deadlines with synthetic sinks.
 - [ ] 3.3 Implement expected-identity queries, Python fixture ingestion and existing viewer checks; verify query field mappings, deadline failure and missing/duplicate record detection in source tests.
 - [ ] 3.4 Implement paired workload scheduling and application/stack sampling; verify omission/lag accounting, unrounded threshold evaluation and evidence retention without command retries or catch-up bursts.

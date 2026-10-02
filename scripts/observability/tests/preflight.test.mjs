@@ -75,3 +75,16 @@ test('CLI retains an unexecuted receipt and exits nonzero on a refused endpoint'
   assert.notEqual(second.status, 0);
   assert.equal(await readFile(join(directory, 'preflight.json'), 'utf8'), JSON.stringify(report, null, 2) + '\n');
 });
+
+test('backend smoke refuses remote endpoints and invalid port sets without allocating a run', async t => {
+  const parent = await mkdtemp(join(tmpdir(), 'smoke-cli-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  for (const [endpoint, ports] of [['ssh://SYNTHETIC_SECRET@example.invalid', '43000,43001,43002,43003,43004'],
+    ['unix:///var/run/docker.sock', '43000,43000,43002,43003,43004']]) {
+    const result = spawnSync(process.execPath, [new URL('../qualify.mjs', import.meta.url).pathname,
+      'backend-smoke', '--evidence-dir', join(parent, 'absent'), '--state-parent', parent,
+      '--endpoint', endpoint, '--ports', ports], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.status, 2); assert.equal(result.stderr.includes('SYNTHETIC_SECRET'), false);
+    await assert.rejects(readFile(join(parent, 'absent', 'backend.json')), { code: 'ENOENT' });
+  }
+});
