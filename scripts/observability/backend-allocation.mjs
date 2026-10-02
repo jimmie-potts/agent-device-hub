@@ -1,3 +1,4 @@
+import { verifyBackendIsolation } from './backend-mounts.mjs';
 import { mkdir, open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
@@ -5,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { readPreparedBackend } from './backend-files.mjs';
 import { inspectHost } from './preflight.mjs';
 import { assertPinnedImage } from './backend-create.mjs';
-import { assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
+import { assertOwnedBackend } from './backend-plan.mjs';
 import { networkReceipt, volumeReceipt, assertOwnedNetwork, assertOwnedVolume } from './backend-resources.mjs';
 import { readAllocation } from './allocation-readback.mjs';
 
@@ -80,7 +81,7 @@ export async function allocateBackend({ directory, backend, signal, hostProbe = 
     } else {
       receipt.containerId = result.id;
       assertOwnedBackend(inspect, plan, receipt);
-      assertBackendIsolation(inspect, plan);
+      await verifyBackendIsolation(inspect, plan);
       if (inspect.State?.Running !== false) throw new Error('Backend unexpectedly running');
       await save(evidence, 'container-verified', { containerId: result.id, imageId: image.imageId, running: false });
     }
@@ -89,7 +90,7 @@ export async function allocateBackend({ directory, backend, signal, hostProbe = 
   assertOwnedNetwork(await backend.inspect('network', receipt.network.networkId, options()), plan, receipt.network, receipt.containerId);
   assertOwnedVolume(await backend.inspect('volume', plan.volumeName, options()), plan, receipt.volume);
   const container = await backend.inspect('container', receipt.containerId, options());
-  assertOwnedBackend(container, plan, receipt); assertBackendIsolation(container, plan);
+  assertOwnedBackend(container, plan, receipt); await verifyBackendIsolation(container, plan);
   if (container.State?.Running !== false) throw new Error('Backend unexpectedly running');
   await checkPlan();
   options();

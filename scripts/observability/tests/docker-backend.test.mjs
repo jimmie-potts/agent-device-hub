@@ -152,7 +152,7 @@ test('stack sampling requests process RSS and cgroup CPU only for the verified o
   const imageId = 'sha256:' + 'b'.repeat(64), config = backendCreateRequests(plan).container.body;
   let foreign = false;
   const { backend, calls } = await fixture(t, (req, res) => {
-    if (req.url.includes('/stats?')) res.end(JSON.stringify({ id, cpu_stats: { cpu_usage: { total_usage: 1000000 } },
+    if (req.url.includes('/stats?')) res.end(JSON.stringify({ id: foreign ? 'c'.repeat(64) : id, cpu_stats: { cpu_usage: { total_usage: 1000000 } },
       memory_stats: { usage: 10000000, limit: 4294967296 } }));
     else if (req.url.includes('/top?')) res.end(JSON.stringify({ Titles: ['PID', 'RSS'], Processes: [['12', '1024']] }));
     else res.end(JSON.stringify({ Id: id, Name: '/' + plan.containerName, Image: foreign ? 'sha256:' + 'c'.repeat(64) : imageId,
@@ -162,12 +162,12 @@ test('stack sampling requests process RSS and cgroup CPU only for the verified o
   });
   const sample = await backend.sampleStack(plan, { containerId: id, imageId }, options);
   assert.equal(sample.rssBytes, 1024 * 1024);
-  assert.equal(sample.writableLayerBytes, 4096);
+  assert.equal('writableLayerBytes' in sample, false);
   assert.deepEqual(calls.slice(1).map(call => call.path), [
     `/v1.47/containers/${id}/stats?stream=false&one-shot=true`,
-    `/v1.47/containers/${id}/top?ps_args=-eo%20pid%2Crss`, `/v1.47/containers/${id}/json?size=true`]);
+    `/v1.47/containers/${id}/top?ps_args=-eo%20pid%2Crss`]);
   foreign = true;
-  await assert.rejects(backend.sampleStack(plan, { containerId: id, imageId }, options), /ownership/);
+  await assert.rejects(backend.sampleStack(plan, { containerId: id, imageId }, options), /Stack measurement/);
 });
 
 test('storage exec uses the fixed read-only command and requires matching completed zero-exit execution', async t => {
@@ -196,7 +196,7 @@ test('storage exec uses the fixed read-only command and requires matching comple
             arguments: STORAGE_PROBE_COMMAND.slice(1), privileged: false, tty: false } }));
       } else {
         res.end(JSON.stringify({ Id: id, Name: '/' + plan.containerName, Image: imageId,
-          Config: config, HostConfig: config.HostConfig, State: { Running: true }, SizeRw: 1024,
+          Config: config, HostConfig: config.HostConfig, State: { Running: true, OOMKilled: false }, SizeRw: 1024,
           Mounts: config.HostConfig.Mounts.map(m => ({ ...m, Name: m.Type === 'volume' ? m.Source : undefined,
             Destination: m.Target, RW: !m.ReadOnly })) }));
       }
@@ -204,6 +204,8 @@ test('storage exec uses the fixed read-only command and requires matching comple
   });
   const result = await backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 });
   assert.equal(result.runDataBytes, 9728); assert.equal(result.execId, execId);
+  assert.equal(result.oomKilled, false);
+  assert.equal(calls.filter(call => call.path.endsWith("/json?size=true")).length, 1);
   assert.equal(JSON.stringify(result).includes('/dev/example'), false);
   exitCode = 127;
   await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-storage-exit/);

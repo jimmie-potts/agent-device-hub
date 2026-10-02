@@ -1,3 +1,4 @@
+import { verifyBackendIsolation } from './backend-mounts.mjs';
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { readPreparedBackend } from './backend-files.mjs';
 import { readAllocation } from './allocation-readback.mjs';
 import { readHostRoots } from './host-roots.mjs';
-import { assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
+import { assertOwnedBackend } from './backend-plan.mjs';
 import { assertOwnedNetwork, assertOwnedVolume } from './backend-resources.mjs';
 import { createMonitorJournal, readMonitorJournal } from './monitor-journal.mjs';
 import { createResourceCallbacks } from './resource-callbacks.mjs';
@@ -39,7 +40,7 @@ export async function withReadyBackend({ directory, backend, monitorBackend, act
     assertOwnedNetwork(await backend.inspect('network', receipt.network.networkId, options), plan, receipt.network, receipt.containerId);
     assertOwnedVolume(await backend.inspect('volume', plan.volumeName, options), plan, receipt.volume);
     const container = await backend.inspect('container', receipt.containerId, options);
-    assertOwnedBackend(container, plan, receipt); assertBackendIsolation(container, plan);
+    assertOwnedBackend(container, plan, receipt); await verifyBackendIsolation(container, plan);
     if (container.State?.Running !== running) throw new Error('Backend running state mismatch');
   }
   await verify(false);

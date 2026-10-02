@@ -35,7 +35,7 @@ export async function inspectHost(directory) {
 
 const localSocket = value => typeof value === 'string' && /^unix:\/\/\/[\w./-]+$/.test(value);
 const infoFields = ['OSType', 'Architecture', 'CgroupVersion', 'NCPU', 'MemTotal', 'MemoryLimit', 'CpuCfsQuota'];
-const infoFormat = `{${infoFields.map(key => `"${key}":{{json .${key}}}`).join(',')}}`;
+const infoFormat = `{${infoFields.map(key => `"${key}":{{json .${key === 'CpuCfsQuota' ? 'CPUCfsQuota' : key}}}`).join(',')}}`;
 
 /** Read-only commands only; raw Docker output and local context names never enter receipts. */
 export async function inspectDocker(env = process.env, run = args => spawnSync('docker', args,

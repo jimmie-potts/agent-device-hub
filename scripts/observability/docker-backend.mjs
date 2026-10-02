@@ -1,7 +1,8 @@
+import { verifyBackendIsolation } from './backend-mounts.mjs';
 import { request, Agent } from 'node:http';
 import { resolve } from 'node:path';
 import { backendCreateRequests } from './backend-create.mjs';
-import { LGTM_IMAGE, assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
+import { LGTM_IMAGE, assertOwnedBackend } from './backend-plan.mjs';
 import { stackSnapshot } from './stack-measurement.mjs';
 import { STORAGE_PROBE_COMMAND, decodeStorageExec, storageSnapshot } from './storage-measurement.mjs';
 import { isDeepStrictEqual } from 'node:util';
@@ -102,11 +103,11 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       }
       async function inspectContainer() {
         const value = await call('GET', base + '/json?size=true', 200);
-        assertOwnedBackend(value, plan, receipt); assertBackendIsolation(value, plan);
-        if (value.State?.Running !== true) throw error('docker-storage-container-stopped');
+        assertOwnedBackend(value, plan, receipt); await verifyBackendIsolation(value, plan);
+        if (value.State?.Running !== true || typeof value.State.OOMKilled !== 'boolean') throw error('docker-storage-container-stopped');
         return value;
       }
-      await inspectContainer();
+      const container = await inspectContainer();
       const created = await call('POST', base + '/exec', 201, { AttachStdin: false, AttachStdout: true,
         AttachStderr: true, Tty: false, Privileged: false, WorkingDir: '/', Cmd: [...STORAGE_PROBE_COMMAND], Env: ['LC_ALL=C'] });
       if (typeof created.Id !== 'string' || !/^[a-f0-9]{64}$/.test(created.Id)) throw error('docker-exec-identity');
@@ -123,10 +124,9 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       const bytes = await call('POST', execPath + '/start', 200, { Detach: false, Tty: false }, true);
       const ended = await inspectExec();
       if (ended.Running !== false || ended.ExitCode !== 0) throw error('docker-storage-exit');
-      const container = await inspectContainer();
       const sample = storageSnapshot({ stdout: decodeStorageExec(bytes), writableLayerBytes: container.SizeRw,
         hostRunBytes: options.hostRunBytes });
-      return { ...sample, execId: created.Id, startedNs: String(started), finishedNs: String(process.hrtime.bigint()) };
+      return { ...sample, oomKilled: container.State.OOMKilled, execId: created.Id, startedNs: String(started), finishedNs: String(process.hrtime.bigint()) };
     },
     async sampleStack(plan, receipt, options = {}) {
       backendCreateRequests(plan);
@@ -143,9 +143,7 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       const stats = await get('/stats?stream=false&one-shot=true');
       const cpuObservedNs = String(process.hrtime.bigint());
       const top = await get('/top?ps_args=-eo%20pid%2Crss');
-      const inspect = await get('/json?size=true');
-      assertOwnedBackend(inspect, plan, receipt); assertBackendIsolation(inspect, plan);
-      return stackSnapshot({ stats, top, inspect, cpuObservedNs, startedNs: String(started),
+      return stackSnapshot({ stats, top, cpuObservedNs, startedNs: String(started),
         finishedNs: String(process.hrtime.bigint()) }, receipt.containerId);
     },
     async inspectImage(options) {

@@ -32,3 +32,9 @@ test('Docker exec decoding accepts bounded complete stdout frames and never expo
     assert.throws(() => decodeStorageExec(bytes), error => !error.message.includes('SYNTHETIC_SECRET'));
   }
 });
+
+test('POSIX df -P uses 1-blocks and Capacity headings with the same byte units', () => {
+  const stdout = output.replace('Filesystem 1B-blocks Used Available Use% Mounted on',
+    'Filesystem 1-blocks Used Available Capacity Mounted on');
+  assert.equal(storageSnapshot({ stdout, writableLayerBytes: 1024, hostRunBytes: 512 }).runDataBytes, 9728);
+});

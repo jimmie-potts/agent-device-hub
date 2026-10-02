@@ -32,6 +32,7 @@ test('Docker context inspection precedes engine access and requires enforceable 
   const calls = [];
   const run = args => {
     calls.push(args);
+    if (args[0] === 'info') assert.ok(args[2].includes('{{json .CPUCfsQuota}}'), 'Docker CLI Go field uses uppercase CPU');
     return { status: 0, stdout: JSON.stringify(args[0] === 'context'
       ? 'unix:///var/run/docker.sock'
       : { OSType: 'linux', Architecture: 'x86_64', CgroupVersion: '2', NCPU: 4,

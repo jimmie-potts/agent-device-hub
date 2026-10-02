@@ -41,7 +41,7 @@ export function createResourceCallbacks({ plan: inputPlan, receipt: inputReceipt
       return { runDataBytes: measured(storage.runDataBytes), cgroupMemoryBytes: measured(stack.cgroupMemoryBytes),
         hostAvailableMemoryBytes: minimum(hosts.map(host => host?.availableMemoryBytes)),
         minimumAvailableBytes: minimum([storage.minimumAvailableBytes, ...hosts.map(host => host?.availableDiskBytes)]),
-        oomKilled: typeof stack.oomKilled === 'boolean' ? stack.oomKilled : null };
+        oomKilled: typeof storage.oomKilled === 'boolean' ? storage.oomKilled : null };
     },
     async stopOwned(options = {}) {
       const remaining = budget(options, 29000);

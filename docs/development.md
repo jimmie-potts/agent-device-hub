@@ -1714,8 +1714,11 @@ then maps it to Engine API network, volume and container requests. The container
 request pins the image, disables automatic restart/removal, and preserves the
 plan's memory/CPU caps, restricted network, loopback ports and read-only config
 mounts. `assertPinnedImage` checks the local image's digest, ID, Linux amd64
-platform and reported unpacked size against the 10 GiB cap. It does not measure
-Docker's total backing storage or download an image.
+platform and reported `Size` against the 10 GiB cap. With Docker 29's containerd
+image store, `Size` can report compressed content rather than expanded disk
+usage. Qualification therefore also requires a retained disk-usage receipt for
+the pinned image; `Size` alone does not establish the image-space gate. The
+adapter does not download images or measure Docker's total backing storage.
 
 The Docker adapter now supports these fixed creation requests, full-ID start,
 pinned-image inspection and read-only probes of planned resource names. It
@@ -1999,3 +2002,18 @@ measurements remain separate runtime gates.
 Response contracts: [Loki query API](https://grafana.com/docs/loki/latest/reference/loki-http-api/),
 [pinned categorized response encoding](https://github.com/grafana/loki/blob/v3.7.8/pkg/util/marshal/query.go),
 and [Tempo 3.0.3 trace response](https://github.com/grafana/tempo/blob/v3.0.3/pkg/tempopb/tempo.proto).
+
+Docker Desktop compatibility checks retain the original inspection. The verifier
+accepts Docker 29's exact default IPv4/IPv6 bridge options, but rejects additional
+network options. A translated WSL config bind is accepted only when its local
+Desktop mount and the expected config file have matching device, inode and size,
+opened without following file symlinks. The mount must still be read-only.
+
+CPU/RSS sampling reads stats and process RSS for the caller-verified immutable
+container ID. It does not issue a full inspection on every sample. The storage
+watchdog performs a fresh ownership, isolation, running-state, OOM and writable
+layer inspection before its fixed, bounded read-only exec. The sampled total
+combines that writable-layer size, volume usage and host evidence/state usage;
+these observations are sequential, not an atomic filesystem quota. The parser
+accepts the exact POSIX headings produced by `df -P -B1`. Runtime smoke evidence
+must qualify this path before benchmark measurements.

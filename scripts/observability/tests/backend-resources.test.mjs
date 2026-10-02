@@ -40,3 +40,14 @@ test('volume receipt preserves creation identity and refuses driver options or s
   assert.throws(() => volumeReceipt({ ...initial, Options: { device: '/host' } }, plan), /volume/);
   assert.throws(() => assertOwnedVolume(initial, plan, { ...receipt, extra: true }), /volume/);
 });
+
+test('Docker 29 default IP options are accepted without allowing expanded network configuration', () => {
+  const value = { ...network(), EnableIPv4: true, EnableIPv6: false,
+    Options: { 'com.docker.network.enable_ipv4': 'true', 'com.docker.network.enable_ipv6': 'false' } };
+  assert.equal(networkReceipt(value, plan).networkId, value.Id);
+  for (const patch of [{ Options: { 'com.docker.network.enable_ipv6': 'true' } },
+    { Options: { 'com.docker.network.enable_ipv4': 'false' } }, { EnableIPv6: true },
+    { Options: { ...value.Options, 'com.docker.network.bridge.name': 'foreign' } }]) {
+    assert.throws(() => networkReceipt({ ...value, ...patch }, plan), /network/);
+  }
+});

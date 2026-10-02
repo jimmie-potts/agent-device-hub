@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 const id = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const empty = value => value == null || (object(value) && Object.keys(value).length === 0);
+const networkOptions = value => value == null || (object(value) && Object.entries(value).every(([key, val]) =>
+  (key === 'com.docker.network.enable_ipv4' && val === 'true') || (key === 'com.docker.network.enable_ipv6' && val === 'false')));
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
 const labelsMatch = (value, plan) => object(value) &&
   Object.entries(plan.labels).every(([key, expected]) => value[key] === expected);
@@ -11,7 +13,8 @@ function readNetwork(value, plan, containerId) {
   const deny = () => { throw new Error('Backend network ownership or isolation verification failed'); };
   if (!value || !id(value.Id) || value.Name !== plan.networkName || !timestamp(value.Created) ||
     value.Driver !== 'bridge' || value.Scope !== 'local' || value.Internal !== true ||
-    value.Attachable !== false || value.Ingress !== false || !empty(value.Options) ||
+    value.Attachable !== false || value.Ingress !== false || !networkOptions(value.Options) ||
+    (value.EnableIPv4 !== undefined && value.EnableIPv4 !== true) || (value.EnableIPv6 !== undefined && value.EnableIPv6 !== false) ||
     !labelsMatch(value.Labels, plan) || !object(value.Containers) ||
     (containerId !== undefined && !id(containerId))) deny();
   for (const [key, endpoint] of Object.entries(value.Containers)) {

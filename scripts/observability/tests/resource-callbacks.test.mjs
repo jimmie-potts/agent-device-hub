@@ -30,9 +30,9 @@ async function fixture(t) {
   const backend = {
     async inspect(kind) { calls.push('inspect:' + kind); return states[kind]; },
     async sampleStack(_plan, _receipt, options) { assert.ok(options.timeoutMs > 0); calls.push('stack');
-      return { cgroupMemoryBytes: GiB, oomKilled: false }; },
+      return { cgroupMemoryBytes: GiB }; },
     async sampleStorage(_plan, _receipt, options) { calls.push('storage'); assert.ok(options.hostRunBytes >= 4);
-      return { runDataBytes: options.hostRunBytes + 1000, minimumAvailableBytes: 3 * GiB }; },
+      return { runDataBytes: options.hostRunBytes + 1000, minimumAvailableBytes: 3 * GiB, oomKilled: false }; },
     async stop() { calls.push('stop'); states.container.State.Running = false; },
   };
   const hostRoots = [await hostTreeIdentity(root)];

@@ -24,7 +24,8 @@ export function decodeStorageExec(buffer) {
 export function storageSnapshot({ stdout, writableLayerBytes, hostRunBytes }) {
   if (typeof stdout !== 'string' || Buffer.byteLength(stdout) > 16384 || !safe(writableLayerBytes) || !safe(hostRunBytes)) fail();
   const lines = stdout.trimEnd().split('\n');
-  if (lines.length !== 5 || lines[2].trim().split(/\s+/).join(' ') !== 'Filesystem 1B-blocks Used Available Use% Mounted on') fail();
+  if (lines.length !== 5 || !['Filesystem 1B-blocks Used Available Use% Mounted on',
+    'Filesystem 1-blocks Used Available Capacity Mounted on'].includes(lines[2].trim().split(/\s+/).join(' '))) fail();
   const volume = lines.slice(0, 2).map(line => {
     const match = /^([0-9]+)\s+\/data$/.exec(line);
     if (!match) fail();

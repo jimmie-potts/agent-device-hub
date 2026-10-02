@@ -38,8 +38,8 @@ async function fixture(t) {
     async start() { assert.equal(JSON.parse(await readFile(join(directory, 'startup-intent.json'))).action, 'start');
       calls.push('start'); states.container.State.Running = true; },
     async stop() { calls.push('stop'); states.container.State.Running = false; },
-    async sampleStack() { return { cgroupMemoryBytes: GiB, oomKilled: false }; },
-    async sampleStorage(_p, _r, options) { return { runDataBytes: options.hostRunBytes, minimumAvailableBytes: 4 * GiB }; },
+    async sampleStack() { return { cgroupMemoryBytes: GiB }; },
+    async sampleStorage(_p, _r, options) { return { runDataBytes: options.hostRunBytes, minimumAvailableBytes: 4 * GiB, oomKilled: false }; },
   };
   const hostProbe = async () => ({ ready: true, availableMemoryBytes: 16 * GiB, availableDiskBytes: 10 * GiB });
   await allocateBackend({ directory, backend, hostProbe }); await registerHostRoots(directory, stateParent);
@@ -66,7 +66,7 @@ test('health deadline prevents action and stops only the owned backend', async t
 
 test('resource cap prevents action and watchdog stop is not repeated', async t => {
   const f = await fixture(t);
-  f.monitorBackend.sampleStorage = async () => ({ runDataBytes: 3 * GiB, minimumAvailableBytes: 4 * GiB });
+  f.monitorBackend.sampleStorage = async () => ({ runDataBytes: 3 * GiB, minimumAvailableBytes: 4 * GiB, oomKilled: false });
   const result = await withReadyBackend({ ...f, action: () => assert.fail('cap breached') });
   assert.equal(result.actionComplete, false); assert.equal(result.monitor.reason, 'run-data-cap');
   assert.equal(result.stopConfirmed, true); assert.deepEqual(f.calls, ['start', 'stop']);
@@ -100,7 +100,7 @@ test('action failure and deadline are retained without repeating action or claim
 test('a later resource failure aborts in-flight action and cannot become successful completion', async t => {
   const f = await fixture(t); let actionEntered = false;
   f.monitorBackend.sampleStorage = async (_p, _r, options) => ({
-    runDataBytes: actionEntered ? 3 * GiB : options.hostRunBytes, minimumAvailableBytes: 4 * GiB });
+    runDataBytes: actionEntered ? 3 * GiB : options.hostRunBytes, minimumAvailableBytes: 4 * GiB, oomKilled: false });
   const result = await withReadyBackend({ ...f, action: async ({ signal }) => {
     actionEntered = true;
     await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
