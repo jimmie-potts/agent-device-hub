@@ -71,6 +71,10 @@ jobs:
       - run: python -m pip install -r requirements-contracts.txt
       - run: npm run build
       - run: npm run typecheck
+      - run: npm run test:observability:built
+      - run: npm run test:observability:python
+      - run: npm run test:observability:query
+      - run: npm run test:observability:package:built
       - run: npm run test:contracts:built
       - run: npm run test:contracts:python
       - run: npm run test:performance
@@ -132,6 +136,7 @@ jobs:
       - run: npm run typecheck:dashboard
       - run: npm run test:dashboard
       - run: npm run test:dashboard:browser
+      - run: npm run test:observability:browser
   app-verify:
     name: App verification on ${{ matrix.os }}
     strategy:
