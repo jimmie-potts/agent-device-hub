@@ -68,6 +68,22 @@ Healthy runs require zero lost expected records. Compare expected and queried mu
 
 Retain every failed and inconclusive attempt. A correction requires a written hypothesis, changed input and fresh evidence. Never rerun an unchanged experiment to obtain a pass or revise thresholds retroactively. Queue drops, resource-cap failures, growth in component/event volume and material runtime/host changes trigger budget review. These are initial pilot targets, not permanent product limits.
 
+### Pinned backend query mapping
+
+Loki 3.7.8's native OTLP importer copies severity and trace identity but does not
+retain `LogRecord.EventName`. Preserve the accepted query field with the fixed
+Collector statement `set(log.attributes["event_name"], log.event_name)` before
+batching logs. Keep error propagation explicit. This mapping changes no producer
+schema, privacy allowlist or benchmark threshold; qualify the exact Collector
+configuration before measurements. Preserve previous configuration receipts.
+
+Read categorized Loki structured metadata with an explicit instance ID and
+nonoverlapping ten-second windows. Compare canonical field projections as
+multisets, including event identity, rather than matching body text or counts.
+Normalize Tempo V2's exact hex/base64 IDs and reject partial results. Bound query
+responses and retain each observation within the accepted 30-second visibility
+window. Ingestion-only satisfaction is separate from the full pilot gate.
+
 ### Qualification and delivery gates
 
 Add source-only harness validation to development commands and CI before changing product behavior. Runtime qualification remains a separate Docker-dependent command; it must not silently skip required checks or convert absence into success. Preserve full Hub/shared checks and independent Standards and Specification reviews on the same committed comparison. Archive only after applicable acceptance evidence exists. Only a supported pilot may unblock downstream adoption.

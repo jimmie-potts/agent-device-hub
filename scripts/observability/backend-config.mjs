@@ -8,12 +8,15 @@ export function backendConfigs() {
     processors: {
       memory_limiter: { check_interval: '1s', limit_mib: 512, spike_limit_mib: 128 },
       batch: { timeout: '1s', send_batch_size: 128, send_batch_max_size: 256 },
+      // Loki 3.7.8 does not retain LogRecord.EventName in its native OTLP importer.
+      'transform/event_name': { error_mode: 'propagate',
+        log_statements: ['set(log.attributes["event_name"], log.event_name)'] },
     },
     exporters: Object.fromEntries([['logs', 'http://127.0.0.1:3100/otlp'], ['traces', 'http://127.0.0.1:4418']]
       .map(([signal, endpoint]) => [`otlp_http/${signal}`, { endpoint, timeout: '1s',
         retry_on_failure: { enabled: false }, sending_queue: { enabled: false } }])),
     service: { extensions: ['health_check'], pipelines: Object.fromEntries(['logs', 'traces'].map(signal =>
-      [signal, { receivers: ['otlp'], processors: ['memory_limiter', 'batch'], exporters: [`otlp_http/${signal}`] }])) },
+      [signal, { receivers: ['otlp'], processors: ['memory_limiter', ...(signal === 'logs' ? ['transform/event_name'] : []), 'batch'], exporters: [`otlp_http/${signal}`] }])) },
   };
   const loki = {
     auth_enabled: false,

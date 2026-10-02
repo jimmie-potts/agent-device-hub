@@ -1952,3 +1952,50 @@ resource identities before recovery; never infer absence from a failed API call.
 A failed or interrupted action remains incomplete. The reusable session callback
 must honor its AbortSignal, retain bounded evidence and obey the frozen workload
 protocol; the smoke command's empty action is not benchmark acceptance.
+
+
+### Backend query checks
+
+The pinned Loki importer does not retain `LogRecord.EventName`. The Collector's
+`transform/event_name` processor copies it to the `event_name` attribute before
+export. This is a backend mapping; the released producer contract is unchanged.
+The source regression checks processor ordering and failure propagation. The
+pinned Collector binary and actual ingestion must still qualify this mapping.
+See the [Loki 3.7.8 importer](https://github.com/grafana/loki/blob/v3.7.8/pkg/loghttp/push/otlp.go)
+and [Collector 0.161.0 log context](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.161.0/pkg/ottl/contexts/ottllog/README.md).
+
+`backend-queries.mjs` reads only the prepared run's loopback endpoints. Loki queries
+use an explicit synthetic instance ID, bounded ten-second windows and the
+`categorize-labels` response header. `query-records.mjs` validates canonical fields
+from structured metadata without parsing the body. Unknown fields, parsed message
+fields, warnings, missing event identity and a full 5,000-row response cannot prove
+completeness. Normalized fields retain the original typed contract values through
+canonical validation. Returned projections preserve service, scope, severity,
+operation, outcome, command ticket, timestamps and trace/span identity.
+
+Tempo V2 results normalize exact hex or protobuf base64 identities. Partial traces,
+foreign trace IDs, dropped fields and unexpected events fail validation. Full
+projected records are compared as multisets; equal counts with different fields,
+missing records and duplicates remain distinct failures. HTTP responses are bounded
+to four MiB, have finite deadlines, never redirect or retry, and are checked for
+synthetic privacy sentinels before returning parsed evidence. Response hashes and
+byte counts accompany the validated records; raw error text is not retained.
+
+`ingestion-check.mjs` applies the frozen 30-second post-flush visibility deadline.
+It uses nonoverlapping half-open log windows, at most eight concurrent query reads,
+serialized evidence writes and explicit log-to-span resource correlation. Every
+query result and round goes to the caller's durable recorder. Unexpected records
+fail immediately. Missing identities remain observable through bounded visibility
+polling. Query, cancellation or evidence failures remain inconclusive. This helper
+qualifies ingestion only; it cannot establish the whole pilot disposition.
+
+`python-fixture.mjs` verifies the immutable installed contract before invoking
+isolated Python 3.12/3.14. It checks Python/TypeScript canonical and OTLP parity and
+returns one synthetic uncertainty record plus an explicitly synthetic associated
+span. The packaged-consumer test exercises it outside workspace resolution. Actual
+Python ingestion, the existing Grafana viewer, full scenario execution and paired
+measurements remain separate runtime gates.
+
+Response contracts: [Loki query API](https://grafana.com/docs/loki/latest/reference/loki-http-api/),
+[pinned categorized response encoding](https://github.com/grafana/loki/blob/v3.7.8/pkg/util/marshal/query.go),
+and [Tempo 3.0.3 trace response](https://github.com/grafana/tempo/blob/v3.0.3/pkg/tempopb/tempo.proto).

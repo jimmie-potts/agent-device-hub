@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { makePythonFixture } from '../python-fixture.mjs';
+import { expectedLog } from '../query-records.mjs';
 import { verifyReleaseInputs, prepareReleasedContract, verifyInstalledContract } from '../released-contract.mjs';
 
 const root = new URL('../../../', import.meta.url);
@@ -38,6 +40,12 @@ test('pilot consumes the released artifact outside workspace resolution', async 
     { cwd: scratch, env: childEnv, encoding: 'utf8', timeout: 30_000 });
   assert.equal(tests.status, 0, tests.stderr + tests.stdout);
   assert.match(tests.stdout, /fail 0/);
+  const pythonFixture = await makePythonFixture(installed, { instanceId: '00000000-0000-4000-8000-000000000001',
+    traceId: '1'.repeat(32), spanId: '2'.repeat(16), timestamp: '2026-10-02T00:00:00.000Z' });
+  assert.equal(pythonFixture.record.resource['service.name'], 'nanoleaf-worker');
+  assert.equal(pythonFixture.log.resourceLogs[0].scopeLogs[0].logRecords[0].traceId, '1'.repeat(32));
+  assert.equal(expectedLog(pythonFixture.record).fields.bunny_ticket_sequence, '7');
+  assert.equal(pythonFixture.span.resourceSpans[0].scopeSpans[0].spans[0].spanId, '2'.repeat(16));
   const { writeFile } = await import('node:fs/promises');
   await writeFile(join(installed, 'fixtures/records.json'), '{}\n');
   await assert.rejects(verifyInstalledContract(installed), /integrity:fixtures\/records.json/);

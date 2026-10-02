@@ -42,3 +42,13 @@ test('configuration generation is deterministic and exposes no environment inter
     assert.ok(Buffer.byteLength(value) < 8192);
   }
 });
+
+test('Collector preserves canonical event identity explicitly before the pinned Loki importer drops EventName', () => {
+  const config = parse(backendConfigs()['otelcol-config.yaml']);
+  const transform = config.processors['transform/event_name'];
+  assert.ok(transform, 'Loki v3.7.8 does not map LogRecord.EventName itself');
+  assert.equal(transform.error_mode, 'propagate');
+  assert.deepEqual(transform.log_statements, ['set(log.attributes["event_name"], log.event_name)']);
+  assert.deepEqual(config.service.pipelines.logs.processors, ['memory_limiter', 'transform/event_name', 'batch']);
+  assert.deepEqual(config.service.pipelines.traces.processors, ['memory_limiter', 'batch']);
+});
