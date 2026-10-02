@@ -14,7 +14,7 @@ function npm(args,cwd){if(!process.env.npm_execpath)throw new Error('npm-execpat
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 // Previously published private dependencies retain their original archive bytes.
 const released={
- 'device-contracts':{version:'1.1.0',sha256:'25407c366cca0792ba09fba81b88f5467e123ad8583b21b1065954b41b920f3f',manifest:'86ab212aecc089b2720adbf6f9cec9352cc8526616c1ab98738fe3ce2c1122bf'},
+ 'device-contracts':{version:'1.2.0',sha256:'f05b326b88833086abf1af596569448e409645486e7bef482f74e9a6998ced7e',manifest:'d4358ab7257537fdca5787770b0c2591b4e49639ca7fa553e4187bcbb89b6faa'},
  'device-mcp':{version:'1.0.1',sha256:'e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32',manifest:'949ef80fd0a440e1816bc2dc250f63c5f40ff6369f251519cad1e3408d036a3e'}
 };
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
@@ -35,7 +35,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.4.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.1.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.4.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.2.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz']]){
     const pin=released[name],source=join(root,pin?'vendor':'artifacts',archive);
     if(pin){assert.equal(metadata.dependencies[`@jimmie-potts/${name}`],pin.version);assert.equal(sha(await readFile(source)),pin.sha256,`published archive: ${name}`);}
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
@@ -71,6 +71,14 @@ try {
   const revision=sourceRevision(root)===initialRevision?initialRevision:'unknown';
   await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:metadata.name,version:metadata.version,sourceRevision:revision,files:hashes},null,2)+'\n');
   async function pack(folder){await mkdir(folder);const result=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',folder],stage));return join(folder,result[0].filename);}
+  // Record the dependency bytes npm actually ships, including public packages.
+  // The trusted archive digest covers the same complete closure at staging time.
+  const inventoryArchive=await pack(join(scratch,'inventory'));
+  const unpacked=join(scratch,'inventory-content');await mkdir(unpacked);
+  const unpack=spawnSync('tar',['-xzf',inventoryArchive,'--strip-components=1','-C',unpacked],{encoding:'utf8'});
+  if(unpack.error||unpack.status!==0)throw new Error(unpack.error?.message??unpack.stderr);
+  const dependencyFiles={};for(const name of await files(unpacked,'node_modules'))dependencyFiles[name]=sha(await readFile(join(unpacked,name)));
+  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:metadata.name,version:metadata.version,sourceRevision:revision,files:hashes,dependencyFiles},null,2)+'\n');
   const first=await pack(join(scratch,'first')),second=await pack(join(scratch,'second')),bytes=await readFile(first);
   assert.deepEqual(bytes,await readFile(second),'repeated package bytes');
   // Inspect what npm actually shipped, not merely the staging directory.
@@ -92,12 +100,16 @@ try {
   if(process.argv.includes('--test')){
     assert.match(run(['--test',join(root,'scripts/hub-build-identity.test.mjs')],root),/fail 0/);
     const consumer=join(scratch,'consumer');await mkdir(consumer);await writeFile(join(consumer,'package.json'),'{"name":"isolated-hub-consumer","private":true,"type":"module"}');
-    npm(['install','--offline','--cache',join(scratch,'empty-cache'),'--ignore-scripts','--no-audit','--no-fund',output],consumer);
+    // Production staging extracts the archive directly. Disable npm-generated bin
+    // links so this comparison checks exactly the shipped dependency closure.
+    npm(['install','--offline','--cache',join(scratch,'empty-cache'),'--ignore-scripts','--bin-links=false','--no-audit','--no-fund',output],consumer);
     const installed=join(consumer,'node_modules/@jimmie-potts/hub');
     const manifest=JSON.parse(await readFile(join(installed,'manifest.json'),'utf8'));
     assert.equal(manifest.sourceRevision,revision,'packaged source identity');
     assert.deepEqual(await files(installed),[...Object.keys(manifest.files),'manifest.json'].sort());
     for(const [path,expected] of Object.entries(manifest.files))assert.equal(sha(await readFile(join(installed,path))),expected,path);
+    assert.deepEqual(await files(installed,'node_modules'),Object.keys(manifest.dependencyFiles).sort());
+    for(const [path,expected] of Object.entries(manifest.dependencyFiles))assert.equal(sha(await readFile(join(installed,path))),expected,path);
     const tests=(await readdir(join(installed,'tests'))).filter(name=>name.endsWith('.test.mjs')).map(name=>join(installed,'tests',name));
     assert.match(run(['--test',...tests],installed),/fail 0/);
     assert.equal(run(['--input-type=module','-e','import {startHub} from "@jimmie-potts/hub"; import {launchOwner} from "@jimmie-potts/hub/migration"; import {stageProducer} from "@jimmie-potts/hub/migration-routes"; if([startHub,launchOwner,stageProducer].some(value=>typeof value!=="function"))process.exit(1);'],consumer),'');
