@@ -1621,3 +1621,17 @@ redirects, retryable status codes, unavailable/paused receivers, cancellation
 and concurrent callers. The combined Hub/worker fixture also sends its seven
 logs and six spans through an actual synthetic HTTP receiver and checks that
 export requests are not recursively traced. Grafana ingestion remains untested.
+
+`backend-plan.mjs` generates an argument-only plan for the pinned LGTM image,
+a run-owned internal bridge network, a labeled data volume and five loopback
+listeners. It requests two CPUs, 4 GiB RAM with no extra swap, dropped container
+capabilities, no privilege escalation, disabled eBPF instrumentation and bounded
+Docker logs. It mounts only the owned data volume and two read-only config files.
+It does not execute Docker or treat planned flags as verified configuration.
+
+The readback verifier checks actual CPU/memory limits, isolation flags, published
+bindings and mounts. Cleanup additionally requires the exact recorded container
+ID, resolved image ID, name and ownership labels. These source checks do not yet
+validate config syntax in the image, network reachability, volume ownership,
+image size or the continuous 2 GiB run-data cap. The launcher must establish
+those gates before measured work and preserve resources until evidence is saved.
