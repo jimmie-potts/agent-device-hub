@@ -1708,3 +1708,21 @@ last line. A saved intent or returned operation does not prove removal;
 the coordinator must still verify absence. These records cover cleanup only.
 Creation receipts and the launch journal remain to implement, and no runtime
 teardown result is implied by source journal tests.
+
+`backend-create.mjs` regenerates and validates the complete fixed launch plan,
+then maps it to Engine API network, volume and container requests. The container
+request pins the image, disables automatic restart/removal, and preserves the
+plan's memory/CPU caps, restricted network, loopback ports and read-only config
+mounts. `assertPinnedImage` checks the local image's digest, ID, Linux amd64
+platform and reported unpacked size against the 10 GiB cap. It does not measure
+Docker's total backing storage or download an image.
+
+The Docker adapter now supports these fixed creation requests, full-ID start,
+pinned-image inspection and read-only probes of planned resource names. It
+never pulls a missing image or retries a failed creation. Creation responses
+retain only the resource ID/name and warning count; raw warning text is omitted.
+The launcher must save every intent and creation receipt, refuse existing
+resources, check warnings and fresh ownership/isolation, and establish storage
+and readiness gates before workload execution. A missing or malformed response
+leaves creation ambiguous until readback. These launcher steps remain pending;
+transport methods alone do not establish readiness or safe resource adoption.

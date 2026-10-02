@@ -5,6 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDockerBackend } from '../docker-backend.mjs';
+import { backendPlan } from '../backend-plan.mjs';
+import { backendCreateRequests } from '../backend-create.mjs';
 
 async function fixture(t, handler, apiVersion = { ApiVersion: '1.47', MinAPIVersion: '1.24', Os: 'linux', Arch: 'amd64' }) {
   const directory = await mkdtemp(join(tmpdir(), 'dk-'));
@@ -97,4 +99,47 @@ test('concurrent calls are refused instead of queued; close cancels active reque
   await assert.rejects(pending, /docker-aborted/);
   await assert.rejects(backend.inspect('container', id, options), /docker-closed/);
   assert.ok(calls.length <= 2);
+});
+
+test('creation uses only regenerated pinned requests and sanitized response receipts', async t => {
+  const plan = backendPlan({ runId: 'api-create', ownerToken: '12345678-1234-4123-8123-123456789012',
+    configDirectory: '/workspace/.local/scratch/api-create/config',
+    ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
+  const bodies = [];
+  const { backend, calls } = await fixture(t, (req, res) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      if (req.url.endsWith('/start')) { res.statusCode = 204; res.end(); return; }
+      bodies.push(JSON.parse(Buffer.concat(chunks)));
+      res.statusCode = 201;
+      res.end(JSON.stringify(req.url.includes('volumes') ? { Name: plan.volumeName, private: 'SYNTHETIC_SECRET' }
+        : { Id: id, Warning: 'SYNTHETIC_SECRET', Warnings: ['SYNTHETIC_SECRET'] }));
+    });
+  });
+  for (const kind of ['network', 'volume', 'container']) {
+    const result = await backend.create(kind, plan, options);
+    assert.equal(JSON.stringify(result).includes('SYNTHETIC_SECRET'), false);
+    assert.equal(result.id, kind === 'volume' ? plan.volumeName : id);
+    assert.equal(result.warningCount, kind === 'volume' ? 0 : 1);
+  }
+  assert.deepEqual(bodies, Object.values(backendCreateRequests(plan)).map(value => value.body));
+  await backend.start(id, options);
+  assert.equal(calls.at(-1).path, '/v1.47/containers/' + id + '/start');
+  const count = calls.length;
+  await assert.rejects(backend.create('container', { ...plan, image: 'other:latest' }, options));
+  assert.equal(calls.length, count);
+});
+
+test('image and planned-name probes are pinned and missing resources do not trigger creation', async t => {
+  const plan = backendPlan({ runId: 'probe', ownerToken: '12345678-1234-4123-8123-123456789012',
+    configDirectory: '/workspace/.local/scratch/probe/config',
+    ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
+  const { backend, calls } = await fixture(t, (_req, res) => { res.statusCode = 404; res.end('{"message":"missing"}'); });
+  assert.equal(await backend.inspectImage(options), null);
+  for (const kind of ['network', 'volume', 'container']) assert.equal(await backend.inspectPlanned(kind, plan, options), null);
+  assert.ok(calls.every(call => call.method === 'GET'));
+  assert.equal(calls[1].path, '/v1.47/images/' + encodeURIComponent(plan.image) + '/json');
+  await assert.rejects(backend.create('container', plan, options), /docker-http-status/);
+  assert.equal(calls.filter(call => call.method === 'POST').length, 1, 'failed creation is never retried');
 });
