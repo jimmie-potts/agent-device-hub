@@ -52,3 +52,17 @@ test('invalid canonical metadata, IDs, time ranges and names cannot be exported'
     { parentSpanContext: { traceId: '1'.repeat(32), spanId: '0'.repeat(16) } },
   ]) assert.equal(projectSpan({ ...span(), ...changes }, metadata(), 'bunny.command.request'), undefined);
 });
+
+test('only separately approved causal link identities reach export, never SDK link attributes', () => {
+  const source = span();
+  Object.defineProperty(source, 'links', { get() { assert.fail('raw SDK links must not be read'); } });
+  const approved = [{ traceId: '4'.repeat(32), spanId: '5'.repeat(16), traceFlags: 1 }];
+  const output = projectSpan(source, metadata(), 'bunny.command.execute', approved);
+  assert.deepEqual(output.resourceSpans[0].scopeSpans[0].spans[0].links,
+    [{ traceId: '4'.repeat(32), spanId: '5'.repeat(16), flags: 1 }]);
+  for (const links of [[{ ...approved[0], attributes: { secret: 'SYNTHETIC_SECRET' } }],
+    [{ ...approved[0], traceId: '0'.repeat(32) }], [{ ...approved[0], traceFlags: -1 }],
+    Array(9).fill(approved[0]), 'SYNTHETIC_SECRET']) {
+    assert.equal(projectSpan(source, metadata(), 'bunny.command.execute', links), undefined);
+  }
+});

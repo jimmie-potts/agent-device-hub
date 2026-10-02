@@ -10,9 +10,24 @@ function nanos(time) {
 }
 
 /** Export only host-approved canonical metadata, never SDK content or detected resources. */
-export function projectSpan(span, metadata, registeredName) {
+export function projectSpan(span, metadata, registeredName, approvedLinks = []) {
   try {
     if (!catalog.span_names.includes(registeredName)) return undefined;
+    if (!Array.isArray(approvedLinks) || approvedLinks.length > 8) return undefined;
+    const links = [];
+    for (const link of approvedLinks) {
+      if (!link || Object.getPrototypeOf(link) !== Object.prototype ||
+        Object.keys(link).some(key => !['traceId', 'spanId', 'traceFlags'].includes(key))) return undefined;
+      const values = {};
+      for (const key of ['traceId', 'spanId', 'traceFlags']) {
+        const descriptor = Object.getOwnPropertyDescriptor(link, key);
+        if (!descriptor || !('value' in descriptor)) return undefined;
+        values[key] = descriptor.value;
+      }
+      if (!nonzero(values.traceId, 32) || !nonzero(values.spanId, 16) ||
+        !Number.isInteger(values.traceFlags) || values.traceFlags < 0 || values.traceFlags > 255) return undefined;
+      links.push({ traceId: values.traceId, spanId: values.spanId, flags: values.traceFlags & 1 });
+    }
     const mapped = toOtlp(metadata)?.resourceLogs[0];
     if (!mapped) return undefined;
     const identity = span.spanContext();
@@ -29,6 +44,7 @@ export function projectSpan(span, metadata, registeredName) {
       flags: identity.traceFlags & 1, name: registeredName, kind: span.kind + 1,
       startTimeUnixNano: String(start), endTimeUnixNano: String(end),
       attributes: group.logRecords[0].attributes,
+      ...(links.length ? { links } : {}),
       status: { code: [0, 1, 2].includes(span.status?.code) ? span.status.code : 0 },
     };
     const result = { resourceSpans: [{ resource: mapped.resource, scopeSpans: [{

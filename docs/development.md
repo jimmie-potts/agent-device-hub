@@ -1556,3 +1556,17 @@ parentage, links, isolated tickets, canonical records and independent effects.
 Cancellation ends queued diagnostics without reporting an execution success.
 The combined process harness and bounded network export remain separate
 qualification requirements.
+
+`bounded-sink.mjs` provides the trace transport queue: 1,024 records and 4 MiB,
+including the in-flight item, with at most 8 KiB per serialized record. It drops
+newest, invokes the sink asynchronously, counts sink failures without retrying,
+and aborts a stalled sink after the shutdown flush deadline (at most one
+second). Sinks must return promptly and honor the supplied abort signal.
+Source tests exercise both default capacity limits, UTF-8 byte accounting,
+exceptions, rejected promises, abandoned work and late settlement. An exported
+counter means the sink resolved; it does not prove backend ingestion.
+
+Span projection accepts up to eight separately approved causal link identities.
+It exports only validated trace/span IDs and sampling flags, without reading
+SDK links or their attributes. The host must supply these identities from owned
+handoffs; arbitrary links and detected resource metadata remain excluded.
