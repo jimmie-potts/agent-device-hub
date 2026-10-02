@@ -1488,6 +1488,32 @@ contract/state/MCP and workflow checks.
 
 The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.
 
+## Epic Guide browser
+
+Hub #511 adds a separate static candidate; the legacy Guide remains available.
+Use Node 24 after `npm ci`, and the existing Python story parsers.
+
+```bash
+node --test docs/work-guide/browser/tests/*.test.mjs
+node docs/work-guide/browser/tests/browser.mjs
+node docs/work-guide/browser/tests/live.mjs
+node docs/work-guide/browser/build.mjs --collect
+# Use --collect --rest if GraphQL quota is unavailable; Search must reconcile completely.
+node docs/work-guide/browser/build.mjs --build
+node docs/work-guide/browser/build.mjs --check
+```
+
+Adapter checks cover terminal pagination, independent inventory reconciliation,
+whole-attempt consistency, required ancestry, optional metadata gaps, UTC
+completion boundaries, prerequisite outcomes and last-good preservation.
+Browser checks exercise the actual generator/renderer with a large epic, mobile,
+keyboard, Back/filter state, theme, reduced motion, per-page print, briefs and
+clipboard denial; negative controls reject mixed releases and unsafe projection.
+The build emits canonical records, release manifest and actionable inventory
+audit. Source candidate verification does not establish hosted/public acceptance.
+Run the existing Guide maintenance/build/browser and shared build/type/controller
+contract/workflow checks as well. CI runs these browser tests with pinned Chromium.
+
 ## Shared observability contract checks
 
 The source contract in `packages/observability` uses Node 24 and Python 3.12 or
