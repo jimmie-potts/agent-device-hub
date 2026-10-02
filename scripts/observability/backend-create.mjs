@@ -13,7 +13,7 @@ export function backendCreateRequests(plan) {
   const bindings = Object.fromEntries(Object.entries({ grafana: 3000, otlp: 4318, loki: 3100, tempo: 3200, health: 13133 })
     .map(([name, port]) => [port + '/tcp', [{ HostIp: '127.0.0.1', HostPort: String(plan.ports[name]) }]]));
   return {
-    network: { path: '/networks/create', body: { Name: plan.networkName, Driver: 'bridge', Internal: true,
+    network: { path: '/networks/create', body: { Name: plan.networkName, Driver: 'bridge', Internal: false,
       Attachable: false, Ingress: false, Labels: { ...plan.labels } } },
     volume: { path: '/volumes/create', body: { Name: plan.volumeName, Driver: 'local', Labels: { ...plan.labels } } },
     container: { path: `/containers/create?name=${plan.containerName}&platform=linux%2Famd64`, body: {

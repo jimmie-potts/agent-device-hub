@@ -25,7 +25,7 @@ async function fixture(t) {
       assert.equal(intent.action, 'create'); assert.equal(intent.kind, kind);
       created.push(kind);
       if (kind === 'network') states[kind] = { Id: ids.network, Name: plan.networkName, Created: '2026-10-02T00:00:00Z',
-        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: true, Attachable: false, Ingress: false, Containers: {}, Options: {} };
+        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: false, Attachable: false, Ingress: false, Containers: {}, Options: {} };
       if (kind === 'volume') states[kind] = { Name: plan.volumeName, CreatedAt: '2026-10-02T00:00:00Z', Driver: 'local',
         Scope: 'local', Mountpoint: '/docker/owned/_data', Labels: plan.labels, Options: null };
       if (kind === 'container') {

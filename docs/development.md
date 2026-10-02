@@ -1653,7 +1653,7 @@ partial preparation is retained for diagnosis. These checks establish file and
 profile consistency; pinned-image binary validation and runtime readiness are
 still required before qualification.
 
-`backend-resources.mjs` verifies network creation identity, internal bridge
+`backend-resources.mjs` verifies network creation identity, task-owned bridge
 settings and endpoint ownership. Volume verification compares creation time,
 local driver, mountpoint and unique run labels; driver options are forbidden.
 Docker volumes have no immutable ID, so this is a creation-property check,
@@ -1670,8 +1670,8 @@ Inspection errors are failures, not absence. Its single deadline is at most
 readback. A later invocation resumes from observed state without recreating
 resources. Adapter calls must honor cancellation and must not retry mutations.
 The source tests cover foreign resources, replacement, failed intent storage,
-ambiguous command results and deadline cancellation. Real Docker execution,
-the durable adapter journal and measured teardown remain pending.
+ambiguous command results and deadline cancellation. Runtime qualification must retain the durable adapter journal and measured
+teardown result.
 
 `docker-backend.mjs` implements inspection, stop and removal over an explicitly
 selected local Unix socket using Docker Engine API v1.47. It first checks that
@@ -1687,8 +1687,7 @@ request, and errors omit raw engine messages. There are no redirects, retries,
 forced removals or image deletion methods. Only a JSON 404 on inspection means
 absence; failures and unexpected status codes remain errors. Source tests use
 an isolated Unix-socket HTTP fixture, including API incompatibility, timeouts,
-oversized output and cancellation. Real-engine compatibility and cleanup remain
-unverified until Docker is available. The
+oversized output and cancellation. Real-engine qualification must preserve compatibility and cleanup receipts. The
 [Engine API reference](https://docs.docker.com/reference/api/engine/version/v1.47/)
 defines the status codes and request parameters.
 
@@ -1706,8 +1705,8 @@ with exact fields and owned IDs. It is limited to 16 events and 32 KiB. Readback
 refuses symlinks, malformed records, wrong identity, sequence gaps and a partial
 last line. A saved intent or returned operation does not prove removal;
 the coordinator must still verify absence. These records cover cleanup only.
-Creation receipts and the launch journal remain to implement, and no runtime
-teardown result is implied by source journal tests.
+Creation and launch receipts are described below. Source journal tests do not
+establish a runtime teardown result.
 
 `backend-create.mjs` regenerates and validates the complete fixed launch plan,
 then maps it to Engine API network, volume and container requests. The container
@@ -1727,7 +1726,7 @@ retain only the resource ID/name and warning count; raw warning text is omitted.
 The launcher must save every intent and creation receipt, refuse existing
 resources, check warnings and fresh ownership/isolation, and establish storage
 and readiness gates before workload execution. A missing or malformed response
-leaves creation ambiguous until readback. These launcher steps remain pending;
+leaves creation ambiguous until readback. `allocateBackend` and `withReadyBackend` implement these gates;
 transport methods alone do not establish readiness or safe resource adoption.
 
 `allocateBackend` in `backend-allocation.mjs` creates an exclusive allocation
@@ -1744,9 +1743,8 @@ leaves its records and resources available for readback, without automatic
 retry, adoption or deletion. Records contain only projected IDs, resource
 receipts and host/image measurements, with exclusive private files and file plus
 directory synchronization. The result is `allocated-stopped` and qualification
-remains `unexecuted`. This allocation flow does not start the backend. Daemon
-storage checks, the continuous run-data watchdog, readiness probes and launch
-authorization from those technical gates still need integration before a run.
+remains `unexecuted`. This allocation flow does not start the backend. `withReadyBackend` supplies storage monitoring, readiness probes and workload
+gating after allocation.
 
 `readAllocation` reads allocation evidence without changing it. It distinguishes
 an absent attempt, an interrupted attempt and a complete recorded allocation.
@@ -1763,18 +1761,17 @@ Malformed or truncated files, symlinked paths, missing predecessors and forged
 receipt fields are retained and refused. These consistency checks do not make
 local files tamper-proof against a privileged editor.
 
-`sampleStack` requests one-shot cgroup statistics, `ps -eo pid,rss` process
-inventory and container inspection with writable-layer size through the local
-Engine adapter. It validates the recorded container/image identity and isolation
-before returning a projected sample. The three requests share one deadline.
+`sampleStack` requests one-shot cgroup statistics and `ps -eo pid,rss` process
+inventory for the caller-verified immutable container ID. The two read-only
+requests share one deadline. The storage watchdog separately performs fresh
+container ownership, isolation, OOM and writable-layer inspection.
 Raw Docker configuration, process command lines and environment values are not
 included in the sample.
 
 `stack-measurement.mjs` sums each process's RSS in KiB converted to bytes, keeps
 cgroup memory usage separate, and computes mean CPU cores from the cumulative
 CPU-nanosecond delta divided by monotonic elapsed nanoseconds. Samples retain
-process IDs, per-process RSS, writable-layer size, OOM status, collection duration
-and timestamp bounds. Missing values, foreign IDs, duplicate PIDs, unsafe
+process IDs, per-process RSS, collection duration and timestamp bounds. Missing values, foreign IDs, duplicate PIDs, unsafe
 integers, counter rollback and invalid time order are failures. The summary
 retains peak measurements and maximum sampling gaps; it does not establish
 benchmark-window coverage or a pass result.
@@ -1787,8 +1784,8 @@ and the continuous cap watchdog remain required before qualification.
 
 `storage-measurement.mjs` defines a fixed read-only probe for the owned backend:
 allocated and apparent `/data` sizes plus available space on `/data` and `/`.
-The command has an internal two-second timeout; its required utilities still
-need verification in the pinned image. The parser retains only byte counts,
+The command has an internal two-second timeout; runtime smoke must verify its
+utilities in the pinned image. The parser retains only byte counts,
 rejects missing/unsafe fields, and omits filesystem names. Total run data adds
 the larger volume measure, container writable-layer bytes and owned host run
 files (including synthetic app state and evidence).
@@ -1799,17 +1796,15 @@ does not disable application Pino capture or Collector log ingestion. Backend
 console history will be unavailable; preserve service health/query failures
 and owned file evidence instead. Non-TTY exec output decoding accepts only
 bounded complete stdout frames; stderr or malformed framing fails without
-exposing raw text. Host-file measurement and watchdog integration remain to
-implement. No storage cap has been qualified
-by these parser tests.
+exposing raw text. Host-file measurement and watchdog integration are described below. Parser
+tests alone do not qualify runtime storage accounting.
 
 `sampleStorage` now connects that probe to the Engine adapter. It verifies the
 owned running container before creating a non-privileged, non-TTY exec with
 the fixed command. It checks the exec's container ID and command before start,
 then requires a matching, stopped exec with exit code zero before accepting
-output. The container is inspected again for ownership, isolation and current
-writable-layer size. Only projected byte counts, exec ID and monotonic time
-bounds are returned.
+output. Its initial inspection supplies writable-layer size and OOM status.
+Only projected measurements, exec ID and monotonic time bounds are returned.
 
 The operation shares one total deadline across requests. Binary response bytes
 are limited to 64 KiB, decoded stdout to 16 KiB, and protocol upgrades are refused.
@@ -1817,8 +1812,9 @@ No exec is retried. Cancelling an HTTP request does not prove termination of the
 exec process: the command's own two-second timeout is a separate required runtime
 check. A timeout, missing utility, nonzero exit, running exec or malformed output
 leaves storage unqualified. Synthetic Unix-socket tests cover these response
-checks; the pinned image's utilities and actual Engine stream behavior remain
-unverified. Host run-root registration and continuous enforcement are still needed.
+checks; the runtime smoke must also qualify the pinned utilities and actual
+Engine stream behavior. Host-root registration and the watchdog supply the
+remaining run-data accounting.
 
 `host-storage.mjs` measures the host-side run trees selected by the launcher,
 including synthetic app state and evidence. The launcher must authorize those
@@ -1834,8 +1830,8 @@ No filenames or file contents enter the result. Traversal is bounded to 10,000
 entries, depth 64 and a default one-second deadline; cancellation or an incomplete
 read is a failure. Files may still grow during a walk, so this is a measured
 snapshot, not an atomic filesystem quota. The runtime watchdog must retain the
-sample timing and stop on missing measurements or cap breaches. Launcher root
-registration and continuous enforcement remain to integrate.
+sample timing and stop on missing measurements or cap breaches. `host-roots.mjs`
+and `backend-session.mjs` register those roots and connect the watchdog.
 
 `resource-watchdog.mjs` assesses the accepted hard limits using projected run-data,
 cgroup memory, host-available memory, available disk and OOM observations. It
@@ -1858,7 +1854,7 @@ callback that verifies current resource ownership and stopped state. It must
 retain the watchdog result and block workload execution when readiness fails
 or monitoring later fails. This loop is separate from the benchmark's 100 ms RSS
 sampling and does not prove that cadence. Runtime callbacks and startup integration
-remain unfinished; unit tests do not establish cap enforcement on Docker.
+are described below; unit tests do not establish cap enforcement on Docker.
 
 `resource-callbacks.mjs` connects the watchdog to the measurement adapters. It
 copies the fixed plan, allocation receipt and authorized host-root identities,
@@ -1874,8 +1870,8 @@ verified stopped state confirms success; a still-running container does not.
 It does not delete, force-remove, retry or act on a changed owner. Source tests
 connect these callbacks to the watchdog with actual temporary host files and
 an injected backend, proving that a cap breach requests one stop and checks
-its result. Durable root registration, monitor records and launcher startup
-integration remain required before the real pilot can use this path.
+its result. The session also requires durable root registration and monitor
+records before the real pilot can use this path.
 
 `host-roots.mjs` registers the backend evidence directory and a fresh synthetic
 state directory. The state parent must be canonical `.local` storage outside
@@ -1890,7 +1886,8 @@ adopts a replacement directory. Interrupted registration leaves the intent and
 any created state intact for inspection; the same intent cannot be overwritten
 to retry. The launcher must register before starting synthetic applications and
 use these verified roots for monitoring. This adds no live state migration or
-installation. Durable monitor records and startup wiring remain pending.
+installation. The session connects these roots to durable monitoring before
+starting workloads.
 
 `monitor-journal.mjs` records watchdog evidence in a new private file per attempt.
 The header pins run, owner, container and image identities. Header creation and
@@ -2017,3 +2014,12 @@ combines that writable-layer size, volume usage and host evidence/state usage;
 these observations are sequential, not an atomic filesystem quota. The parser
 accepts the exact POSIX headings produced by `df -P -B1`. Runtime smoke evidence
 must qualify this path before benchmark measurements.
+
+Pilot network profile 1.1 uses an ordinary task-owned bridge, as approved after
+the internal-bridge smoke produced no actual host mappings. Outbound connectivity
+is possible. All five published ports must map only to the selected `127.0.0.1`
+ports in both the requested configuration and running-container readback. Missing
+or expanded mappings stop the session before workloads. Host HTTP readiness is
+also required. This profile changes no daemon, firewall or host security setting.
+Prior profile receipts remain evidence; regenerate them with their recorded
+source revision rather than rewriting them to the new profile.

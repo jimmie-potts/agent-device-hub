@@ -71,7 +71,7 @@ export async function readAllocation(directory) {
     let expected;
     if (kind === 'network') {
       expected = networkReceipt({ Id: returned.id, Name: plan.networkName, Created: verified.createdAt,
-        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: true, Attachable: false, Ingress: false, Containers: {} }, plan);
+        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: false, Attachable: false, Ingress: false, Containers: {} }, plan);
       receipt.network = expected;
     } else if (kind === 'volume') {
       expected = volumeReceipt({ Name: plan.volumeName, CreatedAt: verified.createdAt, Mountpoint: verified.mountpoint,

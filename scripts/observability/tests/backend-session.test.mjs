@@ -22,13 +22,13 @@ async function fixture(t) {
     async inspectImage() { return image; }, async inspectPlanned(kind) { return states[kind] ?? null; },
     async create(kind) {
       if (kind === 'network') states[kind] = { Id: ids.network, Name: plan.networkName, Created: '2026-10-02T00:00:00Z',
-        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: true, Attachable: false, Ingress: false, Containers: {}, Options: {} };
+        Labels: plan.labels, Driver: 'bridge', Scope: 'local', Internal: false, Attachable: false, Ingress: false, Containers: {}, Options: {} };
       if (kind === 'volume') states[kind] = { Name: plan.volumeName, CreatedAt: '2026-10-02T00:00:00Z', Driver: 'local',
         Scope: 'local', Mountpoint: '/docker/owned/_data', Labels: plan.labels, Options: null };
       if (kind === 'container') {
         const config = backendCreateRequests(plan).container.body;
         states[kind] = { Id: ids.container, Name: '/' + plan.containerName, Image: image.Id,
-          Config: config, HostConfig: config.HostConfig, State: { Running: false },
+          Config: config, HostConfig: config.HostConfig, NetworkSettings: { Ports: config.HostConfig.PortBindings }, State: { Running: false },
           Mounts: config.HostConfig.Mounts.map(m => ({ ...m, Name: m.Type === 'volume' ? m.Source : undefined,
             Destination: m.Target, RW: !m.ReadOnly })) };
       }

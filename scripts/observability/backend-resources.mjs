@@ -12,7 +12,7 @@ const labelsMatch = (value, plan) => object(value) &&
 function readNetwork(value, plan, containerId) {
   const deny = () => { throw new Error('Backend network ownership or isolation verification failed'); };
   if (!value || !id(value.Id) || value.Name !== plan.networkName || !timestamp(value.Created) ||
-    value.Driver !== 'bridge' || value.Scope !== 'local' || value.Internal !== true ||
+    value.Driver !== 'bridge' || value.Scope !== 'local' || value.Internal !== false ||
     value.Attachable !== false || value.Ingress !== false || !networkOptions(value.Options) ||
     (value.EnableIPv4 !== undefined && value.EnableIPv4 !== true) || (value.EnableIPv6 !== undefined && value.EnableIPv6 !== false) ||
     !labelsMatch(value.Labels, plan) || !object(value.Containers) ||
@@ -24,7 +24,7 @@ function readNetwork(value, plan, containerId) {
     labels: { ...plan.labels } };
 }
 
-/** Capture only a new, empty isolated network; do not adopt an existing named network. */
+/** Capture only a new, empty task-owned network; do not adopt an existing named network. */
 export function networkReceipt(inspect, plan) { return readNetwork(inspect, plan); }
 
 /** Pass the recorded container ID only before its removal; afterwards require no endpoints. */

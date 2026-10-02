@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { backendPlan, assertOwnedBackend, assertBackendIsolation, LGTM_IMAGE } from '../backend-plan.mjs';
+import { backendPlan, assertOwnedBackend, assertBackendIsolation, assertPublishedPorts, LGTM_IMAGE } from '../backend-plan.mjs';
 const input = () => ({ runId: 'pilot-001', ownerToken: '12345678-1234-4123-8123-123456789012',
   configDirectory: '/workspace/.local/scratch/pilot-001/config',
   ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
@@ -8,7 +8,8 @@ const input = () => ({ runId: 'pilot-001', ownerToken: '12345678-1234-4123-8123-
 test('backend plan pins resources, isolated network and loopback listeners without ambient env', () => {
   const plan = backendPlan(input());
   assert.equal(plan.image, LGTM_IMAGE);
-  assert.ok(plan.networkArgs.includes('--internal'));
+  assert.equal(plan.networkArgs.includes('--internal'), false);
+  assert.equal(plan.version, '1.1');
   assert.ok(plan.containerArgs.includes('4294967296'));
   assert.ok(plan.containerArgs.includes('--cap-drop=ALL'));
   assert.ok(plan.containerArgs.includes('--security-opt=no-new-privileges'));
@@ -60,4 +61,17 @@ test('resource and listener readback refuses any missing or expanded isolation s
     assert.throws(() => assertBackendIsolation({ ...inspect, HostConfig: { ...inspect.HostConfig, ...field } }, plan), /isolation/);
   }
   assert.throws(() => assertBackendIsolation({ ...inspect, Mounts: [...inspect.Mounts, { Destination: '/host' }] }, plan), /isolation/);
+});
+
+
+test('running backend requires actual loopback mappings, not only requested bindings', () => {
+  const plan = backendPlan(input());
+  const ports = Object.fromEntries(Object.entries({ grafana: 3000, otlp: 4318, loki: 3100, tempo: 3200, health: 13133 })
+    .map(([name, port]) => [port + '/tcp', [{ HostIp: '127.0.0.1', HostPort: String(plan.ports[name]) }]]));
+  assert.equal(assertPublishedPorts({ NetworkSettings: { Ports: ports } }, plan), true);
+  for (const changed of [undefined, {}, { ...ports, '3000/tcp': [] },
+    { ...ports, '3000/tcp': [{ HostIp: '0.0.0.0', HostPort: '43000' }] },
+    { ...ports, '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '44000' }] }]) {
+    assert.throws(() => assertPublishedPorts({ NetworkSettings: { Ports: changed } }, plan), /published/);
+  }
 });

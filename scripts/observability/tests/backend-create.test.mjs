@@ -8,7 +8,7 @@ const plan = backendPlan({ runId: 'create-001', ownerToken: '12345678-1234-4123-
 
 test('Engine requests preserve the frozen resource and privacy limits without arbitrary overrides', () => {
   const requests = backendCreateRequests(plan), c = requests.container.body;
-  assert.deepEqual(requests.network.body, { Name: plan.networkName, Driver: 'bridge', Internal: true,
+  assert.deepEqual(requests.network.body, { Name: plan.networkName, Driver: 'bridge', Internal: false,
     Attachable: false, Ingress: false, Labels: plan.labels });
   assert.deepEqual(requests.volume.body, { Name: plan.volumeName, Driver: 'local', Labels: plan.labels });
   assert.equal(c.Image, plan.image);

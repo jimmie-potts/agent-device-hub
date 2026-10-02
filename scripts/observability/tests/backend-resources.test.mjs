@@ -7,7 +7,7 @@ const plan = backendPlan({ runId: 'resources-001', ownerToken: '12345678-1234-41
   configDirectory: '/workspace/.local/scratch/resources-001/config',
   ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
 const network = () => ({ Id: 'a'.repeat(64), Name: plan.networkName, Created: '2026-10-02T00:00:00Z',
-  Driver: 'bridge', Scope: 'local', Internal: true, Attachable: false, Ingress: false,
+  Driver: 'bridge', Scope: 'local', Internal: false, Attachable: false, Ingress: false,
   Labels: { ...plan.labels }, Containers: {}, Options: {} });
 const volume = () => ({ Name: plan.volumeName, CreatedAt: '2026-10-02T00:00:00Z', Driver: 'local',
   Scope: 'local', Labels: { ...plan.labels }, Options: null, Mountpoint: '/var/lib/docker/volumes/owned/_data' });
@@ -20,7 +20,7 @@ test('network receipt rejects foreign endpoints and replacement even with copied
   assert.equal(assertOwnedNetwork(attached, plan, receipt, containerId), true);
   assert.throws(() => assertOwnedNetwork(attached, plan, receipt), /network/);
   for (const patch of [{ Id: 'c'.repeat(64) }, { Created: '2026-10-03T00:00:00Z' },
-    { Internal: false }, { Driver: 'overlay' }, { Scope: 'swarm' }, { Attachable: true },
+    { Internal: true }, { Driver: 'overlay' }, { Scope: 'swarm' }, { Attachable: true },
     { Ingress: true }, { Options: { 'com.docker.network.bridge.name': 'foreign' } },
     { Labels: {} }, { Containers: null }, { Name: 'foreign' }]) {
     assert.throws(() => assertOwnedNetwork({ ...initial, ...patch }, plan, receipt), /network/);

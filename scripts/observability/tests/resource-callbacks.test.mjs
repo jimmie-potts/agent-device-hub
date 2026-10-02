@@ -18,7 +18,7 @@ async function fixture(t) {
     configDirectory: join(root, 'config'), ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
   const states = {
     network: { Id: 'a'.repeat(64), Name: plan.networkName, Created: '2026-10-02T00:00:00Z', Driver: 'bridge', Scope: 'local',
-      Internal: true, Attachable: false, Ingress: false, Labels: plan.labels, Containers: {}, Options: {} },
+      Internal: false, Attachable: false, Ingress: false, Labels: plan.labels, Containers: {}, Options: {} },
     volume: { Name: plan.volumeName, CreatedAt: '2026-10-02T00:00:00Z', Driver: 'local', Scope: 'local',
       Labels: plan.labels, Mountpoint: '/docker/owned/_data', Options: {} },
     container: { Id: 'b'.repeat(64), Name: '/' + plan.containerName, Image: 'sha256:' + 'c'.repeat(64),

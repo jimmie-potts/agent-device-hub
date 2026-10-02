@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { readPreparedBackend } from './backend-files.mjs';
 import { readAllocation } from './allocation-readback.mjs';
 import { readHostRoots } from './host-roots.mjs';
-import { assertOwnedBackend } from './backend-plan.mjs';
+import { assertOwnedBackend, assertPublishedPorts } from './backend-plan.mjs';
 import { assertOwnedNetwork, assertOwnedVolume } from './backend-resources.mjs';
 import { createMonitorJournal, readMonitorJournal } from './monitor-journal.mjs';
 import { createResourceCallbacks } from './resource-callbacks.mjs';
@@ -42,6 +42,7 @@ export async function withReadyBackend({ directory, backend, monitorBackend, act
     const container = await backend.inspect('container', receipt.containerId, options);
     assertOwnedBackend(container, plan, receipt); await verifyBackendIsolation(container, plan);
     if (container.State?.Running !== running) throw new Error('Backend running state mismatch');
+    if (running) assertPublishedPorts(container, plan);
   }
   await verify(false);
   const callbacks = createResourceCallbacks({ plan, receipt, backend: monitorBackend, hostProbe, hostRoots: Object.values(roots.roots) });

@@ -13,7 +13,7 @@ function fixture() {
     container: { Id: containerId, Name: '/' + plan.containerName, Image: imageId,
       Config: { Image: plan.image, Labels: plan.labels }, State: { Running: true } },
     network: { Id: 'c'.repeat(64), Name: plan.networkName, Created: '2026-10-02T00:00:00Z',
-      Driver: 'bridge', Scope: 'local', Internal: true, Attachable: false, Ingress: false,
+      Driver: 'bridge', Scope: 'local', Internal: false, Attachable: false, Ingress: false,
       Labels: plan.labels, Containers: {}, Options: {} },
     volume: { Name: plan.volumeName, CreatedAt: '2026-10-02T00:00:00Z', Driver: 'local',
       Scope: 'local', Labels: plan.labels, Options: {}, Mountpoint: '/docker/owned/_data' },

@@ -16,7 +16,7 @@ export function backendPlan(input) {
   const containerName = `bunny-o704-${runId}`, volumeName = `${containerName}-data`, networkName = `${containerName}-net`;
   const labels = { 'bunny.observability.task': '704', 'bunny.observability.run': runId, 'bunny.observability.owner': ownerToken };
   const labelArgs = Object.entries(labels).flatMap(([name, value]) => ['--label', `${name}=${value}`]);
-  const networkArgs = ['network', 'create', '--driver', 'bridge', '--internal', ...labelArgs, networkName];
+  const networkArgs = ['network', 'create', '--driver', 'bridge', ...labelArgs, networkName];
   const volumeArgs = ['volume', 'create', ...labelArgs, volumeName];
   const containerArgs = ['create', '--name', containerName, '--platform', 'linux/amd64', '--pull=never',
     '--network', networkName, '--cpus', '2', '--memory', '4294967296', '--memory-swap', '4294967296',
@@ -30,7 +30,7 @@ export function backendPlan(input) {
       ['--mount', `type=bind,source=${configDirectory}/${name},target=/otel-lgtm/${name},readonly`]),
     ...Object.entries(destinations).flatMap(([name, internal]) => ['--publish', `127.0.0.1:${ports[name]}:${internal}/tcp`]),
     LGTM_IMAGE];
-  return { version: '1.0', runId, ownerToken, image: LGTM_IMAGE, containerName, volumeName, networkName,
+  return { version: '1.1', runId, ownerToken, image: LGTM_IMAGE, containerName, volumeName, networkName,
     labels, configDirectory, ports: { ...ports }, networkArgs, volumeArgs, containerArgs,
     limits: { imageBytes: 10 * 1024 ** 3, runDataBytes: 2 * 1024 ** 3, teardownMs: 30000 } };
 }
@@ -68,6 +68,21 @@ export function assertBackendIsolation(inspect, plan) {
   for (const name of ['otelcol-config.yaml', 'loki-config.yaml']) {
     const mount = inspect.Mounts.find(value => value.Destination === `/otel-lgtm/${name}`);
     if (!mount || mount.Type !== 'bind' || mount.Source !== `${plan.configDirectory}/${name}` || mount.RW !== false) deny();
+  }
+  return true;
+}
+
+
+/** Requested bindings can exist while Docker publishes nothing (for example on
+ * an internal-only bridge). Require actual mappings before host workloads. */
+export function assertPublishedPorts(inspect, plan) {
+  const ports = inspect?.NetworkSettings?.Ports;
+  const deny = () => { throw new Error('Backend published ports verification failed'); };
+  if (!ports || Object.keys(ports).length !== Object.keys(destinations).length) deny();
+  for (const [name, port] of Object.entries(destinations)) {
+    const values = ports[`${port}/tcp`];
+    if (!Array.isArray(values) || values.length !== 1 || values[0].HostIp !== '127.0.0.1' ||
+      values[0].HostPort !== String(plan.ports[name])) deny();
   }
   return true;
 }

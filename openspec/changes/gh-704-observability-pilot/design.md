@@ -46,7 +46,7 @@ Each signal is bounded to 1,024 records and 4 MiB, whichever fills first; record
 
 ### Disposable pinned backend
 
-Use `grafana/otel-lgtm:0.34.0` at Linux amd64 digest `sha256:c6a56be719990e78b1d32e879988a219904300ecde1b9bfeec472831a56a922b`. Record its parent manifest digest and component versions. Publish only explicitly selected loopback ports. Do not use privileged mode, host networking, host PID access or device access. Account for all bundled stack services.
+Use `grafana/otel-lgtm:0.34.0` at Linux amd64 digest `sha256:c6a56be719990e78b1d32e879988a219904300ecde1b9bfeec472831a56a922b`. Record its parent manifest digest and component versions. Publish only explicitly selected loopback ports on a fresh task-owned ordinary bridge. The owner approved this profile after the internal bridge produced no actual host mappings in a retained prerequisite smoke. Outbound connectivity is possible; use only synthetic data and keep analytics disabled. Verify actual Docker mappings and host-side HTTP readiness before workloads. Do not change daemon, firewall or host security settings. Do not use privileged mode, host networking, host PID access or device access. Account for all bundled stack services.
 
 Restrict Loki index labels to stable service namespace/name/environment. Preserve request, ticket, trace and span identifiers as queryable metadata rather than indexed labels. Document Loki dot-to-underscore and numeric conversion mappings. Verify the existing Grafana Explore log/trace links without adding a dashboard or changing product UI. Python fixtures must reach the same field queries as Node records.
 
