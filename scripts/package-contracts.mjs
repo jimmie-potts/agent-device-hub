@@ -30,7 +30,10 @@ try{
  for(const name of ['package.json','src','dist','schemas','fixtures','python','tests'])
   await cp(join(root,'packages/contracts',name),join(stage,name),{recursive:true,filter:path=>!path.includes('__pycache__')&&!path.endsWith('.pyc')});
  await cp(join(root,'docs/controller-contract.md'),join(stage,'README.md'));
- await cp(join(root,'docs/install-contract.md'),join(stage,'install-contract.md'));
+ const installContract=(await readFile(join(root,'docs/install-contract.md'),'utf8'))
+  .replaceAll('../packages/contracts/','./')
+  .replaceAll('(development.md#controller-contract-checks)','(https://github.com/jimmie-potts/agent-device-hub/blob/controller-contracts-v1.2.0/docs/development.md#controller-contract-checks)');
+ await writeFile(join(stage,'install-contract.md'),installContract);
  await cp(join(root,'requirements-contracts.txt'),join(stage,'requirements-contracts.txt'));
  const hashes={};for(const name of await files(stage))hashes[name]=sha256(await readFile(join(stage,name)));
  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:'@jimmie-potts/device-contracts',version:'1.2.0',apiVersions:['1.0','1.1'],installReceiptVersion:'install-receipt/1.0',schemaDraft:'2020-12',fixtureFormat:1,files:hashes},null,2)+'\n');
