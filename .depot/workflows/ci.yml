@@ -95,6 +95,8 @@ jobs:
       - run: npm run test:tidbyt:built
       - run: npm run test:local-controllers:built
       - run: npm run test:tidbyt:python
+      - run: npm run test:wispr:built
+      - run: npm run test:wispr:package:built
   mcp:
     name: MCP on ${{ matrix.os }}
     strategy:

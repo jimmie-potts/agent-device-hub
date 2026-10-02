@@ -791,6 +791,31 @@ worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
 
+## Wispr collector checks
+
+Use Node 24 from the assigned worktree root. Run `npm ci`, `npm run build`,
+`npm run typecheck`, `npm run test:wispr`, `npm run test:wispr:package`,
+`npm run test:contracts`, `npm run test:contracts:python`, `npm run test:package`,
+`npm run check:workflow` and `npm run test:workflow`.
+The contracts/state CI jobs run the Wispr `:built` suites after the shared build.
+`npm run build:wispr` builds just the two Wispr workspaces for focused development;
+it does not replace the shared acceptance checks.
+
+The source suite covers strict aggregate validation, hand-calculated metrics,
+timezones, retention, late changes, clear/restore fencing, source/privacy checks,
+atomic publication and bounded failures. The package suite extracts the offline
+collector and exercises a synthetic collect/status/export flow and an isolated
+contract consumer. No check reads personal Wispr data.
+
+Run `npm run test:wispr:native:built` separately under native Windows Node 24,
+with its synthetic database/output directory on a local Windows drive. The
+native check rejects other platforms and verifies concurrent WAL writes,
+source preservation, reader-lock release, busy/deadline bounds, ACL/path rejection
+and locked-destination recovery. Keep the native receipt tied to the final
+candidate/package digest; Linux CI is not a substitute. An isolated test runtime
+does not change the global Windows Node installation. Installation, scheduled
+collection and personal-data validation require their own authorization.
+
 ## Dashboard checks
 
 Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
