@@ -41,7 +41,8 @@ export function createBrightnessOperation(ready, { fetchImpl = fetch } = {}) {
     const receipt = await receiptBody(response);
     const matches = receipt && receipt.requestId.epoch === request.requestId.epoch &&
       receipt.requestId.sequence === request.requestId.sequence && receipt.controllerId === request.controllerId && receipt.deviceId === request.deviceId;
-    return { requestId: request.requestId, traceId, parentId, status: response.status, validReceipt: !!matches,
+    return { requestId: request.requestId, controllerId:request.controllerId,deviceId:request.deviceId,
+      traceId, parentId, status: response.status, validReceipt: !!matches,
       receipt: matches ? { requestId: receipt.requestId, outcome: receipt.outcome, priorEffects: receipt.priorEffects,
         configurationRevision: receipt.configurationRevision, completedOperations: receipt.completedOperations,
         uncertainOperations: receipt.uncertainOperations, failure: receipt.failure?.code ?? null } : null };

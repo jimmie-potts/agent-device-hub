@@ -12,6 +12,7 @@ import { applicationSnapshot } from '../application-measurement.mjs';
 import { createBrightnessOperation } from '../workload-operation.mjs';
 import { reconcileWorkload } from '../workload-oracle.mjs';
 import { createDeliveryRecorder } from '../delivery-records.mjs';
+import { assessCommandDiagnostics,assessFaultDiagnostics } from '../command-evidence.mjs';
 
 test('fresh baseline and instrumented application processes preserve command outcomes and expose independent CPU/RSS', async t => {
   const parent=await mkdtemp(join(tmpdir(),'wp-')), local=join(parent,'.local');await mkdir(local);
@@ -51,6 +52,14 @@ test('fresh baseline and instrumented application processes preserve command out
     if(enabled){
       const accounting=evidence.finish(stopped.result.counts);assert.equal(accounting.complete,true,JSON.stringify(accounting.counts));
       assert.equal(accounting.expectedLogs.length,21);assert.equal(accounting.expectedSpans.length,18);
+      const diagnosticInput={commands:events.filter(e=>e.kind==='completion').map(e=>e.outcome),logs:accounting.expectedLogs,spans:accounting.expectedSpans};
+      assert.equal(assessCommandDiagnostics(diagnosticInput).complete,true);
+      for(const mutate of [
+        value=>value.spans.pop(),value=>value.logs.pop(),value=>value.logs.push(value.logs[0]),
+        value=>{value.spans[0].parentSpanId='f'.repeat(16);},
+        value=>{value.logs[0].fields.bunny_ticket_sequence='999';},
+        value=>{value.spans.find(s=>s.name==='bunny.command.execute').links=[];},
+      ]) {const changed=structuredClone(diagnosticInput);mutate(changed);assert.equal(assessCommandDiagnostics(changed).complete,false);}
       const terminal=rejectCollection?'failed':'exported';
       assert.equal(stopped.result.counts.logs[terminal],21);assert.equal(stopped.result.counts.traces.output[terminal],18);
       assert.equal(accounting.counts.logs[terminal],21);assert.equal(accounting.counts.traces[terminal],18);
@@ -63,4 +72,40 @@ test('fresh baseline and instrumented application processes preserve command out
     assert.throws(()=>process.kill(refused.pid,0),{code:'ESRCH'});
   }
   assert.deepEqual(outcomes,Array.from({length:9},()=>[202,'queued']));assert.equal(requests,78);
+});
+
+test('fixed command fault sequence preserves baseline outcomes, counts each side effect and excludes private fixtures',async t=>{
+  const parent=await mkdtemp(join(tmpdir(),'wf-')),local=join(parent,'.local');await mkdir(local);
+  t.after(()=>rm(parent,{recursive:true,force:true}));
+  const collector=createServer(async(req,res)=>{for await(const chunk of req){}res.setHeader('content-type','application/json');res.end('{}');});
+  await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
+  const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'faults');
+  await prepareBackendDirectory(directory,{runId:'faults',ports:{grafana:other[0],otlp:port,loki:other[1],tempo:other[2],health:other[3]}});
+  const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
+  await prepareReleasedContract(join(roots.roots.state.path,'contract'));
+  const outcomes=[];
+  for(const enabled of [false,true]) {
+    const events=[],recorder=createDeliveryRecorder({record:event=>events.push(event)});
+    const child=await startWorkloadProcess(directory,{enabled,purpose:'command-faults',onEvidence:recorder.accept});t.after(()=>child.stop());
+    const result=await child.qualifyCommands(),closed=await child.stop();
+    assert.equal(result.complete,true,JSON.stringify(result));assert.equal(result.cases.length,10);
+    assert.equal(closed.code,0);assert.equal(closed.reason,null);assert.equal(closed.result.complete,true);
+    assert.equal(closed.result.oracle.effects,6);assert.equal(closed.executions.length,6);
+    assert.equal(new Set(closed.executions.map(e=>JSON.stringify(e.requestId))).size,6);
+    outcomes.push(result.cases);
+    const accounting=recorder.finish(closed.result.counts??{});assert.equal(accounting.complete,true);
+    if(enabled){
+      assert.equal(accounting.expectedLogs.length,49);assert.equal(accounting.expectedSpans.length,48);
+      const input={qualification:result,logs:accounting.expectedLogs,spans:accounting.expectedSpans};
+      assert.equal(assessFaultDiagnostics(input).complete,true);
+      for(const mutate of [value=>value.logs.pop(),value=>{value.spans[0].parentSpanId='f'.repeat(16);},
+        value=>{value.logs[0].fields.bunny_ticket_sequence='999';}]) {
+        const changed=structuredClone(input);mutate(changed);assert.equal(assessFaultDiagnostics(changed).complete,false);
+      }
+    }
+    else assert.equal(events.length,0);
+    assert.equal(JSON.stringify(events).includes('SYNTHETIC_PRIVATE_CANARY'),false);
+  }
+  assert.deepEqual(outcomes[1],outcomes[0]);
 });

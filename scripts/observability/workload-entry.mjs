@@ -49,8 +49,8 @@ async function stop() {
 process.on('disconnect', () => { void stop().catch(() => { process.exitCode = 2; }); });
 process.once('message', async input => {
   try {
-    if (!input || Object.keys(input).sort().join(',') !== 'directory,enabled' ||
-      typeof input.directory !== 'string' || typeof input.enabled !== 'boolean' || !process.send) throw new Error('Input invalid');
+    if (!input || Object.keys(input).sort().join(',') !== 'directory,enabled,purpose' ||
+      typeof input.directory !== 'string' || typeof input.enabled !== 'boolean' || !['workload','command-faults'].includes(input.purpose) || !process.send) throw new Error('Input invalid');
     const { plan } = await readPreparedBackend(input.directory), roots = await readHostRoots(input.directory);
     stage = 'contract';
     const installed = join(roots.roots.state.path, 'contract/node_modules/@jimmie-potts/bunny-observability');
@@ -88,17 +88,26 @@ process.once('message', async input => {
     stage = 'application';
     const { startHub } = await import('../../apps/hub/dist/server.js');
     const { startFakeController } = await import('../../apps/hub/tests/fake-controller.mjs');
-    fake = await startFakeController({ execution: { autoDrain: true }, diagnostics: worker });
+    const fakeOptions={ execution: { autoDrain: input.purpose==='workload' }, diagnostics: worker };
+    fake = await startFakeController(fakeOptions);
     origins = [new URL(fake.endpoint).origin];
-    const token = 's'.repeat(43), directory = join(roots.roots.state.path, 'hub');
+    const token = 's'.repeat(43), directory = join(roots.roots.state.path,
+      input.purpose==='workload'?'hub':`hub-faults-${input.enabled?'enabled':'disabled'}`);
     await mkdir(directory, { mode: 0o700 });
     hub = await startHub({ directory, ownerId: 'synthetic-pilot', consumers: [], diagnostics,
       credentials: [{ id: 'pilot', digest: createHash('sha256').update(token).digest('hex'), scopes: ['read','control'], devices: ['wall'] }],
       controllers: [fake.config()] });
     const snapshot = fake.snapshot10(); stage = 'running';
     drainTimer = setInterval(drain, 25);
+    let qualifying=false;
     process.on('message', message => {
       if (message?.kind === 'stop' && Object.keys(message).length === 1) void stop().catch(() => { process.exitCode = 2; process.disconnect(); });
+      else if(message?.kind==='qualify-commands' && Object.keys(message).length===1 && input.purpose==='command-faults' && !qualifying) {
+        qualifying=true;
+        void import('./command-faults.mjs').then(({runCommandFaults})=>runCommandFaults({hub,fake,fakeOptions,token}))
+          .then(result=>{drain();send({kind:'command-qualification',result});})
+          .catch(()=>{evidenceFailed=true;send({kind:'command-qualification',result:{complete:false,stage:'qualification-error'}});});
+      }
       else { evidenceFailed = true; void stop(); }
     });
     send({ kind: 'ready', pid: process.pid, url: hub.url, token, resource, contractSource: 'verified-released-archive',

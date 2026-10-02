@@ -2244,3 +2244,14 @@ measurement. The telemetry journal allows 75,000 events/96 MiB; the query journa
 allows 150,000 rows/128 MiB and splits large result sets into bounded rows.
 Both remain under the monitored run-data cap. This command stops its backend;
 retain evidence and use manifest-owned cleanup afterward.
+
+`command-faults` accepts the same qualification arguments. It runs a fixed
+sequence with telemetry disabled and enabled: queued success, duplicate replay,
+rejected revision, concurrent capacity rejection, timeout after admission,
+unauthenticated and malformed context, private payload/query rejection and a
+throwing diagnostic observer. Both modes must retain the same responses and six
+intended fake effects. The enabled sequence must have the expected per-request
+log/span structure, preserve uncertainty after timeout, reject untrusted context,
+exclude the private canary and match real Loki/Tempo queries. This qualifies
+command-path faults with collection available; Collector pause/absence, exporter
+failure, saturation and paired overhead remain separate gates.

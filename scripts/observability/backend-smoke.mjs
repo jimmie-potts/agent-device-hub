@@ -1,6 +1,6 @@
 import { prepareReleasedContract } from './released-contract.mjs';
 import { performIngestion } from './ingestion-session.mjs';
-import { performRecordedCommands } from './recorded-commands.mjs';
+import { performRecordedCommands,performCommandFaults } from './recorded-commands.mjs';
 import { basename, join } from 'node:path';
 import { prepareBackendDirectory } from './backend-files.mjs';
 import { inspectHost, inspectDocker } from './preflight.mjs';
@@ -25,8 +25,9 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
     await allocateBackend({ directory, backend, signal });
     return await withReadyBackend({ directory, backend, monitorBackend, signal,
       ...(ingestion ? { action: async ({ plan, signal }) => {
-        if(ingestion==='delivery') {
-          const result=await performRecordedCommands({directory,plan,signal});
+        if(['delivery','command-faults'].includes(ingestion)) {
+          const run=ingestion==='delivery'?performRecordedCommands:performCommandFaults;
+          const result=await run({directory,plan,signal});
           if(result.failure)throw new Error('Delivery ingestion incomplete');
           return result;
         }
@@ -38,3 +39,4 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
 export const smokeBackend = input => runBackend(input, false);
 export const qualifyIngestionBackend = input => runBackend(input, true);
 export const qualifyDeliveryBackend = input => runBackend(input, 'delivery');
+export const qualifyCommandFaults = input => runBackend(input, 'command-faults');

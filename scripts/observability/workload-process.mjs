@@ -6,8 +6,9 @@ import { applicationSnapshot } from './application-measurement.mjs';
 
 /** One fresh owned application group, separate from workload/query drivers.
  * No retries; caller retains returned evidence and cleans only registered state. */
-export async function startWorkloadProcess(directory, { enabled, signal, onStart = () => {}, onEvidence = () => {} } = {}) {
-  if (typeof enabled !== 'boolean' || signal?.aborted || typeof onStart !== 'function' || typeof onEvidence !== 'function') throw new Error('Application invocation invalid');
+export async function startWorkloadProcess(directory, { enabled, signal, onStart = () => {}, onEvidence = () => {}, purpose='workload' } = {}) {
+  if (typeof enabled !== 'boolean' || signal?.aborted || typeof onStart !== 'function' || typeof onEvidence !== 'function' ||
+    !['workload','command-faults'].includes(purpose)) throw new Error('Application invocation invalid');
   await readPreparedBackend(directory); await readHostRoots(directory);
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [new URL('./workload-entry.mjs', import.meta.url).pathname],
@@ -27,6 +28,7 @@ export async function startWorkloadProcess(directory, { enabled, signal, onStart
   const abort = () => terminate('aborted'); signal?.addEventListener('abort',abort,{once:true});
   const startup = setTimeout(() => terminate('startup-deadline'),20000), lifetime = setTimeout(() => terminate('lifetime-deadline'),150000);
   let stopTimer;
+  let qualification,resolveQualification,rejectQualification,qualificationTimer,qualificationReturned=false;
   child.stdout.on('data', chunk => { outputBytes += chunk.length; terminate('unexpected-stdout'); });
   child.stderr.on('data', chunk => { stderrBytes += chunk.length;stderrHash.update(chunk);if(stderrBytes>8192)terminate('stderr-limit'); });
   child.on('error', () => terminate('spawn-failed'));
@@ -45,11 +47,14 @@ export async function startWorkloadProcess(directory, { enabled, signal, onStart
           if(returned && typeof returned.then==='function'){Promise.resolve(returned).catch(()=>{});throw new Error('Synchronous observer required');}
         }
       }catch{terminate('telemetry-evidence-failed');}
+    } else if(message?.kind==='command-qualification' && qualification && !qualificationReturned) {
+      qualificationReturned=true;clearTimeout(qualificationTimer);resolveQualification(message.result);
     } else if (message?.kind==='closed' && !result) result=message;
     else terminate('invalid-message');
   });
   const closed = new Promise(resolve => child.on('close',(code,exitSignal) => {
     clearTimeout(startup);clearTimeout(lifetime);clearTimeout(killTimer);clearTimeout(stopTimer);signal?.removeEventListener('abort',abort);
+    clearTimeout(qualificationTimer);rejectQualification?.(new Error('Command qualification interrupted'));
     rejectReady(new Error('Application startup incomplete'));
     resolve({pid:child.pid??null,code,exitSignal,reason,result:result??null,executions,outputBytes,stderrBytes,stderrSha256:stderrHash.digest('hex')});
   }));
@@ -62,11 +67,21 @@ export async function startWorkloadProcess(directory, { enabled, signal, onStart
     if(returned && typeof returned.then==='function') {
       Promise.resolve(returned).catch(()=>{});throw new Error('Synchronous ownership recorder required');
     }
-    if(signal?.aborted)abort();else child.send({directory,enabled},error=>{if(error)terminate('input-failed');});
+    if(signal?.aborted)abort();else child.send({directory,enabled,purpose},error=>{if(error)terminate('input-failed');});
     const value=await ready;
     if (value.pid!==child.pid || value.contractSource!=='verified-released-archive' || !/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(value.url)) throw new Error('Application ready invalid');
     await applicationSnapshot(identity);
     return { ready:value, identity, closed,
+      qualifyCommands() {
+        if(purpose!=='command-faults' || stopping)throw new Error('Command qualification unavailable');
+        if(!qualification) {
+          qualification=new Promise((resolve,reject)=>{resolveQualification=resolve;rejectQualification=reject;});
+          qualification.catch(()=>{});
+          qualificationTimer=setTimeout(()=>terminate('command-qualification-deadline'),20000);
+          child.send({kind:'qualify-commands'},error=>{if(error)terminate('qualification-input-failed');});
+        }
+        return qualification;
+      },
       stop() {
         if (!stopping && child.connected) {
           stopping=true;stopTimer=setTimeout(()=>terminate('stop-deadline'),3000);
