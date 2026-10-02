@@ -112,3 +112,11 @@ test('stop cancels a read wait even if the optional feed ignores its signal', as
   assert.equal(await pending,undefined);assert.equal(signal.aborted,true);
   assert.equal(await reader.read(),undefined);assert.equal(reads,1);assert.equal(timers.pending.size,0);
 });
+
+test('a notice between evaluation completion and promise cleanup still gets its rerun',async()=>{
+  const clock={now:0},timers=fakeTimers(clock);let calls=0;
+  const loop=new EvaluationLoop(async()=>{calls++;return 30000;},timers,30000);
+  const first=loop.update();await Promise.resolve();
+  const second=loop.update();await Promise.all([first,second]);
+  assert.equal(calls,2,'a finishing evaluation must not strand the last requested rerun');loop.stop();
+});

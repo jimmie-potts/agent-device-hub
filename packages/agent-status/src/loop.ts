@@ -38,7 +38,11 @@ export class EvaluationLoop {
     if (this.#stopped) return Promise.resolve();
     this.#schedulePoll();
     this.#requested = true;
-    this.#running ??= this.#loop().finally(() => { this.#running = undefined; });
+    this.#running ??= this.#loop().finally(() => {
+      this.#running = undefined;
+      // A notice can arrive after the loop exits but before this cleanup runs.
+      if (this.#requested && !this.#stopped) return this.update();
+    });
     return this.#running;
   }
 
