@@ -1652,3 +1652,23 @@ launch plan, and checks exact configuration bytes and receipts. Corruption or
 partial preparation is retained for diagnosis. These checks establish file and
 profile consistency; pinned-image binary validation and runtime readiness are
 still required before qualification.
+
+`backend-resources.mjs` verifies network creation identity, internal bridge
+settings and endpoint ownership. Volume verification compares creation time,
+local driver, mountpoint and unique run labels; driver options are forbidden.
+Docker volumes have no immutable ID, so this is a creation-property check,
+not protection against a privileged actor recreating all properties. The
+mountpoint is evidence only and must never become a host deletion target.
+
+`backend-cleanup.mjs` coordinates cleanup through an injected backend adapter.
+It requires saved evidence, verifies all retained resources before mutation,
+records each intent durably, then stops and removes the recorded container,
+empty network and volume. It checks fresh ownership before each removal and
+verifies absence afterwards. It never removes images or uses forced removal.
+Inspection errors are failures, not absence. Its single deadline is at most
+30 seconds; timeout aborts the adapter and leaves pending effects for fresh
+readback. A later invocation resumes from observed state without recreating
+resources. Adapter calls must honor cancellation and must not retry mutations.
+The source tests cover foreign resources, replacement, failed intent storage,
+ambiguous command results and deadline cancellation. Real Docker execution,
+the durable adapter journal and measured teardown remain pending.
