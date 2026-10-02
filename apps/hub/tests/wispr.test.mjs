@@ -103,6 +103,30 @@ test('unsafe source paths and unknown or colliding configuration reject',async t
  for(const opts of [{sourceId:'hub-service'},{sourceId:'speaker'},{aggregatePath:'relative.json'},{aggregatePath:'/tmp/OneDrive/aggregate.json'},{shareTextAggregates:'yes'},{extra:true}])assert.throws(()=>wisprConfiguration({...base,...opts},['speaker']),/invalid-wispr/);
 });
 
+test('cloud-folder spellings reject for both configured files',()=>{
+ const base={sourceId:'dictation',aggregatePath:'/synthetic/aggregate.json',diagnosticsPath:'/synthetic/status.json'};
+ for(const folder of ['iCloudDrive','iCloud Drive','ICLOUDDRIVE','OneDrive','OneDrive - Synthetic','Dropbox','Google Drive'])for(const key of ['aggregatePath','diagnosticsPath']){
+  assert.throws(()=>wisprConfiguration({...base,[key]:`/mnt/c/synthetic/${folder}/data.json`},[]),/invalid-wispr/,`${folder} ${key}`);
+ }
+});
+
+test('worker replacement preserves accepted clear fences and namespace binding',async t=>{
+ const {createWispr}=await import('../dist/wispr.js');const {Worker}=await import('node:worker_threads');
+ const {wispr,snapshot,publish}=await fixture(t,{shareTextAggregates:true});await publish(language(snapshot),true);
+ const config=wisprConfiguration(wispr,[]);let worker;
+ const service=createWispr(config,()=>Date.parse(snapshot.generatedAt),data=>{worker=new Worker(new URL('../dist/wispr-worker.js',import.meta.url),{workerData:data??config});return worker;});t.after(()=>service.close());
+ const query=()=>service.request('language','?period=today&corpus=cleaned');
+ assert.match((await query()).body,/SUM/);
+ const cleared={...snapshot,generation:randomUUID(),revision:2};await publish(cleared,false);await writeFile(wispr.aggregatePath,'invalid');
+ assert.equal((await query()).status,503);
+ await publish(snapshot,true);assert.equal((await query()).status,503,'old generation refused before worker exit');
+ await worker.terminate();assert.equal((await query()).status,503,'clear survives worker replacement');
+ await publish({...snapshot,namespace:randomUUID(),generation:randomUUID(),revision:3},true);
+ await worker.terminate();assert.equal((await query()).status,503,'namespace binding survives worker replacement');
+ await publish(cleared,false);assert.equal((await service.request('summary','')).status,200,'matching new generation can recover');
+ await worker.terminate();await publish(snapshot,true);assert.equal((await query()).status,503,'repeated replacement cannot restore retired text');
+});
+
 
 test('failed collector attempts never masquerade as fresh numeric observations',async t=>{
  const {get,wispr}=await fixture(t);const first=await(await get('summary')).json();

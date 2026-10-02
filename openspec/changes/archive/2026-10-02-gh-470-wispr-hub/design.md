@@ -27,4 +27,10 @@ Non-goals: accessing SQLite, modifying producer state, adding runtime configurat
 
 ## Migration Plan
 
+Worker recovery retains the accepted namespace/generation/revision in the Hub
+process. The worker sends that metadata before its response, including after
+observing a clear whose aggregate is unavailable. Replacements receive the
+retained fence and start with an empty snapshot cache. No language or numeric
+snapshot bytes enter this authority record.
+
 Existing configs omit Wispr and retain existing behavior. Source delivery bundles the contract dependency in the offline Hub package. Installation and enabling either exposure or sharing require the separate owner-authorized runbook. Rollback removes the optional block when using an older package; it never changes collector data. No persistent Hub schema migration occurs.

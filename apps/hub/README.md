@@ -657,6 +657,9 @@ for every request and rechecked before the worker replies. Maximum input is
 return a typed capacity error; choose a narrower range or coarser series bucket.
 The HTTP worker wait is bounded to 2.5 seconds. A timed-out worker is retired
 before another starts, without retrying a request automatically.
+The Hub retains the accepted namespace, generation and revision across worker
+replacement. A replacement starts without cached data and must pass those same
+identity checks before serving files; a worker failure cannot undo an observed clear.
 
 Missing, malformed, older or unsupported input retains last-good numeric data
 with its true observation time and a failure reason. A first failure returns

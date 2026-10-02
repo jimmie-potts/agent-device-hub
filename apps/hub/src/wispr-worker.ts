@@ -4,9 +4,9 @@ import {dirname,join} from 'node:path';
 import {validateSnapshot,validateStatus,MAX_SNAPSHOT_BYTES,type Snapshot,type CollectorStatus} from '@jimmie-potts/wispr-contracts';
 import {HttpError} from './common.js';
 import {projectWispr,wisprResponse as encode} from './wispr-query.js';
-import type {WisprConfig,WisprResponse} from './wispr.js';
-const config=workerData as WisprConfig;
-let snapshot:Snapshot|undefined,manifest:CollectorStatus|undefined,namespace:string|undefined,revision=-1,generation:string|undefined,refreshAt=-Infinity;
+import type {WisprWorkerData,WisprResponse} from './wispr.js';
+const config=workerData as WisprWorkerData;
+let snapshot:Snapshot|undefined,manifest:CollectorStatus|undefined,namespace=config.fence?.namespace,revision=config.fence?.revision??-1,generation=config.fence?.generation,refreshAt=-Infinity;
 let problem:string|null=null;
 function file(path:string,maximum:number):unknown {
   if(realpathSync(path)!==path)throw new Error('unsafe-file');
@@ -36,9 +36,12 @@ function observe():CollectorStatus|undefined {
     const next=result.value;
     if(namespace&&next.namespace!==namespace)throw new Error('identity');
     if(next.revision<revision||(next.revision===revision&&generation&&next.generation!==generation))throw new Error('older');
+    const changed=namespace!==next.namespace||generation!==next.generation||revision!==next.revision;
     namespace??=next.namespace;
     if(generation&&next.generation!==generation){snapshot=undefined;refreshAt=-Infinity;}
     revision=next.revision;generation=next.generation;manifest=next;
+    // Delivered before any response, even when the replacement aggregate is unavailable.
+    if(changed)parentPort!.postMessage({kind:'fence',fence:{namespace,generation,revision}});
     if(!next.languageEnabled)suppressText();
     return next;
   }catch{manifest=undefined;suppressText();problem='manifest-unavailable';return undefined;}

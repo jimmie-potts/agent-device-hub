@@ -25,4 +25,12 @@ Raw logs and receipts are retained in the coordinating checkout's `.local/eviden
 
 ## Remaining delivery gates
 
+The first independent Standards round found two defects: worker replacement
+forgot accepted identity/clear fences, and the cloud-path filter missed the
+unspaced `iCloudDrive` component. Regression tests reproduced both before the
+corrections and then passed. The focused suite now has 19 passing tests, including
+real worker replacement with restored old text, namespace replacement and recovery
+to the accepted generation. Both configured paths reject cloud-folder spellings.
+These corrections require independent review of the new committed candidate.
+
 Independent Standards and Specification reviews must assess the same committed base/head, including authorization and the private-file boundary. Required PR CI, guarded merge, merged-revision CI and tracker reconciliation remain coordinator gates. This source candidate does not establish installed Windows ACLs, live Wispr field meanings, recurring collection or dashboard acceptance.
