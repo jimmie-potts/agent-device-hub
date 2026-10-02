@@ -1856,3 +1856,20 @@ retain the watchdog result and block workload execution when readiness fails
 or monitoring later fails. This loop is separate from the benchmark's 100 ms RSS
 sampling and does not prove that cadence. Runtime callbacks and startup integration
 remain unfinished; unit tests do not establish cap enforcement on Docker.
+
+`resource-callbacks.mjs` connects the watchdog to the measurement adapters. It
+copies the fixed plan, allocation receipt and authorized host-root identities,
+requires the backend run directory among those roots, and verifies network and
+volume ownership before sampling. It combines bounded host-tree counts, host
+RAM/disk availability, owned-container cgroup measurements and the storage exec
+result under one remaining-time budget. Missing metrics stay null. Available
+disk is the minimum across the host run filesystems and container probe.
+
+The stop callback inspects the exact recorded container ID, verifies ownership,
+requests a normal stop only when running, then inspects again. Absence or a
+verified stopped state confirms success; a still-running container does not.
+It does not delete, force-remove, retry or act on a changed owner. Source tests
+connect these callbacks to the watchdog with actual temporary host files and
+an injected backend, proving that a cap breach requests one stop and checks
+its result. Durable root registration, monitor records and launcher startup
+integration remain required before the real pilot can use this path.
