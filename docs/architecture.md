@@ -70,6 +70,26 @@ Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
 
+## Shared event contract
+
+The [event profile](event-contract.md) and [ADR 0010](decisions/0010-shared-event-contracts.md)
+define a language-neutral CloudEvents envelope for staged adoption. The Hub owns
+its registry and shared validation; producers own their facts and consumers retain
+their authorization, state and device boundaries. The profile separates latest-state
+recovery, actionable notification recovery after confirmed durable acceptance and
+live-only effects. It does not select a broker, storage service or Effect runtime,
+and does not replace released lifecycle/controller formats. Current retained
+notices and their recovery limits are assessed in the profile; complete history
+remains distinct from notification delivery.
+
+## Installed release ownership
+
+The [install contract](install-contract.md) separates each runtime's release anchor
+from mutable state and the shared runtime parent/Node executable. It defines
+verified release identity, compatible recovery preserving latest durable state
+and private operation receipts. Consumer commands and live acceptance remain
+separately owned; the contract adds no installer or deployment service.
+
 ## Agent observation and commands
 
 Provider emitters send small validated lifecycle observations to the active state

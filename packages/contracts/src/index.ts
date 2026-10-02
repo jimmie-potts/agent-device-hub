@@ -9,7 +9,7 @@ import type {
 } from './types.js';
 export type * from './types.js';
 
-export const ARTIFACT_VERSION = '1.1.0';
+export const ARTIFACT_VERSION = '1.2.0';
 /** The original wire version. 1.0-only consumers keep using it unchanged. */
 export const API_VERSION = '1.0';
 export const API_VERSIONS = ['1.0', '1.1'] as const;
@@ -340,3 +340,5 @@ export function evaluate(input: ReferenceInput): unknown {
     default: throw new Error('Unknown reference operation');
   }
 }
+
+export { INSTALL_RECEIPT_VERSION, installReceiptSchema, validateInstallReceipt } from './install-receipt.js';

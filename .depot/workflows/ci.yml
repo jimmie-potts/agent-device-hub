@@ -80,6 +80,8 @@ jobs:
       - run: npm run test:contracts:python
       - run: npm run test:performance
       - run: npm run test:package:built
+      - run: npm run test:events:built
+      - run: npm run test:events:python
       - run: npm run test:lifecycle:built
       - run: npm run test:lifecycle:python
       - run: npm run test:lifecycle:package:built
@@ -94,6 +96,8 @@ jobs:
       - run: npm run test:tidbyt:built
       - run: npm run test:local-controllers:built
       - run: npm run test:tidbyt:python
+      - run: npm run test:wispr:built
+      - run: npm run test:wispr:package:built
   mcp:
     name: MCP on ${{ matrix.os }}
     strategy:

@@ -797,18 +797,50 @@ class Recommendations(unittest.TestCase):
             entry = recommendation_entry(session, cheaper=False)
             result = self.R.read(self.written(entry))
             self.assertEqual(result['state'], 'recommended', result.get('reason'))
-            for host, word in (('claude', 'effort'), ('codex', 'reasoning level')):
+            for host in ('claude', 'codex'):
                 with self.subTest(session=session, host=host):
                     text = result['prompts']['recommended'][host]
                     self.assertEqual(text, self.R.prompt(entry, host, 'recommended', '2026-09-24'), 'The saved prompt round-trips')
                     self.assertIn(phrase, text)
-                    self.assertIn(f'take the {word} as stated rather than guessing it', text)
+                    self.assertIn('my declared launch settings for each role it names', text)
+                    self.assertIn('requested, declared and independently observed settings separately', text)
+                    self.assertIn('unavailable runtime observation stays unknown', text)
+                    self.assertIn('observed required-setting mismatch', text)
+                    self.assertIn('unmet explicit verified-identity requirement', text)
+                    self.assertNotIn('State the model you are running', text)
                     self.assertIn("The issue's Execution recommendation (assessed 2026-09-24) is the basis", text)
                     self.assertEqual(text.endswith("If deliver-work isn't available here, say so and stop."), session != 'Investigate first')
                     self.assertEqual(text.endswith("If a skill this investigation needs isn't available here, say so and stop."), session == 'Investigate first')
                     self.assertEqual(text.startswith('Investigate '), session == 'Investigate first')
                     self.assertEqual(reviews[host] in text, session != 'Investigate first', 'Implementing prompts authorize the two reviewers')
                     self.assertNotIn('effort level', text.replace('take the effort as stated', ''))
+
+    def test_declared_prompts_roundtrip_recommended_and_cheaper_for_every_session(self):
+        for session in self.R.SESSION_NOUN:
+            entry = recommendation_entry(session)
+            for host in ('claude', 'codex'):
+                cheaper = entry['cheaper']['hosts'][host]
+                # Exercise the same session contract at either starting level.
+                entry['cheaper']['hosts'][host] = dict(
+                    entry['hosts'][host], model=cheaper['model'], thinking=cheaper['thinking'])
+            written = self.written(entry)
+            result = self.R.read(written)
+            self.assertEqual(result['state'], 'recommended', result.get('reason'))
+            for start in ('recommended', 'cheaper'):
+                for host in ('claude', 'codex'):
+                    with self.subTest(session=session, start=start, host=host):
+                        text = result['prompts'][start][host]
+                        self.assertEqual(text, self.R.prompt(entry, host, start, '2026-09-24'))
+                        self.assertIn('my declared launch settings for each role it names', text)
+                        self.assertIn('unavailable runtime observation stays unknown', text)
+                        self.assertIn('observed required-setting mismatch', text)
+                        self.assertIn('unmet explicit verified-identity requirement', text)
+                        self.assertNotIn('State the model you are running', text)
+                        self.assertEqual("Read-only: don't change files, branches or GitHub." in text,
+                                         session == 'Investigate first')
+                        self.assertEqual('required Standards and Specification reviews' in text,
+                                         session != 'Investigate first')
+            self.assertEqual(self.R.upsert(written, entry, '2026-10-02'), (written, 'unchanged'))
 
     def test_apply_rereads_writes_changed_sections_and_reads_back(self):
         store = {'body': STORY}

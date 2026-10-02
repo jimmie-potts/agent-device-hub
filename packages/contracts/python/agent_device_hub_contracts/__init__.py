@@ -9,7 +9,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-ARTIFACT_VERSION = "1.1.0"
+ARTIFACT_VERSION = "1.2.0"
 # The original wire version. 1.0-only consumers keep using it unchanged.
 API_VERSION = "1.0"
 API_VERSIONS = ("1.0", "1.1")
@@ -377,3 +377,30 @@ def evaluate(value: dict[str, Any]) -> Any:
     if operation == "sample":
         return {"snapshot": {**deepcopy(value["snapshot"]), "sampleClock": deepcopy(value["sampleClock"]), "serviceHealth": value["serviceHealth"]}, "effects": 0}
     raise ValueError("Unknown reference operation")
+
+
+INSTALL_RECEIPT_VERSION = "install-receipt/1.0"
+INSTALL_RECEIPT_SCHEMA = json.loads((Path(__file__).resolve().parents[2] / "schemas/install-receipt-v1.schema.json").read_text())
+_INSTALL_RECEIPT_VALIDATOR = Draft202012Validator(INSTALL_RECEIPT_SCHEMA)
+
+
+def validate_install_receipt(value: Any) -> bool:
+    """Check receipt shape and cross-field evidence consistency without host access."""
+    from datetime import datetime
+    if not _is_json(value) or not _INSTALL_RECEIPT_VALIDATOR.is_valid(value):
+        return False
+    try:
+        for stamp in (value['startedAt'], value['updatedAt'], value['completedAt']):
+            if stamp is not None:
+                datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        return False
+    if value['updatedAt'] < value['startedAt']:
+        return False
+    if value['completedAt'] is not None and value['completedAt'] != value['updatedAt']:
+        return False
+    if value['outcome'] == 'succeeded' and value['running']['identity'] != value['target']:
+        return False
+    if value['rollback']['status'] == 'succeeded' and value['running']['identity'] != value['previous']:
+        return False
+    return True

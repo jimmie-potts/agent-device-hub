@@ -103,3 +103,15 @@ test('an opted-in feed requests and validates title-bearing snapshot 1.2', async
   await assert.rejects(feed.snapshot(), /feed-unavailable/);
   assert.throws(() => new HubStatusFeed({ ...options, snapshotVersion: '2.0' }), /invalid-runner-config/);
 });
+
+test('native loopback SSE receives current notices and closes its socket on stop',async t=>{
+  let response,closed;const disconnected=new Promise(resolve=>{closed=resolve;});
+  const server=createServer((req,res)=>{
+    assert.equal(req.headers.authorization,'Bearer '+'t'.repeat(43));assert.equal(req.url,'/api/monitor/v1/changes');
+    response=res;res.on('close',closed);res.writeHead(200,{'content-type':'text/event-stream'});
+    res.write('id: 11111111-1111-4111-8111-111111111111:1\nevent: resync\ndata: '+JSON.stringify({apiVersion:'1.0',ownerId:'owner',revision:1,connection:'current',collector:'running',lossCount:0,admissionRejected:0,uncertain:0})+'\n\n');
+  });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+  const feed=new HubStatusFeed({hubUrl:`http://127.0.0.1:${server.address().port}`,ownerId:'owner',token:'t'.repeat(43)}),sub=feed.subscribe();t.after(()=>sub.close());
+  assert.deepEqual((await sub.next()).value,{kind:'resync',revision:1});const next=sub.next();sub.close();assert.equal((await next).done,true);
+  await disconnected;assert.equal(response.destroyed,true);
+});

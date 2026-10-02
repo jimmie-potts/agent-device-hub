@@ -262,7 +262,7 @@ test('Depot CI runs seven Linux jobs and retains every suite', () => {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'node --test docs/work-guide/contracts/records.test.mjs',
       'node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs', 'npm run test:preflight'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built'],
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
     'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host'],
@@ -403,6 +403,8 @@ test('guide CI retains its validation and review artifacts', () => {
           { name: 'Prepare the pinned browser checker',
             run:
              'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Check epic browser adapters and generated fixtures',
+            run: 'npm ci\nnode --test docs/work-guide/browser/tests/*.test.mjs\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs\nnode docs/work-guide/browser/build.mjs --check\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs\n' },
           { name: 'Check the guide and capture review evidence',
             run:
              'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
@@ -416,7 +418,7 @@ test('guide CI retains its validation and review artifacts', () => {
             with:
              { name: 'work-guide-review',
                path:
-                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n',
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n${{ runner.temp }}/epic-browser-review/\n',
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });

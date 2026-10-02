@@ -360,6 +360,23 @@ Rollback after accepted writes uses the same procedure with the current hub as s
 
 The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-potts/hub/migration-routes` alongside its host API. The source checks exercise disposable state and real owning-service code; they do not migrate a personal installation or establish physical display accuracy.
 
+## Running build identity
+
+Authenticated reads of `/api/hub/v1/health` and `/api/dashboard/v1/context`
+include `build: {sourceRevision, version}`. The Hub reads its own packaged
+`manifest.json` once at startup. Changing a release link or replacing that file
+does not change the running process's identity; restarting loads the target
+release's metadata. This build revision is separate from an agent-state
+`sourceRevision`.
+
+The package command stamps a full Git commit only when the source checkout is
+clean and its commit is available. Dirty or unavailable source provenance is
+`unknown`. Missing, unreadable, linked or malformed runtime metadata also yields
+`unknown`; the Hub does not inspect Git or infer a build from a current link.
+Responses contain no installation paths. Existing read permissions and health
+failure status still apply. Connections shows the version and short revision,
+with selection and copying of a known full revision.
+
 ## Browser frontend
 
 The packaged hub serves B.U.N.N.Y. at `/`, with fixed `/dashboard.js` and
@@ -369,7 +386,8 @@ The page sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and
 handle to its tab.
 `GET /api/dashboard/v1/context` authenticates with read scope and exposes only
 that principal's registered component aliases, control permission and configured
-monitor consumers. Native controller credentials and endpoint URLs are excluded.
+monitor consumers, plus the running build identity. Native controller credentials
+and endpoint URLs are excluded.
 
 ### Open B.U.N.N.Y. without typing a token
 

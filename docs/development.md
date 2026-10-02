@@ -365,6 +365,30 @@ covers the read-only guard and a run under Node's permission model, which
 denies file writes and child processes. CI runs it in the Workflow checks job.
 Fixtures do not qualify live GitHub state or installed clients.
 
+## Execution recommendation generator
+
+When changing `docs/work-guide/work/recommendations.py`, run the focused prompt
+and parser regression suite from the assigned worktree root:
+
+```bash
+python3 docs/work-guide/work/test_maintenance.py Recommendations
+python3 docs/work-guide/work/test_maintenance.py
+```
+
+Retain a failing-before/passing-after result for changed prompt behavior. Check
+recommended and cheaper starts for Claude Code and Codex across all four session
+types, including render/read round trips and unchanged-upsert behavior.
+Investigate-first prompts must remain read-only. Model and level declarations
+cover only settings named for each role; current runtime observations remain
+separate, and missing observations must not become a mismatch. Observed required
+mismatches and unmet explicit verified-identity requirements still stop work.
+
+Also run the Node 24 workflow setup and checks above and report the actual
+OpenSpec inventory. Generator-only source maintenance does not refresh issue
+bodies, regenerate the dated guide or publish an edition. Intentional guide
+updates still follow the guide procedure; CI filtering and evidence requirements
+remain those in the SDLC.
+
 ## Shared tooling provenance
 
 The bootstrap wrapper, validator and fixtures adapt the existing Pixoo tooling
@@ -458,7 +482,13 @@ Python dependencies in an isolated environment with
 Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
 `npm run test:contracts:python` and `npm run test:package`. Every command must
 exit zero. Both languages execute the same 190 schema and 137 semantic cases,
-including the API 1.1 moment cases from Hub #292.
+including the API 1.1 moment cases from Hub #292. Contracts 1.2.0 additionally
+runs the shared install receipt corpus through both validators, including
+identity equality and timestamp consistency; the existing test globs and
+contracts CI matrix include it. See [the install contract](install-contract.md).
+Hub packaging retains the already published controller 1.1.0 archive and rewrites
+its packaged dependency to that verified version while workspace checks use 1.2.0.
+This contract delivery does not publish or adopt a new Hub archive.
 The package check installs a newly built archive into a temporary consumer,
 checks every manifest hash, imports the named package, and runs both full corpora.
 It requires npm dependency access and creates no device or controller service.
@@ -482,7 +512,7 @@ a device or launches an installed agent client.
 The private controller-contract 1.0.0 archive is pinned under vendor/ with its
 original release receipt. Packaging verifies its SHA-256 before bundling it and
 pins the packed dependency to that bundled version, while the workspace builds
-against the 1.1.0 contract source. The MCP package
+against the 1.2.0 contract source. The MCP package
 test installs outside the checkout, verifies both manifests, runs the tool/protocol
 suite and typechecks consumer examples without private-registry credentials.
 
@@ -491,6 +521,24 @@ consumer's vendor directory before adoption. Consumer CI then needs no new
 cross-repository secret. Keep actual MCP release source/hash receipts outside the
 reviewed commit. Read [the module guide](../packages/mcp/README.md) for the API,
 protocol matrix, SDK license and remaining installed-client/physical acceptance.
+
+## Shared event contract checks
+
+Use Node 24 and Python 3.12 or 3.14 with `requirements-contracts.txt`.
+`npm run build` and `npm run typecheck` include `packages/event-contracts`.
+`npm run test:events` builds and runs the TypeScript shared profile/reference
+corpus; `npm run test:events:python` runs the identical cases in Python.
+CI runs `test:events:built` after the shared build and the Python check in both
+supported Python matrix entries. Each runner must reject an empty or duplicate
+case inventory and assert exact expected results.
+
+The corpus covers qualified identity/time/order, safe-integer revisions, closed
+payloads/privacy, finite limits, retry identity, snapshot recovery, confirmed
+notification acceptance, expiry/handling and live-only effects. These are pure
+source-contract/reference checks. They do not qualify a production transport,
+store, producer, installed client or device. Existing lifecycle/controller
+TypeScript/Python/package and affected consumer checks remain required for
+compatibility. See [the event profile](event-contract.md).
 
 ## Agent lifecycle contract checks
 
@@ -539,6 +587,16 @@ Linux state and temporary files. Parent timeout kills the namespace and the
 host terminates and verifies its own namespace init through a Linux PID handle;
 Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
+
+## Status stream checks
+
+`npm run test:agent-status` covers incremental SSE parsing, authenticated owner
+checks, reconnect/idle deadlines, bounded notices, stop and the fixed recovery
+poll under storms. `npm run test:lifx` and `npm run test:tidbyt` cover notice-driven
+reevaluation, stop during reads, retained write outcomes and the existing device
+policies. `npm run test:local-controllers` verifies their owning host consumers.
+These existing commands run in CI's contracts matrix; source fakes establish
+notice-to-evaluation timing, not installed or physical latency.
 
 ## Tidbyt controller checks
 
@@ -655,6 +713,14 @@ work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
 `npm run test:setup`.
 
+Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
+Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,
+unhealthy status, manifest replacement and a real process restart across a
+current-link switch. `test:hub:package` also runs
+`scripts/hub-build-identity.test.mjs` against disposable Git repositories to
+verify clean, dirty, missing and equal-version/different-commit provenance.
+The extracted manifest must carry the package command's captured source identity.
+
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
 `apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
@@ -733,6 +799,31 @@ worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
 
+## Wispr collector checks
+
+Use Node 24 from the assigned worktree root. Run `npm ci`, `npm run build`,
+`npm run typecheck`, `npm run test:wispr`, `npm run test:wispr:package`,
+`npm run test:contracts`, `npm run test:contracts:python`, `npm run test:package`,
+`npm run check:workflow` and `npm run test:workflow`.
+The contracts/state CI jobs run the Wispr `:built` suites after the shared build.
+`npm run build:wispr` builds just the two Wispr workspaces for focused development;
+it does not replace the shared acceptance checks.
+
+The source suite covers strict aggregate validation, hand-calculated metrics,
+timezones, retention, late changes, clear/restore fencing, source/privacy checks,
+atomic publication and bounded failures. The package suite extracts the offline
+collector and exercises a synthetic collect/status/export flow and an isolated
+contract consumer. No check reads personal Wispr data.
+
+Run `npm run test:wispr:native:built` separately under native Windows Node 24,
+with its synthetic database/output directory on a local Windows drive. The
+native check rejects other platforms and verifies concurrent WAL writes,
+source preservation, reader-lock release, busy/deadline bounds, ACL/path rejection
+and locked-destination recovery. Keep the native receipt tied to the final
+candidate/package digest; Linux CI is not a substitute. An isolated test runtime
+does not change the global Windows Node installation. Installation, scheduled
+collection and personal-data validation require their own authorization.
+
 ## Dashboard checks
 
 Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
@@ -744,6 +835,14 @@ installs a personal service, opens live state or contacts hardware. A change
 to `apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
 [Hub verification](../apps/hub/verify/README.md) step drives also runs
 `npm run test:hub:verify`; the App verification CI job runs it.
+
+The browser matrix's `running Hub build` cases check Connections with synthetic
+known metadata and an older context without a build field. They cover read-only
+inspection, full revision copying and clipboard failure, unknown fallback,
+desktop/mobile accessibility and zero device commands. Set `DASHBOARD_SCENARIO`
+to `running Hub build` to run these cases alone; set `DASHBOARD_RECEIPTS` to an
+evidence directory to retain their screenshots. Actual process identity is
+verified separately by the Hub tests described above.
 
 Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
 `npm run test:hub:package` with disposable owner-launch and browser-session
@@ -1459,6 +1558,32 @@ installation or device is touched. Retain all ordinary Hub, dashboard, shared
 contract/state/MCP and workflow checks.
 
 The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.
+
+## Epic Guide browser
+
+Hub #511 adds a separate static candidate; the legacy Guide remains available.
+Use Node 24 after `npm ci`, and the existing Python story parsers.
+
+```bash
+node --test docs/work-guide/browser/tests/*.test.mjs
+node docs/work-guide/browser/tests/browser.mjs
+node docs/work-guide/browser/tests/live.mjs
+node docs/work-guide/browser/build.mjs --collect
+# Use --collect --rest if GraphQL quota is unavailable; Search must reconcile completely.
+node docs/work-guide/browser/build.mjs --build
+node docs/work-guide/browser/build.mjs --check
+```
+
+Adapter checks cover terminal pagination, independent inventory reconciliation,
+whole-attempt consistency, required ancestry, optional metadata gaps, UTC
+completion boundaries, prerequisite outcomes and last-good preservation.
+Browser checks exercise the actual generator/renderer with a large epic, mobile,
+keyboard, Back/filter state, theme, reduced motion, per-page print, briefs and
+clipboard denial; negative controls reject mixed releases and unsafe projection.
+The build emits canonical records, release manifest and actionable inventory
+audit. Source candidate verification does not establish hosted/public acceptance.
+Run the existing Guide maintenance/build/browser and shared build/type/controller
+contract/workflow checks as well. CI runs these browser tests with pinned Chromium.
 
 ## Shared observability contract checks
 
