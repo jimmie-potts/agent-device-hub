@@ -1815,4 +1815,21 @@ exec process: the command's own two-second timeout is a separate required runtim
 check. A timeout, missing utility, nonzero exit, running exec or malformed output
 leaves storage unqualified. Synthetic Unix-socket tests cover these response
 checks; the pinned image's utilities and actual Engine stream behavior remain
-unverified. Host run-file measurement and continuous enforcement are still needed.
+unverified. Host run-root registration and continuous enforcement are still needed.
+
+`host-storage.mjs` measures the host-side run trees selected by the launcher,
+including synthetic app state and evidence. The launcher must authorize those
+roots and retain their device/inode identities; capturing an identity does not
+establish ownership. Roots must be canonical disk-backed `.local` directories
+and must not overlap. Measurement checks the root identity before and after
+walking and resolves children relative to open directory descriptors.
+
+The walker reads metadata only. It rejects symlinks, unsupported file types and
+filesystem crossings, deduplicates hard links, and counts directory metadata as
+well as files. The larger of apparent and allocated bytes becomes `hostRunBytes`.
+No filenames or file contents enter the result. Traversal is bounded to 10,000
+entries, depth 64 and a default one-second deadline; cancellation or an incomplete
+read is a failure. Files may still grow during a walk, so this is a measured
+snapshot, not an atomic filesystem quota. The runtime watchdog must retain the
+sample timing and stop on missing measurements or cap breaches. Launcher root
+registration and continuous enforcement remain to integrate.
