@@ -1,7 +1,7 @@
 import { validateSnapshot, type Snapshot } from '@jimmie-potts/agent-state';
 import type { Mode, Receipt } from '@jimmie-potts/device-contracts';
 import {
-  BoundedReader, EvaluationLoop, highestStatus, STATUS_COLORS, systemTimers,
+  BoundedReader, EvaluationLoop, FeedListener, highestStatus, STATUS_COLORS, systemTimers,
   type AgentState, type Feed, type HighestStatus, type PublisherTimers,
 } from '@jimmie-potts/agent-status';
 import { LifxController, type PaintHsbk } from './controller.js';
@@ -50,7 +50,7 @@ export type LifxStatusPublisherOptions = {
   controller: LifxController;
   bulbs: LifxStatusBulbConfig[];
   acknowledgingConsumers?: readonly string[];
-  /** Re-read the feed this often without a mode-change notice. Default 30 s. */
+  /** Fixed recovery polling interval, independent of notices. Default 30 s. */
   pollMs?: number;
   /** A feed read slower than this counts as unavailable. Default 3 s. */
   feedTimeoutMs?: number;
@@ -72,6 +72,7 @@ export class LifxStatusPublisher {
   readonly #controller: LifxController;
   readonly #reader: BoundedReader<Snapshot>;
   readonly #loop: EvaluationLoop;
+  readonly #listener: FeedListener;
   readonly #consumers?: readonly string[];
   readonly #bulbs = new Map<string, BulbState>();
   readonly #pollMs: number;
@@ -90,8 +91,9 @@ export class LifxStatusPublisher {
     this.#controller = options.controller;
     this.#consumers = options.acknowledgingConsumers ? [...options.acknowledgingConsumers] : undefined;
     const timers = options.timers ?? systemTimers;
-    this.#reader = new BoundedReader(() => options.feed.snapshot(), feedTimeoutMs, timers);
-    this.#loop = new EvaluationLoop(() => this.#evaluate(), timers);
+    this.#reader = new BoundedReader(signal => options.feed.snapshot(signal), feedTimeoutMs, timers);
+    this.#loop = new EvaluationLoop(() => this.#evaluate(), timers, pollMs);
+    this.#listener = new FeedListener(options.feed, () => { void this.update(); });
     for (const bulb of options.bulbs) {
       const brightness = bulb.brightnessCapPercent ?? 50;
       const quiet = bulb.quietCapPercent ?? 20;
@@ -117,6 +119,8 @@ export class LifxStatusPublisher {
 
   stop(): void {
     this.#loop.stop();
+    this.#listener.stop();
+    this.#reader.stop();
     for (const state of this.#bulbs.values()) state.unsubscribe();
   }
 
@@ -138,7 +142,9 @@ export class LifxStatusPublisher {
   }
 
   async #evaluate(): Promise<number> {
+    this.#listener.start();
     const value = await this.#reader.read();
+    if (this.#loop.stopped) return this.#pollMs;
     const valid = value === undefined ? undefined : validateSnapshot(value);
     const current = valid?.ok ? valid.value : undefined;
     if (current) this.#lastGood = current;

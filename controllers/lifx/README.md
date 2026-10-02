@@ -186,3 +186,13 @@ Tests inject fake transports and sockets; they use synthetic documentation IPs.
 Every test that constructs a controller or a status publisher passes its own
 temporary `modeStateRoot`, never the real default under a developer's home.
 Real installation, bulb traffic and visible acceptance need separate authority.
+
+## Status change subscriptions
+
+The shared Hub status feed also consumes authenticated SSE notices. Each valid
+state/resync requests prompt reevaluation; heartbeats do not. A fixed 30-second
+recovery poll continues during stream failure and notice storms. Stop aborts the
+subscription and pending read wait, rejects late submissions and retains outcomes
+for already admitted writes. See the [shared status guide](../../packages/agent-status/README.md)
+for stream bounds and source-test limits. Existing modes, manual control,
+transition/cadence rules and unavailable-feed presentation still apply.

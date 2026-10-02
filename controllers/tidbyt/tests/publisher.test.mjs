@@ -374,3 +374,48 @@ test('an idle root with an active child session keeps the installation', async t
   assert.deepEqual(s.publisher.state().view.rows.map(row => row.state), ['RUN'], 'one row: the root, not the child');
   assert.equal(s.connection.state.removals, 0);
 });
+
+test('stop during a pending status read prevents any late installation work', async t => {
+  let resolveRead;
+  const s=await setup(t,{feed:()=>({snapshot:()=>new Promise(resolve=>{resolveRead=resolve;})})});
+  s.publisher.start();await new Promise(resolve=>setImmediate(resolve));
+  s.publisher.stop();resolveRead(s.owner.snapshot());await s.publisher.whenIdle();
+  assert.equal(s.connection.state.reads,0);assert.equal(s.connection.state.removals,0);assert.equal(s.connection.state.pushes.length,0);
+});
+
+test('stop during installation lookup prevents a new removal', async t => {
+  let resolveListing;
+  const connection=fakeConnection({read:()=>new Promise(resolve=>{resolveListing=resolve;})});
+  const s=await setup(t,{connection,feed:o=>({snapshot:()=>o.snapshot()})});
+  s.publisher.start();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(connection.state.reads,1);s.publisher.stop();resolveListing({ok:true,present:true});
+  await s.publisher.whenIdle();assert.equal(connection.state.removals,0);
+});
+
+import {HubStatusFeed} from '@jimmie-potts/agent-status';
+import {streamFetch,frame} from '../../../packages/agent-status/tests/helpers/streams.mjs';
+
+test('concrete SSE notices reevaluate promptly but preserve the 15-second latest-frame gate',async t=>{
+  const stream=streamFetch();let owner,clock,starts=[];
+  // setup owns deterministic publisher timers; the stream stays healthy during this case.
+  const feed=new HubStatusFeed({hubUrl:'http://127.0.0.1:8788',ownerId:'owner',token:'t'.repeat(43),fetch:async(url,options)=>{
+    if(url.endsWith('/changes'))return stream.fetch(url,options);
+    starts.push(clock.now);return Response.json({apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:owner.snapshot()});
+  }});
+  const s=await setup(t,{feed:()=>feed});owner=s.owner;clock=s.clock;
+  await s.owner.ingest(hook('UserPromptSubmit','sse','turn'));s.publisher.start();await s.settle();
+  assert.equal(s.connection.state.pushes.length,1);assert.equal(stream.connections.length,1);
+  await s.advance(100);await owner.ingest(approval('sse','turn'));stream.connections[0].send(frame(1));await s.settle();
+  assert.equal(starts.at(-1),100,'evaluation begins within one second of receipt');assert.equal(s.connection.state.pushes.length,1,'write remains gated');
+  for(let i=2;i<=100;i++)stream.connections[0].send(frame(i));await s.settle();
+  assert.equal(s.connection.state.pushes.length,1);await s.advance(14900);assert.equal(s.connection.state.pushes.length,2);
+  assert.deepEqual(s.connection.state.pushes[1],s.expected());s.publisher.stop();assert.equal(stream.connections[0].options.signal.aborted,true);
+});
+
+test('an admitted Tidbyt push retains its terminal receipt after publisher stop',async t=>{
+  let release;const connection=fakeConnection({push:()=>new Promise(resolve=>{release=resolve;})});
+  const s=await setup(t,{connection,feed:o=>({snapshot:()=>o.snapshot()})});await s.owner.ingest(approval('pending','t1'));
+  s.publisher.start();await new Promise(resolve=>setImmediate(resolve));assert.equal(connection.state.pushes.length,1);
+  s.publisher.stop();release({outcome:'sent'});await s.publisher.whenIdle();assert.equal(s.publisher.state().lastWrite.outcome,'sent');
+  await s.publisher.update();assert.equal(connection.state.pushes.length,1);
+});
