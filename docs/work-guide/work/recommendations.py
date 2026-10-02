@@ -268,8 +268,7 @@ def label_html(key, result):
 
 # --- Rendering --------------------------------------------------------------
 
-EFFORT = {'claude': ('effort', 'take the effort as stated rather than guessing it'),
-          'codex': ('reasoning', 'take the reasoning level as stated rather than guessing it')}
+EFFORT = {'claude': 'effort', 'codex': 'reasoning'}
 SESSION_NOUN = {'One-shot': 'one-shot', 'Pair': 'paired', 'Orchestrate': 'orchestrating', 'Investigate first': 'read-only investigation'}
 
 
@@ -290,14 +289,16 @@ def prompt(entry, host, start, assessed_date):
     """One template per session type and host."""
     choice = entry['hosts'][host] if start == 'recommended' else entry['cheaper']['hosts'][host]
     session = choice['session']
-    word, take = EFFORT[host]
+    word = EFFORT[host]
     model = _prompt_model(host, choice['model'])
     url = f"https://github.com/jimmie-potts/{entry['repo']}/issues/{entry['number']}"
     scope = f"{entry['cheaper']['covers']} of " if start == 'cheaper' else ''
     parts = [f'Investigate {url} before any implementation.' if session == 'Investigate first'
              else f'Use the deliver-work skill to deliver {scope}{url}.',
              f'I started this session on {model} at {choice["thinking"]} {word}. '
-             f'State the model you are running and stop if it is not {model}; {take}.']
+             'Treat the selected model and level settings in this prompt as my declared launch settings for each role it names. '
+             'Record requested, declared and independently observed settings separately; unavailable runtime observation stays unknown. '
+             'Stop on an observed required-setting mismatch or an unmet explicit verified-identity requirement.']
     reviewer = entry['hosts'][host].get('reviewers')
     if session != 'Investigate first' and not reviewer:
         raise ValueError('an implementing start needs the two final reviewers of the recommended session')

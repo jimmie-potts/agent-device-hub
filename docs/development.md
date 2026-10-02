@@ -365,6 +365,30 @@ covers the read-only guard and a run under Node's permission model, which
 denies file writes and child processes. CI runs it in the Workflow checks job.
 Fixtures do not qualify live GitHub state or installed clients.
 
+## Execution recommendation generator
+
+When changing `docs/work-guide/work/recommendations.py`, run the focused prompt
+and parser regression suite from the assigned worktree root:
+
+```bash
+python3 docs/work-guide/work/test_maintenance.py Recommendations
+python3 docs/work-guide/work/test_maintenance.py
+```
+
+Retain a failing-before/passing-after result for changed prompt behavior. Check
+recommended and cheaper starts for Claude Code and Codex across all four session
+types, including render/read round trips and unchanged-upsert behavior.
+Investigate-first prompts must remain read-only. Model and level declarations
+cover only settings named for each role; current runtime observations remain
+separate, and missing observations must not become a mismatch. Observed required
+mismatches and unmet explicit verified-identity requirements still stop work.
+
+Also run the Node 24 workflow setup and checks above and report the actual
+OpenSpec inventory. Generator-only source maintenance does not refresh issue
+bodies, regenerate the dated guide or publish an edition. Intentional guide
+updates still follow the guide procedure; CI filtering and evidence requirements
+remain those in the SDLC.
+
 ## Shared tooling provenance
 
 The bootstrap wrapper, validator and fixtures adapt the existing Pixoo tooling
