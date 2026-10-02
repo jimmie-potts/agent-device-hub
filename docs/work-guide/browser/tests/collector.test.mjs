@@ -54,3 +54,21 @@ test('unavailable outside-Guide facts remain unresolved while primary reads stay
   await assert.rejects(collect({request:async path=>{if(path==='repos/'+repos[0]+'/issues/1/parent')throw Error('required parent denied');return base(path);}}),/required parent denied/);
   await assert.rejects(collect({request:async path=>{if(path==='repos/'+repos[0]+'/issues/1')throw Error('HTTP 404 primary unavailable');return base(path);}}),/primary unavailable/);
 });
+
+test('external priming failure falls back to required native reads, including consistency rereads', async()=> {
+  for(const failOn of [1,2]) {
+    const base=api();let parentReads=0;
+    const request=async path=> {
+      if(path==='repos/'+repos[0]+'/issues/1/parent')return {data:raw('example/public-reference',7),next:false};
+      if(path==='repos/example/public-reference/issues/7')return {data:raw('example/public-reference',7),next:false};
+      if(path==='repos/example/public-reference/issues/7/parent') {
+        if(++parentReads===failOn)throw Error('required external parent read failed');
+        return {data:null,next:false};
+      }
+      return base(path);
+    };
+    request.checkPublic=async()=>{};
+    request.prime=async raws=>{if(raws.some(x=>x.html_url.includes('example/public-reference'))&&parentReads===failOn-1)throw Error('required native graph read failed');};
+    await assert.rejects(collect({request}),/required external parent read failed/);
+  }
+});

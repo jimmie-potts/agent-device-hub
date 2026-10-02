@@ -86,6 +86,12 @@ const fromGraph=x=> {
   return {_public:!x.repository.isPrivate,number:x.number,node_id:x.id,html_url:x.url,title:x.title,body:x.body,state:x.state.toLowerCase(),state_reason:x.stateReason?.toLowerCase()??null,created_at:x.createdAt,updated_at:x.updatedAt,closed_at:x.closedAt,labels:x.labels.nodes};
 };
 ghRequest.prime=async raws=> {
+  // A failed refresh must not leave previous facts or relationships available to
+  // the separate-read fallback. Clear each record before starting its new read.
+  for(const raw of raws) {
+    const base=`repos/${facts(raw).repository}/issues/${raw.number}`;
+    for(const suffix of ['', '/parent', '/sub_issues?per_page=100&page=1', '/dependencies/blocked_by?per_page=100&page=1'])nativeCache.delete(base+suffix);
+  }
   const query=`query($ids:[ID!]!){nodes(ids:$ids){... on Issue{${basicFields} parent{repository{isPrivate} number id url} subIssues(first:100){nodes{repository{isPrivate} number id url} pageInfo{hasNextPage}} blockedBy(first:100){nodes{repository{isPrivate} number id url} pageInfo{hasNextPage}}}}}`;
   const args=['api','graphql','-f',`query=${query}`,...raws.flatMap(x=>['-f',`ids[]=${x.node_id}`])];
   const result=JSON.parse((await readGh(args)).stdout);
@@ -156,7 +162,10 @@ export async function collect({request=ghRequest, project=unknownProject()}={}) 
     const primary=batch.filter(id=>rawById.has(id)&&!outside(id));
     if(primary.length)await request.prime(primary.map(id=>rawById.get(id)));
     for(const id of batch.filter(id=>rawById.has(id)&&outside(id))) {
-      try{await request.prime([rawById.get(id)]);}catch{discardReference(id);}
+      // Priming combines facts and native relationships. On failure, read them
+      // separately: unavailable outside facts may be a gap, but a failed native
+      // ancestry read remains fatal. Production priming clears old cache entries.
+      try{await request.prime([rawById.get(id)]);}catch{/* Separate reads below establish which evidence failed. */}
     }
   };
   const seen=new Set();
