@@ -1480,3 +1480,22 @@ check verifies immutable archive contents and independent TypeScript/Python
 consumers. These checks use synthetic records, no collector, device or live
 state. Real ingestion, Grafana queries and paired overhead measurements belong
 to the separately bounded pilot; passing fixtures do not establish adoption.
+
+## Shared observability pilot checks
+
+Run `npm run test:observability:pilot` on Node 24 for the pilot harness source
+checks, including the external released-contract consumer and its Node/Python
+fixtures. Use supported Python 3.12 or 3.14 with `requirements-contracts.txt`
+installed. The Depot contracts/state matrix runs this command after its fresh build.
+Keep the shared contract, Hub, packaged Hub, Hub MCP and workflow checks required
+by the change. Source checks use synthetic inputs and do not require Docker.
+
+The isolated runtime evaluation is separate: it must prove actual Collector,
+Loki and Tempo ingestion, viewer correlation, bounded failures, privacy and
+paired overhead against the frozen owner-approved protocol. Missing Docker or
+required measurements leave that evaluation unexecuted or inconclusive; a
+source-test pass cannot qualify adoption. Use only loopback fake controllers,
+task-owned state and the pinned development image within the recorded caps.
+Retain all failed/inconclusive runs and cleanup evidence in the main checkout's
+`.local/evidence/`. No command in this procedure authorizes live installation,
+personal settings, state migration or physical devices.
