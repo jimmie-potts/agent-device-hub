@@ -1586,3 +1586,18 @@ events, detected resources or links are read for export. A bounded nonclosing
 flush reports timeout as failure; shutdown counts unfinished associations and
 closes the transport queue. Backend ingestion and the combined runtime harness
 remain separate acceptance checks.
+
+`host.mjs` starts the pilot SDK once in a fresh process after hook registration
+and before application imports. It rejects inherited `OTEL_*` settings without
+printing values or changing personal configuration. Resource detection, SDK log
+processors and metric readers are disabled; resource, sampler, propagation and
+span limits are explicit. Its two signal queues flush concurrently.
+
+The single log path in `log-pipeline.mjs` uses the released Pino queue, validates
+its JSON and maps it through the released OTLP converter before one transport
+call. An optional local sink receives only canonical JSON. Tests cover private
+field rejection, local write failure, transport rejection, stalled transport and
+shutdown abort without retries. The combined host fixture follows an actual Hub
+command through fake execution: seven logs, six correlated spans, one independent
+effect. Stalled sinks preserve that command and account for all abandoned
+records. These injected-sink tests do not establish Collector ingestion.
