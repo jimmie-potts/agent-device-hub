@@ -1873,3 +1873,18 @@ connect these callbacks to the watchdog with actual temporary host files and
 an injected backend, proving that a cap breach requests one stop and checks
 its result. Durable root registration, monitor records and launcher startup
 integration remain required before the real pilot can use this path.
+
+`host-roots.mjs` registers the backend evidence directory and a fresh synthetic
+state directory. The state parent must be canonical `.local` storage outside
+every Git checkout. Registration saves a synchronized intent before exclusive
+directory creation, writes a private owner marker, and saves device/inode
+identities for both roots. State names use a short owner-token prefix to leave
+room for Hub Unix-socket paths; an existing name is always refused.
+
+Readback checks bounded, no-follow records, the complete run identity, current
+directory identities and the state owner marker. It neither repairs records nor
+adopts a replacement directory. Interrupted registration leaves the intent and
+any created state intact for inspection; the same intent cannot be overwritten
+to retry. The launcher must register before starting synthetic applications and
+use these verified roots for monitoring. This adds no live state migration or
+installation. Durable monitor records and startup wiring remain pending.
