@@ -1,0 +1,8 @@
+{
+  "name": "@jimmie-potts/wispr-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "dependencies": { "@jimmie-potts/wispr-contracts": "1.0.0" }
+}
