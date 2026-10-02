@@ -713,6 +713,14 @@ work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
 `npm run test:setup`.
 
+Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
+Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,
+unhealthy status, manifest replacement and a real process restart across a
+current-link switch. `test:hub:package` also runs
+`scripts/hub-build-identity.test.mjs` against disposable Git repositories to
+verify clean, dirty, missing and equal-version/different-commit provenance.
+The extracted manifest must carry the package command's captured source identity.
+
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
 `apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
@@ -802,6 +810,14 @@ installs a personal service, opens live state or contacts hardware. A change
 to `apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
 [Hub verification](../apps/hub/verify/README.md) step drives also runs
 `npm run test:hub:verify`; the App verification CI job runs it.
+
+The browser matrix's `running Hub build` cases check Connections with synthetic
+known metadata and an older context without a build field. They cover read-only
+inspection, full revision copying and clipboard failure, unknown fallback,
+desktop/mobile accessibility and zero device commands. Set `DASHBOARD_SCENARIO`
+to `running Hub build` to run these cases alone; set `DASHBOARD_RECEIPTS` to an
+evidence directory to retain their screenshots. Actual process identity is
+verified separately by the Hub tests described above.
 
 Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
 `npm run test:hub:package` with disposable owner-launch and browser-session

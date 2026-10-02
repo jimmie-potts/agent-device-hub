@@ -18,6 +18,36 @@ const form=(page,heading)=>page.locator('form.edit').filter({visible:true}).filt
 const statusOf=(page,heading)=>form(page,heading).locator(':scope>[role=status]');
 async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 try {
+ for(const known of [true,false])await scenario(`running Hub build ${known?'known and copyable':'unknown for older context'}`,async(f,page)=>{
+  await page.getByRole('link',{name:'Connections',exact:true}).click();
+  const build=page.getByRole('region',{name:'Running Hub build',exact:true});await build.waitFor();
+  assert.equal(await page.getByText('Read only · Local',{exact:true}).count(),1);
+  if(known){
+   await build.getByText('0.4.1',{exact:true}).waitFor();await build.getByText('0123456789ab',{exact:true}).waitFor();
+   await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+   await build.getByRole('button',{name:'Copy full revision',exact:true}).click();
+   await build.getByRole('status').getByText('Full revision copied.',{exact:true}).waitFor();
+   assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'0123456789abcdef0123456789abcdef01234567');
+   await build.getByText('Full revision',{exact:true}).click();
+   assert.equal(await build.getByLabel('Full source revision').inputValue(),'0123456789abcdef0123456789abcdef01234567');
+  }else{
+   assert.equal(await build.getByText('Unknown',{exact:true}).count(),2);
+   assert.equal(await build.getByRole('button',{name:'Copy full revision',exact:true}).count(),0);
+  }
+  await axe(page);
+  if(process.env.DASHBOARD_RECEIPTS){await mkdir(process.env.DASHBOARD_RECEIPTS,{recursive:true});await page.screenshot({path:`${process.env.DASHBOARD_RECEIPTS}/connections-build-${known?'known':'unknown'}-desktop.png`,fullPage:true});}
+  await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:`${process.env.DASHBOARD_RECEIPTS}/connections-build-${known?'known':'unknown'}-mobile.png`,fullPage:true});
+  if(known){
+   await page.evaluate(()=>Object.defineProperty(navigator.clipboard,'writeText',{value:async()=>{throw new Error('denied');}}));
+   await build.getByRole('button',{name:'Copy full revision',exact:true}).click();
+   await build.getByRole('status').getByText('Copy unavailable. Select the full revision to copy it.',{exact:true}).waitFor();
+  }
+  assert.equal(f.writes.length,0,'build inspection and copying send no device command');
+ },undefined,async(f,page)=>{
+  f.reconnect({scopes:['read']});
+  await page.route('**/api/dashboard/v1/context',async route=>{const response=await route.fetch(),body=await response.json();if(known)body.build={version:'0.4.1',sourceRevision:'0123456789abcdef0123456789abcdef01234567'};else delete body.build;await route.fulfill({response,json:body});});
+ });
  await scenario('empty sessions retain useful controls; keyboard and all view accessibility',async(f,page)=>{
   await page.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
   const wall=page.getByRole('link',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);

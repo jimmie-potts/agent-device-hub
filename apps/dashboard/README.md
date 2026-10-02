@@ -67,6 +67,12 @@ panel. Connections is a two-card page; the login is one line and the token
 disclosure. At 1,280 px wide the wall page is under 2,000 px tall, down from
 3,624 px before this change.
 
+Connections includes the running Hub's version and 12-character source revision.
+Expand **Full revision** to select it, or use **Copy full revision**. A read-only
+credential can inspect and copy these values without sending device commands.
+Missing or invalid metadata appears as **Unknown**, including when an older Hub
+omits the build field. Values describe the serving process, not a release link.
+
 ## Visual foundation
 
 The [application UI style guide](../../docs/application-ui-style-guide.md)
