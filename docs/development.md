@@ -799,6 +799,20 @@ worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
 
+## Wispr Hub checks
+
+`apps/hub/tests/wispr.test.mjs` exercises #470 through the real HTTP server with
+synthetic aggregate/status files: source grants, browser exposure, late revocation,
+filter math, freshness, generation fencing, text opt-out, bounded file failures
+and CSV/JSON exports. A disposable stalled worker verifies the 2.5-second
+deadline and worker retirement; its factory seam is unavailable to installed
+configuration. `tests/wispr_hub_producer.test.mjs` verifies that the bundled
+consumer fixture exactly matches current collector output. The existing `test:hub:built` glob and offline Hub package
+suite include it; both contracts/state CI matrix jobs already run those commands.
+Use the private cache TMPDIR described above. Run build/typecheck, Hub/package,
+Hub MCP, setup and the shared controller/lifecycle/state/MCP/workflow suites.
+Fixtures never open Wispr or collector databases or enable installed collection.
+
 ## Wispr collector checks
 
 Use Node 24 from the assigned worktree root. Run `npm ci`, `npm run build`,

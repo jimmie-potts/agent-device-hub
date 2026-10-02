@@ -1,3 +1,4 @@
+import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
 import {readBuild} from './build.js';
 import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
@@ -26,7 +27,7 @@ import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -116,6 +117,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       (options.feedIntervalMs !== undefined && (!Number.isInteger(options.feedIntervalMs) || options.feedIntervalMs < 1 || options.feedIntervalMs > 86400000))) throw new Error('invalid-configuration');
   const playbackConfig = options.playback === undefined ? undefined : playbackSources(options.playback,options.controllers.map(c => c.id));
   const playbackId = playbackConfig?.id;
+  const wisprConfig=options.wispr===undefined?undefined:wisprConfiguration(options.wispr,[...options.controllers.map(c=>c.id),...(playbackId?[playbackId]:[])]);
+  const wispr=wisprConfig&&createWispr(wisprConfig,options.clock??Date.now);
   const editorLinks:Record<string,string> = {};
   if (options.editorLinks !== undefined) {
     if (!object(options.editorLinks) || Object.keys(options.editorLinks).length > 16) throw new Error('invalid-editor-links');
@@ -207,7 +210,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if(closing)throw new HttpError('unavailable',503);
     if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
     const token=randomBytes(32).toString('base64url');
-    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(playbackId ? [playbackId] : [])]};
+    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(playbackId ? [playbackId] : []),...(wispr?.config.exposeToDashboard?[wispr.config.sourceId]:[])]};
     browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
     return {token,expiresInSeconds:8*60*60};
   };
@@ -367,7 +370,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const catalogRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/((?:catalog|renditions)\/.*)$/.exec(path);
         const lightingRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/lighting\/(snapshot|commands)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
-        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? catalogRoute?.[1] ?? lightingRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
+        const wisprRoute=/^\/api\/wispr\/v1\/([a-z]+)$/.exec(path);
+        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? catalogRoute?.[1] ?? lightingRoute?.[1] ?? (wisprRoute?wispr?.config.sourceId:(path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined)));
         // Every write reads its body after authorization; a principal retired meanwhile sends nothing.
         const admitted = async (maximum:number) => {const value = await body(req,maximum);live(principal);return value;};
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
@@ -376,7 +380,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',build,control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',build,control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(wispr&&principal.devices.includes(wispr.config.sourceId)?{wispr:{sourceId:wispr.config.sourceId}}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
@@ -413,6 +417,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store','x-content-type-options':'nosniff'});
           advanceFeed();deliverFeed(res);
           res.once('close',() => {streams.delete(res);streamOwners.delete(res);streamState.delete(res);});
+        } else if (wisprRoute && req.method === 'GET') {
+          if(!wispr)throw new HttpError('wispr-unconfigured',404);
+          const response=await wispr.request(wisprRoute[1],url.search);
+          live(principal);authorize(req,'read',wispr.config.sourceId);
+          if(!res.destroyed){res.writeHead(response.status,{'content-type':response.csv?'text/csv; charset=utf-8':'application/json','cache-control':'no-store','x-content-type-options':'nosniff',...(wisprRoute[1]==='export'?{'content-disposition':'attachment; filename=wispr.'+(response.csv?'csv':'json')}:{})});res.end(response.body);}
         } else if (playback && req.method === 'GET' && path === '/api/playback/v1/snapshot' && !url.search) {
           json(res,200,playback.snapshot());
         } else if (playback && req.method === 'POST' && path === '/api/playback/v1/commands' && !url.search) {
@@ -504,7 +513,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
      */
     automation:{submit:(event:unknown) => automation.submit(event),propose:(rule:unknown) => automation.create(rule,false),settled:() => automation.settled()},
     /** In-process counts for lifecycle tests. There is no HTTP route, and no credential or session content is included. */
-    resources:() => ({requests:active,browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
+    resources:() => ({...(wispr?{wisprRequests:wispr.pending()}:{}),requests:active,browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
     prepareConsumers() {
       if(!staged||!activationAllowed||activating||closing||exported)throw new Error('activation-unavailable');
       preparingConsumers=true;
@@ -519,6 +528,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       } finally {activating=false;preparingConsumers=false;}
     },
 
+    setWisprPrivacy(exposeToDashboard:boolean,shareTextAggregates:boolean){
+      if(!wispr)throw new Error('wispr-unconfigured');
+      wispr.privacy(exposeToDashboard,shareTextAggregates);
+      launchCodes.clear();for(const digest of [...browserSessions.keys()])retireBrowser(digest);
+    },
     replaceCredentials(input:Credential[]) {
       currentCredentials = credentials(input);
       launchCodes.clear();for (const digest of [...browserSessions.keys()]) retireBrowser(digest);
@@ -531,6 +545,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         let launchFailure:unknown,playbackFailure:unknown;
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();
+        await wispr?.close();
         try{await playback?.close();}catch(error){playbackFailure=error;}
         // Automation stops before the controller clients close, so no evaluation reads or sends through a closing client.
         await automation.close();

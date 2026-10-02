@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "1.0",
+  "algorithmVersion": "numeric-1",
+  "categoryVersion": "1",
+  "namespace": "11111111-1111-4111-8111-111111111111",
+  "generation": "22222222-2222-4222-8222-222222222222",
+  "revision": 1,
+  "timezone": "America/New_York",
+  "generatedAt": "2026-03-09T00:00:00.000Z",
+  "lastSuccessAt": "2026-03-09T00:00:00.000Z",
+  "latestSourceDate": "2026-03-08",
+  "health": "ok",
+  "truncated": false,
+  "coverage": {
+    "captured": {
+      "from": "2026-03-08",
+      "to": "2026-03-08"
+    },
+    "retained": {
+      "from": "2026-03-08",
+      "to": "2026-03-08"
+    },
+    "sourceRows": 7,
+    "archivedRows": 0,
+    "statuses": {
+      "formatted": 6,
+      "raw": 1,
+      "empty": 0,
+      "dismissed": 0,
+      "unknown": 0
+    },
+    "excluded": {
+      "words": 1,
+      "timestamp": 1,
+      "beforeCapture": 0
+    },
+    "gaps": []
+  },
+  "numeric": {
+    "cells": [
+      {
+        "date": "2026-03-08",
+        "hour": 1,
+        "weekday": 0,
+        "app": "chatgpt",
+        "category": "ai-prompts",
+        "archived": false,
+        "dictations": 1,
+        "words": 20,
+        "recordingSeconds": 0,
+        "speechSeconds": 0,
+        "recordingWords": 0,
+        "speechWords": 0,
+        "recordingSamples": 0,
+        "speechSamples": 0,
+        "wordsCorrected": 0,
+        "correctionSamples": 0,
+        "dictionaryReplacements": 0,
+        "replacementSamples": 0,
+        "invalidRecording": 0,
+        "invalidSpeech": 0,
+        "zeroRecording": 1,
+        "zeroSpeech": 0,
+        "invalidCorrections": 0,
+        "invalidReplacements": 0
+      },
+      {
+        "date": "2026-03-08",
+        "hour": 1,
+        "weekday": 0,
+        "app": "other",
+        "category": "other-unknown",
+        "archived": false,
+        "dictations": 1,
+        "words": 10,
+        "recordingSeconds": 0,
+        "speechSeconds": 0,
+        "recordingWords": 0,
+        "speechWords": 0,
+        "recordingSamples": 0,
+        "speechSamples": 0,
+        "wordsCorrected": 0,
+        "correctionSamples": 0,
+        "dictionaryReplacements": 0,
+        "replacementSamples": 0,
+        "invalidRecording": 1,
+        "invalidSpeech": 1,
+        "zeroRecording": 0,
+        "zeroSpeech": 0,
+        "invalidCorrections": 0,
+        "invalidReplacements": 0
+      },
+      {
+        "date": "2026-03-08",
+        "hour": 1,
+        "weekday": 0,
+        "app": "slack",
+        "category": "messaging",
+        "archived": false,
+        "dictations": 1,
+        "words": 60,
+        "recordingSeconds": 60,
+        "speechSeconds": 30,
+        "recordingWords": 60,
+        "speechWords": 60,
+        "recordingSamples": 1,
+        "speechSamples": 1,
+        "wordsCorrected": 0,
+        "correctionSamples": 0,
+        "dictionaryReplacements": 0,
+        "replacementSamples": 0,
+        "invalidRecording": 0,
+        "invalidSpeech": 0,
+        "zeroRecording": 0,
+        "zeroSpeech": 0,
+        "invalidCorrections": 0,
+        "invalidReplacements": 0
+      },
+      {
+        "date": "2026-03-08",
+        "hour": 3,
+        "weekday": 0,
+        "app": "slack",
+        "category": "messaging",
+        "archived": false,
+        "dictations": 1,
+        "words": 40,
+        "recordingSeconds": 20,
+        "speechSeconds": 10,
+        "recordingWords": 40,
+        "speechWords": 40,
+        "recordingSamples": 1,
+        "speechSamples": 1,
+        "wordsCorrected": 0,
+        "correctionSamples": 1,
+        "dictionaryReplacements": 2,
+        "replacementSamples": 1,
+        "invalidRecording": 0,
+        "invalidSpeech": 0,
+        "zeroRecording": 0,
+        "zeroSpeech": 0,
+        "invalidCorrections": 0,
+        "invalidReplacements": 0
+      }
+    ],
+    "totals": {
+      "dictations": 4,
+      "words": 130,
+      "recordingSeconds": 80,
+      "speechSeconds": 40,
+      "recordingWords": 100,
+      "speechWords": 100,
+      "recordingSamples": 2,
+      "speechSamples": 2,
+      "wordsCorrected": 0,
+      "correctionSamples": 1,
+      "dictionaryReplacements": 2,
+      "replacementSamples": 1,
+      "invalidRecording": 1,
+      "invalidSpeech": 1,
+      "zeroRecording": 1,
+      "zeroSpeech": 0,
+      "invalidCorrections": 0,
+      "invalidReplacements": 0
+    }
+  },
+  "presets": [
+    {
+      "key": "today",
+      "from": "2026-03-08",
+      "to": "2026-03-08",
+      "asOf": "2026-03-09T00:00:00.000Z",
+      "validUntil": "2026-03-09T04:00:00.000Z"
+    },
+    {
+      "key": "7d",
+      "from": "2026-03-02",
+      "to": "2026-03-08",
+      "asOf": "2026-03-09T00:00:00.000Z",
+      "validUntil": "2026-03-09T04:00:00.000Z"
+    },
+    {
+      "key": "30d",
+      "from": "2026-02-07",
+      "to": "2026-03-08",
+      "asOf": "2026-03-09T00:00:00.000Z",
+      "validUntil": "2026-03-09T04:00:00.000Z"
+    },
+    {
+      "key": "all",
+      "from": null,
+      "to": "2026-03-08",
+      "asOf": "2026-03-09T00:00:00.000Z",
+      "validUntil": "2026-03-09T04:00:00.000Z"
+    }
+  ],
+  "language": {
+    "availability": "disabled",
+    "reason": "not-enabled",
+    "tables": []
+  },
+  "dictionary": {
+    "availability": "unavailable",
+    "activeEntries": null,
+    "activeSnippets": null,
+    "localUsage": null,
+    "remoteUsage": null,
+    "window": "unknown",
+    "segment": 0
+  }
+}
