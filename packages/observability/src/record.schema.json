@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.local/schemas/observability/record.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "severity_number",
+    "severity_text",
+    "event_name",
+    "body",
+    "resource",
+    "scope",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z(?![\\s\\S])"
+    },
+    "observed_timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z(?![\\s\\S])"
+    },
+    "severity_number": {
+      "enum": [
+        1,
+        5,
+        9,
+        13,
+        17,
+        21
+      ]
+    },
+    "severity_text": {
+      "enum": [
+        "TRACE",
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "ERROR",
+        "FATAL"
+      ]
+    },
+    "event_name": {
+      "enum": [
+        "process.started",
+        "process.stopped",
+        "process.failed",
+        "command.admitted",
+        "command.rejected",
+        "command.queued",
+        "command.executing",
+        "command.completed",
+        "command.cancelled",
+        "lifecycle.observed",
+        "feed.changed",
+        "operation.completed",
+        "operation.failed",
+        "telemetry.dropped"
+      ]
+    },
+    "body": {
+      "enum": [
+        "Process started",
+        "Process stopped",
+        "Process failed",
+        "Command admitted",
+        "Command rejected",
+        "Command queued",
+        "Command executing",
+        "Command completed",
+        "Command cancelled",
+        "Lifecycle observed",
+        "Feed state changed",
+        "Operation completed",
+        "Operation failed",
+        "Diagnostic records dropped"
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service.namespace",
+        "service.name",
+        "service.version",
+        "service.instance.id",
+        "deployment.environment.name"
+      ],
+      "properties": {
+        "service.namespace": {
+          "const": "bunny"
+        },
+        "service.name": {
+          "enum": [
+            "hub",
+            "hub-dashboard",
+            "local-controllers",
+            "tidbyt",
+            "pixoo",
+            "pixoo-web",
+            "pixoo-media-worker",
+            "nanoleaf-controller",
+            "nanoleaf-worker",
+            "nanoleaf-wall",
+            "nanoleaf-wall-ui",
+            "nanoleaf-mcp",
+            "bunny-tool",
+            "lifx"
+          ]
+        },
+        "service.version": {
+          "type": "string",
+          "pattern": "^(unknown|[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?)(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "service.instance.id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?![\\s\\S])"
+        },
+        "deployment.environment.name": {
+          "enum": [
+            "development",
+            "test",
+            "production"
+          ]
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "bunny.host",
+            "bunny.http",
+            "bunny.mcp",
+            "bunny.state",
+            "bunny.provider",
+            "bunny.controller",
+            "bunny.queue",
+            "bunny.status",
+            "bunny.feed",
+            "bunny.automation",
+            "bunny.playback",
+            "bunny.media",
+            "bunny.storage",
+            "bunny.browser",
+            "bunny.helper",
+            "bunny.verification",
+            "bunny.telemetry"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(unknown|[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?)(?![\\s\\S])",
+          "maxLength": 64
+        }
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 32,
+      "required": [
+        "bunny.provenance"
+      ],
+      "properties": {
+        "bunny.controller.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.device.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.source.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.request.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.ticket.epoch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.operation.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.task.epoch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.effect.epoch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.clock.epoch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.ticket.sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.state.revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.source.revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.telemetry.dropped_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.telemetry.failure_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.queue.wait_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.execution.duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.operation": {
+          "enum": [
+            "startup",
+            "shutdown",
+            "brightness",
+            "power",
+            "mode",
+            "status",
+            "snapshot",
+            "feed",
+            "lifecycle",
+            "automation",
+            "moment",
+            "playback",
+            "media",
+            "storage",
+            "setup",
+            "verification",
+            "maintenance",
+            "telemetry"
+          ]
+        },
+        "bunny.outcome": {
+          "enum": [
+            "accepted",
+            "queued",
+            "succeeded",
+            "rejected",
+            "cancelled",
+            "partial",
+            "uncertain",
+            "timeout",
+            "unavailable",
+            "stale",
+            "current",
+            "failed",
+            "duplicate",
+            "transport-acknowledged"
+          ]
+        },
+        "bunny.reason": {
+          "enum": [
+            "invalid-input",
+            "unauthorized",
+            "busy",
+            "duplicate",
+            "cancelled",
+            "timeout",
+            "transport-error",
+            "sink-error",
+            "queue-full",
+            "oversize",
+            "unsupported-version",
+            "invalid-context",
+            "unavailable",
+            "stale",
+            "shutdown",
+            "none"
+          ]
+        },
+        "bunny.provenance": {
+          "enum": [
+            "source",
+            "observation"
+          ]
+        },
+        "bunny.observed.service": {
+          "enum": [
+            "hub",
+            "hub-dashboard",
+            "local-controllers",
+            "tidbyt",
+            "pixoo",
+            "pixoo-web",
+            "pixoo-media-worker",
+            "nanoleaf-controller",
+            "nanoleaf-worker",
+            "nanoleaf-wall",
+            "nanoleaf-wall-ui",
+            "nanoleaf-mcp",
+            "bunny-tool",
+            "lifx"
+          ]
+        },
+        "bunny.queue.depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "bunny.write.possible": {
+          "type": "boolean"
+        },
+        "bunny.build.revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}(?![\\s\\S])"
+        }
+      }
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^(?!0{32}$)[0-9a-f]{32}(?![\\s\\S])"
+    },
+    "span_id": {
+      "type": "string",
+      "pattern": "^(?!0{16}$)[0-9a-f]{16}(?![\\s\\S])"
+    },
+    "trace_flags": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}(?![\\s\\S])"
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "timestamp": {}
+      },
+      "required": [
+        "timestamp"
+      ]
+    },
+    {
+      "properties": {
+        "observed_timestamp": {}
+      },
+      "required": [
+        "observed_timestamp"
+      ]
+    }
+  ],
+  "dependentRequired": {
+    "span_id": [
+      "trace_id"
+    ],
+    "trace_flags": [
+      "trace_id"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "not": {
+              "properties": {
+                "bunny.queue.depth": {}
+              },
+              "required": [
+                "bunny.queue.depth"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

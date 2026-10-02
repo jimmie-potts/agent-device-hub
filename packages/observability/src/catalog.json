@@ -1,0 +1,272 @@
+{
+  "artifact_version": "1.0.0",
+  "schema_versions": [
+    "1.0",
+    "1.1"
+  ],
+  "default_schema_version": "1.1",
+  "semantic_conventions": "1.44.0",
+  "events": {
+    "process.started": "Process started",
+    "process.stopped": "Process stopped",
+    "process.failed": "Process failed",
+    "command.admitted": "Command admitted",
+    "command.rejected": "Command rejected",
+    "command.queued": "Command queued",
+    "command.executing": "Command executing",
+    "command.completed": "Command completed",
+    "command.cancelled": "Command cancelled",
+    "lifecycle.observed": "Lifecycle observed",
+    "feed.changed": "Feed state changed",
+    "operation.completed": "Operation completed",
+    "operation.failed": "Operation failed",
+    "telemetry.dropped": "Diagnostic records dropped"
+  },
+  "services": [
+    "hub",
+    "hub-dashboard",
+    "local-controllers",
+    "tidbyt",
+    "lifx",
+    "pixoo",
+    "pixoo-web",
+    "pixoo-media-worker",
+    "nanoleaf-controller",
+    "nanoleaf-worker",
+    "nanoleaf-wall",
+    "nanoleaf-wall-ui",
+    "nanoleaf-mcp",
+    "bunny-tool"
+  ],
+  "scopes": [
+    "bunny.host",
+    "bunny.http",
+    "bunny.mcp",
+    "bunny.state",
+    "bunny.provider",
+    "bunny.controller",
+    "bunny.queue",
+    "bunny.status",
+    "bunny.feed",
+    "bunny.automation",
+    "bunny.playback",
+    "bunny.media",
+    "bunny.storage",
+    "bunny.browser",
+    "bunny.helper",
+    "bunny.verification",
+    "bunny.telemetry"
+  ],
+  "severities": {
+    "TRACE": 1,
+    "DEBUG": 5,
+    "INFO": 9,
+    "WARN": 13,
+    "ERROR": 17,
+    "FATAL": 21
+  },
+  "pino_levels": {
+    "10": "TRACE",
+    "20": "DEBUG",
+    "30": "INFO",
+    "40": "WARN",
+    "50": "ERROR",
+    "60": "FATAL"
+  },
+  "python_levels": {
+    "5": "TRACE",
+    "10": "DEBUG",
+    "20": "INFO",
+    "30": "WARN",
+    "40": "ERROR",
+    "50": "FATAL"
+  },
+  "span_names": [
+    "bunny.command.request",
+    "bunny.command.queue",
+    "bunny.command.execute",
+    "bunny.lifecycle.observe",
+    "bunny.feed.read",
+    "bunny.process.start",
+    "bunny.helper.run"
+  ],
+  "attributes": {
+    "bunny.controller.id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.device.id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.source.id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.request.id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.ticket.epoch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.operation.id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.task.epoch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.effect.epoch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.clock.epoch": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.ticket.sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.state.revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.source.revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.telemetry.dropped_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.telemetry.failure_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.queue.wait_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.execution.duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.operation": {
+      "enum": [
+        "startup",
+        "shutdown",
+        "brightness",
+        "power",
+        "mode",
+        "status",
+        "snapshot",
+        "feed",
+        "lifecycle",
+        "automation",
+        "moment",
+        "playback",
+        "media",
+        "storage",
+        "setup",
+        "verification",
+        "maintenance",
+        "telemetry"
+      ]
+    },
+    "bunny.outcome": {
+      "enum": [
+        "accepted",
+        "queued",
+        "succeeded",
+        "rejected",
+        "cancelled",
+        "partial",
+        "uncertain",
+        "timeout",
+        "unavailable",
+        "stale",
+        "current",
+        "failed",
+        "duplicate",
+        "transport-acknowledged"
+      ]
+    },
+    "bunny.reason": {
+      "enum": [
+        "invalid-input",
+        "unauthorized",
+        "busy",
+        "duplicate",
+        "cancelled",
+        "timeout",
+        "transport-error",
+        "sink-error",
+        "queue-full",
+        "oversize",
+        "unsupported-version",
+        "invalid-context",
+        "unavailable",
+        "stale",
+        "shutdown",
+        "none"
+      ]
+    },
+    "bunny.provenance": {
+      "enum": [
+        "source",
+        "observation"
+      ]
+    },
+    "bunny.observed.service": {
+      "enum": [
+        "hub",
+        "hub-dashboard",
+        "local-controllers",
+        "tidbyt",
+        "pixoo",
+        "pixoo-web",
+        "pixoo-media-worker",
+        "nanoleaf-controller",
+        "nanoleaf-worker",
+        "nanoleaf-wall",
+        "nanoleaf-wall-ui",
+        "nanoleaf-mcp",
+        "bunny-tool",
+        "lifx"
+      ]
+    },
+    "bunny.queue.depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1024
+    },
+    "bunny.write.possible": {
+      "type": "boolean"
+    },
+    "bunny.build.revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}(?![\\s\\S])"
+    }
+  }
+}

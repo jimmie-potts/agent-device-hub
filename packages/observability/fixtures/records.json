@@ -1,0 +1,1941 @@
+{
+  "format": 1,
+  "cases": [
+    {
+      "name": "severity-TRACE",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 1,
+        "severity_text": "TRACE",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-DEBUG",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-INFO",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-WARN",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-ERROR",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-FATAL",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-process.started",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-process.stopped",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.stopped",
+        "body": "Process stopped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-process.failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.failed",
+        "body": "Process failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.admitted",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.admitted",
+        "body": "Command admitted",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.rejected",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.rejected",
+        "body": "Command rejected",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.queued",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.queued",
+        "body": "Command queued",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.executing",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.executing",
+        "body": "Command executing",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.completed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-command.cancelled",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.cancelled",
+        "body": "Command cancelled",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-lifecycle.observed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "lifecycle.observed",
+        "body": "Lifecycle observed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-feed.changed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "feed.changed",
+        "body": "Feed state changed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-operation.completed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "operation.completed",
+        "body": "Operation completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-operation.failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "operation.failed",
+        "body": "Operation failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "event-telemetry.dropped",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "telemetry.dropped",
+        "body": "Diagnostic records dropped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "command.admitted-accepted",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.admitted",
+        "body": "Command admitted",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "accepted",
+          "bunny.write.possible": false
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "command.rejected-rejected",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.rejected",
+        "body": "Command rejected",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "rejected",
+          "bunny.write.possible": false
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "command.queued-queued",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.queued",
+        "body": "Command queued",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "queued",
+          "bunny.write.possible": false
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "command.completed-succeeded",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "succeeded",
+          "bunny.write.possible": false
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "command.completed-uncertain",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "uncertain",
+          "bunny.write.possible": true
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "command.cancelled-cancelled",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.cancelled",
+        "body": "Command cancelled",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "brightness",
+          "bunny.request.id": "request-1",
+          "bunny.ticket.epoch": "epoch-1",
+          "bunny.ticket.sequence": 1,
+          "bunny.outcome": "cancelled",
+          "bunny.write.possible": false
+        },
+        "trace_id": "11111111111111111111111111111111",
+        "span_id": "2222222222222222",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "old-profile",
+      "valid": true,
+      "record": {
+        "schema_version": "1.0",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "new-queue-depth",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.queue.depth": 10
+        }
+      }
+    },
+    {
+      "name": "observation-time-only",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "observation",
+          "bunny.observed.service": "pixoo"
+        },
+        "observed_timestamp": "2026-10-01T12:00:00.124Z"
+      }
+    },
+    {
+      "name": "both-times",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "observed_timestamp": "2026-10-01T12:00:00.125Z"
+      }
+    },
+    {
+      "name": "trace-only",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "zero-trace",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "00000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "uppercase-trace",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "orphan-span",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "span_id": "bbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "bad-flags",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "trace_flags": 1
+      }
+    },
+    {
+      "name": "old-forbids-extension",
+      "valid": false,
+      "record": {
+        "schema_version": "1.0",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.queue.depth": 1
+        }
+      }
+    },
+    {
+      "name": "unsupported-1.2",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "unsupported-2.0",
+      "valid": false,
+      "record": {
+        "schema_version": "2.0",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "unsupported-None",
+      "valid": false,
+      "record": {
+        "schema_version": null,
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "invalid-time-2026-02-30T00:00:00.000Z",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-02-30T00:00:00.000Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "invalid-time-2026-10-01T12:00:00Z",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "invalid-time-2026-10-01T12:00:00.123+00:00",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123+00:00",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "invalid-time-1969-12-31T23:59:59.999Z",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "1969-12-31T23:59:59.999Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "invalid-time-None",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": null,
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "missing-times",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "severity-mismatch",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "dynamic-body",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "SECRET",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "unknown-event",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "SECRET",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-payload",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "payload": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-payload",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "payload": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-headers",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "headers": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-headers",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "headers": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-url",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "url": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-url",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "url": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-error",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "error": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-error",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-session_title",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "session_title": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-session_title",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "session_title": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "forbidden-top-prompt",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "prompt": "SECRET"
+      }
+    },
+    {
+      "name": "forbidden-attribute-prompt",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "prompt": "SECRET"
+        }
+      }
+    },
+    {
+      "name": "unregistered-service",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "SECRET",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        }
+      }
+    },
+    {
+      "name": "unsafe-request-id",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.request.id": "/private/SECRET"
+        }
+      }
+    },
+    {
+      "name": "oversize",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.request.id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        }
+      }
+    },
+    {
+      "name": "unsafe-int",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.ticket.sequence": 9007199254740992
+        }
+      }
+    },
+    {
+      "name": "negative-duration",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.duration_ms": -1
+        }
+      }
+    },
+    {
+      "name": "null-attribute",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.reason": null
+        }
+      }
+    },
+    {
+      "name": "observer-missing-source",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "observation"
+        }
+      }
+    },
+    {
+      "name": "trace_id-newline",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "span_id": "bbbbbbbbbbbbbbbb",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "span_id-newline",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "span_id": "bbbbbbbbbbbbbbbb\n",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "trace_flags-newline",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source"
+        },
+        "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "span_id": "bbbbbbbbbbbbbbbb",
+        "trace_flags": "01\n"
+      }
+    },
+    {
+      "name": "identifier-newline",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.request.id": "neutral\n"
+        }
+      }
+    }
+  ]
+}
