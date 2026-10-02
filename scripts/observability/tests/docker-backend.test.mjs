@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createDockerBackend } from '../docker-backend.mjs';
 import { backendPlan } from '../backend-plan.mjs';
 import { backendCreateRequests } from '../backend-create.mjs';
+import { STORAGE_PROBE_COMMAND } from '../storage-measurement.mjs';
 
 async function fixture(t, handler, apiVersion = { ApiVersion: '1.47', MinAPIVersion: '1.24', Os: 'linux', Arch: 'amd64' }) {
   const directory = await mkdtemp(join(tmpdir(), 'dk-'));
@@ -167,4 +168,53 @@ test('stack sampling requests process RSS and cgroup CPU only for the verified o
     `/v1.47/containers/${id}/top?ps_args=-eo%20pid%2Crss`, `/v1.47/containers/${id}/json?size=true`]);
   foreign = true;
   await assert.rejects(backend.sampleStack(plan, { containerId: id, imageId }, options), /ownership/);
+});
+
+test('storage exec uses the fixed read-only command and requires matching completed zero-exit execution', async t => {
+  const plan = backendPlan({ runId: 'storage', ownerToken: '12345678-1234-4123-8123-123456789012',
+    configDirectory: '/workspace/.local/scratch/storage/config',
+    ports: { grafana: 43000, otlp: 43001, loki: 43002, tempo: 43003, health: 43004 } });
+  const imageId = 'sha256:' + 'b'.repeat(64), execId = 'd'.repeat(64), config = backendCreateRequests(plan).container.body;
+  let started = false, exitCode = 0, foreign = false, stream = 1, oversized = false, stillRunning = false;
+  const output = '8192\t/data\n4096\t/data\nFilesystem 1B-blocks Used Available Use% Mounted on\n/dev/example 1000000 100000 900000 10% /data\noverlay 2000000 500000 1500000 25% /\n';
+  const { backend, calls } = await fixture(t, (req, res) => {
+    const chunks = []; req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      if (req.url === `/v1.47/containers/${id}/exec`) {
+        const body = JSON.parse(Buffer.concat(chunks));
+        assert.deepEqual(body.Cmd, STORAGE_PROBE_COMMAND);
+        assert.equal(body.Privileged, false); assert.equal(body.Tty, false); assert.equal(body.AttachStdin, false);
+        started = false; res.statusCode = 201; res.end(JSON.stringify({ Id: execId }));
+      } else if (req.url === `/v1.47/exec/${execId}/start`) {
+        started = true; const data = Buffer.from(oversized ? 'x'.repeat(65537) : output), header = Buffer.alloc(8);
+        header[0] = stream; header.writeUInt32BE(data.length, 4);
+        res.setHeader('content-type', 'application/vnd.docker.multiplexed-stream');
+        res.end(Buffer.concat([header, data]));
+      } else if (req.url === `/v1.47/exec/${execId}/json`) {
+        res.end(JSON.stringify({ ID: execId, ContainerID: foreign ? 'e'.repeat(64) : id, Running: started && stillRunning,
+          ExitCode: started ? exitCode : null, ProcessConfig: { entrypoint: STORAGE_PROBE_COMMAND[0],
+            arguments: STORAGE_PROBE_COMMAND.slice(1), privileged: false, tty: false } }));
+      } else {
+        res.end(JSON.stringify({ Id: id, Name: '/' + plan.containerName, Image: imageId,
+          Config: config, HostConfig: config.HostConfig, State: { Running: true }, SizeRw: 1024,
+          Mounts: config.HostConfig.Mounts.map(m => ({ ...m, Name: m.Type === 'volume' ? m.Source : undefined,
+            Destination: m.Target, RW: !m.ReadOnly })) }));
+      }
+    });
+  });
+  const result = await backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 });
+  assert.equal(result.runDataBytes, 9728); assert.equal(result.execId, execId);
+  assert.equal(JSON.stringify(result).includes('/dev/example'), false);
+  exitCode = 127;
+  await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-storage-exit/);
+  foreign = true;
+  const before = calls.filter(call => call.path.endsWith('/start')).length;
+  await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-exec-identity/);
+  assert.equal(calls.filter(call => call.path.endsWith('/start')).length, before);
+  foreign = false; exitCode = 0; stillRunning = true;
+  await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-storage-exit/);
+  stillRunning = false; stream = 2;
+  await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /Storage measurement/);
+  stream = 1; oversized = true;
+  await assert.rejects(backend.sampleStorage(plan, { containerId: id, imageId }, { ...options, hostRunBytes: 512 }), /docker-response-limit/);
 });

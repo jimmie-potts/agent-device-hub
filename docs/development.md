@@ -1796,6 +1796,23 @@ does not disable application Pino capture or Collector log ingestion. Backend
 console history will be unavailable; preserve service health/query failures
 and owned file evidence instead. Non-TTY exec output decoding accepts only
 bounded complete stdout frames; stderr or malformed framing fails without
-exposing raw text. The Engine exec connection, host-file measurement and
-watchdog integration remain to implement. No storage cap has been qualified
+exposing raw text. Host-file measurement and watchdog integration remain to
+implement. No storage cap has been qualified
 by these parser tests.
+
+`sampleStorage` now connects that probe to the Engine adapter. It verifies the
+owned running container before creating a non-privileged, non-TTY exec with
+the fixed command. It checks the exec's container ID and command before start,
+then requires a matching, stopped exec with exit code zero before accepting
+output. The container is inspected again for ownership, isolation and current
+writable-layer size. Only projected byte counts, exec ID and monotonic time
+bounds are returned.
+
+The operation shares one total deadline across requests. Binary response bytes
+are limited to 64 KiB, decoded stdout to 16 KiB, and protocol upgrades are refused.
+No exec is retried. Cancelling an HTTP request does not prove termination of the
+exec process: the command's own two-second timeout is a separate required runtime
+check. A timeout, missing utility, nonzero exit, running exec or malformed output
+leaves storage unqualified. Synthetic Unix-socket tests cover these response
+checks; the pinned image's utilities and actual Engine stream behavior remain
+unverified. Host run-file measurement and continuous enforcement are still needed.

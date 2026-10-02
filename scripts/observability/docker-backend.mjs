@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { backendCreateRequests } from './backend-create.mjs';
 import { LGTM_IMAGE, assertOwnedBackend, assertBackendIsolation } from './backend-plan.mjs';
 import { stackSnapshot } from './stack-measurement.mjs';
+import { STORAGE_PROBE_COMMAND, decodeStorageExec, storageSnapshot } from './storage-measurement.mjs';
+import { isDeepStrictEqual } from 'node:util';
 
 const API = '/v1.47';
 const maximum = 1024 * 1024;
@@ -25,7 +27,7 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
   if (resolve(socketPath) !== socketPath || Buffer.byteLength(socketPath) > 103) throw error('docker-endpoint-invalid');
   const agent = new Agent({ keepAlive: false, maxSockets: 1 });
   let active = null, closed = false;
-  function send(method, path, { signal, timeoutMs = 5000 } = {}, body) {
+  function send(method, path, { signal, timeoutMs = 5000 } = {}, body, binary = false) {
     if (closed) return Promise.reject(error('docker-closed'));
     if (active) return Promise.reject(error('docker-concurrent-request'));
     if (signal?.aborted) return Promise.reject(error('docker-aborted'));
@@ -46,20 +48,21 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       timer = setTimeout(() => finish('docker-timeout'), timeoutMs);
       try {
         req = request({ socketPath, path, method, agent, maxHeaderSize: 8192,
-          headers: { accept: 'application/json', host: 'localhost', ...(payload === undefined ? {} : {
+          headers: { accept: binary ? 'application/vnd.docker.multiplexed-stream' : 'application/json', host: 'localhost', ...(payload === undefined ? {} : {
             'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }) } }, res => {
           let bytes = 0; const chunks = [];
           res.on('data', chunk => {
             bytes += chunk.length;
-            if (bytes > maximum) { finish('docker-response-limit'); res.destroy(); }
+            if (bytes > (binary ? 65536 : maximum)) { finish('docker-response-limit'); res.destroy(); }
             else if (!settled) chunks.push(chunk);
           });
           res.on('error', () => finish('docker-response-failed'));
           res.on('aborted', () => finish('docker-response-failed'));
-          res.on('end', () => finish(null, { status: res.statusCode, body: Buffer.concat(chunks).toString('utf8'),
+          res.on('end', () => finish(null, { status: res.statusCode, body: binary ? Buffer.concat(chunks) : Buffer.concat(chunks).toString('utf8'),
             contentType: res.headers['content-type'], encoding: res.headers['content-encoding'] }));
         });
         req.on('error', () => finish('docker-transport-failed'));
+        req.on('upgrade', (_res, socket) => { socket.destroy(); finish('docker-upgrade-refused'); });
         req.end(payload);
       } catch { finish('docker-transport-failed'); }
     });
@@ -81,6 +84,50 @@ export async function createDockerBackend({ endpoint, signal, timeoutMs = 5000 }
       value.Os !== 'linux' || value.Arch !== 'amd64') throw error('docker-api-incompatible');
   } catch (failure) { close(); throw failure; }
   return {
+    async sampleStorage(plan, receipt, options = {}) {
+      backendCreateRequests(plan);
+      if (!Number.isSafeInteger(options.hostRunBytes) || options.hostRunBytes < 0) throw error('docker-host-storage-missing');
+      const base = API + resourcePath('container', receipt?.containerId), started = process.hrtime.bigint();
+      const budget = options.timeoutMs ?? 5000;
+      if (!Number.isInteger(budget) || budget < 1 || budget > 30000) throw error('docker-timeout-invalid');
+      async function call(method, path, status, body, binary = false) {
+        const remaining = budget - Math.ceil(Number(process.hrtime.bigint() - started) / 1e6);
+        if (remaining < 1) throw error('docker-timeout');
+        const response = await send(method, path, { signal: options.signal, timeoutMs: remaining }, body, binary);
+        if (response.status !== status) throw error('docker-http-status');
+        if (!binary) return json(response);
+        if (!['application/vnd.docker.raw-stream', 'application/vnd.docker.multiplexed-stream'].includes(response.contentType) ||
+          (response.encoding && response.encoding !== 'identity')) throw error('docker-exec-framing');
+        return response.body;
+      }
+      async function inspectContainer() {
+        const value = await call('GET', base + '/json?size=true', 200);
+        assertOwnedBackend(value, plan, receipt); assertBackendIsolation(value, plan);
+        if (value.State?.Running !== true) throw error('docker-storage-container-stopped');
+        return value;
+      }
+      await inspectContainer();
+      const created = await call('POST', base + '/exec', 201, { AttachStdin: false, AttachStdout: true,
+        AttachStderr: true, Tty: false, Privileged: false, WorkingDir: '/', Cmd: [...STORAGE_PROBE_COMMAND], Env: ['LC_ALL=C'] });
+      if (typeof created.Id !== 'string' || !/^[a-f0-9]{64}$/.test(created.Id)) throw error('docker-exec-identity');
+      const execPath = API + '/exec/' + created.Id;
+      async function inspectExec() {
+        const value = await call('GET', execPath + '/json', 200);
+        if (value.ID !== created.Id || value.ContainerID !== receipt.containerId ||
+          value.ProcessConfig?.entrypoint !== STORAGE_PROBE_COMMAND[0] ||
+          !isDeepStrictEqual(value.ProcessConfig?.arguments, STORAGE_PROBE_COMMAND.slice(1)) ||
+          value.ProcessConfig?.privileged !== false || value.ProcessConfig?.tty !== false) throw error('docker-exec-identity');
+        return value;
+      }
+      if ((await inspectExec()).Running !== false) throw error('docker-exec-already-running');
+      const bytes = await call('POST', execPath + '/start', 200, { Detach: false, Tty: false }, true);
+      const ended = await inspectExec();
+      if (ended.Running !== false || ended.ExitCode !== 0) throw error('docker-storage-exit');
+      const container = await inspectContainer();
+      const sample = storageSnapshot({ stdout: decodeStorageExec(bytes), writableLayerBytes: container.SizeRw,
+        hostRunBytes: options.hostRunBytes });
+      return { ...sample, execId: created.Id, startedNs: String(started), finishedNs: String(process.hrtime.bigint()) };
+    },
     async sampleStack(plan, receipt, options = {}) {
       backendCreateRequests(plan);
       const base = API + resourcePath('container', receipt?.containerId);
