@@ -1,3 +1,4 @@
+import { cleanupQualification } from './qualification-cleanup.mjs';
 import { writeFile } from 'node:fs/promises';
 import { performCollectionFaults } from './collection-faults.mjs';
 import { prepareReleasedContract } from './released-contract.mjs';
@@ -27,7 +28,7 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
     const roots = await registerHostRoots(directory, stateParent);
     if (ingestion) await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
     await allocateBackend({ directory, backend, signal });
-    return await withReadyBackend({ directory, backend, monitorBackend, signal,
+    const session = await withReadyBackend({ directory, backend, monitorBackend, signal,
       ...(ingestion ? { action: async ({ plan, receipt, signal }) => {
         if(['paused','absent'].includes(ingestion)) {
           const result=await performCollectionFaults({directory,plan,receipt,backend,condition:ingestion,signal});
@@ -42,6 +43,11 @@ async function runBackend({ directory, stateParent, endpoint, ports, signal }, i
         }
         return performIngestion({ directory, plan, signal });
       } } : {}) });
+    // A confirmed stop is never repeated. Preserve evidence on ambiguous lifecycle results.
+    if (!session.stopConfirmed) return session;
+    const cleanup = await cleanupQualification({ directory, backend, teardownStartedNs: session.teardownStartedNs });
+    return { ...session, cleanup, failure: session.failure ??
+      (cleanup.teardownMs === null || cleanup.teardownMs > 30000 ? 'cleanup-deadline-failed' : null) };
   } finally { backend.close(); monitorBackend?.close(); }
 }
 

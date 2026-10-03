@@ -42,7 +42,7 @@ export async function cleanupQualification({directory,backend,teardownStartedNs}
     Number(process.hrtime.bigint()-BigInt(teardownStartedNs))/1e6:null;
   if(!isDeepStrictEqual(await readHostRoots(directory),roots))throw new Error('Synthetic state ownership changed');
   const state=roots.roots.state.path;
-  if(!(await readdir(state)).every(name=>['observability-owner.json','contract','hub'].includes(name)))throw new Error('Synthetic state contains unknown resources');
+  if(!(await readdir(state)).every(name=>['observability-owner.json','contract','hub','hub-cf-d','hub-cf-e','hub-faults-disabled','hub-faults-enabled'].includes(name)))throw new Error('Synthetic state contains unknown resources');
   await rm(state,{recursive:true,force:false});
   let absent=false;try{await readdir(state);}catch(error){absent=error.code==='ENOENT';}
   if(!absent)throw new Error('Synthetic state removal unconfirmed');

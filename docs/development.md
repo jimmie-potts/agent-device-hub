@@ -1677,7 +1677,7 @@ controller, plus a Python contract fixture. Expect seven Node logs/six spans and
 one Python log/span. Saved queries compare canonical identities and fields in
 Loki/Tempo within a 30-second visibility window; export acknowledgment alone
 cannot pass. The Python fixture proves compatible ingestion, not complete Python
-application instrumentation. The backend stops when the command returns.
+application instrumentation. The backend stops and its confirmed run-owned resources/state are removed before the command returns.
 
 Other supported modes use the same arguments:
 
@@ -1702,7 +1702,7 @@ finalization. Preserve the failed original flush attempt in historical evidence.
 
 Each run saves exact ownership manifests and lifecycle results. A failed or
 partial allocation must be inspected before cleanup; never retry ambiguous
-start/stop/removal effects or use Docker prune. The receipt-based
+start/stop/removal effects or use Docker prune. After a confirmed stop, the command automatically invokes the receipt-based
 `cleanupQualification` helper in `scripts/observability/qualification-cleanup.mjs`
 verifies stopped containers and application absence, removes only the recorded
 container/network/volume and synthetic state, and retains evidence. Cleanup

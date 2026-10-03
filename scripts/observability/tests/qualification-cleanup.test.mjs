@@ -63,3 +63,11 @@ test('foreign container identity prevents removal; unknown synthetic state is re
   await assert.rejects(cleanupQualification(extra),/unknown resources/);
   assert.equal(await readFile(join(extra.roots.roots.state.path,'unrelated'),'utf8'),'keep');
 });
+
+test('qualification cleanup handles the known disposable fault-mode state directories',async t=>{
+  const f=await fixture(t);
+  for(const name of ['hub-cf-d','hub-cf-e','hub-faults-disabled','hub-faults-enabled'])
+    await mkdir(join(f.roots.roots.state.path,name));
+  const result=await cleanupQualification(f);
+  assert.equal(result.syntheticStateRemoved,true);
+});
