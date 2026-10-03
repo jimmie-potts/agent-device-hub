@@ -734,6 +734,9 @@ service control; installed upgrade acceptance requires its own owner checkpoint.
 `install-service-contract.test.mjs` covers systemd omitting an empty
 `EnvironmentFiles` property, binds a configured list and still rejects a missing
 freeze capability. Its fake `systemctl` runs in an isolated child process.
+`install-plan.test.mjs` also covers large protected Codex executables: streaming
+fingerprints detect changed bytes, enforce a 256 MiB protected-file limit and
+retain the 64 MiB default limit for release inventories.
 
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of

@@ -60,3 +60,16 @@ test('protected executable fingerprints support the installed Node binary size w
   assert.notEqual((await protectedPath(path)).sha256,first.sha256);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('protected runtime inventories stream large executables while release and protected limits remain bounded',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'hi-protected-'));try{
+  const directory=join(root,'runtime');await mkdir(directory);
+  const path=join(directory,'codex'),handle=await open(path,'wx',0o700);await handle.truncate(258659424);await handle.close();
+  await assert.rejects(inventory(directory),/unsafe-install-file/);
+  const first=await protectedPath(directory);assert.match(first.sha256,/^[a-f0-9]{64}$/);
+  const changed=await open(path,'r+');await changed.write(Buffer.from('changed'),0,7,200000000);await changed.close();
+  assert.notEqual((await protectedPath(directory)).sha256,first.sha256);
+  const oversized=await open(path,'r+');await oversized.truncate(256*1024*1024+1);await oversized.close();
+  await assert.rejects(protectedPath(directory),/unsafe-install-file/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

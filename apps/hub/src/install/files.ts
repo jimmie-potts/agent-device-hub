@@ -45,7 +45,8 @@ export async function hashRegular(path:string,maximum=256*1024*1024):Promise<str
 }
 
 /** Sorted relative names, types, permission modes, bytes and link targets form the legacy digest. */
-export async function inventory(directory:string):Promise<Inventory>{
+export async function inventory(directory:string,maximumFileBytes=64*1024*1024):Promise<Inventory>{
+ if(!Number.isSafeInteger(maximumFileBytes)||maximumFileBytes<1||maximumFileBytes>256*1024*1024)throw new Error('install-inventory-capacity');
  const root=resolve(directory);const stat=await lstat(root);
  if(!stat.isDirectory()||stat.isSymbolicLink()||await realpath(root)!==root)throw new Error('unsafe-install-root');
  const entries:InventoryEntry[]=[];let total=0;
@@ -61,7 +62,7 @@ export async function inventory(directory:string):Promise<Inventory>{
     entries.push({path,kind:'directory',mode});await visit(path);
    }else if(info.isFile()){
     total+=info.size;if(total>512*1024*1024)throw new Error('install-inventory-capacity');
-    entries.push({path,kind:'file',mode,sha256:sha256(await readRegular(absolute))});
+    entries.push({path,kind:'file',mode,sha256:await hashRegular(absolute,maximumFileBytes)});
    }else throw new Error('unsafe-install-entry');
   }
  }
