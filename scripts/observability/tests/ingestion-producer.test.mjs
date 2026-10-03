@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { runIngestionProducer } from '../ingestion-process.mjs';
+import { prepareBackendDirectory } from '../backend-files.mjs';
+import { measureHostRunFiles } from '../host-storage.mjs';
+import { registerHostRoots } from '../host-roots.mjs';
+import { prepareReleasedContract } from '../released-contract.mjs';
+
+test('fresh producer uses the immutable packaged contract for a real Hub command and Python query fixture', async t => {
+  const parent = await mkdtemp(join(tmpdir(), 'ip-')), local = join(parent, '.local'); await mkdir(local);
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const received = [], server = createServer(async (req, res) => {
+    assert.equal(req.headers.authorization, undefined); assert.equal(req.headers.traceparent, undefined);
+    let text = ''; for await (const chunk of req) text += chunk;
+    received.push({ path: req.url, body: JSON.parse(text) });
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const port = server.address().port, others = [43000,43002,43003,43004,43005].filter(p => p !== port);
+  const directory = join(local, 'backend');
+  await prepareBackendDirectory(directory, { runId: 'producer', ports: { grafana: others[0], otlp: port, loki: others[1], tempo: others[2], health: others[3] } });
+  const roots = await registerHostRoots(directory, tmpdir().split('/').includes('.local') ? tmpdir() : local);
+  t.after(() => rm(roots.roots.state.path, { recursive: true, force: true }));
+  await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
+  assert.ok((await measureHostRunFiles(Object.values(roots.roots))).hostRunBytes > 0);
+  const result = await runIngestionProducer(directory);
+  assert.equal(result.code, 0, JSON.stringify(result));
+  const output = result.output;
+  assert.equal(output.complete, true); assert.equal(output.contractSource, 'verified-released-archive');
+  assert.equal(output.node.logs.length, 7); assert.equal(output.node.spans.length, 6);
+  assert.equal(output.node.effects, 1); assert.equal(output.node.outcome, 'queued');
+  assert.equal(output.python.spanOrigin, 'synthetic-query-fixture');
+  assert.equal(received.filter(r => r.path === '/v1/logs').length, 8);
+  assert.equal(received.filter(r => r.path === '/v1/traces').length, 7);
+  assert.equal(JSON.stringify({ output, received }).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+  const timed = await runIngestionProducer(directory, { timeoutMs: 1 });
+  assert.equal(timed.reason, 'deadline'); assert.notEqual(timed.code, 0);
+  assert.throws(() => process.kill(timed.pid, 0), { code: 'ESRCH' });
+  await assert.rejects(runIngestionProducer(directory, { signal: AbortSignal.abort() }), /invalid/);
+});

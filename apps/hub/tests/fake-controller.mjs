@@ -53,6 +53,14 @@ export function snapshotV1_1(overrides={}){
  * moment requests among them; snapshot10() and snapshot11(), the documents it currently serves; restart({epoch,serves})
  * for a new controller, ticket and clock epoch; failNext(mode,{times,versioned}) with mode 'timeout' or '5xx' for reads;
  * answerNext(answer) for the next POST; hold({method}) to stall the next matching request; close().
+ * Opt-in execution:{capacity:1..32,autoDrain:boolean} adds a synthetic brightness executor. Admission still uses
+ * the reference contract; executeQueued() performs queued effects once and updates cached terminal receipts.
+ * executionState() is an independent oracle. takeExecutions() drains its bounded 256-entry history; any
+ * historyDropped makes complete per-ticket qualification unavailable. Commands/requests and settled receipts
+ * are also bounded to 256 in this mode. Restart/close cancels pending synthetic work, never executes it.
+ * Optional diagnostics.request(allowlistedAttributes,traceparent) is called only after authentication. Its queued,
+ * execute, finish and cancel observers receive no domain callback, request body or mutable receipt. Exceptions
+ * increment diagnosticFailures and never repeat domain work; queued context handles are released at settlement.
  *
  * answerNext takes {receipt:{...fields},status} to change the admitted receipt, for example a device's moment-missed;
  * {failure:code,status} for a typed refusal without admission; {body,status} for a raw answer; {mode:'timeout'} to admit
@@ -65,6 +73,62 @@ export async function startFakeController(options={}){
   const identity={...(options.controllerId?{controllerId:options.controllerId}:{}),...(options.deviceId?{deviceId:options.deviceId}:{})};
   const token=options.token??FAKE_CONTROLLER_TOKEN,requests=[],commands=[],failures=[],answers=[],holds=[];
   const base=snapshotV1_0({identity});
+  const executionEnabled=options.execution!==undefined;
+  const executionOptions=executionEnabled?options.execution:{};
+  assert.ok(executionOptions&&typeof executionOptions==='object'&&!Array.isArray(executionOptions)
+    &&Object.keys(executionOptions).every(key=>['capacity','autoDrain'].includes(key)),'invalid execution options');
+  const capacity=executionOptions.capacity??32;
+  assert.ok(Number.isInteger(capacity)&&capacity>=1&&capacity<=32,'invalid execution capacity');
+  assert.ok(executionOptions.autoDrain===undefined||typeof executionOptions.autoDrain==='boolean','invalid autoDrain');
+  // Diagnostic observers never wrap domain work or receive mutable requests/receipts.
+  let diagnosticFailures=0;
+  const diagnosticFailure=()=>{diagnosticFailures=Math.min(Number.MAX_SAFE_INTEGER,diagnosticFailures+1);};
+  const notify=(target,method,...args)=>{
+    try {
+      const value=target?.[method]?.(...args);
+      if(value&&typeof value.then==='function'){void Promise.resolve(value).catch(diagnosticFailure);return undefined;}
+      return value;
+    } catch {diagnosticFailure();return undefined;}
+  };
+  const queue=[],history=[];
+  let effects=0,executed=0,cancelled=0,historyDropped=0,brightness=null,desiredBrightness=null,drainScheduled=false,closed=false;
+  const retain=(list,value)=>{list.push(value);if(executionEnabled&&list.length>256)list.shift();};
+  const remember=value=>{if(history.length>=256){history.shift();historyDropped++;}history.push(value);};
+  const trimReceipts=()=>{
+    if(!executionEnabled)return;
+    while(current.cache.length>256){
+      const terminal=current.cache.findIndex(entry=>entry.receipt.outcome!=='queued');
+      assert.ok(terminal>=0,'bounded queue cannot fill the receipt history');current.cache.splice(terminal,1);
+    }
+  };
+  const cancelQueued=()=>{
+    while(queue.length){const job=queue.shift();notify(job.diagnostics,'cancel');delete job.diagnostics;cancelled++;remember({requestId:structuredClone(job.request.requestId),outcome:'cancelled',effects});}
+  };
+  const executeQueued=()=>{
+    assert.ok(executionEnabled,'execution is not enabled');
+    const result=[];
+    while(queue.length){
+      const job=queue.shift();
+      const execution=notify(job.diagnostics,'execute');delete job.diagnostics;
+      const supported=job.request.command.kind==='brightness.set';
+      if(supported){brightness=job.request.command.percent;effects++;}
+      executed++;
+      job.receipt={...job.receipt,outcome:supported?'sent':'failed',priorEffects:supported?'confirmed-transmission':'none',
+        completedOperations:supported?['brightness']:[],uncertainOperations:[],
+        ...(supported?{}:{failure:{code:'unsupported-capability'}})};
+      assert.ok(validate(job.receipt.apiVersion==='1.1'?'receiptV1_1':'receipt',job.receipt),'fake terminal receipt must validate');
+      const evidence={requestId:structuredClone(job.request.requestId),receipt:structuredClone(job.receipt),effects,
+        queuedAtMs:job.queuedAtMs,completedAtMs:performance.now()};
+      remember(evidence);result.push(structuredClone(evidence));
+      notify(execution,'finish',{outcome:supported?'transport-acknowledged':'rejected'});
+    }
+    trimReceipts();return result;
+  };
+  const scheduleDrain=()=>{
+    if(!executionOptions.autoDrain||drainScheduled)return;
+    drainScheduled=true;setImmediate(()=>{drainScheduled=false;if(!closed)executeQueued();});
+  };
+
   // Each epoch starts a fresh ticket sequence, admission cache and clock epoch, as a controller restart does.
   const fresh=()=>({ticket:{epoch:state.restarts?`requests-${state.epoch}`:base.nextRequestId.epoch,sequence:base.nextRequestId.sequence},
     configurationRevision:base.configurationRevision,cache:[],
@@ -77,20 +141,33 @@ export async function startFakeController(options={}){
     if(options.moments)value.capabilities.moments=structuredClone(options.moments);
     if(options.moment)value.state.moment=structuredClone(options.moment);
     if(options.mode)value.state.desired.mode={status:'known',value:options.mode};
+    if(executionEnabled){
+      value.state.pending=queue.map(job=>({requestId:structuredClone(job.request.requestId),command:structuredClone(job.request.command),generation:structuredClone(job.request.expectedGeneration)}));
+      value.limits.maxPending=capacity;
+      if(desiredBrightness!==null)value.state.desired.brightness={status:'known',value:desiredBrightness};
+    }
     assert.ok(validate('snapshotV1_1',value),'fake 1.1 snapshot must validate');
     return version==='1.1'?value:downgradeSnapshot(value);
   };
-  const admitted=(request,bodyBytes)=>{
+  const admitted=(request,bodyBytes,diagnostics)=>{
     const snapshot=document('1.1');
     const result=admit({request,bodyBytes,auth:{credential:{kind:'machine',status:'active',declared:true,devices:[snapshot.identity.deviceId],scopes:['read','control']},
       deviceId:snapshot.identity.deviceId,scope:'control',hostAllowed:true,originPresent:false,originAllowed:true,fetchMetadataAllowed:true},
       state:{controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,epoch:current.ticket.epoch,nextSequence:current.ticket.sequence,
         configurationRevision:current.configurationRevision,generation:snapshot.generation,capabilities:snapshot.capabilities,
-        apiVersions:state.serves==='1.1'?['1.0','1.1']:['1.0'],maxBodyBytes:snapshot.limits.maxBodyBytes,maxInFlight:32,maxQueue:32,maxReceipts:256,
-        inFlight:0,queueDepth:0,cache:current.cache,pending:[]}});
+        apiVersions:state.serves==='1.1'?['1.0','1.1']:['1.0'],maxBodyBytes:snapshot.limits.maxBodyBytes,maxInFlight:32,maxQueue:executionEnabled?capacity:32,maxReceipts:256,
+        inFlight:0,queueDepth:executionEnabled?queue.length:0,cache:current.cache,pending:[]}});
     if(result.reserved){
       current.ticket.sequence=result.nextSequence;current.configurationRevision=result.receipt.configurationRevision;
-      current.cache.push({request,receipt:result.receipt});
+      const entry={request:structuredClone(request),receipt:structuredClone(result.receipt)};
+      current.cache.push(entry);
+      if(executionEnabled&&result.scheduled){
+        entry.queuedAtMs=performance.now();queue.push(entry);
+        entry.diagnostics=notify(diagnostics,'queued');
+        if(request.command.kind==='brightness.set')desiredBrightness=request.command.percent;
+        scheduleDrain();
+      }
+      trimReceipts();
     }
     return result;
   };
@@ -99,17 +176,29 @@ export async function startFakeController(options={}){
     let text='';for await(const chunk of req)text+=chunk;
     const url=new URL(req.url,'http://fake.invalid');
     const entry={method:req.method,pathname:url.pathname,search:url.search,params:[...url.searchParams.keys()],versioned:url.searchParams.has('apiVersion'),epoch:state.epoch};
-    requests.push(entry);
+    retain(requests,entry);
     const held=holds.findIndex(h=>!h.method||h.method===req.method);
     if(held>=0){const [h]=holds.splice(held,1);h.arrived();await h.gate;}
     if(req.headers.authorization!==`Bearer ${token}`)return reply(res,401,{failure:{code:'unauthenticated'}});
     if(req.method==='POST'&&url.pathname==='/controller/v1/commands'){
       let body=null;try{body=text?JSON.parse(text):null;}catch{}
-      commands.push(body);
+      retain(commands,body);
       const answer=answers.shift()??{};
       if(answer.failure)return reply(res,answer.status??HTTP_STATUS[answer.failure],{failure:{code:answer.failure}});
       if('body' in answer)return reply(res,answer.status??200,answer.body);
-      const result=admitted(body,Buffer.byteLength(text));
+      let diagnostics;
+      if(options.diagnostics){
+        const attributes={'bunny.controller.id':base.identity.controllerId,'bunny.device.id':base.identity.deviceId,
+          'bunny.operation':'verification'};
+        if(validate(body?.apiVersion==='1.1'?'requestV1_1':'request',body)){
+          attributes['bunny.ticket.epoch']=body.requestId.epoch;attributes['bunny.ticket.sequence']=body.requestId.sequence;
+          if(body.command.kind==='brightness.set')attributes['bunny.operation']='brightness';
+        }
+        diagnostics=notify(options.diagnostics,'request',attributes,req.headers.traceparent);
+      }
+      const result=admitted(body,Buffer.byteLength(text),diagnostics);
+      notify(diagnostics,'finish',{outcome:result.decision==='queued'?(result.scheduled?'queued':'duplicate'):
+        result.receipt?.outcome==='sent'?'duplicate':'rejected'});
       if(answer.mode==='timeout')return;
       if(answer.mode==='drop')return res.destroy();
       if(!result.receipt)return reply(res,HTTP_STATUS[result.decision],{failure:{code:result.decision}});
@@ -140,6 +229,10 @@ export async function startFakeController(options={}){
   const count=predicate=>requests.filter(r=>r.method==='GET'&&r.pathname==='/controller/v1/snapshot'&&predicate(r)).length;
   return {
     endpoint,requests,commands,
+    executeQueued,
+    takeExecutions:()=>history.splice(0).map(entry=>structuredClone(entry)),
+    executionState:()=>({enabled:executionEnabled,queued:queue.length,capacity,executed,effects,cancelled,brightness,
+      history:history.length,historyDropped,retainedReceipts:current.cache.length,diagnosticFailures}),
     moments:()=>commands.filter(body=>body?.command?.kind==='moment'),
     reads:Object.assign(()=>count(()=>true),{versioned:()=>count(r=>r.versioned),unversioned:()=>count(r=>!r.versioned)}),
     snapshot10:()=>document('1.0'),snapshot11:()=>document('1.1'),
@@ -147,6 +240,7 @@ export async function startFakeController(options={}){
       controllerId:snapshotV1_0({identity}).identity.controllerId,deviceId:snapshotV1_0({identity}).identity.deviceId,...overrides}),
     restart:next=>{
       if(next.serves!==undefined){assert.ok(SERVES.includes(next.serves),'unknown serves value');state.serves=next.serves;}
+      if(executionEnabled){cancelQueued();brightness=null;desiredBrightness=null;}
       state.epoch=next.epoch??`${state.epoch}-restarted`;state.restarts++;current=fresh();
     },
     answerNext:answer=>{answers.push(answer);},
@@ -155,6 +249,6 @@ export async function startFakeController(options={}){
       holds.push({method,arrived,gate});return {reached,release};
     },
     failNext:(mode,{times=1,versioned}={})=>{assert.ok(['timeout','5xx'].includes(mode));failures.push({mode,times,versioned});},
-    close:()=>new Promise(resolve=>{server.close(resolve);server.closeAllConnections();}),
+    close:()=>new Promise(resolve=>{closed=true;if(executionEnabled)cancelQueued();server.close(resolve);server.closeAllConnections();}),
   };
 }

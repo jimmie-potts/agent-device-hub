@@ -1,3 +1,4 @@
+import {commandDiagnosticAttributes,type CommandDiagnostics} from './diagnostics.js';
 import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
 import {readBuild} from './build.js';
@@ -27,7 +28,7 @@ import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
+export type HubOptions = {diagnostics?:CommandDiagnostics; directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -141,7 +142,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       placeLinks[place] = link.href;
     }
   }
-  const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
+  const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config,2000,options.diagnostics)]));
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
   const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,
@@ -459,7 +460,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           json(res,200,versions[0] === '1.1' ? await client.snapshot('1.1') : await client.snapshot());
         } else if (route && !url.search && req.method === 'POST' && route[2] === 'commands') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
-          const response = await client.command(await admitted(65536));json(res,response.status,response.body);
+          const input = await admitted(65536);
+          const execute = () => client.command(input);
+          const response = options.diagnostics
+            ? await options.diagnostics.run('bunny.http',commandDiagnosticAttributes(client.config,input),execute,req.headers.traceparent)
+            : await execute();
+          json(res,response.status,response.body);
         } else if (route && !url.search && req.method === 'POST' && route[2] === 'moment') {
           // Hub #336: the owner's explicit moment for this one device, through the #335 sender, answered inside the 3 s cap.
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
