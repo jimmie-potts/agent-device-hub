@@ -58,16 +58,18 @@ try {
     }
     $acl=Get-Acl -LiteralPath $existing
     if($allowed -notcontains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value){throw 'owner'}
-    foreach($rule in $acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])){
-      if($rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and $allowed -notcontains $rule.IdentityReference.Value -and [int]$rule.FileSystemRights -ne 0){throw 'permission'}
+    if($env:BUNNY_WISPR_CHECK_PRIVATE -eq '1'){
+      foreach($rule in $acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])){
+        if($rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and $allowed -notcontains $rule.IdentityReference.Value -and [int]$rule.FileSystemRights -ne 0){throw 'permission'}
+      }
     }
   }
   [Console]::Out.Write('{"ok":true}')
 } catch { [Console]::Out.Write('{"ok":false}');exit 1 }
 `;
 
-/** Read-only qualification. It never changes the source's ACL or repairs owner paths. */
-export function qualifyWindowsPaths(paths: string[]): void {
+/** Shared read-only path/owner checks; only vendor sources accept additional ACL grants. */
+function qualifyPaths(paths: string[],privateFiles:boolean): void {
   if(process.platform!=='win32')throw new Error('unsupported-platform');
   for(const path of paths){
     windowsPath(path);
@@ -81,10 +83,13 @@ export function qualifyWindowsPaths(paths: string[]): void {
     }
   }
   try{
-    const output=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',inspectScript],{encoding:'utf8',timeout:8000,maxBuffer:4096,windowsHide:true,env:{...process.env,BUNNY_WISPR_CHECK_PATHS:JSON.stringify(paths)},stdio:['ignore','pipe','pipe']});
+    const output=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',inspectScript],{encoding:'utf8',timeout:8000,maxBuffer:4096,windowsHide:true,env:{...process.env,BUNNY_WISPR_CHECK_PATHS:JSON.stringify(paths),BUNNY_WISPR_CHECK_PRIVATE:privateFiles?'1':'0'},stdio:['ignore','pipe','pipe']});
     if(JSON.parse(output).ok!==true)throw new Error('unsafe-private-path');
   }catch{throw new Error('unsafe-private-path');}
 }
+
+/** Collector-owned paths always require exclusive owner/SYSTEM/Administrators grants. */
+export function qualifyWindowsPaths(paths: string[]): void { qualifyPaths(paths,true); }
 
 export function loadConfig(path: string): CollectorConfig {
   qualifyWindowsPaths([path]);
@@ -94,9 +99,10 @@ export function loadConfig(path: string): CollectorConfig {
   const config=parseConfig({...parsed,ownerDirectory:canonicalWindowsPath(parsed.ownerDirectory),sourcePath:canonicalWindowsPath(parsed.sourcePath),stateDirectory:canonicalWindowsPath(parsed.stateDirectory)});
   const configPath=canonicalWindowsPath(path);
   if(!contained(config.ownerDirectory,configPath)||contained(config.stateDirectory,configPath))throw new Error('unsafe-path');
-  const paths=[parsed.sourcePath,parsed.stateDirectory];
+  const paths=[parsed.sourcePath];
   for(const suffix of ['-wal','-shm','-journal'])if(existsSync(parsed.sourcePath+suffix))paths.push(parsed.sourcePath+suffix);
-  qualifyWindowsPaths(paths);
+  qualifyPaths(paths,false);
+  qualifyWindowsPaths([parsed.stateDirectory]);
   return config;
 }
 

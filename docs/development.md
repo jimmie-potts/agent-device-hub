@@ -851,8 +851,10 @@ unknown source language, edit finality and counter windows remain explicit.
 Run `npm run test:wispr:native:built` separately under native Windows Node 24,
 with its synthetic database/output directory on a local Windows drive. The
 native check rejects other platforms and verifies concurrent WAL writes,
-source preservation, reader-lock release, busy/deadline bounds, ACL/path rejection
-and locked-destination recovery. Keep the native receipt tied to the final
+source preservation, reader-lock release, busy/deadline bounds, accepted extra
+readers on selected source/sidecars, unchanged source bytes/ACLs, private
+config/state/backup/export ACL rejection, unsafe-path rejection and
+locked-destination recovery. Keep the native receipt tied to the final
 candidate/package digest; Linux CI is not a substitute. An isolated test runtime
 does not change the global Windows Node installation. Installation, scheduled
 collection and personal-data validation require their own authorization.
