@@ -12,5 +12,5 @@
 
 ## 3. Source acceptance
 
-- [ ] 3.1 Update owning dashboard/development guides and existing CI coverage; run shared build/type/controller/workflow, dashboard unit/browser and applicable Hub/package suites with actual receipts.
-- [ ] 3.2 Synchronize the capability and archive the completed change before final independent review; verify strict inventory and workflow checks. Current-candidate human approval remains a separate PR merge gate.
+- [x] 3.1 Update owning dashboard/development guides and existing CI coverage; run shared build/type/controller/workflow, dashboard unit/browser and applicable Hub/package suites with actual receipts.
+- [x] 3.2 Synchronize the capability and archive the completed change before final independent review; verify strict inventory and workflow checks. Current-candidate human approval remains a separate PR merge gate.
