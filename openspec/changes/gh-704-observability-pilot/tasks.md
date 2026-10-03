@@ -21,14 +21,19 @@
 
 ## 4. Runtime qualification and disposition
 
-- [ ] 4.1 Once the existing container engine is available, freeze the pre-run manifest and verify real Loki/Tempo ingestion, Python/Node field queries, trace/log correlation and the existing Grafana viewer; retain exact query and viewer evidence.
+- [x] 4.1 Once the existing container engine is available, freeze the pre-run manifest and verify real Loki/Tempo ingestion, Python/Node field queries, trace/log correlation and the existing Grafana viewer; retain exact query and viewer evidence.
 - [x] 4.2 Run privacy, trust, context, queue/drop, exporter failure, timeout and cleanup scenarios against the real stack; verify zero leaks/crossover/duplicate effects and bounded truthful outcomes.
-- [ ] 4.3 Run the short final-candidate functional check and affected regressions; reuse applicable retained cross-language/viewer/fault evidence with exact revisions and limitations. Keep prior benchmark attempts inconclusive and performance unqualified.
-- [ ] 4.4 Publish the evidence-backed supported/refuted/inconclusive functional pilot report, deferred performance qualification and budget revisit triggers; verify that every mandatory gate is explicit and unsupported adoption remains blocked.
+- [x] 4.3 Run the short final-candidate functional check and affected regressions; reuse applicable retained cross-language/viewer/fault evidence with exact revisions and limitations. Keep prior benchmark attempts inconclusive and performance unqualified.
+- [x] 4.4 Publish the evidence-backed supported/refuted/inconclusive functional pilot report, deferred performance qualification and budget revisit triggers; verify that every mandatory gate is explicit and unsupported adoption remains blocked.
 
 ## 5. Delivery gates
 
 - [ ] 5.1 Run all applicable Hub, packaged-consumer, shared contract and workflow checks from the worktree; preserve command receipts and isolate unrelated failures.
-- [ ] 5.2 After acceptance evidence is complete, synchronize the affected specification and archive this exact change; verify strict OpenSpec validation and the actual specification inventory.
-- [ ] 5.3 Obtain independent Standards and Specification reviews on the same committed base/head, fix blocking findings and verify current PR CI and guarded normal merge prerequisites.
-- [ ] 5.4 Verify all applicable merged-revision CI, reconcile issue/native dependency records by readback and update the durable resumption record; proceed into adoption only if the pilot disposition and prerequisite gates support it.
+
+Mandatory delivery sequence after implementation acceptance (not claims of completion):
+
+1. Synchronize the affected specification and archive this exact change before final review; run strict OpenSpec/workflow validation and record the inventory.
+2. Obtain independent Standards and Specification reviews of the same committed base/head, fix blockers, verify PR CI and guard the normal merge.
+3. Verify applicable merged-revision CI and reconcile native issue/dependency records by readback. Only a supported functional pilot plus these delivery gates permits #705.
+
+These post-implementation gates remain tracked in the PR and issue. Archiving the implementation artifacts does not satisfy or remove them.
