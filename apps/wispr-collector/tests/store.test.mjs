@@ -95,3 +95,19 @@ test('archived derivatives with an unknown algorithm identity remain unavailable
  for(const r of db.prepare('SELECT id,value FROM language').all()){const value=JSON.parse(r.value);value.policy='unknown-future-algorithm';db.prepare('UPDATE language SET value=? WHERE id=?').run(JSON.stringify(value),r.id);}db.close();
  store=open();const next=store.ingest([],'2026-10-02T16:01:00.000Z',{language:{enabled:true}});assert.ok(next.language.tables.every(t=>t.words.length===0));assert.equal(next.numeric.totals.words,30);store.close();
 });
+
+
+test('language survives independent numeric exclusions while capture and timestamp restrictions hold',t=>{
+ const {open}=setup(t);let store=open();
+ const source=['a','b','c'].map(id=>({...row(id),language:{raw:'hello world',formatted:'hello world',observed:'hello friend',language:'en',observation:'complete'}}));
+ const ingest=rows=>{const s=store.ingest(rows,'2026-10-02T16:00:00.000Z',{language:{enabled:true}});store.markPublished(s.revision);return s;};
+ const raw=s=>s.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='raw');
+ assert.equal(raw(ingest(source)).coverage.eligible,3);
+ for(const patch of [{numWords:null},{numWords:0},{numWords:-1},{status:'raw'},{status:'dismissed'},{status:'unknown'}]){
+  const s=ingest(source.map(r=>({...r,...patch})));assert.equal(s.numeric.totals.words,0);assert.equal(raw(s).coverage.eligible,3);assert.equal(raw(s).words.find(w=>w.text==='hello').dictations,3);
+ }
+ store.close();store=open();assert.equal(raw(ingest([])).coverage.eligible,3);
+ const missing=ingest(source.map(r=>({...r,numWords:null,language:{...r.language,raw:null}})));assert.equal(raw(missing).coverage.missing,3);
+ assert.equal(raw(ingest(source.map(r=>({...r,timestamp:'invalid'})))).coverage.eligible,0);
+ const cleared=store.clearAll('2026-10-02T16:00:00.000Z');store.markPublished(cleared.snapshot.revision);assert.equal(raw(ingest(source)).coverage.eligible,0);store.close();
+});

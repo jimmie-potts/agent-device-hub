@@ -81,11 +81,22 @@ export function tokenizeEnglish(value:string,excludedTerms:readonly string[]=[])
   if(/(?:https?:\/\/|www\.|(?<![\p{L}\d._%+-])[\p{L}\d._%+-]+@[\p{L}\d.-]+\.[\p{L}]{2,}|\b[a-z]:[\\/]|(?:^|\s)(?:\/|~\/|\.{1,2}\/|\\\\)|(?<![\p{L}\d_.-])[\p{L}\d_.-]+[\\/][\p{L}\d_.\\/-]+|\b(?:sk-|gh[pousr]_|akia)[a-z\d_-]+)/u.test(text))return excluded('sensitive');
   for(const m of text.matchAll(/\+?\d[\d\s().-]{5,}\d/g))if((m[0].match(/\d/g)??[]).length>=7)return excluded('sensitive');
   for(const m of text.matchAll(/[a-z\d_+/=-]{24,}/g))if(/[a-z]/.test(m[0])&&/\d/.test(m[0]))return excluded('sensitive');
-  for(const term of excludedTerms){
-    const folded=foldEnglish(term).trim();if(!folded)continue;
+  // Match against the original normalized input, including overlapping matches.
+  // A difference array masks their union without retaining an unbounded match list.
+  const spans=new Int32Array(text.length+1);
+  for(const folded of new Set(excludedTerms.map(term=>foldEnglish(term).trim()))){
+    if(!folded)continue;
     const escaped=folded.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    text=text.replace(new RegExp('(?<![\\p{L}\\p{M}\\p{N}])'+escaped+'(?![\\p{L}\\p{M}\\p{N}])','gu'),'\0');
+    const matches=new RegExp('(?<![\\p{L}\\p{M}\\p{N}])(?=('+escaped+')(?![\\p{L}\\p{M}\\p{N}]))','gu');
+    for(const match of text.matchAll(matches)){spans[match.index]++;spans[match.index+match[1].length]--;}
   }
+  const parts:string[]=[];let depth=0,start=0,masked=false;
+  for(let i=0;i<=text.length;i++){
+    depth+=spans[i];
+    if(depth>0&&!masked){parts.push(text.slice(start,i),'\0');masked=true;}
+    else if(depth===0&&masked){start=i;masked=false;}
+  }
+  parts.push(text.slice(start));text=parts.join('');
   const tokens:(string|null)[]=[];let count=0;const window:string[]=[];
   for(const m of text.matchAll(/\0|\p{L}[\p{L}\p{M}]*(?:'\p{L}[\p{L}\p{M}]*)*/gu)){
     if(m[0]==='\0'){tokens.push(null);window.length=0;continue;}

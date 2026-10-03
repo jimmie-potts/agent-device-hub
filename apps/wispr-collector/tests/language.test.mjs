@@ -89,3 +89,17 @@ test('maximum-size delimiter-free sensitivity probes do not perform quadratic sc
   assert.notEqual(result.reason,null);assert.ok(elapsed<1000,`bounded exclusion took ${elapsed}ms`);
  }
 });
+
+
+test('owner exclusions mask the union of overlapping matches independently of order',()=>{
+ for(const [text,terms,expected] of [
+  ['before private phrase after',['private','private phrase'],['before',null,'after']],
+  ['before alpha beta gamma after',['alpha beta','beta gamma'],['before',null,'after']],
+  ['before echo echo echo after',['echo echo'],['before',null,'after']],
+  ["before DON’T private after",["don't","don't private"],['before',null,'after']],
+ ]){
+  const a=tokenizeEnglish(text,terms),b=tokenizeEnglish(text,[...terms].reverse());assert.deepEqual(a.tokens,expected);assert.deepEqual(a,b);
+  assert.equal(language.languagePolicy({enabled:true,excludedTerms:terms}),language.languagePolicy({enabled:true,excludedTerms:[...terms].reverse()}));
+  assert.deepEqual(language.wordFeatures(a.tokens).phrases,[]);
+ }
+});

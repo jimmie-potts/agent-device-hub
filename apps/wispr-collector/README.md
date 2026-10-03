@@ -162,7 +162,9 @@ language collection is enabled and their declared types are textual. It uses
 `detectedLanguage`, falling back to `language` only when the detected-language
 column is absent, and accepts English
 language tags (`en` and `en-*`). Unrecognized or missing language is excluded
-from lexical analysis; numeric contributions remain intact.
+from lexical analysis; numeric contributions remain intact. Language eligibility is
+independent of numeric word counts and status eligibility, while valid timestamps
+and the explicit capture boundary still apply.
 
 The controlled observation profile requires textual `editedTextStatus` equal to
 `complete` and a valid `editObservationEnd` timestamp at or after the record's
@@ -184,7 +186,8 @@ Installed field meanings require the separately authorized validation trial.
 and straight internal apostrophes (curly variants normalize to straight).
 Letter/mark tokens exclude punctuation and numbers. All-word counts and the
 `english-stop-1` useful-word filter stay separate. Two-to-five-token phrases
-never cross records or excluded-term boundaries. Raw-to-formatted cleanup and
+never cross records or excluded-term boundaries. Owner exclusions mask the union
+of overlapping matches, independent of configuration order. Raw-to-formatted cleanup and
 formatted-to-observed changes have separate compared/changed denominators.
 
 Stages exceeding 65,536 UTF-8 bytes, 2,000 tokens, or the 200-character bound for

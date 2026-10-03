@@ -153,3 +153,15 @@ test('a changed exclusion policy replaces old pending rankings before status pub
  const snapshot=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.ok(snapshot.language.tables.every(t=>t.words.length===0));assert.equal(snapshot.numeric.totals.words,6);
  assert.equal(snapshot.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='raw').coverage.uncertain,3);
 });
+
+
+test('policy revocation survives transaction capacity failure and interrupted-attempt reporting',async t=>{
+ const {config,run}=setup(t);enableLanguage(config);await run({command:'collect'});
+ const path=join(config.stateDirectory,'status.json'),before=JSON.parse(readFileSync(path));config.language.excludedTerms=['friend'];
+ await assert.rejects(run({command:'status'},{maxMemoryBytes:1}),/source-capacity/);
+ let denied=JSON.parse(readFileSync(path));assert.equal(denied.languageEnabled,false);assert.equal(denied.revision,before.revision+1);assert.equal(denied.health,'source-capacity');assert.equal(denied.lastSuccessAt,before.lastSuccessAt);
+ const {recordInterruptedAttempt}=await import('../dist/operations.js');recordInterruptedAttempt(config,'run-deadline');
+ denied=JSON.parse(readFileSync(path));assert.equal(denied.languageEnabled,false);assert.equal(denied.revision,before.revision+1);assert.equal(denied.health,'run-deadline');
+ await run({command:'status'});const filtered=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.ok(filtered.language.tables.every(t=>t.words.length===0));
+ await run({command:'collect'});const latest=JSON.parse(readFileSync(join(config.stateDirectory,'aggregate.json')));assert.ok(latest.language.tables.every(t=>t.words.every(w=>w.text!=='friend')));assert.equal(JSON.parse(readFileSync(path)).languageEnabled,true);
+});

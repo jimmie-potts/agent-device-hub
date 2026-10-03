@@ -16,7 +16,7 @@ installed Wispr schema, personal data, scheduling or Hub installation.
 | Current collector output through authorized Hub routes | `tests/wispr_hub_producer.test.mjs`; four presets, three corpora, matching app/category selection, numeric-default export and text revocation |
 | Offline package and Windows boundaries | Extracted `package-smoke.mjs`, `native.mjs`, `native-privacy.mjs`, `native-cli.mjs`, `native-locked-output.mjs`, `native-capacity.mjs` |
 
-The current collector suite passed 90 tests; the Hub suite passed 246 tests.
+The current collector suite passed 93 tests; the Hub suite passed 246 tests.
 Shared build/type checks, TypeScript/Python contracts and contract package tests
 passed. Workflow checks and 18 workflow tests passed after archival: 34 main
 specifications, no active changes and 74 archived changes. Required PR/main CI and the
@@ -33,8 +33,12 @@ A maximum-size sensitivity-filter regression exposed repeated scanning that took
 about two seconds per input. The bounded-match fix reduced the three-input test
 to milliseconds; the complete package and Windows qualification passed again.
 
+Independent review regressions cover numeric/language eligibility, overlapping
+owner exclusions and denial-status preservation after capacity failure or
+interruption. All three failed before correction and passed afterward.
+
 The tested package SHA256 is
-`05c5b38dc3dafce14461aeb8bca896dc6c780ff3aac517616506a8fd0bcdd101`.
+`e706b5ae1e1b4b2100d7ee06bdd82e5fe6193d9340d677e8a999fb4dc14bf301`.
 Repackage or renew native qualification if packaged source changes. One skipped
 native-suite test is the Linux-only rejection case; the Windows entrypoint itself
 requires Windows and cannot skip platform qualification.

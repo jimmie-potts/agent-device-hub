@@ -103,7 +103,7 @@ export class NumericStore {
   private *languageContributions(policy:string):Iterable<RetainedLanguage> {
     const get=this.db.prepare('SELECT value FROM language WHERE id=?');
     for(const contribution of this.contributions()){
-      if(contribution.exclusion!==null||contribution.sourceTime===null)continue;
+      if(contribution.exclusion==='before-capture'||contribution.sourceTime===null)continue;
       const row=get.get(contribution.id);
       const stored=row?JSON.parse(String(row.value)) as {policy:string;features:LanguageFeatures|null}:null;
       yield {sourceTime:contribution.sourceTime,app:contribution.app,features:stored?.policy===policy?stored.features:null};
@@ -177,7 +177,7 @@ export class NumericStore {
         if(processed++%128===0)this.guardMemory();
         const exempt=exemption.get(row.id)?.capture_exempt===1;const value=contribution(row,exempt?null:meta.captureAfter);
         upsert.run(value.id,value.fingerprint,JSON.stringify(value),exempt?1:0);
-        if(policy&&value.exclusion===null){
+        if(policy&&value.exclusion!=='before-capture'&&value.sourceTime!==null){
           const features=options.language!.excludedApps?.includes(value.app)?null:analyzeStages(row.language??{raw:null,formatted:null,observed:null,language:null,observation:null},options.language!.excludedTerms);
           putLanguage.run(value.id,JSON.stringify({policy,features}));
         }else deleteLanguage.run(value.id);
