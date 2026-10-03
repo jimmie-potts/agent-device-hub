@@ -26,8 +26,14 @@ export async function durableFingerprint(program:string):Promise<string>{
  const files:Record<string,string>={};
  for(const name of ['storage.js','automation-store.js','automation.js'])files[name]=sha256(await readRegular(join(program,'dist',name)));
  for(const name of ['agent-state','agent-lifecycle-contracts']){
-  const directory=dirname(await dependencyEntrypoint(program,name));
-  files[name]=(await inventory(directory)).sha256;
+  const root=dirname(dirname(await dependencyEntrypoint(program,name)));
+  // JS is loaded by Node, so private 0600 installation files and 0644 checkout
+  // files have the same durable behavior. Provenance inventories still bind modes.
+  // Include the schemas loaded by these modules, not just their compiled code.
+  for(const scope of ['dist','schemas']){
+   const {entries}=await inventory(join(root,scope));
+   files[name+'/'+scope]=sha256(canonical(entries.map(({mode:_,...entry})=>entry)));
+  }
  }
  return sha256(canonical(files));
 }

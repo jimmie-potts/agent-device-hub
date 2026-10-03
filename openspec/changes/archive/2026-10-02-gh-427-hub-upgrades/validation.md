@@ -52,3 +52,9 @@ it still rejects owner revision regression, missing records and deletion of a
 previously written fence row. All 36 focused installer tests passed after this
 correction. Subsequent base refreshes, full checks and independent verdicts are
 recorded against their exact revisions on the PR.
+
+Preparation also exposed a compatibility false refusal caused solely by private
+file modes. The durable fingerprint now compares code and loaded schema bytes
+independently of modes; installation provenance still includes modes. A private
+mode fixture and a changed-schema refusal both had retained failing regressions
+and now pass. The complete focused installer suite has 38 passing tests.
