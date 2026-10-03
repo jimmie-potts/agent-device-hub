@@ -175,7 +175,7 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
   const matching=comments.filter(x=>x.body?.includes(marker));require(matching.length<=1,'ambiguous-closeout-publication');
   require(!matching.length || matching[0].body.replace(/\r\n/g,'\n').trim()===comment.trim(),'closeout-publication-conflict');
   const projectCurrent=()=>!project || issue.projects.find(x=>x.id===project.id)?.values[STATUS]===project.done;
-  const finished=()=>matching.length===1 && issue.state==='CLOSED' && issue.stateReason==='COMPLETED' && projectCurrent() &&
+  const finished=()=>updates.length===0 && matching.length===1 && issue.state==='CLOSED' && issue.stateReason==='COMPLETED' && projectCurrent() &&
    issue.labels.every(x=>!x.startsWith('status:') && x!=='blocked');
   if(input.operation==='reconcile'){
    require(state,'closeout-state-missing');

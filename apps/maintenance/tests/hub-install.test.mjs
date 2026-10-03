@@ -76,7 +76,10 @@ test('active installer machinery and unqualified migration are deferred before n
  for(const mode of ['machinery','migration']){
   const f=await installFixture();try{
    if(mode==='machinery')f.plan.bound.source.components.push('apps/hub/src/install/cli.ts');else f.plan.bound.migration=true;
-   const result=await runHubInstall(f.input,f.config,f);assert.equal(result.status,'blocked');assert.deepEqual(f.calls.map(x=>x[0]),['plan']);
+   f.plan.digest=createHash('sha256').update(canonical(f.plan.bound)).digest('hex');f.receipt.approval.planSha256=f.plan.digest;
+   const result=await runHubInstall(f.input,f.config,f);assert.equal(result.status,'blocked');
+   assert.equal(result.reason,mode==='machinery'?'hub-active-machinery-needs-stopped-boundary':'hub-install-unqualified-migration');
+   assert.deepEqual(f.calls.map(x=>x[0]),['plan']);
   }finally{await f.dispose();}
  }
 });

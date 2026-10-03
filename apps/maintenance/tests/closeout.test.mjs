@@ -127,6 +127,22 @@ test('only the accepted selected dependency hold is removed; parent acceptance s
   assert.deepEqual(f.calls,['dependent-labels','comment','close']);
  }finally{await f.dispose();}
 });
+test('repeated closeout applies newly assessed related updates before becoming a no-op',async()=>{
+ const f=await fixture();try{
+  const dependent={...structuredClone(f.issue),number:19,url:'https://github.com/jimmie-potts/agent-device-hub/issues/19',body:'Deliver the dependent source work.',labels:['blocked'],blockedBy:[{url:f.issue.url,state:'OPEN',stateReason:null}]};
+  f.issue.blocking=[{url:dependent.url}];f.api.issue=async n=>structuredClone(n===19?dependent:f.issue);
+  f.api.labels=async(n,_repo,labels)=>{assert.equal(n,19);f.calls.push('dependent-labels');dependent.labels=labels;};
+  const first=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);
+  assert.equal(first.status,'complete',first.reason);assert.deepEqual(dependent.labels,['blocked']);assert.deepEqual(f.calls,['comment','close']);
+  dependent.blockedBy[0].state='CLOSED';dependent.blockedBy[0].stateReason='COMPLETED';
+  const planner=async(...args)=>{const result=await assessment(...args);result.affected[0].hold='remove-selected-dependency';return result;};
+  const second=await runCloseout(f.input,f.config,f.api,validateInstallReceipt,planner);
+  assert.equal(second.status,'complete',second.reason);assert.deepEqual(dependent.labels,[]);assert.equal(dependent.state,'OPEN');
+  assert.deepEqual(f.calls,['comment','close','dependent-labels']);
+  const third=await runCloseout(f.input,f.config,f.api,validateInstallReceipt,planner);
+  assert.equal(third.status,'complete',third.reason);assert.deepEqual(f.calls,['comment','close','dependent-labels']);
+ }finally{await f.dispose();}
+});
 test('concrete bounded planner independently reads current public acceptance without raw installation evidence',async()=>{
  const {fixture:toolsFixture}=await import('./fixture.mjs');const f=await fixture(),tools=await toolsFixture();
  try{
