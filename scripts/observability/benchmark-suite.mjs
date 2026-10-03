@@ -6,6 +6,14 @@ import {benchmarkSource} from './benchmark-source.mjs';
 import {runBenchmark} from './benchmark-run.mjs';
 import {summarizeBenchmarkPair} from './benchmark-pair.mjs';
 
+/** Infrastructure and harness failures need diagnosis before another allocation.
+ * Completed measurements with numeric misses still retain all prescribed pairs. */
+export function benchmarkMayContinue(result) {
+  return !result.preparationFailure && result.backendComplete === true && result.cleanupComplete === true &&
+    result.window?.failure === null && result.window.workload?.complete === true &&
+    result.window.sampling?.complete === true;
+}
+
 /** Exactly the preregistered six pairs, serially. No retries, duration overrides,
  * threshold changes or restart of an existing suite directory. */
 export async function runBenchmarkSuite({directory,stateParent,endpoint,ports,signal}) {
@@ -27,7 +35,7 @@ export async function runBenchmarkSuite({directory,stateParent,endpoint,ports,si
         runs.push(result);
         // Known metric failures do not erase the prescribed remaining pairs.
         // Unconfirmed runtime cleanup/prerequisites stop further allocations.
-        if(result.preparationFailure||!result.backendComplete||!result.cleanupComplete)throw new Error('Benchmark lifecycle incomplete');
+        if(!benchmarkMayContinue(result))throw new Error('Benchmark lifecycle or harness incomplete');
       }
       const result=summarizeBenchmarkPair({...pair,runs});pairs.push(result);
       await writeFile(join(directory,`${pair.condition}-${pair.number}-pair.json`),JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});

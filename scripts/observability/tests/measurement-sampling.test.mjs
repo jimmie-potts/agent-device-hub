@@ -39,3 +39,14 @@ test('cancellation and failed evidence stop sampling without reusing a slot',asy
     sample:async()=>{calls++;return {};},record:()=>{throw new Error('full');}});
   assert.equal(failed.reason,'evidence-failed');assert.equal(calls,1);
 });
+
+test('early timer wakeups preserve all absolute sampling boundaries', async () => {
+  let now = 0; const events = [];
+  const result = await runMeasurementSampling({ startMs: 100.75,
+    clock: { now: () => now, wait: async ms => { now += Math.max(1, Math.floor(ms)); } },
+    sample: async () => ({}), record: event => events.push(event) });
+  assert.equal(result.coverageComplete, true);
+  assert.equal(result.samples, 601);
+  assert.ok(events.every(event => event.startedMs >= event.scheduledMs));
+  assert.equal(result.omitted, 0);
+});

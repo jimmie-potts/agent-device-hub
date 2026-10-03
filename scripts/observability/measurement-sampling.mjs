@@ -1,3 +1,4 @@
+import { waitUntil } from './wait-until.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import thresholds from './thresholds.json' with { type: 'json' };
 
@@ -26,7 +27,7 @@ export async function runMeasurementSampling({ startMs, sample, record, signal,
     for (let slot = 0; slot <= durationMs / intervalMs; slot++) {
       if (active.aborted) { reason = 'aborted'; break; }
       const scheduledMs = startMs + slot * intervalMs;
-      if (clock.now() < scheduledMs) await clock.wait(scheduledMs - clock.now(), active);
+      await waitUntil(clock, scheduledMs, active);
       const startedMs = clock.now();
       if (!Number.isFinite(startedMs) || startedMs < scheduledMs) throw new Error('Sampling clock invalid');
       if (startedMs >= scheduledMs + intervalMs) {

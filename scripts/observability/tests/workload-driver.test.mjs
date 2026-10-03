@@ -40,3 +40,18 @@ test('a shared future start preserves the fixed warmup and measurement boundarie
   assert.equal(result.complete,true);assert.equal(events[0].dispatchMs,1000);
   assert.equal(result.measurementStartMs,31000);assert.equal(result.measurementEndMs,91000);
 });
+
+test('early timer wakeups wait through the absolute start and measurement end', async () => {
+  let time = 0, waits = 0; const events = [];
+  const result = await runScheduledWorkload({ startMs: 100.75,
+    clock: { now: () => time, wait: async ms => {
+      await new Promise(resolve => setImmediate(resolve));
+      time += Math.max(1, Math.floor(ms)); waits++;
+    } }, operation: async () => ({}), record: event => events.push(event) });
+  assert.equal(result.complete, true);
+  assert.equal(result.dispatched, 1800);
+  assert.equal(result.omitted, 0);
+  assert.ok(events[0].dispatchMs >= result.startMs);
+  assert.ok(result.finishedMs >= result.measurementEndMs);
+  assert.ok(waits > 1800);
+});

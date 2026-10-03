@@ -1,3 +1,4 @@
+import { waitUntil } from './wait-until.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createWorkloadSchedule } from './workload-schedule.mjs';
 import { latencySummary } from './measurement.mjs';
@@ -48,7 +49,7 @@ export async function runScheduledWorkload({ operation, record, signal, startMs:
       completedMs,latencyMs,scheduledToCompletionMs,failed,outcome});
   }
   try {
-    if (clock.now() < startMs) await clock.wait(startMs-clock.now(),active);
+    await waitUntil(clock,startMs,active);
     while (!schedule.complete && !active.aborted) {
       const events = schedule.advance(clock.now(),pending.size);
       for (const event of events) {
@@ -58,9 +59,9 @@ export async function runScheduledWorkload({ operation, record, signal, startMs:
         const task = perform(event,ordinal).catch(() => { reason ??= 'operation-evidence-failed';control.abort(); }).finally(() => pending.delete(task));
         pending.add(task);
       }
-      if (!schedule.complete && !active.aborted) await clock.wait(Math.max(1,schedule.nextMs-clock.now()),active);
+      if (!schedule.complete && !active.aborted) await waitUntil(clock,schedule.nextMs,active);
     }
-    if (!active.aborted && clock.now()<measurementEndMs) await clock.wait(measurementEndMs-clock.now(),active);
+    if (!active.aborted) await waitUntil(clock,measurementEndMs,active);
   } catch { reason ??= active.aborted ? 'aborted' : 'driver-failed';control.abort(); }
   await Promise.all(pending);
   if (active.aborted) reason ??= signal?.aborted ? 'aborted' : 'driver-failed';
