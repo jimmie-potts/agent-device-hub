@@ -1,6 +1,6 @@
 import {validate,type Request} from '@jimmie-potts/device-contracts';
 import { context, trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Tracer } from '@opentelemetry/api';
-import { createRecord, parseTraceparent, type DiagnosticRecord, type Primitive } from '@jimmie-potts/bunny-observability';
+import { createRecord, parseTraceparent, traceHeaders, type DiagnosticRecord, type Primitive } from '@jimmie-potts/bunny-observability';
 import { HttpError } from './common.js';
 
 type Attributes = Record<string, Primitive>;
@@ -9,7 +9,7 @@ type Options = {
   resource:Record<string,string>;
   /** Host-owned bounded sink; no exporter is created by this adapter. */
   emit(record:DiagnosticRecord):unknown;
-  tracer?:Tracer;
+  tracer?:Pick<Tracer,'startSpan'>;
 };
 export type CommandDiagnostics = ReturnType<typeof createCommandDiagnostics>;
 const outcome:Record<string,string> = {queued:'queued',sent:'transport-acknowledged',failed:'rejected',
@@ -31,6 +31,14 @@ export function createCommandDiagnostics(options:Options) {
   const failed = () => { failures = Math.min(Number.MAX_SAFE_INTEGER, failures + 1); };
   return {
     counts:() => ({failures,invalidRecords}),
+    /** Only ControllerClient's validated, authenticated owned endpoint calls this. */
+    headers():Record<string,string> {
+      try {
+        const current=trace.getSpanContext(context.active());
+        return current&&trace.isSpanContextValid(current)?traceHeaders({trace_id:current.traceId,span_id:current.spanId,
+          trace_flags:(current.traceFlags&1).toString(16).padStart(2,'0')},{authenticated:true,owned:true}):{};
+      } catch {failed();return {};}
+    },
     /** Call only after HTTP authentication. A controller child inherits the active owned context. */
     async run<T extends CommandResponse>(scope:'bunny.http'|'bunny.controller', attributes:Attributes,
       action:()=>Promise<T>, inboundTraceparent?:unknown):Promise<T> {

@@ -2,7 +2,7 @@ import check from './validator.js';
 import catalogData from './catalog.json' with {type:'json'};
 import schema from './record.schema.json' with {type:'json'};
 
-export const ARTIFACT_VERSION = '1.0.0';
+export const ARTIFACT_VERSION = '1.1.0';
 export const SCHEMA_VERSION = '1.1';
 export const SEMANTIC_CONVENTIONS_VERSION = '1.44.0';
 export const MAX_RECORD_BYTES = 8192;

@@ -1780,3 +1780,14 @@ No command here installs a daily-use service, changes personal hooks/settings,
 migrates live state or operates a physical device. Practical source adoption and
 its enable/disable configuration are separate from an explicitly authorized
 installation.
+
+## Shared host diagnostics checks
+
+`npm run test:observability:built` includes the explicit Node host runtime
+checks against a loopback fake OTLP endpoint. `npm run test:observability:python`
+and `npm run test:observability:package:built` cover the Python host and external
+immutable consumer; both run in the existing contracts/state Python CI matrix.
+Run build/type first and install the pinned contract and host requirements.
+Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
+adoption is covered by the existing Hub/MCP/setup checks. These are synthetic
+source checks; they do not install services or qualify physical devices.

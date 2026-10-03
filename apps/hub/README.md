@@ -25,12 +25,12 @@ Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must 
 
 Each controller has `id`, `kind` of `pixoo`, `nanoleaf`, `tidbyt` or `lifx`, `controllerId`, `deviceId`, numeric IPv4 loopback `endpoint` ending `/controller/v1`, and its dedicated `token`. Tidbyt and LIFX devices are served by the [local controller host](../local-controllers/README.md); register each device as its own entry, with the host's endpoint and a token it accepts for that device. There is at most one active HTTP request per device and no automatic retry. A capacity rejection does not reserve a controller ticket. Explicit commands retain the owning controller's request ID and revision guards. A timeout after submission is uncertain, never proof of no effects. `sent` is transport evidence only. To connect an installed Pixoo or Nanoleaf controller, follow [Connect device controllers for B.U.N.N.Y.](SETUP.md#connect-device-controllers-for-bunny).
 
-## Opt-in pilot diagnostics
+## Opt-in shared diagnostics
 
 An in-process host can supply `HubOptions.diagnostics`, created by the packaged
 `@jimmie-potts/hub/diagnostics` adapter. The host supplies a neutral resource,
 a bounded canonical emitter and its tracer. The adapter imports no SDK or
-exporter and the normal CLI configuration does not enable it. With no adapter,
+exporter and normal library startup does not construct one. With no adapter,
 command behavior is unchanged.
 
 The controller command route adopts validated trace context only after
@@ -39,6 +39,40 @@ observations with validated ticket metadata; it never records request bodies,
 credentials or exception text. Telemetry errors preserve domain results and
 never retry a command. Pilot qualification and broader adoption remain separate
 from these source checks; see [the development checks](../../docs/development.md#shared-observability-pilot-checks).
+
+Normal CLI configuration can add `"observability": {"enabled": true}` for canonical
+INFO-and-above NDJSON on stderr. Readiness and command-result stdout stays unchanged.
+To export to an already running local development Collector and enable traces:
+
+```json
+"observability": {
+  "enabled": true,
+  "collectorOrigin": "http://127.0.0.1:4318",
+  "tracing": true,
+  "samplingRatio": 0.1
+}
+```
+
+The origin must be an explicit numeric loopback HTTP origin. Export is optional;
+tracing requires it. Sampling defaults to 10% for new root traces and honors
+qualified parent sampling. Use `1` for a synthetic correlation check. Set
+`enabled` to false or remove the field to disable new diagnostics. Apply these
+settings only through a separately authorized installation/configuration change;
+source delivery does not edit an installed configuration or start a Collector.
+
+Coverage includes lifecycle/startup errors, authenticated HTTP outcomes,
+controller command observations, MCP tool outcomes and commit-triggered feed
+fan-out. Command and MCP spans correlate to available controller spans. Validated traceparent
+is sent only to the configured authenticated controller endpoint; no baggage or
+tracestate is sent. Device/vendor calls remain outside this propagation. Ordinary
+HTTP summaries are logs, not a claim that every route has a trace. Feed work
+without an active parent starts its own trace. Periodic heartbeat polling,
+browser/hooks/helpers, other controllers and per-frame work remain outside this
+slice. No raw URLs, request bodies or exceptions are recorded. Use the existing
+[pilot query examples](../../docs/development.md#shared-observability-pilot-checks)
+with service `hub`, scope, operation, ticket and available trace ID. Logs with an
+unsampled flag need not have a stored span. Queue/drop/export counters are exposed
+by the injected runtime's `counts()` for host diagnostics/tests.
 
 ## Credentials
 

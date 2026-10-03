@@ -1,7 +1,7 @@
 # B.U.N.N.Y. observability contract
 
 This private artifact defines canonical diagnostics for TypeScript, Python and
-browser producers. It does not start an exporter or instrument a component.
+browser producers. Imports do not start an exporter or instrument a component.
 Read `CONTRACT.md` in the archive (source: `docs/observability-contract.md`)
 before integrating it. Source tests
 prove the contract; they do not prove ingestion, installation or device behavior.
@@ -58,3 +58,34 @@ installs it in an isolated consumer, checks hashes, and runs Node/Python/query
 checks against the installed bytes. Browser verification has its own command,
 `npm run test:observability:browser`; the package test also bundles the installed
 pure entrypoint to verify it has no Node-only dependencies.
+
+## Explicit host runtime (artifact 1.1.0)
+
+Node hosts import `createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`.
+Pass `enabled: true`, a contract-valid `resource`, a bounded `localSink` (stderr
+by default), and optionally `collectorOrigin`, `tracing: true` and `samplingRatio`
+(default 0.1). Call `event` for registered lifecycle records, `run` around an
+owned operation, or inject `emit`/`tracerFor` into an existing adapter. The
+operation specifies registered `scope`, `operation` and optionally `spanName`,
+allowlisted attributes and a trusted result-to-outcome mapping. It invokes the
+action once and preserves its return/error. `root: true` isolates an entrypoint;
+an incoming traceparent is adopted only with both authenticated and owned flags.
+One enabled tracing runtime owns the process context manager. Await `shutdown`
+after domain work quiesces. Exporters never initialize from ambient OTel settings.
+
+Python hosts install this artifact's pinned `requirements-host.txt` in addition
+to its contract requirements, then explicitly construct
+`bunny_observability.host.HostDiagnostics` with equivalent snake_case options.
+`with host.operation(scope, operation): ...` records a bounded operation. Capture
+with `capture_context()` and restore inside `with host.run_context(captured)` at
+an owned thread/queue handoff. A persisted process without context begins a new
+trace and may carry its allowlisted ticket; it must not invent a parent. Call
+`close()` at quiescence. Detached workers supply an owned `local_sink` or use the
+explicit loopback Collector sink; this package installs no service or log store.
+
+Both runtimes keep the original queue/record limits, use one log ingestion path,
+and expose safe counts. Local sinks must return promptly (Node may return a
+promise); shutdown cancels owned transports but cannot interrupt arbitrary host
+callback code. Python queue workers are daemon threads. Slow or absent collection
+never retries a domain command. Manual tracing sends no context to device/vendor
+endpoints. Schema versions 1.0/1.1 and the OTel semantic-convention pin are unchanged.

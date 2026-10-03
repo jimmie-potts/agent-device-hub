@@ -1,3 +1,4 @@
+import type {HostDiagnostics} from '@jimmie-potts/bunny-observability/host';
 import {createHash} from 'node:crypto';
 import {createDeviceRegistry,bindServiceTools,createMcpHandler,type ServiceExtension,type McpHandler,type JsonSchema,type DeviceRegistration} from '@jimmie-potts/device-mcp';
 import type {Credential} from './server.js';
@@ -9,7 +10,7 @@ import {LIGHTING_PROFILE} from './lifx-lighting.js';
 // Logical application service; never advertised as a physical device.
 export const HOST_SERVICE = 'hub-service';
 export type HubMcp = McpHandler;
-type Options = {origin:string;clients:Map<string,ControllerClient>;authenticate(token:string):Credential|null;
+type Options = {diagnostics?:HostDiagnostics;origin:string;clients:Map<string,ControllerClient>;authenticate(token:string):Credential|null;
  principal(id:string,scope:'read'|'control',device:string):Credential;
  sessions(principal:Credential,query?:string,provider?:string):Record<string,unknown>;
  command(principal:Credential,input:unknown):Promise<unknown>;
@@ -34,7 +35,8 @@ export function createHubMcp(options:Options):McpHandler {
    async invoke(args,context){
     try {
      const principal=options.principal(context.principalId,scope,target);
-     const value=await invoke(args,principal);
+     const action=()=>invoke(args,principal);
+     const value=options.diagnostics?await options.diagnostics.run({scope:'bunny.mcp',operation:write?'verification':'status',root:true,outcome:value=>object(value)&&typeof value.outcome==='string'?({queued:'queued',sent:'transport-acknowledged',failed:'rejected',cancelled:'cancelled',uncertain:'uncertain','partially-applied':'partial'} as Record<string,string>)[value.outcome]??'succeeded':object(value)&&value.ok===false?'rejected':'succeeded'},action):await action();
      const failed=object(value)&&(value.ok===false||value.outcome==='failed'||value.outcome==='cancelled'||value.outcome==='uncertain'||value.outcome==='partially-applied');
      return {data:{result:value as Record<string,unknown>},isError:failed};
     }catch(error){

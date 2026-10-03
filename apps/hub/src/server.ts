@@ -1,3 +1,4 @@
+import type {HostDiagnostics} from '@jimmie-potts/bunny-observability/host';
 import {commandDiagnosticAttributes,type CommandDiagnostics} from './diagnostics.js';
 import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
@@ -28,7 +29,7 @@ import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {diagnostics?:CommandDiagnostics; directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
+export type HubOptions = {observability?:unknown;hostDiagnostics?:HostDiagnostics;diagnostics?:CommandDiagnostics; directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -272,7 +273,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     // Deferred outside the commit call so a burst of commits triggers one fan-out.
     if (streams.size === 0 || feedScheduled) return;
     feedScheduled = true;
-    setImmediate(() => {feedScheduled = false;feedTick();});
+    setImmediate(() => {feedScheduled = false;
+      if(options.hostDiagnostics)void options.hostDiagnostics.run({scope:'bunny.feed',operation:'feed',spanName:'bunny.feed.read'},()=>feedTick()).catch(()=>{});
+      else feedTick();
+    });
   });
   const authenticateConfigured = (token:string):Credential|null => {
     if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
@@ -292,12 +296,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (browserSessions.get(principal.digest)?.credential === principal || currentCredentials.includes(principal)) return;
     throw new HttpError('unauthenticated',401);
   };
+  const diagnosticRequests=new WeakMap<IncomingMessage,string>();
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
     const token = req.headers.authorization;
     const principal = typeof token === 'string' && token.startsWith('Bearer ') ? authenticate(token.slice(7)) : null;
     if (!principal) throw new HttpError('unauthenticated',401);
     if (!sameOrigin(req) || !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
     if (req.method !== 'GET' && req.headers['x-pixoo-request'] !== '1') throw new HttpError('forbidden',403);
+    diagnosticRequests.set(req,scope==='ingest'?'lifecycle':scope==='control'?'verification':'status');
     return principal;
   };
   async function command(principal: Credential, input: unknown) {
@@ -475,7 +481,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);
         if (!res.headersSent) json(res,safe.status,{error:{code:safe.code}});else res.destroy();
-      } finally {active--;if (!streaming) {res.once('close',() => clearTimeout(timer));res.once('finish',() => clearTimeout(timer));}}
+      } finally {
+        const operation=diagnosticRequests.get(req);
+        if(operation)try{options.hostDiagnostics?.event(res.statusCode>=400?'operation.failed':'operation.completed','bunny.http',
+          {'bunny.operation':operation,'bunny.outcome':res.statusCode>=400?'rejected':'succeeded','bunny.duration_ms':Math.min(86400000,Math.max(0,performance.now()-started))},res.statusCode>=400?'WARN':'INFO');}catch{}
+        active--;if (!streaming) {res.once('close',() => clearTimeout(timer));res.once('finish',() => clearTimeout(timer));}}
     })().catch(() => res.destroy());
   });
   server.maxConnections = 64;
@@ -486,7 +496,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const port = (server.address() as {port:number}).port;
   origin = `http://127.0.0.1:${port}`;hosts = [`127.0.0.1:${port}`,`localhost:${port}`];
   try {
-    if (options.mcp) mcp = createHubMcp({origin,clients,authenticate:authenticateConfigured,principal:(id,scope,device) => {
+    if (options.mcp) mcp = createHubMcp({origin,clients,diagnostics:options.hostDiagnostics,authenticate:authenticateConfigured,principal:(id,scope,device) => {
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;

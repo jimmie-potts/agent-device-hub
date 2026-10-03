@@ -68,7 +68,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-contracts.txt
       - run: npm ci
-      - run: python -m pip install -r requirements-contracts.txt
+      - run: python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt
       - run: npm run build
       - run: npm run typecheck
       - run: npm run test:observability:built

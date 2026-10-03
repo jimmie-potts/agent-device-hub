@@ -15,7 +15,6 @@ const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 // Previously published private dependencies retain their original archive bytes.
 const released={
  'device-contracts':{version:'1.2.0',sha256:'f05b326b88833086abf1af596569448e409645486e7bef482f74e9a6998ced7e',manifest:'d4358ab7257537fdca5787770b0c2591b4e49639ca7fa553e4187bcbb89b6faa'},
- 'bunny-observability':{version:'1.0.0',sha256:'7c48025059a92677790182c84c5b5d3b830f69470a9adc791386ad89c2185894',manifest:'9cd89008b15af5c52cc15fe712ac9d803404e342b01b2d8c593f251d26898508'},
  'device-mcp':{version:'1.0.1',sha256:'e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32',manifest:'949ef80fd0a440e1816bc2dc250f63c5f40ff6369f251519cad1e3408d036a3e'}
 };
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
@@ -27,8 +26,9 @@ const common=resolve(root,commonResult.stdout.trim());
 const scratchRoot=join(dirname(dirname(common)),'.local/scratch/package-hub');await mkdir(scratchRoot,{recursive:true});
 const scratch=await mkdtemp(join(scratchRoot,'hub-'));
 try {
-  // Build the new state/lifecycle pair; existing releases stay pinned below.
+  // Build the new state/lifecycle and observability artifacts; existing releases stay pinned below.
   run([join(root,'scripts/package-agent-state.mjs')],root);
+  run([join(root,'scripts/package-observability.mjs')],root);
   const stage=join(scratch,'stage');await mkdir(stage);
   for(const name of ['package.json','src','dist','public','tests','fixtures','bin','README.md','SETUP.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
@@ -41,7 +41,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.4.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.2.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz'],['bunny-observability','jimmie-potts-bunny-observability-1.0.0.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.4.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.2.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz'],['bunny-observability','jimmie-potts-bunny-observability-1.1.0.tgz']]){
     const pin=released[name],source=join(root,pin?'vendor':'artifacts',archive);
     if(pin){assert.equal(metadata.dependencies[`@jimmie-potts/${name}`],pin.version);assert.equal(sha(await readFile(source)),pin.sha256,`published archive: ${name}`);}
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
