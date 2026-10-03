@@ -167,7 +167,7 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
     const adapters = await w.run('start', '--manifest', w.manifest, '--checkout', `nanoleaf=${w.nanoleaf.checkout}`, '--checkout', `pixoo=${w.pixoo.checkout}`, '--unpinned');
     assert.equal(adapters.code, 1);
     assert.equal(adapters.result.error, 'identity-mismatch');
-    assert.match(adapters.result.detail, /^nanoleaf: core 1\.2\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
+    assert.match(adapters.result.detail, /^nanoleaf: core 1\.3\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
     assert.equal(existsSync(join(w.base, 'p')) && (await readdir(join(w.base, 'p'))).length > 0, false, 'no composition or proof was created');
     assert.equal(existsSync(join(w.base, 's')), false, 'no runtime directory was created');
     assert.equal(w.units(), '', 'no unit was started');
