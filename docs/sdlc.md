@@ -40,11 +40,17 @@ Reading it does not invoke either skill. If it is unavailable, report that and
 apply this section. Codex and Claude follow the same policy. A read-only request
 reports the assessment instead of editing the issue.
 
-Draft stories with the five detailed prompts of the
-[story template](../.github/ISSUE_TEMPLATE/feature.md), using the same headings
+Draft stories with the recognized detailed headings of the
+[Work item template](../.github/ISSUE_TEMPLATE/feature.md), using the same headings
 for maintenance and investigation issues. New stories also begin with the
 [opening below](#new-story-opening). A small story may answer each detailed
 prompt in a few sentences.
+
+Use the [issue conventions](issue-conventions.md) for Epic, Work item and Bug
+intake, native membership and portfolio views. Outcome and observable acceptance
+are required. Implementation, preservation and deferral details are conditional
+on the work; keep their recognized headings without inventing irrelevant prose.
+No model choice or Execution recommendation is required to file an issue.
 
 1. Outcome and real setup.
 2. Smallest useful implementation, with dependencies.
@@ -138,9 +144,10 @@ unchanged. Existing stories remain valid without it.
 
 The GitHub chooser uses a Markdown template so the author's headline can appear
 first at level two. YAML forms add fixed field headings and cannot substitute
-an answer as the headline. The template retains the chooser name, labels,
-detailed prompts and Guide guidance; Markdown does not enforce required inputs.
-Complete every detailed section and replace all opening prompts before filing.
+an answer as the headline. The Work item template retains the labels, recognized detailed headings and
+Guide guidance; Markdown does not enforce required inputs.
+Complete outcome and acceptance, fill the other detailed sections when relevant,
+and replace all opening prompts before filing.
 For CLI or agent-created issues, write the same structure directly without
 frontmatter or template comments. No live test issue or existing-story rewrite
 is needed to demonstrate the format.
