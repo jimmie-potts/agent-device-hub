@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const name='@jimmie-potts/bunny-observability',version='1.0.0';
+const name='@jimmie-potts/bunny-observability',version='1.1.0';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 function run(command,args,cwd){
  const result=spawnSync(command,args,{cwd,encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:8*1024*1024});
@@ -43,7 +43,7 @@ const scratchRoot=join(dirname(dirname(common)),'.local/scratch/package-observab
 const scratch=await mkdtemp(join(scratchRoot,'observability-'));
 try{
  const stage=join(scratch,'stage');await mkdir(stage);
- for(const item of ['package.json','src','dist','fixtures','python','tests','README.md'])
+ for(const item of ['package.json','src','dist','fixtures','python','tests','runtime','requirements-host.txt','README.md'])
   await cp(join(root,'packages/observability',item),join(stage,item),{recursive:true,filter:path=>!path.includes('__pycache__')&&!path.endsWith('.pyc')});
  await cp(join(root,'docs/observability-contract.md'),join(stage,'CONTRACT.md'));
  await cp(join(root,'requirements-contracts.txt'),join(stage,'requirements-contracts.txt'));
@@ -78,7 +78,7 @@ try{
    'import {noop,validateRecord} from "@jimmie-potts/bunny-observability"; import {DiagnosticContext} from "@jimmie-potts/bunny-observability/node"; if(noop.emit({})||validateRecord({}).ok||new DiagnosticContext().current()!==undefined)process.exit(1);'],consumer),'');
   const browser=await build({entryPoints:[join(installed,'dist/index.js')],bundle:true,platform:'browser',format:'esm',write:false});
   assert.equal(browser.errors.length,0);
-  await writeFile(join(consumer,'types.ts'), 'import {createRecord, type DiagnosticRecord} from "@jimmie-potts/bunny-observability"; const result=createRecord({}); if(result.ok){const record:DiagnosticRecord=result.value; console.log(record.event_name); }\n');
+  await writeFile(join(consumer,'types.ts'), 'import {createRecord, type DiagnosticRecord} from "@jimmie-potts/bunny-observability"; import {createHostDiagnostics} from \"@jimmie-potts/bunny-observability/host\"; void createHostDiagnostics({enabled:false}); const result=createRecord({}); if(result.ok){const record:DiagnosticRecord=result.value; console.log(record.event_name); }\n');
   run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext',join(consumer,'types.ts')],consumer);
   // Demonstrate the consumer detects a changed file, not merely matching copies.
   const fixture=join(installed,'fixtures/records.json');await writeFile(fixture,'{}\n');

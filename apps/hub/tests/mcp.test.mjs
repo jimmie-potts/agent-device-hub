@@ -501,3 +501,15 @@ test('status reads at controller contract 1.1 and shows moments, and a 1.0-only 
  const refused=await c.call(name+'_power_set',{...guards(modern.snapshot11()),on:false});
  assert.equal(modern.commands.length,2);assert.equal(modern.commands[1].apiVersion,'1.0');assert.equal(refused.isError,true);
 });
+
+test('enabled host diagnostics records MCP outcomes without changing tool results',async t=>{
+ const {createHostDiagnostics}=await import('@jimmie-potts/bunny-observability/host');
+ const records=[];
+ const diagnostics=await createHostDiagnostics({enabled:true,resource:{'service.namespace':'bunny','service.name':'hub','service.version':'unknown',
+  'service.instance.id':'00000000-0000-4000-8000-000000000001','deployment.environment.name':'test'},localSink:line=>records.push(JSON.parse(line))});
+ t.after(()=>diagnostics.shutdown());
+ const hub=await fixture(t,{hostDiagnostics:diagnostics}),c=client(hub);await c.initialize();
+ const result=await c.call('hub_sessions');assert.equal(result.isError,false);
+ await c.close();await diagnostics.shutdown();
+ assert.ok(records.some(x=>x.scope.name==='bunny.mcp'&&x.attributes['bunny.outcome']==='succeeded'));
+});

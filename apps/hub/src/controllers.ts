@@ -89,7 +89,7 @@ export class ControllerClient {
     try {
       const endpoint = integration ? this.config.endpoint.replace(/\/controller\/v1$/,integration === 'lighting' ? '/controller/lifx-light/v1' : this.config.kind === 'pixoo' ? '/controller/pixoo-integration/v1' : '/controller/integration/v1') : this.config.endpoint;
       const response = await fetch(endpoint + path, {method:body === undefined ? 'GET' : 'POST', redirect:'error',signal:abort.signal,
-        headers:{authorization:`Bearer ${this.config.token}`,'content-type':'application/json','x-pixoo-request':'1'},
+        headers:{authorization:`Bearer ${this.config.token}`,'content-type':'application/json','x-pixoo-request':'1',...this.diagnostics?.headers()},
         ...(body === undefined ? {} : {body:JSON.stringify(body)})});
       const value = await responseJson(response,1024 * 1024);
       if (!response.ok) {

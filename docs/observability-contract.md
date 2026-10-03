@@ -1,6 +1,6 @@
 # Shared diagnostic contract
 
-The artifact `@jimmie-potts/bunny-observability` version 1.0.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.1.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
 1.0 and 1.1 are independent of the pinned OpenTelemetry semantic conventions
 1.44.0. Both profiles are introduced together: 1.0 is the minimal compatibility
