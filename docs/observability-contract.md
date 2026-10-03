@@ -1,5 +1,12 @@
 # Shared diagnostic contract
 
+[ADR 0011](decisions/0011-private-personal-data-retention.md) changes the accepted
+direction for private diagnostics: retain personal context locally and keep it
+out of GitHub. The profiles below describe the released contract, including its
+current exclusions. Richer capture and durable retention require a versioned
+implementation with consumer and exporter checks; this policy decision does not
+widen an existing schema or export destination.
+
 The artifact `@jimmie-potts/bunny-observability` version 1.1.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
 1.0 and 1.1 are independent of the pinned OpenTelemetry semantic conventions

@@ -38,6 +38,16 @@ These terms describe responsibility boundaries. Concrete schemas, freshness,
 command behavior and presentation policies belong in their owning contracts
 and issue-linked specifications.
 
+## Personal data
+
+[ADR 0011](decisions/0011-private-personal-data-retention.md) sets the direction
+for private collection: retain personal content from owner-selected sources,
+including logs and telemetry, while excluding credentials and secrets. Keep
+collected personal data out of every GitHub publication surface. Private
+retention does not expand source selection, sharing or command authority.
+Existing versioned contracts remain in force until their scoped replacements
+are delivered; a bounded snapshot or diagnostic stream is not a complete archive.
+
 ## Ownership
 
 The hub owns provider qualification, shared event/session contracts, one
