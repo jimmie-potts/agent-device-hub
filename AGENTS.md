@@ -113,6 +113,15 @@ omission needs its schema-based reason; failed lookups do not justify omission.
 
 ## Runtime and migration boundaries
 
+Installation: a merged change to the installed Hub is complete only after
+`node apps/hub/bin/hub-install.mjs upgrade <sha>` installs it on the owner's
+installation and its receipt passes, unless the issue marks it source-only with
+a reason and links the installation issue that batches it. Offer the upgrade at
+a checkpoint after merge and post-merge CI; run it only on the owner's approval
+there or an explicit request. Before planning, running or checking an install,
+upgrade or rollback, read [the Hub upgrade procedure](apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub)
+and run `node apps/hub/bin/hub-install.mjs plan` with its required inputs first.
+
 Provider hooks report allowlisted lifecycle metadata and must fail open without
 changing agent permissions or waiting for devices. Keep activity, attention,
 notice acknowledgment, optional read evidence and observation freshness distinct.
