@@ -1,0 +1,50 @@
+{
+  "status": "owner-accepted-initial-targets-unexecuted",
+  "decision": "https://github.com/jimmie-potts/agent-device-hub/issues/706#issuecomment-5945109256",
+  "workload": {
+    "operations_per_second": 20,
+    "maximum_concurrency": 8,
+    "warmup_seconds": 30,
+    "measurement_seconds": 60,
+    "pairs_per_condition": 3,
+    "conditions": [
+      "healthy",
+      "unavailable"
+    ]
+  },
+  "hard_limits": {
+    "host_available_reserve_bytes": 8589934592,
+    "stack_cpu_cores": 2,
+    "stack_memory_bytes": 4294967296,
+    "image_bytes": 10737418240,
+    "run_data_bytes": 2147483648
+  },
+  "each_pair": {
+    "p50_added_ms_absolute": 2,
+    "p50_added_baseline_fraction": 0.1,
+    "p50_rule": "max",
+    "p95_added_ms_absolute": 5,
+    "p95_added_baseline_fraction": 0.15,
+    "p95_rule": "max",
+    "enabled_throughput_minimum_baseline_fraction": 0.95,
+    "application_added_cpu_cores": 0.25,
+    "application_added_peak_rss_bytes": 67108864,
+    "stack_peak_rss_bytes": 3221225472,
+    "stack_mean_cpu_cores": 1,
+    "application_shutdown_seconds": 2,
+    "telemetry_flush_seconds": 1,
+    "container_teardown_seconds": 30,
+    "healthy_expected_records_lost": 0,
+    "privacy_failures": 0,
+    "context_isolation_failures": 0,
+    "duplicate_side_effects": 0,
+    "command_outcomes": "identical"
+  },
+  "revisit_triggers": [
+    "queue drops",
+    "resource-cap failure",
+    "component or event volume growth",
+    "material runtime or host change"
+  ],
+  "failure_policy": "Retain failed and inconclusive results. No unchanged rerun or retroactive threshold relaxation. Adoption remains blocked."
+}

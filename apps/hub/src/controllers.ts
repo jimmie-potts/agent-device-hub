@@ -1,3 +1,4 @@
+import {commandDiagnosticAttributes,type CommandDiagnostics} from './diagnostics.js';
 import {validate, type Request, type Receipt, type RequestV1_1, type ReceiptV1_1, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
 import {pixooCatalogPath,validateCatalogReply,previewReply,type CatalogOperation,type Representation} from './pixoo-catalog.js';
@@ -33,7 +34,7 @@ export class ControllerClient {
   /** In memory only: a new client, and so a hub start, holds none and probes on its first 1.1 read. */
   private served?: {version:'1.0'|'1.1'; epoch:string};
   readonly config: Readonly<ControllerConfig>;
-  constructor(config: ControllerConfig, readonly timeoutMs = 2000) {
+  constructor(config: ControllerConfig, readonly timeoutMs = 2000, private readonly diagnostics?:CommandDiagnostics) {
     const url = loopbackEndpoint(config.endpoint);
     if (!id(config.id) || !id(config.controllerId) || !id(config.deviceId) || !CONTROLLER_KINDS.includes(config.kind) ||
         !/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(config.token) || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2500 ||
@@ -161,13 +162,18 @@ export class ControllerClient {
     if (!validate('request',value)) throw new HttpError('invalid-request',400);
     const request = value as Request;
     if (request.controllerId !== this.config.controllerId || request.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
-    const response = await this.request('/commands',request);const result = response.value;
-    const receipt = result as Receipt;
-    if (!validate('receipt',result) || receipt.controllerId !== request.controllerId || receipt.deviceId !== request.deviceId ||
-        receipt.requestId.epoch !== request.requestId.epoch || receipt.requestId.sequence !== request.requestId.sequence) {
-      this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
-    }
-    this.health = 'ready'; return {status:response.status,body:receipt};
+    const execute = async () => {
+      const response = await this.request('/commands',request);const result = response.value;
+      const receipt = result as Receipt;
+      if (!validate('receipt',result) || receipt.controllerId !== request.controllerId || receipt.deviceId !== request.deviceId ||
+          receipt.requestId.epoch !== request.requestId.epoch || receipt.requestId.sequence !== request.requestId.sequence) {
+        this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
+      }
+      this.health = 'ready'; return {status:response.status,body:receipt};
+    };
+    if (!this.diagnostics) return execute();
+    const observed = {pixoo:'pixoo',nanoleaf:'nanoleaf-controller',tidbyt:'local-controllers',lifx:'local-controllers'}[this.config.kind];
+    return this.diagnostics.run('bunny.controller',{...commandDiagnosticAttributes(this.config,request),'bunny.observed.service':observed},execute);
   }
   /** A 1.1 `moment` request for this controller's device, checked before it takes the slot. */
   private momentRequest(value: unknown): RequestV1_1 {

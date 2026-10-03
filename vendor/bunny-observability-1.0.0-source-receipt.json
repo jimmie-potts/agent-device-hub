@@ -1,0 +1,92 @@
+{
+  "artifact": "@jimmie-potts/bunny-observability",
+  "version": "1.0.0",
+  "sourceRevision": "673a297ad1225cd18b611de8969dea10b28d33f2",
+  "reviewedHead": "b7fc7b221dcc7e57d98d38cd30b41d1b8d79bb3b",
+  "reviewBase": "a0bb44ababf9cb30a6ee6df7ff14b2e5ee1d7949",
+  "sourceTree": "8aee5ce9ed990b1e8e34a367881895bc703554b2",
+  "filename": "jimmie-potts-bunny-observability-1.0.0.tgz",
+  "sha256": "7c48025059a92677790182c84c5b5d3b830f69470a9adc791386ad89c2185894",
+  "manifestSha256": "9cd89008b15af5c52cc15fe712ac9d803404e342b01b2d8c593f251d26898508",
+  "schemaVersions": [
+    "1.0",
+    "1.1"
+  ],
+  "semanticConventions": "1.44.0",
+  "pr": "https://github.com/jimmie-potts/agent-device-hub/pull/707",
+  "issue": "https://github.com/jimmie-potts/agent-device-hub/issues/703",
+  "reviews": {
+    "Standards": "satisfied; independent final 2",
+    "Specification": "satisfied; independent final 2",
+    "report": "https://github.com/jimmie-potts/agent-device-hub/pull/707#issuecomment-5945708637"
+  },
+  "node": "24.21.0",
+  "packageChecks": [
+    {
+      "command": "npm run test:observability:package:built",
+      "revision": "673a297ad1225cd18b611de8969dea10b28d33f2",
+      "exitCode": 0,
+      "archiveReproducible": true,
+      "matchesReviewedArchive": true
+    }
+  ],
+  "mainCiChecks": [
+    {
+      "name": "Checks / Workflow checks on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715485888,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=22n73bx7vd&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715485888",
+      "superseded": []
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.12 on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715482917,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=mjbths0n9d&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715482917",
+      "superseded": []
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.14 on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715476967,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=g1hx87b51n&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715476967",
+      "superseded": []
+    },
+    {
+      "name": "Checks / MCP on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715478683,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=q5vjhl5fz6&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715478683",
+      "superseded": []
+    },
+    {
+      "name": "Checks / Dashboard browser and contracts on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715480384,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=fll2j6jn4p&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715480384",
+      "superseded": []
+    },
+    {
+      "name": "Checks / App verification on ubuntu-latest",
+      "result": "success",
+      "checkRunId": 110715488169,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/h24qf8d0ft?job=5jjs7447tm&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715488169",
+      "superseded": []
+    },
+    {
+      "name": "Work guide / Work guide build and browser checks",
+      "result": "success",
+      "checkRunId": 110715474978,
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/jknr886t7j?job=pg48pxq6zm&repo=jimmie-potts%2Fagent-device-hub",
+      "htmlUrl": "https://github.com/jimmie-potts/agent-device-hub/runs/110715474978",
+      "superseded": []
+    }
+  ],
+  "acceptance": "source contract only; no installed service, collector ingestion, pilot performance or physical acceptance"
+}

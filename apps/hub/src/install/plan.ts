@@ -16,7 +16,7 @@ export async function privateRoot(path:string,allowMissing=false):Promise<void>{
 }
 export async function protectedPath(path:string):Promise<ProtectedPath>{
  const info=await lstat(path),resolved=await realpath(path),actual=await lstat(resolved);
- const hash=actual.isDirectory()?(await inventory(resolved)).sha256:await hashRegular(resolved);
+ const hash=actual.isDirectory()?(await inventory(resolved,256*1024*1024)).sha256:await hashRegular(resolved);
  return {path,resolved,link:info.isSymbolicLink()?await readlink(path):null,sha256:hash,mode:actual.mode&0o777,uid:actual.uid};
 }
 export async function inspectInstalled(layout:Layout):Promise<Installed>{
