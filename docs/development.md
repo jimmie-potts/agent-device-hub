@@ -723,6 +723,9 @@ current-link switch. `test:hub:package` also runs
 `scripts/hub-build-identity.test.mjs` against disposable Git repositories to
 verify clean, dirty, missing and equal-version/different-commit provenance.
 The extracted manifest must carry the package command's captured source identity.
+The running packaged Hub must report that identity in health and dashboard context.
+Complete dependency inventories and the 8 MiB manifest boundary are covered;
+oversized or invalid metadata still reports unknown.
 
 Hub upgrade command checks use `apps/hub/tests/install-*.test.mjs` through
 `npm run test:hub` and `npm run test:hub:package`. The existing contracts/state
