@@ -6,4 +6,3 @@ The dashboard SHALL support keyboard navigation, readable contrast, reduced moti
 #### Scenario: Synthetic acceptance
 - **WHEN** the candidate is qualified without personal sessions or devices
 - **THEN** browser evidence covers inspection without writes, controls, failures, responsive layout and accessibility separately from installed and physical acceptance
-
