@@ -42,3 +42,13 @@ the two tasks temporarily reopened during correction. After checklist closeout,
 strict workflow validation and workflow tests passed. Fresh independent
 review remains required. The earlier instruction-discovery runs prove routing to
 the procedure; they did not inspect the new pause wording.
+
+The second review verified the pause, shared-layout and link corrections, but
+found two remaining comparison failures: an untouched store's empty fence table
+and accepted lifecycle events whose provider timestamp moves backward. Separate
+real-owner regressions reproduced both failures. The comparator now accepts the
+storage adapter's empty default and follows the reducer's timestamp semantics;
+it still rejects owner revision regression, missing records and deletion of a
+previously written fence row. All 36 focused installer tests passed after this
+correction. Subsequent base refreshes, full checks and independent verdicts are
+recorded against their exact revisions on the PR.
