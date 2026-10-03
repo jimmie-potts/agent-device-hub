@@ -22,10 +22,22 @@ try{
  const edits=view().locator('.card').filter({has:page.getByRole('heading',{name:'Observed edits',exact:true})});await edits.getByRole('cell',{name:'world',exact:true}).waitFor();await edits.getByRole('cell',{name:'friend',exact:true}).waitFor();
  await page.getByLabel('Period',{exact:true}).selectOption('all');await page.waitForFunction(()=>Array.from(document.querySelectorAll('.wispr-page dt')).find(x=>x.textContent==='Words')?.nextElementSibling?.textContent==='195');
  await page.getByLabel('App',{exact:true}).selectOption('slack');await page.waitForFunction(()=>Array.from(document.querySelectorAll('.wispr-page dt')).find(x=>x.textContent==='Words')?.nextElementSibling?.textContent==='180');
+ assert.equal(await page.getByLabel('Category',{exact:true}).locator('option[value="email"]').evaluate(e=>e.disabled),true,'app first: incompatible category disabled');
+ assert.equal(await page.getByLabel('Category',{exact:true}).locator('option[value="messaging"]').evaluate(e=>e.disabled),false);
+ await page.getByText('Only matching app and category combinations support language aggregates. Choose All apps or All categories to change groups.',{exact:true}).waitFor();
+ await page.getByLabel('Category',{exact:true}).selectOption('messaging');await view().getByText('hello world',{exact:true}).waitFor();
+ assert.equal(await page.getByLabel('App',{exact:true}).locator('option[value="gmail"]').evaluate(e=>e.disabled),true,'paired selection cannot become incompatible');
+ await page.getByLabel('Category',{exact:true}).selectOption('all');await view().getByText('hello world',{exact:true}).waitFor();
  const downloading=page.waitForEvent('download');await page.getByRole('button',{name:'Download numeric JSON'}).click();const downloaded=await downloading;const exported=JSON.parse(await readFile(await downloaded.path(),'utf8'));assert.equal(exported.data.totals.words,180);assert.equal(exported.filters.app,'slack');assert.ok(!JSON.stringify(exported).includes('hello'));assert.equal(exported.revision,f.snapshot.revision);
  const csvWait=page.waitForEvent('download');await page.getByRole('button',{name:'Download numeric CSV'}).click();const csv=await readFile(await(await csvWait).path(),'utf8');assert.match(csv,/"data.totals.words","180"/);assert.ok(!csv.includes('hello'));
  await page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:/^Home/}).click();await page.getByRole('heading',{name:'Wispr today'}).waitFor();assert.equal(await page.locator('body').textContent().then(s=>s.includes('hello world')),false,'navigation drops hidden text');await page.locator('[data-widget="wispr-summary"]').locator('dd').filter({hasText:/^180$/}).waitFor();await open();await view().getByText('hello world',{exact:true}).waitFor();assert.equal(await page.getByLabel('Period',{exact:true}).inputValue(),'all');assert.equal(await page.getByLabel('App',{exact:true}).inputValue(),'slack');
  await page.getByLabel('App',{exact:true}).selectOption('all');await page.getByLabel('Period',{exact:true}).selectOption('7d');await view().getByText('hello world',{exact:true}).waitFor();
+ await page.getByLabel('Category',{exact:true}).selectOption('email');await view().getByText(/Low sample:/).waitFor();
+ assert.equal(await page.getByLabel('App',{exact:true}).locator('option[value="slack"]').evaluate(e=>e.disabled),true,'category first: incompatible app disabled');
+ assert.equal(await page.getByLabel('App',{exact:true}).locator('option[value="gmail"]').evaluate(e=>e.disabled),false);
+ await page.getByLabel('App',{exact:true}).selectOption('gmail');await view().getByText(/Low sample:/).waitFor();
+ assert.equal(await page.getByLabel('Category',{exact:true}).locator('option[value="messaging"]').evaluate(e=>e.disabled),true);
+ await page.getByLabel('App',{exact:true}).selectOption('all');await page.getByLabel('Category',{exact:true}).selectOption('all');await view().getByText('hello world',{exact:true}).waitFor();
  for(const width of [1440,900,390]){
   await page.setViewportSize({width,height:1000});await page.getByLabel('Period',{exact:true}).focus();assert.equal(await page.getByLabel('Period',{exact:true}).evaluate(e=>e===document.activeElement),true);
   const daily=view().getByText(/^Daily values/);await daily.focus();if(width===390)await daily.tap();else await daily.press('Enter');await view().getByRole('table',{name:'Captured daily totals'}).waitFor();if(width===390)await daily.tap();else await daily.press('Enter');

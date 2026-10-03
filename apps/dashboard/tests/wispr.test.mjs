@@ -4,6 +4,7 @@ import {build} from 'esbuild';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {APPS,CATEGORIES,appCategory} from '../../../packages/wispr-contracts/dist/index.js';
 const dir=await mkdtemp(join(tmpdir(),'dashboard-wispr-'));
 try{
  await build({entryPoints:['apps/dashboard/src/routes.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'routes.mjs')});
@@ -19,7 +20,10 @@ try{
 const helperDir=await mkdtemp(join(tmpdir(),'wispr-data-'));
 try{
  await build({entryPoints:['apps/dashboard/src/wispr-data.ts'],bundle:true,platform:'node',format:'esm',outfile:join(helperDir,'data.mjs')});
- const {numericSelection,readWispr,numericCsv,metrics}=await import(join(helperDir,'data.mjs'));
+ const {numericSelection,readWispr,numericCsv,metrics,compatibleFilters}=await import(join(helperDir,'data.mjs'));
+ test('browser filter compatibility agrees with producer categoryVersion 1',()=>{
+  for(const app of ['all',...APPS])for(const category of ['all',...CATEGORIES])assert.equal(compatibleFilters(app,category),app==='all'||category==='all'||appCategory(app)===category,`${app}/${category}`);
+ });
  const status={apiVersion:'1.0',sourceId:'dictation',namespace:'n',generation:'g',revision:1,timezone:'America/New_York',generatedAt:'2026-03-08T16:00:00.000Z',lastSuccessAt:'2026-03-08T16:00:00.000Z',latestSourceDate:'2026-03-08',freshness:'fresh',ageMs:0,reason:null,coverage:{captured:{from:'2026-03-06',to:'2026-03-08'}},data:{availability:'ok',textAllowed:true,presets:[{key:'7d',from:'2026-03-02',to:'2026-03-08',asOf:'2026-03-08T16:00:00.000Z',validUntil:'2026-03-09T04:00:00.000Z'},{key:'today',from:'2026-03-08',to:'2026-03-08',asOf:'2026-03-08T16:00:00.000Z',validUntil:'2026-03-09T04:00:00.000Z'}]}};
  test('preset query intersects coverage without treating uncovered days as zero',()=>{
   const s=numericSelection(status,{period:'7d',app:'slack',category:'messaging'});

@@ -11,6 +11,9 @@ export type WisprRead={status:Status;numeric?:Numeric;dictionary?:Numeric['data'
 export const initialSelection:Selection={period:'7d',app:'all',category:'all'};
 export const appNames:Record<App,string>={chatgpt:'ChatGPT',claude:'Claude',outlook:'Outlook',gmail:'Gmail',slack:'Slack',teams:'Teams',discord:'Discord',word:'Word',notion:'Notion','google-docs':'Google Docs',other:'Unknown / other'};
 export const categoryNames:Record<Category,string>={'ai-prompts':'AI prompts',email:'Email',messaging:'Messaging',documents:'Documents','other-unknown':'Other / unknown'};
+// categoryVersion 1; kept browser-only so the AJV contract validator is not bundled.
+const appCategories:Record<App,Category>={chatgpt:'ai-prompts',claude:'ai-prompts',outlook:'email',gmail:'email',slack:'messaging',teams:'messaging',discord:'messaging',word:'documents',notion:'documents','google-docs':'documents',other:'other-unknown'};
+export const compatibleFilters=(app:Selection['app'],category:Selection['category'])=>app==='all'||category==='all'||appCategories[app]===category;
 export const periodNames:Record<Preset,string>={today:'Today','7d':'7 days','30d':'30 days',all:'All captured'};
 export const corpusNames:Record<Corpus,string>={raw:'Recognized speech',cleaned:'Flow output',observed:'Observed text'};
 export const identity=(v:Envelope<unknown>)=>JSON.stringify([v.sourceId,v.namespace,v.generation,v.revision]);

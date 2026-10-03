@@ -32,7 +32,7 @@ placement: one `component-status` widget per registered component, with compact 
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
 wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
-register in the same catalog. Every page except Connections stays mounted and hidden, so the session filter,
+register in the same catalog. Every page except Connections and Wispr stays mounted and hidden, so the session filter,
 selection and focus survive navigation; a text field still being edited is sent when the
 user leaves it, and a click on a navigation link leaves it. A control that appears on the home and on its
 component page shares one lifecycle state (`useCommandLifecycle` takes a key per
