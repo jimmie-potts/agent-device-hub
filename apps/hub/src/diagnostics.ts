@@ -21,11 +21,18 @@ export const diagnosticFailure = (error:unknown):Attributes => {
   if (code === 'uncertain-result') return {'bunny.outcome':'uncertain','bunny.reason':'transport-error','bunny.write.possible':true};
   if (code === 'unauthenticated' || code === 'forbidden') return {'bunny.outcome':'rejected','bunny.reason':'unauthorized','bunny.write.possible':false};
   if (code === 'capacity') return {'bunny.outcome':'rejected','bunny.reason':'busy','bunny.write.possible':false};
-  if (['invalid-request','invalid-input','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','unsupported-capability'].includes(code ?? '')) {
+  if (['not-found','invalid-request','invalid-input','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','unsupported-capability'].includes(code ?? '')) {
     return {'bunny.outcome':'rejected','bunny.reason':'invalid-input','bunny.write.possible':false};
   }
   return {'bunny.outcome':'unavailable','bunny.reason':'unavailable','bunny.write.possible':code !== 'controller-unavailable'};
 };
+
+/** Reads only the registered outcome field from an already produced response. */
+export function diagnosticReceipt(value:unknown):Attributes|undefined {
+  if(!value||typeof value!=='object'||!('outcome' in value)||typeof value.outcome!=='string')return;
+  const selected=outcome[value.outcome];
+  if(selected)return {'bunny.outcome':selected,...(selected==='uncertain'?{'bunny.write.possible':true}:{})};
+}
 
 /** Explicitly enabled host adapter. It never records request bodies, headers or exceptions. */
 export function createCommandDiagnostics(options:Options) {

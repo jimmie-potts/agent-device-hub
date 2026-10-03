@@ -59,10 +59,10 @@ test('normal host adapter correlates a command and propagates only to its authen
 });
 
 
-test('HTTP diagnostic summary preserves uncertainty after an admitted write loses its response',async t=>{
+for(const mode of ['drop','receipt'])test(`HTTP diagnostic summary preserves uncertain ${mode} outcomes`,async t=>{
  const {startHub}=await import('../dist/server.js');
  const {startFakeController}=await import('./fake-controller.mjs');
- const fake=await startFakeController();fake.answerNext({mode:'drop'});
+ const fake=await startFakeController();fake.answerNext(mode==='drop'?{mode:'drop'}:{status:503,receipt:{outcome:'uncertain',priorEffects:'possible',uncertainOperations:['brightness'],failure:{code:'uncertain-result'}}});
  const directory=await mkdtemp(join(tmpdir(),'hub-uncertain-summary-'));let hub;
  t.after(async()=>{await hub?.close();await fake.close();await rm(directory,{recursive:true,force:true});});
  const events=[],token='h'.repeat(43);
@@ -73,7 +73,9 @@ test('HTTP diagnostic summary preserves uncertainty after an admitted write lose
  const body={apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:snapshot.nextRequestId,
   expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:snapshot.generation,command:{kind:'brightness.set',percent:42}};
  const response=await fetch(hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify(body)});
- assert.equal(response.status,503);assert.equal((await response.json()).error.code,'uncertain-result');assert.equal(fake.commands.length,1);
+ assert.equal(response.status,503);const result=await response.json();assert.equal(mode==='drop'?result.error.code:result.outcome,mode==='drop'?'uncertain-result':'uncertain');assert.equal(fake.commands.length,1);
  const summary=events.find(x=>x.scope==='bunny.http');assert.ok(summary);
  assert.equal(summary.attributes['bunny.outcome'],'uncertain');assert.equal(summary.attributes['bunny.write.possible'],true);
+ const absent=await fetch(hub.url+'/api/unknown',{headers:{authorization:`Bearer ${token}`}});await absent.text();
+ assert.equal(absent.status,404);assert.equal(events.at(-1).attributes['bunny.write.possible'],false);
 });
