@@ -25,13 +25,21 @@ async function fixture(){
  const manifest=JSON.stringify({artifact:'@jimmie-potts/hub',version:'new',sourceRevision:source.target,files:{'app.js':sha256('new')},dependencyFiles:{}});
  const identity={kind:'release',sourceRevision:source.target,version:'new',archiveSha256:'b'.repeat(64),manifestSha256:sha256(manifest)};
  const prepare=async()=>{await mkdir(target,{recursive:true,mode:0o700});await writeFile(join(target,'app.js'),'new');await writeFile(join(target,'manifest.json'),manifest);await mkdir(join(layout.root,'provenance'),{recursive:true,mode:0o700});await writeFile(join(layout.root,'provenance',source.target+'.json'),JSON.stringify(identity));return {path:target,identity};};
- const service={observe:async()=>structuredClone(observed),stop:async()=>{calls.push('stop');observed={...observed,state:'inactive',pid:null};},start:async()=>{calls.push('start');observed={...observed,state:'active',pid:100+calls.length,start:'start-'+calls.length};},
+ const service={inspect:async read=>read(),observe:async()=>structuredClone(observed),stop:async()=>{calls.push('stop');observed={...observed,state:'inactive',pid:null};},start:async()=>{calls.push('start');observed={...observed,state:'active',pid:100+calls.length,start:'start-'+calls.length};},
   health:async(path,id)=>({identity:id,process:{...structuredClone(observed),entry:join(path,'dist/cli.js'),build:id.kind==='release'?{sourceRevision:id.sourceRevision,version:id.version}:null},program:path,owner:'owner',collector:'running',admission:'open',assets:true,launchSocket:true,browserSecurity:true})};
  const stateReader={capture:async()=>JSON.parse(await readFile(join(state,'state.sqlite'),'utf8')),preserved:(before,after)=>before.every(item=>after.includes(item))};
  const input={plan,approvedDigest:approved.digest,prepare,qualify:async()=>({status:'compatible',evidenceSha256:'c'.repeat(64)}),service,state:stateReader};
  return {root,layout,calls,plan,approved,target,identity,input,service,stateReader,options};
 }
 const valid=result=>assert.equal(validateInstallReceipt(result.receipt),true,JSON.stringify(result.receipt));
+test('health is checked again after inspection and a fault cannot produce a success receipt',async()=>{
+ const f=await fixture();try{
+  let inspected=false;const health=f.service.health;
+  f.service.inspect=async read=>{const value=await read();inspected=true;return value;};
+  f.service.health=async(path,id)=>{const proof=await health(path,id);if(id.kind==='release'&&inspected)proof.collector='faulted';return proof;};
+  const result=await executeOperation(f.input);valid(result);assert.equal(result.receipt.outcome,'failed-rolled-back');assert.equal(result.receipt.failure.code,'install-health-unverified');assert.equal(result.receipt.running.identity.kind,'legacy');
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
 test('first adoption preserves stable shared paths and retains original while producing a valid success receipt',async()=>{
  const f=await fixture();try{
   const result=await executeOperation(f.input);valid(result);assert.equal(result.receipt.outcome,'succeeded');assert.equal(result.receipt.operation,'migrate');
@@ -116,6 +124,23 @@ test('Hub-first and Nanoleaf-first adoption preserve the shared parent, Node and
   assert.equal((await executeOperation(f.input)).receipt.outcome,'succeeded');
   assert.deepEqual(await Promise.all(components.map(component=>realpath(join(f.root,'runtime',component)))),before);
   if(order==='hub-first')await changeNL();
+  const parent=await lstat(join(f.root,'runtime')),node=await readFile(f.layout.node);
+  const selectedNL=await Promise.all(components.map(component=>realpath(join(f.root,'runtime',component))));
+  const protectedIntact=async()=>{
+   assert.deepEqual(await Promise.all(components.map(component=>realpath(join(f.root,'runtime',component)))),selectedNL);
+   for(let i=0;i<components.length;i++)assert.equal(await readFile(join(selectedNL[i],'marker'),'utf8'),'two-'+components[i]);
+   assert.deepEqual(await readFile(f.layout.node),node);const now=await lstat(join(f.root,'runtime'));assert.equal(now.ino,parent.ino);assert.equal(now.dev,parent.dev);
+  };
+  const selected=await selectRollback(f.layout.root,f.identity);
+  const rollbackPlan=()=>createPlan({...f.options,operation:'rollback',requestedTarget:'previous',rollbackTarget:selected.identity,service:{state:'active',pid:500,start:'observed',executable:f.layout.node,entry:'unused',build:null}});
+  const rollback=await executeOperation({...f.input,plan:rollbackPlan,approvedDigest:(await rollbackPlan()).digest,prepare:async()=>selected});valid(rollback);assert.equal(rollback.receipt.outcome,'succeeded');await protectedIntact();
+  const health=f.service.health;
+  f.service.health=async(path,id)=>{if(id.kind==='release'){await writeFile(join(f.layout.state,'state.sqlite'),'["old","latest-consumed-event"]');throw new Error('candidate-health');}return health(path,id);};
+  f.input.approvedDigest=(await f.plan()).digest;
+  const failed=await executeOperation(f.input);valid(failed);assert.equal(failed.receipt.outcome,'failed-rolled-back');assert.equal(failed.receipt.running.identity.kind,'legacy');await protectedIntact();
+  assert.deepEqual(await f.stateReader.capture(),['old','latest-consumed-event']);
+  f.service.health=health;f.input.approvedDigest=(await f.plan()).digest;
+  const again=await executeOperation(f.input);valid(again);assert.equal(again.receipt.outcome,'succeeded');await protectedIntact();assert.deepEqual(await f.stateReader.capture(),['old','latest-consumed-event']);
   assert.equal(await realpath(f.layout.entry),f.target);assert.equal(await readFile(f.layout.node,'utf8'),'shared-node');
  }finally{await rm(f.root,{recursive:true,force:true});}}
 });

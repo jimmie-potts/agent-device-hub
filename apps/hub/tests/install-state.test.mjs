@@ -23,3 +23,28 @@ test('read-only durable evidence covers all tables and rejects older records or 
   const changed=structuredClone(newer);changed.tables.automation_settings=[];assert.equal(statePreserved(newer,changed),false);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+test('latest-state evidence accepts real label and settings updates without accepting older or missing records',async()=>{
+ const {createAgentState}=await import('@jimmie-potts/agent-state');
+ const {HubStorage}=await import('../dist/storage.js');
+ const root=await mkdtemp(join(tmpdir(),'hi-state-evolution-'));let owner;
+ try{
+  const probe=spawnSync(process.execPath,[join(program,'bin/install-compatibility-probe.mjs'),program,root,'write'],{encoding:'utf8'});assert.equal(probe.status,0,probe.stderr);
+  const before=await captureState(root);let lease;
+  owner=await createAgentState({storage:{acquire:async(id,signal)=>lease=await new HubStorage(root).acquire(id,signal)},ownerId:before.state.ownerId,consumers:before.state.consumers,clock:()=>10000});
+  assert.equal((await owner.setLabel(before.state.sessions[0].identity,'Latest approved label')).ok,true);
+  const settings=lease.automation.settings();lease.automation.replaceSettings({...settings,noFlourishes:!settings.noFlourishes});
+  const rule=lease.automation.rules()[0];assert.equal(lease.automation.replaceRule({...rule,name:'Updated rule',updatedAtMs:10001}),true);
+  lease.automation.replaceInterruptSet(['ci.failed']);
+  await owner.shutdown();owner=undefined;
+  const latest=await captureState(root);assert.equal(statePreserved(before,latest),true);assert.equal(statePreserved(latest,latest),true);assert.equal(statePreserved(latest,before),false);
+  const lost=structuredClone(latest);lost.state.sessions=[];assert.equal(statePreserved(latest,lost),false);
+  owner=await createAgentState({storage:{acquire:async(id,signal)=>lease=await new HubStorage(root).acquire(id,signal)},ownerId:before.state.ownerId,consumers:before.state.consumers,clock:()=>10000});
+  assert.equal(lease.automation.deleteRule(rule.id),true);
+  lease.automation.replaceSettings(settings);
+  await owner.shutdown();owner=undefined;
+  const edited=await captureState(root);assert.equal(edited.state.revision,latest.state.revision);assert.equal(statePreserved(latest,edited),true);assert.equal(statePreserved(edited,latest),false);
+  owner=await createAgentState({storage:new HubStorage(root),ownerId:before.state.ownerId,consumers:before.state.consumers,clock:()=>86410001});
+  await owner.shutdown();owner=undefined;
+  const expired=await captureState(root);assert.deepEqual(expired.state.sessions,[]);assert.deepEqual(expired.state.journal,[]);assert.deepEqual(expired.state.retirements,[]);assert.equal(statePreserved(edited,expired),true);assert.equal(statePreserved(expired,edited),false);
+ }finally{await owner?.shutdown();await rm(root,{recursive:true,force:true});}
+});

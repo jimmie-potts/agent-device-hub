@@ -44,6 +44,11 @@ First adoption SHALL retain verified existing bytes and replace only the Hub sta
 
 The updater MUST durably record intent, stop and verify its named writer, take a consistent backup excluding transient objects, atomically switch the Hub anchor and verify bounded running identity and operational health. Candidate failure SHALL attempt only the prequalified recovery route against latest durable state. Failed rollback or receipt finalization MUST remain an explicit failure requiring inspection.
 
+#### Scenario: State inspection with an active owner
+- **WHEN** verification reads state after starting the candidate or recovery program
+- **THEN** it MUST first verify the whole service is paused, bound the isolated read, attempt resumption even on failure and recheck health after resumption
+- **AND** it MUST accept supported owner edits and retention while rejecting backward revisions, lost unexpired records or unexplained deduplication loss
+
 #### Scenario: Failed health and recovery
 - **WHEN** the candidate fails its bounded health check
 - **THEN** it is stopped before recovery starts, and the receipt distinguishes verified recovery from failed or unknown recovery

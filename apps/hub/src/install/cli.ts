@@ -9,7 +9,7 @@ import {observeService,observeRunningBuild,serviceContract,systemdService} from 
 import {selectRollback} from './retention.js';
 import {buildTarget} from './build-target.js';
 import {qualifyCompatibility} from './compatibility.js';
-import {captureState,statePreserved} from './state.js';
+import {captureStateIsolated,statePreserved} from './state.js';
 import {executeOperation} from './operation.js';
 
 type Arguments={command:'plan'|'status'|'upgrade'|'rollback';target?:string;owner?:string;tokenFile?:string;planFile?:string;approve?:string;rollback:boolean;baselineReceipt?:string};
@@ -88,7 +88,7 @@ export async function runInstallCli(args:string[]):Promise<void>{
   };
   const current=await refresh();assertApproval(current,options.approve!);
   const result=await executeOperation({plan:refresh,approvedDigest:options.approve!,prepare:()=>options.command==='upgrade'?buildTarget(repository,current.bound.layout.root,current.bound.source.target):selectRollback(current.bound.layout.root,current.bound.previous,current.bound.target.kind==='release'?current.bound.target.sourceRevision:undefined),
-   qualify:qualifyCompatibility,service:systemdService(current.bound.layout,{...current.bound.health!,state:current.bound.layout.state}),state:{capture:()=>captureState(current.bound.layout.state),preserved:statePreserved}});
+   qualify:qualifyCompatibility,service:systemdService(current.bound.layout,{...current.bound.health!,state:current.bound.layout.state}),state:{capture:()=>captureStateIsolated(current.bound.layout.state),preserved:statePreserved}});
   process.stdout.write(JSON.stringify(result,null,2)+'\n');if(result.receipt.outcome!=='succeeded')process.exitCode=1;
  }catch(error){
   const code=error instanceof Error&&/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(error.message)?error.message:'install-command-failed';

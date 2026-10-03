@@ -23,3 +23,18 @@ Inspection covered the ordinary delivery completion condition, source-only batch
 ## Acceptance boundary
 
 The source plan is archived after synchronization. PR review and CI evidence are revision-specific and remain on the PR. Actual migration, upgrade, rollback and re-upgrade, with private receipts, running identity and latest-state preservation, remain pending; source and synthetic checks do not satisfy them.
+
+## Review corrections in progress
+
+The first independent review found a live SQLite reader/writer conflict, overly
+strict comparisons of mutable and retained state, incomplete recovery sequences
+in the shared-layout fixtures, and a stale setup link. The correction pauses the
+owner around an isolated bounded read and checks health after resumption. A real
+synthetic owner accepts a queued write afterward without faulting. State tests
+exercise label, settings, rule and interrupt-set edits, rule deletion and normal
+session/journal/retirement expiry. Both shared-layout fixtures now include failed
+candidate health, recovery and re-upgrade with other-owner path checks.
+
+Focused checks have passed; complete affected checks and fresh independent review
+are pending for the corrected candidate. The earlier instruction-discovery runs
+prove routing to the procedure; they did not inspect the new pause wording.

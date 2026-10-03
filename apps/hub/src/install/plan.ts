@@ -84,7 +84,7 @@ export async function createPlan(options:PlanOptions){
  const bound={schemaVersion:'hub-install-plan/1.0',owner,operation,requestedTarget,source:sourceBound,target,previous:installed.identity,health:options.health??null,
   baselineSha256:installed.inventorySha256,configurationSha256:sha256(canonical(configurations)),hostConfigurationSha256:sha256(configuration),configurations,serviceContractSha256:options.serviceContractSha256??null,stateOwner:host.ownerId,layout,unit:layout.unit,
   sharedParent:{path:dirname(layout.entry),device:parent.dev,inode:parent.ino,mode:parent.mode&0o777,uid:parent.uid},protectedPaths,
-  migration:!installed.adopted,outage:{stopTimeoutMs:30000,healthTimeoutMs:30000,healthAttempts:30,units:[layout.unit]},
+  migration:!installed.adopted,outage:{stopTimeoutMs:30000,healthTimeoutMs:30000,healthAttempts:30,stateInspection:'freeze-read-thaw',stateInspectionCommandTimeoutMs:5000,stateInspectionReadTimeoutMs:5000,postInspectionHealth:true,units:[layout.unit]},
   backup:{directory:layout.state,configuration:layout.config,exclude:['sockets','transient process objects'],restoreAutomatically:false},
   recovery:{identity:installed.identity,strategy:'latest-durable-state',compatibility:'required-before-stop',attempts:1}};
  return {bound,digest:sha256(canonical(bound)),observations:{remoteMain:mergedMain,service:options.service.state,running:options.service.state==='active'?options.service:null,installedPath:installed.path}};

@@ -8,7 +8,7 @@ import {ownedDirectory,retainLegacy,retainRelease,switchCurrent,syncDirectory,wr
 import {pruneReleases} from './retention.js';
 
 export type HealthProof={identity:Identity;process:ServiceObservation;program:string;owner:string;collector:string;admission:string;assets:boolean;launchSocket:boolean;browserSecurity:boolean};
-export type ServiceControl={observe:()=>Promise<ServiceObservation>;stop:()=>Promise<void>;start:()=>Promise<void>;health:(program:string,identity:Identity)=>Promise<HealthProof>};
+export type ServiceControl={observe:()=>Promise<ServiceObservation>;stop:()=>Promise<void>;start:()=>Promise<void>;inspect:<T>(read:()=>Promise<T>)=>Promise<T>;health:(program:string,identity:Identity)=>Promise<HealthProof>};
 export type OperationInput={plan:()=>Promise<Plan>;approvedDigest:string;prepare:()=>Promise<{path:string;identity:Identity}>;
  qualify:(previous:string,target:string)=>Promise<{status:string;evidenceSha256?:string}>;service:ServiceControl;
  state:{capture:()=>Promise<unknown>;preserved:(before:unknown,after:unknown)=>boolean};checkpoint?:(phase:string)=>Promise<void>};
@@ -122,7 +122,8 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
   if(canonical(await input.state.capture())!==canonical(stateBefore))throw new Error('install-state-changed-during-switch');
   phase='start';await bounded(input.service.start,plan.bound.outage.stopTimeoutMs);
   phase='health';const health=await bounded(()=>input.service.health(target.path,target.identity),plan.bound.outage.healthTimeoutMs);assertHealth(health,plan,target.path,target.identity,before);observations.health=health;
-  const after=await input.state.capture();if(!input.state.preserved(stateBefore,after))throw new Error('install-state-not-preserved');observations.after=after;await protectedUnchanged(plan);
+  const after=await input.service.inspect(input.state.capture);if(!input.state.preserved(stateBefore,after))throw new Error('install-state-not-preserved');observations.after=after;await protectedUnchanged(plan);
+  const finalHealth=await bounded(()=>input.service.health(target.path,target.identity),plan.bound.outage.healthTimeoutMs);assertHealth(finalHealth,plan,target.path,target.identity,before);observations.finalHealth=finalHealth;
   receipt.running={identity:target.identity,verification:target.identity.kind==='release'?'build-health':'legacy-process-artifacts',evidence};receipt.health={status:'healthy',evidence};receipt.statePreservation.evidence=evidence;receipt.outcome='succeeded';releaseLock=true;
  }catch(error){
   receipt.failure={phase,code:safeCode(error),evidence};observations.failure={phase,code:safeCode(error)};
@@ -138,10 +139,11 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
     await bounded(input.service.start,initial.bound.outage.stopTimeoutMs);
     const health=await bounded(()=>input.service.health(previousPath,initial.bound.previous),initial.bound.outage.healthTimeoutMs);
     assertHealth(health,initial,previousPath,initial.bound.previous,recoveringFrom);
-    const after=await input.state.capture();
+    const after=await input.service.inspect(input.state.capture);
     // Recovery must retain both the original records and writes made by the candidate.
     if(!input.state.preserved(stateBefore,after)||!input.state.preserved(latest,after))throw new Error('install-state-not-preserved');await protectedUnchanged(initial);
-    observations.recovered={health,after};receipt.running={identity:initial.bound.previous,verification:initial.bound.previous.kind==='release'?'build-health':'legacy-process-artifacts',evidence};
+    const finalHealth=await bounded(()=>input.service.health(previousPath,initial.bound.previous),initial.bound.outage.healthTimeoutMs);assertHealth(finalHealth,initial,previousPath,initial.bound.previous,recoveringFrom);
+    observations.recovered={health,after,finalHealth};receipt.running={identity:initial.bound.previous,verification:initial.bound.previous.kind==='release'?'build-health':'legacy-process-artifacts',evidence};
     receipt.health={status:'healthy',evidence};receipt.statePreservation.evidence=evidence;receipt.rollback={status:'succeeded',evidence};receipt.outcome='failed-rolled-back';releaseLock=true;
     receipt.failure.phase=['switch','start','health'].includes(originalPhase)?originalPhase:'health';
    }catch(recovery){receipt.outcome='rollback-failed';receipt.failure={phase:'rollback',code:safeCode(recovery),evidence};receipt.rollback={status:'failed',evidence};receipt.health={status:'unknown',evidence};receipt.running=null;}

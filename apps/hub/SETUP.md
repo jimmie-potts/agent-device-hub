@@ -152,6 +152,23 @@ validated intent, stops the monitor and verifies process exit. It backs up the
 named private state/configuration, switches only the Hub current anchor, starts
 the same unit and verifies process/build identity, owner, collector, admission,
 served assets, browser protections, launch socket and durable-state preservation.
+After initial health succeeds, the command briefly freezes the unit's entire
+cgroup while a separate process reads SQLite, then thaws it and repeats health.
+This prevents the verifier's read lock from faulting the writer. Planning requires
+systemd freeze support and an initially running freezer state. Each freeze/thaw
+command or property read has a five-second timeout; the reader is killed after
+five seconds. A failed read still attempts thaw. A failed pause, resume or final
+health check prevents a success receipt and enters the recovery procedure.
+An interrupted updater can leave the unit frozen; inspect its recorded phase and
+`FreezerState` before any owner-directed recovery. A systemd stop job thaws the
+unit before stopping it.
+
+State evidence requires exact equality while stopped across each program switch.
+After restart it accepts supported owner edits and normal retention, checking
+commit/revision ordering, unexpired records, acknowledgments and bounded dedup
+history. It never restores a backup over newer state. SQLite commit counters are
+ordering evidence for the qualified writer, not proof of a user's intent.
+
 Stop/start and health attempts are bounded; a failed stop or backup can leave the
 service needing owner inspection. Offline downstream controllers are reported
 separately from Hub health.

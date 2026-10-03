@@ -14,16 +14,16 @@ async function systemctl(args:string[]):Promise<string>{
  try{return (await execute('systemctl',['--user',...args,unit],{timeout:5000,maxBuffer:1024*1024,env:{...process.env,SYSTEMD_PAGER:'cat'}})).stdout.trim();}catch{throw new Error('install-service-unavailable');}
 }
 async function properties():Promise<Record<string,string>>{
- const text=await systemctl(['show','--property=ActiveState,SubState,MainPID,ControlGroup,Job,ExecStart,KillMode,FragmentPath,DropInPaths,Restart,Type,Environment,EnvironmentFiles,WorkingDirectory']);
+ const text=await systemctl(['show','--property=ActiveState,SubState,MainPID,ControlGroup,Job,ExecStart,KillMode,FragmentPath,DropInPaths,Restart,Type,Environment,EnvironmentFiles,WorkingDirectory,CanFreeze,FreezerState']);
  return Object.fromEntries(text.split('\n').map(line=>{const offset=line.indexOf('=');return [line.slice(0,offset),line.slice(offset+1)];}));
 }
 export async function serviceContract(layout:Layout):Promise<{sha256:string;files:string[]}>{
  const value=await properties(),expected=[layout.node,join(layout.entry,'dist/cli.js'),'serve',layout.config].join(' ');
- if(value.ExecStart.match(/argv\[\]=(.*?) ;/)?.[1]!==expected||!['control-group','mixed'].includes(value.KillMode)||value.Type!=='simple')throw new Error('unknown-install-service-contract');
+ if(value.ExecStart.match(/argv\[\]=(.*?) ;/)?.[1]!==expected||!['control-group','mixed'].includes(value.KillMode)||value.Type!=='simple'||value.CanFreeze!=='yes'||value.FreezerState!=='running')throw new Error('unknown-install-service-contract');
  const files=[value.FragmentPath,...value.DropInPaths.split(' ')].filter(Boolean).sort();if(!files.length)throw new Error('unknown-install-service-contract');
  const content:Record<string,string>={};for(const file of files)content[file]=sha256(await readRegular(await realpath(file)));
  // ExecStart's timestamp/PID fields are volatile; the approved executable arguments are not.
- return {sha256:sha256(canonical({argv:expected,KillMode:value.KillMode,Restart:value.Restart,Type:value.Type,Environment:value.Environment,EnvironmentFiles:value.EnvironmentFiles,WorkingDirectory:value.WorkingDirectory,content})),files};
+ return {sha256:sha256(canonical({argv:expected,KillMode:value.KillMode,Restart:value.Restart,Type:value.Type,CanFreeze:value.CanFreeze,Environment:value.Environment,EnvironmentFiles:value.EnvironmentFiles,WorkingDirectory:value.WorkingDirectory,content})),files};
 }
 async function groupEmpty(group:string):Promise<boolean>{
  if(!group.startsWith('/')||group.includes('..'))return false;
@@ -110,6 +110,17 @@ export async function probeHealth(options:HealthOptions,program:string,identity:
  observed.build=health.build??null;
  return {identity,process:observed,program,owner:health.ownerId,collector:health.collector,admission:health.admission,assets:true,launchSocket:true,browserSecurity:true};
 }
+type PauseControl={freeze:()=>Promise<void>;thaw:()=>Promise<void>;isFrozen:()=>Promise<boolean>};
+/** No SQLite reader overlaps a runnable owner. Always thaw before any health request. */
+export async function inspectPausedOwner<T>(pause:PauseControl,read:()=>Promise<T>):Promise<T>{
+ if(await pause.isFrozen())throw new Error('install-owner-already-paused');
+ try{
+  await pause.freeze();if(!await pause.isFrozen())throw new Error('install-owner-pause-unverified');
+  return await read();
+ }finally{
+  await pause.thaw();if(await pause.isFrozen())throw new Error('install-owner-resume-unverified');
+ }
+}
 export function systemdService(layout:Layout,health:Omit<HealthOptions,'observe'|'signal'>):ServiceControl{
  const observe=()=>observeService(layout);
  async function control(action:'stop'|'start'){
@@ -117,7 +128,7 @@ export function systemdService(layout:Layout,health:Omit<HealthOptions,'observe'
   while(Date.now()<deadline){const observed=await observe();if(observed.state===(action==='stop'?'inactive':'active'))return;await delay(100);}
   throw new Error('install-service-timeout');
  }
- return {observe,stop:()=>control('stop'),start:()=>control('start'),health:async(program,identity)=>{
+ return {observe,stop:()=>control('stop'),start:()=>control('start'),inspect:read=>inspectPausedOwner({freeze:async()=>{await systemctl(['freeze']);},thaw:async()=>{await systemctl(['thaw']);},isFrozen:async()=>{const state=(await properties()).FreezerState;if(!['running','frozen'].includes(state))throw new Error('install-owner-pause-unknown');return state==='frozen';}},read),health:async(program,identity)=>{
   const signal=AbortSignal.timeout(25000);let last:unknown;
   for(let attempt=0;attempt<30&&!signal.aborted;attempt++){
    try{return await probeHealth({...health,observe,signal},program,identity);}catch(error){last=error;}
