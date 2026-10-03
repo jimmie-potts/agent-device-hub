@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readSource, readSyntheticSource } from '../dist/reader.js';
+import { contribution } from '../dist/numeric.js';
 
 const root = process.env.WISPR_TEST_TMPDIR ?? resolve('.local/scratch/wispr-tests');
 mkdirSync(root,{recursive:true});
@@ -17,6 +18,41 @@ function fixture(t, schema = 'CREATE TABLE History(id TEXT PRIMARY KEY,timestamp
   return {path,db};
 }
 const hash = p => createHash('sha256').update(readFileSync(p)).digest('hex');
+
+test('native Wispr History fields retain stable IDs, zoned times and app coverage without private columns', async t => {
+  const {path,db} = fixture(t,'CREATE TABLE History(transcriptEntityId VARCHAR(36) NOT NULL PRIMARY KEY,timestamp DATETIME,status VARCHAR(255),numWords INTEGER,duration FLOAT,speechDuration FLOAT,app VARCHAR(255),asrText TEXT,additionalContext JSON,audio BLOB)');
+  db.prepare('INSERT INTO History VALUES(?,?,?,?,?,?,?,?,?,?)').run('native-id','2026-10-02 15:00:00 +00:00','formatted',12,5,3,'Slack','PRIVATE_NATIVE_TEXT','PRIVATE_NATIVE_CONTEXT',Buffer.from('PRIVATE_NATIVE_AUDIO'));
+  db.close();
+  const before=hash(path),first=await readSyntheticSource(path),repeat=await readSyntheticSource(path);
+  assert.deepEqual(first,repeat);
+  assert.deepEqual(first.rows[0],{id:'native-id',timestamp:'2026-10-02 15:00:00 +00:00',status:'formatted',numWords:12,duration:5,speechDuration:3,numWordsCorrected:null,numDictionaryReplacements:null,appName:'Slack',invalid:[]});
+  assert.equal(first.coverage.appName,true);
+  await assert.rejects(readSyntheticSource(path,{maxBytes:8}),{code:'source-capacity'});
+  assert.equal(JSON.stringify(first).includes('PRIVATE_NATIVE'),false);
+  assert.equal(hash(path),before);
+});
+
+test('native profile rejects unqualified keys and declarations without bypassing an existing id', async t => {
+  for(const schema of [
+    'CREATE TABLE History(transcriptEntityId TEXT,timestamp DATETIME,status TEXT,numWords INTEGER)',
+    'CREATE TABLE History(transcriptEntityId BLOB NOT NULL PRIMARY KEY,timestamp DATETIME,status TEXT,numWords INTEGER)',
+    'CREATE TABLE History(transcriptEntityId TEXT NOT NULL PRIMARY KEY,timestamp NUMERIC,status TEXT,numWords INTEGER)',
+    'CREATE TABLE History(id BLOB,transcriptEntityId TEXT NOT NULL PRIMARY KEY,timestamp DATETIME,status TEXT,numWords INTEGER)',
+    'CREATE TABLE History(transcriptEntityId TEXT NOT NULL,part TEXT,timestamp DATETIME,status TEXT,numWords INTEGER,PRIMARY KEY(transcriptEntityId,part))',
+  ]){
+    const {path,db}=fixture(t,schema);db.close();
+    await assert.rejects(readSyntheticSource(path),{code:'source-schema'});
+  }
+});
+
+test('native DATETIME does not infer a timezone for unqualified values', async t => {
+  const {path,db}=fixture(t,'CREATE TABLE History(transcriptEntityId TEXT NOT NULL PRIMARY KEY,timestamp DATETIME,status TEXT,numWords INTEGER)');
+  const insert=db.prepare('INSERT INTO History VALUES(?,?,?,?)');
+  insert.run('unzoned','2026-10-02 15:00:00','formatted',12);
+  insert.run('invalid',123,'formatted',12);db.close();
+  const result=await readSyntheticSource(path);
+  assert.deepEqual(result.rows.map(r=>contribution(r).exclusion),['timestamp','timestamp']);
+});
 
 test('numeric scan returns only declared columns and preserves source bytes', async t => {
   const {path,db} = fixture(t);

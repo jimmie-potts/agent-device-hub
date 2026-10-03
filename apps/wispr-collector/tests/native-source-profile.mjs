@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdtempSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+
+assert.equal(process.platform,'win32');assert.equal(Number(process.versions.node.split('.')[0]),24);
+const root=process.env.WISPR_TEST_TMPDIR;assert.ok(root&&/^[A-Za-z]:\\/.test(root));
+const directory=mkdtempSync(join(root,'native-source-profile-'));
+const acl=String.raw`$ErrorActionPreference='Stop';$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User;$acl=New-Object System.Security.AccessControl.DirectorySecurity;$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false);foreach($id in @($sid.Value,'S-1-5-18','S-1-5-32-544')){$rule=New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier($id)),'FullControl','ContainerInherit,ObjectInherit','None','Allow');$acl.AddAccessRule($rule)};Set-Acl -LiteralPath $env:BUNNY_WISPR_FIXTURE -AclObject $acl`;
+try{
+ const secured=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',acl],{encoding:'utf8',timeout:8000,windowsHide:true,env:{...process.env,BUNNY_WISPR_FIXTURE:directory}});assert.equal(secured.status,0,secured.stderr);
+ const sourcePath=join(directory,'source.sqlite'),stateDirectory=join(directory,'state'),configPath=join(directory,'config.json');
+ const db=new DatabaseSync(sourcePath);
+ db.exec('CREATE TABLE History(transcriptEntityId VARCHAR(36) NOT NULL PRIMARY KEY,timestamp DATETIME,status VARCHAR(255),numWords INTEGER,duration FLOAT,speechDuration FLOAT,app VARCHAR(255),asrText TEXT,formattedText TEXT,editedText TEXT,detectedLanguage TEXT,editedTextStatus TEXT,contentObservationEndReason TEXT,additionalContext JSON,audio BLOB,screenshot BLOB,url TEXT)');
+ const insert=db.prepare('INSERT INTO History VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+ for(const id of ['native-a','native-b','native-c'])insert.run(id,'2026-10-02 15:00:00 +00:00','formatted',2,5,3,'Slack','hello there','hello world','hello friend','en','complete','PRIVATE_CANARY','PRIVATE_CANARY',Buffer.from('PRIVATE_CANARY'),Buffer.from('PRIVATE_CANARY'),'https://private.invalid/PRIVATE_CANARY');
+ db.close();
+ const hash=()=>createHash('sha256').update(readFileSync(sourcePath)).digest('hex');const before=hash();
+ const sourceAcl=()=>{const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',String.raw`[Console]::Out.Write((Get-Acl -LiteralPath $env:BUNNY_WISPR_SOURCE).Sddl)`],{encoding:'utf8',timeout:8000,windowsHide:true,env:{...process.env,BUNNY_WISPR_SOURCE:sourcePath}});assert.equal(r.status,0,r.stderr);return r.stdout;};const beforeAcl=sourceAcl();
+ const config={schemaVersion:'1.0',namespace:'11111111-1111-4111-8111-111111111111',ownerDirectory:directory,sourcePath,stateDirectory,timezone:'America/New_York',collectionEnabled:true,language:{enabled:false}};
+ const save=()=>writeFileSync(configPath,JSON.stringify(config));save();
+ const cli=command=>{const r=spawnSync(process.execPath,['--disable-warning=ExperimentalWarning',fileURLToPath(new URL('../dist/cli.js',import.meta.url)),command,'--config',configPath],{encoding:'utf8',timeout:60000,windowsHide:true});assert.equal(r.status,0,r.stdout+r.stderr);assert.equal((r.stdout+r.stderr).includes('PRIVATE_CANARY'),false);return JSON.parse(r.stdout);};
+ const snapshot=()=>JSON.parse(readFileSync(join(stateDirectory,'aggregate.json'),'utf8'));
+ cli('collect');const numeric=snapshot();
+ assert.equal(numeric.numeric.totals.words,6);assert.equal(numeric.numeric.totals.dictations,3);
+ assert.ok(numeric.numeric.cells.every(c=>c.app==='slack'&&c.date==='2026-10-02'&&c.hour===11));
+ assert.equal(numeric.language.availability,'disabled');assert.equal(JSON.stringify(numeric).includes('hello'),false);
+ cli('collect');assert.deepEqual(snapshot().numeric,numeric.numeric);
+ config.language.enabled=true;save();cli('collect');const language=snapshot();
+ const table=corpus=>language.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus===corpus);
+ assert.equal(language.language.availability,'available');assert.ok(table('raw').words.some(w=>w.text==='there'&&w.dictations===3));
+ assert.ok(table('formatted').words.some(w=>w.text==='world'&&w.dictations===3));assert.equal(table('observed').coverage.eligible,0);assert.equal(table('observed').words.length,0);
+ assert.equal(JSON.stringify(language).includes('PRIVATE_CANARY'),false);
+ cli('collect');assert.deepEqual(snapshot().numeric,numeric.numeric);assert.deepEqual(snapshot().language,language.language);
+ config.language.enabled=false;save();cli('status');const disabled=snapshot();
+ assert.equal(disabled.language.availability,'disabled');assert.equal(disabled.numeric.totals.words,6);assert.notEqual(disabled.generation,language.generation);
+ assert.equal(hash(),before);assert.equal(sourceAcl(),beforeAcl);
+ console.log(JSON.stringify({result:'passed',scope:'native Windows production CLI on observed Wispr History declarations with synthetic data',sourceUnchanged:true,sourceAclUnchanged:true,numericRepeat:true,nativeAppAndZone:true,languageOptIn:true,unknownEditEnd:true,textOptOut:true,privateCanariesExcluded:true}));
+}finally{rmSync(directory,{recursive:true,force:true});}

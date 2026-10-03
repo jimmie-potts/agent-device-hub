@@ -31,3 +31,14 @@ test('an unknown or incompatible detected language never falls back to a configu
  db.prepare('INSERT INTO History(id,timestamp,status,numWords,asrText,detectedLanguage,language) VALUES(?,?,?,?,?,?,?)').run('unknown','2026-10-02T10:00:00Z','formatted',2,'bonjour ami',null,'en');db.close();
  assert.equal((await scan(path,true))[0].language.language,null);
 });
+
+test('native profile reads opted-in language while missing edit-end evidence stays unknown',async t=>{
+ const {path,db}=source(t);
+ db.exec('DROP TABLE History;CREATE TABLE History(transcriptEntityId VARCHAR(36) NOT NULL PRIMARY KEY,timestamp DATETIME,status VARCHAR(255),numWords INTEGER,app VARCHAR(255),asrText TEXT,formattedText TEXT,editedText TEXT,detectedLanguage TEXT,editedTextStatus TEXT,contentObservationEndReason TEXT)');
+ db.prepare('INSERT INTO History VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('native-id','2026-10-02 10:00:00 +00:00','formatted',2,'Slack','hello there','hello world','hello friend','en','complete','NEVER_SELECT_CONTEXT');
+ db.close();const before=hash(path),rows=await scan(path,true);
+ assert.equal(rows[0].id,'native-id');assert.equal(rows[0].appName,'Slack');
+ assert.equal(rows[0].language.raw,'hello there');assert.equal(rows[0].language.formatted,'hello world');assert.equal(rows[0].language.observation,'unknown');
+ assert.equal(JSON.stringify(rows).includes('NEVER_SELECT_CONTEXT'),false);
+ const numeric=await scan(path,false);assert.equal(numeric[0].language,undefined);assert.equal(JSON.stringify(numeric).includes('hello'),false);assert.equal(hash(path),before);
+});
