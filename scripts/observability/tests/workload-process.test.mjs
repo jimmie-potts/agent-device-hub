@@ -27,7 +27,7 @@ test('fresh baseline and instrumented application processes preserve command out
     const enabled=mode!=='baseline';rejectCollection=mode==='rejected';
     const directory=join(local,mode);
     await prepareBackendDirectory(directory,{runId:mode,ports:{grafana:others[0],otlp:port,loki:others[1],tempo:others[2],health:others[3]}});
-    const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
+    const roots=await registerHostRoots(directory,tmpdir().split('/').includes('.local')?tmpdir():local);t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
     await prepareReleasedContract(join(roots.roots.state.path,'contract'));
     let ownership;const evidence=createDeliveryRecorder({record:()=>{}});
     const processHandle=await startWorkloadProcess(directory,{enabled,purpose:'collection-faults',onStart:identity=>{ownership=identity;},onEvidence:evidence.accept});t.after(()=>processHandle.stop());
@@ -82,7 +82,7 @@ test('fixed command fault sequence preserves baseline outcomes, counts each side
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'faults');
   await prepareBackendDirectory(directory,{runId:'faults',ports:{grafana:other[0],otlp:port,loki:other[1],tempo:other[2],health:other[3]}});
-  const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
+  const roots=await registerHostRoots(directory,tmpdir().split('/').includes('.local')?tmpdir():local);t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
   await prepareReleasedContract(join(roots.roots.state.path,'contract'));
   const outcomes=[];
   for(const enabled of [false,true]) {
@@ -118,7 +118,7 @@ test('stalled collection saturates bounded queues without exceeding the full one
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'stalled');
   await prepareBackendDirectory(directory,{runId:'stalled',ports:{grafana:other[0],otlp:port,loki:other[1],tempo:other[2],health:other[3]}});
-  const roots=await registerHostRoots(directory,tmpdir());t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
+  const roots=await registerHostRoots(directory,tmpdir().split('/').includes('.local')?tmpdir():local);t.after(()=>rm(roots.roots.state.path,{recursive:true,force:true}));
   await prepareReleasedContract(join(roots.roots.state.path,'contract'));
   const recorder=createDeliveryRecorder({record:()=>{}});
   const child=await startWorkloadProcess(directory,{enabled:true,purpose:'collection-faults',onEvidence:recorder.accept});t.after(()=>child.stop());

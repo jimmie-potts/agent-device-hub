@@ -20,6 +20,17 @@ test('release archive and receipt are pinned before extraction', async () => {
   assert.throws(() => verifyReleaseInputs(bytes, Buffer.from('{}')), /receipt checksum/);
 });
 
+test('consumer public dependency bytes match the repository lock used by npm ci', async () => {
+  const consumer = JSON.parse(await readFile(new URL('../released-consumer-lock.json', import.meta.url), 'utf8'));
+  const repository = JSON.parse(await readFile(new URL('package-lock.json', root), 'utf8'));
+  for (const [name, entry] of Object.entries(consumer.packages)) {
+    if (!name || name === 'node_modules/@jimmie-potts/bunny-observability') continue;
+    assert.ok(repository.packages[name], name);
+    assert.equal(entry.version, repository.packages[name].version, name);
+    assert.equal(entry.integrity, repository.packages[name].integrity, name);
+  }
+});
+
 test('pilot consumes the released artifact outside workspace resolution', async t => {
   const git = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
   assert.equal(git.status, 0, git.stderr);
@@ -28,7 +39,16 @@ test('pilot consumes the released artifact outside workspace resolution', async 
   await mkdir(scratchRoot, { recursive: true });
   const scratch = await mkdtemp(join(scratchRoot, 'consumer-'));
   t.after(() => rm(scratch, { recursive: true, force: true }));
-  const installed = await prepareReleasedContract(join(scratch, 'isolated'));
+  // No metadata for this registry is cached; offline setup must use the lock's
+  // integrity-pinned tarballs from the normal shared npm cache, never a registry lookup.
+  const previousRegistry = process.env.npm_config_registry;
+  process.env.npm_config_registry = 'https://observability-test.invalid';
+  let installed;
+  try { installed = await prepareReleasedContract(join(scratch, 'isolated')); }
+  finally {
+    if (previousRegistry === undefined) delete process.env.npm_config_registry;
+    else process.env.npm_config_registry = previousRegistry;
+  }
   const contract = await import(pathToFileURL(join(installed, 'dist/index.js')));
   assert.equal(contract.ARTIFACT_VERSION, '1.0.0');
   assert.equal(contract.validateRecord({}).ok, false);

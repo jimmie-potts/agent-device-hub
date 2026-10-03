@@ -1663,6 +1663,9 @@ Keep npm and browser downloads in the shared caches. Put durable evidence in
 the main checkout's `.local/evidence/`, never only inside a removable worktree.
 The pilot consumes the checksum-verified observability 1.0.0 archive from
 `vendor/`; Node and Python packaged-consumer checks reject damaged inputs.
+Public dependencies use the consumer lock
+matching the root lock; run root `npm ci` first to populate their exact tarballs.
+Consumer setup needs no cached registry metadata.
 
 ### Local synthetic qualification
 

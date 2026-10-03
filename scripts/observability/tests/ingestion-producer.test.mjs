@@ -24,7 +24,7 @@ test('fresh producer uses the immutable packaged contract for a real Hub command
   const port = server.address().port, others = [43000,43002,43003,43004,43005].filter(p => p !== port);
   const directory = join(local, 'backend');
   await prepareBackendDirectory(directory, { runId: 'producer', ports: { grafana: others[0], otlp: port, loki: others[1], tempo: others[2], health: others[3] } });
-  const roots = await registerHostRoots(directory, tmpdir());
+  const roots = await registerHostRoots(directory, tmpdir().split('/').includes('.local') ? tmpdir() : local);
   t.after(() => rm(roots.roots.state.path, { recursive: true, force: true }));
   await prepareReleasedContract(join(roots.roots.state.path, 'contract'));
   assert.ok((await measureHostRunFiles(Object.values(roots.roots))).hostRunBytes > 0);

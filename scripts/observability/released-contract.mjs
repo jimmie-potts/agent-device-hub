@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const archive = new URL('../../vendor/jimmie-potts-bunny-observability-1.0.0.tgz', import.meta.url);
 const receipt = new URL('../../vendor/bunny-observability-1.0.0-source-receipt.json', import.meta.url);
@@ -43,16 +42,21 @@ export async function verifyInstalledContract(directory) {
   return manifest;
 }
 
-/** Installs only the pinned, bundled archive into a new task-owned directory. */
+/** Installs the immutable archive and locked public dependencies into a new owned directory. */
 export async function prepareReleasedContract(directory) {
   verifyReleaseInputs(await readFile(archive), await readFile(receipt));
   if (!process.env.npm_execpath) throw new Error('run the pilot through its npm command');
   await mkdir(directory); // Existing state is not reused or overwritten.
   await writeFile(join(directory, 'package.json'), JSON.stringify({
     name: 'isolated-observability-pilot-consumer', private: true, type: 'module',
+    dependencies: { '@jimmie-potts/bunny-observability': 'file:contract.tgz' },
   }));
-  const result = spawnSync(process.execPath, [process.env.npm_execpath, 'install',
-    '--offline', '--ignore-scripts', '--bin-links=false', '--no-audit', '--no-fund', fileURLToPath(archive)],
+  await copyFile(archive, join(directory, 'contract.tgz'));
+  // npm ci at the repository root caches these exact integrity-pinned tarballs.
+  // A consumer lock avoids needing registry metadata in an otherwise cold cache.
+  await copyFile(new URL('./released-consumer-lock.json', import.meta.url), join(directory, 'package-lock.json'));
+  const result = spawnSync(process.execPath, [process.env.npm_execpath, 'ci',
+    '--offline', '--ignore-scripts', '--bin-links=false', '--no-audit', '--no-fund'],
   { cwd: directory, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`released contract installation failed: ${result.error?.message ?? result.stderr}`);
   const installed = join(directory, 'node_modules/@jimmie-potts/bunny-observability');
