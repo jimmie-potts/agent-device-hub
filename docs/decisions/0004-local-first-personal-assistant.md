@@ -7,6 +7,11 @@ eventual Linux server target stands.
 
 ## Decision
 
+Amended October 3, 2026: [ADR 0011](0011-private-personal-data-retention.md)
+sets the personal-data direction: retain selected personal content, logs and
+telemetry privately, and keep collected personal data out of GitHub. Source
+selection and onward sharing remain explicit; runtime adoption is separate.
+
 The long-term product is a personal assistant with automated alerts, device
 control and voice access across the user's devices. Its user-facing name is
 **B.U.N.N.Y.**, selected by the owner on 2026-09-23 and recorded through

@@ -154,6 +154,11 @@ MCP tools are unchanged.
 
 ### Privacy
 
+[ADR 0011](0011-private-personal-data-retention.md) governs private retention
+and GitHub publication. It does not expand the event fields or external/device
+sharing approved below. Personal-data exclusions must be reassessed when the
+owning private-collection feature is changed; credential protection remains.
+
 - The owner-approved policy in [Hub #424](https://github.com/jimmie-potts/agent-device-hub/issues/424)
   and [Hub #426](https://github.com/jimmie-potts/agent-device-hub/issues/426)
   supersedes the original title and repository-text exclusions. Normalized

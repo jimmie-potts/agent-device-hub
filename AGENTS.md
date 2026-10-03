@@ -147,8 +147,18 @@ device IP and permission for the sequence/display replacement. Never use a guess
 change firmware/router/firewall settings or claim physical accuracy from CI,
 simulator frames or transport acknowledgment.
 
-Keep credentials, private media, databases, agent metadata and runtime state out
-of Git. Session titles, project names, prompts, transcripts and agent output may enter shared data under the owner-approved policy. Credentials, tokens and secrets remain excluded. Only fields declared by the selected versioned contract are transmitted; prompt, response and transcript-content capture requires its separate implementation under Hub #425.
+Keep credentials, private media, databases and runtime state out of Git. Keep
+collected personal data out of Git and every GitHub publication surface,
+including private repositories, issue/PR text, logs, artifacts and attachments.
+Retain personal data from owner-selected sources privately, including logs and
+telemetry; credentials, authentication tokens and secrets remain excluded.
+Before changing collection, retention, diagnostics, export or evidence publication,
+read [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
+collection and sharing boundaries. Use synthetic or sanitized publication copies
+without stripping the private originals. Preserve explicit collection/sharing
+choices, clear/recovery behavior and device authorization. Only fields declared
+by the selected versioned contract are transmitted; prompt, response and
+transcript-content capture requires its separate implementation under Hub #425.
 Preserve explicit-label precedence and neutral fallbacks for untitled sessions.
 
 ## Human-facing prose
