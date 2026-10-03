@@ -35,8 +35,11 @@ async function openReader(hub,credential=readToken){
 
 test('a committed event reaches an open stream immediately, without waiting for the heartbeat timer',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'hub-push-immediate-'));let hub,reader;
+  const {createHostDiagnostics}=await import('@jimmie-potts/bunny-observability/host');
+  const records=[];const diagnostics=await createHostDiagnostics({enabled:true,resource:{'service.namespace':'bunny','service.name':'hub','service.version':'unknown',
+    'service.instance.id':'00000000-0000-4000-8000-000000000001','deployment.environment.name':'test'},localSink:line=>records.push(JSON.parse(line))});
   try{
-    hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:[],feedIntervalMs:NO_TIMER});
+    hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:[],feedIntervalMs:NO_TIMER,hostDiagnostics:diagnostics});
     reader=await openReader(hub);
     assert.match(await reader.next(),/"revision":0/);
     const headers={authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'};
@@ -46,7 +49,8 @@ test('a committed event reaches an open stream immediately, without waiting for 
     const frame=await Promise.race([reader.next(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('timed-out')),3000))]);
     assert.match(frame,/"revision":1/);
     assert.ok(Date.now()-started<3000);
-  } finally {await reader?.cancel();await hub?.close();await rm(directory,{recursive:true,force:true});}
+    await diagnostics.shutdown();assert.ok(records.some(x=>x.scope.name==='bunny.feed'&&x.attributes['bunny.operation']==='feed'));
+  } finally {await reader?.cancel();await hub?.close();await diagnostics.shutdown();await rm(directory,{recursive:true,force:true});}
 });
 
 test('a burst of commits coalesces into one flush and a paused reader does not delay ingest or other readers',async()=>{

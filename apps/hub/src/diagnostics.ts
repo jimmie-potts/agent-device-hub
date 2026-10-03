@@ -1,6 +1,6 @@
 import {validate,type Request} from '@jimmie-potts/device-contracts';
 import { context, trace, ROOT_CONTEXT, SpanKind, SpanStatusCode, type Span, type Tracer } from '@opentelemetry/api';
-import { createRecord, parseTraceparent, type DiagnosticRecord, type Primitive } from '@jimmie-potts/bunny-observability';
+import { createRecord, parseTraceparent, traceHeaders, type DiagnosticRecord, type Primitive } from '@jimmie-potts/bunny-observability';
 import { HttpError } from './common.js';
 
 type Attributes = Record<string, Primitive>;
@@ -9,21 +9,30 @@ type Options = {
   resource:Record<string,string>;
   /** Host-owned bounded sink; no exporter is created by this adapter. */
   emit(record:DiagnosticRecord):unknown;
-  tracer?:Tracer;
+  tracer?:Pick<Tracer,'startSpan'>;
+  /** Enable only when this host has no automatic HTTP propagation owner. */
+  propagate?:boolean;
 };
 export type CommandDiagnostics = ReturnType<typeof createCommandDiagnostics>;
 const outcome:Record<string,string> = {queued:'queued',sent:'transport-acknowledged',failed:'rejected',
   'partially-applied':'partial',uncertain:'uncertain',cancelled:'cancelled'};
-const failure = (error:unknown):Attributes => {
+export const diagnosticFailure = (error:unknown):Attributes => {
   const code = error instanceof HttpError ? error.code : undefined;
   if (code === 'uncertain-result') return {'bunny.outcome':'uncertain','bunny.reason':'transport-error','bunny.write.possible':true};
   if (code === 'unauthenticated' || code === 'forbidden') return {'bunny.outcome':'rejected','bunny.reason':'unauthorized','bunny.write.possible':false};
   if (code === 'capacity') return {'bunny.outcome':'rejected','bunny.reason':'busy','bunny.write.possible':false};
-  if (['invalid-request','invalid-input','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','unsupported-capability'].includes(code ?? '')) {
+  if (['not-found','invalid-request','invalid-input','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','unsupported-capability'].includes(code ?? '')) {
     return {'bunny.outcome':'rejected','bunny.reason':'invalid-input','bunny.write.possible':false};
   }
   return {'bunny.outcome':'unavailable','bunny.reason':'unavailable','bunny.write.possible':code !== 'controller-unavailable'};
 };
+
+/** Reads only the registered outcome field from an already produced response. */
+export function diagnosticReceipt(value:unknown):Attributes|undefined {
+  if(!value||typeof value!=='object'||!('outcome' in value)||typeof value.outcome!=='string')return;
+  const selected=outcome[value.outcome];
+  if(selected)return {'bunny.outcome':selected,...(selected==='uncertain'?{'bunny.write.possible':true}:{})};
+}
 
 /** Explicitly enabled host adapter. It never records request bodies, headers or exceptions. */
 export function createCommandDiagnostics(options:Options) {
@@ -31,6 +40,15 @@ export function createCommandDiagnostics(options:Options) {
   const failed = () => { failures = Math.min(Number.MAX_SAFE_INTEGER, failures + 1); };
   return {
     counts:() => ({failures,invalidRecords}),
+    /** Only ControllerClient's validated, authenticated owned endpoint calls this. */
+    headers():Record<string,string> {
+      if(options.propagate!==true)return {};
+      try {
+        const current=trace.getSpanContext(context.active());
+        return current&&trace.isSpanContextValid(current)?traceHeaders({trace_id:current.traceId,span_id:current.spanId,
+          trace_flags:(current.traceFlags&1).toString(16).padStart(2,'0')},{authenticated:true,owned:true}):{};
+      } catch {failed();return {};}
+    },
     /** Call only after HTTP authentication. A controller child inherits the active owned context. */
     async run<T extends CommandResponse>(scope:'bunny.http'|'bunny.controller', attributes:Attributes,
       action:()=>Promise<T>, inboundTraceparent?:unknown):Promise<T> {
@@ -88,7 +106,7 @@ export function createCommandDiagnostics(options:Options) {
         finish({'bunny.outcome':outcome[response.body.outcome] ?? 'unavailable'},false);
         return response;
       } catch (error) {
-        try { finish(failure(error),true); } catch { failed(); }
+        try { finish(diagnosticFailure(error),true); } catch { failed(); }
         throw error;
       }
     },

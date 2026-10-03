@@ -1,4 +1,5 @@
-import {commandDiagnosticAttributes,type CommandDiagnostics} from './diagnostics.js';
+import type {HostDiagnostics} from '@jimmie-potts/bunny-observability/host';
+import {commandDiagnosticAttributes,diagnosticFailure,diagnosticReceipt,type CommandDiagnostics} from './diagnostics.js';
 import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
 import {readBuild} from './build.js';
@@ -28,7 +29,7 @@ import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {diagnostics?:CommandDiagnostics; directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
+export type HubOptions = {observability?:unknown;hostDiagnostics?:HostDiagnostics;diagnostics?:CommandDiagnostics; directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number; wispr?:WisprOptions};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -272,7 +273,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     // Deferred outside the commit call so a burst of commits triggers one fan-out.
     if (streams.size === 0 || feedScheduled) return;
     feedScheduled = true;
-    setImmediate(() => {feedScheduled = false;feedTick();});
+    setImmediate(() => {feedScheduled = false;
+      if(options.hostDiagnostics)void options.hostDiagnostics.run({scope:'bunny.feed',operation:'feed',spanName:'bunny.feed.read'},()=>feedTick()).catch(()=>{});
+      else feedTick();
+    });
   });
   const authenticateConfigured = (token:string):Credential|null => {
     if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
@@ -292,12 +296,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (browserSessions.get(principal.digest)?.credential === principal || currentCredentials.includes(principal)) return;
     throw new HttpError('unauthenticated',401);
   };
+  const diagnosticRequests=new WeakMap<IncomingMessage,string>();
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
     const token = req.headers.authorization;
     const principal = typeof token === 'string' && token.startsWith('Bearer ') ? authenticate(token.slice(7)) : null;
     if (!principal) throw new HttpError('unauthenticated',401);
     if (!sameOrigin(req) || !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
     if (req.method !== 'GET' && req.headers['x-pixoo-request'] !== '1') throw new HttpError('forbidden',403);
+    diagnosticRequests.set(req,scope==='ingest'?'lifecycle':scope==='control'?'verification':'status');
     return principal;
   };
   async function command(principal: Credential, input: unknown) {
@@ -334,6 +340,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const started = performance.now();
       const timer = setTimeout(() => res.destroy(),3000);
       let streaming = false;
+      let diagnosticError:ReturnType<typeof diagnosticFailure>|undefined;
+      const reply=(response:ServerResponse,status:number,value:unknown)=>{
+        try{diagnosticError=diagnosticReceipt(value)??diagnosticError;}catch{}
+        json(response,status,value);
+      };
       try {
         if (!req.url?.startsWith('/') || req.url.startsWith('//')) throw new HttpError('invalid-input',400);
         if (previewProof && req.url.startsWith(previewProof.prefix)) {await previewProof.handle(req,res);return;}
@@ -357,14 +368,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
           pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
           launchCodes.delete(input.code);
-          json(res,200,openBrowserSession());return;
+          reply(res,200,openBrowserSession());return;
         }
         if(req.method==='POST'&&path==='/api/dashboard/v1/session'&&!url.search){
           // Off unless configured, like MCP. On, any same-origin loopback page gets a launcher-equivalent session (Hub #276).
           if(options.browserAccess!=='trusted-loopback')throw new HttpError('not-found',404);
           if(!sameOrigin(req,{requireOrigin:true,sites:[undefined,'same-origin']})||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
-          pruneBrowser();json(res,200,openBrowserSession());return;
+          pruneBrowser();reply(res,200,openBrowserSession());return;
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands|moment)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
@@ -379,22 +390,22 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
           // A configured credential has no browser session to end: its tickets, retained results and streams stay.
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
-          json(res,200,{disconnected:true});
+          reply(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',build,control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(wispr&&principal.devices.includes(wispr.config.sourceId)?{wispr:{sourceId:wispr.config.sourceId}}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          reply(res,200,{apiVersion:'1.0',build,control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(wispr&&principal.devices.includes(wispr.config.sourceId)?{wispr:{sourceId:wispr.config.sourceId}}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
-          authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
+          authorize(req,url.searchParams.get('scope') as Scope);reply(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           const version=url.searchParams.get('snapshotVersion')??'1.0';
           if (!['1.0','1.1','1.2'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
               [...url.searchParams.keys()].some(k => !['q','provider','snapshotVersion'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
               (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
           const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1'|'1.2');
-          if(url.searchParams.has('q')||url.searchParams.has('provider'))json(res,200,view);
-          else {const {matches,...envelope}=view;json(res,200,envelope);}
+          if(url.searchParams.has('q')||url.searchParams.has('provider'))reply(res,200,view);
+          else {const {matches,...envelope}=view;reply(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
           const current = snapshot();
-          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',build,ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
+          reply(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',build,ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
           if (staged) throw new HttpError('owner-quiesced',503);
           let input=await admitted(2048);
@@ -402,15 +413,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(codexDesktop&&checked.ok&&checked.value.identity.client==='desktop'&&checked.value.identity.hostId===codexDesktop.hostId&&checked.value.identity.sourceId===codexDesktop.sourceId)input=await enrichCodexTitle(checked.value,codexDesktop.home);
           live(principal); // Enrichment may yield while this credential is revoked.
           const result = await owner.ingest(input);
-          json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
+          reply(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
           // Only a newly applied event reaches the rules, after the ingest answer is sent, so intake never delays or changes it.
           if (result.ok && result.outcome === 'applied' && checked.ok) try { const event = lifecycleEvent(checked.value);if (event) automation.submit(event); } catch {}
         } else if (path.startsWith(AUTOMATION_PREFIX)) {
           const response = await automationRoute(automation,{method:req.method ?? '',url,devices:principal.devices,body:admitted,writable:!staged && !exported});
           if (!response) throw new HttpError('not-found',404);
-          json(res,response.status,response.body);
+          reply(res,response.status,response.body);
         } else if (req.method === 'POST' && path === '/api/monitor/v1/commands' && !url.search) {
-          json(res,200,await command(principal,await admitted(65536)));
+          reply(res,200,await command(principal,await admitted(65536)));
         } else if (req.method === 'GET' && path === '/api/monitor/v1/changes' && !url.search) {
           if (streams.size >= 16) throw new HttpError('capacity',429);
           streaming = true;clearTimeout(timer); streams.add(res);streamOwners.set(res,principal.id);
@@ -424,11 +435,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           live(principal);authorize(req,'read',wispr.config.sourceId);
           if(!res.destroyed){res.writeHead(response.status,{'content-type':response.csv?'text/csv; charset=utf-8':'application/json','cache-control':'no-store','x-content-type-options':'nosniff',...(wisprRoute[1]==='export'?{'content-disposition':'attachment; filename=wispr.'+(response.csv?'csv':'json')}:{})});res.end(response.body);}
         } else if (playback && req.method === 'GET' && path === '/api/playback/v1/snapshot' && !url.search) {
-          json(res,200,playback.snapshot());
+          reply(res,200,playback.snapshot());
         } else if (playback && req.method === 'POST' && path === '/api/playback/v1/commands' && !url.search) {
           // A staged migration destination must not become a second playback writer.
           if (staged) throw new HttpError('owner-quiesced',503);
-          const response = await playback.command(await admitted(1024),principal);json(res,response.status,response.body);
+          const response = await playback.command(await admitted(1024),principal);reply(res,response.status,response.body);
         } else if (catalogRoute) {
           if(req.method!=='GET')throw new HttpError('invalid-request',400);
           const client=clients.get(catalogRoute[1]);if(!client)throw new HttpError('unknown-device',404);
@@ -440,24 +451,24 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (integrationRoute) {
           const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           const operation = integrationRoute[2];
-          if (req.method === 'GET' && operation === 'snapshot' && !url.search) json(res,200,await client.integrationSnapshot());
-          else if (req.method === 'GET' && operation === 'geometry' && !url.search) json(res,200,await client.integrationGeometry());
+          if (req.method === 'GET' && operation === 'snapshot' && !url.search) reply(res,200,await client.integrationSnapshot());
+          else if (req.method === 'GET' && operation === 'geometry' && !url.search) reply(res,200,await client.integrationGeometry());
           else if (req.method === 'GET' && operation === 'receipt' && [...url.searchParams.keys()].length === 2 && url.searchParams.has('epoch') && /^[0-9]+$/.test(url.searchParams.get('sequence') ?? ''))
-            {const response = await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))});json(res,response.status,response.body);}
-          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await admitted(65536));json(res,receipt.status,receipt.body);}
-          else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await admitted(65536));json(res,response.status,response.body);}
+            {const response = await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))});reply(res,response.status,response.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await admitted(65536));reply(res,receipt.status,receipt.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await admitted(65536));reply(res,response.status,response.body);}
           else throw new HttpError('invalid-input',400);
         } else if (lightingRoute && !url.search && ((req.method === 'GET' && lightingRoute[2] === 'snapshot') || (req.method === 'POST' && lightingRoute[2] === 'commands'))) {
           // LIFX color and temperature: the owner's typed lifx-light profile, never a controller v1 extension.
           const client = clients.get(lightingRoute[1]);if (!client) throw new HttpError('unknown-device',404);
-          if (lightingRoute[2] === 'snapshot') json(res,200,await client.lightingSnapshot());
-          else {const response = await client.lightingCommand(await admitted(65536));json(res,response.status,response.body);}
+          if (lightingRoute[2] === 'snapshot') reply(res,200,await client.lightingSnapshot());
+          else {const response = await client.lightingCommand(await admitted(65536));reply(res,response.status,response.body);}
         } else if (route && req.method === 'GET' && route[2] === 'snapshot') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           // Default readers keep the 1.0 shape. `apiVersion=1.1` opts in and alone is accepted, once (Hub #576).
           const versions = url.searchParams.getAll('apiVersion');
           if ([...url.searchParams.keys()].some(name => name !== 'apiVersion') || versions.length > 1 || (versions.length === 1 && !['1.0','1.1'].includes(versions[0]))) throw new HttpError('invalid-request',400);
-          json(res,200,versions[0] === '1.1' ? await client.snapshot('1.1') : await client.snapshot());
+          reply(res,200,versions[0] === '1.1' ? await client.snapshot('1.1') : await client.snapshot());
         } else if (route && !url.search && req.method === 'POST' && route[2] === 'commands') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           const input = await admitted(65536);
@@ -465,17 +476,22 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const response = options.diagnostics
             ? await options.diagnostics.run('bunny.http',commandDiagnosticAttributes(client.config,input),execute,req.headers.traceparent)
             : await execute();
-          json(res,response.status,response.body);
+          reply(res,response.status,response.body);
         } else if (route && !url.search && req.method === 'POST' && route[2] === 'moment') {
           // Hub #336: the owner's explicit moment for this one device, through the #335 sender, answered inside the 3 s cap.
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           const input = ownerMomentInput(await admitted(1024));
-          json(res,200,await sendOwnerMoment(client,input,MOMENT_RESPONSE_BOUND_MS - (performance.now() - started)));
+          reply(res,200,await sendOwnerMoment(client,input,MOMENT_RESPONSE_BOUND_MS - (performance.now() - started)));
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);
+        diagnosticError=diagnosticFailure(safe);
         if (!res.headersSent) json(res,safe.status,{error:{code:safe.code}});else res.destroy();
-      } finally {active--;if (!streaming) {res.once('close',() => clearTimeout(timer));res.once('finish',() => clearTimeout(timer));}}
+      } finally {
+        const operation=diagnosticRequests.get(req);
+        if(operation)try{options.hostDiagnostics?.event(res.statusCode>=400?'operation.failed':'operation.completed','bunny.http',
+          {'bunny.operation':operation,'bunny.outcome':res.statusCode>=400?'rejected':'succeeded',...diagnosticError,'bunny.duration_ms':Math.min(86400000,Math.max(0,performance.now()-started))},res.statusCode>=400?'WARN':'INFO');}catch{}
+        active--;if (!streaming) {res.once('close',() => clearTimeout(timer));res.once('finish',() => clearTimeout(timer));}}
     })().catch(() => res.destroy());
   });
   server.maxConnections = 64;
@@ -486,7 +502,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const port = (server.address() as {port:number}).port;
   origin = `http://127.0.0.1:${port}`;hosts = [`127.0.0.1:${port}`,`localhost:${port}`];
   try {
-    if (options.mcp) mcp = createHubMcp({origin,clients,authenticate:authenticateConfigured,principal:(id,scope,device) => {
+    if (options.mcp) mcp = createHubMcp({origin,clients,diagnostics:options.hostDiagnostics,authenticate:authenticateConfigured,principal:(id,scope,device) => {
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
