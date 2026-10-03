@@ -46,10 +46,12 @@ try{
 }catch(error){await page.screenshot({path:output+'/failure.png',fullPage:true});console.error(await page.locator('body').innerText());throw error;}finally{await context.close();await browser.close();await f.close();}
 
 // Missing configuration and unreadable initial source remain distinct from an empty capture.
-for(const scenario of ['no source','malformed source','in-flight opt-out']){
- const fixture=await wisprFixture({configured:scenario!=='no source'}),browser=await chromium.launch({headless:true}),context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(15000);let reads=0;
+for(const scenario of ['no source','malformed source','in-flight opt-out','empty source','sharing off','disabled source','unsupported schema']){
+ const fixture=await wisprFixture({configured:scenario!=='no source',share:scenario!=='sharing off',empty:scenario==='empty source'}),browser=await chromium.launch({headless:true}),context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(15000);let reads=0;
  page.on('request',r=>{if(r.url().includes('/api/wispr/'))reads++;});
  try{
+  if(scenario==='disabled source')await fixture.disable();
+  if(scenario==='unsupported schema')await fixture.unsupported();
   if(scenario==='malformed source')await fixture.malformed();
   if(scenario==='in-flight opt-out'){
    let once=true;await page.route('**/api/wispr/v1/language?*',async route=>{
@@ -59,6 +61,9 @@ for(const scenario of ['no source','malformed source','in-flight opt-out']){
   await page.goto(fixture.hub.url+'/#/wispr/dictation');await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(fixture.token);await page.getByRole('button',{name:'Connect',exact:true}).click();
   if(scenario==='no source'){await page.getByRole('region',{name:'Not found'}).waitFor();assert.equal(reads,0);assert.equal(await page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:/Wispr/}).count(),0);}
   else if(scenario==='malformed source'){await page.getByText(/The configured source is unavailable/).waitFor();assert.equal(await page.locator('.wispr-page dt').count(),0);}
+  else if(scenario==='empty source'){await page.getByText('The source has no eligible captured dictations.',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Download numeric JSON'}).isDisabled(),true);}
+  else if(scenario==='disabled source'){await page.getByText(/Collection is disabled/).first().waitFor();assert.ok(!(await page.locator('body').textContent()).includes('hello world'));}
+  else if(scenario==='unsupported schema'){await page.getByText(/The Wispr source schema is unsupported/).first().waitFor();assert.ok(!(await page.locator('body').textContent()).includes('hello world'));}
   else{await page.getByText('Language collection or sharing is off.',{exact:true}).first().waitFor();assert.ok(!(await page.locator('body').textContent()).includes('hello world'));assert.ok(!(await page.locator('body').textContent()).includes('hello friend'));}
   console.log('Wispr browser: '+scenario+' passed.');
  }finally{await context.close();await browser.close();await fixture.close();}
