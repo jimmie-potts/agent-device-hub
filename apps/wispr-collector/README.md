@@ -2,7 +2,7 @@
 
 This Windows Node 24 CLI reads one explicitly configured local source and retains private analytics. The aggregate JSON boundary is the only input intended for the Hub in WSL. Neither SQLite database is a WSL input. Development uses synthetic data only; source delivery does not install or schedule collection.
 
-The source profile uses the `History` table with `id`, `timestamp`, `status` and `numWords`; optional numeric fields are `duration`, `speechDuration`, `numWordsCorrected`, `numDictionaryReplacements` and `appName`. Required names/types must qualify. Unknown optional fields are ignored. Installed schema and duration/counter semantics need separate confirmation; unsupported fields never become known zeros. Numeric mode does not select transcript, context, audio or arbitrary source columns.
+The existing source profile uses the `History` table with `id`, a textual `timestamp` declaration, `status` and `numWords`. The qualified native profile uses a non-null textual primary key `transcriptEntityId`, a textual or `DATETIME` timestamp declaration, and `app` as its destination field. These fixed aliases map to the same internal ID and app fields. Existing `id` takes precedence and an incompatible declaration is rejected, not bypassed. Timestamp values still need an explicit UTC offset; numeric epochs and missing offsets are not inferred. Optional numeric fields are `duration`, `speechDuration`, `numWordsCorrected` and `numDictionaryReplacements`; the existing profile also uses `appName`. Required names/types must qualify. Unknown optional fields are ignored. Installed schema and duration/counter semantics need separate confirmation; unsupported fields never become known zeros. Numeric mode does not select transcript, context, audio or arbitrary source columns.
 
 ## Development checks
 
@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.1.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.2.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;

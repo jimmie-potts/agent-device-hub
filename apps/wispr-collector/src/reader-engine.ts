@@ -47,12 +47,22 @@ export async function scanSource(path: string, limits: SourceLimits, deliver: (r
     if (table?.type !== 'table' || typeof table.sql !== 'string' || /CREATE\s+VIRTUAL/i.test(table.sql)) throw new SourceError('source-schema');
     const columns = db.prepare('PRAGMA table_xinfo(History)').all();
     const types = new Map(columns.filter(c => c.hidden === 0).map(c => [String(c.name), String(c.type)]));
+    const native = !columns.some(c => String(c.name).toLowerCase() === 'id');
+    const idColumn = native ? 'transcriptEntityId' : 'id';
+    if (native) {
+      const key = columns.find(c => c.name === idColumn && c.hidden === 0);
+      if (key?.pk !== 1 || key.notnull !== 1 || columns.filter(c => typeof c.pk === 'number' && c.pk > 0).length !== 1 || !textType(types.get(idColumn) ?? '')) throw new SourceError('source-schema');
+    }
+    // Fixed profile aliases only; source/configuration never supplies SQL identifiers.
+    const column = (name: string) => name === 'id' ? idColumn : native && name === 'appName' ? 'app' : name;
     for (const name of required) {
-      const type = types.get(name);
-      if (!type || !(name === 'numWords' ? numberType(type) : name === 'id' ? textType(type) || /INT/i.test(type) : textType(type))) throw new SourceError('source-schema');
+      const type = types.get(column(name));
+      const supported = name === 'numWords' ? numberType(type ?? '') : name === 'id' ? textType(type ?? '') || /INT/i.test(type ?? '') :
+        textType(type ?? '') || (native && name === 'timestamp' && /^DATETIME$/i.test(type ?? ''));
+      if (!type || !supported) throw new SourceError('source-schema');
     }
     const coverage = Object.fromEntries(OPTIONAL_COLUMNS.map(name => {
-      const type = types.get(name);
+      const type = types.get(column(name));
       return [name, !!type && (name === 'appName' ? textType(type) : numberType(type))];
     })) as Record<OptionalColumn, boolean>;
     const selected = [...required, ...OPTIONAL_COLUMNS.filter(name => coverage[name])];
@@ -67,10 +77,10 @@ export async function scanSource(path: string, limits: SourceLimits, deliver: (r
     const rowCount = db.prepare('SELECT count(*) AS n FROM History').get()?.n;
     if (typeof rowCount !== 'number' || rowCount > limits.maxRows) throw new SourceError('source-capacity');
     // Size before materialization, so a single huge value cannot bypass the bound.
-    const byteSql = [...selected.map(quoted),...extra.map(e=>e.expression)].map(expression => `coalesce(length(CAST((${expression}) AS BLOB)),0)`).join('+');
+    const byteSql = [...selected.map(name => quoted(column(name))),...extra.map(e=>e.expression)].map(expression => `coalesce(length(CAST((${expression}) AS BLOB)),0)`).join('+');
     const size = db.prepare(`SELECT coalesce(sum(${byteSql}),0) AS n FROM History`).get()?.n;
     if (typeof size !== 'number' || size > limits.maxBytes) throw new SourceError('source-capacity');
-    const statement = db.prepare(`SELECT ${[...selected.map(quoted),...extra.map(e=>`${e.expression} AS ${quoted('language_'+e.alias)}`)].join(',')} FROM History`);
+    const statement = db.prepare(`SELECT ${[...selected.map(name => `${quoted(column(name))} AS ${quoted(name)}`),...extra.map(e=>`${e.expression} AS ${quoted('language_'+e.alias)}`)].join(',')} FROM History`);
     statement.setReadBigInts(true);
     let batch: SourceRow[] = [];
     const ids = new Set<string>();

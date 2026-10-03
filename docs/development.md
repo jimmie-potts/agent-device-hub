@@ -850,7 +850,7 @@ unknown source language, edit finality and counter windows remain explicit.
 
 Run `npm run test:wispr:native:built` separately under native Windows Node 24,
 with its synthetic database/output directory on a local Windows drive. The
-native check rejects other platforms and verifies concurrent WAL writes,
+native check rejects other platforms and verifies the fixed native History identifier/app mapping and DATETIME declaration, numeric/language repeat counts, source byte/ACL preservation, unknown edit-end coverage and text opt-out. It also verifies concurrent WAL writes,
 source preservation, reader-lock release, busy/deadline bounds, accepted extra
 readers on selected source/sidecars, unchanged source bytes/ACLs, private
 config/state/backup/export ACL rejection, unsafe-path rejection and
