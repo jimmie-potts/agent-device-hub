@@ -16,15 +16,15 @@
 - [x] 3.1 Implement isolated backend launch and resource preflight using the pinned image, loopback listeners and task-owned manifests; verify refusal of unavailable prerequisites and unsafe network/resource configuration.
 - [x] 3.2 Implement one bounded log path and a bounded trace path with safe drop/error accounting; verify saturation, absent/paused collection, exporter errors and shutdown deadlines with synthetic sinks.
 - [x] 3.3 Implement expected-identity queries, Python fixture ingestion and existing viewer checks; verify query field mappings, deadline failure and missing/duplicate record detection in source tests.
-- [x] 3.4 Implement paired workload scheduling and application/stack sampling; verify omission/lag accounting, unrounded threshold evaluation and evidence retention without command retries or catch-up bursts.
+- [x] 3.4 Preserve the original qualification branch and failed evidence; remove benchmark-only modules from the supported delivery surface while retaining functional adapters and checks. Paired performance qualification is deferred by the 2026-10-02 owner decision.
 - [x] 3.5 Implement manifest-owned cleanup and run-data limits; verify unrelated resources survive, evidence persists and interrupted runs can be cleaned up within the stated ownership boundary.
 
 ## 4. Runtime qualification and disposition
 
 - [ ] 4.1 Once the existing container engine is available, freeze the pre-run manifest and verify real Loki/Tempo ingestion, Python/Node field queries, trace/log correlation and the existing Grafana viewer; retain exact query and viewer evidence.
 - [x] 4.2 Run privacy, trust, context, queue/drop, exporter failure, timeout and cleanup scenarios against the real stack; verify zero leaks/crossover/duplicate effects and bounded truthful outcomes.
-- [ ] 4.3 Run the prescribed three pairs for healthy and unavailable collection against the frozen thresholds; retain all raw samples, failed/inconclusive attempts and any correction hypotheses.
-- [ ] 4.4 Publish the evidence-backed supported/refuted/inconclusive pilot report and budget revisit triggers; verify that every mandatory gate is explicit and unsupported adoption remains blocked.
+- [ ] 4.3 Run the short final-candidate functional check and affected regressions; reuse applicable retained cross-language/viewer/fault evidence with exact revisions and limitations. Keep prior benchmark attempts inconclusive and performance unqualified.
+- [ ] 4.4 Publish the evidence-backed supported/refuted/inconclusive functional pilot report, deferred performance qualification and budget revisit triggers; verify that every mandatory gate is explicit and unsupported adoption remains blocked.
 
 ## 5. Delivery gates
 

@@ -1617,717 +1617,139 @@ Fixtures cover safe canonical records, exact OTLP mappings, strict version
 projections, privacy, context isolation and bounded sink failures. The package
 check verifies immutable archive contents and independent TypeScript/Python
 consumers. These checks use synthetic records, no collector, device or live
-state. Real ingestion, Grafana queries and paired overhead measurements belong
-to the separately bounded pilot; passing fixtures do not establish adoption.
+state. Real ingestion and Grafana queries belong to the separately bounded functional
+pilot; passing fixtures do not establish adoption. Performance is unqualified.
 
 ## Shared observability pilot checks
 
-Run `npm run test:observability:pilot` on Node 24 for the pilot harness source
-checks, including the external released-contract consumer and its Node/Python
-fixtures. Use supported Python 3.12 or 3.14 with `requirements-contracts.txt`
-installed. The Depot contracts/state matrix runs this command after its fresh build.
-Keep the shared contract, Hub, packaged Hub, Hub MCP and workflow checks required
-by the change. Source checks use synthetic inputs and do not require Docker.
+The functional pilot in [#704](https://github.com/jimmie-potts/agent-device-hub/issues/704)
+checks real ingestion, trace/log correlation and representative failure behavior.
+The owner-approved scope revision of 2026-10-02 defers paired performance
+qualification. A supported functional result does not claim acceptable overhead,
+installed coverage or physical-device behavior.
 
-The isolated runtime evaluation is separate: it must prove actual Collector,
-Loki and Tempo ingestion, viewer correlation, bounded failures, privacy and
-paired overhead against the frozen owner-approved protocol. Missing Docker or
-required measurements leave that evaluation unexecuted or inconclusive; a
-source-test pass cannot qualify adoption. Use only loopback fake controllers,
-task-owned state and the pinned development image within the recorded caps.
-Retain all failed/inconclusive runs and cleanup evidence in the main checkout's
-`.local/evidence/`. No command in this procedure authorizes live installation,
-personal settings, state migration or physical devices.
+### Source validation
 
-Run the read-only runtime preflight with
-`npm run qualify:observability -- preflight --evidence-dir <new-run-directory>`.
-Use a new directory under the main checkout's `.local/evidence/` for each attempt.
-It writes an exclusive `preflight.json`, refuses remote Docker endpoints, checks
-Linux/amd64 and Node 24, reserves eight GiB after the four GiB stack allocation,
-and checks Docker's memory/CPU limit support. Exit 2 means a prerequisite failed
-or evidence could not be created. Exit 0 establishes preflight readiness only;
-the receipt still says `qualification: unexecuted`. Image size, launch bindings,
-continuous resource limits and every runtime acceptance check remain separate.
-The command installs nothing and never launches or changes an existing service.
+Use Node 24 and Python 3.12 or 3.14. Run `npm ci`, the shared build/type/contract
+and workflow checks, the owning Hub/Hub MCP/package checks, and
+`npm run test:observability:pilot`. Depot runs the pilot tests in the existing
+contracts/state matrix. The source tests use synthetic inputs and no Docker.
 
-The opt-in Hub adapter is covered by `apps/hub/tests/diagnostics.test.mjs` in
-`test:hub:built` and the external packaged Hub suite. Its tests check canonical
-records, authenticated request ordering, controller observations, unchanged
-receipts, error privacy and exactly one domain invocation when a tracer, sink
-or context manager fails. Set `TMPDIR` outside every checkout for Hub state,
-for example the parent workspace's `.local/scratch/o704`. The
-released Hub package bundles observability 1.0.0; the pilot SDK stays in the
-evaluation host rather than the Hub runtime dependency closure.
+Hub synthetic state must be outside every Git checkout. On this host use:
 
-`apps/hub/tests/fake-execution.test.mjs` qualifies the pilot's opt-in synthetic
-brightness executor in the existing fake controller. It uses native ticket
-admission, a queue of at most 32 jobs, terminal receipt replay and an independent
-effect counter. Tests cover rejection, concurrent duplicate submission, full
-queues, timeout after admission, restart cancellation and bounded histories.
-The oracle retains 256 records and reports overflow; the runtime harness must
-drain it and retain the evidence. An overflow prevents a complete per-ticket
-claim. These tests run through the existing Hub and packaged Hub suites.
+```bash
+TMPDIR=/home/jimmie/projects/.local/scratch/o704 fnm exec --using=.nvmrc -- npm run test:observability:pilot
+```
 
-The pilot source suite also starts an isolated Node 24 SDK process to check
-HTTP and `fetch` propagation to exact configured numeric loopback origins.
-It checks concurrent parentage, exclusion of other origins, sampling flags and
-absence of baggage/tracestate. Register the OpenTelemetry ESM hook and start
-the SDK before importing the application. Automatic incoming extraction stays
-disabled; the authenticated application boundary owns incoming context. This
-SDK tests also exercise the actual authenticated Hub route with two concurrent
-controllers, malformed and unsampled parents, and the released Pino-to-OTLP
-log mapping. Span projection uses canonical resource/scope/typed attributes
-and preserves nanosecond timestamps; raw SDK URLs, events, links, resource
-detection and error messages are excluded. These tests do not yet qualify
-worker handoff, bounded streaming export or backend ingestion.
+Keep npm and browser downloads in the shared caches. Put durable evidence in
+the main checkout's `.local/evidence/`, never only inside a removable worktree.
+The pilot consumes the checksum-verified observability 1.0.0 archive from
+`vendor/`; Node and Python packaged-consumer checks reject damaged inputs.
 
-The fake controller's optional diagnostic observer receives validated machine
-metadata and traceparent only after authentication. It cannot invoke domain
-work. Exceptions and rejected observer promises increment a bounded failure
-counter; queue settlement releases its diagnostic handle. Source tests cover
-replay and failures at request, queue, admission, execution and terminal steps.
+### Local synthetic qualification
 
-`worker-diagnostics.mjs` captures context explicitly for queue and execution
-spans, emits source records under controller/worker identities, and links
-deferred execution to its original admission. A real SDK test drains two
-controllers in reverse order outside their request contexts and checks
-parentage, links, isolated tickets, canonical records and independent effects.
-Cancellation ends queued diagnostics without reporting an execution success.
-The combined process harness and bounded network export remain separate
-qualification requirements.
+The existing local Docker engine is required. Do not install or reconfigure it
+as part of these commands. The pinned backend is
+`grafana/otel-lgtm:0.34.0@sha256:c6a56be719990e78b1d32e879988a219904300ecde1b9bfeec472831a56a922b`.
+The run requires that image already present and verifies its identity and size.
 
-`bounded-sink.mjs` provides the trace transport queue: 1,024 records and 4 MiB,
-including the in-flight item, with at most 8 KiB per serialized record. It drops
-newest, invokes the sink asynchronously, counts sink failures without retrying,
-and aborts a stalled sink after the shutdown flush deadline (at most one
-second). Sinks must return promptly and honor the supplied abort signal.
-Source tests exercise both default capacity limits, UTF-8 byte accounting,
-exceptions, rejected promises, abandoned work and late settlement. An exported
-counter means the sink resolved; it does not prove backend ingestion.
+The profile uses a fresh task-owned ordinary bridge and volume, exact loopback
+port bindings, two CPUs and 4 GiB RAM with no extra swap. Keep at least 8 GiB
+host-available RAM, at most 10 GiB image space and 2 GiB run data. The resource
+watchdog stops the owned stack on a cap breach or missing required evidence.
+No privileged mode, physical device, host networking, daemon or firewall change
+is permitted. An ordinary bridge allows outbound traffic; all producer state is
+synthetic and backend analytics/plugin downloads are disabled.
 
-Span projection accepts up to eight separately approved causal link identities.
-It exports only validated trace/span IDs and sampling flags, without reading
-SDK links or their attributes. The host must supply these identities from owned
-handoffs; arbitrary links and detected resource metadata remain excluded.
+Supply a new evidence directory and an existing disk-backed state parent outside
+Git. Choose free ports; the example uses 43000–43004:
 
-`span-pipeline.mjs` associates manual spans with canonical metadata through the
-host-injected tracer and inherits only that metadata for approved HTTP/Undici
-children. Active associations have separate limits of 1,024 entries and 4 MiB;
-completed associations are released before enqueueing export. Unsampled spans
-are not retained. Canonical terminal records may update attributes but cannot
-change the registered resource or scope. Registration failure leaves the domain
-span intact and increments safe counters.
-
-The real SDK fixtures exercise this streaming pipeline, including worker causal
-links. The HTTP privacy check first proves its secret fixture reached raw SDK
-attributes, then proves it is absent from exported output. No raw SDK attributes,
-events, detected resources or links are read for export. A bounded nonclosing
-flush reports timeout as failure; shutdown counts unfinished associations and
-closes the transport queue. Backend ingestion and the combined runtime harness
-remain separate acceptance checks.
-
-`host.mjs` starts the pilot SDK once in a fresh process after hook registration
-and before application imports. It rejects inherited `OTEL_*` settings without
-printing values or changing personal configuration. Resource detection, SDK log
-processors and metric readers are disabled; resource, sampler, propagation and
-span limits are explicit. Its two signal queues flush concurrently.
-
-The single log path in `log-pipeline.mjs` uses the released Pino queue, validates
-its JSON and maps it through the released OTLP converter before one transport
-call. An optional local sink receives only canonical JSON. Tests cover private
-field rejection, local write failure, transport rejection, stalled transport and
-shutdown abort without retries. The combined host fixture follows an actual Hub
-command through fake execution: seven logs, six correlated spans, one independent
-effect. Stalled sinks preserve that command and account for all abandoned
-records. These injected-sink tests do not establish Collector ingestion.
-
-`otlp-http.mjs` sends one mapped record per request to a fixed `/v1/logs` or
-`/v1/traces` path on an exact numeric loopback origin. It owns a one-socket agent
-and refuses concurrent calls rather than adding an unbounded agent queue.
-Requests have a one-second maximum total deadline, 8 KiB response-body/header
-limits, and a 64 KiB encoded-request ceiling (canonical records remain bounded
-by their separate 8 KiB limit). It sends no credentials or propagation headers,
-follows no redirects, and never retries. Close cancels the active request and
-destroys only its own agent.
-
-The pilot response parser requires JSON and HTTP 200 and ignores unknown JSON
-fields for OTLP forward compatibility. Partial
-rejection fails the record; a zero-rejection warning increments a counter
-without retaining server text. See the [OTLP response specification](https://opentelemetry.io/docs/specs/otlp/#otlphttp-response).
-The transport records acknowledgment separately from ingestion. Tests cover
-partial rejection for both signals, warnings, malformed/oversized responses,
-redirects, retryable status codes, unavailable/paused receivers, cancellation
-and concurrent callers. The combined Hub/worker fixture also sends its seven
-logs and six spans through an actual synthetic HTTP receiver and checks that
-export requests are not recursively traced. Grafana ingestion remains untested.
-
-`backend-plan.mjs` generates an argument-only plan for the pinned LGTM image,
-a run-owned internal bridge network, a labeled data volume and five loopback
-listeners. It requests two CPUs, 4 GiB RAM with no extra swap, dropped container
-capabilities, no privilege escalation, disabled eBPF instrumentation and disabled
-Docker log-driver storage. It mounts only the owned data volume and two read-only config files.
-It does not execute Docker or treat planned flags as verified configuration.
-
-The readback verifier checks actual CPU/memory limits, isolation flags, published
-bindings and mounts. Cleanup additionally requires the exact recorded container
-ID, resolved image ID, name and ownership labels. These source checks do not yet
-validate config syntax in the image, network reachability, volume ownership,
-image size or the continuous 2 GiB run-data cap. The launcher must establish
-those gates before measured work and preserve resources until evidence is saved.
-
-`backend-config.mjs` generates fixed Collector and Loki profiles. Collector has
-only HTTP OTLP log/trace pipelines, bounded batches, a memory limiter, and one
-local exporter per signal with retries and exporter queues disabled. Loki uses
-TSDB v13 and explicitly indexes only service namespace/name/environment. Other
-resource attributes, including instance and ticket identities, remain structured
-metadata under the [Loki OTLP mapping](https://grafana.com/docs/loki/latest/send-data/otel/).
-No configuration value expands host environment variables.
-
-`backend-files.mjs` prepares an exclusive private run directory with immutable
-synthetic config files and a checksum manifest. Config files are readable by the
-capability-dropped container; their parent directory remains private. Readback
-uses bounded reads without following file symlinks, regenerates the expected
-launch plan, and checks exact configuration bytes and receipts. Corruption or
-partial preparation is retained for diagnosis. These checks establish file and
-profile consistency; pinned-image binary validation and runtime readiness are
-still required before qualification.
-
-`backend-resources.mjs` verifies network creation identity, task-owned bridge
-settings and endpoint ownership. Volume verification compares creation time,
-local driver, mountpoint and unique run labels; driver options are forbidden.
-Docker volumes have no immutable ID, so this is a creation-property check,
-not protection against a privileged actor recreating all properties. The
-mountpoint is evidence only and must never become a host deletion target.
-
-`backend-cleanup.mjs` coordinates cleanup through an injected backend adapter.
-It requires saved evidence, verifies all retained resources before mutation,
-records each intent durably, then stops and removes the recorded container,
-empty network and volume. It checks fresh ownership before each removal and
-verifies absence afterwards. It never removes images or uses forced removal.
-Inspection errors are failures, not absence. Its single deadline is at most
-30 seconds; timeout aborts the adapter and leaves pending effects for fresh
-readback. A later invocation resumes from observed state without recreating
-resources. Adapter calls must honor cancellation and must not retry mutations.
-The source tests cover foreign resources, replacement, failed intent storage,
-ambiguous command results and deadline cancellation. Runtime qualification must retain the durable adapter journal and measured
-teardown result.
-
-`docker-backend.mjs` implements inspection, stop and removal over an explicitly
-selected local Unix socket using Docker Engine API v1.47. It first checks that
-the Linux amd64 daemon supports that API version; an incompatible daemon leaves
-qualification pending and does not authorize a daemon upgrade. It does not read
-ambient Docker endpoint settings. Container/network calls require full IDs and
-volume calls require a pilot volume name. Cleanup must still verify receipts
-and ownership before invoking these transport methods.
-
-Requests have a total deadline of at most 30 seconds, an 8 KiB header limit and
-a 1 MiB response limit. Concurrent calls are refused, cancellation closes the
-request, and errors omit raw engine messages. There are no redirects, retries,
-forced removals or image deletion methods. Only a JSON 404 on inspection means
-absence; failures and unexpected status codes remain errors. Source tests use
-an isolated Unix-socket HTTP fixture, including API incompatibility, timeouts,
-oversized output and cancellation. Real-engine qualification must preserve compatibility and cleanup receipts. The
-[Engine API reference](https://docs.docker.com/reference/api/engine/version/v1.47/)
-defines the status codes and request parameters.
-
-`cleanup-journal.mjs` supplies the cleanup coordinator's durable record callback.
-Each attempt creates a new private file under the verified run directory using
-exclusive creation. The header pins the run and resource identities. File and
-parent-directory synchronization finish before the callback becomes available;
-each subsequent record is synchronized before its promise resolves. A failed
-write disables further appends. Interrupted files are preserved and never
-reopened for writing; a resumed attempt uses a new name and fresh resource
-inspection.
-
-The journal accepts only cleanup intents, matching returns and completion,
-with exact fields and owned IDs. It is limited to 16 events and 32 KiB. Readback
-refuses symlinks, malformed records, wrong identity, sequence gaps and a partial
-last line. A saved intent or returned operation does not prove removal;
-the coordinator must still verify absence. These records cover cleanup only.
-Creation and launch receipts are described below. Source journal tests do not
-establish a runtime teardown result.
-
-`backend-create.mjs` regenerates and validates the complete fixed launch plan,
-then maps it to Engine API network, volume and container requests. The container
-request pins the image, disables automatic restart/removal, and preserves the
-plan's memory/CPU caps, restricted network, loopback ports and read-only config
-mounts. `assertPinnedImage` checks the local image's digest, ID, Linux amd64
-platform and reported `Size` against the 10 GiB cap. With Docker 29's containerd
-image store, `Size` can report compressed content rather than expanded disk
-usage. Qualification therefore also requires a retained disk-usage receipt for
-the pinned image; `Size` alone does not establish the image-space gate. The
-adapter does not download images or measure Docker's total backing storage.
-
-The Docker adapter now supports these fixed creation requests, full-ID start,
-pinned-image inspection and read-only probes of planned resource names. It
-never pulls a missing image or retries a failed creation. Creation responses
-retain only the resource ID/name and warning count; raw warning text is omitted.
-The launcher must save every intent and creation receipt, refuse existing
-resources, check warnings and fresh ownership/isolation, and establish storage
-and readiness gates before workload execution. A missing or malformed response
-leaves creation ambiguous until readback. `allocateBackend` and `withReadyBackend` implement these gates;
-transport methods alone do not establish readiness or safe resource adoption.
-
-`allocateBackend` in `backend-allocation.mjs` creates an exclusive allocation
-record directory and checks current host capacity, the pinned local image and
-absence of all planned resource names. It saves and synchronizes each creation
-intent before calling the adapter, then preserves the returned ID and warning
-count before verifying ownership. Warnings stop dependent work. Verified network
-and volume receipts are checked again before container creation; the final
-receipt requires current ownership/isolation checks and a stopped container.
-Configuration and the launch plan are reread between mutations.
-
-The allocation directory cannot be reused. An interrupted or ambiguous effect
-leaves its records and resources available for readback, without automatic
-retry, adoption or deletion. Records contain only projected IDs, resource
-receipts and host/image measurements, with exclusive private files and file plus
-directory synchronization. The result is `allocated-stopped` and qualification
-remains `unexecuted`. This allocation flow does not start the backend. `withReadyBackend` supplies storage monitoring, readiness probes and workload
-gating after allocation.
-
-`readAllocation` reads allocation evidence without changing it. It distinguishes
-an absent attempt, an interrupted attempt and a complete recorded allocation.
-Every file is bounded to 16 KiB and opened without following symlinks. Readback
-checks the fixed file sequence, exact record fields, run identity, returned IDs,
-verified resource receipts and their agreement with the final receipt. The
-allocator performs this readback before returning success.
-
-An intent without a returned ID remains ambiguous. The loader reports the last
-recorded phase for each resource and does not synthesize a completed receipt,
-repeat a creation request or adopt an object by name. A recorded stopped state
-is historical evidence: start and cleanup still require fresh engine inspection.
-Malformed or truncated files, symlinked paths, missing predecessors and forged
-receipt fields are retained and refused. These consistency checks do not make
-local files tamper-proof against a privileged editor.
-
-`sampleStack` requests one-shot cgroup statistics and `ps -eo pid,rss` process
-inventory for the caller-verified immutable container ID. The two read-only
-requests share one deadline. The storage watchdog separately performs fresh
-container ownership, isolation, OOM and writable-layer inspection.
-Raw Docker configuration, process command lines and environment values are not
-included in the sample.
-
-`stack-measurement.mjs` sums each process's RSS in KiB converted to bytes, keeps
-cgroup memory usage separate, and computes mean CPU cores from the cumulative
-CPU-nanosecond delta divided by monotonic elapsed nanoseconds. Samples retain
-process IDs, per-process RSS, collection duration and timestamp bounds. Missing values, foreign IDs, duplicate PIDs, unsafe
-integers, counter rollback and invalid time order are failures. The summary
-retains peak measurements and maximum sampling gaps; it does not establish
-benchmark-window coverage or a pass result.
-
-The runtime driver must qualify the required 100 ms sampling cadence and record
-missed or slow samples. Summed RSS includes shared pages in each process, as the
-accepted metric requires. Writable-layer size alone excludes the data volume
-so it cannot prove the total run-data cap. Volume and host-file accounting
-and the continuous cap watchdog remain required before qualification.
-
-`storage-measurement.mjs` defines a fixed read-only probe for the owned backend:
-allocated and apparent `/data` sizes plus available space on `/data` and `/`.
-The command has an internal two-second timeout; runtime smoke must verify its
-utilities in the pinned image. The parser retains only byte counts,
-rejects missing/unsafe fields, and omits filesystem names. Total run data adds
-the larger volume measure, container writable-layer bytes and owned host run
-files (including synthetic app state and evidence).
-
-The backend now uses Docker log driver `none`, verified during isolation
-readback, so daemon-owned console files cannot escape that accounting. This
-does not disable application Pino capture or Collector log ingestion. Backend
-console history will be unavailable; preserve service health/query failures
-and owned file evidence instead. Non-TTY exec output decoding accepts only
-bounded complete stdout frames; stderr or malformed framing fails without
-exposing raw text. Host-file measurement and watchdog integration are described below. Parser
-tests alone do not qualify runtime storage accounting.
-
-`sampleStorage` now connects that probe to the Engine adapter. It verifies the
-owned running container before creating a non-privileged, non-TTY exec with
-the fixed command. It checks the exec's container ID and command before start,
-then requires a matching, stopped exec with exit code zero before accepting
-output. Its initial inspection supplies writable-layer size and OOM status.
-Only projected measurements, exec ID and monotonic time bounds are returned.
-
-The operation shares one total deadline across requests. Binary response bytes
-are limited to 64 KiB, decoded stdout to 16 KiB, and protocol upgrades are refused.
-No exec is retried. Cancelling an HTTP request does not prove termination of the
-exec process: the command's own two-second timeout is a separate required runtime
-check. A timeout, missing utility, nonzero exit, running exec or malformed output
-leaves storage unqualified. Synthetic Unix-socket tests cover these response
-checks; the runtime smoke must also qualify the pinned utilities and actual
-Engine stream behavior. Host-root registration and the watchdog supply the
-remaining run-data accounting.
-
-`host-storage.mjs` measures the host-side run trees selected by the launcher,
-including synthetic app state and evidence. The launcher must authorize those
-roots and retain their device/inode identities; capturing an identity does not
-establish ownership. Roots must be canonical disk-backed `.local` directories
-and must not overlap. Measurement checks the root identity before and after
-walking and resolves children relative to open directory descriptors.
-
-The walker reads metadata only. It counts same-UID Unix-socket metadata without
-opening or connecting to sockets. It rejects symlinks, other unsupported types and
-filesystem crossings, deduplicates hard links, and counts directory metadata as
-well as files. The larger of apparent and allocated bytes becomes `hostRunBytes`.
-No filenames or file contents enter the result. Traversal is bounded to 10,000
-entries, depth 64 and a default one-second deadline; cancellation or an incomplete
-read is a failure. Files may still grow during a walk, so this is a measured
-snapshot, not an atomic filesystem quota. The runtime watchdog must retain the
-sample timing and stop on missing measurements or cap breaches. `host-roots.mjs`
-and `backend-session.mjs` register those roots and connect the watchdog.
-
-`resource-watchdog.mjs` assesses the accepted hard limits using projected run-data,
-cgroup memory, host-available memory, available disk and OOM observations. It
-requires remaining disk headroom for the unused part of the 2 GiB run-data budget.
-The first valid sample must be saved before its readiness promise resolves true.
-Later failure remains observable through its completion promise; initial readiness
-does not guarantee continued health.
-
-The watchdog serializes samples, waits one second between them by default, bounds
-each sample to five seconds and limits a monitoring session to 3,600 samples.
-It records sequence and monotonic collection bounds, never arbitrary callback
-fields. Cap breaches, missing samples, evidence failures and sample exhaustion
-end monitoring and request one owned stop. Evidence failure still permits the
-stop attempt; it cannot be reported as saved evidence. Stop has a bounded wait
-and must return explicit confirmation, otherwise the result stays unconfirmed.
-Normal `finish()` cancels monitoring without stopping the backend.
-
-The launcher must supply cancellable sampling, durable recording and a stop
-callback that verifies current resource ownership and stopped state. It must
-retain the watchdog result and block workload execution when readiness fails
-or monitoring later fails. This loop is separate from the benchmark's 100 ms RSS
-sampling and does not prove that cadence. Runtime callbacks and startup integration
-are described below; unit tests do not establish cap enforcement on Docker.
-
-`resource-callbacks.mjs` connects the watchdog to the measurement adapters. It
-copies the fixed plan, allocation receipt and authorized host-root identities,
-requires the backend run directory among those roots, and verifies network and
-volume ownership before sampling. It combines bounded host-tree counts, host
-RAM/disk availability, owned-container cgroup measurements and the storage exec
-result under one remaining-time budget. Missing metrics stay null. Available
-disk is the minimum across the host run filesystems and container probe.
-
-The stop callback inspects the exact recorded container ID, verifies ownership,
-requests a normal stop only when running, then inspects again. Absence or a
-verified stopped state confirms success; a still-running container does not.
-It does not delete, force-remove, retry or act on a changed owner. Source tests
-connect these callbacks to the watchdog with actual temporary host files and
-an injected backend, proving that a cap breach requests one stop and checks
-its result. The session also requires durable root registration and monitor
-records before the real pilot can use this path.
-
-`host-roots.mjs` registers the backend evidence directory and a fresh synthetic
-state directory. The state parent must be canonical `.local` storage outside
-every Git checkout. Registration saves a synchronized intent before exclusive
-directory creation, writes a private owner marker, and saves device/inode
-identities for both roots. State names use a short owner-token prefix to leave
-room for Hub Unix-socket paths; an existing name is always refused.
-
-Readback checks bounded, no-follow records, the complete run identity, current
-directory identities and the state owner marker. It neither repairs records nor
-adopts a replacement directory. Interrupted registration leaves the intent and
-any created state intact for inspection; the same intent cannot be overwritten
-to retry. The launcher must register before starting synthetic applications and
-use these verified roots for monitoring. This adds no live state migration or
-installation. The session connects these roots to durable monitoring before
-starting workloads.
-
-`monitor-journal.mjs` records watchdog evidence in a new private file per attempt.
-The header pins run, owner, container and image identities. Header creation and
-parent-directory synchronization finish before the record callback is exposed;
-each append is synchronized before resolving. Failed or cancelled writes disable
-further appends. Existing attempts cannot be overwritten or reopened for writing.
-
-The journal permits at most 3,600 ordered samples, one stop intent and one final
-result, within 2 MiB and 1 KiB per record. It recomputes resource assessments,
-checks monotonic sample order and refuses arbitrary fields. A saved cap failure
-cannot become normal completion or a different final failure. Readback rejects
-wrong identities, invalid sequence/state, malformed or truncated lines and
-symlinked files. Missing final results remain incomplete; neither a recorded
-normal finish nor confirmed stopping establishes pilot acceptance. The launcher
-connects this journal, root readback and watchdog through `backend-session.mjs`.
-
-
-### Backend startup smoke
-
-After the pinned image is present and read-only preflight passes, run:
-
-```sh
-npm run qualify:observability -- backend-smoke \
-  --evidence-dir <new-absolute-directory-under-.local> \
-  --state-parent <existing-absolute-.local-directory-outside-all-git-checkouts> \
+```bash
+fnm exec --using=.nvmrc -- npm run qualify:observability -- ingestion \
+  --evidence-dir /home/jimmie/projects/agent-device-hub/.local/evidence/gh-706-observability/final-ingestion \
+  --state-parent /home/jimmie/projects/.local/scratch/o704 \
   --endpoint unix:///var/run/docker.sock \
   --ports 43000,43001,43002,43003,43004
 ```
 
-The five ports are Grafana, OTLP HTTP, Loki, Tempo and Collector health, in that
-order. Choose free unprivileged ports. The command uses the explicit local endpoint
-for this process; it does not change Docker contexts, start Docker Desktop, pull
-images or install anything. Its Linux CLI and Engine API preflights must both pass.
-The run directory must not exist, and its parent must already exist. Its basename
-is the run ID accepted by `backendPlan`.
+`ingestion` performs one authenticated Hub brightness command through the fake
+controller, plus a Python contract fixture. Expect seven Node logs/six spans and
+one Python log/span. Saved queries compare canonical identities and fields in
+Loki/Tempo within a 30-second visibility window; export acknowledgment alone
+cannot pass. The Python fixture proves compatible ingestion, not complete Python
+application instrumentation. The backend stops when the command returns.
 
-The command prepares the fixed configuration, registers fresh synthetic state,
-allocates isolated resources and starts the recorded container once. A durable
-intent precedes startup. Separate Engine API connections keep continuous resource
-sampling independent of lifecycle inspections. A saved valid resource sample and
-successful direct checks of Grafana's database, Loki, Tempo and Collector health
-are required before the session action. Health checks have bounded responses and
-a total 120-second startup deadline. Refused connections, redirects, malformed
-Grafana health, missing metrics and cap breaches cannot qualify readiness.
+Other supported modes use the same arguments:
 
-The upstream image health script skips connection-refused services, so Docker's
-health status is insufficient. Direct checks cover the four required published
-services; they do not qualify Prometheus or Pyroscope, which remain included in
-whole-container resource accounting. OTLP ingestion, queries and viewer evidence
-are later gates.
+- `backend-smoke`: readiness and resource checks, with no application workload.
+- `delivery-smoke`: three commands with prequeue identities and loss accounting.
+- `command-faults`: ten representative command, context and error scenarios.
+- `paused-collector` and `absent-collector`: retained bounded fault procedures,
+  each using 200 sequential commands per mode. They are available for relevant
+  regressions; routinely repeating them is not required for the practical pilot.
 
-This smoke runs no telemetry workload. It finishes the monitor journal, verifies
-its readback, normally stops the owned container, and saves `startup-result.json`.
-Exit zero requires no session failure and confirmed stopping; qualification stays
-`unexecuted`. The stopped container, network, volume, synthetic state and evidence
-are retained for explicit receipt-based cleanup. No automatic deletion or force
-stop occurs. A cap-triggered watchdog stop is never repeated by session teardown.
+The application uses the real Hub route and native ticket semantics. The fake
+controller has an independent execution oracle; admission is not execution and
+a timeout after admission remains uncertain. No command is automatically retried.
+Pino has one Collector log path. Manual and narrowly scoped outgoing HTTP spans
+use the shared fields. No incoming pre-authentication instrumentation, device
+endpoint tracing, baggage or tracestate is enabled. Host-owned queues remain
+bounded to 1,024 records/4 MiB per signal, with 8 KiB records and drop-newest
+counters. Flush is bounded to one second; the pilot reserves 50 ms of that for
+finalization. Preserve the failed original flush attempt in historical evidence.
 
-A startup attempt cannot run again in the same directory, even if its response was
-lost. Preserve partial manifests and failed monitor records. Read back recorded
-resource identities before recovery; never infer absence from a failed API call.
-A failed or interrupted action remains incomplete. The reusable session callback
-must honor its AbortSignal, retain bounded evidence and obey the frozen workload
-protocol; the smoke command's empty action is not benchmark acceptance.
+### Cleanup and retained evidence
 
+Each run saves exact ownership manifests and lifecycle results. A failed or
+partial allocation must be inspected before cleanup; never retry ambiguous
+start/stop/removal effects or use Docker prune. The receipt-based
+`cleanupQualification` helper in `scripts/observability/qualification-cleanup.mjs`
+verifies stopped containers and application absence, removes only the recorded
+container/network/volume and synthetic state, and retains evidence. Cleanup
+refuses foreign resources, running applications and unknown state. Preserve its
+receipt and verify that unrelated containers remain untouched. The container
+teardown budget is 30 seconds.
 
-### Backend query checks
+### Existing Grafana viewer
 
-The pinned Loki importer does not retain `LogRecord.EventName`. The Collector's
-`transform/event_name` processor copies it to the `event_name` attribute before
-export. This is a backend mapping; the released producer contract is unchanged.
-The source regression checks processor ordering and failure propagation. The
-pinned Collector binary and actual ingestion must still qualify this mapping.
-See the [Loki 3.7.8 importer](https://github.com/grafana/loki/blob/v3.7.8/pkg/loghttp/push/otlp.go)
-and [Collector 0.161.0 log context](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.161.0/pkg/ottl/contexts/ottllog/README.md).
+Keep the backend inside a monitored `withReadyBackend` action while inspecting
+it; standalone qualification stops it on return. Do not restart a stopped run
+merely to inspect its UI. Existing applicable screenshots and queries may be
+reused with their source revision and limitations recorded.
 
-`backend-queries.mjs` reads only the prepared run's loopback endpoints. Loki queries
-use an explicit synthetic instance ID, bounded ten-second windows and the
-`categorize-labels` response header. `query-records.mjs` validates canonical fields
-from structured metadata without parsing the body. Unknown fields, parsed message
-fields, warnings, missing event identity and a full 5,000-row response cannot prove
-completeness. Normalized fields retain the original typed contract values through
-canonical validation. Returned projections preserve service, scope, severity,
-operation, outcome, command ticket, timestamps and trace/span identity.
-
-Tempo V2 results normalize exact hex or protobuf base64 identities. Partial traces,
-foreign trace IDs, dropped fields and unexpected events fail validation. Full
-projected records are compared as multisets; equal counts with different fields,
-missing records and duplicates remain distinct failures. HTTP responses are bounded
-to four MiB, have finite deadlines, never redirect or retry, and are checked for
-synthetic privacy sentinels before returning parsed evidence. Response hashes and
-byte counts accompany the validated records; raw error text is not retained.
-
-`ingestion-check.mjs` applies the frozen 30-second post-flush visibility deadline.
-It uses nonoverlapping half-open log windows, at most eight concurrent query reads,
-serialized evidence writes and explicit log-to-span resource correlation. Every
-query result and round goes to the caller's durable recorder. Unexpected records
-fail immediately. Missing identities remain observable through bounded visibility
-polling. Query, cancellation or evidence failures remain inconclusive. This helper
-qualifies ingestion only; it cannot establish the whole pilot disposition.
-
-`python-fixture.mjs` verifies the immutable installed contract before invoking
-isolated Python 3.12/3.14. It checks Python/TypeScript canonical and OTLP parity and
-returns one synthetic uncertainty record plus an explicitly synthetic associated
-span. The packaged-consumer test exercises it outside workspace resolution. Actual
-Python ingestion, the existing Grafana viewer, full scenario execution and paired
-measurements remain separate runtime gates.
-
-Response contracts: [Loki query API](https://grafana.com/docs/loki/latest/reference/loki-http-api/),
-[pinned categorized response encoding](https://github.com/grafana/loki/blob/v3.7.8/pkg/util/marshal/query.go),
-and [Tempo 3.0.3 trace response](https://github.com/grafana/tempo/blob/v3.0.3/pkg/tempopb/tempo.proto).
-
-Docker Desktop compatibility checks retain the original inspection. The verifier
-accepts Docker 29's exact default IPv4/IPv6 bridge options, but rejects additional
-network options. A translated WSL config bind is accepted only when its local
-Desktop mount and the expected config file have matching device, inode and size,
-opened without following file symlinks. The mount must still be read-only.
-
-CPU/RSS sampling reads stats and process RSS for the caller-verified immutable
-container ID. It does not issue a full inspection on every sample. The storage
-watchdog performs a fresh ownership, isolation, running-state, OOM and writable
-layer inspection before its fixed, bounded read-only exec. The sampled total
-combines that writable-layer size, volume usage and host evidence/state usage;
-these observations are sequential, not an atomic filesystem quota. The parser
-accepts the exact POSIX headings produced by `df -P -B1`. Runtime smoke evidence
-must qualify this path before benchmark measurements.
-
-Pilot profile 1.2 retains the profile 1.1 ordinary bridge. It uses an ordinary task-owned bridge, as approved after
-the internal-bridge smoke produced no actual host mappings. Outbound connectivity
-is possible. All five published ports must map only to the selected `127.0.0.1`
-ports in both the requested configuration and running-container readback. Missing
-or expanded mappings stop the session before workloads. Host HTTP readiness is
-also required. This profile changes no daemon, firewall or host security setting.
-Prior profile receipts remain evidence; regenerate them with their recorded
-source revision rather than rewriting them to the new profile.
-
-### Single-command ingestion qualification
-
-Use the startup command above with `ingestion` in place of `backend-smoke` to
-run one real Hub command against the fake controller, plus a Python contract
-fixture. The runner installs the pinned bundled archive offline in fresh synthetic
-state with command symlinks disabled. A fresh Node process verifies its manifest
-and resolves the contract imports to that archive before starting instrumentation.
-Python uses the same verified archive. The fixture preserves one fake side effect,
-seven Node logs and six spans; Python adds one log and an explicitly synthetic
-associated span. It does not qualify Python runtime instrumentation.
-
-The producer has bounded output and a 20-second deadline. Failure retains its
-stage, canonical partial output and process exit evidence; stderr is represented
-only by its byte count and hash. A failed producer is never retried. The runner
-saves expected canonical identities, then queries Loki and Tempo within the
-unchanged 30-second visibility deadline. An empty Tempo trace envelope counts
-as missing evidence. Query failures retain allowlisted codes and HTTP status,
-never arbitrary exception text. Full identity multisets and log/span correlation
-must match; acknowledgements or equal counts alone do not pass.
-
-This command proves only the single-command ingestion case. It does not run the
-paired workload, qualify every fault case, capture viewer evidence or establish
-the adoption gate. Like the startup smoke, it retains stopped resources and
-state for explicit receipt-based cleanup.
-
-The observability pilot disables Grafana plugin preinstallation and automatic
-plugin updates. Explore uses the datasource plugins bundled in the pinned image;
-startup downloads must not change the measured software. Verify Loki and Tempo
-registration in `/api/frontend/settings` as well as direct backend queries.
-
-
-For the existing viewer, keep the backend inside a monitored `withReadyBackend`
-action while inspecting it; the standalone `ingestion` command stops it on return.
-Do not restart a stopped qualification allocation merely to inspect its UI.
-
-1. Read the run's canonical `trace_id` and ticket from `ingestion-producer.json`.
-   Open its selected loopback Grafana port and choose **Explore → Loki**.
-2. Select a time range covering the recorded fixture timestamps. Query
+1. Read the Node `trace_id` from `ingestion-producer.json`. Open the selected
+   loopback Grafana port and choose **Explore → Loki**.
+2. Select the recorded time range and query
    `{service_namespace="bunny",deployment_environment_name="test"} | trace_id="<trace_id>"`.
-   The Node fixture has seven rows. Inspect the structured `event_name`,
-   `severity_text`, `bunny_operation`, `bunny_outcome`, `bunny_ticket_epoch`,
-   `bunny_ticket_sequence`, `span_id` and service fields.
-3. Choose **Explore → Tempo**, select TraceQL and enter that exact trace ID.
-   The Node fixture has six spans across Hub, controller and worker, including
-   queue and execution. Manual trace-ID lookup is the initial operator workflow;
-   this does not assert an automatically configured log-to-trace link.
-4. Save the query, time range, screenshots and expected-identity comparison before
-   closing the browser and completing the monitored action. The Python fixture
-   has a separate synthetic trace; verify it through the same field mappings.
+   Inspect `event_name`, `severity_text`, `bunny_operation`, `bunny_outcome`,
+   `bunny_ticket_epoch`, `bunny_ticket_sequence`, `span_id` and service fields.
+3. Open **Explore → Tempo** and look up the same trace ID. The fixture has six
+   Node spans across Hub, controller and worker, including queue/execution.
+4. Retain the exact queries, time range and screenshots. Manual trace-ID lookup
+   is the initial workflow; no automatic log-to-trace link is claimed.
 
-The workload slot scheduler uses the accepted 20 operations/second, 30-second
-warm-up and 60-second measurement window. It records expired slots as driver-lag
-omissions and capacity-limited slots as concurrency omissions. It dispatches at
-most one current slot per observation and never retries an omission. These source
-checks do not constitute a measured workload.
+The pinned Collector copies OTLP event names to the queryable `event_name`
+attribute for Loki. Loki normalizes attribute dots to underscores; the query
+reader preserves typed values. Request/ticket/trace identities remain metadata,
+not high-cardinality stream labels. Python uses the same mapping.
 
-The workload process tests start fresh disabled/enabled Hub and fake-controller
-children using the verified released contract, send sequential brightness commands
-and reconcile queued receipts with independent execution records. The external
-Linux sampler checks process identity and the fixed no-child-process inventory,
-then reads CPU ticks and `smaps_rollup` RSS. Driver and query work stay outside
-application measurements. Sampling includes both 60-second window boundaries at
-100 ms intervals; missed slots and collection failures remain explicit evidence.
-Source tests cover stalled scheduling, failed responses, bounded body reads,
-duplicate or missing execution evidence and sampler identity mismatch. They do
-not replace the frozen paired runtime evaluation or the real-backend fault gates.
+### Functional disposition and deferred work
 
-`collectWorkloadWindow` combines these helpers for one application run inside the
-caller's monitored backend session. It is internal to the evaluation harness:
-the caller must freeze the protocol and satisfy prerequisites before measured
-execution. It records each command, sample and execution separately, stops the
-owned application after failure, and labels its result `single-workload-only`.
-The driver journal is exclusive, limited to 20,000 events/32 MiB and refuses
-records larger than 64 KiB. Persist and sync the child identity through `onStart`
-before initialization. A journal failure prevents startup or stops further work;
-it cannot resume the same evidence file. Missing sampling coverage or incomplete
-workload evidence makes pair evaluation inconclusive even when numeric summaries
-meet their limits. Retain known failed limits alongside that missing evidence.
+A supported recommendation needs applicable ingestion/viewer, command/failure
+and cleanup evidence plus normal independent reviews, tests and CI. Run a short
+final-candidate functional check and rerun tests affected by changes. Reuse
+existing valid evidence instead of repeating every experiment. Missing or failed
+functional evidence remains a blocker; source tests alone do not prove ingestion.
 
-The pilot records log identities before the Pino queue and span identities before
-association admission. It records canonical span projections before the export
-queue, then settles each identity as exported, failed, dropped or unfinished.
-The parent validates and saves these events and reconciles them against queue
-counters. Evidence observers receive copies; observer failure cannot alter the
-command or replay it. Unfinished spans and missing evidence remain explicit.
+The original paired harness is recoverable from
+`archive/gh-704-full-qualification-20261002` at `3e2f363`. Both attempted suites
+remain inconclusive; neither produced a qualified measured pair. Original
+threshold bytes and raw results remain evidence. They are not relabeled passing
+under the new scope. Numerical overhead qualification, exhaustive browser/hook/
+helper coverage and production backend operation are deferred. Revisit budgets
+if real use exposes drops, resource problems or materially greater volume.
 
-Use `npm run qualify:observability -- delivery-smoke` with the same
-`--evidence-dir`, `--state-parent`, `--endpoint` and `--ports` arguments as
-`ingestion` to qualify this path with three sequential synthetic commands and
-real Loki/Tempo queries. This is an ingestion prerequisite, not a paired
-measurement. The telemetry journal allows 75,000 events/96 MiB; the query journal
-allows 150,000 rows/128 MiB and splits large result sets into bounded rows.
-Both remain under the monitored run-data cap. This command stops its backend;
-retain evidence and use manifest-owned cleanup afterward.
-
-`command-faults` accepts the same qualification arguments. It runs a fixed
-sequence with telemetry disabled and enabled: queued success, duplicate replay,
-rejected revision, concurrent capacity rejection, timeout after admission,
-unauthenticated and malformed context, private payload/query rejection and a
-throwing diagnostic observer. Both modes must retain the same responses and six
-intended fake effects. The enabled sequence must have the expected per-request
-log/span structure, preserve uncertainty after timeout, reject untrusted context,
-exclude the private canary and match real Loki/Tempo queries. This qualifies
-command-path faults with collection available; Collector pause/absence, exporter
-failure, saturation and paired overhead remain separate gates.
-
-`paused-collector` and `absent-collector` use the same qualification arguments
-and a fresh owned backend per run. They verify the pinned Collector executable,
-PID and start time before sending STOP or TERM inside that container. Paused
-runs resume the same process and verify health afterward. The whole-container
-resource watchdog remains active throughout; container teardown is the fallback
-if restoration cannot be confirmed. No effect is retried after an ambiguous
-response.
-
-Each condition runs 200 sequential synthetic brightness commands in separate
-telemetry-disabled and telemetry-enabled applications. This fixed saturation
-sequence is distinct from the 20/s paired overhead benchmark. It requires
-identical command outcomes, exactly one fake effect per command, complete
-prequeue identity accounting, failed exports with no false acknowledgments,
-queue drops under paused collection, and the accepted shutdown bounds. All
-attempts retain their results, including a sequence that fails to establish
-saturation. A passing fault check alone does not establish pilot acceptance.
-
-The pilot application reserves 50 ms of the accepted one-second flush budget
-for queue finalization and SDK cleanup: both queues stop waiting at 950 ms.
-Qualification still measures the complete flush and requires it to finish
-within 1,000 ms. The original saturated run exceeded that bound and remains
-failed evidence; this setting does not retroactively change its result.
-
-### Paired pilot evaluation
-
-After contract, ingestion/viewer, fault qualification and applicable source
-checks pass, run `npm run qualify:observability -- benchmarks` with the same
-arguments as the other backend modes. Supply a new evidence directory. This
-command requires a clean owning worktree and records its commit/tree, lockfile
-and harness hashes, Node/Python versions, fixed thresholds, image and contract
-before starting any measured workload. It refuses an existing suite directory.
-
-The suite runs three disabled/enabled pairs each for healthy and unavailable
-collection, in AB/BA/AB order. Each mode gets a fresh backend, state and
-application. The unavailable condition terminates only the verified Collector;
-resource monitoring continues. Each run keeps the fixed 30-second warm-up,
-60-second measurement, 20 operations/s and concurrency bound of eight. Neither
-failed operations nor omitted slots are replayed.
-
-Raw records include all 1,800 offered slots, warm-up telemetry, independent fake
-executions and 601 resource samples. Healthy ingestion reconciles all expected
-12,600 logs and 10,800 spans within the fixed query deadline. The runner compares
-domain outcomes by command ordinal, so valid completion reordering cannot
-create a false mismatch. Transport byte counts distinguish request-body bytes
-submitted to HTTP from acknowledged body bytes; they exclude headers and do not
-claim delivery when the Collector is unavailable.
-
-Cleanup verifies application absence and resource ownership before removing
-only that run's container, network, volume and synthetic state. Container
-teardown timing covers the interval from the session's stop intent through
-resource-removal verification. An unconfirmed stop is not retried by cleanup.
-Unknown state or incomplete cleanup stops further allocations. Known numerical
-failures remain in the report while the remaining prescribed pairs run; there
-is no retry or threshold override. Interrupted suites remain evidence and need
-explicit diagnosis before any new evaluation.
-
-`benchmark-run.json`, each `*-pair.json`, and `benchmark-suite.json` summarize
-the retained journals. Missing samples, workload identities, ingestion or
-cleanup cannot yield a supported pair. The suite's disposition covers paired
-benchmarks only; full pilot acceptance also requires the other issue criteria
-and repository delivery gates. No installation or physical acceptance follows.
+No command here installs a daily-use service, changes personal hooks/settings,
+migrates live state or operates a physical device. Practical source adoption and
+its enable/disable configuration are separate from an explicitly authorized
+installation.

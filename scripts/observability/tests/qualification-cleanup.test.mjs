@@ -7,7 +7,7 @@ import {prepareBackendDirectory} from '../backend-files.mjs';
 import {backendCreateRequests} from '../backend-create.mjs';
 import {allocateBackend} from '../backend-allocation.mjs';
 import {registerHostRoots} from '../host-roots.mjs';
-import {cleanupBenchmark} from '../benchmark-cleanup.mjs';
+import {cleanupQualification} from '../qualification-cleanup.mjs';
 async function fixture(t) {
   const base=await mkdtemp(join(tmpdir(),'bc-')),local=join(base,'.local');await mkdir(local);
   t.after(()=>rm(base,{recursive:true,force:true}));
@@ -37,10 +37,10 @@ async function fixture(t) {
   const roots=await registerHostRoots(directory,stateParent);
   return {directory,backend,states,effects,roots,base};
 }
-test('completed benchmark cleanup removes only registered resources and retains raw evidence and unrelated state',async t=>{
+test('completed qualification cleanup removes only registered resources and retains raw evidence and unrelated state',async t=>{
   const f=await fixture(t);await writeFile(join(f.directory,'workload.jsonl'),'');
   await writeFile(join(f.base,'unrelated'),'keep');
-  const result=await cleanupBenchmark({...f,teardownStartedNs:String(process.hrtime.bigint())});
+  const result=await cleanupQualification({...f,teardownStartedNs:String(process.hrtime.bigint())});
   assert.equal(result.complete,true);assert.equal(result.syntheticStateRemoved,true);assert.ok(result.teardownMs>=0);
   assert.deepEqual(f.effects,['container','network','volume']);
   assert.equal(await readFile(join(f.base,'unrelated'),'utf8'),'keep');
@@ -52,14 +52,14 @@ test('a running backend or live recorded application prevents cleanup effects',a
     const f=await fixture(t);
     if(mode==='backend')f.states.container.State.Running=true;
     else await writeFile(join(f.directory,'workload.jsonl'),JSON.stringify({event:{kind:'application-start',identity:{pid:process.pid}}})+'\n');
-    await assert.rejects(cleanupBenchmark(f),/unconfirmed/);assert.deepEqual(f.effects,[]);
+    await assert.rejects(cleanupQualification(f),/unconfirmed/);assert.deepEqual(f.effects,[]);
     assert.ok(await readFile(join(f.roots.roots.state.path,'observability-owner.json')));
   }
 });
 test('foreign container identity prevents removal; unknown synthetic state is retained',async t=>{
   const foreign=await fixture(t);foreign.states.container.Image='sha256:'+'d'.repeat(64);
-  await assert.rejects(cleanupBenchmark(foreign),/ownership/);assert.deepEqual(foreign.effects,[]);
+  await assert.rejects(cleanupQualification(foreign),/ownership/);assert.deepEqual(foreign.effects,[]);
   const extra=await fixture(t);await writeFile(join(extra.roots.roots.state.path,'unrelated'),'keep');
-  await assert.rejects(cleanupBenchmark(extra),/unknown resources/);
+  await assert.rejects(cleanupQualification(extra),/unknown resources/);
   assert.equal(await readFile(join(extra.roots.roots.state.path,'unrelated'),'utf8'),'keep');
 });

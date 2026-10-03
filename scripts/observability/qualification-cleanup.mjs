@@ -10,9 +10,9 @@ import {isDeepStrictEqual} from 'node:util';
 
 /** Verify recorded application absence before removing this run's synthetic
  * state. Unknown children/resources leave cleanup incomplete, never forced. */
-export async function cleanupBenchmark({directory,backend,teardownStartedNs}) {
+export async function cleanupQualification({directory,backend,teardownStartedNs}) {
   const {plan}=await readPreparedBackend(directory),{receipt,status}=await readAllocation(directory);
-  if(status!=='allocated-stopped')throw new Error('Benchmark allocation incomplete; retain resources for readback');
+  if(status!=='allocated-stopped')throw new Error('Qualification allocation incomplete; retain resources for readback');
   const container=await backend.inspect('container',receipt.containerId,{timeoutMs:5000});
   if(container!==null){assertOwnedBackend(container,plan,receipt);
     if(container.State?.Running!==false)throw new Error('Backend stop unconfirmed; no repeated stop');}
@@ -32,7 +32,7 @@ export async function cleanupBenchmark({directory,backend,teardownStartedNs}) {
     }
   }catch(error){if(error.code!=='ENOENT')throw error;}
   finally{await file?.close();}
-  const journal=await createCleanupJournal(directory,receipt,'benchmark');
+  const journal=await createCleanupJournal(directory,receipt,'qualification');
   let cleaned;
   try {
     cleaned=await cleanupBackend({plan,receipt,backend,record:journal.record,evidenceSaved:true});

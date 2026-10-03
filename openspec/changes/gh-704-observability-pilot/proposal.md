@@ -1,14 +1,14 @@
 ## Why
 
-[Hub #704](https://github.com/jimmie-potts/agent-device-hub/issues/704) must establish whether the shared diagnostic contract helps an operator follow a real Hub command path without changing its outcomes or exceeding the accepted budgets. The [#703 artifact](https://github.com/jimmie-potts/agent-device-hub/releases/tag/bunny-observability-v1.0.0) is delivered; contract fixtures alone do not establish backend ingestion or acceptable overhead.
+[Hub #704](https://github.com/jimmie-potts/agent-device-hub/issues/704) must establish whether the shared diagnostic contract helps an operator follow a real Hub command path without changing its outcomes, using the owner-approved practical functional scope. The [#703 artifact](https://github.com/jimmie-potts/agent-device-hub/releases/tag/bunny-observability-v1.0.0) is delivered; contract fixtures alone do not establish backend ingestion. Numerical overhead qualification is deferred by the owner-approved scope revision of 2026-10-02.
 
 ## What Changes
 
 - Add explicitly enabled diagnostic seams for the existing authenticated Hub brightness command and controller client, with no default exporter or visible UI change.
 - Extend the existing fake controller with bounded synthetic queue/execution evidence and an independent side-effect oracle; preserve native ticket admission and replay behavior.
 - Add a disposable Linux/WSL harness using the pinned LGTM development image, canonical Pino JSON through one Collector log path, manual OpenTelemetry spans and narrowly filtered HTTP/Undici instrumentation.
-- Provide executable field queries, existing Grafana Explore verification, privacy/fault scenarios and three paired benchmarks per collection condition against the owner-approved initial budgets.
-- Retain raw failed/inconclusive attempts, exact versions, checksums, cleanup evidence and a supported/refuted/inconclusive result. Missing Docker leaves runtime qualification unexecuted.
+- Provide executable field queries, existing Grafana Explore verification, representative success/failure checks and a short final-candidate functional smoke. Reuse applicable existing evidence; do not require paired benchmarks.
+- Retain raw failed/inconclusive attempts, exact versions, checksums, cleanup evidence and a supported/refuted/inconclusive functional result. Explicitly label performance unqualified. Preserve the benchmark framework in history rather than treating it as the supported runtime interface. Missing Docker leaves runtime qualification unexecuted.
 
 ## Capabilities
 

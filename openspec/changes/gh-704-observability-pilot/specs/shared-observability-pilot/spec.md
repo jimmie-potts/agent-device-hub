@@ -1,6 +1,6 @@
 ## Purpose
 
-Qualify shared diagnostics through an isolated synthetic Hub command path, retaining enough evidence to judge ingestion, privacy, failure behavior and measured overhead before broader adoption.
+Qualify shared diagnostics through an isolated synthetic Hub command path, retaining enough evidence to judge ingestion, representative failure behavior and useful correlation before practical adoption; numerical performance qualification is deferred.
 
 ## ADDED Requirements
 
@@ -68,26 +68,26 @@ The pilot SHALL use pinned backend inputs, loopback-only listeners, fake credent
 - **WHEN** a pilot run finishes or fails
 - **THEN** its manifest identifies retained evidence and removed resources, and unrelated services, images and state remain untouched
 
-### Requirement: Benchmarks use frozen acceptance rules
+### Requirement: Functional acceptance supports a personal trial
 
-Before measurement, the pilot SHALL freeze and checksum its protocol, revisions and thresholds. It SHALL run three disabled/enabled pairs for each of healthy and unavailable collection, using 20 operations per second, concurrency at most eight, 30 seconds warm-up and 60 seconds measurement. For the pilot to support adoption, every pair MUST meet added p50 latency ≤max(2 ms, 10% baseline), added p95 ≤max(5 ms, 15%), throughput ≥95% baseline, application CPU increase ≤0.25 core and peak RSS increase ≤64 MiB. Stack peak RSS MUST be ≤3 GiB and mean CPU ≤1 core. Healthy expected loss, privacy failures, context isolation failures and duplicate side effects MUST each be zero.
+The pilot SHALL demonstrate successful correlated diagnostics for the real authenticated Hub route using a fake controller, and unchanged domain behavior with unavailable telemetry. Applicable existing cross-language, viewer and fault evidence MAY be reused with its exact source revisions and limitations recorded. A short final-candidate functional check and affected regression tests SHALL verify the delivered implementation. Three-pair performance benchmarks and numerical overhead thresholds are explicitly deferred by the owner-approved 2026-10-02 scope revision; they are not passing requirements.
 
-#### Scenario: Complete paired result
-- **WHEN** a pair completes with all required measurements
-- **THEN** saved raw samples, outcome comparisons and unrounded calculations determine every threshold independently without averaging away a failed pair
+#### Scenario: Useful functional evidence
+- **WHEN** the delivered candidate and applicable retained evidence demonstrate ingestion, correlation and bounded failure without changing commands
+- **THEN** the functional recommendation may support practical adoption after source-delivery gates pass, while overhead remains unqualified
 
-#### Scenario: Failed or inconclusive attempt
-- **WHEN** a threshold fails or a required metric is unavailable
-- **THEN** the original result is retained, adoption remains blocked, and a correction requires a recorded hypothesis rather than an unchanged rerun or retroactive threshold change
+#### Scenario: Historical failed benchmark
+- **WHEN** the report cites an earlier failed or inconclusive benchmark attempt
+- **THEN** it preserves that disposition and original inputs without relabeling the attempt successful under the revised scope
 
 ### Requirement: Disposition distinguishes source and runtime proof
 
-The report SHALL identify the pilot as supported, refuted or inconclusive and cite its measurements, queries, privacy/fault checks, versions and cleanup evidence. Only satisfaction of every mandatory prerequisite and acceptance gate SHALL support adoption. Queue drops, cap failures, growth in component/event volume or material runtime/host changes SHALL trigger budget review with rationale and fresh measurements. Source delivery MUST NOT imply installation or physical acceptance.
+The report SHALL identify the functional pilot as supported, refuted or inconclusive and cite actual queries, representative checks, versions and cleanup evidence. Required reviews, tests and CI remain adoption gates. The report SHALL explicitly separate unqualified performance and deferred exhaustive coverage from the supported functional scope. Source delivery MUST NOT imply installation or physical acceptance.
 
-#### Scenario: Backend checks pass but performance fails
-- **WHEN** ingestion works but any mandatory measured threshold fails
-- **THEN** the report does not mark adoption supported and retains both successful ingestion evidence and failed measurements
+#### Scenario: Functional evidence is missing
+- **WHEN** ingestion, correlation or required bounded-failure evidence is missing or fails
+- **THEN** adoption remains blocked even though performance certification is deferred
 
-#### Scenario: Supported synthetic result
-- **WHEN** all required synthetic, performance and delivery gates pass
-- **THEN** the report permits dependent source adoption while explicitly excluding live installation and physical qualification
+#### Scenario: Supported functional result
+- **WHEN** required functional evidence and source-delivery gates pass
+- **THEN** practical dependent source adoption may proceed, with numerical overhead, live installation and physical qualification explicitly unqualified

@@ -2,11 +2,11 @@
 
 See proposal.md for motivation. The Hub authenticates requests before its controller-command route. Its controller client validates native envelopes, holds one request slot and times out without retrying. The existing fake controller uses reference ticket admission and replay, but a queued receipt does not prove execution. Observability 1.0.0 is released at Hub revision `673a297ad1225cd18b611de8969dea10b28d33f2`.
 
-The owner accepted the initial numerical budgets and a later review policy in [the decision record](https://github.com/jimmie-potts/agent-device-hub/issues/706#issuecomment-5945109256). Docker availability is a checked prerequisite for each runtime attempt. Preserve ingestion, viewer, fault and benchmark evidence separately; an ingestion result alone cannot support adoption.
+The owner approved a practical scope reset on 2026-10-02 after reviewing the cost of the qualification framework. Current #704 acceptance requires useful functional evidence and normal delivery gates; the original paired-performance thresholds are deferred, not passed. Preserve the original protocol, branch and all failed attempts. Existing resource caps and implemented contract protections remain. Do not add a new privacy campaign or general-purpose evaluation subsystem.
 
 ## Goals / Non-Goals
 
-**Goals:** Measure the real authenticated Hub command path, preserve its outcomes under telemetry failure, and make a supported/refuted/inconclusive result reproducible from retained evidence.
+**Goals:** Demonstrate the real authenticated Hub command path, preserve its outcomes under telemetry failure, and make a supported/refuted/inconclusive result reproducible from retained evidence.
 
 **Non-Goals:** Change controller admission, retries, wire envelopes, visible UI, domain-journal retention, or live configuration. A passed contract test does not establish successful backend ingestion.
 
@@ -56,25 +56,15 @@ Disable Docker's log driver for the development backend. Its daemon-owned log fi
 
 Keep at least 8 GiB host-available RAM. Hard-limit the stack to two CPUs and 4 GiB RAM; permit at most 10 GiB image storage and 2 GiB run data. Stop on a cap breach and retain evidence. Keep durable evidence under the main checkout's `.local/evidence/`. The Hub refuses state inside any Git checkout, so put its disposable state in the parent workspace's `.local/scratch/o704` (or a run-owned sibling), outside every checkout. Other task-owned files use disk-backed `.local/`; all credentials are synthetic. Run heavy builds and measurements serially. An unbounded default upstream launcher was rejected because its network and resource settings do not meet this experiment's constraints.
 
-### Frozen paired measurement protocol
+### Practical functional acceptance
 
-Before any measured run, save a machine-readable protocol, thresholds, exact source/image/package revisions and command line with a checksum. Run three disabled/enabled pairs for each of healthy and unavailable collection, in AB, BA, AB order. Each member gets fresh processes and synthetic state, 30 seconds warm-up and 60 seconds measurement at 20 operations/second with at most eight in flight. Use monotonic scheduled slots; retain late dispatches and omitted slots, without catch-up bursts or retries.
+Reuse qualified Node/Python ingestion, existing Grafana Explore screenshots and command/Collector fault evidence when relevant code is unchanged. Record original revisions and affected validation after changes. Run a short final-candidate synthetic command check; verify representative correlated fields, independent fake effects and cleanup. Normal source regression tests cover unavailable export and bounded shutdown. No repeated full fault campaign or paired measurements are required.
 
-Compute nearest-rank p50/p95 from actual dispatch to response, using unrounded values for decisions. Also report scheduled-slot latency and dispatch lag. Throughput counts completions within the measurement interval; report late completions separately. Retain original outcomes and compare a documented projection removing only run-local identifiers and timestamps.
+The supported interface should be the common logging/tracing adapters, opt-in host configuration, pinned local backend and simple functional qualification commands. Remove benchmark-only scheduling/sampling/orchestration from the delivery surface; retain recoverable source at `archive/gh-704-full-qualification-20261002` (3e2f363) and durable raw evidence. Shared modules needed by functional checks remain; do not build replacements merely to reduce file count.
 
-Measure application CPU and peak RSS across the Hub, fake controller and telemetry workers, excluding the driver and query sampler. Record user/system CPU delta divided by elapsed wall time and RSS samples at 100 ms. Measure stack cgroup CPU and the peak summed RSS of all container processes, recording the process inventory and sampling source; do not substitute an undocumented Docker memory display. Missing or unreliable required metrics make the result inconclusive.
+The first paired suite dispatched no commands due to an early timer-wakeup defect. The corrected suite failed backend readiness before workload execution. Both remain inconclusive. Later bounded health diagnostics passed but did not establish the cause. No overhead measurement is claimed. The owner-approved scope change retires the numerical gate for this delivery rather than changing old results.
 
-The workload application runs in a fresh detached child containing the Hub, fake controller and telemetry threads. The external driver checks PID, parent, process group and start time, reads process CPU ticks and `smaps_rollup` RSS, and refuses an observed child process or waited-child CPU. This fixed process inventory excludes driver and query work. Use one monotonic start for workload and sampling; retain every missed sample slot, collection duration and dispatch/completion timestamp. A valid numeric summary without coverage evidence is insufficient.
-
-Each dispatched command consumes one sequential native ticket and configuration revision, even if its response fails. Omitted schedule slots consume no ticket. Never replay a failed attempt. Retain bounded validated receipt projections and reconcile every dispatched ticket with the fake's independent execution history after quiescence. Missing, duplicate or unexpected executions, history overflow, failed responses and omissions prevent a complete workload result.
-
-Every pair must meet p50 added latency ≤max(2 ms, 10% baseline), p95 ≤max(5 ms, 15%), throughput ≥95% baseline, application CPU increase ≤0.25 core and peak RSS increase ≤64 MiB. Stack peak RSS must be ≤3 GiB and mean CPU ≤1 core. After workload quiescence, application shutdown is ≤2 seconds, including the ≤1 second telemetry flush. Container teardown has a separate 30-second bound.
-
-Healthy runs require zero lost expected records. Compare expected and queried multisets by canonical identity rather than counts alone. Allow a fixed 30-second query-visibility deadline after flush; record each bounded poll and its response. An exporter acknowledgment alone is not proof of ingestion. Fault runs must account for pending, exported, dropped and failed records, remain bounded and preserve command outcomes. Privacy leaks, context crossover and duplicate side effects each allow zero failures.
-
-Capture expected log identities before queue admission and span identities before association admission. Retain canonical span projections before export admission, with terminal exported/failed/dropped/pending events. Stream bounded batches to the parent, which validates them before durable recording and reconciles identities against queue counters. Observer failures cannot alter commands; missing evidence prevents qualification. The enabled application measurement includes this evidence-streaming overhead. Existing Grafana Explore checks use the documented manual log/trace lookup with retained screenshots; no custom viewer or automated browser harness is required.
-
-Retain every failed and inconclusive attempt. A correction requires a written hypothesis, changed input and fresh evidence. Never rerun an unchanged experiment to obtain a pass or revise thresholds retroactively. Queue drops, resource-cap failures, growth in component/event volume and material runtime/host changes trigger budget review. These are initial pilot targets, not permanent product limits.
+Keep host/resource caps and one-second flush/two-second application shutdown safeguards. Resource ownership checks remain when needed to avoid affecting unrelated services. Improve diagnostics only when a failure blocks the short functional check; do not continue expanding the harness preemptively.
 
 ### Pinned backend query mapping
 
@@ -83,25 +73,25 @@ retain `LogRecord.EventName`. Preserve the accepted query field with the fixed
 Collector statement `set(log.attributes["event_name"], log.event_name)` before
 batching logs. Keep error propagation explicit. This mapping changes no producer
 schema, privacy allowlist or benchmark threshold; qualify the exact Collector
-configuration before measurements. Preserve previous configuration receipts.
+configuration for functional checks. Preserve previous configuration receipts.
 
 Read categorized Loki structured metadata with an explicit instance ID and
 nonoverlapping ten-second windows. Compare canonical field projections as
 multisets, including event identity, rather than matching body text or counts.
 Normalize Tempo V2's exact hex/base64 IDs and reject partial results. Bound query
 responses and retain each observation within the accepted 30-second visibility
-window. Ingestion-only satisfaction is separate from the full pilot gate.
+window. Ingestion-only satisfaction still requires representative failure evidence and source-delivery gates.
 
 ### Qualification and delivery gates
 
-Add source-only harness validation to development commands and CI before changing product behavior. Runtime qualification remains a separate Docker-dependent command; it must not silently skip required checks or convert absence into success. Preserve full Hub/shared checks and independent Standards and Specification reviews on the same committed comparison. Archive only after applicable acceptance evidence exists. Only a supported pilot may unblock downstream adoption.
+Add source-only harness validation to development commands and CI before changing product behavior. Runtime qualification remains a separate Docker-dependent command; it must not silently skip required checks or convert absence into success. Preserve full Hub/shared checks and independent Standards and Specification reviews on the same committed comparison. Archive only after applicable acceptance evidence exists. Only a supported functional pilot and its source-delivery gates may unblock practical adoption.
 
 ## Risks / Trade-offs
 
 - Automatic instrumentation can capture secrets before projection → disable unsafe receivers, project before every sink, seed adversarial headers/query/body/error fixtures and inspect both local and backend output.
 - Timeouts can follow successful admission → preserve caller uncertainty and inspect the independent fake execution oracle without retrying commands.
 - Backend buffering can conceal loss → use identity multisets and the fixed visibility deadline; retain missing records as failures or inconclusive evidence.
-- Host contention can invalidate performance evidence → serialize heavy work, record host load and capacity, and preserve the affected attempt rather than retrying unchanged conditions.
+- Overhead is unqualified → document that limitation and revisit from observed daily-use problems rather than claiming a performance pass.
 - The development stack may exceed its initial budget → stop and report the failed target; adoption remains blocked pending an owner decision.
 
 ## Migration Plan
@@ -110,12 +100,12 @@ There is no live migration. Source delivery adds opt-in seams and disposable qua
 
 ## Open Questions
 
-Docker engine availability remains an external execution prerequisite. It does not change the design or authorize enabling integration, installing infrastructure or changing security settings. Actual backend overhead and ingestion behavior are deliberately unresolved until measured.
+Docker engine availability remains an external execution prerequisite. It does not change the design or authorize enabling integration, installing infrastructure or changing security settings. Backend overhead remains unqualified. Actual ingestion has retained evidence and is rechecked where the delivered candidate changes it.
 
 ### Collector fault qualification
 
-Qualify paused and absent collection in separate fresh backends before paired
-benchmarks. Verify the pinned Collector executable and its PID/start time inside
+Retained paused and absent collection checks used separate fresh backends;
+reuse their evidence where the final source remains applicable. Verify the pinned Collector executable and its PID/start time inside
 the owned container before sending STOP or TERM. Do not pause the container:
 its storage/resource watchdog must continue. Restore a paused Collector with
 CONT and health readback; otherwise retain the failure and use bounded container
@@ -135,7 +125,7 @@ The saturated runtime exposed 4.6 ms of finalization after the queue's original
 failed evidence. Pilot application queues now wait at most 950 ms, reserving
 50 ms for drop accounting and SDK cleanup. The measured end-to-end flush bound
 remains 1,000 ms; queue capacities, command timeouts and workload are unchanged.
-This setting must be included in the frozen benchmark source revision.
+Retain this setting in the delivered opt-in runtime.
 
 Runtime fault evidence is retained under the main checkout's
 `.local/evidence/gh-706-observability/`: `704-command-faults-001` matched all 49
@@ -152,25 +142,3 @@ flush, failed), and 003 (pre-allocation prerequisite refusal with incomplete
 diagnostic evidence), together with their correction hypotheses and source
 regressions. They are not passing runs. No paired benchmark or full pilot
 acceptance follows from these fault results.
-
-### Paired execution and evidence ownership
-
-Use twelve fresh backend/application runs in the recorded six-pair order.
-Baseline and enabled modes receive the same synthetic brightness operations;
-compare domain receipts by consumed ordinal, independently verifying each
-concrete ticket against fake execution. Include warm-up records in the loss
-oracle and query them after measured work. Sampling uses a separate Docker
-connection from the watchdog and lifecycle controls.
-
-Freeze the clean source commit/tree, lockfile/harness hashes and runtime
-versions before the first run; verify them before and after each run. Retain
-per-run and per-pair results, including incomplete evidence and threshold
-failures. A metric failure does not authorize a rerun. A failed prerequisite or
-unconfirmed cleanup stops new allocations. Complete resource-removal readback
-precedes deletion of the owned synthetic state. Record full teardown elapsed
-time from stop intent, not just the final remove request.
-
-Request-body byte counters distinguish HTTP submission from acknowledgment;
-headers are outside this metric. Synthetic private headers exercise exclusion
-during both workload modes. The benchmark disposition remains separate from
-the full pilot and source-delivery decision.
