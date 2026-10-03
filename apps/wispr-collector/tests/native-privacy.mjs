@@ -58,10 +58,53 @@ try{
   assert.throws(()=>acquireLease(directory),{message:'collector-busy'});lease.release();acquireLease(directory).release();
   const stateDirectory=join(directory,'alias-state'),sourcePath=join(directory,'synthetic-source.sqlite'),configPath=join(directory,'config.json');
   mkdirSync(stateDirectory);mkdirSync(join(stateDirectory,'backups'));
-  const db=new DatabaseSync(sourcePath);db.exec("PRAGMA journal_mode=WAL;CREATE TABLE History(id TEXT,timestamp TEXT,status TEXT,numWords INTEGER);INSERT INTO History VALUES('a','2026-10-01T12:00:00Z','formatted',10)");db.close();
+  const db=new DatabaseSync(sourcePath);db.exec("PRAGMA journal_mode=WAL;CREATE TABLE History(id TEXT,timestamp TEXT,status TEXT,numWords INTEGER);INSERT INTO History VALUES('a','2026-10-01T12:00:00Z','formatted',10)");
   const config={schemaVersion:'1.0',namespace:'11111111-1111-4111-8111-111111111111',ownerDirectory:directory,sourcePath,stateDirectory,timezone:'UTC',collectionEnabled:true,language:{enabled:false}};
   writeFileSync(configPath,JSON.stringify(config));
-  const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex'),before=hash(sourcePath),configBefore=hash(configPath);
+  const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
+  function readerGrant(path,enabled){
+    const args=enabled?['/grant','*S-1-1-0:(RX)']:['/remove:g','*S-1-1-0'];
+    const result=spawnSync('icacls.exe',[path,...args],{encoding:'utf8',timeout:8000,windowsHide:true});
+    assert.equal(result.status,0,result.stdout+result.stderr);
+  }
+  function aclIdentity(path){
+    const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',String.raw`[Console]::Out.Write((Get-Acl -LiteralPath $env:BUNNY_WISPR_FIXTURE).Sddl)`],{encoding:'utf8',timeout:8000,windowsHide:true,env:{...process.env,BUNNY_WISPR_FIXTURE:path}});
+    assert.equal(result.status,0,result.stderr);return result.stdout;
+  }
+  function command(name,args=[]){return spawnSync(process.execPath,['--disable-warning=ExperimentalWarning',fileURLToPath(new URL('../dist/cli.js',import.meta.url)),name,'--config',configPath,...args],{encoding:'utf8',timeout:60000,windowsHide:true});}
+  // Grant another reader only on synthetic vendor-source files, never collector outputs.
+  const sourceFiles=[sourcePath,sourcePath+'-wal',sourcePath+'-shm'];
+  for(const path of sourceFiles)readerGrant(path,true);
+  // SQLite read-only WAL readers may update SHM lock/read-mark bookkeeping.
+  // Persistent database/WAL bytes and every source ACL must remain unchanged.
+  const sourceFingerprint=()=>sourceFiles.map(path=>({bytes:path.endsWith('-shm')?null:hash(path),acl:aclIdentity(path)}));
+  const sourceBefore=sourceFingerprint();
+  try{
+    const collected=command('collect');assert.equal(collected.status,0,collected.stdout+collected.stderr);
+    const aggregatePath=join(stateDirectory,'aggregate.json');
+    assert.equal(JSON.parse(readFileSync(aggregatePath)).numeric.totals.words,10);
+    const repeated=command('collect');assert.equal(repeated.status,0,repeated.stdout+repeated.stderr);
+    assert.equal(JSON.parse(readFileSync(aggregatePath)).numeric.totals.words,10);
+    assert.deepEqual(sourceFingerprint(),sourceBefore);
+    const backupPath=join(stateDirectory,'backups/private.sqlite');copyFileSync(join(stateDirectory,'analytics.sqlite'),backupPath);
+    const exportPath=join(directory,'private-export.json');writeFileSync(exportPath,'preserve-existing-export');
+    for(const path of [configPath,stateDirectory,join(stateDirectory,'analytics.sqlite'),backupPath,exportPath]){
+      const retainedBefore=hash(join(stateDirectory,'analytics.sqlite')),publishedBefore=hash(aggregatePath);
+      readerGrant(path,true);
+      try{
+        const rejected=path===exportPath?command('export',['--format','json','--output',exportPath]):command('collect');
+        assert.equal(rejected.status,1,rejected.stdout+rejected.stderr);
+        assert.equal(JSON.parse(rejected.stderr).code,'unsafe-private-path');
+        assert.equal(hash(join(stateDirectory,'analytics.sqlite')),retainedBefore);assert.equal(hash(aggregatePath),publishedBefore);
+        assert.equal(readFileSync(exportPath,'utf8'),'preserve-existing-export');
+      }finally{readerGrant(path,false);}
+    }
+    rmSync(exportPath);
+    console.log(JSON.stringify({result:'passed',scope:'native selected-source ACL relaxation',extraSourceReaderAccepted:true,sidecarsQualified:true,sourceBytesAndAclsUnchanged:true,repeatedCountsExact:true,privateConfigStateBackupExportRejected:true}));
+  }finally{db.close();}
+  // Leave a clean state directory for the existing writable-alias negative controls.
+  rmSync(stateDirectory,{recursive:true,force:true});mkdirSync(stateDirectory);mkdirSync(join(stateDirectory,'backups'));
+  const before=hash(sourcePath),configBefore=hash(configPath);
   function rejected(command,args=[]){
     const result=spawnSync(process.execPath,['--disable-warning=ExperimentalWarning',fileURLToPath(new URL('../dist/cli.js',import.meta.url)),command,'--config',configPath,...args],{encoding:'utf8',timeout:60000,windowsHide:true});
     assert.equal(result.status,1,result.stdout+result.stderr);assert.equal(JSON.parse(result.stderr).code,'unsafe-path');

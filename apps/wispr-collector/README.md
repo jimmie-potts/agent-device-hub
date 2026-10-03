@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.0.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.1.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
@@ -37,9 +37,13 @@ within the configured owner directory, on a fixed local Windows drive, without
 symlink/junction redirects. Existing writable state, backups and export files
 must not have hard links. Containment checks resolve Windows short-name aliases;
 exports cannot replace the source, its SQLite sidecars or the config file.
-Allowed Windows ACL principals are the current user,
-SYSTEM and Administrators. The collector checks permissions; it never repairs
-source permissions. Installation and access to personal data need separate owner
+Collector-created config, state, backups and exports allow only the current
+user, SYSTEM and Administrators. The explicitly selected Wispr source and its
+SQLite sidecars may retain additional ACL grants. Their owner must still be
+the current user, SYSTEM or Administrators, and all local-path checks still
+apply. The collector accepts existing source permissions without changing them;
+it does not guarantee exclusive source access. It checks collector-owned paths
+and never repairs source permissions. Installation and access to personal data need separate owner
 authorization.
 
 Example config (paths are placeholders, not discovered Wispr locations):
