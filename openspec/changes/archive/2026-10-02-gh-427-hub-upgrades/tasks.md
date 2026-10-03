@@ -14,5 +14,5 @@
 
 - [x] 3.1 Replace the stale setup update section and add the root declaration plus SDLC pointer; inspect completion/authority/trigger branches, unchanged CLAUDE import and one authoritative procedure.
 - [x] 3.2 Run fresh read-only Claude instruction discovery and Codex when available; retain evidence that an upgrade request reaches the procedure and plan checkpoint without effects, or report the allowed Codex availability gap explicitly.
-- [ ] 3.3 Pass mandatory build/type, Hub/package/MCP/setup, shared contract/lifecycle/state/MCP and workflow checks; retain red/green, package and fake recovery evidence. Source results make no installed or device claim.
-- [ ] 3.4 Synchronize this source capability and archive the completed source plan before final review; verify the actual specification inventory and workflow checks. Retain real installed acceptance in Hub #427 for the post-merge owner checkpoint.
+- [x] 3.3 Pass mandatory build/type, Hub/package/MCP/setup, shared contract/lifecycle/state/MCP and workflow checks; retain red/green, package and fake recovery evidence. Source results make no installed or device claim.
+- [x] 3.4 Synchronize this source capability and archive the completed source plan before final review; verify the actual specification inventory and workflow checks. Retain real installed acceptance in Hub #427 for the post-merge owner checkpoint.

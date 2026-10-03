@@ -24,7 +24,7 @@ Inspection covered the ordinary delivery completion condition, source-only batch
 
 The source plan is archived after synchronization. PR review and CI evidence are revision-specific and remain on the PR. Actual migration, upgrade, rollback and re-upgrade, with private receipts, running identity and latest-state preservation, remain pending; source and synthetic checks do not satisfy them.
 
-## Review corrections in progress
+## Review corrections
 
 The first independent review found a live SQLite reader/writer conflict, overly
 strict comparisons of mutable and retained state, incomplete recovery sequences
@@ -35,6 +35,10 @@ exercise label, settings, rule and interrupt-set edits, rule deletion and normal
 session/journal/retirement expiry. Both shared-layout fixtures now include failed
 candidate health, recovery and re-upgrade with other-owner path checks.
 
-Focused checks have passed; complete affected checks and fresh independent review
-are pending for the corrected candidate. The earlier instruction-discovery runs
-prove routing to the procedure; they did not inspect the new pause wording.
+All 34 installer tests and 18 non-workflow canonical commands passed at
+`ab3239179f325c1da042db9426af4c8c36b5b722`, including 279 Hub tests and isolated
+package/reproducibility checks. The first workflow validation correctly rejected
+the two tasks temporarily reopened during correction. After checklist closeout,
+strict workflow validation and workflow tests passed. Fresh independent
+review remains required. The earlier instruction-discovery runs prove routing to
+the procedure; they did not inspect the new pause wording.
