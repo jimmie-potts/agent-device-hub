@@ -23,7 +23,8 @@ export async function serviceContract(layout:Layout):Promise<{sha256:string;file
  const files=[value.FragmentPath,...value.DropInPaths.split(' ')].filter(Boolean).sort();if(!files.length)throw new Error('unknown-install-service-contract');
  const content:Record<string,string>={};for(const file of files)content[file]=sha256(await readRegular(await realpath(file)));
  // ExecStart's timestamp/PID fields are volatile; the approved executable arguments are not.
- return {sha256:sha256(canonical({argv:expected,KillMode:value.KillMode,Restart:value.Restart,Type:value.Type,CanFreeze:value.CanFreeze,Environment:value.Environment,EnvironmentFiles:value.EnvironmentFiles,WorkingDirectory:value.WorkingDirectory,content})),files};
+ // systemctl omits EnvironmentFiles when its array is empty, including with --all.
+ return {sha256:sha256(canonical({argv:expected,KillMode:value.KillMode,Restart:value.Restart,Type:value.Type,CanFreeze:value.CanFreeze,Environment:value.Environment,EnvironmentFiles:value.EnvironmentFiles??'',WorkingDirectory:value.WorkingDirectory,content})),files};
 }
 async function groupEmpty(group:string):Promise<boolean>{
  if(!group.startsWith('/')||group.includes('..'))return false;
