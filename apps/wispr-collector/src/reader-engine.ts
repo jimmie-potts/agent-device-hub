@@ -47,7 +47,7 @@ export async function scanSource(path: string, limits: SourceLimits, deliver: (r
     if (table?.type !== 'table' || typeof table.sql !== 'string' || /CREATE\s+VIRTUAL/i.test(table.sql)) throw new SourceError('source-schema');
     const columns = db.prepare('PRAGMA table_xinfo(History)').all();
     const types = new Map(columns.filter(c => c.hidden === 0).map(c => [String(c.name), String(c.type)]));
-    const native = !types.has('id');
+    const native = !columns.some(c => String(c.name).toLowerCase() === 'id');
     const idColumn = native ? 'transcriptEntityId' : 'id';
     if (native) {
       const key = columns.find(c => c.name === idColumn && c.hidden === 0);

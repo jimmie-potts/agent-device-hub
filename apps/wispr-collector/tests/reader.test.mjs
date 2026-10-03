@@ -54,6 +54,17 @@ test('native DATETIME does not infer a timezone for unqualified values', async t
   assert.deepEqual(result.rows.map(r=>contribution(r).exclusion),['timestamp','timestamp']);
 });
 
+test('generated incompatible id columns cannot enable native fallback', async t => {
+  for (const storage of ['VIRTUAL', 'STORED']) {
+    for (const id of ['id', 'ID']) {
+      const {path,db}=fixture(t,`CREATE TABLE History(transcriptEntityId TEXT NOT NULL PRIMARY KEY,${id} BLOB GENERATED ALWAYS AS (CAST(transcriptEntityId AS BLOB)) ${storage},timestamp DATETIME,status TEXT,numWords INTEGER)`);
+      db.prepare('INSERT INTO History(transcriptEntityId,timestamp,status,numWords) VALUES(?,?,?,?)').run('native-id','2026-10-02 15:00:00 +00:00','formatted',12);
+      db.close();
+      await assert.rejects(readSyntheticSource(path),{code:'source-schema'});
+    }
+  }
+});
+
 test('numeric scan returns only declared columns and preserves source bytes', async t => {
   const {path,db} = fixture(t);
   db.prepare('INSERT INTO History VALUES(?,?,?,?,?,?,?,?)').run('a','2026-10-02 15:00:00 +00:00','formatted',12,5,3,'Slack','SYNTHETIC_PRIVATE_TRANSCRIPT');

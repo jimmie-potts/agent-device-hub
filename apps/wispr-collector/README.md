@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.1.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.2.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
