@@ -5,7 +5,7 @@ import {mkdir,readFile} from 'node:fs/promises';
 import {wisprFixture} from './wispr-fixture.mjs';
 import {textOverlaps} from './layout.mjs';
 const output=process.env.DASHBOARD_RECEIPTS??'apps/dashboard/.local/wispr-receipts';await mkdir(output,{recursive:true});
-const f=await wisprFixture(),browser=await chromium.launch({headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+const f=await wisprFixture(),browser=await chromium.launch({headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce',hasTouch:true}),page=await context.newPage(),errors=[];
 page.on('pageerror',e=>errors.push(e.message));let writes=0;page.on('request',r=>{if(r.method()!=='GET'&&!r.url().endsWith('/logout')&&!r.url().endsWith('/session'))writes++;});
 const signIn=async(token=f.token)=>{await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();};
 const open=()=>page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:/Wispr/}).click();
@@ -28,7 +28,7 @@ try{
  await page.getByLabel('App',{exact:true}).selectOption('all');await page.getByLabel('Period',{exact:true}).selectOption('7d');await view().getByText('hello world',{exact:true}).waitFor();
  for(const width of [1440,900,390]){
   await page.setViewportSize({width,height:1000});await page.getByLabel('Period',{exact:true}).focus();assert.equal(await page.getByLabel('Period',{exact:true}).evaluate(e=>e===document.activeElement),true);
-  await view().getByText(/^Daily values/).click();await view().getByRole('table',{name:'Captured daily totals'}).waitFor();await view().getByText(/^Daily values/).click();
+  const daily=view().getByText(/^Daily values/);await daily.focus();if(width===390)await daily.tap();else await daily.press('Enter');await view().getByRole('table',{name:'Captured daily totals'}).waitFor();if(width===390)await daily.tap();else await daily.press('Enter');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no page overflow '+width);assert.deepEqual(await textOverlaps(page),[],'no overlapping text '+width);
   const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],'axe '+width);await page.screenshot({path:output+`/wispr-${width}.png`,fullPage:true});
  }
