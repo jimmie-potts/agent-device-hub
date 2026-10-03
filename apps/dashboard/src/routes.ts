@@ -1,5 +1,5 @@
 /** The shell's navigation value. Built-in pages and registered components are distinct kinds, so a component alias such as `activity` or `connections` never selects a built-in page (Hub #247). Every route has a hash URL, so pages have addresses and the back button walks the history. */
-export type Route={kind:'home'}|{kind:'component';id:string}|{kind:'playback';sourceId:string}|{kind:'connections'}|{kind:'missing';hash:string};
+export type Route={kind:'home'}|{kind:'component';id:string}|{kind:'playback';sourceId:string}|{kind:'wispr';sourceId:string}|{kind:'connections'}|{kind:'missing';hash:string};
 export const homeRoute:Route={kind:'home'};
 const decode=(part:string)=>{try{return decodeURIComponent(part);}catch{return part;}};
 /** Parses a location hash. An empty hash, `#/`, `#/home` and `#/activity` open the home. A hash that is not a route, including the launcher's `#launch=` fragment, is reported as missing rather than guessed. */
@@ -10,6 +10,7 @@ export function parseRoute(hash:string):Route{
  const parts=path.slice(1).split('/').map(decode);
  if(parts.length===1&&parts[0]==='connections')return {kind:'connections'};
  if(parts.length===2&&parts[0]==='component'&&parts[1])return {kind:'component',id:parts[1]};
+ if(parts.length===2&&parts[0]==='wispr'&&parts[1])return {kind:'wispr',sourceId:parts[1]};
  if(parts.length===2&&parts[0]==='music'&&parts[1])return {kind:'playback',sourceId:parts[1]};
  return {kind:'missing',hash};
 }
@@ -19,6 +20,7 @@ export function routeHash(route:Route):string{
   case 'home':return '#/';
   case 'connections':return '#/connections';
   case 'component':return '#/component/'+encodeURIComponent(route.id);
+  case 'wispr':return '#/wispr/'+encodeURIComponent(route.sourceId);
   case 'playback':return '#/music/'+encodeURIComponent(route.sourceId);
   case 'missing':return route.hash;
  }

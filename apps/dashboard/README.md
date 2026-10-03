@@ -32,7 +32,7 @@ placement: one `component-status` widget per registered component, with compact 
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
 wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
-register in the same catalog. Every page except Connections stays mounted and hidden, so the session filter,
+register in the same catalog. Every page except Connections and Wispr stays mounted and hidden, so the session filter,
 selection and focus survive navigation; a text field still being edited is sent when the
 user leaves it, and a click on a navigation link leaves it. A control that appears on the home and on its
 component page shares one lifecycle state (`useCommandLifecycle` takes a key per
@@ -72,6 +72,29 @@ Expand **Full revision** to select it, or use **Copy full revision**. A read-onl
 credential can inspect and copy these values without sending device commands.
 Missing or invalid metadata appears as **Unknown**, including when an older Hub
 omits the build field. Values describe the serving process, not a release link.
+
+## Private Wispr analytics
+
+A granted configured Wispr source adds `#/wispr/<sourceId>` and the catalogued
+`wispr-summary` home widget. Home always shows today's captured words and speaking
+minutes across all apps, a seven-day trend and collection age. Its reads are numeric
+only. Page period/app/category filters survive navigation independently, in memory.
+
+The page has Today, 7-day, 30-day and All captured presets, core usage and timing
+metrics, a daily trend with a table alternative, app/category tables, and opted-in
+vocabulary and phrases for recognized speech, Flow output and observed text. Flow
+cleanup and observed edits have separate tables and comparison coverage. They do
+not measure accuracy or prove what was sent. Dictionary counters are unfiltered
+snapshots with unknown windows. Numeric CSV/JSON downloads use the selected capture.
+
+Dates come from the configured reporting zone. Partial coverage, missing durations,
+unknown dates, expired periods and stale collection remain visible; a Hub fetch
+does not advance collection time. Data & coverage explains provenance and limits.
+Text requires both collector and Hub opt-ins. Navigating away unmounts the text
+view; failed refreshes clear text, and opt-out, logout or lost permission retires
+pending reads. Nothing is saved to browser storage. The browser never opens SQLite,
+starts collection or changes sharing. Tests and review screenshots are synthetic;
+installation and private-data qualification require separate authorization.
 
 ## Visual foundation
 

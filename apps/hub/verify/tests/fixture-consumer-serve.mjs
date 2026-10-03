@@ -113,7 +113,7 @@ if ((paired && scenario.fault !== 'no-controller') || controllerPort) {
   await new Promise(resolve => controller.listen(controllerPort, '127.0.0.1', resolve));
   endpoints = {controller: scenario.fault === 'installed-endpoint' ? 'http://127.0.0.1:8765/' : `http://127.0.0.1:${controller.address().port}/`};
 }
-let busy = false, lastPoll = 0;
+let busy = false, lastPoll = 0, acknowledgedNonce = null;
 async function tick() {
   if (busy || !paired) return;
   busy = true;
@@ -121,10 +121,11 @@ async function tick() {
     const request = await readFile(join(runtime, 'feed-pause.request'), 'utf8').then(JSON.parse, error => { if (error.code === 'ENOENT') return null; throw error; });
     if (request) {
       const control = await readFile(join(runtime, 'fixture-reset.json'), 'utf8').then(JSON.parse, () => ({}));
-      if (control.mode !== 'hold-ack' && request.runId === runId && request.version === 1) {
+      if (control.mode !== 'hold-ack' && acknowledgedNonce !== request.nonce && request.runId === runId && request.version === 1) {
         const ack = join(runtime, 'feed-pause.ack');
         await writeFile(ack + '.tmp', JSON.stringify({...request, pid: process.pid}), {mode: 0o600});
         await rename(ack + '.tmp', ack);
+        acknowledgedNonce = request.nonce;
       }
       return;
     }

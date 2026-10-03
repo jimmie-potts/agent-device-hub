@@ -15,6 +15,7 @@ export type WidgetDefinition={
  commands:boolean;
 };
 export const widgetCatalog:readonly WidgetDefinition[]=[
+ {id:'wispr-summary',name:'Wispr',description:'Today’s captured words and speaking minutes with a seven-day trend and collection age.',sizes:['small','medium'],source:{kind:'external',needs:['wispr.status','wispr.export']},commands:false},
  {id:'pixoo-media',name:'Pixoo media',description:'Prepared rendition thumbnails and exact frame previews.',sizes:['medium','large'],source:{kind:'controller',needs:['controllers.integration.catalog','controllers.integration.renditions']},commands:false},
  {id:'pixoo-playlists',name:'Pixoo playlists',description:'Saved playlists and their ordered playback filmstrips.',sizes:['medium','large'],source:{kind:'controller',needs:['controllers.integration.catalog']},commands:false},
  {id:'pixoo-now-showing',name:'Pixoo now showing',description:'Reported media selection and its exact preview, with transmission uncertainty.',sizes:['small','medium'],source:{kind:'controller',needs:['controllers.integration','controllers.integration.renditions']},commands:false},

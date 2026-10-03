@@ -444,3 +444,6 @@ try {
  }
  const receipt={synthetic:true,physical:false,passed:true,checks,pixelReadDelayMs:800,independentDeviceReadMs};const output=process.env.DASHBOARD_RECEIPTS??'/tmp/gh6-dashboard-receipts';await mkdir(output,{recursive:true});await writeFile(output+'/matrix.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));
 }finally{await browser.close();}
+
+// Hub #471 uses a real synthetic collector and Hub, independently of controller fixtures.
+if(!process.env.DASHBOARD_SCENARIO||process.env.DASHBOARD_SCENARIO==='Wispr')await import('./wispr.mjs');
