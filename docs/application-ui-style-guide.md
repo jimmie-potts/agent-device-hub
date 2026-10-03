@@ -56,7 +56,7 @@ Legend used throughout:
   **B.U.N.N.Y.** Existing
   strings in the dashboard change only in their owning UI issue
   ([Hub #182](https://github.com/jimmie-potts/agent-device-hub/issues/182)),
-  with the current candidate's approval. The older `BUNNY` spelling in the
+  with current-candidate verification under the SDLC. The older `BUNNY` spelling in the
   owner's draft and in current source is historical input, not a second name.
   Machine identifiers, package names and paths keep the unpunctuated form.
 
@@ -468,9 +468,9 @@ An implementing agent uses this guide with a specific UI issue:
    error and empty states, with long labels and small screens.
 6. Run the owning repository's UI checks (dashboard and browser checks here;
    Python and browser checks for the wall map) and record which ran.
-7. Obtain the current candidate's human UI approval before merging any
-   application UI change. An earlier approval of another page or revision does
-   not cover a changed candidate.
+7. Record the current candidate’s UI evidence and complete independent reviews
+   and CI under the [SDLC UI verification policy](sdlc.md#ui-approval-scope).
+   No human UI approval is required.
 
 Acceptance checklist for each new or restyled page:
 
@@ -492,8 +492,8 @@ Acceptance checklist for each new or restyled page:
 - [ ] Ends decorative motion within 5 seconds and preserves meaning under reduced motion.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
-- [ ] Includes current-candidate screenshots or browser evidence and the
-      required human UI approval before merge.
+- [ ] Includes current-candidate screenshots or browser evidence and completes
+      the SDLC review and CI requirements before merge.
 
 A new design decision is required when a page needs a role that section 4
 does not define, a state the shared rules do not cover, a second skin, a logo,

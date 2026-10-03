@@ -21,8 +21,8 @@ and local proof files; it never merges, comments, labels, approves or installs.
   --finish-line <line>      source (default), installed, real-client or physical
   --counterpart <o/r#n>     owned PR or issue that must be merged or completed (repeatable)
   --receipt <path>          app-verification/1 proof directory or receipt.json (repeatable)
-  --ui                      declare a non-guide UI change the path list does not detect
-  --ui-approval <url>       PR comment or review recording approval of a named candidate
+  --ui                      deprecated; accepted and ignored
+  --ui-approval <value>     deprecated; accepted and ignored (no approval record is read)
   --guide-receipt <path>    guide-verification.json for the guide-only CI exception (repeatable)
   --guide-record <url>      PR comment recording that exception's evidence for one revision
                             (repeatable: a merged guide-only PR needs one for its head and
@@ -76,7 +76,7 @@ function parse(argv) {
     if (!/^[\w.-]+\/[\w.-]+#\d+$/.test(ref)) fail(`--counterpart ${ref} must look like owner/repository#number`);
   }
   const record = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+#(?:issuecomment-\d+|pullrequestreview-\d+|discussion_r\d+)$/;
-  for (const [key, urls] of [['ui-approval', values['ui-approval'] === undefined ? [] : [values['ui-approval']]], ['guide-record', values['guide-record']]]) {
+  for (const [key, urls] of [['guide-record', values['guide-record']]]) {
     if (urls.some(url => !record.test(url))) fail(`--${key} must be a PR comment or review URL`);
   }
   return {

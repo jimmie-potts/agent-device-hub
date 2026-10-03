@@ -119,11 +119,11 @@ The dashboard SHALL obtain authoritative snapshots on resync or expired cursors,
 - **AND** unrelated controls and tasks remain intact
 
 ### Requirement: Accessible verified candidate
-The dashboard SHALL support keyboard navigation, readable contrast, reduced motion and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and require explicit approval of the actual UI before merge.
+The dashboard SHALL support keyboard navigation, readable contrast, reduced motion and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and retain independent review and applicable CI without requiring human UI approval before merge.
 
 #### Scenario: Synthetic acceptance
 - **WHEN** the candidate is qualified without personal sessions or devices
-- **THEN** browser evidence covers inspection without writes, controls, failures, responsive layout and accessibility separately from human and physical acceptance
+- **THEN** browser evidence covers inspection without writes, controls, failures, responsive layout and accessibility separately from installed and physical acceptance
 
 ### Requirement: Local owner browser launch
 The dashboard SHALL accept a single-use short-lived launch code from the installation owner's private launcher, remove it from browser history before exchange, and connect with a memory-only scoped bearer. A direct visit SHALL retain the manual credential path. Disconnect SHALL revoke a launcher session and clear browser memory.

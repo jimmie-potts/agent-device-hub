@@ -4,8 +4,9 @@
 
 The HTML under `docs/system-design/` preserves the September 19, 2026 design
 snapshot. Its implementation labels and issue states describe that baseline;
-GitHub issues and owning application guides supply current status. Routine
-product delivery does not rebaseline it. For an intentional snapshot revision,
+GitHub issues and owning application guides supply current status. The current
+[SDLC UI policy](sdlc.md#ui-approval-scope) supersedes this snapshot’s obsolete
+human UI approval wording. Routine product delivery does not rebaseline it. For an intentional snapshot revision,
 edit `source/*.html` and `design.json`, then regenerate the overview, component
 pages and complete reading view. `assets/` holds the shared style and browser
 behavior. The inventory records the template set and source revision receipts.
@@ -263,6 +264,11 @@ credentials do not block otherwise complete routine check evidence.
 evidence before a merge or issue closure. It is an aid, not a gate or an
 authorization. Every run re-reads GitHub, and a report is current only for the
 head and read time it prints; a saved green report never covers a later head.
+The default `source` finish line is a pre-merge/source-stage check, not a claim
+that installation or overall delivery is complete. `--ui` and `--ui-approval`
+are deprecated compatibility inputs: accepted and ignored, with no approval
+record fetched. The legacy `ui-approval` report entry remains not applicable.
+All UI follows [UI verification](sdlc.md#ui-approval-scope).
 `npm run preflight -- --help` lists the options. The script compiles
 `packages/app-verify` first, because proof receipts are checked with its
 `validateReceipt` rather than a second reader.
@@ -283,7 +289,6 @@ prints tokens, local paths or reviewer return text.
 | Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
-| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/`, `docs/skins/`, `controllers/tidbyt/src/` or `controllers/tidbyt/fixtures/golden/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), or `--ui`. Tidbyt modules that only queue, schedule, authenticate or transport frames are listed as non-UI in `NON_UI_PATHS` in `scripts/delivery-preflight/preflight.mjs`; a new Tidbyt module counts as UI until it is listed. `--ui-approval` must be a record (see below) whose first line approves one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
 | Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
 | Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
@@ -309,26 +314,10 @@ same length) or a balanced double-quoted span outside code; a line with an
 unclosed backtick run or unbalanced quotes is read whole. The summary row
 never approves an axis on its own.
 
-A UI approval or guide-only record is a comment or review on the PR written by
+A guide-only record is a comment or review on the PR written by
 the delivery account: the PR author, or the repository owner when a bot opened
 the PR. Bot comments, other accounts' comments and comments with an HTML marker,
 such as review reports and provider summaries, never count.
-
-A UI approval record starts with its approval: the comment's first non-empty
-line is exactly one of these, case-sensitive, with an optional list marker and
-trailing spaces, and not indented, fenced or quoted. The body may continue
-after it.
-
-```text
-UI approved: <full 40-character sha>
-UI approved by <login>: <full 40-character sha>
-```
-
-Anything else is not approval, including a request that quotes this line
-further down, a free-text name or an abbreviated SHA. The owner writes the
-line from the delivery account, so the tool cannot tell a human from an agent
-using the same account; the form only prevents requests, templates and
-revocations from being misread as approval.
 
 A guide-only record names the full revision and the guide HTML SHA-256, and
 reports each of the four local checks in exactly this form: the command
@@ -358,7 +347,8 @@ The test suite covers a clean candidate and negative controls built from
 deterministic GitHub and receipt fixtures: a missing or unsuccessful job,
 changed head or base, stale, partial or self-contradicting review, multi-axis,
 aliased and malformed finding lines, unavailable API and paginated reads,
-missing or improper UI approval, open counterpart,
+UI changes without approval (including ignored legacy inputs), unchanged review/CI/proof
+failures on UI changes, open counterpart,
 missing work issue, both finish-line kinds, the guide-only exception with its
 evidence and with mixed paths, and dirty or failed-capture receipts. It also
 covers the read-only guard and a run under Node's permission model, which
@@ -733,7 +723,9 @@ CI matrix runs both suites after build/typecheck. Use the private test TMPDIR
 above. Fixtures cover approval drift, package/dependency inventories, compatible
 latest-state recovery, both shared-layout adoption orders, interruption,
 receipt finalization and owned retention. They use synthetic state and fake
-service control; installed upgrade acceptance requires its own owner checkpoint.
+service control; installed upgrade acceptance follows the exact-plan checkpoint
+under [applicable authority](sdlc.md#installation-and-evidence), including standing
+authorization without a renewed human approval.
 `install-service-contract.test.mjs` covers systemd omitting an empty
 `EnvironmentFiles` property, binds a configured list and still rejects a missing
 freeze capability. Its fake `systemctl` runs in an isolated child process.
@@ -947,7 +939,8 @@ read-only or undeclared capabilities with named reasons. The hub dashboard test
 checks that general commands are schema-validated and scoped before any
 controller request. The fake Pixoo declares the capabilities of Pixoo `main`
 `c81bc31`, with controller v1 modes unsupported; the dashboard README records
-the mapping. Human UI approval of the candidate is recorded in its PR.
+the mapping. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #323 adds a read-only Nanoleaf scenario to the same matrix, using the
 fixture's optional `panels` component. `apps/hub/tests/integration.test.mjs`
@@ -965,8 +958,8 @@ the capabilities of Nanoleaf `main` `8062849` and rejects a scene outside Free
 with `unsupported-capability` before any write; the hub route test checks that
 scene commands are schema-validated before forwarding. Client unit tests cover
 the scene availability order, name-or-ID labelling from the integration snapshot
-and the Work/Quiet/pending/unknown gating. Human UI approval of the candidate is
-recorded in its PR.
+and the Work/Quiet/pending/unknown gating. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #355 adds `apps/dashboard/tests/art.test.mjs` to `npm run test:dashboard`
 and `apps/dashboard/tests/art.mjs` to `npm run test:dashboard:browser`. The fake
@@ -980,8 +973,8 @@ geometry read per session, a stale controller, the Panels with their controller
 offline, the schematic fallbacks, the retried read, reads only and axe at
 1280 px and 390 px, then drives status, activity, mode, the opening assembly and
 reduced motion through a component harness bundled from `tests/art-harness.tsx`. The
-existing Dashboard CI job runs both; no new job is needed. Human UI approval of
-the candidate, compared side by side with the wall map, is recorded in its PR.
+existing Dashboard CI job runs both; no new job is needed. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #231 adds matrix scenarios for fresh guards and one-step settings:
 - A controller generation advance between render and activation sends one
@@ -1001,8 +994,8 @@ fake Nanoleaf follows Nanoleaf `main` `08b6b83` same-mode handling, including
 the configuration revision advance on admission, and the fake Pixoo reports
 participation like Pixoo `main` `01da65d`. Client unit tests cover the status
 wording and lock rules, including that only a same-mode reapply reports a
-cancel as already in effect. Human UI approval of the candidate is recorded in
-its PR.
+cancel as already in effect. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #245 moves the command lifecycle shared by draft forms and one-click actions
 into `apps/dashboard/src/lifecycle.ts`. `apps/dashboard/tests/lifecycle.test.mjs`
@@ -1034,8 +1027,9 @@ rejections, uncertain results, credential changes and a staged hub. The existing
 Hub, MCP and Dashboard jobs run all of them. None contacts a receiver. The
 owner's 2026-09-25 paused-state live check is recorded in the issue's refined
 acceptance and in PR #275. Installed browser and Codex MCP acceptance come after
-merge, need separate authorization and are recorded on the issue. Human UI
-approval of the candidate is required before merge and is recorded in the PR.
+merge under the applicable [installation authority](sdlc.md#installation-and-evidence)
+and are recorded on the issue. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #277 makes the dashboard a dense control surface. `apps/dashboard/tests/routes.test.mjs`
 and `widgets.test.mjs` run under `npm run test:dashboard`; the browser suite
@@ -1053,8 +1047,8 @@ suites drive a select, slider, text field or Power button directly, a matrix
 scenario checks the home widget's quick actions, the shared lock and running
 state between the widget and the page, the surviving session draft and the skip
 link, and the lifecycle unit test carries the form wording. The overlap check ignores closed disclosures. Full-page height at
-1,280 px is recorded in the browser receipt. Human UI approval of the candidate
-is required before merge and is recorded in the PR.
+1,280 px is recorded in the browser receipt. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #336 adds the Moments card. `apps/dashboard/tests/moments.test.mjs` runs
 under `npm run test:dashboard` and covers the capability, mood, preset and
@@ -1078,8 +1072,8 @@ clock. The suite covers:
 
 The existing matrix and local-controller suites now expect moments in the
 undeclared line. The device page reads `?apiVersion=1.1`, which 1.0 fakes answer
-unchanged. Hub verification adds the three moment steps above. Human UI approval
-of the candidate is required before merge and is recorded in the PR.
+unchanged. Hub verification adds the three moment steps above. Record current-candidate UI evidence under the
+[UI verification policy](sdlc.md#ui-approval-scope).
 
 Browser suite gotchas, learned in #277:
 

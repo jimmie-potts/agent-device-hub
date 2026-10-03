@@ -121,11 +121,16 @@ Plan resolves a requested branch to a full merged SHA, then names installed and
 running identities separately, the complete included commits and PRs when
 available, changed components, exact configuration/state requirements, named units,
 expected outage, backup scope, recovery procedure and rollback eligibility.
-Unavailable comparisons remain unknown, never an empty change list. The owner
-approves the exact plan, target, baseline, configuration and recovery sequence.
+Unavailable comparisons remain unknown, never an empty change list. The
+coordinating installer reviews the exact plan, target, baseline, configuration
+and recovery sequence against the owner’s applicable authority. Existing scoped
+standing authority satisfies the authorization checkpoint without a new human
+approval; otherwise obtain authority for the named operation.
 Canonical plan bytes and their SHA-256 bind all these inputs. Recheck them under
-the lock; any changed input requires a new plan and approval. Plan must be run
-before an agent plans, performs or checks an install/upgrade/rollback.
+the lock; any changed input requires a new plan and authority assessment. Inputs
+within standing scope need no renewed human approval; effects outside it need
+additional authority. Plan must be run before an agent plans, performs or checks
+an install/upgrade/rollback.
 
 Status reports the installed link, running build, service state and merged main
 separately. An inactive service has no current running-build claim. A failed
@@ -266,9 +271,11 @@ This is distinct from agent-state's state `sourceRevision`.
 
 ## 8. Authority
 
-Every mutating command needs the owner's checkpoint approval or an explicit
-request naming that operation. The checkpoint identifies the installation owner,
-exact target and complete change bundle, baseline/configuration, outage, migration,
+Every mutating command needs applicable owner authority: a scoped standing
+authorization, checkpoint approval or an explicit request naming the operation.
+The procedure does not grant that authority itself. Under standing authority, the
+coordinating installer completes the checkpoint without requesting approval again.
+The checkpoint identifies the installation owner, exact target and complete change bundle, baseline/configuration, outage, migration,
 recovery and any startup device effects. Changed inputs require replanning.
 Commands send no device commands and do not change credentials, hooks, `host.json`,
 shared Node, host services or boot settings outside named scope. Routine upgrades
@@ -285,10 +292,13 @@ delivered. This contract does not add a pointer to a command that does not yet e
 Installation: a merged change to <installed runtime source> is complete only
 after <upgrade command> installs it on the owner's installation and its receipt
 passes, unless the issue marks the change source-only with a reason and links
-the install issue that batches it. Offer the upgrade at a checkpoint after merge
-and post-merge CI; run it only on the owner's approval there or an explicit
-request. Before planning, running or checking an install, upgrade or rollback,
-read <procedure doc>#<section> and run <plan command> first.
+the install issue that batches it; report overall delivery as installation pending.
+After merge and post-merge CI, review the exact plan and execute under the owner’s
+applicable authority. Existing scoped standing installation authority needs no
+renewed approval. Verify running identity, health, state preservation and durable
+receipt; a schema-valid receipt alone is insufficient. Before planning, running
+or checking an install, upgrade or rollback, read <procedure doc>#<section>
+and run <plan command> first.
 ```
 
 Keep completion and authority inline at the root. CLAUDE.md imports `@AGENTS.md`.
@@ -298,9 +308,10 @@ without restating it. That procedure pins this contract's commit. Command tests
 must enforce clean source, hash checks, lock, compatibility and recovery; prose
 alone does not enforce them.
 
-Static instruction checks cover ordinary runtime delivery (offer plan after merge
-and CI), source-only delivery (retain the batching link), direct installation
-(read procedure and plan before mutation), and rollback (same plan/approval gate).
+Instruction review covers ordinary runtime delivery (review and execute the plan
+after merge and CI under existing scope), source-only delivery (retain the batching
+link and pending installation), direct installation (read procedure and plan before
+mutation), and rollback (same exact-plan and authority check).
 Source checks do not claim fresh Codex/Claude host loading or live acceptance.
 
 ## Historical receipt mapping

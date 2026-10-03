@@ -95,8 +95,10 @@ them for Claude Code. Reusable methods remain in the
 Read [the delivery workflow](docs/sdlc.md) before planning or changing this project.
 
 The canonical local checkout is `/home/jimmie/projects/agent-device-hub`.
-Use a separate branch and worktree for each deliverable. Source delivery does not
-install hooks, launch agent sessions, start a personal service or operate devices.
+Use a separate branch and worktree for each deliverable. Authorized delivery
+includes installation and verification on the established target under the
+[standing authority and boundaries](docs/sdlc.md#installation-and-evidence).
+Read-only or explicitly source-only work does not authorize runtime effects.
 
 ## Related repositories
 

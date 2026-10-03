@@ -18,7 +18,7 @@ New releases MUST identify a clean merged full source SHA and verified archive a
 
 ### Requirement: Separate ownership and exact approval
 
-Consumer operations MUST preserve the shared runtime parent, Node executable, other owners' paths and historical copies. Read-only plan and status MUST distinguish installed, running and remote identities. Mutation MUST require approval bound to exact target, complete included changes, baseline, configuration, outage and recovery procedure; changed inputs require replanning.
+Consumer operations MUST preserve the shared runtime parent, Node executable, other owners' paths and historical copies. Read-only plan and status MUST distinguish installed, running and remote identities. Mutation MUST require applicable owner authority and a reviewed plan bound to exact target, complete included changes, baseline, configuration, outage and recovery procedure; changed inputs require replanning and a scope check. Existing scoped standing installation authority MUST satisfy the authorization checkpoint without renewed human approval. The coordinator MUST obtain additional authority for effects outside that scope; this contract grants no authority itself.
 
 #### Scenario: Either runtime adopts first
 - **WHEN** Hub or Nanoleaf adopts, upgrades and rolls back through its own current anchor
@@ -27,6 +27,10 @@ Consumer operations MUST preserve the shared runtime parent, Node executable, ot
 #### Scenario: Baseline changes after approval
 - **WHEN** the installed identity, configuration or approved target differs under the installation lock
 - **THEN** the command refuses before stopping services
+
+#### Scenario: Standing authority covers the exact operation
+- **WHEN** the coordinator has existing owner authorization for routine delivery to the established installation and the exact plan remains within that scope
+- **THEN** it may execute using the reviewed plan digest without renewed human approval, while ownership, compatibility, locking, recovery and verification remain mandatory
 
 ### Requirement: Compatible recovery preserves current state
 
@@ -62,4 +66,4 @@ The contract MUST define startup-scoped build metadata and the root instruction 
 
 #### Scenario: Agent delivers a source-only consumer change
 - **WHEN** the owning issue explicitly batches installation into another issue
-- **THEN** the root declaration retains that exception, while ordinary installed-runtime delivery offers the documented plan at a separately approved checkpoint
+- **THEN** the root declaration retains that exception, while ordinary installed-runtime delivery reviews and executes the documented plan under applicable owner authority without renewing existing scoped standing approval; source-only completion leaves overall installation pending

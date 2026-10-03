@@ -202,7 +202,7 @@ This documentation delivery adds no product behavior or wire-contract delta, so
 it needs no new OpenSpec capability. Future behavior changes need refined
 issue-linked specifications, proportionate executable tests and the repository's
 independent review, CI and guarded delivery gates. Future product UI candidates
-also require human approval under [the SDLC](sdlc.md#ui-approval-scope).
+follow the UI verification requirements in [the SDLC](sdlc.md#ui-approval-scope).
 
 Installation, startup registration, personal mouse configuration,
 agent sessions, input injection and device operations each remain subject to

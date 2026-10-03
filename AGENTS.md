@@ -11,8 +11,10 @@ status; do not copy issue lists or dependency chains into repository docs.
 
 When drafting or picking up a story, or after a material scope or assumption
 change, apply the [scope defaults](docs/sdlc.md#scope-defaults), including in
-ordinary work without `plan-work` or `deliver-work`. A read-only request reports
-the assessment without writing.
+ordinary work without `plan-work` or `deliver-work`. At every pickup, refresh
+alignment with current project direction, accepted architecture, reusable patterns
+and related work; do not restrict discovery to the issue’s original sources.
+A read-only request reports the assessment without writing.
 
 At accepted child completion, reopening, material scope/prerequisite change or
 ownership handoff, the coordinating writer applies the
@@ -68,12 +70,9 @@ exception in docs/sdlc.md; read its evidence requirements before merge or closur
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
-UI changes to the cross-project work guide under docs/work-guide/, including
-its generated HTML and architecture viewers, do not require human approval.
-All other UI changes require explicit human approval of the current candidate,
-renewed after changes to that UI. Mixed changes retain approval for UI outside
-the guide. Read the [UI approval scope](docs/sdlc.md#ui-approval-scope) for the
-boundary and evidence.
+No project UI requires human approval. Preserve applicable automated, browser
+and accessibility validation, independent reviews and CI under the
+[UI verification policy](docs/sdlc.md#ui-approval-scope).
 
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
 npm run check:workflow and npm run test:workflow from the assigned worktree root.
@@ -115,11 +114,13 @@ omission needs its schema-based reason; failed lookups do not justify omission.
 
 Installation: a merged change to the installed Hub is complete only after
 `node apps/hub/bin/hub-install.mjs upgrade <sha>` installs it on the owner's
-installation and its receipt passes, unless the issue marks it source-only with
-a reason and links the installation issue that batches it. Offer the upgrade at
-a checkpoint after merge and post-merge CI; run it only on the owner's approval
-there or an explicit request. Before planning, running or checking an install,
-upgrade or rollback, read [the Hub upgrade procedure](apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub)
+installation and its receipt, running identity and health are verified. The owner
+has given standing installation authority for authorized delivery to this
+established installation: after merge and post-merge CI, review the exact plan
+and run the upgrade without requesting approval again. A source-only exception
+needs the user's narrower scope or an accepted issue with a reason and linked
+installation issue; report overall delivery as installation pending. Before
+planning, running or checking an install, upgrade or rollback, read [the Hub upgrade procedure](apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub)
 and run `node apps/hub/bin/hub-install.mjs plan` with its required inputs first.
 
 Provider hooks report allowlisted lifecycle metadata and must fail open without
@@ -137,10 +138,12 @@ shared-input cutover. Retain task/effect epochs, source reservations, unread
 policy, preferences and scenes. Preserve Pixoo's simulator startup, originals,
 referenced renditions, playback recovery and explicit Monitor/Media semantics.
 
-Source work does not install hooks, change personal settings, launch agent
-sessions, migrate live state or contact devices. Installation requires an
-explicit request and named owner. Physical tests also need an explicit device IP
-and permission for the sequence/display replacement. Never use a guessed target,
+Read-only, planning and explicitly source-only work do not authorize runtime
+changes. Standing installation authority covers the established target and
+documented routine upgrade/recovery procedure with a named installation owner;
+it does not authorize new hosts, personal settings, hooks, agent sessions,
+unqualified migrations or device commands. Physical tests still need an explicit
+device IP and permission for the sequence/display replacement. Never use a guessed target,
 change firmware/router/firewall settings or claim physical accuracy from CI,
 simulator frames or transport acknowledgment.
 
