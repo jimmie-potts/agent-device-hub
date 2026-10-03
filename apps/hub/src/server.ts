@@ -1,5 +1,5 @@
 import type {HostDiagnostics} from '@jimmie-potts/bunny-observability/host';
-import {commandDiagnosticAttributes,type CommandDiagnostics} from './diagnostics.js';
+import {commandDiagnosticAttributes,diagnosticFailure,type CommandDiagnostics} from './diagnostics.js';
 import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
 import {readBuild} from './build.js';
@@ -340,6 +340,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const started = performance.now();
       const timer = setTimeout(() => res.destroy(),3000);
       let streaming = false;
+      let diagnosticError:ReturnType<typeof diagnosticFailure>|undefined;
       try {
         if (!req.url?.startsWith('/') || req.url.startsWith('//')) throw new HttpError('invalid-input',400);
         if (previewProof && req.url.startsWith(previewProof.prefix)) {await previewProof.handle(req,res);return;}
@@ -480,11 +481,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);
+        diagnosticError=diagnosticFailure(safe);
         if (!res.headersSent) json(res,safe.status,{error:{code:safe.code}});else res.destroy();
       } finally {
         const operation=diagnosticRequests.get(req);
         if(operation)try{options.hostDiagnostics?.event(res.statusCode>=400?'operation.failed':'operation.completed','bunny.http',
-          {'bunny.operation':operation,'bunny.outcome':res.statusCode>=400?'rejected':'succeeded','bunny.duration_ms':Math.min(86400000,Math.max(0,performance.now()-started))},res.statusCode>=400?'WARN':'INFO');}catch{}
+          {'bunny.operation':operation,'bunny.outcome':res.statusCode>=400?'rejected':'succeeded',...diagnosticError,'bunny.duration_ms':Math.min(86400000,Math.max(0,performance.now()-started))},res.statusCode>=400?'WARN':'INFO');}catch{}
         active--;if (!streaming) {res.once('close',() => clearTimeout(timer));res.once('finish',() => clearTimeout(timer));}}
     })().catch(() => res.destroy());
   });

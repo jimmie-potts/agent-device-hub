@@ -16,7 +16,7 @@ type Options = {
 export type CommandDiagnostics = ReturnType<typeof createCommandDiagnostics>;
 const outcome:Record<string,string> = {queued:'queued',sent:'transport-acknowledged',failed:'rejected',
   'partially-applied':'partial',uncertain:'uncertain',cancelled:'cancelled'};
-const failure = (error:unknown):Attributes => {
+export const diagnosticFailure = (error:unknown):Attributes => {
   const code = error instanceof HttpError ? error.code : undefined;
   if (code === 'uncertain-result') return {'bunny.outcome':'uncertain','bunny.reason':'transport-error','bunny.write.possible':true};
   if (code === 'unauthenticated' || code === 'forbidden') return {'bunny.outcome':'rejected','bunny.reason':'unauthorized','bunny.write.possible':false};
@@ -99,7 +99,7 @@ export function createCommandDiagnostics(options:Options) {
         finish({'bunny.outcome':outcome[response.body.outcome] ?? 'unavailable'},false);
         return response;
       } catch (error) {
-        try { finish(failure(error),true); } catch { failed(); }
+        try { finish(diagnosticFailure(error),true); } catch { failed(); }
         throw error;
       }
     },

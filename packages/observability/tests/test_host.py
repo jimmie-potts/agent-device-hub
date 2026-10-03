@@ -26,6 +26,21 @@ class HostTests(unittest.TestCase):
         self.assertEqual(record['attributes']['bunny.outcome'], 'succeeded')
         self.assertNotIn('trace_id', record)
 
+    def test_wall_clock_adjustments_do_not_change_elapsed_duration(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        for adjustment in [-10_000_000_000, 10_000_000_000]:
+            with self.subTest(adjustment=adjustment):
+                lines=[]
+                host=HostDiagnostics(enabled=True,resource=RESOURCE,local_sink=lines.append)
+                wall=iter([1_800_000_000_000_000_000, 1_800_000_000_000_000_000+adjustment])
+                elapsed=iter([100_000_000, 125_000_000])
+                clock=SimpleNamespace(time_ns=lambda:next(wall),monotonic_ns=lambda:next(elapsed))
+                with patch('bunny_observability.host.time',clock):
+                    with host.operation('bunny.queue','brightness'): pass
+                host.close()
+                self.assertEqual(json.loads(lines[0])['attributes']['bunny.duration_ms'],25)
+
     def test_domain_exception_survives_sink_failure(self):
         def broken(_line): raise RuntimeError('sink-private')
         host=HostDiagnostics(enabled=True, resource=RESOURCE, local_sink=broken)

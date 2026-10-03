@@ -220,6 +220,7 @@ class HostDiagnostics:
             yield
             return
         start = time.time_ns()
+        monotonic_start = time.monotonic_ns()
         span = None
         active = nullcontext()
         fields = {'bunny.provenance':'source', **(attributes or {}), 'bunny.operation':operation}
@@ -246,12 +247,13 @@ class HostDiagnostics:
                     raise
         finally:
             try:
-                end = max(start, time.time_ns())
+                elapsed = max(0, time.monotonic_ns() - monotonic_start)
+                end = start + elapsed
                 identity = span.get_span_context() if span else None
                 correlation = dict(trace_id=f'{identity.trace_id:032x}', span_id=f'{identity.span_id:016x}', trace_flags=f'{int(identity.trace_flags)&1:02x}') if identity and identity.is_valid else {}
                 record = create_record(dict(timestamp=self._now(), event_name='operation.failed' if failed else 'operation.completed',
                     severity_text='WARN' if failed else 'INFO', resource=self._resource, scope=dict(name=scope,version='1.0.0'),
-                    attributes={**fields, 'bunny.outcome':'failed' if failed else 'succeeded', 'bunny.duration_ms':min(86400000, (end-start)/1e6)}, **correlation))
+                    attributes={**fields, 'bunny.outcome':'failed' if failed else 'succeeded', 'bunny.duration_ms':min(86400000, elapsed/1e6)}, **correlation))
                 if record['ok']:
                     self.emit(record['value'])
                     if span and span.is_recording():

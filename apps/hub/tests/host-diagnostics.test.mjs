@@ -57,3 +57,23 @@ test('normal host adapter correlates a command and propagates only to its authen
  const child=spans.find(x=>x.parentSpanId!=='4'.repeat(16));assert.ok(child);
  assert.equal(parent,`00-${child.traceId}-${child.spanId}-01`);
 });
+
+
+test('HTTP diagnostic summary preserves uncertainty after an admitted write loses its response',async t=>{
+ const {startHub}=await import('../dist/server.js');
+ const {startFakeController}=await import('./fake-controller.mjs');
+ const fake=await startFakeController();fake.answerNext({mode:'drop'});
+ const directory=await mkdtemp(join(tmpdir(),'hub-uncertain-summary-'));let hub;
+ t.after(async()=>{await hub?.close();await fake.close();await rm(directory,{recursive:true,force:true});});
+ const events=[],token='h'.repeat(43);
+ hub=await startHub({directory,ownerId:'owner',consumers:[],controllers:[fake.config()],
+  hostDiagnostics:{event:(event,scope,attributes)=>events.push({event,scope,attributes})},
+  credentials:[{id:'operator',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:['wall']}]});
+ const snapshot=fake.snapshot10();
+ const body={apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:snapshot.nextRequestId,
+  expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:snapshot.generation,command:{kind:'brightness.set',percent:42}};
+ const response=await fetch(hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify(body)});
+ assert.equal(response.status,503);assert.equal((await response.json()).error.code,'uncertain-result');assert.equal(fake.commands.length,1);
+ const summary=events.find(x=>x.scope==='bunny.http');assert.ok(summary);
+ assert.equal(summary.attributes['bunny.outcome'],'uncertain');assert.equal(summary.attributes['bunny.write.possible'],true);
+});
