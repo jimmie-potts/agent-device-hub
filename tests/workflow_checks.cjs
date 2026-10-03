@@ -193,8 +193,8 @@ test('the GitHub Markdown template starts with an editable headline and five bul
   const frontmatter = template.match(/^---\n([\s\S]*?)\n---\n/);
   assert.ok(frontmatter, 'GitHub chooser metadata is present');
   assert.deepEqual(YAML.parse(frontmatter[1]), {
-    name: 'Feature or integration',
-    about: 'Define the smallest useful change for the real setup.',
+    name: 'Work item',
+    about: 'Define a verifiable feature, investigation or maintenance increment.',
     labels: ['enhancement', 'status:backlog'],
   });
   checkStoryOpening(template.slice(frontmatter[0].length));
