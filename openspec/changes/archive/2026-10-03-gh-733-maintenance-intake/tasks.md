@@ -12,4 +12,6 @@
 
 - [x] 3.1 Implement the shared supervisor intake/reconcile protocol, authority/deadline checks and factual reports; test unauthorized, expired, interrupted and selected-only results.
 - [x] 3.2 Exercise the intake and shared supervisor together with disposable adapters through delivery, review, CI and installed-receipt outcomes; retain evidence without claiming installed activation.
-- [ ] 3.3 Document private configuration, retention, package installation, shared manual claims and recovery; pass focused tests, applicable shared build/type/contract/workflow checks, synchronize the capability and archive the completed change before independent review.
+- [x] 3.3 Implement the owning closeout adapter with full installation receipt validation, independent current acceptance, criterion-specific affected tracker assessment, canonical advice updates and durable readback; test omitted physical criteria, graph drift and ambiguous effects.
+- [x] 3.4 Add the thin owning Hub installation protocol adapter, native pre-intent deadline reserve and full current receipt/process/health readback; verify source-only bypass, refusal/recovery and no duplicate upgrade with disposable fixtures.
+- [x] 3.5 Document private configuration, retention, package installation, shared manual claims and recovery; pass focused tests, applicable shared build/type/contract/workflow checks, synchronize the capability and archive the completed change before independent review.

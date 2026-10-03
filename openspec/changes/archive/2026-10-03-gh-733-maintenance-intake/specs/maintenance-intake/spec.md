@@ -75,3 +75,43 @@ The intake SHALL preserve accepted private evidence until an explicit owner-sele
 #### Scenario: Existing evidence exceeds capacity
 - **WHEN** a new intake cannot safely persist its evidence within the configured capacity
 - **THEN** new admission is refused with a recorded reason and existing evidence is preserved
+
+### Requirement: Owning tracker reconciliation before closure
+
+The owning closeout adapter SHALL validate the published installation receipt, exact merge and unchanged selected requirements. It SHALL independently assess complete current acceptance rather than trust the worker's acceptance classification. It SHALL read affected native and explicit trackers, assess criterion-specific evidence and remaining work, and preserve parent, client and physical obligations. Recommendation changes SHALL use the canonical parser, dry run and upsert. Current ownership, body, comments, relationships and Project fields SHALL be checked before effects and by authoritative readback. Unsupported semantic changes, incomplete reads or missing acceptance SHALL leave reconciliation pending without erasing verified installation.
+
+#### Scenario: Worker omitted physical acceptance
+- **WHEN** the worker declares source and installed completion but the current issue requires physical evidence
+- **THEN** independent assessment blocks closure and retains the installation receipt separately
+
+#### Scenario: Related parent still has pending acceptance
+- **WHEN** the selected installed issue is accepted and a related parent has remaining client or physical criteria
+- **THEN** the receipt preserves each remaining obligation, owner and next action, and the adapter does not close the parent
+
+#### Scenario: Related recommendation needs refresh
+- **WHEN** accepted prerequisites change the next action and current shared policy supports an updated recommendation
+- **THEN** the adapter reviews and applies the canonical update, preserving unrelated text and Project fields, and verifies readback before claiming reconciliation complete
+
+#### Scenario: Accepted source-only exception
+- **WHEN** the reviewed issue explicitly accepts source-only completion with a reason and linked installation obligation and independent assessment confirms that scope
+- **THEN** the adapter may close that source issue without invoking or inventing installation evidence, while retaining overall installation pending and the linked obligation
+
+#### Scenario: Closeout effect loses its response
+- **WHEN** publication, closure or a Project effect has an ambiguous result
+- **THEN** retained intent requires read-only authoritative reconciliation without repeating the effect or claiming completion from installation alone
+
+### Requirement: Existing Hub installation protocol
+
+The Hub installation adapter SHALL bind the established owner, exact target, current native plan digest and original work deadline. It SHALL reuse the native installation operation and require at least 600 seconds before entry and immediately before durable mutation intent. It SHALL NOT kill an admitted switch or invent a second recovery engine. Lost responses SHALL reconcile retained intent, full published receipts and fresh process/health evidence without repeating upgrade. Active machinery changes, unknown migration and unresolved native barriers SHALL remain pending.
+
+#### Scenario: Preparation consumes the available reserve
+- **WHEN** staging or compatibility checks leave less than the native transition reserve
+- **THEN** the native operation refuses before stopping the installed service
+
+#### Scenario: Lost native upgrade response
+- **WHEN** upgrade produced a valid terminal receipt but its response was lost
+- **THEN** reconciliation reads that attempt's receipt and fresh running evidence without issuing another upgrade
+
+#### Scenario: Native operation safely refused or recovered
+- **WHEN** a valid terminal receipt records refusal or rollback and current baseline identity and health are verified with no remaining barrier
+- **THEN** the supervisor may park the failed delivery without claiming the requested revision was installed

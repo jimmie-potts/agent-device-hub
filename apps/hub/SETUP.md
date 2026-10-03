@@ -131,6 +131,16 @@ inventory verify. This option never supplies provenance for a new target.
 
 ### Authorized upgrade
 
+The qualified shared supervisor can add `--deadline <Unix-seconds>` to an
+`upgrade` or `rollback`. The native operation requires at least 600 seconds
+before entry and again immediately before durable mutation intent, after
+staging and compatibility checks. Insufficient reserve refuses before stopping
+the service. Once admitted, the existing switch/recovery flow finishes; an
+external timeout must not terminate it. Ordinary authorized manual upgrades
+keep the same plan/digest procedure without a deadline flag. The owning
+[supervisor adapter](../maintenance/README.md#hub-installation-adapter) supplies
+this bound and independently verifies receipt, process and health readback.
+
 At the checkpoint, name the installation owner, full target SHA and complete
 included changes, installed baseline, configuration, expected monitoring outage,
 backup/state scope and recovery route. Account for existing automation resuming

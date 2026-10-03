@@ -37,7 +37,7 @@ export function request(value:any,config:Config):Request {
  requireValue(value.schemaVersion===1&&['intake','reconcile'].includes(value.operation),'invalid-operation');
  requireValue(value.authority===config.authority,'unauthorized-maintenance');
  requireValue(typeof value.runId==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(value.runId),'invalid-run');
- requireValue(Number.isFinite(value.deadline)&&value.deadline*1000>Date.now()&&value.deadline*1000-Date.now()<=36000*1000,'expired-deadline');
+ requireValue(Number.isFinite(value.deadline)&&(value.operation==='reconcile'||value.deadline*1000>Date.now())&&value.deadline*1000-Date.now()<=36000*1000,'expired-deadline');
  requireValue(typeof value.evidenceDirectory==='string'&&isAbsolute(value.evidenceDirectory)&&!value.evidenceDirectory.startsWith(config.checkout+'/'),'invalid-evidence-directory');
  return value;
 }

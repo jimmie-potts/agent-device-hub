@@ -80,3 +80,13 @@ test('an issue marker alone cannot bypass source-backed planning',async()=>{
  const f=await fixture({issues:[{number:44,state:'open',title:'Untrusted copied marker',body:markerBody,labels:[],assignees:[]}]});
  try{const r=await invoke(f);assert.equal(r.selections.length,0);assert.equal((await f.read()).creates,0);assert.ok((await f.read()).calls.some(c=>c.tool==='codex'&&c.args[0]==='exec'));}finally{await f.close();}
 });
+test('an expired saved run reconciles by reads without renewing its deadline',async()=>{
+ const f=await fixture({mode:'lost-response'});try{
+  await invoke(f);const path=join(f.config.stateRoot,'run-fixture-run.json'),state=JSON.parse(await readFile(path,'utf8'));state.deadline=1;await writeFile(path,JSON.stringify(state),{mode:0o600});
+  await f.change({mode:'success',calls:[]});
+  const response=await invoke(f,{...f.request,operation:'reconcile',deadline:1});assert.equal(response.status,'complete');assert.equal(response.selections.length,1);
+  const remote=await f.read();assert.equal(remote.creates,1);assert.ok(remote.calls.every(c=>c.tool==='gh'&&!c.args.includes('POST')));
+  assert.equal(JSON.parse(await readFile(path,'utf8')).deadline,1);
+  assert.equal((await invoke(f,{...f.request,operation:'reconcile',runId:'unknown-expired',deadline:1})).status,'blocked');
+ }finally{await f.close();}
+});

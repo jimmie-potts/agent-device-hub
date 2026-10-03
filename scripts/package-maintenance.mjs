@@ -15,17 +15,30 @@ const scratchRoot=join(root,'.local/scratch/maintenance-package');await mkdir(sc
 const scratch=await mkdtemp(join(scratchRoot,'check-'));
 try{
  const stage=join(scratch,'stage');await mkdir(stage);
- const meta=await build({entryPoints:[join(root,'apps/maintenance/bin/maintenance.mjs')],bundle:true,platform:'node',target:'node24',format:'esm',outfile:join(stage,'maintenance.mjs'),metafile:true,legalComments:'none'});
- assert.ok(Object.values(meta.metafile.outputs).every(out=>out.imports.every(i=>i.path.startsWith('node:'))),'all non-built-in dependencies bundled');
+ const contractSchemas={name:'published-contract-schemas',setup(builder){
+  builder.onLoad({filter:/packages\/contracts\/dist\/(?:index|install-receipt)\.js$/},async({path})=>{
+   let contents=await readFile(path,'utf8');
+   const reads=[...contents.matchAll(/JSON\.parse\(readFileSync\(new URL\('(\.\.\/schemas\/[a-z0-9-]+\.schema\.json)', import\.meta\.url\), 'utf8'\)\)/g)];
+   assert.equal(reads.length,1,'published contract schema read must remain explicit');
+   for(const match of reads)contents=contents.replace(match[0],JSON.stringify(JSON.parse(await readFile(resolve(dirname(path),match[1]),'utf8'))));
+   return {contents,loader:'js'};
+  });
+ }};
+ const metas=[];
+ for(const name of ['maintenance','tracker-closeout','hub-supervisor-install']){
+  const meta=await build({entryPoints:[join(root,'apps/maintenance/bin',name+'.mjs')],bundle:true,platform:'node',target:'node24',format:'esm',outfile:join(stage,name+'.mjs'),metafile:true,legalComments:'none',plugins:[contractSchemas],banner:{js:"import {createRequire} from 'node:module'; const require=createRequire(import.meta.url);"}});
+  assert.ok(Object.values(meta.metafile.outputs).every(out=>out.imports.every(i=>i.path.startsWith('node:'))),'all non-built-in dependencies bundled');metas.push(meta);
+ }
+ await cp(join(root,'apps/maintenance/closeout/recommendation.py'),join(stage,'recommendation.py'));
  await cp(join(root,'apps/maintenance/README.md'),join(stage,'README.md'));
- await writeFile(join(stage,'package.json'),JSON.stringify({name:'@jimmie-potts/bunny-maintenance',version:'0.1.0',private:true,type:'module',bin:{'bunny-maintenance':'maintenance.mjs'},engines:{node:'>=24 <25'}})+'\n');
+ await writeFile(join(stage,'package.json'),JSON.stringify({name:'@jimmie-potts/bunny-maintenance',version:'0.1.0',private:true,type:'module',bin:{'bunny-maintenance':'maintenance.mjs','bunny-tracker-closeout':'tracker-closeout.mjs','bunny-hub-install':'hub-supervisor-install.mjs'},engines:{node:'>=24 <25'}})+'\n');
  const files={};for(const name of (await readdir(stage)).sort())files[name]=hash(await readFile(join(stage,name)));
  const lock=JSON.parse(await readFile(join(root,'package-lock.json'),'utf8'));
  const dependencies={};
- for(const path of Object.keys(meta.metafile.inputs)){
+ for(const path of metas.flatMap(meta=>Object.keys(meta.metafile.inputs))){
   const match=path.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//);if(match){const name=match[1],entry=lock.packages['node_modules/'+name];if(entry?.version)dependencies[name]=entry.version;}
  }
- dependencies['@jimmie-potts/bunny-observability']='1.1.0';
+ dependencies['@jimmie-potts/bunny-observability']='1.1.0';dependencies['@jimmie-potts/device-contracts']='1.2.0';
  await writeFile(join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,artifact:'@jimmie-potts/bunny-maintenance',version:'0.1.0',node:'24',dependencyClosure:dependencies,files},null,2)+'\n');
  const npm=args=>run(process.execPath,[process.env.npm_execpath,...args],stage);
  const packs=[];for(const name of ['one','two']){const path=join(scratch,name);await mkdir(path);const result=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',path]));packs.push(join(path,result[0].filename));}
@@ -43,6 +56,16 @@ try{
    const response=spawnSync(process.execPath,[join(installed,'maintenance.mjs'),'--config',f.configPath],{cwd:consumer,input:JSON.stringify(f.request),encoding:'utf8'});
    assert.equal(response.status,0);assert.equal(JSON.parse(response.stdout).selections[0].issue,12);assert.equal((await f.read()).creates,1);
   }finally{await f.close();}
+  const {closeoutFixture}=await import('../apps/maintenance/tests/closeout-fixture.mjs');const tracker=await closeoutFixture({parent:scratch,helper:join(installed,'recommendation.py')});
+  try{
+   const response=spawnSync(process.execPath,[join(installed,'tracker-closeout.mjs'),'--config',tracker.configPath],{cwd:consumer,input:JSON.stringify(tracker.request),encoding:'utf8'});
+   assert.equal(response.status,0,response.stderr);const result=JSON.parse(response.stdout);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal((await tracker.read()).issues[0].state,'closed');
+  }finally{await tracker.close();}
+  const {fixture:installFixture,invoke}=await import('../apps/maintenance/tests/hub-install-fixture.mjs');const installer=await installFixture({parent:scratch});
+  try{
+   const response=await invoke(process.execPath,join(installed,'hub-supervisor-install.mjs'),installer.configPath,installer.request,consumer);
+   assert.equal(response.code,0,response.stderr);assert.equal(JSON.parse(response.stdout).status,'installed',response.stdout);
+  }finally{await installer.close();}
  }
  console.log(JSON.stringify({archive,sha256:hash(bytes),dependencyClosure:dependencies,reproducible:true}));
 }finally{await rm(scratch,{recursive:true,force:true});}

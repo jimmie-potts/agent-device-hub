@@ -41,7 +41,8 @@ export class Intake {
     run={schemaVersion:1,runId:req.runId,authority:req.authority,deadline:req.deadline,phase:'collecting',since,until,fingerprints:[],selections:[],decisions:[]};
     await this.store.save(`run-${req.runId}.json`,run);
    }
-   const adapter=this.adapters??new Adapters(this.config,req.deadline*1000);
+   const operationDeadline=req.operation==='reconcile'?Date.now()+120000:req.deadline*1000;
+   const adapter=this.adapters??new Adapters(this.config,operationDeadline);
    let extract:Extract;
    if(req.operation==='intake'){
     // Reserve evidence and recovery space before reading an owner-selected source.
@@ -64,7 +65,7 @@ export class Intake {
     if(req.operation==='intake'){run!.sourceRevision=await adapter.source();await this.store.save(`run-${req.runId}.json`,run);}
     let uncertain=false;
     for(const fingerprint of run!.fingerprints){
-     requireValue(Date.now()<req.deadline*1000,'expired-deadline');
+     requireValue(Date.now()<operationDeadline,'expired-deadline');
      const finding=extract.findings.find(f=>f.fingerprint===fingerprint)!;
      let state:FindingState|undefined=await this.store.read(`finding-${fingerprint}.json`);
      if(state)requireValue(state.schemaVersion===1&&state.fingerprint===fingerprint&&state.marker===marker(fingerprint),'invalid-finding-state');
