@@ -28,7 +28,7 @@
 
 ## 5. Delivery gates
 
-- [ ] 5.1 Run all applicable Hub, packaged-consumer, shared contract and workflow checks from the worktree; preserve command receipts and isolate unrelated failures.
+- [x] 5.1 Run all applicable Hub, packaged-consumer, shared contract and workflow checks from the worktree; preserve command receipts and isolate unrelated failures.
 
 Mandatory delivery sequence after implementation acceptance (not claims of completion):
 
