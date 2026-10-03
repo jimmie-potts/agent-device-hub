@@ -224,7 +224,7 @@ identities use a bounded 256-entry FIFO; completion notices provide additional
 identity retention. Saved ambiguity can recover on a fresh eligible start using
 the unchanged version 1.0 store. The diagnostic journal is neither a raw-event
 archive nor a complete history. See the [state policy and limits](../packages/agent-state/README.md#state-and-uncertainty)
-and [installed update procedure](../apps/hub/SETUP.md#update-the-current-status-package).
+and [installed update procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
 
 The MCP module exports an HTTP handler and configured service/tool registration.
 The owning application enables and mounts it; the module never opens a listener

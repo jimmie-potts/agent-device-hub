@@ -486,8 +486,11 @@ including the API 1.1 moment cases from Hub #292. Contracts 1.2.0 additionally
 runs the shared install receipt corpus through both validators, including
 identity equality and timestamp consistency; the existing test globs and
 contracts CI matrix include it. See [the install contract](install-contract.md).
-Hub packaging retains the already published controller 1.1.0 archive and rewrites
-its packaged dependency to that verified version while workspace checks use 1.2.0.
+Hub packaging pins the published controller contracts 1.2.0 archive and its
+manifest hashes, including the install-receipt validator. Its manifest also
+records every bundled dependency file shipped by npm; package checks verify that
+complete inventory after offline extraction. The MCP archive retains its own
+published dependency closure.
 This contract delivery does not publish or adopt a new Hub archive.
 The package check installs a newly built archive into a temporary consumer,
 checks every manifest hash, imports the named package, and runs both full corpora.
@@ -720,6 +723,14 @@ current-link switch. `test:hub:package` also runs
 `scripts/hub-build-identity.test.mjs` against disposable Git repositories to
 verify clean, dirty, missing and equal-version/different-commit provenance.
 The extracted manifest must carry the package command's captured source identity.
+
+Hub upgrade command checks use `apps/hub/tests/install-*.test.mjs` through
+`npm run test:hub` and `npm run test:hub:package`. The existing contracts/state
+CI matrix runs both suites after build/typecheck. Use the private test TMPDIR
+above. Fixtures cover approval drift, package/dependency inventories, compatible
+latest-state recovery, both shared-layout adoption orders, interruption,
+receipt finalization and owned retention. They use synthetic state and fake
+service control; installed upgrade acceptance requires its own owner checkpoint.
 
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of

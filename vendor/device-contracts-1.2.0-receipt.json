@@ -1,0 +1,60 @@
+{
+  "artifact": "@jimmie-potts/device-contracts",
+  "version": "1.2.0",
+  "apiVersions": [
+    "1.0",
+    "1.1"
+  ],
+  "installReceiptVersion": "install-receipt/1.0",
+  "sourceRevision": "96710bba52054c381035a6afabe8348d2b9bbd93",
+  "reviewedHead": "22608fb5b9022bbef04a06d4ebd11b3b66615313",
+  "sha256": "f05b326b88833086abf1af596569448e409645486e7bef482f74e9a6998ced7e",
+  "manifestSha256": "d4358ab7257537fdca5787770b0c2591b4e49639ca7fa553e4187bcbb89b6faa",
+  "filename": "jimmie-potts-device-contracts-1.2.0.tgz",
+  "pr": "https://github.com/jimmie-potts/agent-device-hub/pull/711",
+  "issue": "https://github.com/jimmie-potts/agent-device-hub/issues/465",
+  "mainCiChecks": [
+    {
+      "name": "Checks / Workflow checks on ubuntu-latest",
+      "checkRunId": 110950989303,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=xznjg6n9kk&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.12 on ubuntu-latest",
+      "checkRunId": 110950973922,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=3m0hv50lbl&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.14 on ubuntu-latest",
+      "checkRunId": 110950985409,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=hf58zkfztq&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Checks / MCP on ubuntu-latest",
+      "checkRunId": 110950970006,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=10q6prl1zk&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Checks / Dashboard browser and contracts on ubuntu-latest",
+      "checkRunId": 110950978018,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=zmf1g8fxhk&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Checks / App verification on ubuntu-latest",
+      "checkRunId": 110950981288,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/k0lcml7n0g?job=7dm1bgsj3f&repo=jimmie-potts%2Fagent-device-hub"
+    },
+    {
+      "name": "Work guide / Work guide build and browser checks",
+      "checkRunId": 110950965792,
+      "conclusion": "success",
+      "detailsUrl": "https://depot.dev/orgs/0kwdkp3sc9/workflows/mpg8z04htb?job=bhh0d388dg&repo=jimmie-potts%2Fagent-device-hub"
+    }
+  ]
+}

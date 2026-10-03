@@ -419,6 +419,9 @@ these procedural gates.
 
 ## Installation and evidence
 
+For installed Hub upgrade and rollback work, follow the owning
+[Hub upgrade procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
+
 Source delivery does not install personal hooks, start a local service, launch
 agent sessions, migrate live databases or operate devices. Each requires the
 applicable explicit authorization and identified owner. Physical work additionally
