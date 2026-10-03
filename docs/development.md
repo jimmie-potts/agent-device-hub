@@ -847,6 +847,17 @@ collection and personal-data validation require their own authorization.
 
 ## Dashboard checks
 
+Hub #471 adds `apps/dashboard/tests/wispr.test.mjs` to the unit glob and
+`apps/dashboard/tests/wispr.mjs` to the existing browser matrix and Dashboard CI.
+After `npm run build`, run `node apps/dashboard/tests/wispr.mjs` for the focused
+real synthetic SQLite collector → aggregate files → authenticated Hub → browser
+check. Use the outside-checkout `TMPDIR` documented under Standalone hub checks;
+this fixture uses the real private Hub store. `DASHBOARD_RECEIPTS` retains synthetic
+screenshots. The check covers hand-calculated totals, stages, separate edit pairs,
+numeric downloads, independent home/page filters, permission retirement and
+responsive accessibility. Unit tests cover preset coverage, missing values and
+in-flight snapshot/opt-out guards. No personal database or installed service is used.
+
 Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
 `npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`
 and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
