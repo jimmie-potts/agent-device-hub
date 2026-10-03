@@ -14,4 +14,13 @@ try{
  await run({command:'export',format:'json',output:join(directory,'numeric.json')});await run({command:'export',format:'csv',output:join(directory,'numeric.csv')});
  for(const file of ['numeric.json','numeric.csv'])assert.equal(readFileSync(join(directory,file),'utf8').includes('PRIVATE_CANARY'),false);
  const status=await run({command:'status'});assert.equal(status.revision,1);console.log('Offline synthetic collection, numeric JSON/CSV export, status and independent contract import passed.');
+ const writer=new DatabaseSync(sourcePath);writer.exec('ALTER TABLE History ADD COLUMN asrText TEXT; ALTER TABLE History ADD COLUMN formattedText TEXT; ALTER TABLE History ADD COLUMN editedText TEXT; ALTER TABLE History ADD COLUMN detectedLanguage TEXT; ALTER TABLE History ADD COLUMN editedTextStatus TEXT; ALTER TABLE History ADD COLUMN editObservationEnd TEXT; DELETE FROM History');
+ const insert=writer.prepare('INSERT INTO History(id,timestamp,status,numWords,asrText,formattedText,editedText,detectedLanguage,editedTextStatus,editObservationEnd) VALUES(?,?,?,?,?,?,?,?,?,?)');
+ for(const id of ['a','b','c'])insert.run(id,'2026-10-01T12:00:00Z','formatted',2,'hello there','hello world','hello friend','en','complete','2026-10-01T12:01:00Z');writer.close();
+ config.language.enabled=true;await run({command:'collect'});
+ const language=JSON.parse(readFileSync(join(stateDirectory,'aggregate.json')));assert.equal(validateSnapshot(language).ok,true);assert.equal(language.language.availability,'available');assert.ok(language.language.tables.some(t=>t.words.some(w=>w.text==='friend')));
+ await run({command:'backup',name:'text'});config.language.enabled=false;await run({command:'status'});
+ const disabled=JSON.parse(readFileSync(join(stateDirectory,'aggregate.json')));assert.equal(disabled.language.availability,'disabled');assert.notEqual(disabled.generation,language.generation);assert.equal(disabled.numeric.totals.words,6);
+ assert.ok(!readFileSync(join(stateDirectory,'aggregate.json'),'utf8').includes('friend'));
+ console.log('Offline opted-in language publication and text-disabled recovery passed.');
 }finally{rmSync(directory,{recursive:true,force:true});}

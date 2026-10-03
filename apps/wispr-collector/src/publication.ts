@@ -38,6 +38,13 @@ function status(snapshot: Snapshot, health: CollectorStatus['health'], lastAttem
     health,languageEnabled:snapshot.language.availability==='available'};
 }
 
+/** Fence cached text before cleanup or aggregate replacement can fail. */
+export function publishTextRevocation(path:string,snapshot:Snapshot,generation:string,revision:number,at:string):void {
+  const value={...status(snapshot,snapshot.health,at),generation,revision,languageEnabled:false};
+  if(!validateStatus(value).ok)throw new Error('invalid-status');
+  atomicJson(path,value,4096);
+}
+
 export function publishSnapshot(paths: PublicationPaths, input: unknown): void {
   const result=validateSnapshot(input);
   if(!result.ok)throw new Error('invalid-snapshot');
@@ -46,7 +53,17 @@ export function publishSnapshot(paths: PublicationPaths, input: unknown): void {
 }
 
 export function recordFailure(paths: PublicationPaths, snapshot: Snapshot, code: FailureCode, attemptedAt: string): void {
-  atomicJson(paths.status,status(snapshot,code,attemptedAt),4096);
+  let value=status(snapshot,code,attemptedAt);
+  if(existsSync(paths.status)){
+    if(statSync(paths.status).size>4096)throw new Error('invalid-status');
+    const parsed=validateStatus(JSON.parse(readFileSync(paths.status,'utf8')));
+    if(!parsed.ok||parsed.value.namespace!==snapshot.namespace)throw new Error('invalid-status');
+    const prior=parsed.value;
+    // A denial may have committed before the store transaction failed or was killed.
+    // Failure diagnostics cannot roll that authority back or re-enable its text.
+    if(prior.revision>snapshot.revision||(prior.revision===snapshot.revision&&(!prior.languageEnabled||prior.generation!==snapshot.generation)))value={...prior,health:code,lastAttemptAt:attemptedAt};
+  }
+  atomicJson(paths.status,value,4096);
 }
 
 export function readStatus(path:string,snapshot:Snapshot):CollectorStatus|null {

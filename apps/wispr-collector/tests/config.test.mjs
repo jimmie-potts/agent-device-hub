@@ -7,8 +7,13 @@ const good=()=>({schemaVersion:'1.0',namespace:'11111111-1111-4111-8111-11111111
 test('explicit owner-selected config has a fixed aggregate boundary',()=>{
   const c=parseConfig(good());assert.equal(c.collectionEnabled,true);assert.equal(c.language.enabled,false);
 });
+test('language opt-in accepts bounded owner exclusions without enabling collection implicitly',()=>{
+ const value=good();value.collectionEnabled=false;value.language={enabled:true,excludedApps:['slack'],excludedTerms:['Private phrase']};
+ const parsed=parseConfig(value);assert.equal(parsed.language.enabled,true);assert.equal(parsed.collectionEnabled,false);assert.deepEqual(parsed.language.excludedApps,['slack']);assert.deepEqual(parsed.language.excludedTerms,['Private phrase']);
+ for(const language of [{enabled:'yes'},{enabled:true,unknown:true},{enabled:true,excludedApps:['unknown']},{enabled:true,excludedApps:['slack','slack']},{enabled:true,excludedTerms:['']},{enabled:true,excludedTerms:Array(101).fill('term')}])assert.throws(()=>parseConfig({...value,language}),/invalid-config/);
+});
 test('config rejects unknown controls, UNC paths, source aliases and content capture',()=>{
-  for(const change of [v=>v.token='SYNTHETIC_SECRET',v=>v.sourcePath='\\\\server\\share\\flow.sqlite',v=>v.sourcePath=v.stateDirectory+'\\analytics.sqlite',v=>v.stateDirectory='C:\\Users\\Synthetic\\OneDrive\\Private',v=>v.sourcePath='D:\\OtherOwner\\flow.sqlite',v=>v.language.enabled=true,v=>v.timezone='bad-zone',v=>v.sourcePath='C:\\Users\\Synthetic\\a.sqlite:stream']){
+  for(const change of [v=>v.token='SYNTHETIC_SECRET',v=>v.sourcePath='\\\\server\\share\\flow.sqlite',v=>v.sourcePath=v.stateDirectory+'\\analytics.sqlite',v=>v.stateDirectory='C:\\Users\\Synthetic\\OneDrive\\Private',v=>v.sourcePath='D:\\OtherOwner\\flow.sqlite',v=>v.language.captureContext=true,v=>v.timezone='bad-zone',v=>v.sourcePath='C:\\Users\\Synthetic\\a.sqlite:stream']){
     const value=good();change(value);assert.throws(()=>parseConfig(value),/invalid-config|unsafe-path|language-extension-unavailable/);
   }
 });
