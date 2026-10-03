@@ -8,6 +8,29 @@ import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {captureState,statePreserved} from '../dist/install/state.js';
 const program=fileURLToPath(new URL('..',import.meta.url));
+for(const scenario of ['empty-fence','delayed-observation'])test('real owner evolution preserves '+scenario,async()=>{
+ const {createAgentState}=await import('@jimmie-potts/agent-state');
+ const {HubStorage}=await import('../dist/storage.js');
+ const root=await mkdtemp(join(tmpdir(),'hi-state-owner-'));let owner,lease;
+ const identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',sessionId:'session'};
+ const options={storage:{acquire:async(id,signal)=>lease=await new HubStorage(root).acquire(id,signal)},ownerId:'owner',consumers:[],clock:()=>10000};
+ const event=(kind,sequence,observedAtMs)=>({apiVersion:'1.0',identity,turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind},observedAtMs,ordering:{status:'known',epoch:'epoch',sequence}});
+ try{
+  owner=await createAgentState(options);
+  if(scenario==='delayed-observation')lease.setFence(false);
+  assert.equal((await owner.ingest(event('session.started',1,10000))).ok,true);
+  await owner.shutdown();owner=undefined;const before=await captureState(root);
+  owner=await createAgentState(options);
+  const result=scenario==='empty-fence'?await owner.setLabel(identity,'Latest label'):await owner.ingest(event('turn.ended',2,9000));
+  assert.equal(result.ok,true);assert.equal(owner.snapshot().collector,'running');
+  await owner.shutdown();owner=undefined;const after=await captureState(root);
+  assert.equal(after.state.revision,before.state.revision+1);
+  if(scenario==='empty-fence')assert.deepEqual(after.tables.fence,[]);
+  else assert.equal(after.state.sessions[0].observedAtMs,9000);
+  assert.equal(statePreserved(before,after),true);assert.equal(statePreserved(after,before),false);
+  const lost=structuredClone(after);lost.state.sessions=[];assert.equal(statePreserved(after,lost),false);
+ }finally{await owner?.shutdown();await rm(root,{recursive:true,force:true});}
+});
 test('read-only durable evidence covers all tables and rejects older records or missing dedup history',async()=>{
  const root=await mkdtemp(join(tmpdir(),'hi-state-'));
  try{

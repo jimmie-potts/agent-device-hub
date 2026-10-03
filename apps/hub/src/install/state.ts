@@ -70,7 +70,8 @@ export function statePreserved(before:unknown,after:unknown):boolean{
     if(!retired||retired.atMs<a.state.lastCommitAtMs||!bounded(old.seen.map(row=>row.key),retired.keys,LIMITS.seen)||!bounded(old.retiredTurns,retired.turns,LIMITS.retiredTurns))return false;
     continue;
    }
-   if(next.lastEvidenceAtMs<old.lastEvidenceAtMs||next.observedAtMs<old.observedAtMs||(next.generation??0)<(old.generation??0)||(next.metadataObservedAtMs??0)<(old.metadataObservedAtMs??0))return false;
+   // Provider observation timestamps may move backward on accepted ordered events.
+   if(next.lastEvidenceAtMs<old.lastEvidenceAtMs||(next.generation??0)<(old.generation??0)||(next.metadataObservedAtMs??0)<(old.metadataObservedAtMs??0))return false;
    // Labels, metadata, activity and resolved attention can change through owner APIs.
    // Notices and acknowledgments cannot disappear from an extant session.
    for(const notice of old.notices){const found=next.notices.find(item=>item.id===notice.id);if(!found||notice.kind!==found.kind||!same(notice.turn,found.turn)||!includes(notice.acknowledgedBy,found.acknowledgedBy))return false;}
@@ -95,7 +96,10 @@ export function statePreserved(before:unknown,after:unknown):boolean{
   if(b.tables.automation_settings.length!==1||b.tables.automation_settings[0].id!==1)return false;
   parseSettings(JSON.parse(String(b.tables.automation_settings[0].payload)));
   parseInterruptSet({kinds:b.tables.interrupt_set.map(row=>row.kind)});
-  if(b.tables.fence.length!==1||b.tables.fence[0].id!==1||![0,1].includes(Number(b.tables.fence[0].active)))return false;
+  // An untouched store represents an open fence with no row. Once written, the
+  // adapter updates that row and never deletes it.
+  if(b.tables.fence.length===0){if(a.tables.fence.length!==0)return false;}
+  else if(b.tables.fence.length!==1||b.tables.fence[0].id!==1||![0,1].includes(Number(b.tables.fence[0].active)))return false;
   for(const row of b.tables.rules){
    parseRuleInput({name:row.name,kind:row.kind,enabled:row.enabled===1,trigger:JSON.parse(String(row.trigger)),action:JSON.parse(String(row.action))},null,true);
    const old=a.tables.rules.find(item=>item.id===row.id);
