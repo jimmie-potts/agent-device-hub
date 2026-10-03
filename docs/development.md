@@ -731,6 +731,9 @@ above. Fixtures cover approval drift, package/dependency inventories, compatible
 latest-state recovery, both shared-layout adoption orders, interruption,
 receipt finalization and owned retention. They use synthetic state and fake
 service control; installed upgrade acceptance requires its own owner checkpoint.
+`install-service-contract.test.mjs` covers systemd omitting an empty
+`EnvironmentFiles` property, binds a configured list and still rejects a missing
+freeze capability. Its fake `systemctl` runs in an isolated child process.
 
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
