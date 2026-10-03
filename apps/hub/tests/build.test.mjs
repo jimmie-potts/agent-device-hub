@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,mkdir,writeFile,chmod,cp,symlink,rename,stat} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,writeFile,chmod,cp,symlink,rename,stat,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
@@ -36,6 +36,22 @@ test('metadata failures remain unknown and never expose manifest values or paths
   await chmod(file,0);
   if(process.getuid?.()!==0)assert.deepEqual(readBuild(pathToFileURL(file)),empty);
  }finally{await chmod(file,0o600).catch(()=>{});await rm(directory,{recursive:true,force:true});}
+});
+
+test('complete dependency manifests retain build identity within the installer size bound',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-build-inventory-')),file=join(directory,'manifest.json');
+ const identity={sourceRevision:'d'.repeat(40),version:'0.5.0'};
+ const manifest={artifact:'@jimmie-potts/hub',...identity,files:{},dependencyFiles:Object.fromEntries(Array.from({length:4000},(_,i)=>[`node_modules/example/module-${i}.js`,'a'.repeat(64)]))};
+ const bytes=JSON.stringify(manifest);
+ assert(Buffer.byteLength(bytes)>256*1024,'represent the complete packaged dependency inventory');
+ try{
+  await writeFile(file,bytes);
+  assert.deepEqual(readBuild(pathToFileURL(file)),identity);
+  await writeFile(file,bytes.padEnd(8*1024*1024));
+  assert.deepEqual(readBuild(pathToFileURL(file)),identity,'accept the supported manifest boundary');
+  await writeFile(file,bytes.padEnd(8*1024*1024+1));
+  assert.deepEqual(readBuild(pathToFileURL(file)),{sourceRevision:'unknown',version:'unknown'},'oversized metadata remains unknown');
+ }finally{await rm(directory,{recursive:true,force:true});}
 });
 
 test('running process keeps its identity across manifest replacement and current-link switch; restart adopts target',async()=>{
@@ -94,6 +110,10 @@ test('health and context share running identity without weakening read scope or 
   const value=await health.json();assert.ok(value.build,'health includes running build');
   assert.deepEqual(Object.keys(value.build).sort(),['sourceRevision','version']);
   assert.match(value.build.sourceRevision,/^(?:unknown|[0-9a-f]{40})$/);
+  // The isolated package suite must observe the actual shipped manifest through
+  // a running Hub, not accept unknown identity for an otherwise verified archive.
+  const manifest=await readFile(new URL('../manifest.json',import.meta.url),'utf8').then(JSON.parse,error=>{if(error.code==='ENOENT')return null;throw error;});
+  assert.deepEqual(value.build,manifest?{sourceRevision:manifest.sourceRevision,version:manifest.version}:{sourceRevision:'unknown',version:'unknown'});
   assert.deepEqual((await (await get('/api/dashboard/v1/context')).json()).build,value.build);
   for(const path of ['/api/hub/v1/health','/api/dashboard/v1/context']){
    assert.equal((await fetch(hub.url+path)).status,401);

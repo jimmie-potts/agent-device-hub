@@ -12,7 +12,8 @@ export function readBuild(manifest = new URL('../manifest.json',import.meta.url)
   // Reject linked metadata and avoid blocking on a special file before its type check.
   descriptor=openSync(manifest,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
   if(!fstatSync(descriptor).isFile())return unknown();
-  const bytes=Buffer.alloc(256*1024+1),length=readSync(descriptor,bytes,0,bytes.length,0);
+  // Match the installer limit: packaged dependency inventories exceed 256 KiB.
+  const bytes=Buffer.alloc(8*1024*1024+1),length=readSync(descriptor,bytes,0,bytes.length,0);
   if(length===bytes.length)return unknown();
   const value:unknown=JSON.parse(bytes.subarray(0,length).toString('utf8'));
   if(!value||typeof value!=='object'||Array.isArray(value))return unknown();
