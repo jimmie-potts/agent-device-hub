@@ -68,10 +68,17 @@ For legacy Nanoleaf rollback, call `rollbackNanoleaf(command)`. It selects and v
 
 This command implements the [installed runtime contract at contracts 1.2.0](https://github.com/jimmie-potts/agent-device-hub/blob/96710bba52054c381035a6afabe8348d2b9bbd93/docs/install-contract.md).
 Before planning, running or checking an installed Hub upgrade or rollback, read
-this section and run `plan`. Source delivery and CI do not authorize installation.
-The installation owner approves the saved plan's exact target, included changes,
-baseline, configuration, outage, first adoption and recovery route before effects.
-Changed approval inputs require a new plan. The command has no force option.
+this section and run `plan`. The owner’s standing authority in [AGENTS.md](../../AGENTS.md#runtime-and-migration-boundaries)
+covers routine upgrades to the established installation during authorized delivery.
+The coordinator reviews the saved plan’s exact target, included changes, baseline,
+configuration, outage and recovery against that scope, without requesting approval
+again. First adoption, new targets or other effects outside scope need their own
+authority. Changed inputs require a new plan and scope assessment; the exact digest
+check remains mandatory. The command has no force option.
+
+The pinned contract defines installer mechanics. The current local
+[authority policy](../../docs/install-contract.md#8-authority) recognizes standing
+authorization without changing its schemas, digest binding or recovery checks.
 
 ### Prepare and review the plan
 
@@ -106,12 +113,12 @@ its `digest` to the resolved full target SHA, source comparison, installed progr
 inventory, configuration files, shared paths, service contract, backup scope and
 recovery procedure. Process observations and remote-main freshness remain
 separate from those approval inputs. Normal state revisions can advance while the
-owner reviews the plan.
+coordinator reviews the plan.
 
 Review `bound.source.comparison`, the added and removed commits and changed paths, the previous
 identity, configuration/protected-path hashes, migration flag and outage/recovery
 fields. An unavailable baseline comparison is **unknown**, not an empty change
-bundle. Present that gap at the checkpoint and establish the complete target
+bundle. Record that gap at the checkpoint and establish the complete target
 bundle from trusted source and installation evidence. Do not infer an installed
 SHA from a version number or an old issue comment.
 
@@ -122,7 +129,7 @@ is available, `--baseline-receipt /absolute/private/prior-identity.json` accepts
 its release identity only after the existing manifest and complete dependency
 inventory verify. This option never supplies provenance for a new target.
 
-### Approved upgrade
+### Authorized upgrade
 
 At the checkpoint, name the installation owner, full target SHA and complete
 included changes, installed baseline, configuration, expected monitoring outage,
@@ -131,8 +138,10 @@ when the Hub restarts and obtain any device authority the selected sequence need
 The upgrader itself sends no device commands and changes no credentials, hooks,
 `host.json`, unit or shared Node executable.
 
-Only after approval, use the full SHA from `bound.source.target` and the saved
-plan's exact `digest`:
+After the plan is reviewed within applicable authority, use the full SHA from
+`bound.source.target` and the saved plan’s exact `digest`. `--approve` binds the
+operation to that plan; it does not require a new human prompt under standing
+authority:
 
 ```bash
 fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs upgrade <full-sha> \
@@ -187,9 +196,9 @@ health must be healthy and state-preservation evidence must be present. Read-onl
 remote main; an inactive service has no running-build claim. Source tests and
 fake service receipts remain separate from this installed acceptance.
 
-### Approved rollback and re-upgrade
+### Authorized rollback and re-upgrade
 
-Rollback uses the same plan and approval gate. The default target is the previous
+Rollback uses the same exact-plan and authority check. The default target is the previous
 recoverable identity recorded by the latest successful operation for the current
 selection. It is not chosen by directory age and is never fetched implicitly.
 For an explicit full SHA, put that SHA after `plan` and after `rollback` below.
@@ -198,7 +207,7 @@ For an explicit full SHA, put that SHA after `plan` and after `rollback` below.
 fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs plan --rollback \
   --owner <installation-owner> --token-file /absolute/private/read-token \
   > /absolute/private/hub-rollback-plan.json
-# Review and approve this exact rollback plan before the next command.
+# Review this exact rollback plan within applicable authority before executing.
 fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs rollback \
   --plan /absolute/private/hub-rollback-plan.json --approve <rollback-plan-digest>
 ```
@@ -207,8 +216,8 @@ Recovery always reopens the **latest** durable state. It never restores an older
 database over newer notices, acknowledgments, labels, rules, settings or consumed
 events. Legacy health without build metadata uses a newly started process,
 executable/entrypoint resolution and served-asset evidence. After rollback,
-prepare and approve a new upgrade plan for the exact desired SHA; do not reuse a
-plan bound to the baseline that preceded rollback.
+prepare and review a new upgrade plan within applicable authority for the desired
+SHA; do not reuse a plan bound to the baseline that preceded rollback.
 
 For initial installed acceptance, retain the migration/upgrade receipt, a real
 rollback receipt and a re-upgrade receipt, with correct running identity,

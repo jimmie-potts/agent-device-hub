@@ -11,7 +11,9 @@ Planning/review stays read-only unless the user explicitly authorizes document o
 tracker writes. Those writes authorize their named artifacts, not future runtime
 implementation. A normal implementation or maintenance request includes issue
 updates, isolated work, validation, PR publication, independent review, eligible
-merge, main-CI readback and [cleanup after delivery](#cleanup-after-delivery).
+merge, main-CI readback, applicable installation and verification under the
+[installation policy](#installation-and-evidence), and
+[cleanup after delivery](#cleanup-after-delivery).
 Narrower user scope prevails.
 
 Reuse existing issues. Record dependencies as full cross-repository links and
@@ -39,6 +41,18 @@ Use the shared assessment in the installed deliver-work package's
 Reading it does not invoke either skill. If it is unavailable, report that and
 apply this section. Codex and Claude follow the same policy. A read-only request
 reports the assessment instead of editing the issue.
+
+At every pickup, read the current issue and dependencies, current main, the
+accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
+relevant contracts/ADRs and reusable components, and related work added since
+planning. Expand the original source/search boundary when current evidence
+warrants it. Record the current sources and whether the issue remains aligned,
+needs an implementation adjustment, is superseded, or needs an owner decision.
+Reuse the existing assessment; no new dossier or benchmark is required. Routine
+implementation adjustments within accepted scope may proceed. Do not silently
+remove an accepted capability or change scope, acceptance, compatibility, authority
+or accepted risk. In unattended work, defer that decision-dependent branch and
+continue independent authorized work. A read-only assessment makes no changes.
 
 Draft stories with the recognized detailed headings of the
 [Work item template](../.github/ISSUE_TEMPLATE/feature.md), using the same headings
@@ -75,7 +89,7 @@ facilities where possible; this is not a general backup-tooling requirement.
 For each meaningful cut, name the capability or assurance lost and reconcile
 dependent issues and specifications within the task's authority. Never silently
 remove requested behavior; ask the user when a cut would change it. Scope
-defaults keep review, CI, UI approval, OpenSpec and the source, installation and
+defaults keep review, CI, UI verification, OpenSpec and the source, installation and
 physical boundaries, with their existing exceptions, and add no new gate.
 
 For a consequential change to credentials, persistent state, concurrency or
@@ -262,7 +276,7 @@ failure remains a reported tracker gap; it does not erase verified source delive
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
    prevent merge except for the verified guide-only filtering described below.
-   Apply the UI approval scope below.
+   Apply the UI verification policy below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "<text>".
@@ -363,29 +377,21 @@ verification.
 
 ### UI approval scope
 
-UI changes to the cross-project work guide maintained under `docs/work-guide/`
-do not require human approval. This includes its layout, styling, navigation,
-interactions, generated HTML and companion architecture viewers. Publishing
-verified copies of these guide artifacts adds no human UI approval gate;
-publication still requires the authority and evidence in the
-[guide procedure](work-guide/README.md#publish-the-public-edition).
+No project UI requires human approval, including new or materially changed Hub,
+dashboard, device-facing, Guide and Ask interfaces. Record the affected UI and
+applicable automated, browser, visual and accessibility evidence in the PR.
+Independent Standards and Specification reviews, applicable CI and guarded merge
+remain required. A missing required check or blocking finding still prevents merge.
 
-All other UI changes require explicit human approval of the current candidate,
-renewed after further changes to that UI. A PR containing both guide and other
-UI changes still needs approval for the other UI. Guide changes alone do not
-invalidate approval of otherwise unchanged UI.
+This policy supersedes older human UI approval requirements in issues, plans and
+dated design snapshots. Preserve their design outcomes, validation, dependencies
+and separately scoped acceptance. Reconcile active tracker wording during
+authorized updates; do not rewrite historical approval evidence. Publication and
+physical device operations retain their own authority requirements.
 
-Record the affected UI and either its guide exemption or current-candidate
-approval in the PR. For guide work, this policy supersedes older human UI
-approval wording in issues and plans. Preserve their design deliverables,
-validation and dependencies; reconcile the approval wording during authorized
-tracker updates.
-
-Independent Standards and Specification reviews, local guide/browser checks,
-applicable CI and guarded merge remain required. Assess the guide-only CI
-exception separately against every changed path. Guide UI changes accompanied
-by edits outside `docs/work-guide/`, such as SDLC documentation, require normal
-CI even though the guide UI needs no human approval.
+Assess the guide-only CI exception separately against every changed path.
+Changes outside `docs/work-guide/`, including this policy, require normal CI.
+The heading retains its existing anchor for links from older records.
 
 ### Guide-only CI exception
 
@@ -406,7 +412,7 @@ may accept intentionally absent runs only after recording all of the following:
   alone, failed API reads or a cancelled run do not establish intentional filtering.
 
 Independent Standards and Specification reviews and guarded squash merge still
-apply. Follow the separate [UI approval scope](#ui-approval-scope). Required checks
+apply. Follow the separate [UI verification policy](#ui-approval-scope). Required checks
 that remain pending block merge; never bypass protections or emit dummy success
 checks. Record unavailable protection reads and inspect the PR's authoritative
 merge/check state.
@@ -429,10 +435,25 @@ these procedural gates.
 For installed Hub upgrade and rollback work, follow the owning
 [Hub upgrade procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
 
-Source delivery does not install personal hooks, start a local service, launch
-agent sessions, migrate live databases or operate devices. Each requires the
-applicable explicit authorization and identified owner. Physical work additionally
-needs an explicit IP and permission for the test sequence/content replacement.
+Authorized delivery finishes merged, installed on its established target and
+verified. The owner’s standing installation authority covers that routine upgrade
+and its documented recovery; do not ask for installation approval again. Review
+the exact plan and complete included change bundle against that authority before
+execution, retaining ownership, compatibility, digest, health and receipt checks.
+A new target or effects outside scope need their own authority.
+
+An explicitly source-only task, or an accepted issue that batches installation
+with a reason and linked owner, may finish its source portion while overall
+delivery remains installation pending. For changes confined to instructions,
+documentation or development tooling, record the applicable installed
+instruction/tool readback or why no runtime installation applies; do not restart
+a service merely for prose.
+Required acceptance that is unavailable remains pending, never waived by merge.
+
+Read-only and planning work do not authorize installation. Personal hook/settings
+changes, agent sessions, unqualified migration, new hosts and device commands
+remain outside routine installation scope. Physical work needs an explicit IP
+and permission for the test sequence/content replacement.
 
 Keep source/CI, installation, real-client, transport and visible-device evidence
 separate. A fake or successful HTTP command does not establish optical results.

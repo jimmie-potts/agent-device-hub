@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
 import { main } from '../scripts/delivery-preflight/cli.mjs';
-import { NON_UI_PATHS, isUiPath, runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
+import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
@@ -679,7 +679,8 @@ test('pagination: every list and review thread page is read, and the decisive it
 
   const files = paged(cleanWorld());
   files.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  assertUnresolved(await preflight(files), 'ui-approval', /apps\/dashboard\/src\/main\.tsx/);
+  assert.equal((await preflight(files)).result, 'satisfied');
+  assert.ok(files.requests.some(request => /files\?.*page=2/.test(request.url)));
 
   const runs = paged(cleanWorld());
   runs.checkRuns[HEAD].at(-1).conclusion = 'failure';
@@ -706,112 +707,53 @@ test('pagination: a failed later page, an off-host next link and too many pages 
   assert.ok(tooMany.readFailures.some(failure => new RegExp(`more than ${MAX_PAGES} pages`).test(failure.detail)));
 });
 
-test('an incomplete changed-file list keeps path-filtered jobs expected and the UI scope unresolved', async () => {
+test('an incomplete changed-file list keeps path-filtered jobs expected', async () => {
   const world = guideOnlyWorld();
   world.pr.changed_files = world.files.length + 1;
   const report = await preflight(world);
-  assertUnresolved(report, 'ui-approval', /changed-file list is incomplete/);
+  assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
   assertUnresolved(report, 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
   assert.match(gate(report, 'ci-pr').reasons.join(), /path filters are not applied and every job stays expected/);
 });
 
-// ---- UI approval ----
+// ---- UI verification without human approval ----
 
-test('UI approval: a non-guide UI change without approval evidence is unresolved', async () => {
-  const world = cleanWorld();
-  world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  assertUnresolved(await preflight(world), 'ui-approval', /apps\/dashboard\/src\/main\.tsx.*needs explicit human approval/);
-});
-
-test('UI approval: a record naming the current candidate satisfies it; a stale one does not', async () => {
-  const world = cleanWorld();
-  world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const approval = comment(`UI approved by jimmie-potts: ${HEAD}\n\nRecorded from the owner's review of the dashboard frames.`);
-  world.comments.push(approval);
-  const current = await preflight(world, { uiApproval: approval.html_url });
-  assert.equal(gate(current, 'ui-approval').status, 'satisfied', JSON.stringify(gate(current, 'ui-approval')));
-  assert.equal(gate(current, 'ui-approval').evidence.approvedRevision, HEAD);
-
-  const older = comment(`UI approved: ${OLD_HEAD}  `);
-  world.comments.push(older);
-  world.compares[`${OLD_HEAD}...${HEAD}`] = { status: 'ahead', merge_base_commit: { sha: OLD_HEAD }, files: [{ filename: 'apps/dashboard/src/style.css', status: 'modified' }] };
-  assertUnresolved(await preflight(world, { uiApproval: older.html_url }), 'ui-approval', /UI changed after the approved revision: apps\/dashboard\/src\/style\.css/);
-
-  world.compares[`${OLD_HEAD}...${HEAD}`].files = [{ filename: 'apps/dashboard/tests/browser.mjs', status: 'modified' }];
-  const unchanged = await preflight(world, { uiApproval: older.html_url });
-  assert.equal(gate(unchanged, 'ui-approval').status, 'satisfied');
-});
-
-test('UI approval: guide UI is exempt, and --ui declares UI the path list does not know', async () => {
-  const world = cleanWorld();
-  world.files.push({ filename: 'docs/work-guide/work/guide_overview.css', status: 'modified' });
-  const guide = await preflight(world);
-  assert.equal(gate(guide, 'ui-approval').status, 'not-applicable');
-  assert.match(gate(guide, 'ui-approval').reasons.join(), /guide UI is exempt/);
-  assertUnresolved(await preflight(cleanWorld(), { ui: true }), 'ui-approval', /declared UI change needs explicit human approval/);
-});
-
-test('UI approval: a record that names no candidate revision is not approval', async () => {
-  const world = cleanWorld();
-  world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const vague = comment('The owner likes the dashboard.');
-  world.comments.push(vague);
-  const noForm = /does not start with "UI approved: <full sha>" or "UI approved by <login>: <full sha>" for a revision of this PR/;
-  assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', noForm);
-  for (const body of [
-    `Pushed round 2 fixes at ${HEAD}.`, `The owner has not approved ${HEAD} yet.`, `Approval pending for ${HEAD}.`, `Approved.\nPushed ${HEAD}.`,
-    `Requesting UI approval for ${HEAD}: screenshots attached.`, `UI approval requested for ${HEAD}.`, `Please approve ${HEAD}.`,
-    `Approval needed: ${HEAD}`, `Approval of ${HEAD} revoked.`, `The owner rejected ${HEAD}; approval is required again.`, `Can you approve ${HEAD}?`,
-    `UI approved: ${HEAD.slice(0, 12)}`, `ui approved: ${HEAD}`, `UI approved: ${HEAD}, pending colors`, `> UI approved: ${HEAD}`,
-    `UI approved: ${'a'.repeat(40)}`,
-    // Round 4: requests that carry the line, free-text names and indentation.
-    `Requesting UI approval. To approve, reply with this line:\n\n\`\`\`text\nUI approved: ${HEAD}\n\`\`\``,
-    `Requesting UI approval. To approve, reply with this line:\n\nUI approved: ${HEAD}`,
-    `\`\`\`text\nUI approved: ${HEAD}\n\`\`\``,
-    `UI approved by nobody yet: ${HEAD}`, `UI approved by the owner? Please confirm: ${HEAD}`, `    UI approved: ${HEAD}`, `\tUI approved: ${HEAD}`,
-    `Thanks!\nUI approved: ${HEAD}`,
-  ]) {
-    const record = comment(body);
-    world.comments.push(record);
-    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', noForm);
+test('UI changes pass without human approval for Guide, dashboard and new device UI', async () => {
+  for (const file of ['docs/work-guide/work/guide_overview.css', 'apps/dashboard/src/main.tsx',
+    'scripts/build-dashboard.mjs', 'controllers/tidbyt/src/newframe.ts',
+    'controllers/tidbyt/fixtures/golden/status-bar.webp']) {
+    const world = cleanWorld();
+    world.files.push({ filename: file, status: 'added' });
+    const report = await preflight(world);
+    assert.equal(report.result, 'satisfied', file);
+    assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
   }
-  const leading = comment(`\n\n- UI approved: ${HEAD}\n\nScreens checked at 390 and 1440 px.`);
-  world.comments.push(leading);
-  assert.equal(gate(await preflight(world, { uiApproval: leading.html_url }), 'ui-approval').status, 'satisfied');
 });
 
-test('UI approval: bot summaries, review reports and other accounts are not approval records', async () => {
-  const records = [
-    comment(`<!-- codex-pull-request-review-summary -->\n<!-- codex-security-review:v1 {"headSha":"${HEAD}","status":"completed"} -->\n## Codex Review Summary`, { user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }),
-    comment(reviewReport()),
-    comment(`LGTM at ${HEAD}`, { user: { login: 'someone-else', type: 'User' } }),
-  ];
-  const reasons = [/a bot; it must come from the delivery account jimmie-potts/, /carries an automation marker/, /by someone-else, not the delivery account jimmie-potts/];
-  for (const [index, record] of records.entries()) {
+test('UI changes retain independent review, CI and declared proof failures', async t => {
+  const ui = () => {
     const world = cleanWorld();
     world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-    world.comments.push(record);
-    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', reasons[index]);
-  }
+    return world;
+  };
+  const review = ui();
+  review.comments = [];
+  assertUnresolved(await preflight(review), 'review', /review/);
+  const ci = ui();
+  ci.checkRuns[HEAD].at(-1).conclusion = 'failure';
+  assertUnresolved(await preflight(ci), 'ci-pr', /: failure/);
+  const proof = writeProof(scratch(t));
+  fs.writeFileSync(path.join(proof, 'receipt.json'), '{}');
+  assertUnresolved(await preflight(ui(), { receipts: [proof] }), 'proof', /receipt/);
 });
 
-test('UI approval: the dashboard shell and Tidbyt frame rendering are UI', async () => {
-  for (const file of ['scripts/build-dashboard.mjs', 'controllers/tidbyt/src/render.ts', 'controllers/tidbyt/src/nowplaying.ts', 'controllers/tidbyt/src/status.ts', 'controllers/tidbyt/fixtures/golden/status-bar.webp']) {
-    const world = cleanWorld();
-    world.files.push({ filename: file, status: 'modified' });
-    assertUnresolved(await preflight(world), 'ui-approval', /needs explicit human approval/);
-  }
-  const credentials = cleanWorld();
-  credentials.files.push({ filename: 'controllers/tidbyt/src/credentials.ts', status: 'modified' });
-  assert.equal(gate(await preflight(credentials), 'ui-approval').status, 'not-applicable');
-});
-
-test('UI approval: Tidbyt sources are UI unless listed as known non-UI modules', () => {
-  for (const file of ['controllers/tidbyt/src/newframe.ts', 'controllers/tidbyt/src/webp.ts', 'controllers/tidbyt/src/draw.ts']) assert.ok(isUiPath(file), file);
-  for (const file of NON_UI_PATHS) assert.ok(!isUiPath(file), file);
-  const listed = fs.readdirSync(path.join(root, 'controllers/tidbyt/src')).map(name => `controllers/tidbyt/src/${name}`);
-  for (const file of NON_UI_PATHS) assert.ok(listed.includes(file), `${file} still exists`);
-  assert.ok(!isUiPath('controllers/tidbyt/tests/render.test.mjs'));
+test('legacy UI declarations are ignored without fetching an approval record', async () => {
+  const world = cleanWorld();
+  const approvalUrl = `https://github.com/${REPO}/pull/${PR}#issuecomment-999999`;
+  const report = await preflight(world, { ui: true, uiApproval: approvalUrl });
+  assert.equal(report.result, 'satisfied');
+  assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
+  assert.ok(!world.requests.some(request => request.url.includes('999999')));
 });
 
 // ---- Counterparts ----
@@ -843,11 +785,11 @@ test('an open counterpart or open blocker is unresolved; merged and completed on
 
 // ---- Finish line ----
 
-test('a source-only finish line never demands installation or device acceptance', async () => {
+test('a source-stage check never claims completed installation or device acceptance', async () => {
   const report = await preflight(cleanWorld(), { finishLine: 'source' });
   const live = gate(report, 'live-acceptance');
   assert.equal(live.status, 'not-applicable');
-  assert.match(live.reasons.join(), /source-only finish line/);
+  assert.match(live.reasons.join(), /source-stage check only/);
   assert.equal(report.result, 'satisfied');
 });
 
@@ -1189,9 +1131,7 @@ test('every scenario issues only GET requests and GraphQL queries', async t => {
   await run(guide, { guideReceipts: [guideReceipt], guideRecords: [guideRecord(guide)] });
   const ui = cleanWorld();
   ui.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const approval = comment(`UI approved: ${HEAD}`);
-  ui.comments.push(approval);
-  await run(ui, { uiApproval: approval.html_url });
+  await run(ui);
   for (const world of worlds) {
     assert.ok(world.requests.length > 5);
     for (const request of world.requests) {
@@ -1237,7 +1177,7 @@ test('the CLI reports usage errors with their own exit status', () => {
   const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /--pr <number>/);
-  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat'], ['--pr', '1', '--guide-record', 'https://example.com/x'], ['--pr', '1', '--ui-approval', 'nope']]) {
+  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat'], ['--pr', '1', '--guide-record', 'https://example.com/x']]) {
     const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, GH_TOKEN: '' } });
     assert.equal(result.status, 3, `${args.join(' ')}: ${result.stderr}`);
   }
@@ -1267,3 +1207,16 @@ test('the CLI turns a missing credential into a read failure', () => {
   assert.match(report.readFailures[0].detail, /credential/);
 });
 
+
+test('the CLI accepts legacy UI flags without inspecting their unused value', async () => {
+  const output = [];
+  const code = await main({
+    argv: ['--pr', String(PR), '--ui', '--ui-approval', '/private/obsolete-record', '--json'],
+    transport: fakeTransport(cleanWorld()),
+    stdout: { write: text => output.push(text) },
+    stderr: { write: text => assert.fail(text) },
+  });
+  assert.equal(code, 0);
+  assert.equal(gate(JSON.parse(output.join('')), 'ui-approval').status, 'not-applicable');
+  assert.doesNotMatch(output.join(''), /private\/obsolete-record/);
+});

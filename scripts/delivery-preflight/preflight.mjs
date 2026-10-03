@@ -6,35 +6,9 @@ import { evaluateCi } from './ci.mjs';
 import { COMPARE_FILE_LIMIT, Gate, GUIDE_ROOT, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
-import { approvedRevision, isBot, readRecord } from './records.mjs';
+import { isBot, readRecord } from './records.mjs';
 import { POLICY_PATHS, REVIEW_FORMAT, collectReports, judgeRound, policyComponents, requirementReference } from './reviews.mjs';
 
-// Non-guide UI recognized by path: a directory prefix ends with "/", anything
-// else is one file. `--ui` declares UI elsewhere. Tidbyt frames are device UI
-// (#189, #280), so all of controllers/tidbyt/src/ counts except the modules
-// below, which queue, schedule, authenticate or transport frames without
-// deciding what they show. A new Tidbyt module is UI until it is listed here.
-export const UI_PATHS = [
-  'apps/dashboard/src/',
-  'scripts/build-dashboard.mjs',
-  'docs/system-design/',
-  'docs/skins/',
-  'controllers/tidbyt/src/',
-  'controllers/tidbyt/fixtures/golden/',
-];
-export const NON_UI_PATHS = [
-  'controllers/tidbyt/src/cli.ts',
-  'controllers/tidbyt/src/connection.ts',
-  'controllers/tidbyt/src/controller.ts',
-  'controllers/tidbyt/src/credentials.ts',
-  'controllers/tidbyt/src/index.ts',
-  'controllers/tidbyt/src/nowplaying-publisher.ts',
-  'controllers/tidbyt/src/publisher.ts',
-  'controllers/tidbyt/src/publishing.ts',
-  'controllers/tidbyt/src/runner.ts',
-];
-export const isUiPath = file => !NON_UI_PATHS.includes(file)
-  && UI_PATHS.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry));
 export const FINISH_LINES = ['source', 'installed', 'real-client', 'physical'];
 // The one bot-opened delivery: the nightly guide refresh, which carries no work issue.
 export const GUIDE_REFRESH_BRANCH = 'guide/nightly-refresh';
@@ -57,8 +31,9 @@ function publicDeclaration(declaration) {
     finishLine: declaration.finishLine,
     counterparts: declaration.counterparts || [],
     receipts: (declaration.receipts || []).map(describeLocal),
-    ui: Boolean(declaration.ui),
-    uiApproval: declaration.uiApproval ?? null,
+    // Ignored legacy inputs carry no evidence and are not echoed.
+    ui: false,
+    uiApproval: null,
     guideReceipts: (declaration.guideReceipts || []).map(describeLocal),
     guideRecords: declaration.guideRecords || [],
   };
@@ -425,62 +400,10 @@ async function evaluateFeedback(ctx, comments) {
   }
 }
 
-async function evaluateUi(ctx) {
-  const { gates, declaration } = ctx;
-  const ui = gates.ui;
-  const uiPaths = ctx.paths.filter(isUiPath);
-  const guidePaths = ctx.paths.filter(file => file.startsWith(GUIDE_ROOT));
-  ui.evidence = { paths: uiPaths, guidePaths: guidePaths.length };
-  if (!ctx.filesRead) {
-    ui.notEvaluated('the changed files could not be read');
-    return;
-  }
-  if (!ctx.filesComplete) {
-    ui.unresolved('the changed-file list is incomplete, so the UI scope is unknown');
-    return;
-  }
-  if (!uiPaths.length && !declaration.ui) {
-    ui.notApplicable(guidePaths.length ? 'no non-guide UI path changed; guide UI is exempt from human approval' : 'no non-guide UI path changed');
-    return;
-  }
-  if (guidePaths.length) ui.note('guide UI is exempt; the approval covers the other UI');
-  if (!declaration.uiApproval) {
-    ui.unresolved(uiPaths.length
-      ? `${uiPaths.join(', ')} needs explicit human approval of the current candidate (--ui-approval <PR comment URL>)`
-      : 'the declared UI change needs explicit human approval of the current candidate (--ui-approval <PR comment URL>)');
-    return;
-  }
-  const found = await readRecord(ctx, ui, declaration.uiApproval, 'UI approval record');
-  if (!found) return;
-  const { record, problems } = found;
-  ui.evidence.approval = { url: record.url, author: record.author, createdAt: record.createdAt };
-  if (problems.length) {
-    for (const problem of problems) ui.unresolved(problem);
-    return;
-  }
-  const commits = await ctx.read(ui, () => ctx.github.getAll(`/repos/${ctx.repo}/pulls/${ctx.pr.number}/commits?per_page=100`));
-  if (!commits.ok) return;
-  const approved = approvedRevision(record.body, commits.value.map(item => item.sha));
-  if (!approved) {
-    ui.unresolved('the approval record does not start with "UI approved: <full sha>" or "UI approved by <login>: <full sha>" for a revision of this PR');
-    return;
-  }
-  ui.evidence.approvedRevision = approved;
-  if (approved === ctx.head) return;
-  if (declaration.ui && !uiPaths.length) {
-    ui.unresolved(`declared UI cannot be traced by path; the approval names ${short(approved)}, not the current head`);
-    return;
-  }
-  const compare = await ctx.read(ui, () => ctx.github.get(`/repos/${ctx.repo}/compare/${approved}...${ctx.head}`));
-  if (!compare.ok) return;
-  const changed = touchedPaths(compare.value.files || []);
-  if (changed.length >= COMPARE_FILE_LIMIT) {
-    ui.unresolved(`cannot confirm the UI is unchanged since ${short(approved)}: the comparison is too large`);
-    return;
-  }
-  const uiChanged = changed.filter(isUiPath);
-  if (uiChanged.length) ui.unresolved(`UI changed after the approved revision: ${uiChanged.join(', ')} since ${short(approved)}`);
-  else ui.note(`no UI path changed between the approved ${short(approved)} and the current head`);
+function evaluateUi(ctx) {
+  // Retain the schema-1 entry for readers of older reports. Neither path nor
+  // legacy CLI declarations create a human approval requirement.
+  ctx.gates.ui.notApplicable('human UI approval is not required; applicable browser/accessibility checks, independent reviews and CI remain required');
 }
 
 async function evaluateProof(ctx) {
@@ -555,7 +478,7 @@ async function evaluateCounterparts(ctx) {
 function evaluateLive(gate, declaration, proofs) {
   const line = declaration.finishLine;
   if (line === 'source') {
-    gate.notApplicable('source-only finish line: installation, real-client and physical acceptance are separate and not required here');
+    gate.notApplicable('source-stage check only: installation, real-client and physical acceptance are not inspected; a satisfied report does not establish completed delivery');
     return;
   }
   gate.unresolved(`${line} acceptance needs the owner's evidence under its owning issue; this preflight reads no installation, client or device state, and CI, fixtures and simulator receipts cannot satisfy it`);

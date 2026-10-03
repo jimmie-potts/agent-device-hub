@@ -2,7 +2,7 @@
 
 Status: Accepted direction under [hub #271](https://github.com/jimmie-potts/agent-device-hub/issues/271),
 2026-09-25. The owner chose the dashboard shell on 2026-09-25. Implementation,
-UI approval, installation and the wall map's retirement belong to follow-up
+UI verification, installation and the wall map's retirement belong to follow-up
 issues named under Consequences, which are not yet filed.
 
 ## Context
@@ -165,13 +165,13 @@ then retires.
   database. Status-derived animation makes that acceptable; exact frame
   mirroring stays out of scope, as it already is on the wall map.
 - **Two interfaces for a while.** The wall map keeps working and keeps its
-  approval gate until parity, and it stops growing except where an existing
-  issue assigns it a control. The parity list bounds the overlap.
+  verification requirements until parity, and it stops growing except where an
+  existing issue assigns it a control. The parity list bounds the overlap.
 - **Nanoleaf work already delivered.** The Lines/Panels selector
   ([Nanoleaf #44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44))
   is the editor's device switch and informs the two device pages.
-- **Human UI approval** applies to every shell change as before; nothing here
-  changes that gate.
+- **UI verification** follows the current [SDLC](../sdlc.md#ui-approval-scope);
+  retain browser, accessibility, independent review and CI requirements.
 - **Follow-ups.** After this ADR merges, the Direction section's
   "what it is becoming" text is updated through the guide maintenance
   procedure, and #271's first open question and #286's second phase are
@@ -186,4 +186,4 @@ then retires.
   remain open.
 - **Decision only.** This decision creates no implementation, installation or
   device operation, and adds no OpenSpec product delta by itself. Each
-  implementation issue records its own capability delta and UI approval.
+  implementation issue records its own capability delta and UI verification.

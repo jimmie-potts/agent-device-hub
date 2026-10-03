@@ -17,16 +17,17 @@ evidence. Do not equate CI with client or physical acceptance.
 
 Record base SHA, head SHA, merge-base, diff command and clean worktree.
 Record independent Standards and Specification reviews and finding dispositions.
-For cross-project work-guide UI and its architecture viewers, record the
-[guide exemption](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md#ui-approval-scope) and required visual/browser
-validation. Human UI approval is not required for those guide changes.
-For all other UI changes, record approval of the current candidate, including
-when the same PR changes the guide. Renew approval after changes to that other UI.
+For UI changes, record applicable automated, browser, visual and accessibility
+evidence under the [UI verification policy](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md#ui-approval-scope).
+Human UI approval is not required.
 
 ## Delivery
 
 Verify all configured current-head PR jobs, guarded merge and merged-revision
-main CI before issue closure.
+main CI before issue closure. Record installation and verified runtime identity/health
+for the established target, or the applicable instruction/tool readback or reason
+no runtime installation applies. A source-only exception identifies its reason
+and linked installation owner; overall delivery remains installation pending.
 
 ## Work guide, when intentionally updated or published
 

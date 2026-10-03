@@ -1,5 +1,4 @@
-// Owner-facing records on the PR: UI approval and guide-only exception
-// evidence. A record counts only when the delivery account wrote it as a plain
+// Owner-facing records on the PR: guide-only exception evidence. A record counts only when the delivery account wrote it as a plain
 // comment or review on this PR; bot comments, other accounts and comments that
 // carry automation markers (review reports, provider summaries) never count.
 export const RECORD_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)#(?:issuecomment-(\d+)|pullrequestreview-(\d+)|discussion_r(\d+))$/;
@@ -71,21 +70,4 @@ export function guideRecordResults(body) {
     results[passing ? 'passed' : 'unverified'].push(id);
   }
   return results;
-}
-
-// A UI approval record starts with its approval: the comment's first non-empty
-// line must be exactly "UI approved: <full sha>" or "UI approved by <login>:
-// <full sha>" (case-sensitive, optional list marker, trailing spaces allowed,
-// no indentation, not fenced or quoted); the body may continue after it.
-// Anything else is not approval, including a request that quotes the line
-// further down. The owner writes it from the delivery account, so the tool
-// cannot tell a human from an agent on that account; the form only prevents
-// requests, templates or revocations from being misread as approval.
-const UI_APPROVAL_LINE = /^(?:[-*] )?UI approved(?: by [A-Za-z0-9-]+)?: ([0-9a-f]{40})[ \t]*$/;
-
-/** The PR revision a record approves on its first line, or null. */
-export function approvedRevision(body, commits) {
-  const first = body.split('\n').find(line => line.trim()) || '';
-  const match = first.match(UI_APPROVAL_LINE);
-  return match && commits.includes(match[1]) ? match[1] : null;
 }

@@ -96,7 +96,7 @@ Source work changes no installed owner, hook, Codex state or physical device.
 The separately authorized archive trial established owner retirement, dashboard
 removal and visible Nanoleaf Line release for Codex Desktop. Installed read-task
 retention and device-local eviction were also observed. Displays retain their
-existing polling and write cadence; current-candidate UI approval remains a
+existing polling and write cadence; current-candidate UI verification remains a
 separate delivery gate.
 
 The selected Desktop task did not reliably emit a non-archive end during the

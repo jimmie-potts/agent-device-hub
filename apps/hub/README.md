@@ -1,6 +1,6 @@
 # Linux hub host
 
-This application implements the source scope of [Hub #5](https://github.com/jimmie-potts/agent-device-hub/issues/5). It targets Node 24 on Linux in WSL. Native Windows qualification is outside scope. Installation and live migration require a separate request and named owner.
+This application implements the source scope of [Hub #5](https://github.com/jimmie-potts/agent-device-hub/issues/5). It targets Node 24 on Linux in WSL. Native Windows qualification is outside scope. Routine upgrades follow the [standing installation authority](../../AGENTS.md#runtime-and-migration-boundaries) and named-owner procedure; new installations and live migrations need their own scope.
 
 The host supplies private SQLite ownership, the shared agent-state engine, authenticated loopback monitor routes, bounded controller clients and both delivered integration extensions. Supervised migration transfers state into a fenced destination, verifies routes, then opens ingestion. The [setup runbook](SETUP.md) covers reversible producer setup and Nanoleaf cutover from #8. Installed-client and full integrated performance qualification remain separate.
 
@@ -15,7 +15,7 @@ the hub package.
 
 ## Configuration and authority
 
-The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
+The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service follows the [installation authority and procedure](SETUP.md#upgrade-and-roll-back-the-installed-hub). Tests use ephemeral disposable state instead.
 
 Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop`, optional [`playback`](#playback), optional [`wispr`](#private-wispr-aggregates) and optional [`browserAccess`](#open-bunny-from-a-bookmark). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 

@@ -9,8 +9,11 @@ in agent-skills.
 
 Use the [SDLC](../sdlc.md) with one coordinating writer, isolated worktrees,
 independent fixed-comparison Standards and Specification review, all configured
-PR/main CI, guarded squash merges and separate installation/physical authority.
-Current-candidate user approval additionally gates UI merges.
+PR/main CI and guarded squash merges. Authorized delivery includes verified
+installation under the owner’s standing authority for the established target;
+physical work retains its explicit authority. UI changes retain automated/browser
+verification without a human approval gate. Reassess current project alignment
+at every issue pickup under the SDLC scope defaults.
 
 Node 24 and OpenSpec 1.12.0 match the existing projects. Reuse the proven workflow
 validation behavior during bootstrap, with common-tool extraction and consumer

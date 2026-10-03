@@ -18,8 +18,6 @@ function summary(gate) {
     case 'review':
       if (!e.round) return '';
       return `${e.round} ${e.report}; returns: ${(e.returns || []).map(r => `${r.label} ${r.return}${r.digestVerified ? '' : ' (digest unverified)'}`).join(', ')}`;
-    case 'ui-approval':
-      return e.approval ? `approval ${e.approval.url} names ${short(e.approvedRevision)}` : '';
     case 'proof':
       return (e.receipts || []).map(r => `${r.runId} at ${short(r.sourceRevision)}, ${r.sha256sums || 'no SHA256SUMS'}`).join('; ');
     case 'counterparts':

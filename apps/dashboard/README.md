@@ -456,9 +456,9 @@ The starting point is Nanoleaf `main` at
 [PR #60](https://github.com/jimmie-potts/codex-nanoleaf/pull/60). The dashboard carries
 forward cyan selection, magenta pending states, compact controls, a quiet grid,
 local Bahnschrift/Segoe UI typography and focus-preserving interaction. It does
-not copy wall geometry, physical Locate controls or animation rendering. This new
-candidate requires its own explicit human approval. The Hub #151 and Hub #153
-general-control candidates require renewed approval, recorded in their PRs.
+not copy wall geometry, physical Locate controls or animation rendering. UI
+candidates follow the [SDLC verification policy](../../docs/sdlc.md#ui-approval-scope):
+retain automated, browser and accessibility evidence without human approval.
 
 `npm run test:dashboard` checks command guards and links, every command
 lifecycle transition for both the form and the action wording, the route parser
@@ -530,17 +530,17 @@ without a saved layout, for an owner that predates the route and for a layout
 the renderer rejects, retries a failed geometry read after the next poll, runs
 axe at 1280 px and 390 px, and drives status, activity, mode, stale, the
 opening assembly and reduced motion through a component harness. `tests/art.test.mjs` covers the adapter and the
-ported layout validator. The candidate needs the owner's side-by-side approval
-against the wall map on the same fixture before merge.
+ported layout validator. Retain side-by-side comparison evidence against the
+wall map on the same fixture before merge; human approval is not required.
 
-The activity view requests snapshot 1.2 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.
+The activity view requests snapshot 1.2 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. Retain the current candidate’s automated and browser evidence under the SDLC UI verification policy.
 
 Session headings use label, then shared title, then session ID. Project display
 names appear beside the provider facts. Search includes label, title, project
 and ID. Label fields accept up to 80 Unicode scalar values; the HTML 160-code-unit
 ceiling accommodates 80 supplementary characters, while the pattern enforces
 80 scalars. Synthetic desktop/mobile fixtures cover these names, neutral
-fallbacks and owner precedence; their previews require explicit UI approval.
+fallbacks and owner precedence; retain their preview evidence under the SDLC UI verification policy.
 
 ## Pixoo library previews
 
