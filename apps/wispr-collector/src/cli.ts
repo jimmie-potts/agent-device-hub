@@ -11,7 +11,6 @@ try{
   if(Number(process.versions.node.split('.')[0])!==24)throw new Error('unsupported-runtime');
   const {configPath,operation}=parseArgs(process.argv.slice(2));
   const config=loadConfig(configPath);
-  if(operation.command==='collect'&&!config.collectionEnabled)throw new Error('collection-disabled');
   const output=operation.command==='export'?operation.output:undefined;
   if(output&&win32.normalize(output).toLowerCase()===win32.normalize(configPath).toLowerCase())throw new Error('unsafe-path');
   qualifyState(config,output,configPath);mkdirSync(config.stateDirectory,{recursive:true});

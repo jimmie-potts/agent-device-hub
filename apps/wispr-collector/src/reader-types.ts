@@ -1,3 +1,4 @@
+import type { LanguageInput } from './language.js';
 export type SourceLimits = { maxRows: number; maxBytes: number; maxMemoryBytes: number; deadlineMs: number };
 export const SOURCE_LIMITS: Readonly<SourceLimits> = Object.freeze({
   maxRows: 100_000, maxBytes: 256 * 1024 * 1024,
@@ -9,7 +10,7 @@ export type SourceRow = {
   id: string; timestamp: string | null; status: string | null;
   numWords: number | null; duration: number | null; speechDuration: number | null;
   numWordsCorrected: number | null; numDictionaryReplacements: number | null; appName: string | null;
-  invalid: string[];
+  invalid: string[]; language?: LanguageInput;
 };
 export type SourceRead = { rows: SourceRow[]; coverage: Record<OptionalColumn, boolean>; selectedBytes: number };
 export const READ_CODES = ['source-unavailable', 'source-schema', 'source-busy', 'source-capacity', 'source-deadline', 'source-read', 'unsupported-platform', 'unsafe-path'] as const;

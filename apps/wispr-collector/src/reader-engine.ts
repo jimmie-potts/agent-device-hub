@@ -1,5 +1,10 @@
+import type { Snapshot } from '@jimmie-potts/wispr-contracts';
+import { readDictionary } from './dictionary.js';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { OPTIONAL_COLUMNS, SourceError, sourceLimits, type SourceRow, type SourceLimits, type OptionalColumn } from './reader-types.js';
+
+import { MAX_STAGE_BYTES, type LanguageInput } from './language.js';
+import { sourceTimestamp } from './numeric.js';
 
 const textType = (type: string) => /CHAR|CLOB|TEXT/i.test(type);
 const numberType = (type: string) => /INT|REAL|FLOA|DOUB|NUM|DEC/i.test(type);
@@ -31,7 +36,9 @@ function normalized(row: Record<string, SQLOutputValue>): SourceRow {
     appName: text('appName', 256), invalid };
 }
 
-export async function scanNumeric(path: string, limits: SourceLimits, deliver: (rows: SourceRow[], rss: number) => Promise<void>): Promise<{coverage: Record<OptionalColumn, boolean>; selectedBytes: number}> {
+export async function scanNumeric(path:string,limits:SourceLimits,deliver:(rows:SourceRow[],rss:number)=>Promise<void>) {return scanSource(path,limits,deliver,{language:false});}
+
+export async function scanSource(path: string, limits: SourceLimits, deliver: (rows: SourceRow[], rss: number) => Promise<void>, options:{language:boolean}): Promise<{coverage: Record<OptionalColumn, boolean>; selectedBytes: number; dictionary:Snapshot['dictionary']}> {
   const db = new DatabaseSync(path, { readOnly: true, timeout: 1000, allowExtension: false, enableDoubleQuotedStringLiterals: false });
   try {
     // Bound SQLite allocations even while synchronous SQL cannot report RSS.
@@ -49,13 +56,21 @@ export async function scanNumeric(path: string, limits: SourceLimits, deliver: (
       return [name, !!type && (name === 'appName' ? textType(type) : numberType(type))];
     })) as Record<OptionalColumn, boolean>;
     const selected = [...required, ...OPTIONAL_COLUMNS.filter(name => coverage[name])];
+    const extra:{expression:string;alias:string}[]=[];
+    if(options.language){
+      for(const [name,alias,max] of [['asrText','raw',MAX_STAGE_BYTES],['formattedText','formatted',MAX_STAGE_BYTES],['editedText','observed',MAX_STAGE_BYTES],['detectedLanguage','detectedLanguage',64],['language','language',64],['editedTextStatus','editedTextStatus',64],['editObservationEnd','editObservationEnd',128]] as const){
+        const column=quoted(name),supported=textType(types.get(name)??'');
+        extra.push({alias,expression:supported?`CASE WHEN typeof(${column})='text' AND length(CAST(${column} AS BLOB))<=${max} THEN ${column} ELSE NULL END`:'NULL'});
+        if(['raw','formatted','observed'].includes(alias))extra.push({alias:alias+'Oversized',expression:supported?`CASE WHEN typeof(${column})='text' AND length(CAST(${column} AS BLOB))>${max} THEN 1 ELSE 0 END`:'0'});
+      }
+    }
     const rowCount = db.prepare('SELECT count(*) AS n FROM History').get()?.n;
     if (typeof rowCount !== 'number' || rowCount > limits.maxRows) throw new SourceError('source-capacity');
     // Size before materialization, so a single huge value cannot bypass the bound.
-    const byteSql = selected.map(name => `coalesce(length(CAST(${quoted(name)} AS BLOB)),0)`).join('+');
+    const byteSql = [...selected.map(quoted),...extra.map(e=>e.expression)].map(expression => `coalesce(length(CAST((${expression}) AS BLOB)),0)`).join('+');
     const size = db.prepare(`SELECT coalesce(sum(${byteSql}),0) AS n FROM History`).get()?.n;
     if (typeof size !== 'number' || size > limits.maxBytes) throw new SourceError('source-capacity');
-    const statement = db.prepare(`SELECT ${selected.map(quoted).join(',')} FROM History`);
+    const statement = db.prepare(`SELECT ${[...selected.map(quoted),...extra.map(e=>`${e.expression} AS ${quoted('language_'+e.alias)}`)].join(',')} FROM History`);
     statement.setReadBigInts(true);
     let batch: SourceRow[] = [];
     const ids = new Set<string>();
@@ -65,12 +80,23 @@ export async function scanNumeric(path: string, limits: SourceLimits, deliver: (
     };
     for (const row of statement.iterate()) {
       const value = normalized(row);
+      if(options.language){
+        const get=(key:string)=>typeof row['language_'+key]==='string'?row['language_'+key] as string:null;
+        const detected=get('detectedLanguage'),configured=get('language');
+        const locale=types.has('detectedLanguage')?detected:configured;
+        const end=sourceTimestamp(get('editObservationEnd')),start=sourceTimestamp(value.timestamp),status=get('editedTextStatus');
+        const observation:LanguageInput['observation']=status==='partial'?'partial':status==='complete'&&start&&end&&end.time>=start.time?'complete':'unknown';
+        value.language={raw:get('raw'),formatted:get('formatted'),observed:get('observed'),language:locale,observation,
+          oversized:(['raw','formatted','observed'] as const).filter(k=>row['language_'+k+'Oversized']===1n)};
+      }
       if (ids.has(value.id)) throw new SourceError('source-schema');
       ids.add(value.id); batch.push(value);
       if (batch.length === 128) await sendBatch();
     }
     if (batch.length) await sendBatch();
+    let dictionaryBytes=0;
+    const dictionary=readDictionary(db,limits.maxRows,limits.maxBytes-size,bytes=>{dictionaryBytes=bytes;});
     db.exec('COMMIT');
-    return {coverage, selectedBytes: size};
+    return {coverage, selectedBytes: size+dictionaryBytes,dictionary};
   } finally { db.close(); }
 }
