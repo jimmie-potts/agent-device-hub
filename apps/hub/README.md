@@ -31,7 +31,9 @@ An in-process host can supply `HubOptions.diagnostics`, created by the packaged
 `@jimmie-potts/hub/diagnostics` adapter. The host supplies a neutral resource,
 a bounded canonical emitter and its tracer. The adapter imports no SDK or
 exporter and normal library startup does not construct one. With no adapter,
-command behavior is unchanged.
+command behavior is unchanged. Existing injected adapters keep automatic propagation
+under their host owner; only the normal CLI adapter selects `propagate: true` for
+manual controller headers. Do not combine that option with automatic propagation.
 
 The controller command route adopts validated trace context only after
 authentication. It emits canonical request records and controller-client

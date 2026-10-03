@@ -10,6 +10,8 @@ type Options = {
   /** Host-owned bounded sink; no exporter is created by this adapter. */
   emit(record:DiagnosticRecord):unknown;
   tracer?:Pick<Tracer,'startSpan'>;
+  /** Enable only when this host has no automatic HTTP propagation owner. */
+  propagate?:boolean;
 };
 export type CommandDiagnostics = ReturnType<typeof createCommandDiagnostics>;
 const outcome:Record<string,string> = {queued:'queued',sent:'transport-acknowledged',failed:'rejected',
@@ -33,6 +35,7 @@ export function createCommandDiagnostics(options:Options) {
     counts:() => ({failures,invalidRecords}),
     /** Only ControllerClient's validated, authenticated owned endpoint calls this. */
     headers():Record<string,string> {
+      if(options.propagate!==true)return {};
       try {
         const current=trace.getSpanContext(context.active());
         return current&&trace.isSpanContextValid(current)?traceHeaders({trace_id:current.traceId,span_id:current.spanId,

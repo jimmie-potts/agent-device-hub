@@ -16,7 +16,7 @@ export async function createHubDiagnostics(configuration:unknown):Promise<{runti
     'service.instance.id':randomUUID(),'deployment.environment.name':'development'};
   const runtime=await createHostDiagnostics({enabled:true,resource,collectorOrigin:configuration.collectorOrigin as string|undefined,
     tracing:configuration.tracing as boolean|undefined,samplingRatio:configuration.samplingRatio as number|undefined});
-  const commands=createCommandDiagnostics({resource,emit:record=>runtime.emit(record),
+  const commands=createCommandDiagnostics({resource,propagate:true,emit:record=>runtime.emit(record),
     tracer:runtime.tracerFor({resource,scope:(_name,options)=>{
       const kind=(options as {kind?:number}).kind;return kind===2?'bunny.controller':'bunny.http';
     }})});
