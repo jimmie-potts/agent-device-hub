@@ -15,6 +15,7 @@
 
 ## 4. Delivery
 
+- [x] 3.4 After #794, list `v1.2.js` and `host-session-snapshot.js` as gate content, with tests that a release without them has the same fingerprint, edits to them qualify both ways and a lifecycle root change refuses.
 - [x] 4.1 Update contract, provider-qualification, package, Hub and setup docs and package versions without replacing published bytes.
 - [x] 4.2 Pass the required build, type, contract, lifecycle, state, Hub, setup, MCP, package and workflow checks.
 - [x] 4.3 Synchronize affected specifications and archive the change on the delivery branch; installed observation stays with the issue.

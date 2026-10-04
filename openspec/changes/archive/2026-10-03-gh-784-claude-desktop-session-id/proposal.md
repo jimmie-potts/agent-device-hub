@@ -24,6 +24,7 @@ None.
 - `standalone-hub-host`: versioned session route for the field.
 - `standalone-hub-mcp`: session tool reads snapshot 1.3.
 - `shared-monitor-installation`: explicit producer selection of lifecycle 1.2.
+- `hub-runtime-upgrades`: the upgrade gate lists the lifecycle 1.2 module and the snapshot 1.3 validator as content; the lifecycle root module stays durable.
 
 ## Impact
 

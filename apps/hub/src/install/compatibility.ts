@@ -33,12 +33,14 @@ const sqliteImport=/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)["']node:sql
 type Surface={required:string[];content:string[];outbound:(name:string)=>boolean};
 const surfaces:Record<'agent-state'|'agent-lifecycle-contracts',Surface>={
  'agent-state':{required:['dist/validation.js','dist/memory-storage.js','schemas/durable-v2.1.schema.json'],
-  content:['index.js','reducer.js','retirement.js','types.js','providers.js','metadata.js','subscriptions.js','children.js'],
+  // Hub #784: host-session-snapshot.js validates snapshot 1.3 and stores nothing.
+  content:['index.js','reducer.js','retirement.js','types.js','providers.js','metadata.js','subscriptions.js','children.js','host-session-snapshot.js'],
   outbound:name=>/^snapshot-v\d+(?:\.\d+)*\.schema\.json$/.test(name)},
  'agent-lifecycle-contracts':{required:['schemas/lifecycle-v1.schema.json','schemas/lifecycle-v1.1.schema.json'],
   // Every lifecycle module is durable: validateEvent and validDisplayText check stored records.
-  // A later, separately loaded version module may be listed here by name.
-  content:[],
+  // A later, separately loaded version module may be listed here by name. Hub #784: v1.2.js
+  // admits lifecycle 1.2 for content callers; stored-session checks keep using index.js.
+  content:['v1.2.js'],
   outbound:name=>/^lifecycle-v\d+(?:\.\d+)*\.schema\.json$/.test(name)&&!['lifecycle-v1.schema.json','lifecycle-v1.1.schema.json'].includes(name)}
 };
 // Node never loads declarations or source maps.
