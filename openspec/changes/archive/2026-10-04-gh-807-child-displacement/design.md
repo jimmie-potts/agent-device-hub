@@ -5,8 +5,9 @@
 ## Decisions
 
 - **Who may displace.** Only an event that would create a root session: one whose parent is not `known`, which covers both `top-level` and `unknown`. It must pass every earlier admission check (staleness, guards, archive evidence and the reducer producing a session) before anything is removed, so a stale, archived or non-creating event never costs a record.
-- **Who is displaced.** The child record (parent `known`) with the oldest `lastEvidenceAtMs`, ties broken by identity key, whose subtree (itself and its known descendants) holds no attention. A pending subagent approval therefore never disappears to make room.
-- **How.** Through the existing `retire()` path, which removes the subtree in one durable replacement and keeps retirement guards. The displaced child's delayed events are rejected as stale instead of re-creating it, and a fresh `session.started` for that identity is still eligible like any retired identity.
+- **Who is displaced.** A child record (parent `known`) whose whole subtree (itself and its known descendants) is finished, meaning activity `idle`, `interrupted` or `ended`, and holds no attention. Among those, the subtree whose newest `lastEvidenceAtMs` is oldest goes, with ties broken by identity key. A running subagent therefore never disappears to make room: a Claude Code subagent reports only at start, permission request and stop, so its own evidence ages while it runs, but its activity stays `active`, or `unknown` after real `SubagentStart`/`SubagentStop` hooks. The same holds for a pending approval anywhere in the subtree. In the installed owner, 94 of 118 child records were `idle` and none was `active`, so the rule still frees space.
+- **How.** Through the existing `retire()` path, which removes the subtree in one durable replacement and keeps retirement guards. The displaced records' later events other than an eligible start are rejected as stale instead of re-creating them, and a fresh `session.started` or `turn.started` for that identity is still eligible like any retired identity. The guards share the 128-identity retirement memory with runtime ends, so sustained saturation evicts older end guards sooner. That is within the documented best-effort limit.
+- **Spec consistency.** "Runtime-end retirement" names this displacement as the one other early removal besides expiry.
 - **Visibility.** Each displacement increments the existing loss count, which hosts already surface. No new snapshot field or schema.
 - **Unchanged.** New children are rejected when full, roots are never displaced, and with no eligible child the root is rejected as `capacity`.
 
@@ -22,8 +23,10 @@ No new data is read, stored or sent. Outcomes stay fixed and content-free.
 
 | Example | Test |
 | --- | --- |
-| Full owner, new root: least recently active child and its descendants retired, loss +1, root admitted, delayed child event stale | `capacity.test.mjs` "displaces the least recently active child" |
-| Child whose descendant awaits approval is skipped for the next eligible child | `capacity.test.mjs` "descendant awaits attention" |
-| New child, or every child attended: capacity, nothing removed | `capacity.test.mjs` "still rejects" |
-| Unknown end displaces nothing | `capacity.test.mjs` "would not create a root" |
+| Full owner, new root: the finished subtree with the oldest evidence retired, loss +1, two revisions, later child event stale | `capacity.test.mjs` "displaces the finished child subtree" |
+| Subtree evidence ranks: a child whose grandchild worked recently stays | `capacity.test.mjs` "subtree evidence ranks children" |
+| Running (`active`), real-hook `unknown` and attended subtrees stay; with none eligible the root is rejected | `capacity.test.mjs` "never displaced" |
+| New child: capacity, nothing removed | `capacity.test.mjs` "rejects a new child" |
+| Non-creating acknowledgment, guarded retired root and old observation displace nothing | `capacity.test.mjs` "would not create a root" |
 | Archived Codex Desktop conversation displaces nothing; a live one does | `capacity.test.mjs` "archived Codex Desktop" |
+| A failed displacement commit admits nothing and leaves the child | `capacity.test.mjs` "failed displacement" |

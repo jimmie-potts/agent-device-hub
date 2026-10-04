@@ -1471,6 +1471,19 @@ receipts and preserved prior release bytes. Packaging scratch is disk-backed
 under `.local/scratch/package-archives`; runtime fixtures keep their small
 private stores outside Git checkouts.
 
+## Owner capacity checks
+
+Hub #807 lets a new root task displace a finished child subtree without attention
+when the owner is full. `packages/agent-state/tests/capacity.test.mjs` covers
+displacement with descendants and two revisions, ranking by subtree evidence,
+protection of running (`active`), real-hook `unknown` and attended subtrees,
+rejection of a new child, events that create no root (acknowledgment, guarded
+retired root, old observation, archived Codex Desktop conversation) and a failed
+displacement commit. The glob-based `npm run test:agent-state` and the existing CI
+jobs run it, so no new command or CI job is needed. Run the agent-state check set
+listed above. Live admission while the installed owner is full is an installed
+observation.
+
 ## Claude Desktop host session checks
 
 Hub #784 adds lifecycle 1.2 (`packages/lifecycle-contracts/fixtures/lifecycle-v1.2.json`,

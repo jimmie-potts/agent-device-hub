@@ -626,7 +626,9 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.6.1 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.1 a full owner lets a new root task displace the least recently active subagent record ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Durable 2.1 is not readable
+Hub 0.6.1 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.1 a full owner
+lets a new root task displace a finished subagent subtree without attention
+([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Durable 2.1 is not readable
 by owners older than 0.4.0. Package publication is source delivery, not installation;
 real-client rename observations and physical presentation require separate
 owner-authorized acceptance.

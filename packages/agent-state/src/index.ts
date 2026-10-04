@@ -188,12 +188,23 @@ export async function createAgentState(options:Options) {
     }
     return keys;
   }
-  // The least recently active child record whose subtree holds no attention (Hub #807), or none.
+  // Hub #807: the child record to retire for a new root, or none. Its whole subtree must be finished (idle,
+  // interrupted or ended; `active` and `unknown` may still be running) and hold no attention, so a running
+  // subagent or a pending approval never disappears to make room. The subtree whose newest evidence is oldest
+  // goes first; ties go to the lower identity key.
+  const finished=(session:Session)=>session.activity==='idle'||session.activity==='interrupted'||session.activity==='ended';
   function displaceableChild():Session|undefined {
-    const attended=new Set(data.sessions.filter(session=>session.attention.length>0).map(session=>identityKey(session.identity)));
-    return data.sessions.filter(session=>session.parent.status==='known')
-      .sort((a,b)=>a.lastEvidenceAtMs-b.lastEvidenceAtMs||identityKey(a.identity).localeCompare(identityKey(b.identity)))
-      .find(session=>![...subtree(identityKey(session.identity))].some(key=>attended.has(key)));
+    const byKey=new Map(data.sessions.map(session=>[identityKey(session.identity),session]));
+    let best:{session:Session;at:number;key:string}|undefined;
+    for(const session of data.sessions){
+      if(session.parent.status!=='known')continue;
+      const key=identityKey(session.identity);
+      const members=[...subtree(key)].flatMap(member=>byKey.get(member)??[]);
+      if(members.some(member=>member.attention.length>0||!finished(member)))continue;
+      const at=Math.max(...members.map(member=>member.lastEvidenceAtMs));
+      if(!best||at<best.at||at===best.at&&key<best.key)best={session,at,key};
+    }
+    return best?.session;
   }
   async function retire(roots:string[],at:number,end?:Envelope):Promise<Outcome> {
     const removed=new Set(roots.flatMap(root=>[...subtree(root)]));
@@ -282,9 +293,10 @@ export async function createAgentState(options:Options) {
         if(!reduced.session)return {ok:true,revision:data.revision,outcome:reduced.outcome};
         if(full){
           // Hub #807: subagent records must not crowd a new root task out for a day. Only an event that
-          // creates a root retires the least recently active child whose subtree holds no attention,
-          // through the ordinary retirement path, so guards reject its delayed events. Roots are never
-          // displaced, and with no eligible child admission is still rejected. Each displacement is loss.
+          // creates a root retires one finished child subtree without attention, through the ordinary
+          // retirement path, so its later events other than an eligible start are rejected as stale.
+          // Roots are never displaced, and with no eligible child admission is still rejected. Each
+          // displacement is loss.
           const victim=displaceableChild();
           if(!victim){loss();return {ok:false,code:'capacity'};}
           const made=await retire([identityKey(victim.identity)],now());

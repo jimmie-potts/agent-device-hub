@@ -170,13 +170,18 @@ saturation for operator action; beyond expiry, it must not silently discard
 state to make room, with one exception for child records. Subagent records
 are short-lived and never stand alone, but each holds a slot for a day, so they
 could crowd new tasks out. When the owner is full and an event would create a
-root session (any record whose parent is not known), the owner retires the
-least recently active child record whose subtree holds no attention, together
-with its descendants, through the ordinary retirement path, then admits the
-root. Retirement guards reject the displaced child's delayed events, and each
-displacement adds one to the loss count. A new child never displaces anything,
-roots are never displaced, and with no eligible child the root is rejected as
-before. Revision exhaustion also rejects admission.
+root session (any record whose parent is not known), the owner retires one
+child record with its descendants through the ordinary retirement path, then
+admits the root. Only a subtree whose records are all finished (idle,
+interrupted or ended) and hold no attention is eligible, so a running subagent
+(`active`, or `unknown` after real Claude Code subagent hooks) or a pending
+approval never disappears; among eligible subtrees the one whose newest
+evidence is oldest goes. Retirement guards reject the displaced records' later
+events other than an eligible start, and each displacement adds one to the loss
+count. The guards share the 128-identity retirement memory with runtime ends, so
+sustained saturation evicts older end guards sooner. A new child never displaces
+anything, roots are never displaced, and with no eligible child the root is
+rejected as before. Revision exhaustion also rejects admission.
 
 Provider observations, calculated current state and diagnostics have separate
 roles. Envelopes preserve available qualified identity/order evidence; snapshots
@@ -259,7 +264,7 @@ admission without changing those schemas.
 Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
 Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
-Package 3.6.0 lets a new root task displace the least recently active child record without attention when the owner is full ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)), without changing the schemas.
+Package 3.6.0 lets a new root task displace a finished child subtree without attention when the owner is full ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)), without changing the schemas.
 Package 3.5.0 adds the lifecycle 1.2 Claude Desktop host session ID and opt-in snapshot 1.3 without changing the durable schemas.
 Package 3.4.0 maps Claude Code `PostToolUse` and `PostToolUseFailure` to known-ID resolutions and forgets same-turn approvals without a request ID on a known-ID resolution or turn end, without changing the schemas.
 Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
@@ -283,7 +288,7 @@ source commit. No checkout-relative imports or private-registry secret is needed
 
 ## Runtime-end retirement
 
-An accepted `runtime.ended` for a known session on any supported path (Codex Desktop, Codex CLI or Claude Code) removes the session and its known descendants in one durable replacement and publishes one revision. Removal frees capacity and forgets task labels, project overrides, attention and notices, even when notices or attention remain. It does not acknowledge, mark read, complete or cancel work, and it never terminates an agent. Ending one path's last session cannot remove another path's session, even one with the same native ID under a different selector. Ordinary completion, `SubagentStop`, interruption, input waits and freshness uncertainty retain records, and a long turn has no new timeout. Each record keeps the existing 24-hour evidence expiry fallback, so a run whose end is never delivered still expires on its own clock.
+An accepted `runtime.ended` for a known session on any supported path (Codex Desktop, Codex CLI or Claude Code) removes the session and its known descendants in one durable replacement and publishes one revision. Removal frees capacity and forgets task labels, project overrides, attention and notices, even when notices or attention remain. It does not acknowledge, mark read, complete or cancel work, and it never terminates an agent. Ending one path's last session cannot remove another path's session, even one with the same native ID under a different selector. Ordinary completion, `SubagentStop`, interruption, input waits and freshness uncertainty retain records, and a long turn has no new timeout. Each record keeps the existing 24-hour evidence expiry fallback, so a run whose end is never delivered still expires on its own clock. The one other early removal is capacity displacement of a finished child subtree (see [Bounds and privacy](#bounds-and-privacy)).
 
 Stores written while only Codex Desktop retired may hold a Claude or CLI record whose accepted end was reduced into activity `ended`. Opening such a store retires exactly those records and their known descendants in one durable revision with the same guards. Settlement adds no journal row and performs no acknowledgment, clock reset or old-effect replay. Records with idle, waiting, interrupted or unknown activity are never treated as ended; they keep their evidence clocks and the 24-hour fallback. That includes a record whose unordered hook end left activity `unknown` under the older owner: the diagnostic journal's `runtime.ended` row is bounded history, not retirement authority, so the record waits for its own expiry. The reducer no longer produces `ended`.
 
