@@ -1,0 +1,33 @@
+## Context
+
+See proposal.md for motivation. Main at `b27db50` ships lifecycle package 1.1.0 (envelopes 1.0 and 1.1), agent-state 3.4.0 with snapshots 1.0, 1.1 and 1.2 and durable format 2.1, and Hub 0.5.1. Lifecycle and snapshot schemas are closed, so a new field needs new versions. The owner decided on 2026-10-03 that the Desktop session ID stays in owner memory and that durable 2.1, including `storedSession` and every durable schema, stays byte-for-byte unchanged, so a previous release can still reopen the store. Hub #424 is the precedent for versioned producer selection and opt-in snapshot projections.
+
+## Goals / Non-Goals
+
+Goals: carry a validated Claude Desktop session ID from the hook to the opt-in session feed, and keep every older producer, envelope, snapshot and durable reader unchanged.
+
+Non-goals: using the ID as a session identity, merging or correlating records by it, persisting it, mapping Codex or other host IDs, Desktop archive evidence, the CHOMPI bridge (#742), installer compatibility (#794), installation, hook changes on a running installation and dashboard presentation.
+
+## Decisions
+
+- **Field name and grammar.** `hostSessionId`, named after the provider's `CLAUDE_CODE_HOST_SESSION_ID`: the session ID assigned by the application hosting the agent. It is distinct from `identity.hostId`, which names the monitored machine. It uses the existing `$defs/id` grammar (1-128 ASCII letters, digits, `_`, `.`, `-`); `local_<uuid>` is 42 characters. A structured `{host,id}` object was rejected because one producer path exists and a string keeps the corpus small.
+- **Version.** Lifecycle 1.2 is lifecycle 1.1 plus `hostSessionId`; 1.0 and 1.1 still reject the field. The contract stays provider-neutral, but the field is root-only: the 1.2 schema rejects it when `parent.status` is `known`. A child agent runs inside the same Desktop session, but #424 already keeps parent metadata off child records, and a consumer can reach the root through the child's known parent. Relaxing this later needs a new minor version.
+- **Producer read.** `enrichHook` gains `lifecycleVersion` (`1.1` default, or `1.2`) and an injectable `environment` that defaults to `process.env`. With 1.2 and a Claude root event, it reads exactly `CLAUDE_CODE_ENTRYPOINT` and `CLAUDE_CODE_HOST_SESSION_ID` through own-property descriptors. It requires the entrypoint to equal `claude-desktop` byte for byte and validates the value with the identifier grammar. A missing, different, malformed or oversized value, or a throwing environment, yields no field and the normalized event is still sent. `normalizeHook` never reads the environment. Envelope trimming removes the title, then the project, then the host session ID, keeping the 2,048-byte bound. Codex events never carry the field. An unsupported `lifecycleVersion` produces no event.
+- **Owner memory.** The owner keeps a `Map` from the full identity key to the latest value, outside `DurableState`. A committed lifecycle 1.2 event for an existing or new root session sets the value when present and clears it when absent; envelopes 1.0 and 1.1 leave it unchanged. The map changes only with a committed revision, so change subscribers see a revision bump. It is applied before the commit is published and restored if the commit fails. Duplicate, stale and rejected events do not touch it. Entries are pruned whenever a record leaves the store: retirement on `runtime.ended`, startup settlement, 24-hour expiry or capacity replacement. A retired identity that starts again gets the value from its new events.
+- **Not an identity.** The reducer, deduplication guards, retirement guards, journal and generations never read the field. Two records with the same Desktop ID stay two records. Claude `/clear` keeps today's #312 behavior: the old hook session retires and the new hook session is a separate record carrying the same value.
+- **Restart.** After a Hub restart the map is empty. Each session shows no value until its next committed 1.2 event. The bridge caches each slot's ID itself (#742).
+- **Snapshot 1.3.** Snapshot 1.3 is snapshot 1.2 plus optional `hostSessionId`, rejected on a child record. Default 1.0, 1.1 and 1.2 projections never include it. The HTTP route accepts `snapshotVersion=1.3`; `hub_sessions` moves from 1.2 to 1.3 because #424 made it the metadata-bearing session tool. Its query matching is unchanged. The dashboard and Tidbyt stay on 1.2.
+- **Producer selection.** Setup input and staged producer files accept `lifecycleVersion:"1.2"`. The Hub `monitor-hook` and the package `hook.mjs` pass the selection to `enrichHook`. An installed receipt cannot change its version in place (`setup-identity-conflict`), so an operator removes the reviewed setup and applies a new one in a new receipt directory, as for 1.1.
+- **Packages.** Lifecycle 1.2.0, agent-state 3.5.0 and Hub 0.6.0. Exact pins move in lockstep. Published archives and receipts are not replaced.
+
+## Risks / Trade-offs
+
+- [The ID is absent after a restart until the session's next event] → The owner decided this; the bridge keeps its own per-slot cache and treats absence as unknown.
+- [A 1.2 producer pointed at an older owner gets every event rejected] → Select 1.2 only after the owner upgrade. The hook still fails open, and the operator reselects an older version before any Hub rollback.
+- [Hook processes may not inherit the Desktop environment] → #740 saw the variables in Desktop Code processes but not in hook processes. Missing values are omitted, and the issue's installed observation settles inheritance.
+- [A consumer might treat the ID as identity] → Specs, docs and tests state that it is opaque routing metadata. The owner never merges by it.
+- [Guarded upgrade refuses changed agent-state and lifecycle bytes] → #794 owns the installer change; this change does not touch `apps/hub/src/install/**`.
+
+## Migration Plan
+
+No data migration. Durable 2.1 and its schemas stay byte-identical, and a source test reopens a store written by the new owner and checks that the on-disk bytes contain no `hostSessionId`. Installation (after #794): upgrade the Hub, then select lifecycle 1.2 for the Claude producer with the documented remove-and-apply setup step. Rollback: reselect the producer's previous lifecycle version first, then roll back the Hub. The previous release reopens the unchanged store.
