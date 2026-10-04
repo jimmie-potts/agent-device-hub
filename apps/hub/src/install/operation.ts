@@ -11,7 +11,11 @@ export type HealthProof={identity:Identity;process:ServiceObservation;program:st
 export type ServiceControl={observe:()=>Promise<ServiceObservation>;stop:()=>Promise<void>;start:()=>Promise<void>;inspect:<T>(read:()=>Promise<T>)=>Promise<T>;health:(program:string,identity:Identity)=>Promise<HealthProof>};
 export type OperationInput={plan:()=>Promise<Plan>;approvedDigest:string;prepare:()=>Promise<{path:string;identity:Identity}>;
  qualify:(previous:string,target:string)=>Promise<{status:string;evidenceSha256?:string}>;service:ServiceControl;
- state:{capture:()=>Promise<unknown>;preserved:(before:unknown,after:unknown)=>boolean};checkpoint?:(phase:string)=>Promise<void>};
+ state:{capture:()=>Promise<unknown>;preserved:(before:unknown,after:unknown)=>boolean};checkpoint?:(phase:string)=>Promise<void>;deadline?:number};
+/** Reserve the native switch and recovery budget; never terminate an admitted switch. */
+export function assertInstallReserve(deadline:number|undefined,nowSeconds=Date.now()/1000):void{
+ if(deadline!==undefined&&(!Number.isFinite(deadline)||deadline-nowSeconds<600))throw new Error('install-deadline-reserve');
+}
 type Phase='preflight'|'stage'|'intent'|'stop'|'backup'|'switch'|'start'|'health'|'rollback'|'receipt-finalization'|'recovery';
 export type Receipt={schemaVersion:'install-receipt/1.0';operationId:string;operation:'migrate'|'upgrade'|'rollback';runtime:'hub';installationId:string;
  startedAt:string;updatedAt:string;completedAt:string|null;requestedTarget:string;previous:Identity|null;target:Identity|null;
@@ -87,6 +91,9 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
    const old=JSON.parse((await readRegular(join(root,'receipts',file))).toString()) as Receipt;
    if(!validateInstallReceipt(old)||!['succeeded','failed-rolled-back','refused'].includes(old.outcome))throw new Error('install-operation-unresolved');
   }
+  // Record a known pre-entry refusal in the existing namespace so a supervisor
+  // can settle it from this receipt plus a fresh healthy baseline readback.
+  assertInstallReserve(input.deadline);
   const plan=await input.plan();assertApproval(plan,input.approvedDigest);await protectedUnchanged(plan);
   await writeDurable(join(root,'receipts',operationId+'-plan.json'),plan);
   before=await input.service.observe();if(before.state!=='active'||!before.pid||!before.start)throw new Error('install-baseline-not-running');
@@ -105,7 +112,7 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
   receipt.compatibility={status:'compatible',evidence};observations.compatibility=compatibility;
   // Staging and qualification can be slow; recheck the approved baseline immediately before intent.
   assertApproval(await input.plan(),input.approvedDigest);await protectedUnchanged(plan);await verifyProgram(target.path,target.identity);await verifyProgram(previousPath,installed.identity);
-  phase='intent';await checkpoint('intent');await persist();
+  phase='intent';assertInstallReserve(input.deadline);await checkpoint('intent');assertInstallReserve(input.deadline);await persist();
   phase='stop';await checkpoint('stopping');await stop();
   phase='backup';stateBefore=await input.state.capture();observations.before=stateBefore;
   receipt.backup=await backupState(plan.bound.layout.state,join(root,'backups',operationId));

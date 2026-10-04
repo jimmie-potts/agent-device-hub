@@ -58,6 +58,14 @@ Compose grill-with-docs for unsettled implementation-changing decisions and tdd
 for meaningful executable behavior. Reuse the shared agent-skills catalog;
 report missing prerequisites without copying, installing or replacing skills.
 
+When this repository participates in the installed nightly queue, acquire its
+shared manual claim before delivery writes and retain it for the whole delivery,
+even while scheduled admissions are paused or disabled. Read
+[the manual claim procedure](docs/sdlc.md#shared-manual-delivery-claim).
+An explicitly assigned worker inside a held supervisor claim does not nest claims.
+An unwrapped or nonwrappable client stays read-only until a qualified claim or
+handoff; prose alone does not exclude another writer.
+
 Use one coordinating writer and an isolated branch/worktree per deliverable.
 Preserve other worktrees, branches, installations and their owners. Deliver
 changes through PRs. Independent read-only Standards and Specification reviewers

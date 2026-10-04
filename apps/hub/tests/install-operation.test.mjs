@@ -32,6 +32,25 @@ async function fixture(){
  return {root,layout,calls,plan,approved,target,identity,input,service,stateReader,options};
 }
 const valid=result=>assert.equal(validateInstallReceipt(result.receipt),true,JSON.stringify(result.receipt));
+test('insufficient entry reserve produces a durable attributable refusal with no service effect',async()=>{
+ const f=await fixture();try{
+  f.input.deadline=Date.now()/1000+599;
+  f.input.prepare=async()=>{throw new Error('preparation-must-not-run');};
+  const result=await executeOperation(f.input);valid(result);
+  assert.equal(result.receipt.outcome,'refused');assert.equal(result.receipt.failure.phase,'preflight');assert.equal(result.receipt.failure.code,'install-deadline-reserve');
+  assert.deepEqual(JSON.parse(await readFile(result.path,'utf8')),result.receipt);assert.deepEqual(f.calls,[]);
+  await assert.rejects(lstat(join(f.layout.root,'install.lock')),/ENOENT/);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+test('deadline reserve is rechecked after preparation and before native mutation intent',async()=>{
+ const f=await fixture();try{
+  f.input.deadline=Date.now()/1000+601;
+  f.input.qualify=async()=>{f.input.deadline=Date.now()/1000+599;return {status:'compatible',evidenceSha256:'c'.repeat(64)};};
+  const result=await executeOperation(f.input);valid(result);
+  assert.equal(result.receipt.outcome,'refused');assert.equal(result.receipt.failure.code,'install-deadline-reserve');assert.deepEqual(f.calls,[]);
+  await assert.rejects(lstat(join(f.layout.root,'install.lock')),/ENOENT/);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
 test('health is checked again after inspection and a fault cannot produce a success receipt',async()=>{
  const f=await fixture();try{
   let inspected=false;const health=f.service.health;
