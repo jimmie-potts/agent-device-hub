@@ -454,6 +454,10 @@ The temporary AutoHotkey trial qualified this boundary; reusable implementation
 and persistent installation remain separate. This local path does not wait for
 shared monitoring, general controls, Music or model calls. Preserve vendor mappings and the
 existing CHOMPI bridge; its MIDI bindings do not establish 8BitDo/profile support.
+The CHOMPI controller epic ([#738](https://github.com/jimmie-potts/agent-device-hub/issues/738))
+is a separate non-MIDI route: one Windows bridge is the only CHOMPI writer and
+reads the Hub's session feed without becoming a state owner. See the
+[qualification report](chompi-controller-qualification.md).
 
 An explicitly selected qualified binding later requests
 Work → Free → Quiet → Work through the hub's preset service. Keyboard A/B and the attached

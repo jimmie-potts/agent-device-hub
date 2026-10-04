@@ -140,7 +140,13 @@ and vendor mappings retain their owners.
 Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y. Their earlier
 successful manual mapping trial is historical evidence, not a further gate.
 Firmware replacement, new drivers and custom USB protocol research are outside
-the selected approach.
+the selected N30 approach.
+
+The separate CHOMPI controller epic ([#738](https://github.com/jimmie-potts/agent-device-hub/issues/738))
+replaces CHOMPI firmware with a non-MIDI HID controller and its own Windows
+bridge. Its [qualification report](chompi-controller-qualification.md) records
+the transport, routing and trial plan; the legacy MIDI bridge stays unchanged
+until that epic's installed cutover.
 
 ## Delivery sequence
 
