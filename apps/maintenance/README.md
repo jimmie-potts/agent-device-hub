@@ -47,6 +47,11 @@ by journald or that a service is healthy.
 
 ## Configuration
 
+Trusted fingerprint entries use streaming SHA256 with a 512 MiB per-file limit.
+Use resolved regular-file paths; final symlinks, multiply linked files, changed
+reads and mismatched hashes refuse operation. Private configuration and evidence
+keep their smaller read limits. Fingerprint checks do not execute the tools.
+
 Keep the configuration outside candidate repositories, owned by the current
 user with mode 0600. Use a separate owned 0700 `stateRoot` outside source and
 publishable artifacts. `evidenceDirectory` is an owned, private, dedicated

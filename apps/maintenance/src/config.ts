@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {isAbsolute,resolve} from 'node:path';
-import {readRegular,requireValue} from './storage.js';
+import {fingerprintRegular,readRegular,requireValue} from './storage.js';
 export const REPOSITORY='jimmie-potts/agent-device-hub';
 export const sha=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 export type Config={schemaVersion:1;repository:typeof REPOSITORY;authority:string;checkout:string;stateRoot:string;
@@ -26,7 +26,7 @@ export function validateConfig(value:any):Config {
  return value;
 }
 export async function fingerprints(config:Config){
- for(const [path,digest] of Object.entries(config.files))requireValue(sha(await readRegular(path,128*1024*1024))===digest,'trusted-file-drift');
+ for(const [path,digest] of Object.entries(config.files))requireValue(await fingerprintRegular(path)===digest,'trusted-file-drift');
 }
 export async function loadConfig(path:string):Promise<Config>{
  const config=validateConfig(JSON.parse((await readRegular(path,128*1024,true)).toString('utf8')));await fingerprints(config);return config;

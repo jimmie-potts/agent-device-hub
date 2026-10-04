@@ -51,8 +51,11 @@ try{
   for(const [name,digest] of Object.entries(manifest.files))assert.equal(hash(await readFile(join(installed,name))),digest);
   const invalid=spawnSync(process.execPath,[join(installed,'maintenance.mjs')],{cwd:consumer,input:'{}',encoding:'utf8'});
   assert.equal(invalid.status,0);assert.equal(JSON.parse(invalid.stdout).status,'blocked');
+  const {largeTrustedFile}=await import('../apps/maintenance/tests/fingerprint-fixture.mjs');
   const {fixture}=await import('../apps/maintenance/tests/fixture.mjs');const f=await fixture({parent:scratch});
   try{
+   const large=await largeTrustedFile(f.directory);f.config.files[large.path]=large.sha256;
+   await writeFile(f.configPath,JSON.stringify(f.config),{mode:0o600});
    const response=spawnSync(process.execPath,[join(installed,'maintenance.mjs'),'--config',f.configPath],{cwd:consumer,input:JSON.stringify(f.request),encoding:'utf8'});
    assert.equal(response.status,0);assert.equal(JSON.parse(response.stdout).selections[0].issue,12);assert.equal((await f.read()).creates,1);
   }finally{await f.close();}
@@ -60,6 +63,10 @@ try{
   for(const name of ['agent-device-hub','codex-nanoleaf','divoom-app-upgrade','agent-skills','dotfiles']){
    const tracker=await closeoutFixture({repository:'jimmie-potts/'+name,parent:scratch,helper:join(installed,'recommendation.py')});
    try{
+    if(name==='agent-device-hub'){
+     const large=await largeTrustedFile(tracker.directory);tracker.config.planning.files[large.path]=large.sha256;
+     await writeFile(tracker.configPath,JSON.stringify(tracker.config),{mode:0o600});
+    }
     const response=spawnSync(process.execPath,[join(installed,'tracker-closeout.mjs'),'--config',tracker.configPath],{cwd:consumer,input:JSON.stringify(tracker.request),encoding:'utf8'});
     assert.equal(response.status,0,response.stderr);const result=JSON.parse(response.stdout);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(result.repository,tracker.request.repository);assert.equal((await tracker.read()).issues[0].state,'closed');
    }finally{await tracker.close();}

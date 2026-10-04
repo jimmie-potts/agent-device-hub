@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {join,dirname} from 'node:path';
 import {runProcess,subscriptionEnvironment} from '../dist/process.js';
-import {PrivateStore,readRegular} from '../dist/storage.js';
+import {PrivateStore,fingerprintRegular,readRegular} from '../dist/storage.js';
 import {acceptanceInstructions,closeoutPolicy} from './policies.mjs';
 const hash=x=>createHash('sha256').update(typeof x==='string'||Buffer.isBuffer(x)?x:JSON.stringify(x)).digest('hex');
 const require=(ok,reason)=>{if(!ok)throw new Error(reason);};
@@ -47,7 +47,7 @@ export async function checkPlanner(config){
  require(p.files[join(dirname(p.recommendations),'story_sections.py')],'closeout-fingerprint-missing');
  const instructions=acceptanceInstructions(config);
  for(const path of instructions)require(p.files[path],'owning-acceptance-fingerprint-missing');
- for(const [path,digest] of Object.entries(p.files))require(hash(await readRegular(path,128*1024*1024))===digest,'closeout-file-drift');
+ for(const [path,digest] of Object.entries(p.files))require(await fingerprintRegular(path)===digest,'closeout-file-drift');
  return {...p,acceptanceInstructions:instructions};
 }
 export async function assess(config,input,selected,related){
