@@ -2,7 +2,7 @@
 
 The synthetic large-batch regression fails with aggregate-capacity on collector 1.1.3 and passes with the partition correction. The focused suite passes 17/17, including adversarial partition overflow and committed-state rollback. Whole-output differential comparison matches 264 mixed contributions across three reporting zones.
 
-Required build/typecheck, collector (103/103), offline package, controller contracts (410/410), Python contracts (4/4), contract package, workflow and affected Hub consumers (20/20) pass. After incorporating main's CHOMPI and Claude Desktop changes, shared checks and Hub consumers are refreshed; workflow inventory is 41 specifications and 88 archives, with 18/18 workflow tests.
+Required build/typecheck, collector (103/103), offline package, controller contracts (410/410), Python contracts (4/4), contract package, workflow and affected Hub consumers (20/20) pass. After incorporating main's CHOMPI and Claude Desktop changes, shared checks and Hub consumers are refreshed; that comparison has 41 specifications and 87 archives, with 18/18 workflow tests. The earlier count of 88 incorrectly included `.gitkeep`. The subsequent maintenance-only base refresh adds one archive; its refreshed inventory is 41 specifications and 88 archives.
 
 Complete extracted collector 1.1.4 passes all six native entrypoints and package smoke. Its 603 manifest hashes are verified. Archive SHA256: `302da81feb855adeeba3d281fb11414823beb9c41949a10ee775fa87ddbd59ff`.
 
