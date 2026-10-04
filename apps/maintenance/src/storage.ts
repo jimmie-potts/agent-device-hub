@@ -5,7 +5,8 @@ import {randomUUID} from 'node:crypto';
 import {hashRegular} from '../../hub/dist/install/files.js';
 
 // Trusted native executables can exceed the separate private-content read bound.
-export const fingerprintRegular=(path:string):Promise<string>=>hashRegular(path,512*1024*1024);
+// Refusals keep maintenance's unsafe-file reason instead of the installer's wording.
+export const fingerprintRegular=(path:string):Promise<string>=>hashRegular(path,512*1024*1024).catch(error=>{if(error?.code==='ENOENT')throw error;throw new Error('unsafe-file');});
 
 export function requireValue(value:unknown,reason:string):asserts value {if(!value)throw new Error(reason);}
 export async function privateDirectory(path:string):Promise<void> {
