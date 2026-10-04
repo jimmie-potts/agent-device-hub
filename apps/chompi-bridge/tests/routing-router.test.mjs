@@ -152,6 +152,19 @@ test('a Codex slot with neither a Codex name nor a Hub title cannot be verified'
   assert.equal(ctx.failures().at(-1).reason, 'title-missing');
   assert.deepEqual(ctx.adapter.keys, [], 'nothing is typed');
   assert.equal(target(ctx), null);
+  assert.equal(ctx.adapter.count('openUri'), 1, 'the link opens once and is never repeated');
+});
+
+test('matrix: a Codex name another thread also has fails closed even when that row is not rendered', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { title: undefined })] });
+  ctx.adapter.codexNames.set(tid(1), 'Shared name');
+  ctx.adapter.codexThreads.set(tid(1), 'Shared name');
+  ctx.adapter.codexNames.set(tid(9), 'Shared name'); // a collapsed or deleted thread: no sidebar row
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1).reason, 'title-not-unique');
+  assert.deepEqual(ctx.adapter.keys, []);
+  assert.equal(target(ctx), null);
 });
 
 test('a Codex slot without a Hub title verifies by the name Codex keeps for the thread', async t => {
@@ -170,6 +183,7 @@ test('the Codex name takes precedence over a stale Hub title', async t => {
   ctx.adapter.codexThreads.set(tid(1), 'Renamed in Codex');
   await ctx.focus(1);
   assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.ok(!JSON.stringify(ctx.logs).includes('Renamed in Codex') && !JSON.stringify(ctx.logs).includes('Old Hub title'), 'logs never carry names');
 });
 
 test('matrix: the target app not in the foreground after open gets no input', async t => {

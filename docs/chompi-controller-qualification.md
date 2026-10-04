@@ -295,9 +295,10 @@ dismisses attention. Before any input:
    Codex: UI Automation shows the selected sidebar row with the thread's
    name, and no other open Codex task shares that name; a duplicate name
    fails closed. The name is the one Codex keeps in its local
-   `session_index.jsonl`, or the Hub's title when Codex has none (the Hub
-   carries a Codex title only when the owner set one; found in the #743
-   trial). Claude: only the target session's `lastFocusedAt` moved past the
+   `session_index.jsonl`, or the Hub's title when Codex has never named the
+   thread (the Hub carries a Codex title only when the owner set one; found
+   in the #743 trial). A name any other thread in that index also has fails
+   closed too, because collapsed or deleted rows are not in the sidebar's count. Claude: only the target session's `lastFocusedAt` moved past the
    press time and no other session's is newer.
 4. **Composer.** Codex sends `Alt+L`; both clients then require UI Automation
    keyboard focus on the composer.

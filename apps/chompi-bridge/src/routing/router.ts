@@ -393,7 +393,10 @@ export class TaskRouter {
   /** The adapter compares the thread's Codex name, or the slot's Hub title when Codex has none. */
   async #codexSelection(taskId: string, title: string | null): Promise<Check> {
     const selection = await this.#call(() => this.#adapter.codexSelectedThread(taskId, title));
-    if (selection.ok && selection.value.status === 'unknown' && selection.value.reason === 'codex-title-missing') return { ok: false, reason: 'title-missing' };
+    if (selection.ok && selection.value.status === 'unknown') {
+      if (selection.value.reason === 'codex-title-missing') return { ok: false, reason: 'title-missing' };
+      if (selection.value.reason === 'codex-name-not-unique') return { ok: false, reason: 'title-not-unique' };
+    }
     if (!selection.ok || selection.value.status !== 'known') return { ok: false, reason: 'selection-unknown' };
     if (!selection.value.value.matches) return { ok: false, reason: 'selection-mismatch' };
     return selection.value.value.sameTitleRows === 1 ? { ok: true } : { ok: false, reason: 'title-not-unique' };

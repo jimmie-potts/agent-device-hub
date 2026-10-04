@@ -70,8 +70,10 @@ export interface OsAdapter {
   /**
    * Codex: whether the selected sidebar row shows the thread's name, and how many open rows share
    * that name. The adapter takes the name Codex itself keeps for `threadId` and uses `fallbackTitle`
-   * (the Hub's title) only when Codex has none; with neither it answers unknown
-   * (`codex-title-missing`). Compared inside the adapter; no title text is returned.
+   * (the Hub's title) only when Codex has never named the thread. It answers unknown when the name
+   * source cannot be read or the current name is unusable, `codex-title-missing` with no name at all
+   * and `codex-name-not-unique` when another thread has the same name. Compared inside the adapter;
+   * no title text is returned.
    */
   codexSelectedThread(threadId: string, fallbackTitle: string | null): Promise<Observation<{ matches: boolean; sameTitleRows: number }>>;
 

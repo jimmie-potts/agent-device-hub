@@ -6,7 +6,8 @@ export { encodeKeyboardInputs, INPUT_SIZE, Keyboard, VIRTUAL_KEYS, virtualKeyCod
 export { encodeWheelInput, MAX_SCROLL_NOTCHES, WHEEL_DELTA, type ScreenPoint, type ScreenRect } from './mouse.js';
 export { parseDeepLink, type DeepLink } from './uri.js';
 export {
-  claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNames, MAX_THREAD_NAME, type CodexArchiveOptions, type CodexThreadNameOptions,
+  claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNameIndex, CodexThreadNames, MAX_THREAD_NAME, type CodexArchiveOptions,
+  type CodexThreadName, type CodexThreadNameOptions,
 } from './client-files.js';
 export {
   asciiJson, defaultSpawnHelper, encodeHelperCommand, helperScriptPath, UIA_HELPER_PROTOCOL, UiaHelper,

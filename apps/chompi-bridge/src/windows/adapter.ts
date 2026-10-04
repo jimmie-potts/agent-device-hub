@@ -57,9 +57,10 @@ interface Foreground { hwnd: number; root: number; pid: number; packageIdentity:
 const isClient = (client: unknown): client is Client => client === 'codex' || client === 'claude';
 
 /**
- * The Windows OS adapter (interface version 1). Keystrokes, foreground identity and deep links use Win32 through
+ * The Windows OS adapter (interface version 2). Keystrokes, foreground identity and deep links use Win32 through
  * koffi; UI checks go to a read-only UI Automation helper scoped to the client's foreground top-level window; the
- * Codex archive and Claude Desktop records are read by name and by allowlisted key. Nothing here logs.
+ * Codex archive and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
+ * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. Nothing here logs.
  */
 export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
   const env = options.env ?? process.env;
@@ -259,13 +260,20 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       if (fallbackTitle !== null && (typeof fallbackTitle !== 'string' || fallbackTitle.length === 0 || fallbackTitle.length > MAX_TITLE)) {
         return unknown('invalid-title');
       }
-      // Codex's own name is what its sidebar shows; the Hub only has a title the owner set.
+      // Codex's own name is what its sidebar shows; the Hub only has a title the owner set. Every unknown fails closed:
+      // an unreadable index, an unusable current name, no name at all, or a name another thread also has (its row may
+      // be collapsed or gone, so the sidebar's own duplicate count cannot see it).
       const home = codexHome();
-      if (home && threadNames?.home !== home) threadNames = { home, index: new CodexThreadNames(home, options.codexThreadNames) };
-      const named = home ? await threadNames!.index.name(threadId) : unknown('codex-home-unset');
+      if (!home) return unknown('codex-home-unset');
+      if (threadNames?.home !== home) threadNames = { home, index: new CodexThreadNames(home, options.codexThreadNames) };
+      const read = await threadNames.index.read();
       if (closed) return unknown('adapter-closed');
-      const title = named.status === 'known' && named.value !== null ? named.value : fallbackTitle;
-      if (title === null) return unknown(named.status === 'unknown' ? named.reason : 'codex-title-missing');
+      if (read.status !== 'known') return read;
+      const current = read.value.nameOf(threadId);
+      if (current.status === 'invalid') return unknown('codex-name-invalid');
+      const title = current.status === 'named' ? current.name : fallbackTitle;
+      if (title === null) return unknown('codex-title-missing');
+      if (read.value.sharedWithOtherThread(title, threadId)) return unknown('codex-name-not-unique');
       return windowQuery('codex', 'codexSelectedTitle', { title }, value => {
         const record = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
         const { matches, sameTitleRows } = record;

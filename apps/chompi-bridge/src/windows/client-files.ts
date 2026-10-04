@@ -96,27 +96,58 @@ export interface CodexThreadNameOptions {
 /** The longest thread name the adapter compares, matching its title bound. */
 export const MAX_THREAD_NAME = 1024;
 
-type NameIndex = { mtimeMs: number; size: number; names: Map<string, string> };
+/** A thread's current Codex name: named, never named, or unusable (its newest entry is invalid or out of order). */
+export type CodexThreadName = { status: 'named'; name: string } | { status: 'none' } | { status: 'invalid' };
+
+/** One parsed `session_index.jsonl`: each thread's current name and how many threads share each name. */
+export class CodexThreadNameIndex {
+  private readonly names: Map<string, string | null>;
+  private readonly holders = new Map<string, number>();
+
+  /** `names` maps a thread ID to its current name, or to `null` when that name is unusable. */
+  constructor(names: Map<string, string | null>) {
+    this.names = names;
+    for (const name of names.values()) if (name !== null) this.holders.set(name, (this.holders.get(name) ?? 0) + 1);
+  }
+
+  nameOf(threadId: string): CodexThreadName {
+    if (!this.names.has(threadId)) return { status: 'none' };
+    const name = this.names.get(threadId)!;
+    return name === null ? { status: 'invalid' } : { status: 'named', name };
+  }
+
+  /**
+   * Whether a thread other than `threadId` currently has `name`, rendered in the sidebar or not (collapsed projects,
+   * archived or deleted threads all count), so a name match can never stand in for the exact thread.
+   */
+  sharedWithOtherThread(name: string, threadId: string): boolean {
+    const holders = this.holders.get(name) ?? 0;
+    return holders > (this.names.get(threadId) === name ? 1 : 0);
+  }
+}
+
+type NameCache = { mtimeMs: number; size: number; index: CodexThreadNameIndex };
 
 /**
- * Codex's own name for a thread, the name its sidebar shows, from `<home>/session_index.jsonl`: one JSON object per
- * line with `id`, `thread_name` and `updated_at`. Codex appends a line when a thread is named or renamed, so the
- * entry with the latest `updated_at` wins and a later line wins a tie. Only those three keys are read, and names
- * never leave the adapter. The parsed index is kept until the file's size or modification time changes.
+ * Codex's own thread names, the names its sidebar shows, from `<home>/session_index.jsonl`: one JSON object per line
+ * with `id`, `thread_name` and `updated_at`. Codex appends a line when it names or renames a thread, so a thread's
+ * last line is its current name; a tie in `updated_at` goes to the later line. The name is unusable when that last
+ * line has an empty, overlong or non-string name or an unparsable `updated_at`, or when an earlier line for the
+ * thread has a later `updated_at`. Only those three keys are read, and names never leave the adapter. The parsed index
+ * is kept until the file's size or modification time changes.
  */
 export class CodexThreadNames {
   private readonly home: string;
   private readonly maxBytes: number;
-  private cache: NameIndex | null = null;
+  private cache: NameCache | null = null;
 
   constructor(home: string, options: CodexThreadNameOptions = {}) {
     this.home = home;
     this.maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
   }
 
-  /** Known `null` when Codex has no name for the thread (or no index yet); unknown when the index cannot be read. */
-  async name(threadId: string): Promise<Observation<string | null>> {
-    if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) return unknown('invalid-thread-id');
+  /** The parsed index; an empty one when Codex has written none yet; unknown when the index cannot be read. */
+  async read(): Promise<Observation<CodexThreadNameIndex>> {
     const path = join(this.home, 'session_index.jsonl');
     let handle;
     try {
@@ -125,7 +156,7 @@ export class CodexThreadNames {
       if (errorCode(error) !== 'ENOENT') return unknown('codex-index-unreadable');
       try {
         await stat(this.home);
-        return known(null);
+        return known(new CodexThreadNameIndex(new Map()));
       } catch {
         return unknown('codex-home-missing');
       }
@@ -137,9 +168,9 @@ export class CodexThreadNames {
       if (!this.cache || this.cache.mtimeMs !== info.mtimeMs || this.cache.size !== info.size) {
         const text = await handle.readFile('utf8');
         if (Buffer.byteLength(text, 'utf8') > this.maxBytes) return unknown('codex-index-too-large');
-        this.cache = { mtimeMs: info.mtimeMs, size: info.size, names: parseThreadNames(text) };
+        this.cache = { mtimeMs: info.mtimeMs, size: info.size, index: new CodexThreadNameIndex(parseThreadNames(text)) };
       }
-      return known(this.cache.names.get(threadId) ?? null);
+      return known(this.cache.index);
     } catch {
       return unknown('codex-index-unreadable');
     } finally {
@@ -148,8 +179,8 @@ export class CodexThreadNames {
   }
 }
 
-function parseThreadNames(text: string): Map<string, string> {
-  const latest = new Map<string, { name: string; at: number }>();
+function parseThreadNames(text: string): Map<string, string | null> {
+  const last = new Map<string, { name: string | null; at: number; earlierMax: number }>();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let entry: unknown;
@@ -157,13 +188,13 @@ function parseThreadNames(text: string): Map<string, string> {
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
     const { id, thread_name: name, updated_at: updatedAt } = entry as Record<string, unknown>;
     if (typeof id !== 'string' || !THREAD_ID.test(id)) continue;
-    if (typeof name !== 'string' || name.length === 0 || name.length > MAX_THREAD_NAME) continue;
-    const parsed = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
-    const at = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
-    const previous = latest.get(id);
-    if (!previous || at >= previous.at) latest.set(id, { name, at });
+    const at = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
+    const usable = typeof name === 'string' && name.length > 0 && name.length <= MAX_THREAD_NAME && Number.isFinite(at);
+    const previous = last.get(id);
+    const earlierMax = previous ? Math.max(previous.earlierMax, Number.isFinite(previous.at) ? previous.at : Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
+    last.set(id, { name: usable ? name as string : null, at, earlierMax });
   }
-  return new Map([...latest].map(([id, { name }]) => [id, name]));
+  return new Map([...last].map(([id, { name, at, earlierMax }]) => [id, name !== null && at >= earlierMax ? name : null]));
 }
 
 async function boundedDirectories(path: string, limit: number): Promise<string[] | 'too-large'> {

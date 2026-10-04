@@ -149,11 +149,13 @@ test('helper failures, malformed replies and foreground changes during a UI chec
   assert.deepEqual(await instance.composerFocused('codex'), { status: 'unknown', reason: 'foreground-changed' });
 });
 
-test('codexSelectedThread compares inside the helper and returns only a boolean and a count', async () => {
+test('codexSelectedThread compares inside the helper and returns only a boolean and a count', async t => {
   const win32 = fakeWin32();
   let reply = { ok: true, value: { matches: true, sameTitleRows: 1 } };
   const helper = fakeHelper(() => reply);
-  const instance = adapter(win32, helper);
+  const codexHome = mkdtempSync(join(tmpdir(), 'chompi-codex-home-'));
+  t.after(() => rmSync(codexHome, { recursive: true, force: true }));
+  const instance = adapter(win32, helper, { codexHome });
   const result = await instance.codexSelectedThread(thread, CANARY_TITLE);
   assert.deepEqual(result, { status: 'known', value: { matches: true, sameTitleRows: 1 } });
   assert.deepEqual(helper.calls[0], { op: 'codexSelectedTitle', hwnd: 0x1234, processId: 4242, title: CANARY_TITLE });
@@ -174,23 +176,34 @@ test('codexSelectedThread compares inside the helper and returns only a boolean 
   assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-not-foreground' });
 });
 
-test('codexSelectedThread prefers the name Codex keeps for the thread and needs a name from somewhere', async t => {
+test('codexSelectedThread prefers the name Codex keeps for the thread and fails closed on every unknown', async t => {
   const home = mkdtempSync(join(tmpdir(), 'chompi-codex-names-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
+  const index = join(home, 'session_index.jsonl');
+  const line = (id, name, at = '2026-10-04T10:00:00Z') => JSON.stringify({ id, thread_name: name, updated_at: at });
+  const other = '019a3b1c-7d2e-7f00-8a11-ba9876543210';
   const helper = fakeHelper(() => ({ ok: true, value: { matches: true, sameTitleRows: 1 } }));
   const instance = adapter(fakeWin32(), helper, { codexHome: home });
   assert.deepEqual(await instance.codexSelectedThread(thread, null), { status: 'unknown', reason: 'codex-title-missing' });
   assert.equal(helper.calls.length, 0, 'no name means no UI query');
   await instance.codexSelectedThread(thread, CANARY_TITLE);
-  assert.equal(helper.calls.at(-1).title, CANARY_TITLE, 'the Hub title is the fallback');
-  writeFileSync(join(home, 'session_index.jsonl'), JSON.stringify({ id: thread, thread_name: 'CANARY codex name', updated_at: '2026-10-04T10:00:00Z' }) + '\n');
+  assert.equal(helper.calls.at(-1).title, CANARY_TITLE, 'the Hub title is the fallback for a thread Codex never named');
+  writeFileSync(index, line(thread, 'CANARY codex name') + '\n');
   const result = await instance.codexSelectedThread(thread, CANARY_TITLE);
   assert.equal(helper.calls.at(-1).title, 'CANARY codex name', "Codex's own name wins over the Hub title");
   assert.equal(JSON.stringify(result).includes('CANARY'), false);
+  const calls = helper.calls.length;
+  writeFileSync(index, line(thread, 'CANARY codex name') + '\n' + line(other, 'CANARY codex name') + '\n');
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-name-not-unique' });
+  writeFileSync(index, line(other, 'CANARY hub title') + '\n');
+  assert.deepEqual(await instance.codexSelectedThread(thread, 'CANARY hub title'), { status: 'unknown', reason: 'codex-name-not-unique' }, 'a fallback another thread holds is not unique');
+  writeFileSync(index, line(thread, 'Good') + '\n' + line(thread, '', '2026-10-04T11:00:00Z') + '\n');
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-name-invalid' });
+  assert.equal(helper.calls.length, calls, 'none of these reach the UI query');
   const missingHome = adapter(fakeWin32(), helper, { codexHome: join(home, 'absent') });
-  assert.deepEqual(await missingHome.codexSelectedThread(thread, null), { status: 'unknown', reason: 'codex-home-missing' });
-  await missingHome.codexSelectedThread(thread, CANARY_TITLE);
-  assert.equal(helper.calls.at(-1).title, CANARY_TITLE, 'an unreadable index falls back to the Hub title');
+  assert.deepEqual(await missingHome.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-home-missing' }, 'an unreadable index fails closed');
+  const unset = adapter(fakeWin32(), helper, { codexHome: undefined, env: {} });
+  assert.deepEqual(await unset.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-home-unset' });
 });
 
 test('approval-card detection is not qualified and stays unknown', async () => {

@@ -156,6 +156,7 @@ export class FakeAdapter {
     if (pending) return pending;
     const title = this.codexNames.get(threadId) ?? fallbackTitle;
     if (!title) return unknown('codex-title-missing');
+    if ([...this.codexNames].some(([id, name]) => id !== threadId && name === title)) return unknown('codex-name-not-unique');
     if (this.foreground.packageIdentity !== CODEX_PACKAGE) return unknown('codex not foreground');
     const rows = [...this.codexThreads.values()].filter(value => value === title).length;
     return known({ matches: this.codexSelected !== null && this.codexThreads.get(this.codexSelected) === title, sameTitleRows: rows });
