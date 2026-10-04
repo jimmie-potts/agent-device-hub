@@ -1,0 +1,415 @@
+{
+ "protocol": "chompi-hid",
+ "version": 1,
+ "reportBytes": 64,
+ "vectors": [
+  {
+   "name": "hello",
+   "direction": "device-to-host",
+   "report": "01013412000100220623000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "hello",
+    "version": 1,
+    "epoch": 4660,
+    "firmware": [
+     0,
+     1,
+     0
+    ],
+    "controls": 34,
+    "encoders": 6,
+    "leds": 35
+   }
+  },
+  {
+   "name": "input press key 1",
+   "direction": "device-to-host",
+   "report": "02013412010001010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "input",
+    "version": 1,
+    "epoch": 4660,
+    "sequence": 1,
+    "control": 1,
+    "kind": "press",
+    "delta": 0
+   }
+  },
+  {
+   "name": "input release key 15",
+   "direction": "device-to-host",
+   "report": "0201341202000f020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "input",
+    "version": 1,
+    "epoch": 4660,
+    "sequence": 2,
+    "control": 15,
+    "kind": "release",
+    "delta": 0
+   }
+  },
+  {
+   "name": "input big wheel click press",
+   "direction": "device-to-host",
+   "report": "02013412030021010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "input",
+    "version": 1,
+    "epoch": 4660,
+    "sequence": 3,
+    "control": 33,
+    "kind": "press",
+    "delta": 0
+   }
+  },
+  {
+   "name": "input turn encoder 1 clockwise 2",
+   "direction": "device-to-host",
+   "report": "02013412040029030200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "input",
+    "version": 1,
+    "epoch": 4660,
+    "sequence": 4,
+    "control": 41,
+    "kind": "turn",
+    "delta": 2
+   }
+  },
+  {
+   "name": "input turn big wheel counterclockwise 1",
+   "direction": "device-to-host",
+   "report": "02013412ffff2d03ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "input",
+    "version": 1,
+    "epoch": 4660,
+    "sequence": 65535,
+    "control": 45,
+    "kind": "turn",
+    "delta": -1
+   }
+  },
+  {
+   "name": "heartbeat",
+   "direction": "device-to-host",
+   "report": "03013412070001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "heartbeat",
+    "version": 1,
+    "epoch": 4660,
+    "ledFrame": 7,
+    "hostAlive": true
+   }
+  },
+  {
+   "name": "leds frame 7 part 0",
+   "direction": "host-to-device",
+   "report": "810107000013000000070d1d0e1a3a1527571c34742341912a4eae315bcb3868e83f75054682224d8f3f549c5c5ba97962b69669c3b370d0d077dded7eea0a00",
+   "valid": true,
+   "message": {
+    "type": "leds",
+    "version": 1,
+    "frame": 7,
+    "part": 0,
+    "first": 0,
+    "colors": [
+     [
+      0,
+      0,
+      0
+     ],
+     [
+      7,
+      13,
+      29
+     ],
+     [
+      14,
+      26,
+      58
+     ],
+     [
+      21,
+      39,
+      87
+     ],
+     [
+      28,
+      52,
+      116
+     ],
+     [
+      35,
+      65,
+      145
+     ],
+     [
+      42,
+      78,
+      174
+     ],
+     [
+      49,
+      91,
+      203
+     ],
+     [
+      56,
+      104,
+      232
+     ],
+     [
+      63,
+      117,
+      5
+     ],
+     [
+      70,
+      130,
+      34
+     ],
+     [
+      77,
+      143,
+      63
+     ],
+     [
+      84,
+      156,
+      92
+     ],
+     [
+      91,
+      169,
+      121
+     ],
+     [
+      98,
+      182,
+      150
+     ],
+     [
+      105,
+      195,
+      179
+     ],
+     [
+      112,
+      208,
+      208
+     ],
+     [
+      119,
+      221,
+      237
+     ],
+     [
+      126,
+      234,
+      10
+     ]
+    ]
+   }
+  },
+  {
+   "name": "leds frame 7 part 1",
+   "direction": "host-to-device",
+   "report": "81010700011085f7278c04449311619a1e7ea12b9ba838b8af45d5b652f2bd5f0fc46c2ccb7949d28666d99383e0a0a0e7adbdeebada00000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "leds",
+    "version": 1,
+    "frame": 7,
+    "part": 1,
+    "first": 19,
+    "colors": [
+     [
+      133,
+      247,
+      39
+     ],
+     [
+      140,
+      4,
+      68
+     ],
+     [
+      147,
+      17,
+      97
+     ],
+     [
+      154,
+      30,
+      126
+     ],
+     [
+      161,
+      43,
+      155
+     ],
+     [
+      168,
+      56,
+      184
+     ],
+     [
+      175,
+      69,
+      213
+     ],
+     [
+      182,
+      82,
+      242
+     ],
+     [
+      189,
+      95,
+      15
+     ],
+     [
+      196,
+      108,
+      44
+     ],
+     [
+      203,
+      121,
+      73
+     ],
+     [
+      210,
+      134,
+      102
+     ],
+     [
+      217,
+      147,
+      131
+     ],
+     [
+      224,
+      160,
+      160
+     ],
+     [
+      231,
+      173,
+      189
+     ],
+     [
+      238,
+      186,
+      218
+     ]
+    ]
+   }
+  },
+  {
+   "name": "host heartbeat",
+   "direction": "host-to-device",
+   "report": "8201030000003c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": true,
+   "message": {
+    "type": "host-heartbeat",
+    "version": 1,
+    "profileVersion": 3,
+    "brightnessPercent": 60
+   }
+  },
+  {
+   "name": "unknown message type",
+   "direction": "device-to-host",
+   "report": "7f010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "unknown-type"
+  },
+  {
+   "name": "unsupported version",
+   "direction": "device-to-host",
+   "report": "02020100010001010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "unsupported-version"
+  },
+  {
+   "name": "input control out of range",
+   "direction": "device-to-host",
+   "report": "02010100050023010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-control"
+  },
+  {
+   "name": "input unknown kind",
+   "direction": "device-to-host",
+   "report": "02010100060001090000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-kind"
+  },
+  {
+   "name": "turn on a non-encoder control",
+   "direction": "device-to-host",
+   "report": "02010100070003030100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-kind"
+  },
+  {
+   "name": "press with nonzero delta",
+   "direction": "device-to-host",
+   "report": "02010100080003010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-delta"
+  },
+  {
+   "name": "turn with zero delta",
+   "direction": "device-to-host",
+   "report": "02010100090029030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-delta"
+  },
+  {
+   "name": "leds part 1 wrong count",
+   "direction": "host-to-device",
+   "report": "81010800011300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-led-range"
+  },
+  {
+   "name": "leds part 2",
+   "direction": "host-to-device",
+   "report": "81010800020100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-led-range"
+  },
+  {
+   "name": "brightness over 100",
+   "direction": "host-to-device",
+   "report": "82010100000065000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "invalid-brightness"
+  },
+  {
+   "name": "short report",
+   "direction": "device-to-host",
+   "report": "0201",
+   "valid": false,
+   "reason": "invalid-length"
+  },
+  {
+   "name": "hello with wrong LED count",
+   "direction": "device-to-host",
+   "report": "01010100000100220624000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false,
+   "reason": "incompatible-device"
+  }
+ ]
+}
