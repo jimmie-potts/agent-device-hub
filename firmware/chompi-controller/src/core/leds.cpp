@@ -48,6 +48,19 @@ void RenderFrame(const Rgb leds[kLedCount], uint8_t brightness_percent,
     }
 }
 
+void EncodeChain(const uint8_t (*leds)[3], int count, uint32_t* out)
+{
+    const size_t porch = static_cast<size_t>(kPorchLeds) * 24;
+    const size_t data  = static_cast<size_t>(count) * 24;
+    std::memset(out, 0, porch * sizeof(out[0]));
+    for(int led = 0; led < count; ++led)
+        for(int byte = 0; byte < 3; ++byte)
+            for(int bit = 0; bit < 8; ++bit)
+                out[porch + static_cast<size_t>(led * 24 + byte * 8 + bit)]
+                    = (leds[led][byte] & (0x80u >> bit)) ? kPulseOne : kPulseZero;
+    std::memset(out + porch + data, 0, porch * sizeof(out[0]));
+}
+
 void RenderDisconnected(uint32_t now_ms, ChainFrame* out)
 {
     const uint32_t half  = kDisconnectedPeriodMs / 2;

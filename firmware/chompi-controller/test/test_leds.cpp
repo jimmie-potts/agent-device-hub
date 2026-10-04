@@ -97,3 +97,35 @@ TEST("leds: disconnected pattern is a dim breathe on the CHOMPI key only")
     RenderDisconnected(kDisconnectedPeriodMs / 2, &b);
     CHECK(a.panel[0][0] < b.panel[0][0]);
 }
+
+TEST("leds: chain pulses keep the porch idle so data starts at the first LED")
+{
+    // A WS2812 latches every 24 pulses it receives, zero bits included. The
+    // porch must hold the line low (duty 0, no pulses) like the upstream
+    // launcher's populate_off; zero-bit pulses there would push every colour
+    // kPorchLeds LEDs down the chain and drop the first kPorchLeds LEDs.
+    uint8_t leds[kPanelLedCount][3];
+    std::memset(leds, 0, sizeof(leds));
+    leds[0][0] = 0x80; // first data bit is a one, the rest of LED 0 zeros
+    leds[kPanelLedCount - 1][2] = 0x01;
+    uint32_t out[ChainPulseCount(kPanelLedCount)];
+    std::memset(out, 0xff, sizeof(out));
+    EncodeChain(leds, kPanelLedCount, out);
+
+    const size_t porch = static_cast<size_t>(kPorchLeds) * 24;
+    const size_t data  = static_cast<size_t>(kPanelLedCount) * 24;
+    CHECK_EQ(sizeof(out) / sizeof(out[0]), 2 * porch + data);
+    for(size_t i = 0; i < porch; ++i)
+    {
+        CHECK_EQ(out[i], 0u);
+        CHECK_EQ(out[porch + data + i], 0u);
+    }
+    // Every data bit is a pulse; MSB first, bytes in wire order.
+    for(size_t i = porch; i < porch + data; ++i)
+        CHECK(out[i] == kPulseOne || out[i] == kPulseZero);
+    CHECK_EQ(out[porch], kPulseOne);
+    for(size_t i = porch + 1; i < porch + 24; ++i)
+        CHECK_EQ(out[i], kPulseZero);
+    CHECK_EQ(out[porch + data - 1], kPulseOne);
+    CHECK_EQ(out[porch + data - 2], kPulseZero);
+}

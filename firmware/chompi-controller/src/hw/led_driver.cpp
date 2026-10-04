@@ -1,7 +1,8 @@
 // Adapted from sfaber02/CHOMPI launcher-v1.1 (79ea9e7),
 // firmware/chompi-launcher/code/src/temp_led_stuff.h. MIT License, Copyright
-// (c) 2026 CHOMPI Club; see THIRD_PARTY.md. Timing constants, pins, porch
-// handling and the stop sequence are unchanged.
+// (c) 2026 CHOMPI Club; see THIRD_PARTY.md. Timers, pins and the stop sequence
+// are unchanged. Pulse encoding, including the idle-line porch, is in
+// core/leds.cpp.
 #include "led_driver.h"
 
 #include <cstring>
@@ -17,38 +18,17 @@ namespace
 daisy::TimerHandle tim3_smt, tim5_pth;
 daisy::TimChannel  led_pth_pwm, led_smt_pwm;
 
-// A few LED-times of zero pulses at each end of each chain.
-constexpr int kPorchSize     = 6;
-constexpr int kNumPthLeds    = kPanelLedCount + 2 * kPorchSize;
-constexpr int kNumSmtLeds    = kKeyLedCount + 2 * kPorchSize;
-constexpr size_t kOutPthSize = kNumPthLeds * 3 * 8;
-constexpr size_t kOutSmtSize = kNumSmtLeds * 3 * 8;
+constexpr size_t kOutPthSize = ChainPulseCount(kPanelLedCount);
+constexpr size_t kOutSmtSize = ChainPulseCount(kKeyLedCount);
 
 // One PWM duration per colour bit. In the DMA-capable SRAM section.
 uint32_t DMA_BUFFER_MEM_SECTION output_pth_data[kOutPthSize];
 uint32_t DMA_BUFFER_MEM_SECTION output_smt_data[kOutSmtSize];
 
-// Tuned for CHOMPI Rev2 hardware: 0.68 us one, 0.334 us zero.
-constexpr uint32_t kOneTime  = 20;
-constexpr uint32_t kZeroTime = 10;
-
 // Cleared to let the self-retriggering chain wind down.
 volatile bool leds_running = true;
 
 void EndOfLeds(void* context);
-
-void PopulateBits(uint8_t value, uint32_t* buff)
-{
-    for(int i = 0; i < 8; i++)
-        buff[i] = (value & (1 << (7 - i))) ? kOneTime : kZeroTime;
-}
-
-void PopulateLed(const uint8_t wire[3], uint32_t* buff)
-{
-    PopulateBits(wire[0], buff);
-    PopulateBits(wire[1], buff + 8);
-    PopulateBits(wire[2], buff + 16);
-}
 
 void EndOfLeds(void* context)
 {
@@ -129,19 +109,8 @@ void LedSetup()
 
 void LedShow(const ChainFrame& frame)
 {
-    static const uint8_t kOff[3] = {0, 0, 0};
-    for(int i = 0; i < kNumPthLeds; i++)
-    {
-        const bool porch = i < kPorchSize || i >= kNumPthLeds - kPorchSize;
-        PopulateLed(porch ? kOff : frame.panel[i - kPorchSize],
-                    &output_pth_data[i * 24]);
-    }
-    for(int i = 0; i < kNumSmtLeds; i++)
-    {
-        const bool porch = i < kPorchSize || i >= kNumSmtLeds - kPorchSize;
-        PopulateLed(porch ? kOff : frame.keys[i - kPorchSize],
-                    &output_smt_data[i * 24]);
-    }
+    EncodeChain(frame.panel, kPanelLedCount, output_pth_data);
+    EncodeChain(frame.keys, kKeyLedCount, output_smt_data);
 }
 
 void LedsOff()
