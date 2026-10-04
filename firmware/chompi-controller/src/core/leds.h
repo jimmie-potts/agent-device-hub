@@ -4,7 +4,9 @@
 // The chain layout, colour orders and caps come from the CHOMPI firmware
 // (temp_led_stuff.h and TestPage.h led_map in CHOMPI-Club/CHOMPI, MIT):
 // 25 key LEDs on the SMT chain in GRB order capped at 1/4, and 10 panel LEDs
-// on the PTH chain in RGB order capped at 1/11.
+// on the PTH chain in RGB order capped at 1/11. The pulse timing and porch
+// come from sfaber02/CHOMPI launcher-v1.1 (79ea9e7),
+// firmware/chompi-launcher/code/src/temp_led_stuff.h (MIT, CHOMPI Club).
 #pragma once
 
 #include <cstddef>
