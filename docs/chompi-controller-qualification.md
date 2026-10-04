@@ -45,8 +45,11 @@ controller does not build TAPE.
 
 ## Owner decisions
 
-Given in conversation on October 3, 2026 and recorded on
-[#738](https://github.com/jimmie-potts/agent-device-hub/issues/738#issuecomment-5974160427):
+Given in conversation on October 3, 2026 and recorded in the
+[#738 pickup](https://github.com/jimmie-potts/agent-device-hub/issues/738#issuecomment-5974160427)
+and [routing](https://github.com/jimmie-potts/agent-device-hub/issues/738#issuecomment-5974359583)
+comments, [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784#issuecomment-5974902280)
+and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomment-5974936965):
 
 - Card backups and controller installs use the launcher's key-15 USB storage
   mode from Windows. The owner has a card reader for the one-time launcher
@@ -60,6 +63,9 @@ Given in conversation on October 3, 2026 and recorded on
   the bridge remembers each slot's ID across Hub restarts.
 - If Claude Desktop archive is not observable to the Hub, an explicit CHOMPI
   gesture releases a Claude slot.
+- The bridge is a portable TypeScript/Node 24 core with one small OS adapter
+  interface, so a later move to the owner's Mac mini needs only a macOS
+  adapter. Only the Windows adapter is built now.
 
 ## CHOMPI hardware
 
@@ -227,7 +233,7 @@ observation before anything depends on it in installed use.
 | Opening an existing session by undocumented link | Supported, undocumented | `claude://code/continue?session=local_<id>` opens that exact session if it exists and is not archived; otherwise it silently shows the Code home. The app builds this link itself for its taskbar Jump List. Any Desktop update can change it | `S`: main-process URL handler in the installed bundle. Accepted by the owner with fail-closed checks |
 | Unsafe undocumented links | Unsupported | `code/needs-input` opens a different waiting session when the ID is absent. `claude://resume` imports or unarchives sessions. Never use either | `S` |
 | Desktop session identity | Supported, undocumented | Desktop's `local_<uuid>` differs from the hook `session_id`, which changes on `/clear`; the Desktop ID survives `/clear` | `S`: Desktop session store |
-| Desktop ID available to hooks | Unverified | Desktop-hosted Code processes carry `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Hook processes are expected to inherit them; the installed observation in [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784) confirms it. If they do not, Claude routing stays disabled | `S`: Code process environment |
+| Desktop ID available to hooks | Unverified | Desktop-hosted Code processes carry `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Hook processes are expected to inherit them; the installed observation planned in [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784) will check it. If they do not, Claude routing stays disabled | `S`: Code process environment |
 | Lifecycle and attention feed | Supported | Desktop-hosted Code sessions load the WSL user settings that run the installed Hub producer for every hooked event, so activity, `attention.approval` for permission prompts and session ends reach the Hub like other Claude Code sessions. A live Desktop session in the feed is still to be observed | `S`: user hook configuration, `providers.ts`; [provider qualification](provider-qualification.md) |
 | Hub distinguishes Desktop from CLI | Unsupported | Both use client `code` and one source today | `S`: `providers.ts`, provider qualification |
 | Selected-session verification | Supported, undocumented | When a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. The window title is always "Claude". Split panes and pop-out windows are unverified | `S` |
@@ -257,12 +263,16 @@ observation before anything depends on it in installed use.
 - Input stays on Windows beside the apps, as [desktop controls](desktop-controls.md)
   requires.
 
-The repository's convention is TypeScript for shared services; this bridge is
-a Windows-local input helper. Its HID, `SendInput`, foreground identity and UI
-Automation needs favor C#/.NET 8 (the SDK is installed, and the legacy
-`chompi-codex` bridge already proves the `SendInput` and package-identity
-approach). #741 records the language choice; the protocol fixtures stay JSON
-so other consumers can share them.
+The bridge follows the repository's TypeScript/Node 24 convention, as the
+owner decided. A portable core holds the protocol, slots, profile, feed client
+and routing decisions, and uses node-hid for USB. Keystrokes, foreground
+identity, UI checks and client file paths sit behind one OS adapter interface.
+The Windows adapter uses FFI for `SendInput` and package identity and a
+long-lived PowerShell helper for UI Automation, adding no new toolchain; the
+legacy `chompi-codex` bridge's `SendInput` and package-identity approach is
+reusable. A macOS adapter (`open` for deep links, CGEvent keystrokes and the
+Accessibility API) is a later, separately qualified step. Protocol fixtures
+stay JSON.
 
 ### Exact-task focus, fail closed
 
@@ -392,26 +402,26 @@ each dependent issue must use.
 - [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741), firmware
   and bridge: vendor HID on libDaisy's ST core with a new VID/PID; slot 04;
   the `BACKUP_SRAM` fix; the launcher's USB switch and LED teardown; the
-  minimal protocol above; one exclusive Windows writer; C#/.NET 8 is the
-  suggested bridge language.
+  minimal protocol above; one exclusive writer; a TypeScript core with a
+  Windows OS adapter.
 - [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784): the
-  owner-selected Hub hook field that carries the Claude Desktop session ID. Its
-  installed observation is the first check that hooks see
-  `CLAUDE_CODE_HOST_SESSION_ID`.
+  owner-selected Hub hook field that carries the Claude Desktop session ID,
+  kept in Hub memory. Its planned installed observation is the first check
+  that hooks see `CLAUDE_CODE_HOST_SESSION_ID`. Installing it uses the
+  installer change in [#794](https://github.com/jimmie-potts/agent-device-hub/issues/794).
 - [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742), task
   routing: Claude routing consumes #784's field and the bridge's own
   archive and focus reads. Codex verification needs UI Automation, which #743
   qualifies. Reading archive and focus evidence for slot bookkeeping must not
   reinterpret lifecycle state; #742 confirms that boundary.
 - [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743), first
-  installed trial: also depends on #784 for Claude routing, and adds the hook
-  environment check (trial step 2), approval-guard checks and big-wheel
-  identification to its original plan.
+  installed trial: its Claude routing uses #784's field, and its plan adds the
+  hook environment check (trial step 2), approval-guard checks and big-wheel
+  identification.
 - [#744](https://github.com/jimmie-potts/agent-device-hub/issues/744) and
   [#745](https://github.com/jimmie-potts/agent-device-hub/issues/745), knobs and
   their installed check: Codex model change has default shortcuts, but Codex
   effort change needs a personal key binding, and Claude's Windows model and
   effort shortcuts are unverified. A personal binding needs owner authority
   beyond the current epic grant. Until #743 records what is available, knob 1
-  and knob 2 "for each client" may need an explicit scope decision before #745
-  can close.
+  and knob 2 "for each client" may need an explicit owner scope decision.
