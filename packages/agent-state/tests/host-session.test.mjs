@@ -142,16 +142,16 @@ test('a record with a known parent never carries the value, whichever event made
 });
 
 test('a snapshot taken while a commit is in flight shows only committed values',async()=>{
- const memory=new MemoryStorage();let hold=null;
+ const memory=new MemoryStorage();let hold=null,release;
  const storage={acquire:async(id,signal)=>{const lease=await memory.acquire(id,signal);return {...lease,commit:async(change,abort)=>{if(hold)await hold.promise;return lease.commit(change,abort);}};}};
  const f=fixture(storage),owner=await f.open();
  try{
   await owner.ingest(f.event('session-a','turn.started',{hostSessionId:desktopId}));
-  let release;hold={promise:new Promise(resolve=>{release=resolve;})};
+  hold={promise:new Promise(resolve=>{release=resolve;})};
   const pending=owner.ingest(f.event('session-a','turn.ended',{hostSessionId:otherId}));
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(host(owner,'session-a'),desktopId,'an uncommitted value must not be visible');
   hold=null;release();
   assert.equal((await pending).ok,true);assert.equal(host(owner,'session-a'),otherId);
- }finally{await owner.shutdown();}
+ }finally{hold=null;release?.();await owner.shutdown();}
 });
