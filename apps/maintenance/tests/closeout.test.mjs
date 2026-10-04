@@ -109,6 +109,22 @@ test('tool policies retain independent physical acceptance and lost-response rec
   }finally{await f.dispose();}
  }
 });
+test('skills proof includes admitted accompanying docs and the complete skill inventory',async()=>{
+ const f=await fixture('jimmie-potts/agent-skills');try{
+  const proof=toolProof(f);proof.plan.files.push({path:'docs/example.md',mode:'100644',size:5,sha256:'d'.repeat(64)});
+  f.config.installedFiles.allowedPaths.push('docs/example.md');proof.planSha256=hash(pythonJSON(proof.plan));await saveProof(f,pythonJSON(proof));
+  const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);assert.equal(result.status,'complete',result.reason);
+ }finally{await f.dispose();}
+});
+test('active skill policy cannot be widened by a configured allowed path',async()=>{
+ const f=await fixture('jimmie-potts/agent-skills');try{
+  const proof=toolProof(f);proof.plan.files[0].path='skills/tdd/SKILL.md';proof.plan.requiredSkills=['tdd'];
+  for(const link of proof.plan.links){link.skill='tdd';link.path=link.path.replace('/example','/tdd');link.target=link.target.replace('/example','/tdd');}
+  Object.assign(f.config.installedFiles,{allowedPaths:['skills/tdd/SKILL.md'],requiredSkills:['tdd'],links:proof.plan.links.map(({agent,skill,path})=>({agent,skill,path}))});
+  proof.planSha256=hash(pythonJSON(proof.plan));await saveProof(f,pythonJSON(proof));
+  const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);assert.equal(result.reason,'installed-files-path-not-authorized');assert.deepEqual(f.calls,[]);
+ }finally{await f.dispose();}
+});
 test('concrete tool CLI uses owning acceptance pins and never queries or mutates the portfolio',async()=>{
  const {closeoutFixture}=await import('./closeout-fixture.mjs');const {cli,githubAdapter}=await import('../closeout/closeout.mjs');
  for(const name of ['dotfiles','agent-skills']){

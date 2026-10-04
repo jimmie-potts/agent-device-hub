@@ -1895,10 +1895,10 @@ installation receipts, canonical Python recommendation tooling and all five
 fixed repository closeout policies in the extracted package. Policy cases cover
 wrong runtime/repository/revision/owner, tool plan digests and file/link readback,
 protected paths, owning instruction fingerprints, unchanged client/physical
-acceptance and tool repositories without portfolio writes. The same suite covers the Hub supervisor installer wrapper;
+acceptance and tool repositories without portfolio writes. The same suite covers
+the Hub supervisor installer wrapper;
 its native deadline guard also requires the Standalone hub, Standalone hub MCP
 and Shared monitoring setup checks above. Fixtures use synthetic journal data
-and disposable private state;
-these checks do not establish installed scheduling, credentials, permissions or
+and disposable private state; these checks do not establish installed scheduling, credentials, permissions or
 physical behavior. See [the intake guide](../apps/maintenance/README.md) for its
 trusted supervisor boundary and installed qualification.

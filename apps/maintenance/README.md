@@ -238,7 +238,8 @@ blocks automatic closure even if the worker omitted it.
 Closeout configuration contains `schemaVersion: 1`, `repository`, absolute `gh`,
 `installationId`, private `stateDirectory`, `capacityBytes` (1 MiB–1 GiB) and
 `planning`. The latter contains absolute `codex`, `python`, `checkout`,
-`owningCheckout`, `planWork`, `recommendationPolicy`, `recommendations`, `helper`, plus `model`,
+`owningCheckout`, `planWork`, `recommendationPolicy`, `recommendations`, `helper`,
+plus `model`,
 `policyRevision`, `timeoutSeconds` (1–1800) and `files`. Use the installed shared
 execution-recommendation policy, the owning
 `docs/work-guide/work/recommendations.py`, its adjacent `story_sections.py`, and
@@ -266,8 +267,12 @@ and `links`, an ordered inventory of exact `{agent, skill, path}` entries for
 prequalified existing Codex/Claude loading links. Issue text and receipt content
 cannot widen these bounds. Dotfiles allows only configured `scripts/`, `tests/`
 and `docs/` files; its supervisor, installer and owning instructions remain
-protected. Skills allows configured files under existing linked `skills/<name>/`
-directories. Protect every active policy, installer and delivery dependency in
+protected. Skills allows the complete configured inventory under affected linked
+`skills/<name>/` directories and admitted accompanying `tests/` and `docs/` files;
+the allowlist must cover that full inventory, including unchanged skill files.
+Root instruction files, `scripts/` and the active `deliver-work`, `review-work`,
+`code-review`, `plan-work`, `tdd`, `writing-for-agents` and `unslop` skills are
+excluded. Protect every other active policy, installer and delivery dependency in
 the trusted configuration; their updates retain the stopped/restart boundary.
 
 The private receipt has exactly `schemaVersion: "installed-files/1.0"`,
@@ -314,8 +319,8 @@ unknown. It preserves parent/client/physical outcomes. Supported public effects
 are deliberately narrow: refresh an affected open issue's execution advice with
 the canonical parser, dry run and upsert; remove `blocked` only for the selected
 accepted sole dependency with no other owner hold; publish one fixed selected
-receipt comment; close the selected issue; and, for runtime profiles, project Done onto its existing
-Project item. It does not close parents, create memberships, change commitment,
+receipt comment; close the selected issue; and, for runtime profiles, project
+Done onto its existing Project item. It does not close parents, create memberships, change commitment,
 reparent work or alter native relationships. Parent phase must already agree.
 Changed native meaning requires an owning reconciliation decision.
 
