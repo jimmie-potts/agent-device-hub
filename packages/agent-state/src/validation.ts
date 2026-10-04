@@ -14,6 +14,7 @@ const snapshotV11Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/s
 
 const durableV21Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v2.1.schema.json',import.meta.url),'utf8')));
 const snapshotV12Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.2.schema.json',import.meta.url),'utf8')));
+const snapshotV13Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.3.schema.json',import.meta.url),'utf8')));
 
 // Reject accessors and non-JSON input before serialization, schema traversal or cloning.
 function bounded(value:unknown,depth=0,budget={nodes:0,bytes:0}):boolean {
@@ -80,7 +81,7 @@ export function validateExport(input:unknown):Validation<DurableState>{
   });
 }
 export function validateSnapshot(input:unknown):Validation<Snapshot>{
-  return validate(input,value=>snapshotCheck(value)||snapshotV11Check(value)||snapshotV12Check(value),snapshot=>sessionSemantics(snapshot.sessions)&&snapshot.sessions.every(session=>
+  return validate(input,value=>snapshotCheck(value)||snapshotV11Check(value)||snapshotV12Check(value)||snapshotV13Check(value),snapshot=>sessionSemantics(snapshot.sessions)&&snapshot.sessions.every(session=>
     (session.generation??0)<=snapshot.revision&&
     session.lastEvidenceAtMs<=snapshot.asOfMs&&session.observationAgeMs===snapshot.asOfMs-session.lastEvidenceAtMs&&
     session.freshness===(session.restartUncertain||session.observationAgeMs>=300000?'uncertain':'current')&&

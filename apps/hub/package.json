@@ -7,7 +7,7 @@
     "node": ">=24 <25"
   },
   "dependencies": {
-    "@jimmie-potts/agent-state": "3.4.0",
+    "@jimmie-potts/agent-state": "3.5.0",
     "@jimmie-potts/device-contracts": "1.2.0",
     "@jimmie-potts/device-mcp": "1.0.1",
     "@jimmie-potts/agent-lifecycle-contracts": "1.2.0",

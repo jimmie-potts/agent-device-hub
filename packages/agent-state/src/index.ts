@@ -91,6 +91,13 @@ export async function createAgentState(options:Options) {
     throw new Error('invalid-storage');
   }
   const restarted=new Set(data.sessions.map(session=>identityKey(session.identity)));
+  // Lifecycle 1.2 host session IDs (Claude Desktop `local_<uuid>`) live only in owner memory for its
+  // lifetime: never in DurableState, exports, identity, deduplication or retirement decisions.
+  const hostSessions=new Map<string,string>();
+  const pruneHostSessions=()=>{
+    const present=new Set(data.sessions.map(session=>identityKey(session.identity)));
+    for(const key of hostSessions.keys())if(!present.has(key))hostSessions.delete(key);
+  };
   const feeds=new Feeds(data.revision);
   const wall=()=>{
     let value:number;
@@ -144,7 +151,7 @@ export async function createAgentState(options:Options) {
       retirements:retirements.filter(item=>item.atMs>at-LIMITS.sessionAgeMs).slice(-LIMITS.retirements),
       journal:data.journal.filter(row=>row.atMs>pruneBeforeMs).slice(-LIMITS.journalEvents)};
     await io(signal=>lease.commit(freeze(structuredClone({expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs,replace:next})),signal));
-    data=next;feeds.publish(revision);scheduleMaintenance();
+    data=next;pruneHostSessions();feeds.publish(revision);scheduleMaintenance();
     return {ok:true,revision,outcome:'applied'};
   }
   async function expire():Promise<Outcome|undefined> {
@@ -257,8 +264,16 @@ export async function createAgentState(options:Options) {
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}
         if(!reduced.session)return {ok:true,revision:data.revision,outcome:reduced.outcome};
         if(!previous)reduced.session.generation=data.revision+1;
-        const result=await commit(reduced.session,event.event.kind,reduced.outcome==='ambiguous'?'ambiguous':'applied');
-        if(result.ok&&reduced.fresh)restarted.delete(identityKey(event.identity));return result;
+        // Only a committed 1.2 event speaks for the host session: present sets, absent clears.
+        // Apply it before the commit publishes its revision, and restore it if the commit fails.
+        const key=identityKey(event.identity),prior=hostSessions.get(key);
+        const restore=()=>{if(prior===undefined)hostSessions.delete(key);else hostSessions.set(key,prior);};
+        if(event.apiVersion==='1.2'){if(event.hostSessionId!==undefined)hostSessions.set(key,event.hostSessionId);else hostSessions.delete(key);}
+        let result:Outcome;
+        try{result=await commit(reduced.session,event.event.kind,reduced.outcome==='ambiguous'?'ambiguous':'applied');}
+        catch(error){restore();throw error;}
+        if(!result.ok)restore();
+        if(result.ok&&reduced.fresh)restarted.delete(key);return result;
       });
     },
     setLabel(identity:Identity,label:string|null,origin:'user'|'agent'='user'):Promise<Outcome>{
@@ -298,14 +313,16 @@ export async function createAgentState(options:Options) {
         return commit(next,'attention.resolved','ambiguous',recoveryJournalKey(selected,turnId));
       });
     },
-    snapshot(version:'1.0'|'1.1'|'1.2'='1.0'):Snapshot{
-      if(version!=='1.0'&&version!=='1.1'&&version!=='1.2')throw new Error('unsupported-version');
+    snapshot(version:'1.0'|'1.1'|'1.2'|'1.3'='1.0'):Snapshot{
+      if(version!=='1.0'&&version!=='1.1'&&version!=='1.2'&&version!=='1.3')throw new Error('unsupported-version');
+      const metadata=version==='1.2'||version==='1.3';
       const at=now();
       const sessions:Snapshot['sessions']=data.sessions.map(session=>{
         const {seen,watermarks,retiredTurns,generation,title,project,labelOrigin,metadataObservedAtMs,...visible}=structuredClone(session);
         const age=Math.max(0,at-session.lastEvidenceAtMs),restartUncertain=restarted.has(identityKey(session.identity));
-        if(version!=='1.2'&&labelOrigin==='agent')delete visible.label;
-        return {...visible,...(version!=='1.0'?{generation:generation??0}:{}),...(version==='1.2'?{...(title?{title}:{}),...(project?{project}:{}),...(visible.label!==undefined?{labelOrigin:labelOrigin??'user'}:{})}:{}),observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
+        if(!metadata&&labelOrigin==='agent')delete visible.label;
+        const hostSessionId=version==='1.3'?hostSessions.get(identityKey(session.identity)):undefined;
+        return {...visible,...(version!=='1.0'?{generation:generation??0}:{}),...(hostSessionId!==undefined?{hostSessionId}:{}),...(metadata?{...(title?{title}:{}),...(project?{project}:{}),...(visible.label!==undefined?{labelOrigin:labelOrigin??'user'}:{})}:{}),observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
       });
       for(const session of sessions)session.children=childCounts(sessions,session.identity);
       return freeze({apiVersion:version,revision:data.revision,asOfMs:at,collector,lossCount,sessions});

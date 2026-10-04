@@ -1,7 +1,7 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '3.4.0';
+export const VERSION = '3.5.0';
 export const FORMAT_VERSION = '2.1';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
   journalEvents:10000, journalAgeMs:86400000, sessionAgeMs:86400000, staleMs:300000, deadlineMs:3000,
@@ -42,8 +42,10 @@ export type Outcome = {ok:true; revision:number; outcome:'applied'|'duplicate'|'
 export type SessionSnapshot = Omit<Session,'retiredTurns'|'seen'|'watermarks'|'metadataObservedAtMs'> & {
   observationAgeMs:number; freshness:'current'|'uncertain'; restartUncertain:boolean;
   children:{active:number; uncertain:number};
+  /** Snapshot 1.3 only: the latest lifecycle 1.2 host session ID, held in owner memory. Never an identity. */
+  hostSessionId?:string;
 };
-export type Snapshot = {apiVersion:'1.0'|'1.1'|'1.2'; revision:number; asOfMs:number;
+export type Snapshot = {apiVersion:'1.0'|'1.1'|'1.2'|'1.3'; revision:number; asOfMs:number;
   collector:'running'|'quiesced'|'faulted'|'closed'; lossCount:number; sessions:SessionSnapshot[]};
 export type Change = {apiVersion:'1.0'; kind:'change'|'resync'; revision:number; dropped:number};
 export interface Subscription extends AsyncIterableIterator<Change> { stats():{pending:number; bytes:number; dropped:number}; close():void; }

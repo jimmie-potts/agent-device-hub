@@ -7,7 +7,8 @@ from agent_state import validate_snapshot
 class SnapshotContract(unittest.TestCase):
     def test_shared_fixtures(self):
         corpus = json.loads((Path(__file__).resolve().parents[1] / 'fixtures/snapshots-v1.json').read_text())
-        corpus['cases'] += json.loads((Path(__file__).resolve().parents[1] / 'fixtures/snapshots-v1.2.json').read_text())['cases']
+        for version in ('1.2', '1.3'):
+            corpus['cases'] += json.loads((Path(__file__).resolve().parents[1] / f'fixtures/snapshots-v{version}.json').read_text())['cases']
         for case in corpus['cases']:
             with self.subTest(case=case['id']):
                 before = json.dumps(case['input'], sort_keys=True)
