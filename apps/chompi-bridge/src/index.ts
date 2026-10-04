@@ -9,3 +9,5 @@ export { ChompiSimulator, type SimulatorCounters, type SimulatorOptions } from '
 export { createNodeHidTransport, loadNodeHid, type NodeHidHandle, type NodeHidModule } from './node-hid-transport.js';
 export { acquireInstanceLock, defaultLockPath, InstanceLockHeldError, type InstanceLock, type LockPathContext } from './lock.js';
 export * from './os-adapter.js';
+export * from './routing/index.js';
+export * from './windows/index.js';

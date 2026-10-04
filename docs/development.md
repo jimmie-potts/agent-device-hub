@@ -857,12 +857,36 @@ runs `npm run test:chompi-bridge:built` after the shared build.
 
 Run `npm run test:chompi-bridge:native:built` separately under native Windows
 Node 24 after a build, using an isolated runtime rather than changing the
-global Windows Node. It fails on other platforms. It enumerates HID devices
-read-only, checks that the matcher rejects the stock CHOMPI ID, checks that the
-named-pipe lock refuses a second holder and is released on exit and on kill,
-and reruns the portable suites except the codec fixtures, which need the
+global Windows Node. It fails on other platforms. On a `\\wsl.localhost`
+checkout installed from Linux, run `npm ci` on Windows first so the
+`@koromix/koffi-win32-x64` prebuild sits beside koffi. The check enumerates
+HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
+checks that the named-pipe lock refuses a second holder and is released on
+exit and on kill, and runs the Windows OS adapter's read-only observations:
+the koffi FFI load, the foreground window identity, a ping to the UI
+Automation helper, the composer and Codex selected-title observations and the
+installed client versions. Its Win32 surface replaces `SendInput` and
+`ShellExecute` with throwing guards, so it types nothing and opens no link.
+It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
-Windows HID or named pipes.
+Windows HID, named pipes, FFI or UI Automation.
+
+### CHOMPI task routing checks
+
+Hub #742 adds the routing core under `apps/chompi-bridge/src/routing/`. The
+same `npm run test:chompi-bridge` runs its `routing-*.test.mjs` suites with
+a scripted fake OS adapter, a fake Hub `fetch`, `ManualClock` and the device
+simulator: profile validation and reload, the read-only feed client (GET-only,
+refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
+token-file privacy), slot assignment, release and persistence, state lights,
+each row of the no-misrouting matrix, Record and Send gating, big-wheel scrolling, loss handling,
+exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
+`run --profile` session. The fake adapter models the
+qualified app behavior; the tests do not open links, type keys, read Codex or
+Claude data or contact a Hub. The adapter's `approvalVisible` is always
+`unknown` until an approval selector is qualified, so Send stays refused in
+real use until then. Live focus, dictation placement, approval-card behavior
+and lights on the device belong to #743.
 
 ## Wispr Hub checks
 
