@@ -3,11 +3,16 @@
 import assert from 'node:assert/strict';
 import {dependencyEntrypoint} from '../dist/install/compatibility.js';
 import {pathToFileURL} from 'node:url';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {readFile,writeFile,readdir} from 'node:fs/promises';
 const [program,directory,mode]=process.argv.slice(2);
 assert(['write','reopen'].includes(mode));
-const {createAgentState}=await import(pathToFileURL(await dependencyEntrypoint(program,'agent-state')).href);
+const stateEntry=await dependencyEntrypoint(program,'agent-state');
+const state=await import(pathToFileURL(stateEntry).href),{createAgentState}=state;
+// HubStorage imports these validators through the agent-state entrypoint, which is content.
+// The entrypoint must bind the fingerprinted durable validator, not a replacement.
+const validation=await import(pathToFileURL(join(dirname(stateEntry),'validation.js')).href);
+for(const name of ['validateExport','migrateExport'])assert.equal(state[name],validation[name],'durable-binding-'+name);
 const {HubStorage}=await import(pathToFileURL(join(program,'dist/storage.js')).href);
 const {createAutomation,DEFAULT_SETTINGS}=await import(pathToFileURL(join(program,'dist/automation.js')).href);
 const marker=join(directory,'synthetic-install-probe.json');
@@ -27,12 +32,16 @@ const consumed={source:'github',id:'already-consumed',kind:'pull-request.merged'
 const capture=async()=>({state:await owner.exportState(),rules:lease.automation.rules(),settings:lease.automation.settings(),interruptSet:lease.automation.interruptSet(),log:lease.automation.readLog(100),budget:lease.automation.handedForTask('probe-agent','probe-task'),fence:lease.fenced()});
 try{
  if(mode==='write'){
-  assert.equal((await owner.ingest(event('session.started'))).ok,true);
+  // Lifecycle 1.1 metadata and a known parent cover every stored session field.
+  assert.equal((await owner.ingest(event('session.started',identity,{title:{value:'Probe title',source:'provider'},project:'probe-project',projectId:'probe-project-id'}))).ok,true);
   assert.equal((await owner.setLabel(identity,'Preserved label')).ok,true);
   assert.equal((await owner.ingest(event('turn.ended'))).ok,true);
   const notice=owner.snapshot().sessions[0].notices[0];assert(notice);
   assert.equal((await owner.acknowledge(identity,notice.id,consumers[0].id)).ok,true);
   assert.equal((await owner.ingest(event('attention.input',identity,{event:{kind:'attention.input',attention:{status:'known',id:'input'}}}))).ok,true);
+  const child={...identity,sessionId:'probe-child'};
+  assert.equal((await owner.ingest(event('session.started',child,{parent:{status:'known',identity}}))).ok,true);
+  assert.equal((await owner.setLabel(child,'Agent label','agent')).ok,true);
   const retired={...identity,sessionId:'retired'};
   assert.equal((await owner.ingest(event('session.started',retired))).ok,true);
   assert.equal((await owner.ingest(event('runtime.ended',retired))).ok,true);
@@ -43,6 +52,9 @@ try{
   lease.setFence(true);
   const expected=await capture();assert.equal(expected.state.formatVersion,'2.1');assert.equal(expected.state.retirements.length,1);assert(expected.state.journal.length>0);
   assert.equal(expected.state.sessions[0].attention.length,1);assert(expected.state.sessions[0].seen.length>0);assert(expected.state.sessions[0].watermarks.length>0);assert.equal(expected.budget,1);
+  const [main,stored]=expected.state.sessions;
+  assert.deepEqual([main.title,main.project,main.projectId,main.labelOrigin,main.metadataObservedAtMs],[{value:'Probe title',source:'provider'},'probe-project','probe-project-id','user',at]);
+  assert.deepEqual([stored.parent,stored.label,stored.labelOrigin],[{status:'known',identity},'Agent label','agent']);
   await writeFile(marker,JSON.stringify({synthetic:true,expected}),{mode:0o600,flag:'wx'});
  }else{
   const {expected}=JSON.parse(await readFile(marker,'utf8'));

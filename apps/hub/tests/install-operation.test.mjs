@@ -8,6 +8,8 @@ import {createPlan} from '../dist/install/plan.js';
 import {sha256} from '../dist/install/files.js';
 import {executeOperation} from '../dist/install/operation.js';
 import {selectRollback} from '../dist/install/retention.js';
+import {qualifyCompatibility} from '../dist/install/compatibility.js';
+import {program,copyRelease} from './durable-release-fixture.mjs';
 
 async function fixture(){
  const root=await mkdtemp(join(tmpdir(),'hi-op-')),state=join(root,'state'),entry=join(root,'runtime/hub-gh30');
@@ -205,5 +207,27 @@ test('each first-adoption interruption retains durable evidence and blocks autom
    assert.equal(entry?.isSymbolicLink()??false,boundary==='legacy-forwarded');
    assert.equal(entry===null,boundary==='legacy-renamed');
   }finally{await rm(f.root,{recursive:true,force:true});}
+ }
+});
+test('real durable qualification results admit content changes and refuse the rest before any service stop',async()=>{
+ const examples=[
+  ['content change',release=>release.append('state','dist/reducer.js','\n//\n'),'succeeded'],
+  ['stored schema change',release=>release.append('state','schemas/durable-v2.1.schema.json'),'refused'],
+  ['storage module change',release=>release.append('hub','storage.js','\n//\n'),'refused'],
+  ['leaked stored field',release=>release.replace('state','dist/reducer.js','session.title = event.title;',"session.title = event.title; session.hostSessionId = 'local_probe';"),'refused'],
+  ['missing durable dependency',release=>release.remove('state','dist/validation.js'),'refused']
+ ];
+ for(const [name,change,outcome] of examples){
+  const f=await fixture(),release=await copyRelease();
+  try{
+   await change(release);let qualified;
+   f.input.qualify=async()=>qualified=await qualifyCompatibility(program,release.root);
+   const result=await executeOperation(f.input);valid(result);
+   assert.equal(result.receipt.outcome,outcome,name+': '+JSON.stringify(qualified));
+   assert.deepEqual(f.calls,outcome==='succeeded'?['stop','start']:[],name);
+   const evidence=JSON.parse(await readFile(result.path.replace('.json','-evidence.json'),'utf8'));
+   assert.deepEqual(evidence.observations.compatibility,qualified,name);
+   if(outcome==='refused'){assert.equal(result.receipt.failure.code,'install-rollback-unqualified',name);assert.equal(result.receipt.compatibility.status,'unknown',name);}
+  }finally{await release.dispose();await rm(f.root,{recursive:true,force:true});}
  }
 });

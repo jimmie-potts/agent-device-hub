@@ -107,9 +107,10 @@ export async function executeOperation(input:OperationInput):Promise<{receipt:Re
   if(target.path!==expectedPath)throw new Error('unknown-install-target');await verifyProgram(target.path,target.identity);
   previousPath=installed.identity.kind==='legacy'?await retainLegacy(root,installed.path,installed.identity):installed.adopted?installed.path:await retainRelease(root,installed.path,installed.identity);
   observations.recovery={path:previousPath,identity:installed.identity};observations.target=target;
-  const compatibility=await input.qualify(previousPath,target.path);
+  // Evidence keeps the specific qualification reason for a refusal as well as the compatible result.
+  const compatibility=await input.qualify(previousPath,target.path);observations.compatibility=compatibility;
   if(compatibility.status!=='compatible'||!compatibility.evidenceSha256)throw new Error('install-rollback-unqualified');
-  receipt.compatibility={status:'compatible',evidence};observations.compatibility=compatibility;
+  receipt.compatibility={status:'compatible',evidence};
   // Staging and qualification can be slow; recheck the approved baseline immediately before intent.
   assertApproval(await input.plan(),input.approvedDigest);await protectedUnchanged(plan);await verifyProgram(target.path,target.identity);await verifyProgram(previousPath,installed.identity);
   phase='intent';assertInstallReserve(input.deadline);await checkpoint('intent');assertInstallReserve(input.deadline);await persist();

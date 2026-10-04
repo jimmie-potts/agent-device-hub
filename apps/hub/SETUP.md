@@ -161,10 +161,21 @@ fnm exec --using=.nvmrc -- node apps/hub/bin/hub-install.mjs upgrade <full-sha> 
 The command builds the exact clean merged revision in an isolated checkout,
 checks the extracted package and complete file/dependency inventories, and stages
 an immutable release before stopping anything. Conflicting bytes at an existing
-SHA refuse. This first compatibility qualification requires the same known
-durable implementations plus a synthetic target-write/previous-reopen probe.
-Unknown or incompatible recovery refuses before outage; a future state-format
-change needs separate reviewed qualification.
+SHA refuse. Compatibility qualification requires the installer, the previous
+release and the target to share the same durable surface: the Hub storage and
+automation modules, the agent-state durable validator and stored-state schemas,
+every lifecycle module, and the lifecycle 1.0 and 1.1 schemas. An unclassified
+package file or a new Hub SQLite module counts as durable. Reducer, coordination,
+constants, snapshot-schema and new lifecycle schema files pass this check; an
+edit inside the durable validator or a lifecycle module does not. A synthetic
+probe then checks that the agent-state entrypoint still exports the durable
+validator, writes state with the target, including session titles, projects and
+a known parent, and reopens it with the previous release. A durable-surface
+change, a probe failure or a missing file refuses before outage with
+`install-rollback-unqualified`; the operation's evidence file records the
+qualification reason. A future state-format change needs separate
+reviewed qualification. [`compatibility.ts`](src/install/compatibility.ts) classifies
+every durable file.
 
 Under its installation lock, the command rechecks approval inputs, persists
 validated intent, stops the monitor and verifies process exit. It backs up the
