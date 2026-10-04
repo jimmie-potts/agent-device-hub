@@ -27,10 +27,10 @@ try{
  }
  await dependency('ajv',root);
  const hashes={};for(const name of await files(stage))hashes[name]=sha256(await readFile(join(stage,name)));
- await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:'@jimmie-potts/wispr-collector',version:'1.1.2',nodeMajor:24,dependencies,files:hashes},null,2)+'\n');
+ await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:'@jimmie-potts/wispr-collector',version:'1.1.3',nodeMajor:24,dependencies,files:hashes},null,2)+'\n');
  const tar=spawnSync('tar',['--sort=name','--mode=u=rwX,go=rX','--mtime=@0','--owner=0','--group=0','--numeric-owner','-cf','-','package'],{cwd:scratch,maxBuffer:32*1024*1024});if(tar.status!==0)throw Error('archive-failed');
  const bytes=gzipSync(tar.stdout,{level:9}),destination=join(root,'artifacts');await mkdir(destination,{recursive:true});
- const archive=join(destination,'wispr-collector-1.1.2.tgz'),checksum=sha256(bytes);await writeFile(archive,bytes);await writeFile(archive+'.sha256',checksum+'  wispr-collector-1.1.2.tgz\n');
+ const archive=join(destination,'wispr-collector-1.1.3.tgz'),checksum=sha256(bytes);await writeFile(archive,bytes);await writeFile(archive+'.sha256',checksum+'  wispr-collector-1.1.3.tgz\n');
  if(process.argv.includes('--test')){
    const consumer=join(scratch,'consumer');await mkdir(consumer);run('tar',['-xzf',archive,'-C',consumer],scratch);
    const extracted=join(consumer,'package'),manifest=JSON.parse(await readFile(join(extracted,'manifest.json'),'utf8'));

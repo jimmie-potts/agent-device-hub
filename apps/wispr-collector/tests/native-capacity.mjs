@@ -3,6 +3,7 @@ import { mkdtempSync,mkdirSync,rmSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { supervise } from '../dist/supervisor.js';
+import {qualifyLanguageResources} from './language-resources.mjs';
 assert.equal(process.platform,'win32');assert.equal(Number(process.versions.node.split('.')[0]),24);
 const root=process.env.WISPR_TEST_TMPDIR;assert.ok(root);const directory=mkdtempSync(join(root,'native-capacity-'));
 try{
@@ -17,3 +18,4 @@ try{
  await assert.rejects(run(),/source-capacity/);assert.deepEqual(JSON.parse(readFileSync(join(stateDirectory,'aggregate.json'))),snapshot);
  console.log(JSON.stringify({result:'passed',scope:'native synthetic 100000-row bound',rows:100000,elapsedMs,overflowRejected:true,lastGoodPreserved:true}));
 }finally{rmSync(directory,{recursive:true,force:true});}
+console.log(JSON.stringify(qualifyLanguageResources(root)));

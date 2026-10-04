@@ -848,6 +848,14 @@ and opt-out before pending publication. Cross-consumer fixtures must validate
 real collector tables through the shared contract and the Hub language routes;
 unknown source language, edit finality and counter windows remain explicit.
 
+Ranking regressions cover diverse retained text across overlapping presets,
+repeatable batch reads, stable table order and exact support/top-100/omitted
+values. An excessive active batch must still reject and preserve the committed
+store. The native capacity script also qualifies synthetic diverse-language
+import, repeat, restart and zone rebuild, reporting elapsed time and peak RSS.
+These measurements qualify the synthetic retained-store path, not performance
+on the owner's installed history or the entire supervised command.
+
 Run `npm run test:wispr:native:built` separately under native Windows Node 24,
 with its synthetic database/output directory on a local Windows drive. The
 native check rejects other platforms and verifies the fixed native History identifier/app mapping and DATETIME declaration, numeric/language repeat counts, source byte/ACL preservation, unknown edit-end coverage and text opt-out. It also verifies concurrent WAL writes,
