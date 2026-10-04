@@ -21,10 +21,11 @@ export async function dependencyEntrypoint(program:string,name:string):Promise<s
  }
  throw new Error('missing-probe-dependency');
 }
-// Hub #794 durable surface: the files that encode, decode or accept stored bytes, plus the
-// stored-state and frozen lifecycle schemas they apply. HubStorage re-validates each complete
-// commit with validateExport, so content modules outside the surface cannot widen the format.
-// Unclassified package files count as durable. The #794 OpenSpec design explains each entry.
+// Hub #794 durable surface: the storage-path code that encodes, decodes or accepts stored bytes,
+// including every validator it calls, plus the stored-state and frozen lifecycle schemas. HubStorage
+// re-validates each complete commit with validateExport; the probe checks that the agent-state
+// entrypoint still binds the durable validator. Unclassified package files count as durable;
+// Hub dist uses the node:sqlite import rule. The #794 OpenSpec design explains each entry.
 const hubStores=['storage.js','automation-store.js','automation.js','common.js'];
 // These open SQLite without writing monitor state: the installer's read-only capture and the migration lease.
 const hubOtherSqlite=['install/state.js','migration-routes.js'];
@@ -35,7 +36,9 @@ const surfaces:Record<'agent-state'|'agent-lifecycle-contracts',Surface>={
   content:['index.js','reducer.js','retirement.js','types.js','providers.js','metadata.js','subscriptions.js','children.js'],
   outbound:name=>/^snapshot-v\d+(?:\.\d+)*\.schema\.json$/.test(name)},
  'agent-lifecycle-contracts':{required:['schemas/lifecycle-v1.schema.json','schemas/lifecycle-v1.1.schema.json'],
-  content:['index.js'],
+  // Every lifecycle module is durable: validateEvent and validDisplayText check stored records.
+  // A later, separately loaded version module may be listed here by name.
+  content:[],
   outbound:name=>/^lifecycle-v\d+(?:\.\d+)*\.schema\.json$/.test(name)&&!['lifecycle-v1.schema.json','lifecycle-v1.1.schema.json'].includes(name)}
 };
 // Node never loads declarations or source maps.

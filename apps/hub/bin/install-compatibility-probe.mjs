@@ -3,11 +3,16 @@
 import assert from 'node:assert/strict';
 import {dependencyEntrypoint} from '../dist/install/compatibility.js';
 import {pathToFileURL} from 'node:url';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {readFile,writeFile,readdir} from 'node:fs/promises';
 const [program,directory,mode]=process.argv.slice(2);
 assert(['write','reopen'].includes(mode));
-const {createAgentState}=await import(pathToFileURL(await dependencyEntrypoint(program,'agent-state')).href);
+const stateEntry=await dependencyEntrypoint(program,'agent-state');
+const state=await import(pathToFileURL(stateEntry).href),{createAgentState}=state;
+// HubStorage imports these validators through the agent-state entrypoint, which is content.
+// The entrypoint must bind the fingerprinted durable validator, not a replacement.
+const validation=await import(pathToFileURL(join(dirname(stateEntry),'validation.js')).href);
+for(const name of ['validateExport','migrateExport'])assert.equal(state[name],validation[name],'durable-binding-'+name);
 const {HubStorage}=await import(pathToFileURL(join(program,'dist/storage.js')).href);
 const {createAutomation,DEFAULT_SETTINGS}=await import(pathToFileURL(join(program,'dist/automation.js')).href);
 const marker=join(directory,'synthetic-install-probe.json');

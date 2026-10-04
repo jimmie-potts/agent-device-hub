@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,cp,writeFile,symlink,rm,chmod,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {qualifyCompatibility,dependencyEntrypoint,durableFingerprint} from '../dist/install/compatibility.js';
 import {program,copyRelease} from './durable-release-fixture.mjs';
 
@@ -10,7 +11,7 @@ const records=['owner','source','revision','labels','notices','acknowledgments',
 const refused=(result,reason)=>{assert.equal(result.status,'unknown',JSON.stringify(result));assert.equal(result.reason,reason);assert.equal(result.probe,null);};
 async function withRelease(change,check){
  const release=await copyRelease();
- try{await change(release);await check(release.root);}finally{await release.dispose();}
+ try{await change(release);await check(release.root,release);}finally{await release.dispose();}
 }
 
 test('durable fingerprint ignores private installation modes',async()=>{
@@ -27,14 +28,13 @@ test('target writes every durable record kind; previous reopens it and consumed 
 });
 
 // Acceptance example 1: content and lifecycle changes that leave the durable surface unchanged.
-test('reducer, coordination, constants, snapshot and lifecycle changes qualify in both directions',async()=>{
+test('reducer, coordination, constants, snapshot-schema and new lifecycle-version changes qualify in both directions',async()=>{
  await withRelease(async release=>{
   await release.append('state','dist/reducer.js','\n// reducer change\n');
   await release.append('state','dist/index.js','\n// snapshot or coordination change\n');
   await release.replace('state','dist/types.js',"export const VERSION = '3.4.0';","export const VERSION = '3.99.0';");
   await release.append('state','schemas/snapshot-v1.2.schema.json');
   await release.write('state','schemas/snapshot-v1.3.schema.json','{}\n');
-  await release.append('lifecycle','dist/index.js','\n// lifecycle version change\n');
   await release.write('lifecycle','schemas/lifecycle-v1.2.schema.json','{}\n');
  },async root=>{
   assert.equal(await durableFingerprint(root),await durableFingerprint(program));
@@ -71,11 +71,31 @@ for(const [name,change] of [
  ['agent-state durable validator',release=>release.write('state','dist/validation.js',poison)],
  ['agent-state identity key',release=>release.append('state','dist/memory-storage.js','\n//\n')],
  ['unclassified agent-state module',release=>release.write('state','dist/durable-store.js',poison)],
+ ['lifecycle envelope validator',release=>release.write('lifecycle','dist/index.js',poison)],
  ['unclassified lifecycle module',release=>release.write('lifecycle','dist/identity.js',poison)]
 ])test('durable module change refuses without executing it: '+name,async()=>{
  await withRelease(change,async root=>{
   refused(await qualifyCompatibility(root,program),'durable-implementation-unqualified');
   refused(await qualifyCompatibility(program,root),'durable-implementation-unqualified');
+ });
+});
+
+// Review counterexample: lifecycle validateEvent decides whether the previous release reopens stored sessions.
+test('loosened lifecycle parent rule refuses before the probe runs',async()=>{
+ await withRelease(release=>release.replace('lifecycle','dist/index.js',"['provider', 'client', 'hostId', 'sourceId'].some(","['provider', 'client', 'hostId'].some("),async root=>{
+  refused(await qualifyCompatibility(program,root),'durable-implementation-unqualified');
+  refused(await qualifyCompatibility(root,program),'durable-implementation-unqualified');
+ });
+});
+// HubStorage imports validateExport through the agent-state entrypoint, which is content.
+test('entrypoint that rebinds the durable validator fails the probe in either direction',async()=>{
+ await withRelease(release=>release.replace('state','dist/index.js',"export { validateSnapshot, validateExport, migrateExport } from './validation.js';","export { validateSnapshot, migrateExport } from './validation.js';\nconst permissive = value => ({ ok: true, value });\nexport { permissive as validateExport };"),async (root,release)=>{
+  assert.equal(await durableFingerprint(root),await durableFingerprint(program));
+  // The rebinding loads: the target entrypoint exports the permissive replacement.
+  const {validateExport}=await import(pathToFileURL(release.path('state','dist/index.js')).href);
+  assert.deepEqual(validateExport({unexpected:true}),{ok:true,value:{unexpected:true}});
+  refused(await qualifyCompatibility(program,root),'durable-reopen-probe-failed');
+  refused(await qualifyCompatibility(root,program),'durable-reopen-probe-failed');
  });
 });
 
