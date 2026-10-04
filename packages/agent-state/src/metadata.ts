@@ -63,15 +63,17 @@ export async function readSessionTitle(provider:'codex'|'claude',sessionId:strin
   try{return await Promise.race([work,new Promise<undefined>(resolve=>{timer=setTimeout(()=>{abort.abort();resolve(undefined);},DEADLINE_MS);})]);}
   finally{clearTimeout(timer);abort.abort();}
 }
-/** Metadata enrichment never discards the lifecycle envelope to make room for a title. */
-export function withMetadata(event:Envelope,metadata:{title?:Title;project?:string}):Envelope {
-  let result:Envelope={...event,apiVersion:'1.1',...metadata};
-  if(Buffer.byteLength(JSON.stringify(result))>2048){delete result.title;}
-  if(Buffer.byteLength(JSON.stringify(result))>2048){delete result.project;}
+export type MetadataVersion='1.1'|'1.2';
+/** Metadata enrichment never discards the lifecycle envelope to make room for a title.
+ * Trimming drops the title, then the project, and the host session ID last. */
+export function withMetadata(event:Envelope,metadata:{title?:Title;project?:string;hostSessionId?:string},version:MetadataVersion='1.1'):Envelope {
+  const result:Envelope={...event,apiVersion:version,...metadata};
+  if(version!=='1.2')delete result.hostSessionId;
+  for(const key of ['title','project','hostSessionId'] as const)if(Buffer.byteLength(JSON.stringify(result))>2048)delete result[key];
   return Object.freeze(result);
 }
 export async function enrichCodexTitle(event:Envelope,codexHome:string):Promise<Envelope>{
-  if(event.apiVersion!=='1.1'||event.identity.provider!=='codex'||event.parent.status==='known')return event;
+  if((event.apiVersion!=='1.1'&&event.apiVersion!=='1.2')||event.identity.provider!=='codex'||event.parent.status==='known')return event;
   const value=await readSessionTitle('codex',event.identity.sessionId,null,{codexHome});
-  return value?withMetadata(event,{title:value}):event;
+  return value?withMetadata(event,{title:value},event.apiVersion):event;
 }
