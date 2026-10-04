@@ -87,6 +87,12 @@ export interface OsAdapter {
 
   /** Releases held keys and stops helper processes. */
   close(): Promise<void>;
+
+  /** Optional: starts helpers and caches slow observations so the first key press is not delayed. */
+  warmUp?(): Promise<unknown>;
+
+  /** Optional: releases held keys synchronously, for process `exit` hooks where no promise can settle. */
+  releaseAllSync?(): void;
 }
 
 export class OsAdapterNotImplementedError extends Error {

@@ -161,10 +161,12 @@ export interface FeedTiming {
   retryMs: number;
   maxSnapshotBytes: number;
   maxLineBytes: number;
+  /** After falling back to snapshot 1.2, how long before asking for 1.3 again (also asked on every reconnect). */
+  versionRetryMs: number;
 }
 
 export const DEFAULT_FEED_TIMING: Readonly<FeedTiming> = Object.freeze({
-  requestTimeoutMs: 3000, streamIdleMs: 5000, retryMs: 2000, maxSnapshotBytes: 2 * 1024 * 1024, maxLineBytes: 64 * 1024,
+  requestTimeoutMs: 3000, streamIdleMs: 5000, retryMs: 2000, maxSnapshotBytes: 2 * 1024 * 1024, maxLineBytes: 64 * 1024, versionRetryMs: 300_000,
 });
 
 export interface HubFeedOptions {
@@ -218,6 +220,7 @@ class Feed implements HubFeed {
   #idleTimer: unknown;
   #retryTimer: unknown;
   #reconnectTimer: unknown;
+  #versionTimer: unknown;
   #snapshotBusy = false;
   #snapshotPending = false;
   #tasks = new Set<Promise<unknown>>();
@@ -238,8 +241,8 @@ class Feed implements HubFeed {
 
   async stop(): Promise<void> {
     this.#running = false;
-    for (const timer of [this.#idleTimer, this.#retryTimer, this.#reconnectTimer]) if (timer !== undefined) this.#clock.clearTimeout(timer);
-    this.#idleTimer = this.#retryTimer = this.#reconnectTimer = undefined;
+    for (const timer of [this.#idleTimer, this.#retryTimer, this.#reconnectTimer, this.#versionTimer]) if (timer !== undefined) this.#clock.clearTimeout(timer);
+    this.#idleTimer = this.#retryTimer = this.#reconnectTimer = this.#versionTimer = undefined;
     this.#stream?.abort(new FeedFailure('stopped'));
     for (const request of this.#requests) request.abort(new FeedFailure('stopped'));
     await Promise.allSettled([...this.#tasks]);
@@ -276,6 +279,8 @@ class Feed implements HubFeed {
 
   async #connect(): Promise<void> {
     if (!this.#running) return;
+    // Every connection asks for 1.3 first, so an upgraded Hub is picked up without a bridge restart.
+    this.#version = '1.3';
     try {
       this.#token = await this.#readToken();
     } catch (error) {
@@ -315,6 +320,7 @@ class Feed implements HubFeed {
       let envelope = await this.#getSnapshot(this.#version);
       if (envelope === 'version-refused' && this.#version === '1.3') {
         this.#version = '1.2';
+        this.#scheduleVersionRetry();
         envelope = await this.#getSnapshot('1.2');
       }
       if (envelope === 'version-refused') throw new FeedFailure('snapshot-http-400');
@@ -348,6 +354,16 @@ class Feed implements HubFeed {
       this.#requestSnapshot();
     }
     return true;
+  }
+
+  #scheduleVersionRetry(): void {
+    if (!this.#running) return;
+    if (this.#versionTimer !== undefined) this.#clock.clearTimeout(this.#versionTimer);
+    this.#versionTimer = this.#clock.setTimeout(() => {
+      this.#versionTimer = undefined;
+      this.#version = '1.3';
+      if (this.#streamOpen) this.#requestSnapshot();
+    }, this.#timing.versionRetryMs);
   }
 
   #scheduleRetry(): void {

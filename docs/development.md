@@ -879,8 +879,9 @@ a scripted fake OS adapter, a fake Hub `fetch`, `ManualClock` and the device
 simulator: profile validation and reload, the read-only feed client (GET-only,
 refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
 token-file privacy), slot assignment, release and persistence, state lights,
-each row of the no-misrouting matrix, Record and Send gating, big-wheel scrolling, loss handling
-and an end-to-end `run --profile` session. The fake adapter models the
+each row of the no-misrouting matrix, Record and Send gating, big-wheel scrolling, loss handling,
+exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
+`run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or
 Claude data or contact a Hub. The adapter's `approvalVisible` is always
 `unknown` until an approval selector is qualified, so Send stays refused in

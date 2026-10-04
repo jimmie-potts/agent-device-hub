@@ -1,3 +1,4 @@
+import { constants as osConstants } from 'node:os';
 import { join } from 'node:path';
 import { createChompiBridge, type BridgeEvent } from './bridge.js';
 import { ManualClock, systemClock, type Clock } from './clock.js';
@@ -26,7 +27,25 @@ export interface CliDeps {
   fetch?: typeof fetch;
   /** Creates the OS adapter; defaults to the platform adapter (Windows only). */
   createOsAdapter?: () => Promise<OsAdapter>;
+  /** Process hooks for routing runs (exit, uncaught errors); tests pass a stand-in. Defaults to `process`. */
+  process?: ProcessHooks;
 }
+
+/** The part of `process` routing uses to release keys on any way out. */
+export interface ProcessHooks {
+  on(event: 'exit' | 'uncaughtException' | 'unhandledRejection', listener: (...args: unknown[]) => void): unknown;
+  off(event: 'exit' | 'uncaughtException' | 'unhandledRejection', listener: (...args: unknown[]) => void): unknown;
+  exit(code: number): void;
+}
+
+/** Optional adapter extras: a synchronous release for `process.on('exit')`, and a start-up warm-up. */
+interface AdapterExtras {
+  releaseAllSync?: () => void;
+  warmUp?: () => Promise<unknown>;
+}
+
+/** SIGINT, SIGTERM, SIGHUP and, on Windows, SIGBREAK (console close) all stop the bridge the same way. */
+const STOP_SIGNALS = (['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const).filter(name => name in osConstants.signals);
 
 export const USAGE = `usage: chompi-bridge probe
        chompi-bridge monitor --simulate
@@ -136,9 +155,8 @@ export function testPattern(): Rgb[] {
 function stopRequested(signal: AbortSignal | undefined): Promise<void> {
   if (signal) return signal.aborted ? Promise.resolve() : new Promise(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
   return new Promise(resolve => {
-    const done = () => { process.off('SIGINT', done); process.off('SIGTERM', done); resolve(); };
-    process.once('SIGINT', done);
-    process.once('SIGTERM', done);
+    const done = () => { for (const name of STOP_SIGNALS) process.off(name, done); resolve(); };
+    for (const name of STOP_SIGNALS) process.once(name, done);
   });
 }
 
@@ -210,6 +228,40 @@ async function runRouting(command: Extract<Command, { command: 'run' }>, flags: 
     deps.stderr.write(`chompi-bridge-os-adapter-unavailable: ${(error as Error).message}\n`);
     return 1;
   }
+  const extras = adapter as OsAdapter & AdapterExtras;
+  // Whatever way the process leaves, held keys come up: synchronously on exit, and on an uncaught error before it.
+  const hooks = deps.process ?? (process as unknown as ProcessHooks);
+  const releaseSync = () => { try { extras.releaseAllSync?.(); } catch { /* exiting anyway */ } };
+  const fatal = (error: unknown) => {
+    releaseSync();
+    deps.stderr.write(`chompi-bridge-fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+    hooks.exit(1);
+  };
+  hooks.on('exit', releaseSync);
+  hooks.on('uncaughtException', fatal);
+  hooks.on('unhandledRejection', fatal);
+  try {
+    return await routeUntilStopped(command, deps, clock, print, profile, feed, slots, extras, flags, stop);
+  } finally {
+    hooks.off('uncaughtException', fatal);
+    hooks.off('unhandledRejection', fatal);
+    hooks.off('exit', releaseSync);
+  }
+}
+
+async function routeUntilStopped(
+  command: Extract<Command, { command: 'run' }>, deps: CliDeps, clock: Clock, print: (event: object) => unknown, profile: RoutingProfile,
+  feed: HubFeed, slots: SlotStore, adapter: OsAdapter & AdapterExtras, flags: RoutingFlags, stop: Promise<void>,
+): Promise<number> {
+  // Warm the adapter (helper process, cached client versions) before any key press can arrive.
+  if (adapter.warmUp) {
+    try {
+      const result = await adapter.warmUp();
+      print({ type: 'adapter-ready', ...(result && typeof result === 'object' && !Array.isArray(result) ? { result } : {}) });
+    } catch (error) {
+      print({ type: 'adapter-warm-up-failed', message: (error as Error).message });
+    }
+  }
 
   const simulator = command.simulate ? new ChompiSimulator({ clock }) : undefined;
   simulator?.plug();
@@ -230,7 +282,10 @@ async function runRouting(command: Extract<Command, { command: 'run' }>, flags: 
   });
   const watcher = new ProfileWatcher({
     path: flags.profile, initial: profile, clock,
-    onReload: next => router.setProfile(next),
+    onReload: next => {
+      bridge.setProfileVersion(next.profileVersion);
+      router.setProfile(next);
+    },
     onReject: error => print({ type: 'profile-rejected', issues: error.issues }),
   });
   let stopping = false;

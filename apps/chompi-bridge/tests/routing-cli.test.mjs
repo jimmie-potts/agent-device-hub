@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { main, USAGE } from '../dist/cli.js';
 import { ManualClock } from '../dist/clock.js';
@@ -72,6 +73,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   const streams = io();
   const running = main(routingArgs(paths), {
     ...streams, env: { XDG_RUNTIME_DIR: paths.runtime }, clock, fetch: hub.fetch, signal: controller.signal,
+    process: Object.assign(new EventEmitter(), { exit() { throw new Error('unexpected exit'); } }),
     createHidTransport: () => simulator.transport, createOsAdapter: async () => adapter,
   });
   // Virtual time with Hub heartbeats every 100 ms, as the real Hub sends every second.
@@ -97,6 +99,15 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   assert.equal(adapter.enters, 1, 'small-knob clicks never send');
   assert.deepEqual(simulator.leds[0], JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')).colors.selected, 'the device shows the selected slot');
 
+  // A profile edit is applied without a restart, and the firmware hears the new profile version.
+  assert.equal(simulator.profileVersion, 1);
+  writeFileSync(paths.profile, JSON.stringify({ ...JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')), profileVersion: 7 }));
+  for (let i = 0; i < 200 && simulator.profileVersion !== 7; i++) { await new Promise(resolve => setTimeout(resolve, 5)); await run(100); }
+  assert.equal(simulator.profileVersion, 7, 'the reload reaches the host heartbeat');
+  assert.ok(streams.out().includes('"type":"profile-applied"'));
+  simulator.click(1);
+  await run(300);
+
   simulator.press(26);
   await run(200);
   assert.equal(adapter.held.size, 2);
@@ -114,4 +125,39 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   assert.ok(!streams.out().includes('Task 1'), 'titles are never printed');
   assert.ok(hub.requests.every(r => r.method === 'GET'));
   await settle();
+});
+
+test('routing warms the adapter first and releases keys on exit and on an uncaught error', async t => {
+  const paths = files(t);
+  const clock = new ManualClock(1_700_000_000_000);
+  const simulator = new ChompiSimulator({ clock });
+  simulator.plug();
+  t.after(() => simulator.unplug());
+  const hub = new FakeHub();
+  const adapter = new FakeAdapter(clock);
+  const hooks = Object.assign(new EventEmitter(), { exits: [], exit(code) { this.exits.push(code); } });
+  const controller = new AbortController();
+  const streams = io();
+  const running = main(routingArgs(paths), {
+    ...streams, env: { XDG_RUNTIME_DIR: paths.runtime }, clock, fetch: hub.fetch, signal: controller.signal, process: hooks,
+    createHidTransport: () => simulator.transport, createOsAdapter: async () => adapter,
+  });
+  for (let i = 0; i < 100 && !streams.out().includes('adapter-ready'); i++) { await new Promise(resolve => setTimeout(resolve, 5)); await advance(clock, 50, 50); }
+  const ready = JSON.parse(streams.out().split('\n').find(line => line.includes('adapter-ready')));
+  assert.deepEqual(ready.result, { codex: '26.930.3930.0', claude: '2.19675.0.0' });
+  assert.ok(adapter.calls.findIndex(c => c[0] === 'warmUp') < adapter.calls.findIndex(c => c[0] === 'foregroundWindow' || c[0] === 'openUri') || !adapter.calls.some(c => c[0] === 'openUri'));
+  assert.equal(hooks.listenerCount('uncaughtException'), 1);
+
+  hooks.emit('uncaughtException', new Error('boom'));
+  assert.equal(adapter.count('releaseAllSync'), 1, 'keys are released before exiting');
+  assert.deepEqual(hooks.exits, [1]);
+  assert.match(streams.err(), /^chompi-bridge-fatal: boom$/m);
+  hooks.emit('unhandledRejection', new Error('later'));
+  assert.deepEqual(hooks.exits, [1, 1]);
+  hooks.emit('exit', 0);
+  assert.equal(adapter.count('releaseAllSync'), 3);
+
+  controller.abort();
+  assert.equal(await running, 0, streams.err());
+  assert.equal(hooks.listenerCount('exit') + hooks.listenerCount('uncaughtException') + hooks.listenerCount('unhandledRejection'), 0, 'hooks are removed after the run');
 });

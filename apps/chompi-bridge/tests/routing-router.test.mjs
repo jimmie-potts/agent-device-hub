@@ -251,6 +251,7 @@ test('an unqualified Codex version disables Codex only, because its UI selectors
   ctx.adapter.versions = { ...ctx.adapter.versions, codex: known('26.1001.0.0') };
   await ctx.focus(2);
   assert.equal(ctx.failures().at(-1).reason, 'client-unqualified');
+  assert.equal(ctx.failures().at(-1).observedVersion, '26.1001.0.0', 'the log names the version to qualify');
   ctx.adapter.versions = { ...ctx.adapter.versions, codex: unknown('package not found') };
   await ctx.focus(2);
   assert.equal(ctx.failures().at(-1).reason, 'client-version-unknown');
@@ -294,6 +295,33 @@ test('a task key press never acknowledges, approves or dismisses anything', asyn
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }]);
   assert.equal(ctx.router.status().slots[0].state, 'attention', 'attention remains');
   assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
+});
+
+test('a focused key with pending attention keeps pulsing and the press reaches no Hub', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['approval'] })] });
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) { seen.add(JSON.stringify(ctx.lights.last[0])); await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2, 50); }
+  assert.ok(seen.has(JSON.stringify(PROFILE.colors.attention)), 'the attention color still shows on the focused key');
+  assert.ok(seen.has(JSON.stringify(PROFILE.colors.selected)), 'alternating with the selected color');
+  assert.equal(ctx.router.status().slots[0].state, 'attention');
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut; nothing approves');
+  assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
+});
+
+test('the Claude ambiguity check reads every known Desktop ID, beyond 63', async t => {
+  const sessions = Array.from({ length: 80 }, (_, i) => claudeTask(i + 1));
+  const ctx = await setup(t, { sessions });
+  const realOpen = ctx.adapter.openUri.bind(ctx.adapter);
+  // The 80th known session, which never gets a slot, also becomes visible: verification must see it.
+  ctx.adapter.openUri = async uri => { await realOpen(uri); ctx.adapter.claudeRecords.get(lid(80)).lastFocusedAt = ctx.clock.now() + 2; };
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1)?.reason, 'selection-ambiguous');
+  assert.equal(target(ctx), null);
+  const queried = new Set(ctx.adapter.calls.filter(c => c[0] === 'claudeSessions').flatMap(c => c[1]));
+  assert.equal(queried.size, 80, 'every known Desktop ID was read');
 });
 
 // Send

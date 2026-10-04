@@ -1,13 +1,14 @@
 import { spawn as spawnProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 
 export const UIA_HELPER_PROTOCOL = 1;
 
 /** The parts of a child process the helper client uses; a test can supply a scripted stand-in. */
 export interface HelperChild {
-  stdin: { write(chunk: string): unknown; end(): unknown } | null;
+  stdin: { write(chunk: string): unknown; end(): unknown; on?(event: 'error', listener: (error: Error) => void): unknown } | null;
   stdout: { on(event: 'data', listener: (chunk: Buffer | string) => void): unknown } | null;
   stderr?: { on(event: 'data', listener: (chunk: Buffer | string) => void): unknown } | null;
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
@@ -23,6 +24,16 @@ export type HelperReply = { ok: true; value: unknown } | { ok: false; reason: st
 export interface UiaHelperLike {
   request(op: string, params?: Record<string, unknown>): Promise<HelperReply>;
   close(): Promise<void>;
+  /** How many helper processes have started; a change means a restart. */
+  readonly starts?: number;
+}
+
+/**
+ * JSON with every non-ASCII UTF-16 code unit escaped as `\uXXXX`. Windows PowerShell 5.1 decodes redirected stdin
+ * in the console code page, so raw UTF-8 would garble a title; `ConvertFrom-Json` decodes the escapes exactly.
+ */
+export function asciiJson(value: unknown): string {
+  return JSON.stringify(value).replace(/[\u007f-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 
 export interface UiaHelperOptions {
@@ -75,6 +86,7 @@ interface Running {
   ready: boolean;
   exited: boolean;
   buffer: string;
+  decoder: StringDecoder;
   /** Request IDs waiting for the ready line. */
   queued: number[];
   startTimer: NodeJS.Timeout;
@@ -118,7 +130,7 @@ export class UiaHelper implements UiaHelperLike {
     if (this.pending.size >= this.maxPending) return Promise.resolve({ ok: false, reason: 'helper-busy' });
     const id = this.nextId++;
     return new Promise<HelperReply>(resolve => {
-      this.pending.set(id, { message: `${JSON.stringify({ ...params, id, op })}\n`, resolve });
+      this.pending.set(id, { message: `${asciiJson({ ...params, id, op })}\n`, resolve });
       const running = this.ensureRunning();
       if (typeof running === 'string') this.settle(id, { ok: false, reason: running });
       else if (running.ready) this.send(running, id);
@@ -154,7 +166,7 @@ export class UiaHelper implements UiaHelperLike {
       return 'helper-spawn-failed';
     }
     const running: Running = {
-      child, ready: false, exited: false, buffer: '', queued: [],
+      child, ready: false, exited: false, buffer: '', decoder: new StringDecoder('utf8'), queued: [],
       startTimer: setTimeout(() => this.stop(running, 'helper-start-timeout'), this.startTimeoutMs),
     };
     const onExit = () => {
@@ -166,7 +178,9 @@ export class UiaHelper implements UiaHelperLike {
     child.on('exit', onExit);
     child.on('error', onExit);
     child.stderr?.on('data', () => undefined);
-    child.stdout?.on('data', chunk => this.onData(running, String(chunk)));
+    // A closed pipe (EPIPE) is a helper failure, never an uncaught exception.
+    child.stdin?.on?.('error', () => this.stop(running, 'helper-exited'));
+    child.stdout?.on('data', chunk => this.onData(running, typeof chunk === 'string' ? chunk : running.decoder.write(chunk)));
     this.running = running;
     return running;
   }

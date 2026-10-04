@@ -3,7 +3,7 @@ import {
   OS_ADAPTER_VERSION, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
   type Observation, type OsAdapter,
 } from '../os-adapter.js';
-import { claudeSessions, codexArchived } from './client-files.js';
+import { claudeSessions, CodexArchiveIndex, type CodexArchiveOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
 import { KeyboardError, OpenUriError } from './errors.js';
 import { Keyboard } from './keyboard.js';
@@ -23,7 +23,24 @@ export interface WindowsAdapterOptions {
   /** Claude Desktop `claude-code-sessions` directory (default: under the package's `LocalCache` in `%LOCALAPPDATA%`). */
   claudeSessionsRoot?: string;
   env?: NodeJS.ProcessEnv;
+  /** Archive scan bounds and caching (defaults: 1 s scan, 10 s negative cache). */
+  codexArchive?: Omit<CodexArchiveOptions, 'now'>;
+  /** Longest wait for the shell to accept a deep link (default 10 s). */
+  openUriTimeoutMs?: number;
+  /** How long cached client versions stay fresh while the helper keeps running (default 10 min). */
+  versionTtlMs?: number;
+  now?: () => number;
 }
+
+/** Start-up and exit hooks the host adapters add to the portable interface. */
+export interface HostOsAdapter extends OsAdapter {
+  /** Starts the UI Automation helper and caches client versions. Never throws. */
+  warmUp(): Promise<void>;
+  /** Releases held keys synchronously, for a `process.on('exit')` hook. Never throws. */
+  releaseAllSync(): void;
+}
+
+export type WindowsOsAdapter = HostOsAdapter;
 
 type Unknown = { status: 'unknown'; reason: string };
 const unknown = (reason: string): Unknown => ({ status: 'unknown', reason });
@@ -42,13 +59,19 @@ const isClient = (client: unknown): client is Client => client === 'codex' || cl
  * koffi; UI checks go to a read-only UI Automation helper scoped to the client's foreground top-level window; the
  * Codex archive and Claude Desktop records are read by name and by allowlisted key. Nothing here logs.
  */
-export function createWindowsAdapter(options: WindowsAdapterOptions = {}): OsAdapter {
+export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
   const env = options.env ?? process.env;
   const loadApi = options.win32 ?? (() => loadWin32Api());
   let api: Promise<Win32Api> | undefined;
   let keyboard: Keyboard | undefined;
   let helper = options.helper;
   let closed = false;
+  const now = options.now ?? Date.now;
+  const versionTtlMs = options.versionTtlMs ?? 10 * 60_000;
+  const openUriTimeoutMs = options.openUriTimeoutMs ?? 10_000;
+  let versions: { value: ClientVersions; at: number; starts: number | undefined } | null = null;
+  let versionsInflight: Promise<ClientVersions> | null = null;
+  let archive: { home: string; index: CodexArchiveIndex } | null = null;
 
   const win32 = async (): Promise<Win32Api | null> => {
     api ??= loadApi();
@@ -104,25 +127,44 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): OsAda
     return known(value);
   }
 
-  const adapter: OsAdapter = {
+  async function fetchVersions(): Promise<ClientVersions> {
+    const current = uia();
+    const reply = await current.request('clientVersions');
+    if (!reply.ok) {
+      const reason = REASON.test(reply.reason) ? reply.reason : 'helper-error';
+      return { codex: unknown(reason), claude: unknown(reason) };
+    }
+    const values = (typeof reply.value === 'object' && reply.value !== null ? reply.value : {}) as Record<string, unknown>;
+    const one = (entry: unknown): Observation<string> => {
+      const record = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+      if (typeof record.version === 'string') return VERSION.test(record.version) ? known(record.version) : unknown('helper-invalid-reply');
+      if (record.reason === 'not-installed' || record.reason === 'multiple-packages') return unknown(record.reason);
+      return unknown('helper-invalid-reply');
+    };
+    const value = { codex: one(values.codex), claude: one(values.claude) };
+    versions = { value, at: now(), starts: current.starts };
+    return value;
+  }
+
+  const adapter: WindowsOsAdapter = {
     version: OS_ADAPTER_VERSION,
     platform: 'win32',
 
     async clientVersions(): Promise<ClientVersions> {
       if (closed) return { codex: unknown('adapter-closed'), claude: unknown('adapter-closed') };
-      const reply = await uia().request('clientVersions');
-      if (!reply.ok) {
-        const reason = REASON.test(reply.reason) ? reply.reason : 'helper-error';
-        return { codex: unknown(reason), claude: unknown(reason) };
+      // Cached for the helper's lifetime: a restart (new start count) or the TTL refreshes it.
+      if (versions && versions.starts === uia().starts && now() - versions.at < versionTtlMs) return versions.value;
+      return (versionsInflight ??= fetchVersions().finally(() => { versionsInflight = null; }));
+    },
+
+    async warmUp(): Promise<void> {
+      if (closed) return;
+      try {
+        await uia().request('ping');
+        await adapter.clientVersions();
+      } catch {
+        // Warm-up is an optimization; every observation still fails closed on its own.
       }
-      const values = (typeof reply.value === 'object' && reply.value !== null ? reply.value : {}) as Record<string, unknown>;
-      const one = (entry: unknown): Observation<string> => {
-        const record = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
-        if (typeof record.version === 'string') return VERSION.test(record.version) ? known(record.version) : unknown('helper-invalid-reply');
-        if (record.reason === 'not-installed' || record.reason === 'multiple-packages') return unknown(record.reason);
-        return unknown('helper-invalid-reply');
-      };
-      return { codex: one(values.codex), claude: one(values.claude) };
     },
 
     async foregroundWindow(): Promise<Observation<ForegroundWindow | null>> {
@@ -137,10 +179,17 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): OsAda
       const loaded = await win32();
       if (!loaded) throw new OpenUriError('win32-unavailable');
       let result: number;
+      let timer: NodeJS.Timeout | undefined;
       try {
-        result = loaded.shellOpen(uri);
+        // ShellExecuteW runs on a worker thread; a hung activation times out here without blocking the event loop.
+        result = await Promise.race([
+          loaded.shellOpen(uri),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('open-uri-timeout')), openUriTimeoutMs); }),
+        ]);
       } catch (cause) {
         throw new OpenUriError('open-uri-failed', { cause });
+      } finally {
+        clearTimeout(timer);
       }
       if (!(result > 32)) throw new OpenUriError('open-uri-failed', { shellResult: result });
     },
@@ -153,7 +202,11 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): OsAda
     },
 
     async releaseAll(): Promise<void> {
-      // Only keys this adapter pressed can be held; without a loaded keyboard there are none.
+      adapter.releaseAllSync();
+    },
+
+    releaseAllSync(): void {
+      // Only keys this adapter pressed can be held; without a loaded keyboard there are none. FFI calls are synchronous.
       try { keyboard?.releaseAll(); } catch { /* never throws */ }
     },
 
@@ -212,7 +265,8 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): OsAda
       if (closed) return unknown('adapter-closed');
       const home = codexHome();
       if (!home) return unknown('codex-home-unset');
-      return codexArchived(home, threadId);
+      if (archive?.home !== home) archive = { home, index: new CodexArchiveIndex(home, { ...options.codexArchive, now }) };
+      return archive.index.archivedThread(threadId);
     },
 
     async claudeSessions(localIds: readonly string[]): Promise<Observation<ClaudeDesktopSession[]>> {

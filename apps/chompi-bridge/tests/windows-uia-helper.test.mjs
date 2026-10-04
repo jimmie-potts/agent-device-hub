@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { encodeHelperCommand, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
+import { asciiJson, encodeHelperCommand, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
 
 /** A scripted stand-in for the PowerShell helper process. */
 class FakeChild extends EventEmitter {
@@ -14,8 +14,11 @@ class FakeChild extends EventEmitter {
     this.killed = false;
     this.ended = false;
     this.reply = reply;
-    this.stdin = {
+    this.writes = [];
+    this.stdin = Object.assign(new EventEmitter(), {
       write: chunk => {
+        this.writes.push(chunk);
+        if (this.onWrite?.(chunk, this) === false) return true;
         for (const line of String(chunk).split('\n').filter(Boolean)) {
           const request = JSON.parse(line);
           this.requests.push(request);
@@ -24,7 +27,7 @@ class FakeChild extends EventEmitter {
         return true;
       },
       end: () => { this.ended = true; queueMicrotask(() => this.exit(0)); },
-    };
+    });
     if (ready) queueMicrotask(() => this.out({ ready: true, protocol: 1 }));
   }
   out(value) { this.stdout.emit('data', Buffer.from(JSON.stringify(value) + '\n')); }
@@ -155,4 +158,67 @@ test('the shipped helper script is read-only and fits one PowerShell command lin
   const encoded = encodeHelperCommand(script);
   assert.ok(encoded.length < 30000, `encoded helper is ${encoded.length} characters; Windows allows 32767 per command line`);
   assert.equal(Buffer.from(encoded, 'base64').toString('utf16le'), script);
+});
+
+const NON_ASCII_TITLES = ['Résumé café', 'Plan \u2014 review', '\u4efb\u52a1\u8def\u7531', 'Ship it \u{1f680}', 'mixed \u00e9\u2014\u4e2d\u{1f600}\u0000\u007f'];
+
+/** Windows PowerShell 5.1 reads redirected stdin in the console code page; decoding bytes as Latin-1 models that. */
+const powershellStyleDecode = line => JSON.parse(Buffer.from(line, 'utf8').toString('latin1'));
+
+test('request lines are pure ASCII and non-ASCII titles survive a code-page decoder', () => {
+  for (const title of NON_ASCII_TITLES) {
+    const line = asciiJson({ id: 1, op: 'codexSelectedTitle', title });
+    assert.match(line, /^[\x00-\x7f]*$/, JSON.stringify(title));
+    assert.equal(powershellStyleDecode(line).title, title, 'escapes decode to the exact UTF-16 string');
+  }
+  assert.equal(asciiJson({ t: '\u{1f680}' }), '{"t":"\\ud83d\\ude80"}', 'a surrogate pair becomes two escapes');
+  // Raw UTF-8 would not survive the same decoder: this is the bug the escaping prevents.
+  assert.notEqual(powershellStyleDecode(JSON.stringify({ title: NON_ASCII_TITLES[0] })).title, NON_ASCII_TITLES[0]);
+});
+
+test('the helper client writes only ASCII to the helper stdin', async () => {
+  const { spawn, children } = spawner(() => new FakeChild({ reply: (request, child) => queueMicrotask(() => child.out({ id: request.id, ok: true, value: { matches: false, sameTitleRows: 0 } })) }));
+  const helper = new UiaHelper({ spawn });
+  for (const title of NON_ASCII_TITLES) {
+    assert.deepEqual(await helper.request('codexSelectedTitle', { hwnd: 1, processId: 2, title }), { ok: true, value: { matches: false, sameTitleRows: 0 } });
+  }
+  for (const chunk of children[0].writes) assert.match(chunk, /^[\x00-\x7f]*$/);
+  assert.deepEqual(children[0].writes.map(chunk => powershellStyleDecode(chunk.trim()).title), NON_ASCII_TITLES);
+  await helper.close();
+});
+
+test('a reply split inside a multi-byte character still decodes', async () => {
+  const { spawn } = spawner(() => new FakeChild({
+    reply: (request, child) => queueMicrotask(() => {
+      const bytes = Buffer.from(JSON.stringify({ id: request.id, ok: true, value: { note: '\u00e9\u{1f680}' } }) + '\n');
+      const cut = bytes.indexOf(0xf0) + 2; // inside the four-byte emoji
+      child.stdout.emit('data', bytes.subarray(0, cut));
+      child.stdout.emit('data', bytes.subarray(cut));
+    }),
+  }));
+  const helper = new UiaHelper({ spawn });
+  assert.deepEqual(await helper.request('ping'), { ok: true, value: { note: '\u00e9\u{1f680}' } });
+  await helper.close();
+});
+
+test('a broken stdin pipe is a helper failure, not a crash, and the next request restarts', async () => {
+  const { spawn, children } = spawner(index => {
+    const child = new FakeChild({ reply: index === 0 ? undefined : echo });
+    if (index === 0) child.onWrite = (chunk, self) => { queueMicrotask(() => self.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))); return false; };
+    return child;
+  });
+  const helper = new UiaHelper({ spawn });
+  assert.deepEqual(await helper.request('ping'), { ok: false, reason: 'helper-exited' });
+  assert.equal(children[0].killed, true);
+  assert.deepEqual(await helper.request('ping'), { ok: true, value: { op: 'ping' } });
+  assert.equal(children.length, 2);
+  await helper.close();
+});
+
+test('the helper script escapes non-ASCII replies and answers a decode probe without echoing text', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /\$NonAscii = \[regex\]'\[\^\\x00-\\x7F\]'/);
+  assert.match(script, /Reply\(\$value\) \{\n\s+\[Console\]::Out\.WriteLine\(\$NonAscii\.Replace\(/);
+  assert.match(script, /probeLength = \$text\.Length; probeSum = \$sum/);
+  assert.equal(/\[Console\]::(Out\.Write|WriteLine)\((?!\$NonAscii)/.test(script), false, 'every reply goes through the escaper');
 });

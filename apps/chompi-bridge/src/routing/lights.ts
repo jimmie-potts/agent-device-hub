@@ -59,7 +59,9 @@ export function renderFrame({ profile, slots, recording, send, pulseOn }: Render
     if (index === undefined) return;
     let color: Rgb = colors[light.state];
     if (light.state === 'attention' && !pulseOn) color = scale(color, PULSE_LOW);
-    if (light.selected) color = colors.selected;
+    // Selection never hides attention: a selected key with attention pulses between the attention and selected
+    // colors, so focusing a task can never look like acknowledging it.
+    if (light.selected) color = light.state === 'attention' && pulseOn ? colors.attention : colors.selected;
     if (light.error) color = colors.error;
     frame[index] = color;
   });

@@ -195,6 +195,10 @@ export class FakeAdapter {
     return known(true);
   }
 
+  /** Optional adapter extras the CLI uses when present. */
+  warmUp = async () => { this.calls.push(['warmUp']); return { codex: '26.930.3930.0', claude: '2.19675.0.0' }; };
+  releaseAllSync = () => { this.calls.push(['releaseAllSync']); this.held.clear(); };
+
   async close() { this.calls.push(['close']); this.held.clear(); }
 
   /** Keystrokes that would type Enter. */

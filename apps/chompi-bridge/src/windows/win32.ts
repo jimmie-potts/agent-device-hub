@@ -17,8 +17,11 @@ export interface Win32Api extends KeyboardApi {
   windowProcessId(hwnd: number): number;
   /** Package and image of a process, or null when it cannot be opened for limited query. */
   processIdentity(pid: number): ProcessIdentity | null;
-  /** `ShellExecuteW` with the `open` verb; a result above 32 means the request was handed off. */
-  shellOpen(uri: string): number;
+  /**
+   * `ShellExecuteW` with the `open` verb on a libuv worker thread, so a slow protocol activation cannot block the
+   * event loop; a result above 32 means the request was handed off.
+   */
+  shellOpen(uri: string): Promise<number>;
   /** `GetCursorPos`, or null when Windows does not report it (for example on a secure desktop). */
   cursorPosition(): ScreenPoint | null;
   /** `GetWindowRect`, or null when the window is gone. */
@@ -28,8 +31,9 @@ export interface Win32Api extends KeyboardApi {
 }
 
 /** The subset of koffi 3.x used here, typed locally so builds and Linux tests never need the native module. */
+type KoffiFunction = ((...args: unknown[]) => unknown) & { async(...args: unknown[]): void };
 interface KoffiModule {
-  load(path: string): { func(definition: string): (...args: unknown[]) => unknown };
+  load(path: string): { func(definition: string): KoffiFunction };
 }
 
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
@@ -37,8 +41,7 @@ const GA_ROOTOWNER = 3;
 const ERROR_SUCCESS = 0;
 const APPMODEL_ERROR_NO_PACKAGE = 15700;
 const SW_SHOWNORMAL = 1;
-const COINIT_APARTMENTTHREADED = 0x2;
-const COINIT_DISABLE_OLE1DDE = 0x4;
+const COINIT_MULTITHREADED = 0x0;
 const FAMILY_CHARS = 256;
 const PATH_CHARS = 1024;
 
@@ -129,11 +132,17 @@ export async function loadWin32Api(load: () => Promise<KoffiModule> = loadKoffi)
     },
     shellOpen(uri) {
       if (!comReady) {
-        // ShellExecute may activate the protocol handler through COM; S_FALSE and RPC_E_CHANGED_MODE also leave COM usable.
-        CoInitializeEx(null, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        // ShellExecute may activate the protocol handler through COM. Joining the main thread to the process MTA keeps
+        // that apartment alive, so the worker thread below runs in the implicit MTA without its own initialization.
+        // S_FALSE and RPC_E_CHANGED_MODE (already initialized) are both acceptable.
+        CoInitializeEx(null, COINIT_MULTITHREADED);
         comReady = true;
       }
-      return Number(ShellExecuteW(0, 'open', uri, null, null, SW_SHOWNORMAL));
+      return new Promise<number>((resolve, reject) => {
+        ShellExecuteW.async(0, 'open', uri, null, null, SW_SHOWNORMAL, (error: unknown, result: unknown) => {
+          if (error) reject(error); else resolve(Number(result));
+        });
+      });
     },
   };
 }

@@ -62,6 +62,19 @@ test('the frame maps slots to their key LEDs, pulses attention and overlays erro
   for (let i = 15; i < 35; i++) assert.deepEqual(on[i], [0, 0, 0], `LED ${i} stays off`);
 });
 
+test('a selected key with attention keeps pulsing, so focus never looks like acknowledgment', () => {
+  const slots = blank();
+  slots[0] = { state: 'attention', error: false, selected: true };
+  slots[1] = { state: 'active', error: false, selected: true };
+  const on = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: true });
+  const off = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: false });
+  assert.notDeepEqual(on[0], off[0], 'attention still pulses on the selected key');
+  assert.deepEqual(on[0], profile.colors.attention);
+  assert.deepEqual(off[0], profile.colors.selected);
+  assert.deepEqual(on[1], profile.colors.selected, 'a selected key without attention is steady');
+  assert.deepEqual(off[1], profile.colors.selected);
+});
+
 test('Record and the wheel LEDs show dictation and Send readiness', () => {
   const ready = renderFrame({ profile, slots: blank(), recording: true, send: 'ready', pulseOn: true });
   assert.deepEqual(ready[ledIndex(26)], profile.colors.record);

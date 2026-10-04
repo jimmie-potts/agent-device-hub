@@ -128,6 +128,8 @@ export interface ChompiBridge {
   setLeds(colors: readonly Rgb[]): void;
   /** Host brightness percent (0-100) sent in every host heartbeat; the firmware applies its own caps after it. */
   setBrightness(percent: number): void;
+  /** Profile version (u32) sent from the next host heartbeat on, after a profile reload. */
+  setProfileVersion(version: number): void;
   status(): BridgeStatus;
 }
 
@@ -179,6 +181,11 @@ const zeroCounters = (): BridgeCounters => ({
   ledResends: 0, subscriberOverflows: 0,
 });
 
+function checkProfileVersion(version: number): number {
+  if (!Number.isInteger(version) || version < 0 || version > 0xffffffff) throw new RangeError('profileVersion must be a u32');
+  return version;
+}
+
 function checkBrightness(percent: number): number {
   if (!Number.isInteger(percent) || percent < 0 || percent > 100) throw new RangeError('brightness must be an integer percent 0-100');
   return percent;
@@ -195,7 +202,7 @@ class Bridge implements ChompiBridge {
   readonly #clock: Clock;
   readonly #timing: BridgeTiming;
   readonly #serial: string | undefined;
-  readonly #profileVersion: number;
+  #profileVersion: number;
   readonly #subscriptions = new Set<BridgeSubscription>();
   readonly #counters = zeroCounters();
   #brightness: number;
@@ -215,9 +222,7 @@ class Bridge implements ChompiBridge {
     this.#clock = options.clock ?? systemClock;
     this.#timing = { ...DEFAULT_TIMING, ...options.timing };
     this.#serial = options.serialNumber;
-    const profile = options.profileVersion ?? 0;
-    if (!Number.isInteger(profile) || profile < 0 || profile > 0xffffffff) throw new RangeError('profileVersion must be a u32');
-    this.#profileVersion = profile;
+    this.#profileVersion = checkProfileVersion(options.profileVersion ?? 0);
     this.#brightness = checkBrightness(options.brightnessPercent ?? 100);
   }
 
@@ -256,6 +261,10 @@ class Bridge implements ChompiBridge {
       delete this.#timers.command;
       if (this.#heartbeating) this.#sendHostHeartbeat();
     }, wait);
+  }
+
+  setProfileVersion(version: number): void {
+    this.#profileVersion = checkProfileVersion(version);
   }
 
   status(): BridgeStatus {

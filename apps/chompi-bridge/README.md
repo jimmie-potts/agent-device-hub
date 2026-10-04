@@ -79,6 +79,7 @@ for await (const event of bridge.events()) {
 }
 bridge.setLeds(colors);      // 35 [r, g, b] triples, LED index order from the protocol README
 bridge.setBrightness(40);    // 0-100, before the firmware's own caps
+bridge.setProfileVersion(2); // u32 sent from the next host heartbeat, after a profile reload
 await bridge.stop();
 await lock.release();
 ```
@@ -133,7 +134,7 @@ installation (#743) must ship `src/windows/uia-helper.ps1` beside `dist/`.
 
 `src/routing/` turns controller events and the Hub's session feed into slot lights, exact-task focus, Wispr dictation
 and Send. The design, acceptance examples and owner decisions are in the
-[OpenSpec change](../../openspec/changes/gh-742-chompi-task-routing/design.md) and the
+[OpenSpec design](../../openspec/changes/archive/2026-10-03-gh-742-chompi-task-routing/design.md) and the
 [qualification report](../../docs/chompi-controller-qualification.md#routing-design).
 
 ### Run
@@ -145,8 +146,10 @@ node apps/chompi-bridge/bin/chompi-bridge.mjs run --profile <file> --hub http://
 
 The bridge takes the single-instance lock, loads and validates the profile, opens the slot file and loads the
 Windows adapter. Any failure exits 1 before the controller opens: `chompi-bridge-profile-invalid`,
-`chompi-bridge-hub-invalid`, `chompi-bridge-state-invalid` or `chompi-bridge-os-adapter-unavailable`. It then connects
-the controller, the feed and the router. It prints JSON lines with slot numbers and reason codes only: link events,
+`chompi-bridge-hub-invalid`, `chompi-bridge-state-invalid` or `chompi-bridge-os-adapter-unavailable`. It then warms
+the adapter when it offers `warmUp()` (the UI Automation helper and cached client versions) and logs `adapter-ready` or
+`adapter-warm-up-failed`, all before the controller connects, and only then connects the controller, the feed and the
+router. It prints JSON lines with slot numbers and reason codes only: link events,
 `feed`, `slot-assigned`, `overflow`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
 `invalidated`, `profile-rejected` and similar. It never prints titles, text or the token. Starting it against the real
 controller and desktop is #743 work and needs the owner's device authorization.
@@ -166,7 +169,7 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows` |
 | `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply) |
 | `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s |
-| `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone |
+| `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone; see [Qualify a client update](#qualify-a-client-update) |
 
 Validation rejects unknown fields and bad values with a path, for example
 `profile.controls.send[0]: 30 is a small-knob click and can never send`. Key names are exactly the ones the Windows adapter can type
@@ -177,6 +180,20 @@ Back. The profile has no URIs, paths, commands or package identities, so loading
 file; a valid change is swapped in whole, clears the target and releases held keys; an invalid or unreadable file is
 reported once and the last good profile stays.
 
+### Qualify a client update
+
+Codex Desktop updates itself often, and each update disables Codex routing until its version is listed. A slot press
+then logs `focus-failed` with `reason: "client-unqualified"`, the `client` and the `observedVersion`. To qualify it:
+
+1. Check the selectors against [UIA-NOTES.md](src/windows/UIA-NOTES.md) for that version (the selected-row and
+   composer structure), for example with the native check's read-only observations.
+2. Add the logged `observedVersion` to `qualifiedVersions.codex` (or `.claude`) in the profile. Keep earlier versions
+   only while they can still be installed.
+3. Save the file. The bridge reloads it within `timing.profilePollMs` and logs `profile-applied`; no restart is needed.
+
+A Claude Desktop update needs the same check plus the undocumented `claude://code/continue` link and session store,
+because the report qualified those per version.
+
 ### Hub feed
 
 The bridge reads `GET /api/monitor/v1/sessions?snapshotVersion=1.3` and follows `GET /api/monitor/v1/changes` with a
@@ -185,7 +202,7 @@ whole snapshot on each notification and replays nothing. It sends no other reque
 or approve. The origin must be `http://127.0.0.1:<port>`. A snapshot request has 3 s and 2 MiB, a silent stream is
 dropped after 5 s, and failures retry every 2 s. The feed is `stale` until it is healthy again, and every assigned key
 then shows the stale color. A Hub without snapshot 1.3 is read at 1.2, which has no Claude Desktop IDs, so Claude
-routing stays off.
+routing stays off; the bridge asks for 1.3 again every 5 minutes and on every reconnect.
 
 ### Slots
 
@@ -211,7 +228,8 @@ slots live in `<state>/slots.json`, written 0600 through a temporary file and re
 | `stale` | The feed is stale or unavailable |
 | `error` | A refused action, for 1.5 s |
 
-The verified target shows `selected`, the Record LED shows `record` while dictating and the wheel LEDs show
+The verified target shows `selected`; if it has attention, its key keeps pulsing between the attention and selected
+colors, so focusing a task never looks like acknowledging it. The Record LED shows `record` while dictating and the wheel LEDs show
 `sendReady` or `sendBlocked`. The disconnected pattern is the firmware's own.
 
 ### Safety rules
@@ -228,15 +246,23 @@ The verified target shows `selected`, the Record LED shows `record` while dictat
   Observations are polled; the link and keystrokes are never repeated.
 - Record holds the dictation chord only after a re-check of the target and releases it with Record. Release never
   sends.
-- Send re-checks the target, needs a current feed, no Hub approval for the task and an adapter answer of no visible
-  approval card (today always `unknown`, so Send is refused until #743 qualifies the check), then types one Enter. A repeat within 1 s, a Send during dictation or an uncertain keystroke never
-  types a second Enter, and an uncertain one clears the target.
+- Send re-checks the target and then types one Enter. It is refused while the Hub shows `approval` attention for the
+  task, while the feed is stale or unavailable (a pending approval would be unknown), and while the adapter's approval
+  visibility is `true` or `unknown`. The Windows adapter answers `unknown` until #743 qualifies an approval selector,
+  so Send is refused in real use until then. `question` and `input` attention do not block Send, because answering
+  them is the point. A repeat within 1 s, a Send during dictation or an uncertain keystroke never types a second
+  Enter, and an uncertain one clears the target.
 - A big-wheel turn scrolls the target's client, or without a target the foreground Codex or Claude window, through the
   adapter's `scrollClient` mouse-wheel primitive, which acts only while that client is in front with the pointer inside
   it. Scroll never types, selects a task or changes the target, never runs while Record is held, and is not retried
   when the adapter answers `false` or unknown. Other encoder turns are inert.
-- A controller `stale`, `session-restart` or `disconnected`, Back, a profile swap, an overflowed subscription and
-  shutdown release every held key and clear the target. A fresh slot press is needed afterwards.
+- A controller `stale`, `session-restart` or `disconnected`, Back, a profile swap and an overflowed subscription
+  release every held key and clear the target. A fresh slot press is needed afterwards.
+- Stopping: SIGINT, SIGTERM, SIGHUP and, on Windows, SIGBREAK (console close) stop the bridge, which releases every
+  held key before closing. On any process exit the adapter's synchronous `releaseAllSync()` runs as well, and an
+  uncaught exception or unhandled rejection releases keys, prints `chompi-bridge-fatal` and exits 1. A forced kill
+  (`SIGKILL`, End task) runs no code, so a dictation chord held at that moment stays down in Windows until those keys
+  are pressed and released; press left Ctrl and left Win once to clear it.
 
 ## Commands
 

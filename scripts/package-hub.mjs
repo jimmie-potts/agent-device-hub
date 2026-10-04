@@ -68,9 +68,12 @@ try {
   const lockedPublic=Object.entries(lock.packages).filter(([path,entry])=>path.startsWith('node_modules/')&&!entry.link&&!entry.dev);
   for(const [path,entry] of lockedPublic){
     const source=join(root,path);
-    // npm skips optional packages for other platforms (for example koffi's per-OS
-    // binaries), so an optional entry that is absent here is not part of this closure.
-    let status;try{status=await lstat(source);}catch(error){if(error.code==='ENOENT'&&entry.optional)continue;throw error;}
+    // npm skips optional packages built for another OS or CPU (for example koffi's
+    // per-platform binaries); those are not part of this closure. Any other locked
+    // package, optional or not, must be installed.
+    const otherPlatform=list=>Array.isArray(list)&&list.length>0&&!list.some(value=>value===process.platform||value===process.arch)&&!list.every(value=>value.startsWith('!'));
+    const foreign=entry.optional&&(otherPlatform(entry.os)||otherPlatform(entry.cpu));
+    let status;try{status=await lstat(source);}catch(error){if(error.code==='ENOENT'&&foreign)continue;throw error;}
     assert.equal(status.isSymbolicLink(),false,`public package must be installed: ${path}`);
     const installed=JSON.parse(await readFile(join(source,'package.json'),'utf8'));
     assert.equal(installed.version,entry.version,`installed package differs from lock: ${path}`);

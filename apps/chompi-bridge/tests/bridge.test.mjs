@@ -169,6 +169,16 @@ test('the bridge sends host heartbeats every 500 ms with the profile version and
   for (const bad of [-1, 101, 2.5, Number.NaN]) assert.throws(() => s.bridge.setBrightness(bad), RangeError);
 });
 
+test('a new profile version goes out in the next host heartbeat', async t => {
+  const s = await setup(t, { profileVersion: 3 });
+  const beats = () => sent(s.connection()).filter(m => m.type === 'host-heartbeat');
+  s.bridge.setProfileVersion(7);
+  s.connection().inject(heartbeat(0x1234));
+  await advance(s.clock, 500);
+  assert.equal(beats().at(-1).profileVersion, 7);
+  for (const bad of [-1, 2 ** 32, 1.5]) assert.throws(() => s.bridge.setProfileVersion(bad), RangeError);
+});
+
 test('heartbeat loss marks the link stale, releases held controls, and later disconnects', async t => {
   const s = await setup(t);
   const c = s.connection();

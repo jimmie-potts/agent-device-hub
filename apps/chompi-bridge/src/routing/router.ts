@@ -1,6 +1,6 @@
 import type { BridgeEvent } from '../bridge.js';
 import { systemClock, type Clock } from '../clock.js';
-import type { Client, OsAdapter } from '../os-adapter.js';
+import type { ClaudeDesktopSession, Client, OsAdapter } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
@@ -50,7 +50,8 @@ type Call<T> = { ok: true; value: T } | { ok: false; reason: 'timeout' | 'reject
 type Check = { ok: true } | { ok: false; reason: string };
 
 const RENDER_TICK_MS = 100;
-const MAX_CLAUDE_IDS = 64;
+/** Desktop IDs per `claudeSessions` call; more are read in several calls, never truncated. */
+const CLAUDE_IDS_PER_CALL = 64;
 /** Bounds on wheel notches: per adapter call, and waiting while a call runs. */
 const MAX_NOTCHES_PER_CALL = 10;
 const MAX_PENDING_NOTCHES = 50;
@@ -245,9 +246,9 @@ export class TaskRouter {
       }
       const claude = records.filter(r => r.client === 'claude');
       if (claude.length) {
-        const sessions = await this.#call(() => this.#adapter.claudeSessions(claude.map(r => r.taskId)));
-        if (this.#closed || !sessions.ok || sessions.value.status !== 'known') return;
-        for (const desktop of sessions.value.value) {
+        const sessions = await this.#claudeRecords(claude.map(r => r.taskId));
+        if (this.#closed || !sessions) return;
+        for (const desktop of sessions) {
           const record = claude.find(r => r.taskId === desktop.localId);
           if (record && desktop.isArchived && this.#slots.get(record.slot)?.taskId === record.taskId) this.#releaseSlot(record.slot, 'claude-archived');
         }
@@ -269,11 +270,11 @@ export class TaskRouter {
 
   async #focus(slot: number, generation: number, pressedAt: number): Promise<void> {
     const alive = () => generation === this.#generation && !this.#closed;
-    const fail = (step: string, reason: string) => {
+    const fail = (step: string, reason: string, extra: Record<string, unknown> = {}) => {
       if (!alive()) return;
       this.#focusing = null;
       this.#flash(slot);
-      this.#log({ type: 'focus-failed', slot, step, reason });
+      this.#log({ type: 'focus-failed', slot, step, reason, ...extra });
     };
     const record = this.#slots.get(slot);
     if (!record) return fail('target', 'empty-slot');
@@ -282,7 +283,8 @@ export class TaskRouter {
     // 1. Target check
     const gate = await this.#versionGate(client);
     if (!alive()) return;
-    if (!gate.ok) return fail('target', gate.reason);
+    // The observed version is logged so the owner can qualify a client update (see the README).
+    if (!gate.ok) return fail('target', gate.reason, { client, observedVersion: gate.observed });
     if (client === 'codex') {
       if (!record.title) return fail('target', 'title-missing');
       const archived = await this.#call(() => this.#adapter.codexArchived(record.taskId));
@@ -347,13 +349,13 @@ export class TaskRouter {
     this.#render();
   }
 
-  async #versionGate(client: Client): Promise<Check> {
+  async #versionGate(client: Client): Promise<{ ok: true } | { ok: false; reason: string; observed: string | null }> {
     const qualified = this.#profile.qualifiedVersions[client];
     const versions = await this.#call(() => this.#adapter.clientVersions());
-    if (!versions.ok) return { ok: false, reason: 'client-version-unknown' };
+    if (!versions.ok) return { ok: false, reason: 'client-version-unknown', observed: null };
     const version = versions.value[client];
-    if (version.status !== 'known') return { ok: false, reason: 'client-version-unknown' };
-    return qualified.includes(version.value) ? { ok: true } : { ok: false, reason: 'client-unqualified' };
+    if (version.status !== 'known') return { ok: false, reason: 'client-version-unknown', observed: null };
+    return qualified.includes(version.value) ? { ok: true } : { ok: false, reason: 'client-unqualified', observed: version.value };
   }
 
   /** Other Claude Desktop IDs the router knows, for the "no other session became visible" check. */
@@ -362,7 +364,19 @@ export class TaskRouter {
     for (const record of this.#slots.entries()) if (record.client === 'claude') ids.add(record.taskId);
     for (const session of this.#feed.sessions) if (session.hostSessionId) ids.add(session.hostSessionId);
     ids.delete(except);
-    return [...ids].sort().slice(0, MAX_CLAUDE_IDS - 1);
+    return [...ids].sort();
+  }
+
+  /** Reads the named Claude Desktop records in bounded calls. Any unknown or failed call makes the whole answer unknown. */
+  async #claudeRecords(ids: readonly string[]): Promise<ClaudeDesktopSession[] | null> {
+    const records: ClaudeDesktopSession[] = [];
+    for (let i = 0; i < ids.length; i += CLAUDE_IDS_PER_CALL) {
+      const chunk = ids.slice(i, i + CLAUDE_IDS_PER_CALL);
+      const answer = await this.#call(() => this.#adapter.claudeSessions(chunk));
+      if (!answer.ok || answer.value.status !== 'known') return null;
+      records.push(...answer.value.value);
+    }
+    return records;
   }
 
   async #foreground(client: Client): Promise<Check> {
@@ -387,12 +401,11 @@ export class TaskRouter {
     const foreground = await this.#foreground(record.client);
     if (!foreground.ok) return foreground;
     if (record.client === 'codex') return this.#codexSelection(record.title);
-    const others = this.#otherClaudeIds(record.taskId);
-    const desktop = await this.#call(() => this.#adapter.claudeSessions([record.taskId, ...others]));
-    if (!desktop.ok || desktop.value.status !== 'known') return { ok: false, reason: 'selection-unknown' };
-    const target = desktop.value.value.find(s => s.localId === record.taskId);
+    const desktop = await this.#claudeRecords([record.taskId, ...this.#otherClaudeIds(record.taskId)]);
+    if (!desktop) return { ok: false, reason: 'selection-unknown' };
+    const target = desktop.find(s => s.localId === record.taskId);
     if (!target || target.isArchived || target.lastFocusedAt === null || target.lastFocusedAt <= pressedAt) return { ok: false, reason: 'selection-mismatch' };
-    const moved = desktop.value.value.some(s => s.localId !== record.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > pressedAt);
+    const moved = desktop.some(s => s.localId !== record.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > pressedAt);
     return moved ? { ok: false, reason: 'selection-ambiguous' } : { ok: true };
   }
 
@@ -412,11 +425,11 @@ export class TaskRouter {
       const selection = await this.#codexSelection(target.title);
       if (!selection.ok) return selection;
     } else {
-      const desktop = await this.#call(() => this.#adapter.claudeSessions([target.taskId, ...this.#otherClaudeIds(target.taskId)]));
-      if (!desktop.ok || desktop.value.status !== 'known') return { ok: false, reason: 'selection-unknown' };
-      const own = desktop.value.value.find(s => s.localId === target.taskId);
+      const desktop = await this.#claudeRecords([target.taskId, ...this.#otherClaudeIds(target.taskId)]);
+      if (!desktop) return { ok: false, reason: 'selection-unknown' };
+      const own = desktop.find(s => s.localId === target.taskId);
       if (!own || own.isArchived || own.lastFocusedAt === null) return { ok: false, reason: 'selection-mismatch' };
-      if (desktop.value.value.some(s => s.localId !== target.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > own.lastFocusedAt!)) {
+      if (desktop.some(s => s.localId !== target.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > own.lastFocusedAt!)) {
         return { ok: false, reason: 'selection-mismatch' };
       }
     }

@@ -19,7 +19,7 @@ function fakeWin32({ family = CODEX_PACKAGE_FAMILY, image = 'C:\\Program Files\\
     processIdentity: () => state.open ? { packageFamily: state.family, imagePath: state.image } : null,
     isKeyDown: vk => state.physical.has(vk),
     sendInput: events => { state.sent.push(events); return { inserted: events.length, error: 0 }; },
-    shellOpen: uri => { state.opened.push(uri); return state.shellResult; },
+    shellOpen: async uri => { state.opened.push(uri); await new Promise(resolve => setTimeout(resolve, 1)); return state.shellResult; },
   };
 }
 
@@ -177,20 +177,78 @@ test('approval-card detection is not qualified and stays unknown', async () => {
 });
 
 test('clientVersions returns versions only and marks anything else unknown', async () => {
-  let reply = { ok: true, value: { codex: { version: '26.930.3930.0' }, claude: { version: '2.19675.0.0' } } };
-  const instance = adapter(fakeWin32(), fakeHelper(() => reply));
-  assert.deepEqual(await instance.clientVersions(), {
+  const check = async (reply, expected) => assert.deepEqual(await adapter(fakeWin32(), fakeHelper(() => reply)).clientVersions(), expected);
+  await check({ ok: true, value: { codex: { version: '26.930.3930.0' }, claude: { version: '2.19675.0.0' } } }, {
     codex: { status: 'known', value: '26.930.3930.0' },
     claude: { status: 'known', value: '2.19675.0.0' },
   });
-  reply = { ok: true, value: { codex: { reason: 'not-installed' }, claude: { version: 'C:\\Users\\someone' } } };
-  assert.deepEqual(await instance.clientVersions(), {
+  await check({ ok: true, value: { codex: { reason: 'not-installed' }, claude: { version: 'C:\\Users\\someone' } } }, {
     codex: { status: 'unknown', reason: 'not-installed' },
     claude: { status: 'unknown', reason: 'helper-invalid-reply' },
   });
-  reply = { ok: false, reason: 'helper-timeout' };
-  assert.deepEqual(await instance.clientVersions(), {
+  await check({ ok: false, reason: 'helper-timeout' }, {
     codex: { status: 'unknown', reason: 'helper-timeout' },
     claude: { status: 'unknown', reason: 'helper-timeout' },
   });
+});
+
+test('client versions are cached for the helper lifetime, refreshed on restart and after ten minutes', async () => {
+  let clock = 0;
+  let version = '26.930.3930.0';
+  let fail = false;
+  const helper = fakeHelper(op => {
+    if (op === 'ping') return { ok: true, value: { pong: true } };
+    return fail ? { ok: false, reason: 'helper-timeout' } : { ok: true, value: { codex: { version }, claude: { version: '2.19675.0.0' } } };
+  });
+  helper.starts = 1;
+  const instance = createWindowsAdapter({ win32: async () => fakeWin32(), helper, now: () => clock });
+  await instance.warmUp();
+  assert.deepEqual(helper.calls.map(call => call.op), ['ping', 'clientVersions'], 'warm-up starts the helper and fetches versions');
+  version = '26.999.0.0';
+  assert.equal((await instance.clientVersions()).codex.value, '26.930.3930.0', 'the first call after warm-up is served from the cache');
+  assert.equal(helper.calls.length, 2);
+  helper.starts = 2;
+  assert.equal((await instance.clientVersions()).codex.value, '26.999.0.0', 'a helper restart refreshes');
+  version = '27.0.0.0';
+  clock += 10 * 60_000 - 1;
+  assert.equal((await instance.clientVersions()).codex.value, '26.999.0.0');
+  clock += 1;
+  assert.equal((await instance.clientVersions()).codex.value, '27.0.0.0', 'the TTL refreshes');
+  fail = true;
+  clock += 10 * 60_000;
+  assert.equal((await instance.clientVersions()).codex.reason, 'helper-timeout');
+  fail = false;
+  assert.equal((await instance.clientVersions()).codex.value, '27.0.0.0', 'a failed fetch is not cached');
+  const before = helper.calls.length;
+  clock += 10 * 60_000;
+  await Promise.all([instance.clientVersions(), instance.clientVersions(), instance.clientVersions()]);
+  assert.equal(helper.calls.length, before + 1, 'concurrent calls share one fetch');
+});
+
+test('warmUp never throws, even when the helper rejects', async () => {
+  const helper = { request: async () => { throw new Error('boom'); }, close: async () => undefined };
+  await createWindowsAdapter({ win32: async () => fakeWin32(), helper }).warmUp();
+});
+
+test('openUri waits for the asynchronous shell call and times out a hung activation', async () => {
+  const win32 = fakeWin32();
+  win32.shellOpen = () => new Promise(() => undefined);
+  const instance = adapter(win32, undefined, { openUriTimeoutMs: 20 });
+  await assert.rejects(instance.openUri(`codex://threads/${thread}`), error => error.code === 'open-uri-failed' && error.cause?.message === 'open-uri-timeout');
+  win32.shellOpen = async () => { throw new Error('ffi'); };
+  await assert.rejects(instance.openUri(`codex://threads/${thread}`), error => error.code === 'open-uri-failed');
+});
+
+test('releaseAllSync releases held keys synchronously for an exit hook', async () => {
+  const win32 = fakeWin32();
+  const instance = adapter(win32);
+  instance.releaseAllSync();
+  assert.equal(win32.state.sent.length, 0, 'nothing loaded or held yet');
+  await instance.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
+  const result = instance.releaseAllSync();
+  assert.equal(result, undefined);
+  assert.deepEqual(win32.state.sent.at(-1), [{ vk: 0x5b, up: true }, { vk: 0xa2, up: true }], 'released before releaseAllSync returns');
+  await instance.sendKeys({ action: 'down', keys: ['LeftAlt'] });
+  win32.sendInput = () => { throw new Error('ffi'); };
+  assert.doesNotThrow(() => instance.releaseAllSync(), 'a failing release never throws from an exit hook');
 });

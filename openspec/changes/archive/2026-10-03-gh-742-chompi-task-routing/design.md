@@ -44,13 +44,13 @@ Timing defaults: verification timeout 3000 and poll 100; adapter call timeout 20
 
 Unknown fields, wrong types, out-of-range values and overlapping controls reject with a path-qualified message such as `profile.controls.send[0]: 30 is a small-knob click`. The profile holds no URIs, paths, commands or package identities: links, package families and the snapshot request are fixed in code, and key names are exactly the adapter's key table, so a valid profile never asks for a key the adapter would refuse. Loading never runs anything.
 
-A reload reads the whole file, validates it, and only then swaps it in; an invalid or unreadable file is reported and the last good profile stays. Swapping in a new profile clears the target and releases held keys, and replays no earlier event. A missing or invalid profile at start exits before the device opens.
+A reload reads the whole file, validates it, and only then swaps it in; an invalid or unreadable file is reported and the last good profile stays. Swapping in a new profile clears the target and releases held keys, replays no earlier event, and sends the new `profileVersion` in the following host heartbeats (`bridge.setProfileVersion`). A missing or invalid profile at start exits before the device opens.
 
 ### 3. Hub feed
 
 `HubFeed` reads `GET /api/monitor/v1/sessions?snapshotVersion=1.3` with `Authorization: Bearer <token>`, then follows `GET /api/monitor/v1/changes`. Every `state` or `resync` event schedules one snapshot refetch (one in flight, one pending); events are never replayed. The token is read from a private file at each connection attempt, never logged, and on POSIX the file must not be group- or world-accessible. The origin must be `http://127.0.0.1:<port>`, matching the Hub's numeric loopback rule. Requests are only GETs to those two paths.
 
-Bounds: 3000 ms per snapshot request, a 2 MiB snapshot body, a 64 KiB SSE line buffer, and 5000 ms of stream silence (the Hub heartbeats every second) before the stream is dropped. After a failure the feed retries every 2000 ms. A 400 for version 1.3 falls back to 1.2, where no session carries `hostSessionId`, so Claude routing stays off until the Hub is upgraded.
+Bounds: 3000 ms per snapshot request, a 2 MiB snapshot body, a 64 KiB SSE line buffer, and 5000 ms of stream silence (the Hub heartbeats every second) before the stream is dropped. After a failure the feed retries every 2000 ms. A 400 for version 1.3 falls back to 1.2, where no session carries `hostSessionId`, so Claude routing stays off until the Hub is upgraded. The feed asks for 1.3 again every 5 minutes and on every reconnect, so an upgrade is picked up without a bridge restart.
 
 The feed status is `unavailable` before the first snapshot, `current` while the last snapshot succeeded, the stream is open and the collector is `running`, and `stale` otherwise. A stale feed keeps the last snapshot for display.
 
@@ -83,7 +83,7 @@ The store is `<state>/slots.json` (`schemaVersion: 1`): slot number, client, pro
 | `stale` | the feed is stale or unavailable (every assigned slot) | dim orange |
 | `error` | a refused action, for 1.5 s | red |
 
-Only `unread` uses the completion color; unknown, ended and stale never do. The verified target's key shows `selected` over its state, the Record LED shows `record` while dictating, and the two wheel LEDs show `sendReady` when a verified target exists and `sendBlocked` while the Hub reports an approval for it. Other LEDs stay off. Colors use the profile's RGB values and the brightness percent goes to the firmware with `setBrightness`. The renderer returns a state label per slot for any companion view or status line. Disconnected display belongs to the firmware's own pattern; the router sends nothing special for it.
+Only `unread` uses the completion color; unknown, ended and stale never do. The verified target's key shows `selected` over its state, except that attention keeps pulsing on it, alternating between the attention and selected colors, so focusing a task never looks like acknowledging it; the Record LED shows `record` while dictating, and the two wheel LEDs show `sendReady` when a verified target exists and `sendBlocked` while the Hub reports an approval for it. Other LEDs stay off. Colors use the profile's RGB values and the brightness percent goes to the firmware with `setBrightness`. The renderer returns a state label per slot for any companion view or status line. Disconnected display belongs to the firmware's own pattern; the router sends nothing special for it.
 
 ### 6. Focus, fail closed
 
@@ -91,7 +91,7 @@ A slot key press starts a new attempt and invalidates any earlier target. Each a
 
 1. **Target check.** The slot is assigned; the client's version is qualified (both clients are gated); Codex `codexArchived` is known `false`; Claude `claudeSessions` returns the record with `isArchived=false`. Archive evidence releases the slot.
 2. **Open.** The fixed link for the client with the URI-encoded ID.
-3. **Verify** (polled every 100 ms up to 3000 ms; observation retries only). The foreground package family is `OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`. Codex: `codexSelectedTitle(lastTitle)` matches with `sameTitleRows === 1`; a missing title fails. Claude: the target's `lastFocusedAt` is later than the press time and no other known Claude slot's record is later than the press time.
+3. **Verify** (polled every 100 ms up to 3000 ms; observation retries only). The foreground package family is `OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`. Codex: `codexSelectedTitle(lastTitle)` matches with `sameTitleRows === 1`; a missing title fails. Claude: the target's `lastFocusedAt` is later than the press time and no other known Claude Desktop record (every slot's and every feed session's ID, read 64 at a time, never truncated) is later than the press time.
 4. **Composer.** Codex taps the composer shortcut once; both then require `composerFocused` to be known `true` within the timeout.
 
 Any failure or unknown flashes the key's error light, logs the step and reason without titles, and leaves no target. A key press never acknowledges, approves or dismisses anything.
@@ -101,13 +101,15 @@ Any failure or unknown flashes the key's error light, logs the step and reason w
 Before both, the router re-checks in one pass: the target is current, the foreground package matches, the selection still verifies (Codex title and row count; Claude target record not superseded by a newer one) and the composer has focus. Any unknown refuses.
 
 - **Record** holds the dictation chord (`down`) after the checks pass and releases it (`up`) on the Record release, including a synthetic one. If Record is released before the checks finish, nothing is pressed. Release never sends.
-- **Send** additionally requires a current feed, no Hub `approval` attention on the target's records and `approvalVisible` known `false`, no dictation in progress, no Send in progress and no Send in the last 1000 ms. It then taps Enter once. A rejected or timed-out keystroke is uncertain: the target is cleared, the key flashes error and nothing is retried. Question and input attention do not block Send, because answering them is the point.
+- **Send** additionally requires a current feed, no Hub `approval` attention on the target's records and `approvalVisible` known `false`, no dictation in progress, no Send in progress and no Send in the last 1000 ms. It then taps Enter once. A rejected or timed-out keystroke is uncertain: the target is cleared, the key flashes error and nothing is retried. So Send is refused by Hub `approval` attention, a stale or unavailable feed, or approval visibility that is `true` or unknown (the Windows adapter answers unknown until #743 qualifies a selector). Question and input attention do not block Send, because answering them is the point.
 - Small-knob and volume clicks, every turn, slot keys, Record and Back can never produce Enter: the profile cannot map them to Send, and turns never type.
 - **Scroll.** A big-wheel turn calls the adapter's `scrollClient(client, notches)` (positive notches scroll up), which sends mouse-wheel input only while that client is in front with the pointer inside its window, and otherwise answers `false`. The client is the target's, or without a target the foreground app when its package family is Codex or Claude; any other app gets nothing. Turns coalesce into one call at a time (at most 10 notches per call, 50 waiting). Scroll never types, selects a task or changes the target, never runs while Record is held, and a `false` or unknown answer is dropped, logged when unknown, and never retried. Other encoder turns are inert here (#744).
 
 ### 8. Loss and invalidation
 
 A slot key press, Back, bridge `stale`, `session-restart` or `disconnected`, a closed event subscription, a profile swap and shutdown all clear the target, end dictation and call `releaseAll()`. After recovery a fresh slot press is required. Slots and their persisted state are untouched.
+
+SIGINT, SIGTERM, SIGHUP and, on Windows, SIGBREAK stop the bridge through that shutdown. A `process.on('exit')` hook calls the adapter's synchronous `releaseAllSync()`, and an uncaught exception or unhandled rejection releases keys the same way, prints `chompi-bridge-fatal` and exits 1. A forced kill runs no code; a chord held at that instant stays down in Windows until those keys are pressed and released. At start-up the CLI calls the adapter's `warmUp()` (helper process, cached client versions) before the controller connects, and logs `adapter-ready` or `adapter-warm-up-failed`. A version-gated focus failure logs the observed version so the owner can qualify a client update.
 
 ## Acceptance examples
 

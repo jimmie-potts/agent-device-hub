@@ -72,6 +72,21 @@ const adapter = createWindowsAdapter({ win32: async () => adapterApi, helper });
 const helperStart = Date.now();
 assert.deepEqual(await helper.request('ping'), { ok: true, value: { pong: true } }, 'the UI Automation helper answers a ping');
 const helperPingMs = Date.now() - helperStart;
+// Non-ASCII crosses stdin as \uXXXX escapes; the probe reply is a length and code-unit sum, never the text.
+const probeText = `\u00e9\u2014\u4efb\u52a1 \u{1f680} ${randomUUID()}`;
+const probeSum = [...Array(probeText.length).keys()].reduce((sum, i) => (sum + probeText.charCodeAt(i)) % 2147483647, 0);
+assert.deepEqual(await helper.request('ping', { probe: probeText }), { ok: true, value: { pong: true, probeLength: probeText.length, probeSum } },
+  'the helper decodes non-ASCII request text exactly');
+// One non-ASCII random title against the running Codex window, found read-only by process; it can never match.
+const codexWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+  '$p = Get-Process ChatGPT -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($p) { "$([long]$p.MainWindowHandle) $($p.Id)" }'],
+{ encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
+let nonAsciiTitle = 'codex-not-running';
+if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
+  const reply = await helper.request('codexSelectedTitle', { hwnd: codexWindow[0], processId: codexWindow[1], title: `\u00e9\u2014\u4e2d\u{1f600} ${randomUUID()}` });
+  assert.deepEqual(reply, { ok: true, value: { matches: false, sameTitleRows: 0 } }, 'a non-ASCII random title verifies as no match without errors');
+  nonAsciiTitle = reply.value;
+}
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);
 await adapter.releaseAll();
@@ -83,7 +98,10 @@ const codexSelected = await adapter.codexSelectedTitle(`chompi-native-check-${ra
 if (codexSelected.status === 'known') assert.deepEqual(codexSelected.value, { matches: false, sameTitleRows: 0 }, 'a random title never matches');
 const approval = await adapter.approvalVisible('codex');
 assert.equal(approval.status, 'unknown');
+await adapter.warmUp();
+const versionsStart = Date.now();
 const versions = await adapter.clientVersions();
+const versionsAfterWarmUpMs = Date.now() - versionsStart;
 assert.equal(versions.codex.status, 'known', `Codex version: ${versions.codex.reason ?? ''}`);
 assert.equal(versions.claude.status, 'known', `Claude version: ${versions.claude.reason ?? ''}`);
 assert.deepEqual(await adapter.codexArchived(randomUUID()), { status: 'known', value: false });
@@ -108,7 +126,8 @@ const suites = [
   'routing-cli', 'routing-feed', 'routing-lights', 'routing-profile', 'routing-router', 'routing-slots',
 ].map(name => `${name}.test.mjs`);
 const portable = spawnSync(process.execPath, ['--test', ...suites], { cwd: here, encoding: 'utf8', timeout: 120000 });
-assert.equal(portable.status, 0, portable.stdout + portable.stderr);
+const failing = [...new Set(`${portable.stdout}`.split('\n').filter(line => line.startsWith('\u2716') && !line.includes('failing tests')))];
+assert.equal(portable.status, 0, `portable suites failed (status ${portable.status}): ${failing.join('; ') || 'no failing test named'}\n${(portable.stdout + portable.stderr).slice(-4000)}`);
 const count = /^ℹ pass (\d+)$/m.exec(portable.stdout)?.[1];
 
 console.log(JSON.stringify({
@@ -127,6 +146,9 @@ console.log(JSON.stringify({
     releaseAllNoop: true,
     scrollGateReads: { cursorKnown: true, foregroundRectKnown: Boolean(rect) },
     helperStartAndPingMs: helperPingMs,
+    nonAsciiProbe: 'decoded exactly',
+    nonAsciiRandomTitle: nonAsciiTitle,
+    clientVersionsAfterWarmUpMs: versionsAfterWarmUpMs,
     composerFocusedCodex: codexComposer,
     composerCheckMs: composerMs,
     codexSelectedTitleRandom: codexSelected,

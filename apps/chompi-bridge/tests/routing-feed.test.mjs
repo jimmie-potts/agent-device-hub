@@ -176,6 +176,31 @@ test('a Hub without snapshot 1.3 falls back to 1.2, where no session carries a D
   assert.deepEqual(hub.requests.filter(r => r.path.endsWith('/sessions')).map(r => r.search), ['?snapshotVersion=1.3', '?snapshotVersion=1.2']);
 });
 
+test('after a 1.2 fallback the feed retries snapshot 1.3 periodically and on every reconnect', async t => {
+  const { clock, hub, feed } = setup(t, { timing: { streamIdleMs: 10_000_000 } });
+  hub.version13 = false;
+  hub.sessions = [claudeTask(1)];
+  feed.start();
+  await settle();
+  assert.equal(feed.view().snapshotVersion, '1.2');
+  hub.version13 = true; // the Hub is upgraded in place
+  await advance(clock, 290_000, 10_000);
+  assert.equal(feed.view().snapshotVersion, '1.2', 'no retry before the interval');
+  await advance(clock, 20_000, 10_000);
+  assert.equal(feed.view().snapshotVersion, '1.3');
+  assert.equal(feed.view().sessions[0].hostSessionId, lid(1), 'Claude Desktop IDs arrive without a bridge restart');
+
+  const second = setup(t, { timing: { streamIdleMs: 10_000_000 } });
+  second.hub.version13 = false;
+  second.feed.start();
+  await settle();
+  assert.equal(second.feed.view().snapshotVersion, '1.2');
+  second.hub.version13 = true;
+  second.hub.stream.end();
+  await advance(second.clock, 2500, 100);
+  assert.equal(second.feed.view().snapshotVersion, '1.3', 'a reconnect asks for 1.3 again');
+});
+
 test('an overlong SSE line drops the stream', async t => {
   const { hub, feed } = setup(t, { timing: { maxLineBytes: 128 } });
   hub.sessions = [codexTask(1)];

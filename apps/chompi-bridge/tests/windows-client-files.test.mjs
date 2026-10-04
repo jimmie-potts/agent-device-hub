@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeSessions, codexArchived } from '../dist/windows/index.js';
+import { claudeSessions, CodexArchiveIndex, codexArchived } from '../dist/windows/index.js';
 
 const thread = '019a3b1c-7d2e-7f00-8a11-0123456789ab';
 const other = '019a3b1c-7d2e-7f00-8a11-ba9876543210';
@@ -38,18 +38,60 @@ test('a Codex archive directory that is a directory entry, not a file, does not 
   assert.deepEqual(await codexArchived(home, thread), { status: 'known', value: false });
 });
 
-test('missing Codex directories, bad IDs and oversized listings are distinguished', async t => {
+test('missing Codex directories and bad IDs are distinguished', async t => {
   const home = scratch(t);
   assert.deepEqual(await codexArchived(home, thread), { status: 'known', value: false }, 'no archive yet');
   assert.deepEqual(await codexArchived(join(home, 'absent'), thread), { status: 'unknown', reason: 'codex-home-missing' });
   for (const id of ['', thread.toUpperCase(), `../${thread}`, `${thread}.jsonl`, 'x'.repeat(36)]) {
     assert.deepEqual(await codexArchived(home, id), { status: 'unknown', reason: 'invalid-thread-id' });
   }
+});
+
+test('a large archive has no entry limit; only the scan time bound makes it unknown', async t => {
+  const home = scratch(t);
   const archive = join(home, 'archived_sessions');
   mkdirSync(archive);
-  for (let i = 0; i < 5; i += 1) writeFileSync(join(archive, `rollout-2026-10-01T12-30-0${i}-${other}.jsonl`), '');
-  assert.deepEqual(await codexArchived(home, thread, { maxEntries: 4 }), { status: 'unknown', reason: 'codex-archive-too-large' });
-  assert.deepEqual(await codexArchived(home, thread, { maxEntries: 5 }), { status: 'known', value: false });
+  for (let i = 0; i < 300; i += 1) writeFileSync(join(archive, `rollout-2026-10-01T12-30-00-019a3b1c-7d2e-7f00-8a11-${String(i).padStart(12, '0')}.jsonl`), '');
+  writeFileSync(join(archive, `rollout-2026-10-02T08-00-00-${thread}.jsonl`), '');
+  assert.deepEqual(await codexArchived(home, thread), { status: 'known', value: true }, '301 entries are fine');
+  let clock = 0;
+  const slow = new CodexArchiveIndex(home, { scanTimeoutMs: 50, now: () => (clock += 1) });
+  assert.deepEqual(await slow.archivedThread(other), { status: 'unknown', reason: 'codex-archive-timeout' });
+});
+
+test('one scan answers every slot: archived IDs stay cached and a miss is cached briefly', async t => {
+  const home = scratch(t);
+  const archive = join(home, 'archived_sessions');
+  mkdirSync(archive);
+  writeFileSync(join(archive, `rollout-2026-10-02T08-00-00-${thread}.jsonl`), '');
+  let clock = 1000;
+  const index = new CodexArchiveIndex(home, { negativeTtlMs: 10_000, now: () => clock });
+  const [a, b] = await Promise.all([index.archivedThread(thread), index.archivedThread(other)]);
+  assert.deepEqual([a, b], [{ status: 'known', value: true }, { status: 'known', value: false }], 'concurrent lookups share one scan');
+  writeFileSync(join(archive, `rollout-2026-10-02T09-00-00-${other}.jsonl`), '');
+  rmSync(join(archive, `rollout-2026-10-02T08-00-00-${thread}.jsonl`));
+  clock += 9_999;
+  assert.deepEqual(await index.archivedThread(other), { status: 'known', value: false }, 'the miss is cached within the TTL');
+  assert.deepEqual(await index.archivedThread(thread), { status: 'known', value: true }, 'an archived ID stays cached');
+  clock += 2;
+  assert.deepEqual(await index.archivedThread(other), { status: 'known', value: true }, 'after the TTL a new scan finds it');
+});
+
+test('a timed-out scan still reports IDs it already found and is not cached as a miss', async t => {
+  const home = scratch(t);
+  const archive = join(home, 'archived_sessions');
+  mkdirSync(archive);
+  writeFileSync(join(archive, `rollout-2026-10-02T08-00-00-${thread}.jsonl`), '');
+  writeFileSync(join(archive, `rollout-2026-10-02T08-00-01-${other}.jsonl`), '');
+  let clock = 0;
+  let step = 0;
+  const index = new CodexArchiveIndex(home, { scanTimeoutMs: 1, now: () => (clock += step) });
+  step = 1; // the start reads 1, the first entry 2 (inside the bound), the second 3 (over it)
+  const first = await index.archivedThread('019a3b1c-7d2e-7f00-8a11-000000000000');
+  assert.deepEqual(first, { status: 'unknown', reason: 'codex-archive-timeout' });
+  step = 0;
+  const found = [await index.archivedThread(thread), await index.archivedThread(other)].filter(r => r.status === 'known' && r.value === true).length;
+  assert.equal(found, 2, 'the next lookup rescans because the timed-out scan was not cached');
 });
 
 function claudeStore(t) {

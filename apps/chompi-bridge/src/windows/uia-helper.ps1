@@ -15,9 +15,19 @@ $CodexRowPrefix = 'group relative cursor-interaction'
 $CodexSelectedToken = 'bg-primary-ghost-hover'
 $ComposerToken = 'ProseMirror'
 
+# Requests arrive ASCII-only (non-ASCII as \uXXXX escapes, which ConvertFrom-Json decodes). Replies are escaped
+# the same way, so neither direction depends on the console code page.
+$NonAscii = [regex]'[^\x00-\x7F]'
+$EscapeChar = [System.Text.RegularExpressions.MatchEvaluator]{ param($match) '\u{0:x4}' -f [int][char]$match.Value }
 function Reply($value) {
-  [Console]::Out.WriteLine((ConvertTo-Json -InputObject $value -Compress -Depth 4))
+  [Console]::Out.WriteLine($NonAscii.Replace((ConvertTo-Json -InputObject $value -Compress -Depth 4), $EscapeChar))
   [Console]::Out.Flush()
+}
+# Length and UTF-16 code-unit sum of a probe string, so a check can confirm decoding without echoing text.
+function Probe([string]$text) {
+  $sum = 0
+  foreach ($unit in $text.ToCharArray()) { $sum = ($sum + [int]$unit) % 2147483647 }
+  return @{ pong = $true; probeLength = $text.Length; probeSum = $sum }
 }
 function Fail([string]$code) { throw [System.InvalidOperationException]::new("chompi:$code") }
 function HasToken([string]$classes, [string]$token) { return [bool]($classes -and (($classes -split '\s+') -ccontains $token)) }
@@ -95,7 +105,7 @@ while ($true) {
     $request = ConvertFrom-Json -InputObject $line
     $id = $request.id
     switch ([string]$request.op) {
-      'ping' { $value = @{ pong = $true } }
+      'ping' { if ($null -ne $request.probe) { $value = Probe ([string]$request.probe) } else { $value = @{ pong = $true } } }
       'codexSelectedTitle' { $value = CodexSelectedTitle $request }
       'composerFocused' { $value = ComposerFocused $request }
       'clientVersions' { $value = ClientVersions }
