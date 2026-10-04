@@ -2,7 +2,10 @@ import {constants} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute,join,win32} from 'node:path';
-import {validDisplayText,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
+// The hook loads this module on every invocation: take the validator from the root module and only
+// the type from the 1.2 subpath, so hooks compile no extra schema.
+import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
+import type {Envelope} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 const MAX_BYTES=1024*1024,MAX_LINES=8192,MAX_LINE_BYTES=65536,DEADLINE_MS=100;
 let pending=0;
