@@ -114,7 +114,7 @@ Evidence limits: Claude Code's debug log named each SessionEnd reason but not it
 
 | Claim | Class | Evidence and limit |
 | --- | --- | --- |
-| Desktop names each Code session `local_<uuid>`, separate from the hook `session_id`, and keeps it across `/clear` | Observed artifact | The [#740 qualification](https://github.com/jimmie-potts/agent-device-hub/blob/codex/gh-740-chompi-qualification/docs/chompi-controller-qualification.md) read Desktop's session store with Claude Desktop 2.19675 on Windows. The [hook reference](https://code.claude.com/docs/en/hooks) does not document it |
+| Desktop names each Code session `local_<uuid>`, separate from the hook `session_id`, and keeps it across `/clear` | Observed artifact | The [#740 qualification](chompi-controller-qualification.md) read Desktop's session store with Claude Desktop 2.19675 on Windows. The [hook reference](https://code.claude.com/docs/en/hooks) does not document it |
 | A Desktop Code process environment carries `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | Observed artifact | #740 saw both variables in Desktop Code processes. Neither is documented as a hook input |
 | Hook processes inherit those variables | Unknown | Not yet observed. The issue's installed observation settles it: an existing Desktop session's next event shows the value in the feed, and a CLI session shows none |
 | Mapping | Source | With lifecycle 1.2 selected, the Claude provider adds `hostSessionId` only for the exact `claude-desktop` entrypoint and a valid identifier. Synthetic environments prove the mapping, omission and privacy, not provider delivery |
