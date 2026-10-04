@@ -47,10 +47,14 @@ export async function fake(tool,path){
   if(args.includes('graphql')){
    const query=JSON.parse(await input()).query,number=Number(query.match(/issue\(number:(\d+)\)/)?.[1]),issue=f.issues.find(i=>i.number===number);
    if(!issue)process.exit(1);
+   const repository=f.repository??'jimmie-potts/agent-device-hub';
+   if(!query.includes('name:'+JSON.stringify(repository.split('/')[1])))throw new Error('wrong-repository-query');
+   f.queries??=[];f.queries.push(query);await save();
    const list=nodes=>({nodes,pageInfo:{hasNextPage:false}});
-   const value={...issue,id:'issue-'+number,url:'https://github.com/jimmie-potts/agent-device-hub/issues/'+number,state:issue.state.toUpperCase(),stateReason:issue.state==='closed'?'COMPLETED':null,updatedAt:'2026-10-03T00:00:00Z',labels:list(issue.labels),assignees:list([]),parent:null,blockedBy:list(issue.blockedBy??[]),blocking:list(issue.blocking??[]),subIssues:list([]),projectItems:list([])};
+   const value={...issue,id:'issue-'+number,url:'https://github.com/'+repository+'/issues/'+number,state:issue.state.toUpperCase(),stateReason:issue.state==='closed'?'COMPLETED':null,updatedAt:'2026-10-03T00:00:00Z',labels:list(issue.labels),assignees:list([]),parent:null,blockedBy:list(issue.blockedBy??[]),blocking:list(issue.blocking??[]),subIssues:list([]),projectItems:list([])};
    console.log(JSON.stringify({data:{repository:{issue:value},node:{fields:list([{id:'PVTSSF_lAHOAu24Wc4Bkz2NzhjjEkM',name:'Status',options:[{id:'done',name:'Done'}]}])}}}));return;
   }
+  if(!endpoint.startsWith('repos/'+(f.repository??'jimmie-potts/agent-device-hub')+'/'))throw new Error('wrong-repository-endpoint');
   if(endpoint.includes('/pulls/'))return console.log(JSON.stringify({merged:true,merge_commit_sha:'b'.repeat(40)}));
   if(endpoint.includes('/comments')){
    if(method==='POST'){const payload=JSON.parse(await input());(f.comments??=[]).push({id:1,body:payload.body});await save();return console.log('{}');}

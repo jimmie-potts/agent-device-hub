@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,readFile,chmod,rm,realpath} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {pythonJSON,saveProof,toolProof,pinAcceptance} from './closeout-fixture.mjs';
 import {runCloseout as executeCloseout} from '../closeout/closeout.mjs';
 import {validateAssessment,canonical,recommendationEntry} from '../closeout/assessment.mjs';
 const advice={action:'unchanged',session:'One-shot',surface:'Backend',codex:'gpt-6.1-sol',claude:'opus',effort:'high',codexReviewer:'gpt-6-astra',claudeReviewer:'opus',cheaperClaude:'none',missing:'none'};
@@ -11,18 +12,120 @@ const runCloseout=(input,config,api,validator,planner=assessment,render=canonica
 import {validateInstallReceipt} from '../../../packages/contracts/dist/index.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const corpus=JSON.parse(await readFile(new URL('../../../packages/contracts/fixtures/install-receipt-v1.json',import.meta.url),'utf8'));
-async function fixture(){
+async function fixture(repository='jimmie-potts/agent-device-hub',runtime='hub'){
  const dir=await mkdtemp(join(process.env.TMPDIR??'/tmp','maintenance-closeout-'));await chmod(dir,0o700);
- const install=structuredClone(corpus.cases.find(x=>x.id==='upgrade-success').value),bytes=JSON.stringify(install);
+ const install={...structuredClone(corpus.cases.find(x=>x.id==='upgrade-success').value),runtime},bytes=JSON.stringify(install);
  await writeFile(join(dir,'install.json'),bytes,{mode:0o600});
- const issue={id:'issue-one',number:1,url:'https://github.com/jimmie-potts/agent-device-hub/issues/1',state:'OPEN',stateReason:null,body:'Supported source and installed defect',labels:['status:in-progress'],parent:null,blockedBy:[],blocking:[],subIssues:[],projects:[]};
- const input={schemaVersion:1,operation:'closeout',repository:'jimmie-potts/agent-device-hub',issue:1,pr:2,merge:'b'.repeat(40),acceptedSourceOnly:null,installationReceipt:{path:join(dir,'install.json'),sha256:hash(bytes)},requirementsBodySha256:hash(issue.body),requiredAcceptance:['source','installed'],deadline:Date.now()/1000+30,evidenceDirectory:dir};
+ const issue={id:'issue-one',number:1,url:`https://github.com/${repository}/issues/1`,state:'OPEN',stateReason:null,body:'Supported source and installed defect',labels:['status:in-progress'],parent:null,blockedBy:[],blocking:[],subIssues:[],projects:[]};
+ const input={schemaVersion:1,operation:'closeout',repository,issue:1,pr:2,merge:'b'.repeat(40),acceptedSourceOnly:null,installationReceipt:{path:join(dir,'install.json'),sha256:hash(bytes)},requirementsBodySha256:hash(issue.body),requiredAcceptance:['source','installed'],deadline:Date.now()/1000+30,evidenceDirectory:dir};
  const calls=[];let comments=[];
- const api={async issue(){return structuredClone(issue);},async pull(){return {merged:true,merge_commit_sha:input.merge};},async comments(){return comments;},async comment(_n,body){calls.push('comment');comments.push({body});},async close(){calls.push('close');issue.state='CLOSED';issue.stateReason='COMPLETED';issue.labels=[];},async projectDone(){calls.push('project');}};
+ const api={async issue(){return structuredClone(issue);},async pull(){return {merged:true,merge_commit_sha:input.merge};},async comments(){return comments;},async comment(_n,body){calls.push('comment');comments.push({body});},async close(_n,labels=[]){calls.push('close');issue.state='CLOSED';issue.stateReason='COMPLETED';issue.labels=labels;},async projectDone(){calls.push('project');}};
  return {dir,input,issue,api,calls,config:{schemaVersion:1,repository:input.repository,stateDirectory:dir,installationId:'primary',capacityBytes:16*1024*1024},async dispose(){await rm(dir,{recursive:true,force:true});}};
 }
 test('installed receipt does not discharge physical acceptance',async()=>{
  const f=await fixture();try{f.input.requiredAcceptance.push('physical');const r=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);assert.equal(r.status,'blocked');assert.deepEqual(f.calls,[]);}finally{await f.dispose();}
+});
+test('fixed consumer policies accept their owning semantic runtime receipt',async()=>{
+ for(const [repository,runtime] of [['jimmie-potts/codex-nanoleaf','nanoleaf'],['jimmie-potts/divoom-app-upgrade','pixoo']]){
+  const f=await fixture(repository,runtime);try{
+   const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);
+   assert.equal(result.status,'complete',result.reason);assert.deepEqual(f.calls,['comment','close']);
+   assert.match((await f.api.comments())[0].body,new RegExp(repository+'/pull/2'));
+   assert.equal(JSON.parse(await readFile(result.receipt.path,'utf8')).repository,repository);
+  }finally{await f.dispose();}
+ }
+});
+test('fixed runtime policies reject wrong receipt identity before tracker effects',async()=>{
+ for(const [repository,runtime] of [['jimmie-potts/agent-device-hub','hub'],['jimmie-potts/codex-nanoleaf','nanoleaf'],['jimmie-potts/divoom-app-upgrade','pixoo']]){
+  for(const fault of ['repository','runtime','owner','revision','kind']){
+   const f=await fixture(repository,runtime);try{
+    const proof=JSON.parse(await readFile(f.input.installationReceipt.path,'utf8'));
+    if(fault==='repository')f.input.repository='jimmie-potts/dotfiles';
+    if(fault==='runtime')proof.runtime=runtime==='hub'?'pixoo':'hub';
+    if(fault==='owner')proof.installationId='other-owner';
+    if(fault==='revision')f.input.merge='c'.repeat(40);
+    if(fault==='kind')proof.schemaVersion='installed-files/1.0';
+    await saveProof(f,proof);
+    const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);
+    assert.equal(result.status,'blocked',`${runtime}/${fault}`);assert.deepEqual(f.calls,[]);
+   }finally{await f.dispose();}
+  }
+ }
+});
+test('tool policies accept owning installed-file proof without runtime or portfolio claims',async()=>{
+ for(const name of ['dotfiles','agent-skills']){
+  const f=await fixture('jimmie-potts/'+name);try{
+   f.issue.labels=['documentation','status:owner-custom'];
+   f.issue.projects=[{id:'unrelated',project:'PVT_kwHOAu24Wc4Bkz2N',done:'done',values:{custom:'preserve'}}];
+   await saveProof(f,pythonJSON(toolProof(f)));
+   const result=await runCloseout(f.input,f.config,f.api,()=>{throw new Error('runtime-validator-must-not-run');});
+   assert.equal(result.status,'complete',result.reason);assert.deepEqual(f.calls,['comment','close']);
+   assert.deepEqual(f.issue.labels,['documentation','status:owner-custom']);assert.deepEqual(f.issue.projects[0].values,{custom:'preserve'});
+   const body=(await f.api.comments())[0].body;assert.match(body,/installed file and link readback/);assert.doesNotMatch(body,/running identity|health/);
+   assert.equal(JSON.parse(await readFile(result.receipt.path,'utf8')).project,null);
+  }finally{await f.dispose();}
+ }
+});
+test('tool policies reject identity, plan, path and readback faults without publication',async()=>{
+ for(const name of ['dotfiles','agent-skills']){
+  for(const fault of ['kind','repository','issue','owner','revision','plan-identity','configuration','digest','readback','link','outside','protected','dirty','runtime-fields',...(name==='agent-skills'?['manager','required-skill']:[])]){
+   const f=await fixture('jimmie-potts/'+name);try{
+    const proof=toolProof(f);
+    if(fault==='kind')proof.schemaVersion='install-receipt/1.0';
+    if(fault==='repository')proof.repository='jimmie-potts/agent-device-hub';
+    if(fault==='issue')proof.issue++;
+    if(fault==='owner')proof.owner='another';
+    if(fault==='revision')proof.targetRevision='d'.repeat(40);
+    if(fault==='plan-identity')proof.plan.issue++;
+    if(fault==='configuration')proof.plan.configSha256='d'.repeat(64);
+    if(fault==='readback')proof.readback.files=[{...proof.plan.files[0],sha256:'f'.repeat(64)}];
+    if(fault==='link')name==='dotfiles'?proof.plan.link.target='/other':proof.plan.links[0].target='/other';
+    if(fault==='outside')proof.plan.files[0].path='home/settings.json';
+    if(fault==='protected')f.config.installedFiles.protectedPaths=[proof.plan.files[0].path];
+    if(fault==='dirty')proof.readback.preservedDirtySha256='f'.repeat(64);
+    if(fault==='runtime-fields')proof.health={status:'healthy'};
+    if(fault==='manager')proof.readback.managerStatus.codex.status='missing';
+    if(fault==='required-skill')proof.plan.requiredSkills=[];
+    proof.planSha256=fault==='digest'?'f'.repeat(64):hash(pythonJSON(proof.plan));
+    await saveProof(f,pythonJSON(proof));
+    const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);
+    assert.equal(result.status,'blocked',name+'/'+fault);assert.equal(result.effects,'none');assert.deepEqual(f.calls,[],name+'/'+fault);
+   }finally{await f.dispose();}
+  }
+ }
+});
+test('tool policies retain independent physical acceptance and lost-response recovery',async()=>{
+ for(const name of ['dotfiles','agent-skills']){
+  const f=await fixture('jimmie-potts/'+name);try{
+   await saveProof(f,pythonJSON(toolProof(f)));
+   const planner=async(...args)=>{const result=await assessment(...args);result.selected.requiredAcceptance.push('physical');return result;};
+   assert.equal((await runCloseout(f.input,f.config,f.api,validateInstallReceipt,planner)).reason,'independent-acceptance-pending');assert.deepEqual(f.calls,[]);
+   const body=f.issue.body;f.issue.body+=' Required client readback.';
+   assert.equal((await runCloseout(f.input,f.config,f.api,validateInstallReceipt)).reason,'requirements-changed-after-review');assert.deepEqual(f.calls,[]);f.issue.body=body;
+   const close=f.api.close;f.api.close=async(...args)=>{await close(...args);throw new Error('lost-response');};
+   assert.equal((await runCloseout(f.input,f.config,f.api,validateInstallReceipt)).status,'uncertain');
+   f.input.operation='reconcile';assert.equal((await runCloseout(f.input,f.config,f.api,validateInstallReceipt)).status,'complete');
+   assert.deepEqual(f.calls,['comment','close']);
+  }finally{await f.dispose();}
+ }
+});
+test('concrete tool CLI uses owning acceptance pins and never queries or mutates the portfolio',async()=>{
+ const {closeoutFixture}=await import('./closeout-fixture.mjs');const {cli,githubAdapter}=await import('../closeout/closeout.mjs');
+ for(const name of ['dotfiles','agent-skills']){
+  const f=await closeoutFixture({repository:'jimmie-potts/'+name});try{
+   const result=await cli(f.configPath,f.request);assert.equal(result.status,'complete',result.reason);
+   const remote=await f.read();assert.ok(remote.queries.length>0);assert.ok(remote.queries.every(query=>!query.includes('ProjectV2')&&!query.includes('projectItems')));
+   assert.match(remote.prompt,/Selected repository policy is jimmie-potts\//);assert.match(remote.prompt,/Do not infer runtime health/);
+   assert.ok(remote.prompt.includes(join(f.config.planning.owningCheckout,'AGENTS.md')));
+   assert.ok(!remote.prompt.includes('/synthetic/catalog'));
+   await assert.rejects(githubAdapter(f.config,f.request.deadline).projectDone('unrelated','done'),/project-policy-not-authorized/);
+  }finally{await f.close();}
+ }
+ const f=await closeoutFixture({repository:'jimmie-potts/codex-nanoleaf'});try{
+  delete f.config.planning.files[join(f.config.planning.owningCheckout,'AGENTS.md')];
+  await writeFile(f.configPath,JSON.stringify(f.config),{mode:0o600});
+  await assert.rejects(cli(f.configPath,f.request),/owning-acceptance-fingerprint-missing/);assert.deepEqual((await f.read()).calls,[]);
+ }finally{await f.close();}
 });
 test('closes only the selected installed issue and is idempotent',async()=>{
  const f=await fixture();try{
@@ -170,7 +273,8 @@ test('concrete bounded planner independently reads current public acceptance wit
   const root=new URL('../../../',import.meta.url).pathname,planning={timeoutSeconds:3,codex:tools.config.tools.codex,python:await realpath('/usr/bin/python3'),checkout:tools.config.checkout,planWork:tools.config.planWork,recommendationPolicy:tools.config.planWork,recommendations:join(root,'docs/work-guide/work/recommendations.py'),helper:join(root,'apps/maintenance/closeout/recommendation.py'),model:'gpt-6-astra',policyRevision:'a'.repeat(40),files:{}};
   for(const key of ['codex','python','planWork','recommendationPolicy','recommendations','helper'])planning.files[planning[key]]=hash(await readFile(planning[key]));
   planning.files[join(root,'docs/work-guide/work/story_sections.py')]=hash(await readFile(join(root,'docs/work-guide/work/story_sections.py')));
-  const result=await executeCloseout(f.input,{...f.config,planning},f.api,validateInstallReceipt);
+  const config={...f.config,planning};await pinAcceptance(config);
+  const result=await executeCloseout(f.input,config,f.api,validateInstallReceipt);
   assert.equal(result.status,'complete',result.reason);assert.deepEqual(f.calls,['comment','close']);
   const remote=await tools.read();assert.match(remote.prompt,/complete current acceptance/);assert.ok(!remote.prompt.includes(f.input.installationReceipt.path));
   const receipt=JSON.parse(await readFile(join(f.dir,'assessment-receipt.json'),'utf8'));assert.equal(receipt.observedModel,'unknown');

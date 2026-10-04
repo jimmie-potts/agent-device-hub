@@ -1,3 +1,5 @@
+import {closeoutPolicy,completionLabels} from './policies.mjs';
+import {validateInstalledFiles} from './installed-files.mjs';
 import {assess,validateAssessment,canonical,recommendationEntry,checkPlanner} from './assessment.mjs';
 import {runProcess} from '../dist/process.js';
 import {PrivateStore} from '../dist/storage.js';
@@ -7,7 +9,6 @@ import {open,lstat,realpath,mkdir} from 'node:fs/promises';
 import {resolve,join,dirname,basename,isAbsolute} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const REPOSITORY='jimmie-potts/agent-device-hub';
 export const PROJECT='PVT_kwHOAu24Wc4Bkz2N';
 export const STATUS='PVTSSF_lAHOAu24Wc4Bkz2NzhjjEkM';
 export const PHASE='PVTSSF_lAHOAu24Wc4Bkz2NzhjjE0g';
@@ -49,8 +50,8 @@ async function existing(path){
 }
 function validateInput(input,config){
  require(exact(input,['schemaVersion','operation','repository','issue','pr','merge','installationReceipt','acceptedSourceOnly','requirementsBodySha256','requiredAcceptance','deadline','evidenceDirectory']),'invalid-closeout-input');
- require(config.schemaVersion===1 && config.repository===REPOSITORY && input.schemaVersion===1 &&
-  input.repository===REPOSITORY && ['closeout','reconcile'].includes(input.operation) && number(input.issue) &&
+ require(config.schemaVersion===1 && input.schemaVersion===1 &&
+  input.repository===config.repository && ['closeout','reconcile'].includes(input.operation) && number(input.issue) &&
   number(input.pr) && /^[a-f0-9]{40}$/.test(input.merge) && digest(input.requirementsBodySha256) &&
   Number.isFinite(input.deadline),'invalid-closeout-identity');
  if(input.acceptedSourceOnly===null)require(exact(input.installationReceipt,['path','sha256']) && digest(input.installationReceipt.sha256),'invalid-installation-reference');
@@ -66,7 +67,7 @@ function validateInput(input,config){
 }
 const hold=issue=>issue.labels.some(x=>['blocked','hold','on-hold','status:blocked'].includes(x.toLowerCase()));
 function selected(issue,input){
- require(issue.number===input.issue && issue.url===`https://github.com/${REPOSITORY}/issues/${input.issue}`,'selected-issue-mismatch');
+ require(issue.number===input.issue && issue.url===`https://github.com/${input.repository}/issues/${input.issue}`,'selected-issue-mismatch');
  require(sha256(issue.body??'')===input.requirementsBodySha256,'requirements-changed-after-review');
  if(input.acceptedSourceOnly!==null)require(issue.body.includes(input.acceptedSourceOnly.reason)&&issue.body.includes(input.acceptedSourceOnly.installationIssue)&&input.acceptedSourceOnly.installationIssue!==issue.url,'source-only-exception-not-in-reviewed-body');
  require(!hold(issue),'selected-issue-held');
@@ -100,7 +101,8 @@ async function affected(api,issue,marker){
  }
  return result;
 }
-function projectPlan(issue,related){
+function projectPlan(issue,related,policy){
+ if(!policy.portfolio)return null;
  const matches=issue.projects.filter(x=>x.project===PROJECT);require(matches.length<=1,'ambiguous-project-membership');
  if(!matches.length)return null;
  const item=matches[0],parent=related.find(x=>x.url===issue.parent?.url);
@@ -115,27 +117,34 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
  config={...config,deadline:input?.deadline};
  const output={schemaVersion:1,status:'blocked',repository:input?.repository,issue:input?.issue,merge:input?.merge};
  try{
+  const policy=closeoutPolicy(config.repository);
   validateInput(input,config);
+  const cleanLabels=labels=>completionLabels(policy,labels);
+  const labelsComplete=labels=>JSON.stringify(labels)===JSON.stringify(cleanLabels(labels));
   const live=()=>require(Date.now()/1000<input.deadline,'closeout-deadline-exhausted');
   live();await privateDirectory(input.evidenceDirectory);
   await privateDirectory(config.stateDirectory,input.operation==='closeout');
   if(input.acceptedSourceOnly===null){
    const installBytes=await privateRead(input.installationReceipt.path),install=JSON.parse(installBytes.toString());
-   require(sha256(installBytes)===input.installationReceipt.sha256 && typeof validateReceipt==='function' && validateReceipt(install) &&
-   install.runtime==='hub' && install.installationId===config.installationId && install.outcome==='succeeded' &&
+   require(sha256(installBytes)===input.installationReceipt.sha256,'installation-not-verified');
+   if(policy.proof==='installed-files/1.0')await validateInstalledFiles(installBytes,install,input,config);
+   else require(typeof validateReceipt==='function' && validateReceipt(install) &&
+   install.runtime===policy.runtime && install.installationId===config.installationId && install.outcome==='succeeded' &&
    install.target?.kind==='release' && install.target.sourceRevision===input.merge &&
     install.running?.identity?.sourceRevision===input.merge && install.health.status==='healthy','installation-not-verified');
   }
   const marker=`<!-- bunny-closeout:${input.issue}:${input.merge} -->`;
   let issue=await evidence(api,await api.issue(input.issue),marker);selected(issue,input);
   const pull=await api.pull(input.pr);require(pull.merged && pull.merge_commit_sha===input.merge,'merged-revision-mismatch');
-  const related=await affected(api,issue,marker),project=projectPlan(issue,related);
-  const finish=input.acceptedSourceOnly===null?'The owning delivery supervisor verified source checks, independent reviews, merged-main CI and installed receipt, running identity and health. Required acceptance is source and installed verification.':`The owning delivery supervisor verified source checks, independent reviews and merged-main CI. The reviewed issue explicitly accepts source-only completion. Overall installation remains pending under ${input.acceptedSourceOnly.installationIssue}.`;
-  const comment=`${marker}\n\n[PR #${input.pr}](https://github.com/${REPOSITORY}/pull/${input.pr}) merged as \`${input.merge}\`. ${finish} Related parent outcomes remain governed by their own acceptance; this receipt does not close them.\n`;
-  const statePath=join(config.stateDirectory,`${input.issue}-${input.merge}.json`);
+  const related=await affected(api,issue,marker),project=projectPlan(issue,related,policy);
+  const installed=policy.runtime?'installed receipt, running identity and health':'installed file and link readback';
+  const finish=input.acceptedSourceOnly===null?`The owning delivery supervisor verified source checks, independent reviews, merged-main CI and ${installed}. Required acceptance is source and installed verification.`:`The owning delivery supervisor verified source checks, independent reviews and merged-main CI. The reviewed issue explicitly accepts source-only completion. Overall installation remains pending under ${input.acceptedSourceOnly.installationIssue}.`;
+  const comment=`${marker}\n\n[PR #${input.pr}](https://github.com/${input.repository}/pull/${input.pr}) merged as \`${input.merge}\`. ${finish} Related parent outcomes remain governed by their own acceptance; this receipt does not close them.\n`;
+  const namespace=policy.runtime==='hub'?'':config.repository.split('/')[1]+'-';
+  const statePath=join(config.stateDirectory,`${namespace}${input.issue}-${input.merge}.json`);
   let state=await existing(statePath);
   if(state&&!state.complete)mutated=true;
-  require(!state || state.bodyHash===input.requirementsBodySha256,'closeout-state-conflict');
+  require(!state || state.bodyHash===input.requirementsBodySha256 && state.repository===input.repository && state.issue===input.issue && state.merge===input.merge,'closeout-state-conflict');
   if(input.operation==='closeout')require(!state || state.complete,'unfinished-closeout-needs-reconciliation');
   let assessment;
   if(input.operation==='reconcile'){
@@ -148,6 +157,7 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
    const original=related.find(x=>x.url===item.url);
    const update={url:item.url,number:original.number,repository:item.url.replace('https://github.com/','').split('/issues/')[0],body:original.body,labels:original.labels};
    if(item.hold==='remove-selected-dependency'){
+    require(closeoutPolicy(update.repository).workflowLabels,'related-label-policy-unavailable');
     require(original.blockedBy.length===1&&original.blockedBy[0].url===issue.url,'unrelated-hold-removal');
     require(!original.labels.some(x=>['hold','on-hold','status:blocked'].includes(x.toLowerCase())),'unresolved-owner-hold');
     update.labels=original.labels.filter(x=>x!=='blocked');
@@ -180,7 +190,7 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
   const matching=publicationMatches(await api.comments(input.issue));
   const projectCurrent=()=>!project || issue.projects.find(x=>x.id===project.id)?.values[STATUS]===project.done;
   const finished=()=>updates.length===0 && matching.length===1 && issue.state==='CLOSED' && issue.stateReason==='COMPLETED' && projectCurrent() &&
-   issue.labels.every(x=>!x.startsWith('status:') && x!=='blocked');
+   labelsComplete(issue.labels);
   if(input.operation==='reconcile'){
    require(state,'closeout-state-missing');
    require(finished(),'closeout-still-incomplete');
@@ -189,7 +199,7 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
    require(JSON.stringify(currentRelated.map(x=>snapshot(x,issue.url)))===JSON.stringify(related.map(x=>snapshot(x,issue.url))),'affected-record-changed');
    const selectedBack=await evidence(api,await api.issue(input.issue),marker);
    require(JSON.stringify(snapshot(selectedBack,issue.url))===JSON.stringify(snapshot(issue,issue.url)),'selected-record-changed');
-   state={schemaVersion:1,repository:REPOSITORY,issue:input.issue,merge:input.merge,bodyHash:input.requirementsBodySha256,complete:false,pending:null,assessment,updates,snapshots:Object.fromEntries(related.map(x=>[x.url,snapshot(x,issue.url)]))};
+   state={schemaVersion:1,repository:input.repository,issue:input.issue,merge:input.merge,bodyHash:input.requirementsBodySha256,complete:false,pending:null,assessment,updates,snapshots:Object.fromEntries(related.map(x=>[x.url,snapshot(x,issue.url)]))};
    const effect=async(name,call)=>{
     live();state.pending=name;await atomic(statePath,state,config.capacityBytes);mutated=true;
     await call();state.pending=null;await atomic(statePath,state,config.capacityBytes);
@@ -228,12 +238,12 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
    const beforeClose=await evidence(api,await api.issue(input.issue),marker);selected(beforeClose,input);
    require(JSON.stringify(snapshot(beforeClose,issue.url))===JSON.stringify(snapshot(issue,issue.url)),'selected-record-changed');
    issue=beforeClose;await checkRelated();
-   if(issue.state!=='CLOSED' || issue.labels.some(x=>x.startsWith('status:') || x==='blocked')){
-    await effect('selected-close',()=>api.close(input.issue,issue.labels.filter(x=>!x.startsWith('status:') && x!=='blocked')));
+   if(issue.state!=='CLOSED' || !labelsComplete(issue.labels)){
+    await effect('selected-close',()=>api.close(input.issue,cleanLabels(issue.labels)));
    }
    if(project && !projectCurrent()){
     const refreshed=await evidence(api,await api.issue(input.issue),marker);selected(refreshed,input);
-    const closed={...issue,state:'CLOSED',stateReason:'COMPLETED',labels:issue.labels.filter(x=>!x.startsWith('status:')&&x!=='blocked')};
+    const closed={...issue,state:'CLOSED',stateReason:'COMPLETED',labels:cleanLabels(issue.labels)};
     require(JSON.stringify(snapshot(refreshed,issue.url))===JSON.stringify(snapshot(closed,issue.url)),'selected-record-changed');
     const current=refreshed.projects.find(x=>x.id===project.id);
     require(current && JSON.stringify(current.values)===JSON.stringify(project.before),'project-changed-during-closeout');
@@ -243,7 +253,7 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
   issue=await api.issue(input.issue);selected(issue,input);
   const backComments=await api.comments(input.issue);
   require(issue.state==='CLOSED' && issue.stateReason==='COMPLETED' &&
-   issue.labels.every(x=>!x.startsWith('status:') && x!=='blocked') &&
+   labelsComplete(issue.labels) &&
    backComments.filter(x=>x.body?.replace(/\r\n/g,'\n').trim()===comment.trim()).length===1,'selected-closeout-readback-failed');
   if(project){
    const current=issue.projects.find(x=>x.id===project.id);
@@ -254,10 +264,10 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
   require(refreshed.length===Object.keys(expected).length&&refreshed.every(x=>JSON.stringify(snapshot(x,issue.url))===JSON.stringify(expected[x.url])),'affected-record-changed');
   validateAssessment(assessment,issue,refreshed,input.acceptedSourceOnly);
   const pending=assessment.affected.flatMap(item=>item.criteria.filter(x=>x.status==='pending').map(criterion=>({url:item.url,...criterion})));
-  state={schemaVersion:1,repository:REPOSITORY,issue:input.issue,merge:input.merge,
+  state={schemaVersion:1,repository:input.repository,issue:input.issue,merge:input.merge,
    bodyHash:input.requirementsBodySha256,...state,assessment,snapshots:expected,complete:true,pending:null};
   await atomic(statePath,state,config.capacityBytes);
-  const receipt=await atomic(join(input.evidenceDirectory,'tracker-receipt.json'),{schemaVersion:1,repository:REPOSITORY,issue:input.issue,merge:input.merge,
+  const receipt=await atomic(join(input.evidenceDirectory,'tracker-receipt.json'),{schemaVersion:1,repository:input.repository,issue:input.issue,merge:input.merge,
    requirementsBodySha256:input.requirementsBodySha256,installationReceiptSha256:input.installationReceipt?.sha256??null,
    installationPending:input.acceptedSourceOnly===null?null:{reason:'accepted-source-only',issue:input.acceptedSourceOnly.installationIssue},
    selected:{state:issue.state,stateReason:issue.stateReason,labels:issue.labels},project:project?{id:project.id,status:'Done'}:null,
@@ -269,8 +279,8 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
 const NODE=`id number url state stateReason body updatedAt assignees(first:100){nodes{login}pageInfo{hasNextPage}} labels(first:100){nodes{name}pageInfo{hasNextPage}} parent{id number url}
  blockedBy(first:100){nodes{number url state stateReason}pageInfo{hasNextPage}}
  blocking(first:100){nodes{number url state stateReason}pageInfo{hasNextPage}}
- subIssues(first:100){nodes{number url state stateReason}pageInfo{hasNextPage}}
- projectItems(first:100){nodes{id project{id}fieldValues(first:100){nodes{... on ProjectV2ItemFieldSingleSelectValue{optionId field{... on ProjectV2SingleSelectField{id}}}}pageInfo{hasNextPage}}}pageInfo{hasNextPage}}`;
+ subIssues(first:100){nodes{number url state stateReason}pageInfo{hasNextPage}}`;
+const PROJECT_ITEMS=`projectItems(first:100){nodes{id project{id}fieldValues(first:100){nodes{... on ProjectV2ItemFieldSingleSelectValue{optionId field{... on ProjectV2SingleSelectField{id}}}}pageInfo{hasNextPage}}}pageInfo{hasNextPage}}`;
 function completeGraph(value){
  if(value && typeof value==='object'){
   require(!value.hasNextPage,'tracker-pagination-capacity');
@@ -278,6 +288,7 @@ function completeGraph(value){
  }
 }
 export function githubAdapter(config,deadline){
+ const repository=closeoutPolicy(config.repository).repository;
  const call=(args,data)=>{
   const remaining=Math.floor((deadline-Date.now()/1000)*1000);require(remaining>0,'closeout-deadline-exhausted');
   const r=spawnSync(config.gh,['api',...args,...(data?['--input','-']:[])],{input:data?JSON.stringify(data):undefined,
@@ -285,21 +296,25 @@ export function githubAdapter(config,deadline){
   require(!r.error && r.status===0,'github-result-unavailable');return r.stdout?JSON.parse(r.stdout):null;
  };
  const graph=query=>{const value=call(['graphql'],{query});require(value.data && !value.errors,'tracker-graph-unavailable');completeGraph(value.data);return value.data;};
- const endpoint=n=>`repos/${REPOSITORY}/issues/${n}`;
+ const endpoint=n=>`repos/${repository}/issues/${n}`;
  return {
-  async issue(n,repository=REPOSITORY){
-   const [owner,name]=repository.split('/');
-   const d=graph(`{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issue(number:${n}){${NODE}}}
-    node(id:"${PROJECT}"){... on ProjectV2{fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name}}}pageInfo{hasNextPage}}}}}`);
+  async issue(n,selectedRepository=repository){
+   const policy=closeoutPolicy(selectedRepository);
+   const [owner,name]=selectedRepository.split('/');
+   const projectFields=policy.portfolio?`node(id:"${PROJECT}"){... on ProjectV2{fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name}}}pageInfo{hasNextPage}}}}`:'';
+   const d=graph(`{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issue(number:${n}){${NODE}${policy.portfolio?PROJECT_ITEMS:''}}} ${projectFields}}`);
    const issue=d.repository?.issue;require(issue,'affected-issue-unavailable');
-   const status=d.node?.fields.nodes.find(x=>x.id===STATUS);require(status?.name==='Status','project-policy-changed');
-   const done=status.options.filter(x=>x.name==='Done');require(done.length===1,'project-done-option-unavailable');
+   let done=null;
+   if(policy.portfolio){
+    const status=d.node?.fields.nodes.find(x=>x.id===STATUS);require(status?.name==='Status','project-policy-changed');
+    const options=status.options.filter(x=>x.name==='Done');require(options.length===1,'project-done-option-unavailable');done=options[0].id;
+   }
    return {...issue,assignees:issue.assignees.nodes.map(x=>x.login),labels:issue.labels.nodes.map(x=>x.name),blockedBy:issue.blockedBy.nodes,blocking:issue.blocking.nodes,subIssues:issue.subIssues.nodes,
-    projects:issue.projectItems.nodes.map(x=>({id:x.id,project:x.project.id,done:done[0].id,
-     values:Object.fromEntries(x.fieldValues.nodes.filter(y=>y.field).map(y=>[y.field.id,y.optionId]))}))};
+    projects:policy.portfolio?issue.projectItems.nodes.map(x=>({id:x.id,project:x.project.id,done,
+     values:Object.fromEntries(x.fieldValues.nodes.filter(y=>y.field).map(y=>[y.field.id,y.optionId]))})):[]};
   },
-  async pull(n){return call([`repos/${REPOSITORY}/pulls/${n}`]);},
-  async comments(n,repository=REPOSITORY){
+  async pull(n){return call([`repos/${repository}/pulls/${n}`]);},
+  async comments(n,repository=config.repository){
    const all=[];for(let page=1;page<=20;page++){const rows=call([`repos/${repository}/issues/${n}/comments?per_page=100&page=${page}`]);
     require(Array.isArray(rows),'comments-unavailable');all.push(...rows);if(rows.length<100)return all;}
    throw new Error('comments-pagination-capacity');
@@ -322,6 +337,7 @@ export function githubAdapter(config,deadline){
    const back=call([`repos/jimmie-potts/${entry.repo}/issues/${entry.number}`]);require(back.body===expected,'recommendation-readback-mismatch');
   },
   async projectDone(id,option){
+   require(closeoutPolicy(repository).portfolio,'project-policy-not-authorized');
    return graph(`mutation{updateProjectV2ItemFieldValue(input:{projectId:"${PROJECT}",itemId:${JSON.stringify(id)},fieldId:"${STATUS}",value:{singleSelectOptionId:${JSON.stringify(option)}}}){projectV2Item{id}}}`);
   }
  };
