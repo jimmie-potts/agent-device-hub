@@ -8,7 +8,7 @@ These facts from the current source shape the narrower surface:
 
 - All agent-state durable bytes pass through `HubStorage` in `apps/hub/src/storage.ts`. Its `load` and every `commit` run agent-state `validateExport` on the complete state before reading it back or writing a payload. The automation tables use the same connection through `AutomationStore`.
 - `validateExport` (exported again as `migrateExport`) lives in agent-state `validation.ts`. It applies the `durable-v1`, `durable-v2` and `durable-v2.1` schemas, uses `identityKey` from `memory-storage.ts`, and checks stored identities, turns, parents and ordering through lifecycle `validateEvent` with `apiVersion: '1.0'`. The same module also compiles the snapshot schemas for `validateSnapshot`.
-- Hub `automation.ts` validates stored rule and setting text with lifecycle `validDisplayText`, whose pattern comes from `lifecycle-v1.1.schema.json`.
+- Hub `automation.ts` validates stored rules and settings with the `common.ts` validators and lifecycle `validDisplayText`, whose pattern comes from `lifecycle-v1.1.schema.json`.
 - Agent-state `index.ts` coordinates ingestion, snapshots, retention and the open path, and builds the states it commits. `reducer.ts`, `retirement.ts` and `types.ts` (including `VERSION` and `LIMITS`) decide content, and `providers.ts`, `metadata.ts`, `subscriptions.ts` and `children.ts` never touch storage. Every agent-state release so far bumps `VERSION` in `types.ts`.
 
 ## Goals / Non-Goals
@@ -25,7 +25,7 @@ The fingerprint hashes these files, ignoring file modes as before:
 
 | Location | Durable files | Why |
 | --- | --- | --- |
-| Hub `dist/` | `storage.js`, `automation-store.js`, `automation.js` (required) | SQLite layout, load and commit validation, automation tables, defaults and stored-row validation |
+| Hub `dist/` | `storage.js`, `automation-store.js`, `automation.js`, `common.js` (required) | SQLite layout, load and commit validation, automation tables, defaults and stored-row validation. `common.js` holds the identifier and object validators that `automation.js` applies to stored rows; #718 omitted it |
 | Hub `dist/` | Any other `.js` that imports `node:sqlite`, except `install/state.js` and `migration-routes.js` | Fail closed for a new storage module. The two exceptions are the installer's read-only state capture and the migration lease file, and neither opens monitor state for writing |
 | agent-state `dist/` | Every `.js` except `index.js`, `reducer.js`, `retirement.js`, `types.js`, `providers.js`, `metadata.js`, `subscriptions.js` and `children.js`; today that leaves `validation.js` and `memory-storage.js` (both required) | The durable validator and the identity key it applies. An unclassified module counts as durable |
 | agent-state `schemas/` | Every file except `snapshot-v<version>.schema.json`; today `durable-v1`, `durable-v2` and `durable-v2.1` (`durable-v2.1` required) | Stored-state schemas. Snapshot schemas describe an outbound projection and are never stored. Any other or new file, such as `durable-v2.2.schema.json`, counts as durable |
@@ -54,15 +54,15 @@ These are encoded in `apps/hub/tests/install-compatibility.test.mjs` and run aga
 
 1. A target that edits `reducer.js`, `index.js`, `types.js` (`VERSION`), lifecycle `index.js` and a snapshot schema, and adds `lifecycle-v1.2.schema.json` and `snapshot-v1.3.schema.json`, is `compatible` with probe evidence.
 2. A newline in `durable-v2.1.schema.json`, a new `durable-v2.2.schema.json`, an unclassified schema file or an edited `lifecycle-v1.schema.json` refuses with `durable-implementation-unqualified`.
-3. An edit to any Hub storage module, `validation.js` or `memory-storage.js`, a new unclassified agent-state module or a new Hub SQLite module refuses with `durable-implementation-unqualified` without executing the changed code.
+3. An edit to any Hub storage module including `common.js`, to `validation.js` or to `memory-storage.js`, a new unclassified agent-state module or a new Hub SQLite module refuses with `durable-implementation-unqualified` without executing the changed code.
 4. A target whose reducer stores an extra session field when a title arrives fails with `durable-reopen-probe-failed`. Before this change, the probe had no title event, so it never reached that path.
 5. A missing agent-state package, Hub storage module, `validation.js` or lifecycle 1.0 schema refuses with `durable-implementation-unavailable`.
 
-`apps/hub/tests/install-operation.test.mjs` feeds real qualification results for examples 1 to 5 into `executeOperation`. Example 1 succeeds; the others end `refused` with no service effect.
+`apps/hub/tests/install-operation.test.mjs` feeds real qualification results for examples 1 to 5 into `executeOperation`. Example 1 succeeds; the others end `refused` with no service effect, and the evidence file carries each qualification result.
 
 ### Failure and recovery
 
-Nothing new runs after stop. Every refusal still happens during qualification, before intent, with the existing reason codes and a `refused` receipt. The operator diagnoses a refusal from the receipt's `install-rollback-unqualified` failure and the evidence file's qualification result. A change to the durable surface still needs a separately reviewed stored-format procedure. Rollback operations use the same rule in the reverse direction.
+Nothing new runs after stop. Every refusal still happens during qualification, before intent, with the existing reason codes and a `refused` receipt. The operation's evidence file previously recorded the qualification result only on success. It now records it before the status check, so a refused receipt's `install-rollback-unqualified` failure pairs with the specific reason in `observations.compatibility`. The receipt itself is unchanged. A change to the durable surface still needs a separately reviewed stored-format procedure. Rollback operations use the same rule in the reverse direction.
 
 ## Risks / Trade-offs
 

@@ -4,7 +4,7 @@
 
 Every new target MUST have a clean merged full source identity, trusted archive and manifest hashes, verified safe inventory and dependency closure. Before outage, the command MUST prove previous-release compatibility with all durable data the target can write using format evidence and an isolated write/reopen test. Unknown or incompatible recovery MUST refuse.
 
-Format evidence SHALL require the durable surface of the installer, the previous release and the target to be byte-identical, ignoring file modes. The durable surface is the Hub storage adapter, automation store and automation modules; any other Hub module that imports `node:sqlite` apart from the named read-only state capture and migration lease; the agent-state durable validator and identity-key modules; every agent-state schema except snapshot schemas; and the lifecycle 1.0 and 1.1 schemas. Agent-state and lifecycle files that the updater does not classify as non-durable MUST count as durable. Reducer, provider, retention, snapshot, coordination and constants modules, newer lifecycle versions and lifecycle envelope code are outside the surface. The write/reopen test MUST cover the stored session metadata and a known parent as well as the existing record kinds.
+Format evidence SHALL require the durable surface of the installer, the previous release and the target to be byte-identical, ignoring file modes. The durable surface is the Hub storage adapter, automation store and automation modules and the validators they apply to stored rows; any other Hub module that imports `node:sqlite` apart from the named read-only state capture and migration lease; the agent-state durable validator and identity-key modules; every agent-state schema except snapshot schemas; and the lifecycle 1.0 and 1.1 schemas. Agent-state and lifecycle files that the updater does not classify as non-durable MUST count as durable. Reducer, provider, retention, snapshot, coordination and constants modules, newer lifecycle versions and lifecycle envelope code are outside the surface. The write/reopen test MUST cover the stored session metadata and a known parent as well as the existing record kinds.
 
 #### Scenario: Provenance or compatibility refusal
 - **WHEN** source is dirty, archive bytes differ, a path escapes its release, same-SHA bytes conflict or recovery compatibility is unknown
@@ -29,3 +29,7 @@ Format evidence SHALL require the durable surface of the installer, the previous
 #### Scenario: Durable dependency unavailable
 - **WHEN** a package, required storage or validator module, or required schema is missing or unreadable in any compared program
 - **THEN** qualification reports `durable-implementation-unavailable` and the operation refuses before stop
+
+#### Scenario: Refusal reason is inspectable
+- **WHEN** qualification refuses an upgrade or rollback
+- **THEN** the refused receipt reports `install-rollback-unqualified` and the operation's evidence file records the specific qualification reason
