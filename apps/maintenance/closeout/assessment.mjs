@@ -65,7 +65,7 @@ export async function assess(config,input,selected,related){
 export function recommendationEntry(issue,advice,config,input){
  const p=config.planning,[repo,number]=issue.url.replace('https://github.com/jimmie-potts/','').split('/issues/');
  const entry={repo,number:Number(number),read_at:issue.updatedAt,status:advice.action==='insufficient'?'insufficient':'recommended',work_surface:advice.surface,
-  assessed:{policy:`agent-skills@${p.policyRevision}`,evidence:`Current accepted prerequisite: https://github.com/${input.repository}/issues/${input.issue}; related acceptance independently reassessed.`},
+  assessed:{date:new Date().toISOString().slice(0,10),policy:`agent-skills@${p.policyRevision}`,evidence:`Current accepted prerequisite: https://github.com/${input.repository}/issues/${input.issue}; related acceptance independently reassessed.`},
   why:'The next action and review needs were reassessed against current acceptance and shared policy.',reassess:'Scope, prerequisites, acceptance evidence or model availability changes.'};
  if(entry.status==='insufficient')return {...entry,missing:`Required ${advice.missing.replaceAll('-',' ')} remains unavailable; follow this issue's owning acceptance before delivery.`};
  const display=id=>({opus:'Opus',fable:'Fable',sonnet:'Sonnet','gpt-6-luna':'Luna','gpt-6.1-sol':'Sol','gpt-6-astra':'Astra'}[id]+' (`'+id+'`)');

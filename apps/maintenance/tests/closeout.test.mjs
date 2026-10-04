@@ -143,6 +143,27 @@ test('repeated closeout applies newly assessed related updates before becoming a
   assert.equal(third.status,'complete',third.reason);assert.deepEqual(f.calls,['comment','close','dependent-labels']);
  }finally{await f.dispose();}
 });
+test('selected changes during related updates stop before acceptance publication',async()=>{
+ for(const change of ['requirements','ownership','acceptance-comment','publication-conflict']){
+  const f=await fixture();try{
+   const comments=await f.api.comments();f.api.comments=async n=>n===1?comments:[];
+   const dependent={...structuredClone(f.issue),number:19,url:'https://github.com/jimmie-potts/agent-device-hub/issues/19',body:'Deliver the dependent source work.',labels:['blocked'],blockedBy:[{url:f.issue.url,state:'OPEN',stateReason:null}]};
+   f.issue.blocking=[{url:dependent.url}];f.api.issue=async n=>structuredClone(n===19?dependent:f.issue);
+   f.api.labels=async(n,_repo,labels)=>{
+    assert.equal(n,19);f.calls.push('dependent-labels');dependent.labels=labels;
+    if(change==='requirements')f.issue.body+=' Physical observation is required.';
+    if(change==='ownership')f.issue.assignees=['new-owner'];
+    if(change==='acceptance-comment')comments.push({id:9,body:'Physical observation is required before closure.'});
+    if(change==='publication-conflict')comments.push({id:9,body:`<!-- bunny-closeout:${f.input.issue}:${f.input.merge} -->\nConflicting completion receipt.`});
+   };
+   const planner=async(...args)=>{const result=await assessment(...args);result.affected[0].hold='remove-selected-dependency';return result;};
+   const result=await runCloseout(f.input,f.config,f.api,validateInstallReceipt,planner);
+   assert.equal(result.status,'uncertain',change);assert.equal(result.reconciliation,'pending');
+   assert.equal(result.reason,change==='requirements'?'requirements-changed-after-review':change==='publication-conflict'?'closeout-publication-conflict':'selected-record-changed');
+   assert.deepEqual(f.calls,['dependent-labels'],change);assert.deepEqual(dependent.labels,[]);assert.equal(f.issue.state,'OPEN');
+  }finally{await f.dispose();}
+ }
+});
 test('concrete bounded planner independently reads current public acceptance without raw installation evidence',async()=>{
  const {fixture:toolsFixture}=await import('./fixture.mjs');const f=await fixture(),tools=await toolsFixture();
  try{
@@ -165,11 +186,12 @@ test('public acceptance comments reach assessment and related graph drift blocks
   assert.equal(result.reason,'affected-record-changed');assert.deepEqual(f.calls,[]);assert.equal(f.issue.state,'OPEN');
  }finally{await f.dispose();}
 });
-test('concrete GitHub adapter updates related advice through the canonical live CLI',async()=>{
+test('concrete GitHub adapter preserves the assessed date through the canonical live CLI',async t=>{
+ t.mock.method(globalThis,'Date',class extends Date {constructor(...args){super(...(args.length?args:['2000-01-01T00:00:00.000Z']));}});
  const {closeoutFixture}=await import('./closeout-fixture.mjs');const {cli}=await import('../closeout/closeout.mjs');
  const f=await closeoutFixture({related:true,mode:'closeout-advice'});try{
   const result=await cli(f.configPath,f.request);assert.equal(result.status,'complete',result.reason);
-  const remote=await f.read();assert.match(remote.issues[1].body,/## Execution recommendation/);assert.equal(remote.issues[1].state,'open');
+  const remote=await f.read();assert.match(remote.issues[1].body,/\*\*Assessed:\*\* 2000-01-01/);assert.equal(remote.issues[1].state,'open');
   assert.equal(remote.issues[0].state,'closed');assert.equal((await canonical({...f.config,deadline:f.request.deadline},'parse',remote.issues[1].body)).state,'recommended');
  }finally{await f.close();}
 });

@@ -73,9 +73,9 @@ function selected(issue,input){
  require(issue.blockedBy.every(x=>x.state==='CLOSED' && x.stateReason==='COMPLETED'),'required-input-not-accepted');
  require(issue.state==='OPEN' || issue.state==='CLOSED' && issue.stateReason==='COMPLETED','selected-issue-not-completed');
 }
-async function evidence(api,issue,marker){
+async function evidence(api,issue,marker,rows){
  const repository=issue.url.replace('https://github.com/','').split('/issues/')[0];
- const rows=await api.comments(issue.number,repository);
+ if(rows===undefined)rows=await api.comments(issue.number,repository);
  require(Array.isArray(rows),'acceptance-comments-unavailable');
  return {...issue,acceptanceComments:rows.filter(x=>!x.body?.includes(marker)).map(x=>({id:x.id??null,url:x.html_url??null,body:x.body??'',updatedAt:x.updated_at??null}))};
 }
@@ -171,9 +171,13 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
    }
    if(update.body!==original.body||JSON.stringify(update.labels)!==JSON.stringify(original.labels))updates.push(update);
   }
-  const comments=await api.comments(input.issue);
-  const matching=comments.filter(x=>x.body?.includes(marker));require(matching.length<=1,'ambiguous-closeout-publication');
-  require(!matching.length || matching[0].body.replace(/\r\n/g,'\n').trim()===comment.trim(),'closeout-publication-conflict');
+  const publicationMatches=comments=>{
+   require(Array.isArray(comments),'acceptance-comments-unavailable');
+   const matching=comments.filter(x=>x.body?.includes(marker));require(matching.length<=1,'ambiguous-closeout-publication');
+   require(!matching.length || matching[0].body.replace(/\r\n/g,'\n').trim()===comment.trim(),'closeout-publication-conflict');
+   return matching;
+  };
+  const matching=publicationMatches(await api.comments(input.issue));
   const projectCurrent=()=>!project || issue.projects.find(x=>x.id===project.id)?.values[STATUS]===project.done;
   const finished=()=>updates.length===0 && matching.length===1 && issue.state==='CLOSED' && issue.stateReason==='COMPLETED' && projectCurrent() &&
    issue.labels.every(x=>!x.startsWith('status:') && x!=='blocked');
@@ -217,7 +221,10 @@ export async function runCloseout(input,config,api,validateReceipt,planner=asses
     require(now.length===Object.keys(state.snapshots).length&&now.every(x=>JSON.stringify(snapshot(x,issue.url))===JSON.stringify(state.snapshots[x.url])),'affected-record-changed');
    };
    await checkRelated();
-   if(!matching.length)await effect('publication',()=>api.comment(input.issue,comment));
+   const publicationIssue=await api.issue(input.issue),publicationComments=await api.comments(input.issue);
+   const beforePublication=await evidence(api,publicationIssue,marker,publicationComments);selected(beforePublication,input);
+   require(JSON.stringify(snapshot(beforePublication,issue.url))===JSON.stringify(snapshot(issue,issue.url)),'selected-record-changed');
+   if(!publicationMatches(publicationComments).length)await effect('publication',()=>api.comment(input.issue,comment));
    const beforeClose=await evidence(api,await api.issue(input.issue),marker);selected(beforeClose,input);
    require(JSON.stringify(snapshot(beforeClose,issue.url))===JSON.stringify(snapshot(issue,issue.url)),'selected-record-changed');
    issue=beforeClose;await checkRelated();
