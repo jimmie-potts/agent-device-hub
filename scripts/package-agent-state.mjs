@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const NAME='@jimmie-potts/agent-state',VERSION='3.4.0';
-const LIFECYCLE='@jimmie-potts/agent-lifecycle-contracts',LIFECYCLE_VERSION='1.1.0';
+const LIFECYCLE='@jimmie-potts/agent-lifecycle-contracts',LIFECYCLE_VERSION='1.2.0';
 // Build this revision's lifecycle archive; published predecessors remain untouched.
 let LIFECYCLE_SHA;
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -46,7 +46,7 @@ async function pack(stage,destination){
   assert.equal(report.length,1);return join(destination,report[0].filename);
 }
 run(process.execPath,[join(root,'scripts/package-lifecycle.mjs')],root);
-const dependency=join(root,'artifacts/jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz');
+const dependency=join(root,'artifacts/jimmie-potts-agent-lifecycle-contracts-1.2.0.tgz');
 LIFECYCLE_SHA=sha256(await readFile(dependency));
 const sidecar=(await readFile(`${dependency}.sha256`,'utf8')).split(/\s+/)[0];
 assert.equal(LIFECYCLE_SHA,sidecar,'built lifecycle archive');

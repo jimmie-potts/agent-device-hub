@@ -1,0 +1,668 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "claude-desktop-host-session",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "8ee2fe703858bfff3d7cbdd43310f4f55db2bde080cb1c456ebe754feea75108"
+      }
+    },
+    {
+      "id": "host-session-with-display-metadata",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b",
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "user"
+        },
+        "project": "device-hub",
+        "label": {
+          "value": "Hub #784",
+          "origin": "agent"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "b4ab7c65f15921c2edadcc07c71f062f222ca718e29c06ef612e8655c032f6b1"
+      }
+    },
+    {
+      "id": "host-session-absent",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "417782ceef6e1f0bd80c388dfcb6f2c660f8fc30ecdbc9b397500b72c2c97789"
+      }
+    },
+    {
+      "id": "host-session-top-level",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "top-level"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "c25f22ad320a59ba39caf1233a29c32852bbd7b5eaf315fc90262a2b54ee46d6"
+      }
+    },
+    {
+      "id": "host-session-identifier-bound",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "bfc70439c7f601e5c57512ca46b11f7368f54aeb1b8ea42ad904ebb2a507d030"
+      }
+    },
+    {
+      "id": "host-session-runtime-end",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "runtime.ended"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "fe691f263f9e2db436121fdbd395523ae37883a5e377645d0b8f5ff3f57f5f9f"
+      }
+    },
+    {
+      "id": "child-without-host-session",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "child-a"
+        },
+        "turn": {
+          "status": "unknown"
+        },
+        "parent": {
+          "status": "known",
+          "identity": {
+            "provider": "claude",
+            "client": "code",
+            "hostId": "host-a",
+            "sourceId": "source-a",
+            "sessionId": "session-a"
+          }
+        },
+        "event": {
+          "kind": "session.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "784c5a31d16b29687d2ffc046fcae5eb72cf90de93ea72fb81ded549f0b52475"
+      }
+    },
+    {
+      "id": "legacy-1.0-rejects-host-session",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": false
+    },
+    {
+      "id": "legacy-1.1-rejects-host-session",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": false
+    },
+    {
+      "id": "child-rejects-host-session",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "child-a"
+        },
+        "turn": {
+          "status": "unknown"
+        },
+        "parent": {
+          "status": "known",
+          "identity": {
+            "provider": "claude",
+            "client": "code",
+            "hostId": "host-a",
+            "sourceId": "source-a",
+            "sessionId": "session-a"
+          }
+        },
+        "event": {
+          "kind": "session.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-empty",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-overlong",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-space",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local 0f8e"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-path",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local/../x"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-non-ascii",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_é"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-number",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": 7
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-null",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": null
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-object",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": {
+          "id": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-excluded-environment",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b",
+        "environment": {
+          "CLAUDE_CODE_HOST_SESSION_ID": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-excluded-entrypoint",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b",
+        "entrypoint": "claude-desktop"
+      },
+      "valid": false
+    },
+    {
+      "id": "host-session-excluded-credentials",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b",
+        "credentials": "SECRET_CANARY"
+      },
+      "valid": false
+    }
+  ]
+}
