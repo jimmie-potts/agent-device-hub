@@ -30,7 +30,8 @@ can change any of this. Re-qualify it alongside the bridge's qualified-version l
   elements.
 - The selected row is the only row whose class list contains `bg-primary-ghost-hover`. No row supports
   `SelectionItemPattern`.
-- `codexSelectedTitle` reports `matches` only when there is exactly one selected row, and both its Name and the
+- The helper's `codexSelectedTitle` operation (behind the adapter's `codexSelectedThread`, which supplies the
+  thread's name) reports `matches` only when there is exactly one selected row, and both its Name and the
   document Name equal the title (ordinal comparison). `sameTitleRows` counts every rendered row with that Name.
   Rows in collapsed projects are not rendered, so they are not counted. Zero or several selected rows return
   `unknown` (`selected-row-count`).

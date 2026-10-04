@@ -3,13 +3,13 @@ import {
   OS_ADAPTER_VERSION, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
   type Observation, type OsAdapter,
 } from '../os-adapter.js';
-import { claudeSessions, CodexArchiveIndex, type CodexArchiveOptions } from './client-files.js';
+import { claudeSessions, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
 import { KeyboardError, OpenUriError } from './errors.js';
 import { Keyboard } from './keyboard.js';
 import { MAX_SCROLL_NOTCHES, pointInRect, WHEEL_DELTA } from './mouse.js';
 import { UiaHelper, type UiaHelperLike, type UiaHelperOptions } from './uia-helper.js';
-import { parseDeepLink } from './uri.js';
+import { parseDeepLink, THREAD_ID } from './uri.js';
 import { loadWin32Api, type Win32Api } from './win32.js';
 
 export interface WindowsAdapterOptions {
@@ -25,6 +25,8 @@ export interface WindowsAdapterOptions {
   env?: NodeJS.ProcessEnv;
   /** Archive scan bound and answer TTL (defaults: 1 s scan, 10 s TTL). */
   codexArchive?: Omit<CodexArchiveOptions, 'now'>;
+  /** Largest Codex `session_index.jsonl` read for thread names (default 16 MiB). */
+  codexThreadNames?: CodexThreadNameOptions;
   /** Longest wait for the shell to accept a deep link (default 10 s). */
   openUriTimeoutMs?: number;
   /** How long cached client versions stay fresh while the helper keeps running (default 10 min). */
@@ -55,9 +57,10 @@ interface Foreground { hwnd: number; root: number; pid: number; packageIdentity:
 const isClient = (client: unknown): client is Client => client === 'codex' || client === 'claude';
 
 /**
- * The Windows OS adapter (interface version 1). Keystrokes, foreground identity and deep links use Win32 through
+ * The Windows OS adapter (interface version 2). Keystrokes, foreground identity and deep links use Win32 through
  * koffi; UI checks go to a read-only UI Automation helper scoped to the client's foreground top-level window; the
- * Codex archive and Claude Desktop records are read by name and by allowlisted key. Nothing here logs.
+ * Codex archive and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
+ * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. Nothing here logs.
  */
 export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
   const env = options.env ?? process.env;
@@ -81,6 +84,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
     }
   };
   let archive: { home: string; index: CodexArchiveIndex } | null = null;
+  let threadNames: { home: string; index: CodexThreadNames } | null = null;
 
   const win32 = async (): Promise<Win32Api | null> => {
     api ??= loadApi();
@@ -250,9 +254,26 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       }
     },
 
-    async codexSelectedTitle(title: string) {
+    async codexSelectedThread(threadId: string, fallbackTitle: string | null) {
       if (closed) return unknown('adapter-closed');
-      if (typeof title !== 'string' || title.length === 0 || title.length > MAX_TITLE) return unknown('invalid-title');
+      if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) return unknown('invalid-thread-id');
+      if (fallbackTitle !== null && (typeof fallbackTitle !== 'string' || fallbackTitle.length === 0 || fallbackTitle.length > MAX_TITLE)) {
+        return unknown('invalid-title');
+      }
+      // Codex's own name is what its sidebar shows; the Hub only has a title the owner set. Every unknown fails closed:
+      // an unreadable index, an unusable current name, no name at all, or a name another thread also has (its row may
+      // be collapsed or gone, so the sidebar's own duplicate count cannot see it).
+      const home = codexHome();
+      if (!home) return unknown('codex-home-unset');
+      if (threadNames?.home !== home) threadNames = { home, index: new CodexThreadNames(home, options.codexThreadNames) };
+      const read = await threadNames.index.read();
+      if (closed) return unknown('adapter-closed');
+      if (read.status !== 'known') return read;
+      const current = read.value.nameOf(threadId);
+      if (current.status === 'invalid') return unknown('codex-name-invalid');
+      const title = current.status === 'named' ? current.name : fallbackTitle;
+      if (title === null) return unknown('codex-title-missing');
+      if (read.value.sharedWithOtherThread(title, threadId)) return unknown('codex-name-not-unique');
       return windowQuery('codex', 'codexSelectedTitle', { title }, value => {
         const record = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
         const { matches, sameTitleRows } = record;

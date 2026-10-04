@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeSessions, CodexArchiveIndex, codexArchived } from '../dist/windows/index.js';
+import { claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNames } from '../dist/windows/index.js';
 
 const thread = '019a3b1c-7d2e-7f00-8a11-0123456789ab';
 const other = '019a3b1c-7d2e-7f00-8a11-ba9876543210';
@@ -118,6 +118,91 @@ function claudeStore(t) {
   }));
   return { root, org, record };
 }
+
+const indexLine = (id, name, at) => JSON.stringify({ id, thread_name: name, updated_at: at });
+
+const nameOf = async (names, id) => { const read = await names.read(); return read.status === 'known' ? read.value.nameOf(id) : read; };
+
+test("a thread's last session index line is its current name; a tie goes to the later line", async t => {
+  const home = scratch(t);
+  const third = '019a3b1c-7d2e-7f00-8a11-333333333333';
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(thread, 'First name', '2026-10-03T14:00:10.359352509Z'),
+    indexLine(other, 'Other thread', '2026-10-03T15:00:00Z'),
+    indexLine(thread, 'Renamed', '2026-10-03T16:00:00.5Z'),
+    'not json',
+    JSON.stringify({ id: 'not-a-thread', thread_name: 'x', updated_at: '2026-10-03T17:00:00Z' }),
+    JSON.stringify([thread, 'array']),
+    indexLine(other, 'Tie later line', '2026-10-03T15:00:00Z'),
+    indexLine(third, 'Third', '2026-10-03T15:00:00Z'),
+    '',
+  ].join('\r\n'));
+  const names = new CodexThreadNames(home);
+  assert.deepEqual(await nameOf(names, thread), { status: 'named', name: 'Renamed' });
+  assert.deepEqual(await nameOf(names, other), { status: 'named', name: 'Tie later line' });
+  assert.deepEqual(await nameOf(names, '019a3b1c-7d2e-7f00-8a11-000000000000'), { status: 'none' });
+});
+
+test('an unusable or out-of-order newest entry makes the name unusable instead of falling back to an older one', async t => {
+  const home = scratch(t);
+  const ids = ['019a3b1c-7d2e-7f00-8a11-000000000001', '019a3b1c-7d2e-7f00-8a11-000000000002', '019a3b1c-7d2e-7f00-8a11-000000000003', '019a3b1c-7d2e-7f00-8a11-000000000004'];
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(ids[0], 'Good', '2026-10-03T14:00:00Z'), indexLine(ids[0], '', '2026-10-03T15:00:00Z'),
+    indexLine(ids[1], 'Good', '2026-10-03T14:00:00Z'), indexLine(ids[1], 'x'.repeat(1025), '2026-10-03T15:00:00Z'),
+    indexLine(ids[2], 'Good', '2026-10-03T14:00:00Z'), indexLine(ids[2], 'No time', 'yesterday'),
+    indexLine(ids[3], 'Newer', '2026-10-03T16:00:00Z'), indexLine(ids[3], 'Older line written later', '2026-10-03T12:00:00Z'),
+  ].join('\n'));
+  const names = new CodexThreadNames(home);
+  for (const id of ids) assert.deepEqual(await nameOf(names, id), { status: 'invalid' }, id);
+});
+
+test('a name counts as shared when any other thread currently has it, rendered or not', async t => {
+  const home = scratch(t);
+  const third = '019a3b1c-7d2e-7f00-8a11-333333333333';
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(thread, 'Same', '2026-10-03T14:00:00Z'),
+    indexLine(other, 'Same', '2026-10-03T14:00:01Z'),
+    indexLine(third, 'Was same', '2026-10-03T14:00:00Z'), indexLine(third, 'Unique now', '2026-10-03T15:00:00Z'),
+  ].join('\n'));
+  const read = await new CodexThreadNames(home).read();
+  assert.equal(read.status, 'known');
+  assert.equal(read.value.sharedWithOtherThread('Same', thread), true);
+  assert.equal(read.value.sharedWithOtherThread('Unique now', third), false);
+  assert.equal(read.value.sharedWithOtherThread('Was same', thread), false, 'only current names count');
+  assert.equal(read.value.sharedWithOtherThread('Unique now', thread), true, 'a fallback title another thread holds is shared');
+});
+
+test('a thread with an unusable current name counts as holding every name its lines carried', async t => {
+  const home = scratch(t);
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(thread, 'Target', '2026-10-03T14:00:00Z'),
+    indexLine(other, 'Target', '2026-10-03T13:00:00Z'), indexLine(other, '', '2026-10-03T15:00:00Z'),
+  ].join('\n'));
+  const read = await new CodexThreadNames(home).read();
+  assert.deepEqual(read.value.nameOf(other), { status: 'invalid' });
+  assert.equal(read.value.sharedWithOtherThread('Target', thread), true, 'its row might still show the old name');
+});
+
+test('a missing index is an empty index, a missing Codex home is unknown, and an oversized index is unknown', async t => {
+  const home = scratch(t);
+  assert.deepEqual(await nameOf(new CodexThreadNames(home), thread), { status: 'none' });
+  assert.deepEqual(await new CodexThreadNames(join(home, 'absent')).read(), { status: 'unknown', reason: 'codex-home-missing' });
+  writeFileSync(join(home, 'session_index.jsonl'), indexLine(thread, 'Name', '2026-10-03T14:00:00Z'));
+  assert.deepEqual(await new CodexThreadNames(home, { maxBytes: 10 }).read(), { status: 'unknown', reason: 'codex-index-too-large' });
+  mkdirSync(join(home, 'dir-home'));
+  mkdirSync(join(home, 'dir-home', 'session_index.jsonl'));
+  assert.equal((await new CodexThreadNames(join(home, 'dir-home')).read()).status, 'unknown');
+});
+
+test('the parsed index is reused until the file changes', async t => {
+  const home = scratch(t);
+  const path = join(home, 'session_index.jsonl');
+  writeFileSync(path, indexLine(thread, 'Before', '2026-10-03T14:00:00Z') + '\n');
+  const names = new CodexThreadNames(home);
+  assert.deepEqual(await nameOf(names, thread), { status: 'named', name: 'Before' });
+  writeFileSync(path, indexLine(thread, 'Before', '2026-10-03T14:00:00Z') + '\n' + indexLine(thread, 'After rename', '2026-10-03T15:00:00Z') + '\n');
+  assert.deepEqual(await nameOf(names, thread), { status: 'named', name: 'After rename' });
+});
 
 test('Claude records return only the local ID, archive flag and focus time', async t => {
   const { root, record } = claudeStore(t);

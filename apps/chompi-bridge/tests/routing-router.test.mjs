@@ -61,7 +61,7 @@ test('a Codex key press opens the exact thread, verifies selection and composer,
   assert.deepEqual(ctx.adapter.opened, [`codex://threads/${tid(2)}`]);
   assert.deepEqual(target(ctx), { slot: 2, client: 'codex' });
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut');
-  assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedTitle' && c[1] === 'Task 2'));
+  assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedThread' && c[1] === tid(2) && c[2] === 'Task 2'));
   assert.ok(ctx.adapter.count('codexArchived') >= 1, 'the target check reads archive evidence first');
   assert.equal(ctx.lastLog('focused').slot, 2);
   assert.ok(!JSON.stringify(ctx.logs).includes('Task 2'), 'logs never carry titles');
@@ -132,8 +132,8 @@ test('matrix: link opened but a different Codex task stays selected; foreground 
   assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch');
   assert.deepEqual(ctx.adapter.keys, [], 'nothing typed');
   assert.equal(target(ctx), null);
-  assert.ok(ctx.adapter.count('codexSelectedTitle') > 3, 'verification polls within its bound');
-  assert.ok(ctx.adapter.count('codexSelectedTitle') <= Math.ceil(PROFILE.timing.verifyTimeoutMs / PROFILE.timing.verifyPollMs) + 1);
+  assert.ok(ctx.adapter.count('codexSelectedThread') > 3, 'verification polls within its bound');
+  assert.ok(ctx.adapter.count('codexSelectedThread') <= Math.ceil(PROFILE.timing.verifyTimeoutMs / PROFILE.timing.verifyPollMs) + 1);
   assert.equal(ctx.adapter.count('openUri'), 1, 'the link is not reopened');
 });
 
@@ -145,11 +145,45 @@ test('matrix: two live tasks with the same title fail Codex verification closed'
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
-test('a Codex slot without a known title cannot be verified', async t => {
+test('a Codex slot with neither a Codex name nor a Hub title cannot be verified', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1, { title: undefined })] });
-  await ctx.focus(1);
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).reason, 'title-missing');
-  assert.deepEqual(ctx.adapter.opened, [], 'fails before opening anything');
+  assert.deepEqual(ctx.adapter.keys, [], 'nothing is typed');
+  assert.equal(target(ctx), null);
+  assert.equal(ctx.adapter.count('openUri'), 1, 'the link opens once and is never repeated');
+});
+
+test('matrix: a Codex name another thread also has fails closed even when that row is not rendered', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { title: undefined })] });
+  ctx.adapter.codexNames.set(tid(1), 'Shared name');
+  ctx.adapter.codexThreads.set(tid(1), 'Shared name');
+  ctx.adapter.codexNames.set(tid(9), 'Shared name'); // a collapsed or deleted thread: no sidebar row
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1).reason, 'title-not-unique');
+  assert.deepEqual(ctx.adapter.keys, []);
+  assert.equal(target(ctx), null);
+});
+
+test('a Codex slot without a Hub title verifies by the name Codex keeps for the thread', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { title: undefined }), codexTask(2)] });
+  ctx.adapter.codexNames.set(tid(1), 'Codex name 1');
+  ctx.adapter.codexThreads.set(tid(1), 'Codex name 1');
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedThread' && c[1] === tid(1) && c[2] === null));
+  assert.ok(!JSON.stringify(ctx.logs).includes('Codex name 1'), 'logs never carry titles');
+});
+
+test('the Codex name takes precedence over a stale Hub title', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { title: 'Old Hub title' })] });
+  ctx.adapter.codexNames.set(tid(1), 'Renamed in Codex');
+  ctx.adapter.codexThreads.set(tid(1), 'Renamed in Codex');
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.ok(!JSON.stringify(ctx.logs).includes('Renamed in Codex') && !JSON.stringify(ctx.logs).includes('Old Hub title'), 'logs never carry names');
 });
 
 test('matrix: the target app not in the foreground after open gets no input', async t => {
@@ -369,7 +403,7 @@ test('the big-wheel click sends the draft once to the verified composer', async 
   await ctx.click(WHEEL);
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['Enter'] }]);
   assert.equal(ctx.lastLog('sent').slot, 1);
-  for (const name of ['foregroundWindow', 'codexSelectedTitle', 'composerFocused', 'approvalVisible']) assert.ok(ctx.adapter.count(name) >= 1, name);
+  for (const name of ['foregroundWindow', 'codexSelectedThread', 'composerFocused', 'approvalVisible']) assert.ok(ctx.adapter.count(name) >= 1, name);
 });
 
 test('matrix: duplicate or repeated wheel clicks produce one Enter at most', async t => {

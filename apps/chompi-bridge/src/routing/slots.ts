@@ -36,7 +36,7 @@ export interface SlotRecord {
   sourceId: string;
   taskId: string;
   sessionId: string;
-  /** Last-known title; Codex verification compares it inside the adapter. */
+  /** Last-known Hub title; Codex verification's fallback name when Codex has never named the thread. */
   title: string | null;
   assignedAt: number;
 }

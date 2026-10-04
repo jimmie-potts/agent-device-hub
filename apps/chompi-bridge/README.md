@@ -111,7 +111,7 @@ host timeout; on a timeout, lights off, frame 0 and reported keys forgotten; key
 until pressed again; sequence wraps from 65535 to 1. `ManualClock` runs the bridge and simulator in virtual time.
 `FakeTransport` is the lower-level test double.
 
-The OS adapter (`OsAdapter`, interface version 1, `src/os-adapter.ts`) is the seam between the portable routing core
+The OS adapter (`OsAdapter`, interface version 2, `src/os-adapter.ts`) is the seam between the portable routing core
 and the desktop. Every observation is `known` or `unknown`, and titles are compared inside the adapter, so no title or
 conversation text crosses it. `createOsAdapter()` returns the Windows adapter (`src/windows/`) on Windows and an
 unsupported adapter elsewhere, whose observations are all `unknown`, so every focus fails closed and nothing is typed.
@@ -119,11 +119,22 @@ unsupported adapter elsewhere, whose observations are all `unknown`, so every fo
 The Windows adapter uses [koffi](https://koffi.dev/) FFI for `SendInput`, `GetForegroundWindow`, package identity and
 `ShellExecute`, and a long-lived PowerShell UI Automation helper (`src/windows/uia-helper.ps1`, started with
 `-EncodedCommand`) for the composer and Codex selected-row checks. It reads Codex archive filenames and Claude Desktop
-session records by name and key only. Its observations follow the clients' current UI, recorded in
+session records by name and key only, and Codex's own thread names from `session_index.jsonl` in the Codex home (only
+`id`, `thread_name` and `updated_at`; a thread's last line is its current name). Its observations follow the clients' current UI, recorded in
 [UIA-NOTES.md](src/windows/UIA-NOTES.md):
 
 - `composerFocused` is known `false` when the client is not the foreground app.
-- `codexSelectedTitle` is `unknown` (`codex-not-foreground`) when Codex is not the foreground app.
+- `codexSelectedThread` compares the selected row with the name Codex keeps for the thread, or with the Hub's title
+  when Codex has never named it (the Hub carries a Codex title only when the owner set one). It is `unknown`, so the
+  press fails closed, when:
+  - neither name exists (`codex-title-missing`, logged as `title-missing`);
+  - another thread currently has the same name, even one whose row is collapsed, archived or deleted
+    (`codex-name-not-unique`, logged as `title-not-unique`);
+  - the index cannot be read, or the thread's newest entry is unusable or older than an earlier one (logged as
+    `selection-unknown`);
+  - a name exists but Codex is not the foreground app (`codex-not-foreground`).
+
+  Names stay inside the adapter and are never logged or stored.
 - `approvalVisible` is always `unknown`: no approval-card selector is qualified yet. Under the router's rule an unknown
   approval refuses Send, so **Send stays blocked until #743 qualifies an approval selector**. Focus and Record work.
 
@@ -242,8 +253,8 @@ colors, so focusing a task never looks like acknowledging it. The Record LED sho
   - the slot holds a task whose archive state is known and not archived, and Claude's Desktop version is listed;
   - the fixed link brings the expected package family (`OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`) to
     the front;
-  - the exact task is selected. Codex: the slot's title is on the selected row and on no other row. Claude: only the
-    target's `lastFocusedAt` moved past the press;
+  - the exact task is selected. Codex: the thread's name (Codex's own, else the Hub's title) is on the selected row
+    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press;
   - the composer has focus.
 
   Observations are polled; the link and keystrokes are never repeated.
@@ -315,7 +326,7 @@ the no-misrouting matrix against a scripted fake adapter, and an end-to-end rout
 `npm run test:chompi-bridge:native:built` must run under native Windows Node 24 after a build; it fails on other
 platforms. It enumerates HID devices read-only, checks that the matcher rejects the stock CHOMPI ID, checks that
 the named-pipe lock refuses a second holder and is released on exit and on kill, runs the Windows adapter's read-only
-observations (koffi load, foreground identity, a UI Automation helper ping, composer and Codex selected-title
+observations (koffi load, foreground identity, a UI Automation helper ping, composer and Codex selected-thread
 observations and client versions, with `SendInput` and `ShellExecute` replaced by throwing guards), and reruns the
 portable suites except the codec fixtures (whose workspace symlink Windows does not follow on a `\\wsl.localhost`
 checkout). It opens no device, link or keystroke. On a `\\wsl.localhost` checkout installed from Linux, run `npm ci`
