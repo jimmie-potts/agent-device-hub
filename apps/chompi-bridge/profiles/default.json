@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "profileVersion": 1,
+  "controls": {
+    "slots": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "record": 26,
+    "send": [33],
+    "back": 28,
+    "scroll": 45
+  },
+  "shortcuts": {
+    "codexComposer": ["LeftAlt", "L"],
+    "send": ["Enter"],
+    "dictation": ["LeftControl", "LeftWindows"]
+  },
+  "scroll": {
+    "notchesPerStep": 1,
+    "invert": false
+  },
+  "colors": {
+    "empty": [0, 0, 0],
+    "active": [0, 90, 255],
+    "idle": [0, 70, 70],
+    "unread": [0, 220, 40],
+    "attention": [255, 160, 0],
+    "ended": [60, 60, 60],
+    "unknown": [90, 0, 140],
+    "stale": [100, 30, 0],
+    "error": [255, 0, 0],
+    "selected": [255, 255, 255],
+    "record": [255, 0, 0],
+    "sendReady": [0, 255, 0],
+    "sendBlocked": [255, 120, 0]
+  },
+  "brightnessPercent": 40,
+  "timing": {
+    "verifyTimeoutMs": 3000,
+    "verifyPollMs": 100,
+    "adapterTimeoutMs": 2000,
+    "sendRepeatWindowMs": 1000,
+    "releaseHoldMs": 800,
+    "attentionPulseMs": 1000,
+    "errorFlashMs": 1500,
+    "archiveCheckMs": 30000,
+    "profilePollMs": 2000
+  },
+  "qualifiedVersions": {
+    "codex": ["26.930.3930.0"],
+    "claude": ["2.19675.0.0"]
+  }
+}

@@ -61,6 +61,13 @@ export interface OsAdapter {
   releaseAll(): Promise<void>;
 
   /**
+   * Scrolls the client's conversation by `notches` mouse-wheel notches (positive scrolls up).
+   * Sends nothing and returns known `false` unless the client's window is foreground and the
+   * pointer is inside it; never moves the pointer, clicks or types.
+   */
+  scrollClient(client: Client, notches: number): Promise<Observation<boolean>>;
+
+  /**
    * Codex: whether the selected sidebar row's accessible name equals `title`, and how many open
    * rows share that title. Compared inside the adapter; no title text is returned.
    */
