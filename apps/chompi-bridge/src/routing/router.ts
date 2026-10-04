@@ -390,7 +390,7 @@ export class TaskRouter {
     return window.value.value.packageIdentity === CLIENT_PACKAGES[client] ? { ok: true } : { ok: false, reason: 'foreground-mismatch' };
   }
 
-  /** The adapter compares the thread's Codex name, or the slot's Hub title when Codex has none. */
+  /** The adapter compares the thread's Codex name, or the slot's Hub title when Codex has never named the thread. */
   async #codexSelection(taskId: string, title: string | null): Promise<Check> {
     const selection = await this.#call(() => this.#adapter.codexSelectedThread(taskId, title));
     if (selection.ok && selection.value.status === 'unknown') {

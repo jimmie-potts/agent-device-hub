@@ -99,30 +99,41 @@ export const MAX_THREAD_NAME = 1024;
 /** A thread's current Codex name: named, never named, or unusable (its newest entry is invalid or out of order). */
 export type CodexThreadName = { status: 'named'; name: string } | { status: 'none' } | { status: 'invalid' };
 
-/** One parsed `session_index.jsonl`: each thread's current name and how many threads share each name. */
-export class CodexThreadNameIndex {
-  private readonly names: Map<string, string | null>;
-  private readonly holders = new Map<string, number>();
+/** A thread's parsed index entries: its current name (`null` when unusable) and every name its lines carried. */
+export type CodexThreadEntries = { current: string | null; seen: ReadonlySet<string> };
 
-  /** `names` maps a thread ID to its current name, or to `null` when that name is unusable. */
-  constructor(names: Map<string, string | null>) {
-    this.names = names;
-    for (const name of names.values()) if (name !== null) this.holders.set(name, (this.holders.get(name) ?? 0) + 1);
+/** One parsed `session_index.jsonl`: each thread's current name and which threads could be showing each name. */
+export class CodexThreadNameIndex {
+  private readonly threads: Map<string, CodexThreadEntries>;
+  private readonly holders = new Map<string, Set<string>>();
+
+  constructor(threads: Map<string, CodexThreadEntries>) {
+    this.threads = threads;
+    // A thread with a usable name holds only that name. One whose name is unusable might still show any name its
+    // lines carried, so it holds all of them and the uniqueness check stays on the safe side.
+    for (const [id, { current, seen }] of threads) {
+      for (const name of current !== null ? [current] : seen) {
+        let ids = this.holders.get(name);
+        if (!ids) this.holders.set(name, ids = new Set());
+        ids.add(id);
+      }
+    }
   }
 
   nameOf(threadId: string): CodexThreadName {
-    if (!this.names.has(threadId)) return { status: 'none' };
-    const name = this.names.get(threadId)!;
-    return name === null ? { status: 'invalid' } : { status: 'named', name };
+    const thread = this.threads.get(threadId);
+    if (!thread) return { status: 'none' };
+    return thread.current === null ? { status: 'invalid' } : { status: 'named', name: thread.current };
   }
 
   /**
-   * Whether a thread other than `threadId` currently has `name`, rendered in the sidebar or not (collapsed projects,
-   * archived or deleted threads all count), so a name match can never stand in for the exact thread.
+   * Whether a thread other than `threadId` currently has `name`, or might show it because its own name is unusable,
+   * rendered in the sidebar or not (collapsed projects, archived or deleted threads all count), so a name match can
+   * never stand in for the exact thread.
    */
   sharedWithOtherThread(name: string, threadId: string): boolean {
-    const holders = this.holders.get(name) ?? 0;
-    return holders > (this.names.get(threadId) === name ? 1 : 0);
+    const ids = this.holders.get(name);
+    return ids !== undefined && [...ids].some(id => id !== threadId);
   }
 }
 
@@ -179,8 +190,8 @@ export class CodexThreadNames {
   }
 }
 
-function parseThreadNames(text: string): Map<string, string | null> {
-  const last = new Map<string, { name: string | null; at: number; earlierMax: number }>();
+function parseThreadNames(text: string): Map<string, CodexThreadEntries> {
+  const last = new Map<string, { name: string | null; at: number; earlierMax: number; seen: Set<string> }>();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let entry: unknown;
@@ -192,9 +203,11 @@ function parseThreadNames(text: string): Map<string, string | null> {
     const usable = typeof name === 'string' && name.length > 0 && name.length <= MAX_THREAD_NAME && Number.isFinite(at);
     const previous = last.get(id);
     const earlierMax = previous ? Math.max(previous.earlierMax, Number.isFinite(previous.at) ? previous.at : Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
-    last.set(id, { name: usable ? name as string : null, at, earlierMax });
+    const seen = previous?.seen ?? new Set<string>();
+    if (typeof name === 'string' && name.length > 0 && name.length <= MAX_THREAD_NAME) seen.add(name);
+    last.set(id, { name: usable ? name as string : null, at, earlierMax, seen });
   }
-  return new Map([...last].map(([id, { name, at, earlierMax }]) => [id, name !== null && at >= earlierMax ? name : null]));
+  return new Map([...last].map(([id, { name, at, earlierMax, seen }]) => [id, { current: name !== null && at >= earlierMax ? name : null, seen }]));
 }
 
 async function boundedDirectories(path: string, limit: number): Promise<string[] | 'too-large'> {

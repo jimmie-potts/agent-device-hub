@@ -172,6 +172,17 @@ test('a name counts as shared when any other thread currently has it, rendered o
   assert.equal(read.value.sharedWithOtherThread('Unique now', thread), true, 'a fallback title another thread holds is shared');
 });
 
+test('a thread with an unusable current name counts as holding every name its lines carried', async t => {
+  const home = scratch(t);
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(thread, 'Target', '2026-10-03T14:00:00Z'),
+    indexLine(other, 'Target', '2026-10-03T13:00:00Z'), indexLine(other, '', '2026-10-03T15:00:00Z'),
+  ].join('\n'));
+  const read = await new CodexThreadNames(home).read();
+  assert.deepEqual(read.value.nameOf(other), { status: 'invalid' });
+  assert.equal(read.value.sharedWithOtherThread('Target', thread), true, 'its row might still show the old name');
+});
+
 test('a missing index is an empty index, a missing Codex home is unknown, and an oversized index is unknown', async t => {
   const home = scratch(t);
   assert.deepEqual(await nameOf(new CodexThreadNames(home), thread), { status: 'none' });

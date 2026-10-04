@@ -7,7 +7,7 @@ export { encodeWheelInput, MAX_SCROLL_NOTCHES, WHEEL_DELTA, type ScreenPoint, ty
 export { parseDeepLink, type DeepLink } from './uri.js';
 export {
   claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNameIndex, CodexThreadNames, MAX_THREAD_NAME, type CodexArchiveOptions,
-  type CodexThreadName, type CodexThreadNameOptions,
+  type CodexThreadEntries, type CodexThreadName, type CodexThreadNameOptions,
 } from './client-files.js';
 export {
   asciiJson, defaultSpawnHelper, encodeHelperCommand, helperScriptPath, UIA_HELPER_PROTOCOL, UiaHelper,
