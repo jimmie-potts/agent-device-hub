@@ -13,3 +13,8 @@
 - [x] 3.1 Update the compatibility text in `apps/hub/SETUP.md` and `docs/install-contract.md`. Evidence: both name the durable surface rule and keep the no-force and reviewed-migration statements.
 - [x] 3.2 Run build, typecheck, contract, Python contract, package, Hub, Hub package, setup and workflow checks from the worktree root. Evidence: every command exits zero with recorded counts.
 - [x] 3.3 Synchronize `hub-runtime-upgrades` and archive this change on the delivery branch. Evidence: the main spec keeps its blank line after `## Purpose`, and workflow checks pass with the actual specification inventory.
+
+## 4. Review round 1
+
+- [x] 4.1 Make every lifecycle module durable with an initially empty non-durable list, and require the agent-state entrypoint to export the fingerprinted `validateExport` and `migrateExport` in both probe modes. Evidence: the loosened parent-rule counterexample and a poisoned lifecycle `index.js` refuse with `durable-implementation-unqualified`, a rebinding entrypoint fails with `durable-reopen-probe-failed`, and all three failed against the reviewed head.
+- [x] 4.2 Add the `cross-source-parent` negative case to the lifecycle 1.0 corpus, and correct the fail-closed and invariant wording in the design, spec, install contract and setup guide. Evidence: lifecycle TypeScript and Python contract tests and the workflow checks pass.

@@ -164,12 +164,13 @@ an immutable release before stopping anything. Conflicting bytes at an existing
 SHA refuse. Compatibility qualification requires the installer, the previous
 release and the target to share the same durable surface: the Hub storage and
 automation modules, the agent-state durable validator and stored-state schemas,
-and the lifecycle 1.0 and 1.1 schemas. An unclassified package file or a new Hub
-SQLite module counts as durable. Reducer, coordination, snapshot-schema and new
-lifecycle-version changes pass this check; an edit inside the durable validator
-module does not. A synthetic probe then writes state with the target, including
-session titles, projects and a known parent, and reopens it with the previous
-release. A durable-surface change, a probe failure or a missing file refuses
+every lifecycle module, and the lifecycle 1.0 and 1.1 schemas. An unclassified
+package file or a new Hub SQLite module counts as durable. Reducer, coordination,
+constants, snapshot-schema and new lifecycle schema files pass this check; an
+edit inside the durable validator or a lifecycle module does not. A synthetic
+probe then checks that the agent-state entrypoint still exports the durable
+validator, writes state with the target, including session titles, projects and
+a known parent, and reopens it with the previous release. A durable-surface change, a probe failure or a missing file refuses
 before outage with `install-rollback-unqualified`; the operation's evidence file
 records the qualification reason. A future state-format change needs separate
 reviewed qualification. [`compatibility.ts`](src/install/compatibility.ts) classifies

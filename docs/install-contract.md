@@ -145,8 +145,9 @@ selects the last successful recoverable release, not simply a directory by age.
    candidate can durably write: notices, acknowledgments, rules, settings,
    deduplication/event history and each owner's other state. Use format contracts
    and an isolated write/reopen recovery test. Format evidence compares the code
-   and schemas that encode, decode or accept stored bytes, not whole packages;
-   an unclassified file counts as durable. Unknown/incompatible rollback
+   and schemas that encode, decode or accept stored bytes, not whole packages.
+   An unclassified package file counts as durable; in the Hub program, a module
+   joins the durable set when it imports `node:sqlite`. Unknown/incompatible rollback
    refuses before outage. There is no force flag; incompatible migrations require
    a separately reviewed procedure.
 2. Acquire the installation lock; reject another active operation or unresolved
