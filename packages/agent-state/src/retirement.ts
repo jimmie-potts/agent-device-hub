@@ -1,4 +1,4 @@
-import {deduplicationKey} from '@jimmie-potts/agent-lifecycle-contracts';
+import {deduplicationKey} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 import {identityKey} from './memory-storage.js';
 import {LIMITS,type Envelope,type Identity,type Retirement,type Session} from './types.js';
 

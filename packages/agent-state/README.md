@@ -356,6 +356,8 @@ retirement, generations and the journal never read it, and the owner never
 merges records that share one. A Claude `/clear` therefore retires the old hook
 session, and the new hook session is a separate record with the same value.
 
+The owner admits 1.2 envelopes through `@jimmie-potts/agent-lifecycle-contracts/v1.2`. Stored-session checks in `validation.ts` keep using the frozen 1.0/1.1 root module.
+
 Read it with `snapshot('1.3')`, which is snapshot 1.2 plus `hostSessionId`.
 Snapshots 1.0, 1.1 and 1.2 never include it. Durable 2.1, its schemas, exports
 and stored bytes never contain it, so a previous owner can still reopen the

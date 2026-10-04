@@ -2,7 +2,7 @@ import {constants} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute,join,win32} from 'node:path';
-import {validDisplayText,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validDisplayText,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 const MAX_BYTES=1024*1024,MAX_LINES=8192,MAX_LINE_BYTES=65536,DEADLINE_MS=100;
 let pending=0;

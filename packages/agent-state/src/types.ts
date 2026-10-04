@@ -1,4 +1,4 @@
-import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
+import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 export type {Envelope, Identity, KnownId};
 export const VERSION = '3.5.0';

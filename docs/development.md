@@ -1447,7 +1447,8 @@ private stores outside Git checkouts.
 
 ## Claude Desktop host session checks
 
-Hub #784 adds lifecycle 1.2 (`packages/lifecycle-contracts/fixtures/lifecycle-v1.2.json`)
+Hub #784 adds lifecycle 1.2 (`packages/lifecycle-contracts/fixtures/lifecycle-v1.2.json`,
+validated in TypeScript through the `/v1.2` subpath while the root module keeps rejecting 1.2)
 and snapshot 1.3 (`packages/agent-state/fixtures/snapshots-v1.3.json`) corpora to
 the existing TypeScript and Python checks. `host-session-provider.test.mjs` covers
 Desktop, CLI, missing, malformed, oversized, throwing, child, Codex and

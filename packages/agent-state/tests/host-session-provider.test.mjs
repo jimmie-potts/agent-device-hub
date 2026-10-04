@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 import * as providers from '../dist/providers.js';
 
 const claude={provider:'claude',client:'code',hostId:'host',sourceId:'source',hook:'UserPromptSubmit'};

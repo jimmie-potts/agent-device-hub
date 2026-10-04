@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:http';
-import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 const bin=fileURLToPath(new URL('../bin/hook.mjs',import.meta.url));
 const source={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'};

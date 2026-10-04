@@ -1,6 +1,6 @@
 import {readSessionTitle,projectName,withMetadata,type MetadataOptions,type MetadataVersion} from './metadata.js';
 export {enrichCodexTitle} from './metadata.js';
-import type {Envelope,Identity} from '@jimmie-potts/agent-lifecycle-contracts';
+import type {Envelope,Identity} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 export const MAX_NORMALIZED_EVENT_BYTES=2048;
 export const MAX_PENDING_EVENTS=128;

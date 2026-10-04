@@ -53,7 +53,7 @@ try{
   const python=process.platform==='win32'?'python':'python3';
   const pythonCode='import sys, unittest; sys.path.insert(0,sys.argv[1]); suite=unittest.defaultTestLoader.discover(sys.argv[2],pattern="test_*.py"); result=unittest.TextTestRunner().run(suite); sys.exit(not result.wasSuccessful())';
   run(python,['-c',pythonCode,join(installed,'python'),join(installed,'tests')],consumer);
-  const imported=run(process.execPath,['--input-type=module','-e','import {ARTIFACT_VERSION,validateEvent} from "@jimmie-potts/agent-lifecycle-contracts"; if(ARTIFACT_VERSION!=="1.2.0"||validateEvent({}).ok)process.exit(1);'],consumer);
+  const imported=run(process.execPath,['--input-type=module','-e','import {ARTIFACT_VERSION as ROOT,validateEvent} from "@jimmie-potts/agent-lifecycle-contracts"; import {ARTIFACT_VERSION,validateEvent as validate12} from "@jimmie-potts/agent-lifecycle-contracts/v1.2"; if(ROOT!=="1.1.0"||ARTIFACT_VERSION!=="1.2.0"||validateEvent({}).ok||validate12({}).ok)process.exit(1);'],consumer);
   assert.equal(imported,'');
   console.log('Isolated TypeScript and Python package imports, hashes and full conformance corpus passed.');
  }

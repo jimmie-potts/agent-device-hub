@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 import {forgetRetiredApprovals,reduceSession,retiredApproval} from './reducer.js';
 import {Feeds} from './subscriptions.js';
 import {validateExport} from './validation.js';

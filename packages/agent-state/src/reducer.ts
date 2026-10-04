@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {deduplicationKey} from '@jimmie-potts/agent-lifecycle-contracts';
+import {deduplicationKey} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 import {LIMITS, type Attention, type Consumer, type Envelope, type KnownId, type Session, type Unavailable} from './types.js';
 import {identityKey} from './memory-storage.js';
 

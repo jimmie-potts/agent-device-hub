@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./v1.2": {
+      "types": "./dist/v1.2.d.ts",
+      "import": "./dist/v1.2.js"
     }
   },
   "dependencies": {
