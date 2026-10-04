@@ -10,8 +10,9 @@ runs from launcher slot 04. The design comes from the
 [Hub #741](https://github.com/jimmie-potts/agent-device-hub/issues/741).
 
 **Status: source only.** The image builds and passes host tests and artifact
-checks. It has not run on a device. Installation and physical acceptance
-belong to [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743).
+checks. It has run on the owner's device during the
+[#743](https://github.com/jimmie-potts/agent-device-hub/issues/743) trial,
+which owns installation and physical acceptance; neither is complete.
 
 ## What it does and does not do
 
@@ -120,13 +121,14 @@ one against its pinned commit:
 
 DaisySP is not fetched or linked; the controller has no DSP.
 
-### Recorded build (2026-10-03)
+### Recorded build (2026-10-03, #798 at `3432c1e`)
 
 GNU Arm Embedded Toolchain 10.3-2021.10 (GCC 10.3.1 20210824), `-O2`:
 
 - `build/arm/04_AGENT.bin`: 82,852 bytes, SHA-256
   `5bcafce569ebd80fde519a081a4bc25499c10bad8ee2832a904918ef36d0ea24`.
   Two clean builds from different directories produced the same image.
+  Later source changes produce a different image.
 - `libdaisy.a` SHA-256
   `965f24d4002afe479e3bb56bbe4e73cac9c383ff9f5468b7bc119d60bd453462`.
 - `boot_info` at `0x38800000`, in backup SRAM.

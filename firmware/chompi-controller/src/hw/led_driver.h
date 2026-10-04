@@ -3,8 +3,8 @@
 // Adapted from sfaber02/CHOMPI launcher-v1.1 (79ea9e7),
 // firmware/chompi-launcher/code/src/temp_led_stuff.h, which comes from the
 // CHOMPI-Club/CHOMPI firmwares. MIT License, Copyright (c) 2026 CHOMPI Club;
-// see THIRD_PARTY.md. Colour scaling, caps and byte order moved to
-// core/leds.cpp.
+// see THIRD_PARTY.md. Colour scaling, caps, byte order and the WS2812 pulse
+// encoding, including the idle-line porch, moved to core/leds.cpp.
 #pragma once
 
 #include "core/leds.h"

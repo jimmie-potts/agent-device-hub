@@ -19,7 +19,9 @@ Adapted files, each marked in its header:
 
 - `src/core/input.cpp`: quadrature rules from `firmware/chompi-wave/code/src/encoder.cpp`.
 - `src/core/hardware_map.h`, `src/core/leds.*`: bit order, LED positions,
-  colour orders and caps from `hardware.h`, `TestPage.h` and `temp_led_stuff.h`.
+  colour orders, caps, WS2812 pulse timing and porch from `hardware.h`,
+  `TestPage.h` and `temp_led_stuff.h` (the launcher-v1.1 copy for the pulse
+  timing and porch).
 - `src/hw/board.*`: from `firmware/chompi-launcher/code/src/hardware.h`.
 - `src/hw/led_driver.*`: from `firmware/chompi-launcher/code/src/temp_led_stuff.h`.
 - `src/hw/usb_switch.*`: from `UsbTakeOver()` and `ServiceUsbSwitch()` in
