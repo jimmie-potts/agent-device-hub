@@ -52,7 +52,8 @@ identity and UI checks sit behind one OS adapter interface. Boundaries and the o
   resends its current light frame under a new frame number. Keys still held then need a fresh press. If the flag
   drops and no `hello` follows within 5.5 s, the bridge closes the handle with reason `hello-timeout` and enumerates
   again. After the releases it emits one `session-restart` event per restart; a flag drop followed by the
-  firmware's same-epoch `hello` is one restart, and that `hello` completes it.
+  firmware's same-epoch `hello` is one restart, and that `hello` completes it. A `hello` proves the device is live,
+  so completing a restart that began while stale, or a same-epoch `hello` while stale, also emits `recovered`.
 - LED frames go out as the protocol's two parts. The first frame of a connection waits for the device heartbeat, so
   its frame number follows the device's last applied frame. Frame numbers skip 0, which the firmware reports after a
   host timeout. A frame the device has not reported as applied is resent every second. Frames are at most one per
@@ -60,7 +61,8 @@ identity and UI checks sit behind one OS adapter interface. Boundaries and the o
   `status().appliedLedFrame` is the bridge's own last frame once the device reports it, and null otherwise.
 - A brightness change sends an early host heartbeat at most once per 40 ms; a burst coalesces to the newest value,
   so it cannot fill the bounded write queue (32 writes) and drop a healthy link.
-- `stop()` waits for an open in flight and closes that handle before it resolves.
+- `stop()` waits up to 2 s for an open in flight and closes that handle before it resolves. If the open takes longer,
+  `stop()` resolves anyway and the handle is closed as soon as it opens.
 - Malformed or incompatible reports are counted by reason in `status().counters` and otherwise ignored.
 
 ## Interface for #742 (version 1)
@@ -84,7 +86,9 @@ await lock.release();
 - `input`: `{ epoch, sequence, control, kind, delta, synthetic }`. `kind` is `press`, `release` or `turn`;
   `control` is the protocol control ID (1-34 clicks, 41-46 turns); `delta` is nonzero only for turns (positive is
   clockwise). Synthetic releases have `sequence: null` and a `reason`.
-- `stale` and `recovered`: `{ epoch }`.
+- `stale` and `recovered`: `{ epoch }`. `recovered` comes exactly once when the link leaves `stale` for a healthy
+  session: on the next heartbeat, or when a same-epoch `hello` completes a session restart (then after
+  `session-restart`). It always precedes any input accepted afterwards.
 - `session-restart`: `{ epoch, cause }`, with cause `host-flag-dropped` or `same-epoch-hello`. The firmware restarted
   its host session in the same epoch. Synthetic releases for every held control come first, and input after the
   event is fresh, so a consumer should drop anything pending, such as a selected target. It comes once per restart:

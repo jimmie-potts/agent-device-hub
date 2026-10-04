@@ -29,6 +29,8 @@ export interface BridgeTiming {
   ledMinIntervalMs: number;
   /** Minimum time between host heartbeats sent early for a brightness change; the newest value wins. */
   commandMinIntervalMs: number;
+  /** Longest `stop()` waits for an open in flight; a handle that opens later is closed at once. */
+  stopTimeoutMs: number;
 }
 
 export const DEFAULT_TIMING: Readonly<BridgeTiming> = Object.freeze({
@@ -41,6 +43,7 @@ export const DEFAULT_TIMING: Readonly<BridgeTiming> = Object.freeze({
   ledResendMs: 1000,
   ledMinIntervalMs: 40,
   commandMinIntervalMs: 40,
+  stopTimeoutMs: 2000,
 });
 
 export type DisconnectReason = 'device-closed' | 'transport-error' | 'heartbeat-timeout' | 'hello-timeout' | 'epoch-change' | 'stopped';
@@ -59,7 +62,11 @@ export type InputEvent =
   | { type: 'input'; at: number; epoch: number; sequence: null; control: number; kind: 'release'; delta: 0; synthetic: true; reason: ReleaseReason };
 /** No device heartbeat for `staleAfterMs`. A link state only; it says nothing about any task. */
 export interface StaleEvent { type: 'stale'; at: number; epoch: number }
-/** Heartbeats resumed in the same epoch. Controls released at `stale` need a fresh press. */
+/**
+ * The link left `stale` for a healthy session in the same epoch: a heartbeat arrived, or a same-epoch hello completed
+ * a session restart (then it follows `session-restart`). Emitted once per stale period, before any accepted input.
+ * Controls released at `stale` need a fresh press.
+ */
 export interface RecoveredEvent { type: 'recovered'; at: number; epoch: number }
 /**
  * The firmware restarted its host session within the same epoch: its lights went off and it forgot which keys it
@@ -143,6 +150,8 @@ interface Session {
   heardHeartbeat: boolean;
   /** The firmware restarted its host session; input waits for its next hello. */
   restarting: boolean;
+  /** The link was stale when the restart began, so completing it is also a recovery. */
+  staleAtRestart: boolean;
   deviceHostAlive: boolean | null;
   nextFrame: number;
   appliedFrame: number | null;
@@ -350,7 +359,7 @@ class Bridge implements ChompiBridge {
     if (this.#session) this.#endSession('epoch-change');
     this.#clearTimers('quiet', 'hello');
     this.#session = {
-      epoch: message.epoch, firmware: [...message.firmware], lastSequence: undefined, held: new Set(), heardHeartbeat: false, restarting: false,
+      epoch: message.epoch, firmware: [...message.firmware], lastSequence: undefined, held: new Set(), heardHeartbeat: false, restarting: false, staleAtRestart: false,
       deviceHostAlive: null, nextFrame: 1, appliedFrame: null, lastSentFrame: undefined, sentFrame: undefined, sentColors: undefined, sentAt: 0,
       lastLedSendAt: undefined,
     };
@@ -414,6 +423,7 @@ class Bridge implements ChompiBridge {
    */
   #beginRestart(session: Session): void {
     session.restarting = true;
+    session.staleAtRestart = this.#state === 'stale';
     this.#counters.sessionRestarts++;
     this.#releaseHeld(session, 'session-restart');
     this.#emit({ type: 'session-restart', at: this.#clock.now(), epoch: session.epoch, cause: 'host-flag-dropped' });
@@ -433,11 +443,16 @@ class Bridge implements ChompiBridge {
       this.#releaseHeld(session, 'session-restart');
       this.#emit({ type: 'session-restart', at: this.#clock.now(), epoch: session.epoch, cause: 'same-epoch-hello' });
     }
+    const recovering = this.#state === 'stale' || session.staleAtRestart;
     this.#clearTimers('restart');
     session.restarting = false;
+    session.staleAtRestart = false;
     session.lastSequence = undefined;
     this.#resetLights(session);
-    if (this.#state === 'awaiting-hello') this.#state = 'connected';
+    // A hello proves the device is live: the session is healthy again, so leave `stale` with one `recovered`.
+    this.#state = 'connected';
+    this.#armSilenceTimers();
+    if (recovering) this.#emit({ type: 'recovered', at: this.#clock.now(), epoch: session.epoch });
     this.#flushLeds();
   }
 
@@ -583,7 +598,12 @@ class Bridge implements ChompiBridge {
     this.#clearTimers('reconnect', 'quiet', 'hello', 'beat', 'stale', 'silent', 'led', 'command', 'restart');
     this.#endSession('stopped');
     for (const subscription of [...this.#subscriptions]) subscription.stop();
-    await this.#opening;
+    if (this.#opening) {
+      let timer: unknown;
+      const timeout = new Promise<void>(resolve => { timer = this.#clock.setTimeout(resolve, this.#timing.stopTimeoutMs); });
+      await Promise.race([this.#opening, timeout]);
+      this.#clock.clearTimeout(timer);
+    }
     // Pending writes are not awaited: a stalled device must not block shutdown. Closing rejects them.
     if (link?.connection) await link.connection.close().catch(() => undefined);
   }

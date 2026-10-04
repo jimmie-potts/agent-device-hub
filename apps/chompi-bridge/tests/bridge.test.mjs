@@ -500,3 +500,67 @@ test('LED frame numbers skip 0, which the firmware reports after a host timeout'
   await settle();
   assert.deepEqual(sent(s.connection()).filter(m => m.type === 'leds').map(m => m.frame), [1, 1]);
 });
+
+test('a restart that begins while stale ends with one recovered, after session-restart and before input', async t => {
+  const s = await setup(t);
+  const c = s.connection();
+  c.inject(heartbeat(0x1234));
+  c.inject(input(0x1234, 1, 26, 'press'));
+  await settle();
+  await advance(s.clock, 1600);
+  c.inject(heartbeat(0x1234, 0, false));
+  c.inject(hello(0x1234));
+  c.inject(heartbeat(0x1234, 0, true));
+  c.inject(input(0x1234, 1, 26, 'press'));
+  await settle();
+  assert.deepEqual(strip(s.events.drain()).map(({ epoch, ...e }) => e), [
+    { type: 'connected', firmware: [0, 1, 0] },
+    { type: 'input', sequence: 1, control: 26, kind: 'press', delta: 0, synthetic: false },
+    { type: 'input', sequence: null, control: 26, kind: 'release', delta: 0, synthetic: true, reason: 'stale' },
+    { type: 'stale' },
+    { type: 'session-restart', cause: 'host-flag-dropped' },
+    { type: 'recovered' },
+    { type: 'input', sequence: 1, control: 26, kind: 'press', delta: 0, synthetic: false },
+  ]);
+  assert.equal(s.bridge.status().state, 'connected');
+});
+
+test('a same-epoch hello while stale restarts the session and recovers at once', async t => {
+  const s = await setup(t);
+  const c = s.connection();
+  c.inject(heartbeat(0x1234));
+  await settle();
+  await advance(s.clock, 1600);
+  s.events.drain();
+  c.inject(hello(0x1234));
+  c.inject(input(0x1234, 1, 3, 'press'));
+  await settle();
+  assert.deepEqual(strip(s.events.drain()), [
+    { type: 'session-restart', epoch: 0x1234, cause: 'same-epoch-hello' },
+    { type: 'recovered', epoch: 0x1234 },
+    { type: 'input', epoch: 0x1234, sequence: 1, control: 3, kind: 'press', delta: 0, synthetic: false },
+  ]);
+  assert.equal(s.bridge.status().state, 'connected');
+  await advance(s.clock, DEFAULT_TIMING.staleAfterMs);
+  assert.deepEqual(strip(s.events.drain()).map(e => e.type), ['input', 'stale'], 'the hello re-armed liveness, so silence goes stale again');
+});
+
+test('stop gives up waiting for an open that does not settle, and closes it if it ever does', async t => {
+  const s = await setup(t, { epoch: 0, devices: [] });
+  let release;
+  s.transport.openGate = new Promise(resolve => { release = resolve; });
+  s.transport.devices = [CONTROLLER];
+  await advance(s.clock, DEFAULT_TIMING.reconnectMs);
+  assert.equal(s.transport.opens.length, 1);
+  let stopped = false;
+  const stopping = s.bridge.stop().then(() => { stopped = true; });
+  await advance(s.clock, DEFAULT_TIMING.stopTimeoutMs - 100);
+  assert.equal(stopped, false);
+  await advance(s.clock, 200);
+  await stopping;
+  assert.equal(s.transport.connections.length, 0, 'the open is still in flight');
+  release();
+  await settle();
+  assert.equal(s.transport.connection.closed, true, 'a late handle is closed as soon as it opens');
+  assert.equal(s.bridge.status().state, 'stopped');
+});
