@@ -22,3 +22,14 @@ test('HTTP 1.2 reads title from the configured Desktop home and keeps old reader
  const next=await (await fetch(hub.url+'/api/monitor/v1/sessions?snapshotVersion=1.2',{headers})).json();assert.equal(next.snapshot.sessions[0].labelOrigin,'user');
  assert.equal((await fetch(hub.url+'/api/monitor/v1/commands',{method:'POST',headers,body:JSON.stringify({operation:'label',requestId:next.nextRequestId,identity,label:'😀'.repeat(81)})})).status,400);
 });
+test('Desktop title enrichment keeps a lifecycle 1.2 envelope version',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-titles-12-')),home=await mkdtemp(join(tmpdir(),'desktop-titles-12-'));
+ await writeFile(join(home,'session_index.jsonl'),JSON.stringify({id:'session',thread_name:'Windows title'})+'\n');
+ const hub=await startHub({directory,ownerId:'owner',consumers:[],controllers:[],credentials:[{id:'operator',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','ingest'],devices:[]}],codexDesktop:{home,hostId:'host',sourceId:'desktop'}});
+ t.after(async()=>{await hub.close();await rm(directory,{recursive:true,force:true});await rm(home,{recursive:true,force:true});});
+ const headers={authorization:'Bearer '+token,'content-type':'application/json','x-pixoo-request':'1'};
+ const event={apiVersion:'1.2',identity,turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'turn.started'},observedAtMs:Date.now(),ordering:{status:'unknown'}};
+ assert.equal((await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(event)})).status,200);
+ const session=(await (await fetch(hub.url+'/api/monitor/v1/sessions?snapshotVersion=1.3',{headers})).json()).snapshot.sessions[0];
+ assert.equal(session.title.value,'Windows title');assert.equal('hostSessionId' in session,false);
+});

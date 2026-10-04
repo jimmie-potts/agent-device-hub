@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {validateEvent, deduplicationKey} from '../dist/index.js';
+import * as v1_2 from '../dist/v1.2.js';
 
 const event = {
   apiVersion: '1.0',
@@ -25,13 +26,20 @@ test('valid lifecycle metadata is admitted without private payload fields', () =
 
 const corpus = JSON.parse(readFileSync(new URL('../fixtures/lifecycle-v1.json',import.meta.url),'utf8'));
 corpus.cases.push(...JSON.parse(readFileSync(new URL('../fixtures/lifecycle-v1.1.json',import.meta.url),'utf8')).cases);
-assert.equal(new Set(corpus.cases.map(c=>c.id)).size,corpus.cases.length);
-for (const fixture of corpus.cases) test(fixture.id, () => {
-  const result = validateEvent(fixture.input);
+const v12=JSON.parse(readFileSync(new URL('../fixtures/lifecycle-v1.2.json',import.meta.url),'utf8')).cases;
+assert.equal(new Set([...corpus.cases,...v12].map(c=>c.id)).size,corpus.cases.length+v12.length);
+function conforms(fixture,validate,key){
+  const result = validate(fixture.input);
   assert.equal(result.ok, fixture.valid);
-  assert.deepEqual(deduplicationKey(fixture.input), fixture.valid ? fixture.deduplication : null);
+  assert.deepEqual(key(fixture.input), fixture.valid ? fixture.deduplication : null);
   if (fixture.valid) assert.deepEqual(result.value, fixture.input);
   else assert.deepEqual(result,{ok:false,code:'invalid-event'});
+}
+// The frozen root module validates 1.0/1.1; the v1.2 subpath validates the whole corpus.
+for (const fixture of corpus.cases) test(fixture.id, () => {conforms(fixture,validateEvent,deduplicationKey);conforms(fixture,v1_2.validateEvent,v1_2.deduplicationKey);});
+for (const fixture of v12) test('v1.2 '+fixture.id, () => {
+  conforms(fixture,v1_2.validateEvent,v1_2.deduplicationKey);
+  assert.deepEqual(validateEvent(fixture.input),{ok:false,code:'invalid-event'});assert.equal(deduplicationKey(fixture.input),null);
 });
 
 test('non-JSON, cyclic and excessive structures fail without exposing exceptions', () => {

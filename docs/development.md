@@ -1445,6 +1445,25 @@ receipts and preserved prior release bytes. Packaging scratch is disk-backed
 under `.local/scratch/package-archives`; runtime fixtures keep their small
 private stores outside Git checkouts.
 
+## Claude Desktop host session checks
+
+Hub #784 adds lifecycle 1.2 (`packages/lifecycle-contracts/fixtures/lifecycle-v1.2.json`,
+validated in TypeScript through the `/v1.2` subpath while the root module keeps rejecting 1.2)
+and snapshot 1.3 (`packages/agent-state/fixtures/snapshots-v1.3.json`) corpora to
+the existing TypeScript and Python checks. `host-session-provider.test.mjs` covers
+Desktop, CLI, missing, malformed, oversized, throwing, child, Codex and
+older-version environments. `host-session.test.mjs` in agent-state covers the
+memory-only owner map, `/clear`, retirement, expiry, failed commits, restart and
+durable 2.1 exports. The Hub's `host-session.test.mjs` reads the
+on-disk store and checks it against the stored durable 2.1 schema. The setup,
+setup-hook and MCP suites cover the 1.2 selection. The existing
+glob-based suites and CI jobs run all of them, so no new command or CI job is needed.
+
+Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
+workflow checks listed above. Synthetic environments prove the mapping only;
+whether installed Desktop hooks inherit the variables is installed-observation
+evidence.
+
 ## App verification and preview runs
 
 [App verification](app-verification.md) defines the operations, receipt,

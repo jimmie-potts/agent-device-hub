@@ -7,8 +7,8 @@ import {basename,dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const NAME='@jimmie-potts/agent-state',VERSION='3.4.0';
-const LIFECYCLE='@jimmie-potts/agent-lifecycle-contracts',LIFECYCLE_VERSION='1.1.0';
+const NAME='@jimmie-potts/agent-state',VERSION='3.5.0';
+const LIFECYCLE='@jimmie-potts/agent-lifecycle-contracts',LIFECYCLE_VERSION='1.2.0';
 // Build this revision's lifecycle archive; published predecessors remain untouched.
 let LIFECYCLE_SHA;
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -46,7 +46,7 @@ async function pack(stage,destination){
   assert.equal(report.length,1);return join(destination,report[0].filename);
 }
 run(process.execPath,[join(root,'scripts/package-lifecycle.mjs')],root);
-const dependency=join(root,'artifacts/jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz');
+const dependency=join(root,'artifacts/jimmie-potts-agent-lifecycle-contracts-1.2.0.tgz');
 LIFECYCLE_SHA=sha256(await readFile(dependency));
 const sidecar=(await readFile(`${dependency}.sha256`,'utf8')).split(/\s+/)[0];
 assert.equal(LIFECYCLE_SHA,sidecar,'built lifecycle archive');
@@ -71,7 +71,7 @@ try{
   const lifecycleManifest=await verify(stagedLifecycle,LIFECYCLE,LIFECYCLE_VERSION);
   const lifecycleManifestSha256=sha256(await readFile(join(stagedLifecycle,'manifest.json')));
   const hashes={};for(const name of await files(stage))hashes[name]=sha256(await readFile(join(stage,name)));
-  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:NAME,version:VERSION,apiVersion:'1.0',snapshotVersions:['1.0','1.1','1.2'],formatVersion:'2.1',schemaDraft:'2020-12',fixtureFormat:1,
+  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:NAME,version:VERSION,apiVersion:'1.0',snapshotVersions:['1.0','1.1','1.2','1.3'],formatVersion:'2.1',schemaDraft:'2020-12',fixtureFormat:1,
     lifecycleVersion:LIFECYCLE_VERSION,lifecycleSha256:LIFECYCLE_SHA,lifecycleManifestSha256,lifecycleFixtureFormat:lifecycleManifest.fixtureFormat,files:hashes},null,2)+'\n');
   const first=await pack(stage,join(scratch,'first')),second=await pack(stage,join(scratch,'second'));
   const bytes=await readFile(first);assert.deepEqual(bytes,await readFile(second),'repeated archive bytes');
@@ -90,7 +90,7 @@ try{
     const nodeTests=(await readdir(join(installed,'tests'))).filter(name=>name.endsWith('.test.mjs')).sort(compare).map(name=>join(installed,'tests',name));
     assert.ok(nodeTests.length);assert.match(run(process.execPath,['--test',...nodeTests],consumer),/fail 0/u);
     assert.equal(run(process.execPath,['--input-type=module','-e',
-      'import {VERSION,FORMAT_VERSION,validateSnapshot} from "@jimmie-potts/agent-state"; import {normalizeHook} from "@jimmie-potts/agent-state/providers"; if(VERSION!=="3.4.0"||FORMAT_VERSION!=="2.1"||validateSnapshot({}).ok||typeof normalizeHook!=="function")process.exit(1);'],consumer),'');
+      'import {VERSION,FORMAT_VERSION,validateSnapshot} from "@jimmie-potts/agent-state"; import {normalizeHook} from "@jimmie-potts/agent-state/providers"; if(VERSION!=="3.5.0"||FORMAT_VERSION!=="2.1"||validateSnapshot({}).ok||typeof normalizeHook!=="function")process.exit(1);'],consumer),'');
     run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext',join(installed,'examples/embed.ts')],consumer);
     const python=process.platform==='win32'?'python':'python3';
     const code='import sys, unittest; sys.path.insert(0,sys.argv[1]); suite=unittest.defaultTestLoader.discover(sys.argv[2],pattern="test_*.py"); result=unittest.TextTestRunner().run(suite); sys.exit(not result.wasSuccessful())';

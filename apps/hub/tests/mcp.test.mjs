@@ -461,7 +461,7 @@ test('session tools expose title/project metadata and the scalar label bound',as
  await http(hub,'/api/monitor/v1/events',{...event,apiVersion:'1.1',observedAtMs:Date.now(),title:{value:'Review café prompts',source:'provider'},project:'device-hub'});
  for(const q of ['café','device-hub']){
   const view=(await c.call('hub_sessions',{q})).structuredContent.data.result;
-  assert.equal(view.snapshot.apiVersion,'1.2');assert.equal(view.snapshot.sessions[0].title.value,'Review café prompts');assert.deepEqual(view.matches,[event.identity]);
+  assert.equal(view.snapshot.apiVersion,'1.3');assert.equal(view.snapshot.sessions[0].title.value,'Review café prompts');assert.deepEqual(view.matches,[event.identity]);
  }
  const before=(await c.call('hub_sessions')).structuredContent.data.result;
  const valid=await c.call('hub_label',{request_id:before.nextRequestId,identity:event.identity,label:'😀'.repeat(80)});assert.equal(valid.isError,false);
@@ -512,4 +512,13 @@ test('enabled host diagnostics records MCP outcomes without changing tool result
  const result=await c.call('hub_sessions');assert.equal(result.isError,false);
  await c.close();await diagnostics.shutdown();
  assert.ok(records.some(x=>x.scope.name==='bunny.mcp'&&x.attributes['bunny.outcome']==='succeeded'));
+});
+
+test('hub_sessions reads snapshot 1.3 with the in-memory Desktop session ID',async t=>{
+ const hub=await fixture(t),c=client(hub);await c.initialize();
+ const desktop={...event,apiVersion:'1.2',identity:{...event.identity,provider:'claude',client:'code',sessionId:'desktop'},observedAtMs:Date.now(),hostSessionId:'local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'};
+ assert.equal((await http(hub,'/api/monitor/v1/events',desktop)).status,200);
+ const view=(await c.call('hub_sessions',{q:'desktop'})).structuredContent.data.result;
+ assert.equal(view.snapshot.apiVersion,'1.3');assert.equal(view.snapshot.sessions[0].hostSessionId,desktop.hostSessionId);assert.deepEqual(view.matches,[desktop.identity]);
+ await c.close();
 });

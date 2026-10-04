@@ -1,6 +1,6 @@
-import {readSessionTitle,projectName,withMetadata,type MetadataOptions} from './metadata.js';
+import {readSessionTitle,projectName,withMetadata,type MetadataOptions,type MetadataVersion} from './metadata.js';
 export {enrichCodexTitle} from './metadata.js';
-import type {Envelope,Identity} from '@jimmie-potts/agent-lifecycle-contracts';
+import type {Envelope,Identity} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 export const MAX_NORMALIZED_EVENT_BYTES=2048;
 export const MAX_PENDING_EVENTS=128;
@@ -87,14 +87,36 @@ export function normalizeHook(raw:unknown,source:SourceConfiguration,nowMs:numbe
   }catch{return null;}
 }
 
+export type EnrichOptions=MetadataOptions&{
+  /** Lifecycle envelope version selected by the producer configuration; absent means 1.1. */
+  lifecycleVersion?:MetadataVersion;
+  /** Hook process environment; defaults to `process.env`. Only two Claude Desktop keys are read. */
+  environment?:unknown;
+};
+/** Claude Desktop runs Code sessions with its own session ID in the process environment. Read
+ * nothing else, and only for the exact Desktop entrypoint; an unusable value is omitted. */
+function desktopHostSession(environment:unknown):string|undefined {
+  try{
+    if(environment===null||typeof environment!=='object'||Array.isArray(environment))return undefined;
+    const entrypoint=field(environment,'CLAUDE_CODE_ENTRYPOINT');
+    if(entrypoint.state!=='value'||entrypoint.value!=='claude-desktop')return undefined;
+    const value=field(environment,'CLAUDE_CODE_HOST_SESSION_ID');
+    return value.state==='value'&&typeof value.value==='string'&&identifier.test(value.value)?value.value:undefined;
+  }catch{return undefined;}
+}
 /** Optional, version-selected enrichment for newly configured producers. */
-export async function enrichHook(raw:unknown,source:SourceConfiguration,nowMs:number,options:MetadataOptions={}):Promise<Envelope|null>{
+export async function enrichHook(raw:unknown,source:SourceConfiguration,nowMs:number,options:EnrichOptions={}):Promise<Envelope|null>{
+  const version=options.lifecycleVersion??'1.1';
+  if(version!=='1.1'&&version!=='1.2')return null;
   const event=normalizeHook(raw,source,nowMs);if(!event)return null;
-  if(event.parent.status==='known')return withMetadata(event,{});
+  // A child never inherits the parent's title, project or host session.
+  if(event.parent.status==='known')return withMetadata(event,{},version);
   const record=plain(raw);if(!record)return event;
+  const hostSessionId=version==='1.2'&&event.identity.provider==='claude'?
+    desktopHostSession(Object.hasOwn(options,'environment')?options.environment:process.env):undefined;
   const project=projectName(string(record,'cwd'));
   const title=await readSessionTitle(event.identity.provider,event.identity.sessionId,string(record,'transcript_path'),options);
-  return withMetadata(event,{...(project?{project}:{}),...(title?{title}:{})});
+  return withMetadata(event,{...(project?{project}:{}),...(title?{title}:{}),...(hostSessionId?{hostSessionId}:{})},version);
 }
 
 type Item={envelope:Envelope;bytes:number;deadlineMs:number;resolve:()=>void;resolved:boolean;released:boolean};

@@ -6,15 +6,15 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:http';
-import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 
 const bin=fileURLToPath(new URL('../bin/hook.mjs',import.meta.url));
 const source={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'};
 const raw=JSON.stringify({session_id:'session',turn_id:'turn',prompt:'PRIVATE_CANARY',transcript_path:'/PRIVATE_CANARY',tool_input:{secret:'PRIVATE_CANARY'}});
-async function invoke(t,config,input=raw,{end=true}={}){
+async function invoke(t,config,input=raw,{end=true,env}={}){
   const directory=await mkdtemp(join(tmpdir(),'agent-hook-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const path=join(directory,'config.json');await writeFile(path,JSON.stringify(config));
-  const started=performance.now(),child=spawn(process.execPath,[bin,path],{stdio:['pipe','pipe','pipe']});
+  const started=performance.now(),child=spawn(process.execPath,[bin,path],{stdio:['pipe','pipe','pipe'],...(env?{env:{...process.env,...env}}:{})});
   let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.stdin.on('error',()=>{});
   if(end)child.stdin.end(input);else child.stdin.write(input);
   const watchdog=setTimeout(()=>child.kill(),4000);
@@ -29,7 +29,9 @@ async function collector(t,handler){
 }
 test('hook transports allowlisted metadata once and never emits agent output',async t=>{
   const received=[];const endpoint=await collector(t,(request,response)=>{let body='';request.on('data',chunk=>body+=chunk);request.on('end',()=>{received.push({url:request.url,method:request.method,body});response.writeHead(204);response.end();});});
-  await invoke(t,{source,endpoint,enabled:true,qualified:true,timeoutMs:250});
+  // This success path checks transport and privacy, not the deadline (covered below and by the
+  // 3 s elapsed bound). 250 ms left no headroom for process start under parallel suite load.
+  await invoke(t,{source,endpoint,enabled:true,qualified:true,timeoutMs:1000});
   assert.equal(received.length,1);assert.equal(received[0].method,'POST');assert.equal(received[0].url,'/v1/agent-events');
   assert.doesNotMatch(received[0].body,/PRIVATE_CANARY|prompt|transcript|tool_input/);assert.ok(Buffer.byteLength(received[0].body)<=2048);
   assert.equal(validateEvent(JSON.parse(received[0].body)).ok,true);
@@ -48,4 +50,15 @@ test('disabled, invalid, oversized and nonlocal paths send nothing',async t=>{
     {endpoint:endpoint+'?PRIVATE_CANARY'},{timeoutMs:3001},{source:{...source,hook:'Unsupported'}},{extra:'PRIVATE_CANARY'}])await invoke(t,{...config,...extra});
   for(const input of ['{PRIVATE_CANARY','x'.repeat(65537),JSON.stringify({prompt:'PRIVATE_CANARY'})])await invoke(t,config,input);
   await invoke(t,config,'',{end:false});assert.equal(calls,0);
+});
+test('lifecycle 1.2 hooks carry the Claude Desktop host session ID from the process environment only',async t=>{
+  const received=[];const endpoint=await collector(t,(request,response)=>{let body='';request.on('data',chunk=>body+=chunk);request.on('end',()=>{received.push(JSON.parse(body));response.writeHead(204);response.end();});});
+  const claude={provider:'claude',client:'code',hostId:'host',sourceId:'source',hook:'UserPromptSubmit'};
+  const input=JSON.stringify({session_id:'session',prompt_id:'turn',prompt:'PRIVATE_CANARY'});
+  const env={CLAUDE_CODE_ENTRYPOINT:'claude-desktop',CLAUDE_CODE_HOST_SESSION_ID:'local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b',PRIVATE_SETTING:'PRIVATE_CANARY'};
+  for(const lifecycleVersion of [undefined,'1.1','1.2'])await invoke(t,{source:claude,endpoint,enabled:true,qualified:true,timeoutMs:500,...(lifecycleVersion?{lifecycleVersion}:{})},input,{env});
+  await invoke(t,{source:claude,endpoint,enabled:true,qualified:true,timeoutMs:500,lifecycleVersion:'1.2'},input,{env:{...env,CLAUDE_CODE_ENTRYPOINT:'cli'}});
+  await invoke(t,{source:claude,endpoint,enabled:true,qualified:true,timeoutMs:500,lifecycleVersion:'1.3'},input,{env});
+  assert.deepEqual(received.map(event=>[event.apiVersion,event.hostSessionId]),[['1.0',undefined],['1.1',undefined],['1.2',env.CLAUDE_CODE_HOST_SESSION_ID],['1.2',undefined]]);
+  for(const event of received){assert.equal(validateEvent(event).ok,true);assert.doesNotMatch(JSON.stringify(event),/PRIVATE_CANARY|PRIVATE_SETTING|CLAUDE_CODE|claude-desktop/);}
 });

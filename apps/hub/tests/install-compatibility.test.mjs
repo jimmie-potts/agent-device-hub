@@ -32,7 +32,7 @@ test('reducer, coordination, constants, snapshot-schema and new lifecycle-versio
  await withRelease(async release=>{
   await release.append('state','dist/reducer.js','\n// reducer change\n');
   await release.append('state','dist/index.js','\n// snapshot or coordination change\n');
-  await release.replace('state','dist/types.js',"export const VERSION = '3.4.0';","export const VERSION = '3.99.0';");
+  await release.replace('state','dist/types.js',"export const VERSION = '3.5.0';","export const VERSION = '3.99.0';");
   await release.append('state','schemas/snapshot-v1.2.schema.json');
   await release.write('state','schemas/snapshot-v1.3.schema.json','{}\n');
   await release.write('lifecycle','schemas/lifecycle-v1.2.schema.json','{}\n');
@@ -89,7 +89,7 @@ test('loosened lifecycle parent rule refuses before the probe runs',async()=>{
 });
 // HubStorage imports validateExport through the agent-state entrypoint, which is content.
 test('entrypoint that rebinds the durable validator fails the probe in either direction',async()=>{
- await withRelease(release=>release.replace('state','dist/index.js',"export { validateSnapshot, validateExport, migrateExport } from './validation.js';","export { validateSnapshot, migrateExport } from './validation.js';\nconst permissive = value => ({ ok: true, value });\nexport { permissive as validateExport };"),async (root,release)=>{
+ await withRelease(release=>release.replace('state','dist/index.js',"export { validateExport, migrateExport } from './validation.js';","export { migrateExport } from './validation.js';\nconst permissive = value => ({ ok: true, value });\nexport { permissive as validateExport };"),async (root,release)=>{
   assert.equal(await durableFingerprint(root),await durableFingerprint(program));
   // The rebinding loads: the target entrypoint exports the permissive replacement.
   const {validateExport}=await import(pathToFileURL(release.path('state','dist/index.js')).href);
@@ -133,4 +133,23 @@ test('unknown durable implementation behind linked dependencies refuses without 
   await writeFile(join(root,'dist/storage.js'),poison);
   refused(await qualifyCompatibility(root,program),'durable-implementation-unqualified');
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+// Hub #784: the lifecycle 1.2 module and the snapshot 1.3 validator are content, so a release
+// without them (main) has the same durable surface; the frozen lifecycle root still refuses.
+test('lifecycle 1.2 and snapshot 1.3 modules are content; a lifecycle root change still refuses',async()=>{
+ await withRelease(async release=>{
+  for(const [where,file] of [['lifecycle','dist/v1.2.js'],['lifecycle','dist/v1.2.d.ts'],['state','dist/host-session-snapshot.js'],['state','dist/host-session-snapshot.d.ts'],
+   ['lifecycle','schemas/lifecycle-v1.2.schema.json'],['state','schemas/snapshot-v1.3.schema.json']])await release.remove(where,file);
+ },async root=>assert.equal(await durableFingerprint(root),await durableFingerprint(program)));
+ await withRelease(async release=>{
+  await release.append('lifecycle','dist/v1.2.js','\n// 1.2 validator change\n');
+  await release.append('state','dist/host-session-snapshot.js','\n// snapshot 1.3 change\n');
+ },async root=>{
+  for(const [previous,target] of [[program,root],[root,program]]){const result=await qualifyCompatibility(previous,target);assert.equal(result.status,'compatible',JSON.stringify(result));}
+ });
+ await withRelease(release=>release.append('lifecycle','dist/index.js','\n// stored-session validator change\n'),async root=>{
+  refused(await qualifyCompatibility(root,program),'durable-implementation-unqualified');
+  refused(await qualifyCompatibility(program,root),'durable-implementation-unqualified');
+ });
 });

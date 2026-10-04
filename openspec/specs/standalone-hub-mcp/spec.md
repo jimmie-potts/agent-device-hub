@@ -111,11 +111,15 @@ Discovery SHALL list authorized `tidbyt` and `lifx` aliases with their kinds and
 - **THEN** exactly one lighting request reaches the owner and the tool returns its receipt, and an ambiguous transport failure reports possible prior effects without a retry
 
 ### Requirement: Shared display metadata in session tools
-hub_sessions SHALL expose snapshot 1.2 title/project metadata and match its query against label, title, project and session identity. hub_label SHALL retain owner provenance and use the shared 80-scalar bound.
+hub_sessions SHALL expose snapshot 1.3, including title/project metadata and the optional `hostSessionId`, and match its query against label, title, project and session identity. hub_label SHALL retain owner provenance and use the shared 80-scalar bound.
 
 #### Scenario: Find a named session
 - **WHEN** a caller searches by the shared title or project
 - **THEN** the matching session identity and current metadata are returned without device effects
+
+#### Scenario: Desktop session identifier
+- **WHEN** a Desktop session's 1.2 event has committed
+- **THEN** hub_sessions returns snapshot 1.3 with that session's `hostSessionId`
 
 ### Requirement: Status tools read controllers at 1.1
 The per-device `status` tool SHALL read its controller through the negotiated 1.1 read. For a controller that serves 1.1 it SHALL return the validated 1.1 snapshot, including `capabilities.moments` and `state.moment`, and for a 1.0-only controller it SHALL return the 1.0 snapshot unchanged. Its input, scope, read-only annotations and error mapping SHALL stay the same. Command tools SHALL keep sending API 1.0 requests, and the tool SHALL send no command.

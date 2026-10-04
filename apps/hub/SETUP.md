@@ -43,6 +43,41 @@ The SDK installs one `producer.json` and event-specific commands referring to it
 
 `inspectSetup` returns only the receipt state, neutral owner/source IDs, qualification and local enabled flag. It makes no network call and does not prove the client executed a hook. `inspectNanoleaf` calls only the owning CLI's read-only `shared-status` and projects source/configured/connection. Neither operation starts devices. Read authenticated hub health separately; `admission: 'fenced'` means mutations remain refused even during consumer readiness checks.
 
+### Select a lifecycle version
+
+The optional `lifecycleVersion` input selects the envelope the hooks send:
+absent means 1.0, `"1.1"` adds titles and project names, and `"1.2"` also adds
+the Claude Desktop session ID. Any other value is rejected. Select a version
+only when the running owner accepts it: Hub 0.4.0 or later for 1.1, and
+Hub 0.6.0 or later for 1.2. Producers using a version the owner rejects lose
+their events, though the hooks still exit silently with success.
+
+An installed receipt cannot change its version in place; planning it with a
+different `lifecycleVersion` fails with `setup-identity-conflict`. To change the
+version of an installed producer, for example the Claude Code producer moving
+to 1.2:
+
+1. Upgrade the Hub through [Upgrade and roll back the installed Hub](#upgrade-and-roll-back-the-installed-hub).
+2. Run `planRemoval` for the current receipt directory, review it, and run
+   `removeSetup` with its digest. Revocation is confirmed before the entries go.
+3. Run `planSetup` with the same source and target, `lifecycleVersion:"1.2"`
+   and a **new** private receipt directory. Review it and run `applySetup` with
+   its digest and the Hub authority.
+4. Confirm with `inspectSetup` that the new receipt is installed and enabled.
+   Then check that a Desktop session's next state-changing lifecycle event shows
+   its `hostSessionId` in `/api/monitor/v1/sessions?snapshotVersion=1.3`, and
+   that a CLI session shows none. Compare the value with that session's record
+   in Claude Desktop's local session store, read by key only as the
+   [CHOMPI qualification](../../docs/chompi-controller-qualification.md)
+   describes. Record only the IDs, never session content.
+
+Monitoring pauses between steps 2 and 3. Keep the removed receipt for audit.
+Personal client settings change only through these reviewed operations; do not
+edit a producer file or receipt by hand. To roll back, repeat steps 2 and 3 with
+the earlier version before rolling the Hub back. The supervised owner migration's `stageProducer` still accepts only producer
+files without a version or with `"1.1"`; finish any owner migration before
+selecting 1.2.
+
 ## Credentials and Windows invocation
 
 The standalone adapter grants one source-derived principal with ingest scope, persists it in the host configuration, replaces the running credential set and verifies authority. Removal deletes that exact principal and verifies HTTP 401. Other credentials remain intact. Use separate consumer credentials: `read`, plus `control` for a consumer that labels sessions or acknowledges notices. Use separate `read`/`control`/`admin` credentials for migration. Never reuse a device token as a producer token. To create other credentials by hand, and for the grant each route needs, see [Credentials](README.md#credentials) in the hub guide.
@@ -164,10 +199,12 @@ an immutable release before stopping anything. Conflicting bytes at an existing
 SHA refuse. Compatibility qualification requires the installer, the previous
 release and the target to share the same durable surface: the Hub storage and
 automation modules, the agent-state durable validator and stored-state schemas,
-every lifecycle module, and the lifecycle 1.0 and 1.1 schemas. An unclassified
-package file or a new Hub SQLite module counts as durable. Reducer, coordination,
-constants, snapshot-schema and new lifecycle schema files pass this check; an
-edit inside the durable validator or a lifecycle module does not. A synthetic
+every lifecycle module except the listed lifecycle 1.2 module (`v1.2.js`), and
+the lifecycle 1.0 and 1.1 schemas. An unclassified package file or a new Hub
+SQLite module counts as durable. Reducer, coordination, constants, snapshot
+(including the snapshot 1.3 validator), the lifecycle 1.2 module and new
+lifecycle schema files pass this check. An edit inside the durable validator or
+the lifecycle root module (`index.js`) does not. A synthetic
 probe then checks that the agent-state entrypoint still exports the durable
 validator, writes state with the target, including session titles, projects and
 a known parent, and reopens it with the previous release. A durable-surface

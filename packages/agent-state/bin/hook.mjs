@@ -26,7 +26,7 @@ try{
   const config=await readBounded(createReadStream(process.argv[2],{highWaterMark:8192}),8192);
   if(!config||typeof config!=='object'||Array.isArray(config)||
     Object.keys(config).some(key=>!['source','endpoint','enabled','qualified','timeoutMs','lifecycleVersion'].includes(key))||
-    config.lifecycleVersion!==undefined&&config.lifecycleVersion!=='1.1'||config.enabled!==true||config.qualified!==true||typeof config.endpoint!=='string')finish();
+    config.lifecycleVersion!==undefined&&config.lifecycleVersion!=='1.1'&&config.lifecycleVersion!=='1.2'||config.enabled!==true||config.qualified!==true||typeof config.endpoint!=='string')finish();
   const timeout=config.timeoutMs??2900;
   if(!Number.isSafeInteger(timeout)||timeout<1||timeout>3000)finish();
   deadline(timeout);
@@ -35,7 +35,7 @@ try{
     url.username||url.password||url.search||url.hash||url.pathname!=='/v1/agent-events')finish();
   const {normalizeHook,enrichHook}=await import('../dist/providers.js');
   const raw=await readBounded(process.stdin,65536);
-  const event=config.lifecycleVersion==='1.1'?await enrichHook(raw,config.source,Date.now()):normalizeHook(raw,config.source,Date.now());
+  const event=config.lifecycleVersion?await enrichHook(raw,config.source,Date.now(),{lifecycleVersion:config.lifecycleVersion}):normalizeHook(raw,config.source,Date.now());
   if(!event)finish();
   const body=JSON.stringify(event);
   const outgoing=request(url,{method:'POST',agent:false,headers:{'content-type':'application/json','content-length':Buffer.byteLength(body)}},response=>{

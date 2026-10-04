@@ -85,3 +85,17 @@ test('a PostToolUse payload above 64 KiB still resolves attention',async t=>{
  assert.equal(requests.length,1);assert.deepEqual(requests[0].event,{kind:'attention.resolved',attention:{status:'known',id:'toolu_01'}});
  assert.ok(!JSON.stringify(requests).includes('PRIVATE_CANARY'));
 });
+
+test('explicit lifecycle 1.2 adds only the Claude Desktop session ID from the hook environment',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-host-session-hook-'));t.after(()=>rm(directory,{recursive:true,force:true}));const path=join(directory,'producer.json');
+ const requests=[];const server=createServer(async(req,res)=>{let data='';for await(const b of req)data+=b;requests.push(JSON.parse(data));res.end('{}');});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const common={enabled:true,qualified:true,source:{provider:'claude',client:'code',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:`http://127.0.0.1:${server.address().port}/api/monitor/v1/events`,token:'t'.repeat(43)};
+ const payload={hook_event_name:'UserPromptSubmit',session_id:'session',prompt_id:'turn',prompt:'CONTENT_CANARY'};
+ const desktop={CLAUDE_CODE_ENTRYPOINT:'claude-desktop',CLAUDE_CODE_HOST_SESSION_ID:'local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b',PRIVATE_SETTING:'PRIVATE_CANARY'};
+ for(const [config,env] of [[common,desktop],[{...common,lifecycleVersion:'1.1'},desktop],[{...common,lifecycleVersion:'1.2'},desktop],
+  [{...common,lifecycleVersion:'1.2'},{...desktop,CLAUDE_CODE_ENTRYPOINT:'cli'}],[{...common,lifecycleVersion:'1.2'},{...desktop,CLAUDE_CODE_HOST_SESSION_ID:'local id'}],[{...common,lifecycleVersion:'1.3'},desktop]]){
+  await writeFile(path,JSON.stringify(config),{mode:0o600});assert.deepEqual(await run(path,payload,env),{code:0,stdout:'',stderr:''});
+ }
+ assert.deepEqual(requests.map(r=>[r.apiVersion,r.hostSessionId??null]),[['1.0',null],['1.1',null],['1.2',desktop.CLAUDE_CODE_HOST_SESSION_ID],['1.2',null],['1.2',null]]);
+ assert.doesNotMatch(JSON.stringify(requests),/CANARY|PRIVATE_SETTING|CLAUDE_CODE|claude-desktop/);
+});

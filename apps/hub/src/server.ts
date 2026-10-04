@@ -3,7 +3,7 @@ import {commandDiagnosticAttributes,diagnosticFailure,diagnosticReceipt,type Com
 import {createWispr,wisprConfiguration,type WisprOptions} from './wispr.js';
 import {catalogOperation} from './pixoo-catalog.js';
 import {readBuild} from './build.js';
-import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts/v1.2';
 import {enrichCodexTitle} from '@jimmie-potts/agent-state/providers';
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
@@ -182,7 +182,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       ...(sender ? {sender} : {}),clock:options.clock ?? Date.now,
       monotonic:automationDependencies?.monotonic ?? hubMonotonicNow,active:() => !staged && !closing && !exported});
   } catch (error) { await owner.shutdown();throw error; }
-  const snapshot = (version:'1.0'|'1.1'|'1.2'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
+  const snapshot = (version:'1.0'|'1.1'|'1.2'|'1.3'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const replay = createReplayLedgers();
   let exported: Promise<DurableState> | undefined;
   const streams = new Set<ServerResponse>();
@@ -327,7 +327,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       lease!.setFence(true); activationAllowed=false; return exported ??= owner.exportState();
     });
   }
-  const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'|'1.2'='1.0') => {
+  const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'|'1.2'|'1.3'='1.0') => {
     const current = snapshot(version);
     live(principal);
     return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:replay.ticket(principal.id),
@@ -397,10 +397,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           authorize(req,url.searchParams.get('scope') as Scope);reply(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           const version=url.searchParams.get('snapshotVersion')??'1.0';
-          if (!['1.0','1.1','1.2'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
+          if (!['1.0','1.1','1.2','1.3'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
               [...url.searchParams.keys()].some(k => !['q','provider','snapshotVersion'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
               (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
-          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1'|'1.2');
+          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1'|'1.2'|'1.3');
           if(url.searchParams.has('q')||url.searchParams.has('provider'))reply(res,200,view);
           else {const {matches,...envelope}=view;reply(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
@@ -506,7 +506,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
-    },sessions:(principal,query,provider)=>sessions(principal,query,provider,'1.2'),command,...(playbackId ? {playback:{sourceId:playbackId,
+    },sessions:(principal,query,provider)=>sessions(principal,query,provider,'1.3'),command,...(playbackId ? {playback:{sourceId:playbackId,
       // MCP is mounted before playback starts; until then the source is unavailable and nothing is sent.
       snapshot:() => {if (!playback) throw new HttpError('source-unavailable',503);return playback.snapshot();},
       command:async (principal:Credential,input:unknown) => {
