@@ -184,8 +184,10 @@ involved.
 reports at 1 ms) with its own VID/PID and a per-unit serial. It follows the USB
 storage firmware's pattern of a custom class on libDaisy's ST core, about
 150-300 lines with no libDaisy rebuild. Windows binds the built-in HID driver
-with no install or admin rights, reports arrive framed, and the bridge can open
-the device exclusively (share mode 0) to enforce one writer.
+with no install or admin rights, and reports arrive framed. Exclusive open is
+not portable: hidapi, which node-hid wraps, always opens Windows HID devices
+with shared read and write access, so one-writer enforcement belongs to the
+bridge (see [Boundary and ownership](#boundary-and-ownership)).
 
 The ID must not be `0483:5740` (TAPE, the picker and generic ST devices) or
 `1209:C0A1` (USB storage), and must avoid PIDs `8360`, `8297` and `8298` under
@@ -253,8 +255,11 @@ observation before anything depends on it in installed use.
   `GET /api/monitor/v1/sessions` and `/changes` with its own `read`-only
   credential over numeric loopback. It never ingests, acknowledges or
   approves, and it adds no lifecycle reducer.
-- One Windows bridge process is the only CHOMPI writer. It opens the HID device
-  exclusively and matches the controller's VID, PID, product and serial only.
+- One Windows bridge process is the only CHOMPI writer. It takes a per-user
+  single-instance lock before opening the device, and a second instance that
+  cannot take the lock exits without opening it. The lock is portable (a held
+  lock file, or a named mutex in the Windows adapter). The bridge matches the
+  controller's VID, PID, product and serial only.
   The legacy MIDI bridge must not run during the controller trial, and the
   controller firmware never presents MIDI.
 - Slot assignments live in the bridge's own private state on Windows,
@@ -325,7 +330,8 @@ released only by explicit archive or the owner's release gesture:
 - Claude: the Desktop record's `isArchived` flag, read by key only. This
   undocumented store is the one the focus check already reads.
 - Claude: an explicit CHOMPI gesture, for example holding the slot key with
-  Loop, as the owner decided. Extending the gesture to Codex needs an owner
+  Loop (Loop is a proposed key), as the owner decided. Extending the gesture
+  to Codex needs an owner
   decision.
 
 Hub expiry after 24 hours without evidence never releases a slot.
@@ -361,7 +367,8 @@ that cannot be mistaken for any task state.
 | Disconnect during Record hold | Modifiers released; no draft sent |
 | Reconnect or bridge restart | No replay; slots retained; fresh press required |
 | Unqualified client version | That client's routing disabled; the other unaffected |
-| Second bridge instance or legacy MIDI bridge | Exclusive open fails; second writer refuses to run |
+| Second bridge instance, including an overlapping restart | Single-instance lock refused; the second instance exits before opening the device |
+| Legacy MIDI bridge running | Never sees the controller, which presents no MIDI |
 
 ## Owner-operated trial plan (#743)
 
@@ -402,7 +409,8 @@ each dependent issue must use.
 - [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741), firmware
   and bridge: vendor HID on libDaisy's ST core with a new VID/PID; slot 04;
   the `BACKUP_SRAM` fix; the launcher's USB switch and LED teardown; the
-  minimal protocol above; one exclusive writer; a TypeScript core with a
+  minimal protocol above; one writer enforced by a single-instance lock; a
+  TypeScript core with a
   Windows OS adapter.
 - [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784): the
   owner-selected Hub hook field that carries the Claude Desktop session ID,
