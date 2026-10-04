@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-ARTIFACT_VERSION = '3.5.0'
+ARTIFACT_VERSION = '3.6.0'
 API_VERSION = '1.0'
 MAX_BYTES = 16 * 1024 * 1024
 _SCHEMA = json.loads((Path(__file__).resolve().parents[2] / 'schemas/snapshot-v1.schema.json').read_text(encoding='utf-8'))

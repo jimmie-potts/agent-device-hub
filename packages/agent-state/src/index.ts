@@ -177,14 +177,37 @@ export async function createAgentState(options:Options) {
   // Remove the named records and every descendant linked by known parent selectors in one durable
   // replacement, keeping bounded guards against recognizable delayed events. One rule serves every
   // supported provider/client path; retirement forgets monitoring state and asserts nothing else.
-  async function retire(roots:string[],at:number,end?:Envelope):Promise<Outcome> {
-    const removed=new Set(roots);
+  // The subtree of a record: itself and every descendant linked by known parent selectors.
+  function subtree(root:string):Set<string> {
+    const keys=new Set([root]);
     let count=0;
-    while(count!==removed.size){
-      count=removed.size;
-      for(const session of data.sessions)if(session.parent.status==='known'&&removed.has(identityKey(session.parent.identity)))
-        removed.add(identityKey(session.identity));
+    while(count!==keys.size){
+      count=keys.size;
+      for(const session of data.sessions)if(session.parent.status==='known'&&keys.has(identityKey(session.parent.identity)))
+        keys.add(identityKey(session.identity));
     }
+    return keys;
+  }
+  // Hub #807: the child record to retire for a new root, or none. Its whole subtree must be finished (idle,
+  // interrupted or ended; `active` and `unknown` may still be running) and hold no attention, so a running
+  // subagent or a pending approval never disappears to make room. The subtree whose newest evidence is oldest
+  // goes first; ties go to the lower identity key.
+  const finished=(session:Session)=>session.activity==='idle'||session.activity==='interrupted'||session.activity==='ended';
+  function displaceableChild():Session|undefined {
+    const byKey=new Map(data.sessions.map(session=>[identityKey(session.identity),session]));
+    let best:{session:Session;at:number;key:string}|undefined;
+    for(const session of data.sessions){
+      if(session.parent.status!=='known')continue;
+      const key=identityKey(session.identity);
+      const members=[...subtree(key)].flatMap(member=>byKey.get(member)??[]);
+      if(members.some(member=>member.attention.length>0||!finished(member)))continue;
+      const at=Math.max(...members.map(member=>member.lastEvidenceAtMs));
+      if(!best||at<best.at||at===best.at&&key<best.key)best={session,at,key};
+    }
+    return best?.session;
+  }
+  async function retire(roots:string[],at:number,end?:Envelope):Promise<Outcome> {
+    const removed=new Set(roots.flatMap(root=>[...subtree(root)]));
     const retirements=(data.retirements??[]).filter(item=>!removed.has(identityKey(item.identity)));
     for(const session of data.sessions)if(removed.has(identityKey(session.identity)))
       retirements.push(rememberRetirement(session,retirement(session.identity),at,end));
@@ -260,12 +283,26 @@ export async function createAgentState(options:Options) {
           if(oldEnd(event,previous))return {ok:true,revision:data.revision,outcome:'stale'};
           return retire([identityKey(event.identity)],now(),event);
         }
-        if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
+        const full=!previous&&data.sessions.length>=LIMITS.sessions;
+        // A new child never makes room (Hub #807).
+        if(full&&event.parent.status==='known'){loss();return {ok:false,code:'capacity'};}
         // Archive admission evidence stays specific to Codex Desktop conversations.
         if(!previous&&desktop(event.identity)&&await archived(event))return {ok:true,revision:data.revision,outcome:'stale'};
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}
         if(!reduced.session)return {ok:true,revision:data.revision,outcome:reduced.outcome};
+        if(full){
+          // Hub #807: subagent records must not crowd a new root task out for a day. Only an event that
+          // creates a root retires one finished child subtree without attention, through the ordinary
+          // retirement path, so its later events other than an eligible start are rejected as stale.
+          // Roots are never displaced, and with no eligible child admission is still rejected. Each
+          // displacement is loss.
+          const victim=displaceableChild();
+          if(!victim){loss();return {ok:false,code:'capacity'};}
+          const made=await retire([identityKey(victim.identity)],now());
+          if(!made.ok)return made;
+          loss();
+        }
         if(!previous)reduced.session.generation=data.revision+1;
         // Only a committed 1.2 event speaks for the host session: present sets, absent clears. A record
         // whose parent is known never carries one, whichever event made the parent known. Memory changes

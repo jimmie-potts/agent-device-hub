@@ -10,6 +10,6 @@
     }
   },
   "dependencies": {
-    "@jimmie-potts/agent-state": "3.5.0"
+    "@jimmie-potts/agent-state": "3.6.0"
   }
 }
