@@ -70,7 +70,9 @@ to 1.2:
 Monitoring pauses between steps 2 and 3. Keep the removed receipt for audit.
 Personal client settings change only through these reviewed operations; do not
 edit a producer file or receipt by hand. To roll back, repeat steps 2 and 3 with
-the earlier version before rolling the Hub back.
+the earlier version before rolling the Hub back. The supervised owner migration's `stageProducer` still accepts only producer
+files without a version or with `"1.1"`; finish any owner migration before
+selecting 1.2.
 
 ## Credentials and Windows invocation
 

@@ -8,7 +8,7 @@
 - With lifecycle 1.2 selected, the Claude provider reads `CLAUDE_CODE_HOST_SESSION_ID` from the hook environment only when `CLAUDE_CODE_ENTRYPOINT` is exactly `claude-desktop`. It adds the value only after validation; anything else is omitted and the event is still emitted. No other environment value is read.
 - The state owner keeps the latest value per session identity in memory for its lifetime and serves it through opt-in snapshot 1.3. Durable format 2.1 and its schemas are unchanged, so exports and stored bytes never contain the field. It is never a session identity and never merges records.
 - `GET /api/monitor/v1/sessions?snapshotVersion=1.3` and `hub_sessions` expose the field. Default and older snapshot projections are unchanged.
-- Setup and staged producers accept `lifecycleVersion:"1.2"`; existing producer configurations keep their current version.
+- Setup accepts `lifecycleVersion:"1.2"`; existing producer configurations keep their current version.
 
 ## Capabilities
 

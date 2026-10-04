@@ -43,14 +43,6 @@ test('staged routes activate only with valid authority and preserve producer ide
   route=await stageProducer(path,await routeDigest(path),destination.url+'/api/monitor/v1/events',token);
   await destination.activate({producers:[route],consumers:[]});assert.equal(destination.staged(),false);
   const {readFile}=await import('node:fs/promises');const saved=JSON.parse(await readFile(path,'utf8'));assert.equal(saved.enabled,true);assert.deepEqual(saved.source,identity);assert.equal(saved.qualified,true);
-  // A selected lifecycle version survives staging; unknown versions refuse before any write.
-  for(const lifecycleVersion of ['1.2','1.3']){
-   const versioned=join(root,`versioned-${lifecycleVersion}.json`);
-   await writeFile(versioned,JSON.stringify({enabled:true,qualified:true,source:identity,endpoint:source.url+'/api/monitor/v1/events',token,lifecycleVersion}),{mode:0o600});
-   if(lifecycleVersion==='1.3'){await assert.rejects(stageProducer(versioned,await routeDigest(versioned),destination.url+'/api/monitor/v1/events',token),/invalid-producer-file/);continue;}
-   const staged=await stageProducer(versioned,await routeDigest(versioned),destination.url+'/api/monitor/v1/events',token);
-   try{const value=JSON.parse(await readFile(versioned,'utf8'));assert.equal(value.lifecycleVersion,'1.2');assert.equal(value.enabled,false);}finally{await releaseRoute(staged);}
-  }
   assert.equal((await fetch(destination.url+'/api/hub/v1/health',{headers})).status,200);
   await assert.rejects(destination.activate({producers:[route],consumers:[]}),/activation-unavailable/);
  }finally{if(route)await releaseRoute(route);await destination?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}

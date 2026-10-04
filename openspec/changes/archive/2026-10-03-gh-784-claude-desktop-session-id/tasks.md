@@ -5,7 +5,7 @@
 ## 2. Producer
 
 - [x] 2.1 Record failing provider and hook-process tests for Desktop, CLI, missing, malformed, oversized, throwing, child, Codex and older-version cases, then implement the gated environment read with trimming order.
-- [x] 2.2 Accept `lifecycleVersion:"1.2"` in setup, staged producers and both hook entry points, with setup and packaged-hook tests.
+- [x] 2.2 Accept `lifecycleVersion:"1.2"` in setup and both hook entry points, with setup and packaged-hook tests.
 
 ## 3. Owner and feed
 

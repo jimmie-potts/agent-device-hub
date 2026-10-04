@@ -10,7 +10,8 @@ import {LIMITS, type Consumer, type DurableState, type Envelope, type Identity, 
   type Retirement,type Session, type Snapshot, type Storage, type StorageLease, type Commit} from './types.js';
 export * from './types.js';
 export {MemoryStorage} from './memory-storage.js';
-export {validateSnapshot,validateExport,migrateExport} from './validation.js';
+export {validateExport,migrateExport} from './validation.js';
+export {validateSnapshot} from './host-session-snapshot.js';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const recoveryJournalKey=(identity:Identity,turnId:string)=>hash(['approval-recovery',identityKey(identity),turnId]);

@@ -1455,7 +1455,7 @@ older-version environments. `host-session.test.mjs` in agent-state covers the
 memory-only owner map, `/clear`, retirement, expiry, failed commits, restart and
 durable 2.1 exports. The Hub's `host-session.test.mjs` reads the
 on-disk store and checks it against the stored durable 2.1 schema. The setup,
-setup-hook, migration and MCP suites cover the 1.2 selection. The existing
+setup-hook and MCP suites cover the 1.2 selection. The existing
 glob-based suites and CI jobs run all of them, so no new command or CI job is needed.
 
 Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
