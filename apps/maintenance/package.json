@@ -1,0 +1,10 @@
+{
+  "name": "@jimmie-potts/bunny-maintenance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@jimmie-potts/bunny-observability": "1.1.0",
+    "@jimmie-potts/device-contracts": "1.2.0"
+  }
+}

@@ -12,7 +12,7 @@ import {qualifyCompatibility} from './compatibility.js';
 import {captureStateIsolated,statePreserved} from './state.js';
 import {executeOperation} from './operation.js';
 
-type Arguments={command:'plan'|'status'|'upgrade'|'rollback';target?:string;owner?:string;tokenFile?:string;planFile?:string;approve?:string;rollback:boolean;baselineReceipt?:string};
+type Arguments={command:'plan'|'status'|'upgrade'|'rollback';target?:string;owner?:string;tokenFile?:string;planFile?:string;approve?:string;rollback:boolean;baselineReceipt?:string;deadline?:number};
 export function parseInstallArguments(args:string[]):Arguments{
  const [command,...rest]=args;if(!['plan','status','upgrade','rollback'].includes(command))throw new Error('invalid-install-arguments');
  const result:Arguments={command:command as Arguments['command'],rollback:false};
@@ -21,6 +21,10 @@ export function parseInstallArguments(args:string[]):Arguments{
  while(rest.length){
   const flag=rest.shift()!;if(used.has(flag))throw new Error('invalid-install-arguments');used.add(flag);
   if(flag==='--rollback'&&command==='plan'){result.rollback=true;continue;}
+  if(flag==='--deadline'){
+   const value=rest.shift();if(!['upgrade','rollback'].includes(command)||!value||!/^\d+(?:\.\d+)?$/.test(value)||!Number.isFinite(Number(value)))throw new Error('invalid-install-arguments');
+   result.deadline=Number(value);continue;
+  }
   const key=({'--owner':'owner','--token-file':'tokenFile','--plan':'planFile','--approve':'approve','--baseline-receipt':'baselineReceipt'} as const)[flag as '--owner'];
   const value=rest.shift();if(!key||!value||value.startsWith('--'))throw new Error('invalid-install-arguments');result[key]=value;
  }
@@ -88,7 +92,7 @@ export async function runInstallCli(args:string[]):Promise<void>{
   };
   const current=await refresh();assertApproval(current,options.approve!);
   const result=await executeOperation({plan:refresh,approvedDigest:options.approve!,prepare:()=>options.command==='upgrade'?buildTarget(repository,current.bound.layout.root,current.bound.source.target):selectRollback(current.bound.layout.root,current.bound.previous,current.bound.target.kind==='release'?current.bound.target.sourceRevision:undefined),
-   qualify:qualifyCompatibility,service:systemdService(current.bound.layout,{...current.bound.health!,state:current.bound.layout.state}),state:{capture:()=>captureStateIsolated(current.bound.layout.state),preserved:statePreserved}});
+   qualify:qualifyCompatibility,service:systemdService(current.bound.layout,{...current.bound.health!,state:current.bound.layout.state}),state:{capture:()=>captureStateIsolated(current.bound.layout.state),preserved:statePreserved},deadline:options.deadline});
   process.stdout.write(JSON.stringify(result,null,2)+'\n');if(result.receipt.outcome!=='succeeded')process.exitCode=1;
  }catch(error){
   const code=error instanceof Error&&/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(error.message)?error.message:'install-command-failed';

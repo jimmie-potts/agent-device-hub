@@ -12,8 +12,8 @@
     "test:workflow": "node --test tests/workflow_checks.cjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs",
-    "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard && tsc -p packages/event-contracts/tsconfig.json && npm run build:wispr",
-    "typecheck": "tsc -p packages/observability/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit && tsc -p packages/event-contracts/tsconfig.json --noEmit && tsc -p packages/wispr-contracts/tsconfig.json --noEmit && tsc -p apps/wispr-collector/tsconfig.json --noEmit",
+    "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard && tsc -p packages/event-contracts/tsconfig.json && npm run build:wispr && tsc -p apps/maintenance/tsconfig.json",
+    "typecheck": "tsc -p packages/observability/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit && tsc -p packages/event-contracts/tsconfig.json --noEmit && tsc -p packages/wispr-contracts/tsconfig.json --noEmit && tsc -p apps/wispr-collector/tsconfig.json --noEmit && tsc -p apps/maintenance/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -97,7 +97,12 @@
     "test:wispr:package": "npm run build && npm run test:wispr:package:built",
     "test:wispr:package:built": "node scripts/package-wispr.mjs --test",
     "package:wispr": "npm run build && node scripts/package-wispr.mjs",
-    "test:wispr:native:built": "node apps/wispr-collector/tests/native.mjs && node apps/wispr-collector/tests/native-privacy.mjs && node apps/wispr-collector/tests/native-cli.mjs && node apps/wispr-collector/tests/native-source-profile.mjs && node apps/wispr-collector/tests/native-locked-output.mjs && node apps/wispr-collector/tests/native-capacity.mjs"
+    "test:wispr:native:built": "node apps/wispr-collector/tests/native.mjs && node apps/wispr-collector/tests/native-privacy.mjs && node apps/wispr-collector/tests/native-cli.mjs && node apps/wispr-collector/tests/native-source-profile.mjs && node apps/wispr-collector/tests/native-locked-output.mjs && node apps/wispr-collector/tests/native-capacity.mjs",
+    "test:maintenance": "npm run build && npm run test:maintenance:built",
+    "test:maintenance:built": "node --test apps/maintenance/tests/*.test.mjs",
+    "package:maintenance": "npm run build && node scripts/package-maintenance.mjs",
+    "test:maintenance:package": "npm run build && npm run test:maintenance:package:built",
+    "test:maintenance:package:built": "node scripts/package-maintenance.mjs --test"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -132,7 +137,8 @@
     "packages/observability",
     "packages/event-contracts",
     "packages/wispr-contracts",
-    "apps/wispr-collector"
+    "apps/wispr-collector",
+    "apps/maintenance"
   ],
   "dependencies": {
     "react": "19.3.0",

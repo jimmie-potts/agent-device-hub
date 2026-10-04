@@ -1801,3 +1801,21 @@ Run build/type first and install the pinned contract and host requirements.
 Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
 adoption is covered by the existing Hub/MCP/setup checks. These are synthetic
 source checks; they do not install services or qualify physical devices.
+
+## Maintenance intake checks
+
+For `apps/maintenance`, use Node 24 from the repository root. Run `npm ci`,
+`npm run build`, `npm run typecheck`, `npm run test:maintenance:built`,
+`npm run test:maintenance:package:built`,
+`npm run test:observability:built`, `npm run test:contracts:built`,
+`npm run test:contracts:python`, `npm run check:workflow` and
+`npm run test:workflow`. All must exit zero. Depot runs the intake tests in its
+contracts jobs. This suite covers the owning tracker-closeout adapter, full
+installation receipts, canonical Python recommendation tooling and both extracted
+package entrypoints. The same suite covers the Hub supervisor installer wrapper;
+its native deadline guard also requires the Standalone hub, Standalone hub MCP
+and Shared monitoring setup checks above. Fixtures use synthetic journal data
+and disposable private state;
+these checks do not establish installed scheduling, credentials, permissions or
+physical behavior. See [the intake guide](../apps/maintenance/README.md) for its
+trusted supervisor boundary and installed qualification.

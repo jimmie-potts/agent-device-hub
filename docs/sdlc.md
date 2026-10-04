@@ -253,6 +253,26 @@ At authorized planning, implementation, review and closeout checkpoints, follow
 native checkpoint before projecting its resulting state. Project synchronization
 failure remains a reported tracker gap; it does not erase verified source delivery.
 
+## Shared manual delivery claim
+
+When Hub participates in the installed cross-repository nightly queue, start a
+manual delivery client under the same claim before its first write:
+
+```text
+python3 ~/.dotfiles/scripts/nightly_queue.py claim-run --config ~/.config/nightly-queue/config.json --repository jimmie-potts/agent-device-hub --issue <n> -- <manual-client argv>
+```
+
+Read `~/.dotfiles/docs/nightly-queue.md#shared-manual-claims` for the installed
+procedure. Retain the claim through validation, reviews, publication, merge,
+installation and tracker reconciliation, including when the scheduler is paused
+or disabled. Explicitly assigned workers under the supervisor's existing claim
+do not acquire nested claims. Before activation, existing unwrapped clients must
+finish or hand off. Desktop or other clients that cannot be wrapped stay read-only
+until a qualified claim/handoff covers their complete delivery. The helper
+excludes adopted cooperating clients; it cannot fence arbitrary same-user
+processes. A missing or uncertain claim blocks delivery writes without granting
+permission to replace an owner.
+
 ## Review and merge
 
 1. Complete authorized changes, relevant checks and applicable OpenSpec artifacts.
