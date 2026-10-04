@@ -114,3 +114,44 @@ test('durable export and reopen stay format 2.1 without the field; a restart wai
  const imported=await createAgentState({storage:new MemoryStorage(),ownerId:'owner',consumers:[],clock:()=>20000,importState:saved});
  try{assert.equal(imported.snapshot('1.3').sessions.some(s=>'hostSessionId' in s),false);}finally{await imported.shutdown();}
 });
+
+test('a record with a known parent never carries the value, whichever event made the parent known',async()=>{
+ // Ordering A: the child is known first, then sends a root-shaped 1.2 event with a host session ID.
+ const a=fixture(),first=await a.open();
+ try{
+  await first.ingest(a.event('root','session.started',{hostSessionId:desktopId}));
+  await first.ingest(a.event('child','session.started',{parent:{status:'known',identity:identity('root')}}));
+  assert.equal((await first.ingest(a.event('child','turn.started',{hostSessionId:otherId}))).ok,true);
+  const snapshot=first.snapshot('1.3'),child=snapshot.sessions.find(s=>s.identity.sessionId==='child');
+  assert.equal(child.parent.status,'known');assert.equal('hostSessionId' in child,false);
+  assert.equal(host(first,'root'),desktopId);assert.equal(validateSnapshot(snapshot).ok,true);
+ }finally{await first.shutdown();}
+ // Ordering B: a 1.2 root event sets the value, then a 1.1 event makes the parent known.
+ const b=fixture(),second=await b.open();
+ try{
+  await second.ingest(b.event('root','session.started'));
+  await second.ingest(b.event('later-child','session.started',{hostSessionId:otherId}));
+  assert.equal(host(second,'later-child'),otherId);
+  assert.equal((await second.ingest({...b.event('later-child','turn.started',{parent:{status:'known',identity:identity('root')}}),apiVersion:'1.1'})).ok,true);
+  const snapshot=second.snapshot('1.3'),child=snapshot.sessions.find(s=>s.identity.sessionId==='later-child');
+  assert.equal(child.parent.status,'known');assert.equal('hostSessionId' in child,false);assert.equal(validateSnapshot(snapshot).ok,true);
+  // A later root-shaped 1.2 event cannot bring it back while the parent stays known.
+  await second.ingest(b.event('later-child','turn.ended',{hostSessionId:otherId}));
+  assert.equal(validateSnapshot(second.snapshot('1.3')).ok,true);assert.equal(host(second,'later-child'),undefined);
+ }finally{await second.shutdown();}
+});
+
+test('a snapshot taken while a commit is in flight shows only committed values',async()=>{
+ const memory=new MemoryStorage();let hold=null;
+ const storage={acquire:async(id,signal)=>{const lease=await memory.acquire(id,signal);return {...lease,commit:async(change,abort)=>{if(hold)await hold.promise;return lease.commit(change,abort);}};}};
+ const f=fixture(storage),owner=await f.open();
+ try{
+  await owner.ingest(f.event('session-a','turn.started',{hostSessionId:desktopId}));
+  let release;hold={promise:new Promise(resolve=>{release=resolve;})};
+  const pending=owner.ingest(f.event('session-a','turn.ended',{hostSessionId:otherId}));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(host(owner,'session-a'),desktopId,'an uncommitted value must not be visible');
+  hold=null;release();
+  assert.equal((await pending).ok,true);assert.equal(host(owner,'session-a'),otherId);
+ }finally{await owner.shutdown();}
+});
