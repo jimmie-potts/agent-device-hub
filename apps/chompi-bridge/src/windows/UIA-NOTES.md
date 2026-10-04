@@ -64,3 +64,15 @@ can change any of this. Re-qualify it alongside the bridge's qualified-version l
   fails closed, so Send stays blocked until #743 observes a card and qualifies a selector.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
+
+## Adapter caches and their staleness
+
+- **Client versions** come from `Get-AppxPackage` through the helper. The cache is dropped when:
+  - the helper restarts;
+  - 10 minutes pass;
+  - a foreground check sees a client under a process ID it has not seen for that client. This covers the first sighting after start-up and every restart, such as a self-update relaunch.
+
+  A fetch that is in flight when a new process ID appears is not trusted afterwards. Two cases remain stale, each bounded:
+  - A client that restarts on a new version without coming to the foreground keeps its cached version until it is seen in the foreground or the 10 minutes pass.
+  - The press that first brings the new process to the foreground passed the version gate on the cached value, because the gate runs before the link opens. The next gate check fetches again.
+- **The Codex archive** is a set of archived thread IDs from one directory scan. A complete scan replaces the previous set and answers, positive or negative, for 10 seconds. After that, the next lookup rescans, and concurrent lookups share that scan. Archiving or unarchiving therefore shows within one TTL after the next lookup. A scan that runs over its 1-second bound, or fails, never replaces the set. It answers only the archived IDs it read, and returns `unknown` for anything else.

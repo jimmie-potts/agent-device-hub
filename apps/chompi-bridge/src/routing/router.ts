@@ -47,7 +47,7 @@ export interface RouterStatus {
 
 interface Target { slot: number; client: Client; key: string; taskId: string; title: string | null }
 type Call<T> = { ok: true; value: T } | { ok: false; reason: 'timeout' | 'rejected' };
-type Check = { ok: true } | { ok: false; reason: string };
+type Check = { ok: true } | { ok: false; reason: string; observedVersion?: string | null };
 
 const RENDER_TICK_MS = 100;
 /** Desktop IDs per `claudeSessions` call; more are read in several calls, never truncated. */
@@ -324,6 +324,12 @@ export class TaskRouter {
     }
     if (!verified.ok) return fail('verify', verified.reason);
 
+    // The first gate may have used a cached version: an updated client can be the one the link just raised. Gate
+    // again before any input; the adapter re-reads when the client's foreground process changed.
+    const regate = await this.#versionGate(client);
+    if (!alive()) return;
+    if (!regate.ok) return fail('target', regate.reason, { client, observedVersion: regate.observed });
+
     // 4. Composer
     if (client === 'codex') {
       const shortcut = await this.#call(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.codexComposer }));
@@ -419,6 +425,8 @@ export class TaskRouter {
   async #recheck(target: Target): Promise<Check> {
     const record = this.#slots.get(target.slot);
     if (!record || slotKey(record) !== target.key) return { ok: false, reason: 'no-target' };
+    const gate = await this.#versionGate(target.client);
+    if (!gate.ok) return { ok: false, reason: gate.reason, observedVersion: gate.observed };
     const foreground = await this.#foreground(target.client);
     if (!foreground.ok) return foreground;
     if (target.client === 'codex') {
@@ -449,7 +457,7 @@ export class TaskRouter {
   async #recordPress(): Promise<void> {
     this.#recordHeld = true;
     const token = ++this.#recordToken;
-    const refuse = (reason: string) => { this.#log({ type: 'record-refused', reason }); this.#render(); };
+    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'record-refused', reason, ...extra }); this.#render(); };
     const target = this.#target;
     if (!target) return refuse('no-target');
     if (this.#sending) return refuse('send-in-progress');
@@ -459,7 +467,7 @@ export class TaskRouter {
     if (!current()) return;
     if (!check.ok) {
       this.#dropTarget(target);
-      return refuse(check.reason);
+      return refuse(check.reason, check.observedVersion === undefined ? {} : { observedVersion: check.observedVersion });
     }
     this.#chordDown = true;
     this.#render();
@@ -498,7 +506,7 @@ export class TaskRouter {
 
   /** One Enter to the verified composer, or nothing. An uncertain keystroke is never retried. */
   async #send(): Promise<void> {
-    const refuse = (reason: string) => { this.#log({ type: 'send-refused', reason }); this.#render(); };
+    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); this.#render(); };
     if (this.#sending) return refuse('send-in-progress');
     if (this.#clock.now() - this.#lastSendAt < this.#profile.timing.sendRepeatWindowMs) return refuse('repeat');
     const target = this.#target;
@@ -514,7 +522,7 @@ export class TaskRouter {
       if (!alive()) return refuse('superseded');
       if (!check.ok) {
         this.#dropTarget(target);
-        return refuse(check.reason);
+        return refuse(check.reason, check.observedVersion === undefined ? {} : { observedVersion: check.observedVersion });
       }
       const approval = await this.#call(() => this.#adapter.approvalVisible(target.client));
       if (!alive()) return refuse('superseded');

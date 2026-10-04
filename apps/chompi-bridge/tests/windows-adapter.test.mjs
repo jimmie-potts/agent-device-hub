@@ -252,3 +252,67 @@ test('releaseAllSync releases held keys synchronously for an exit hook', async (
   win32.sendInput = () => { throw new Error('ffi'); };
   assert.doesNotThrow(() => instance.releaseAllSync(), 'a failing release never throws from an exit hook');
 });
+
+test('a new foreground process ID for a client invalidates the cached versions', async () => {
+  let version = '26.930.3930.0';
+  const helper = fakeHelper(op => (op === 'ping'
+    ? { ok: true, value: { pong: true } }
+    : { ok: true, value: { codex: { version }, claude: { version: '2.19675.0.0' } } }));
+  helper.starts = 1;
+  const win32 = fakeWin32({ family: null, image: 'C:\\tools\\wezterm-gui.exe' });
+  const instance = createWindowsAdapter({ win32: async () => win32, helper });
+  const fetches = () => helper.calls.filter(call => call.op === 'clientVersions').length;
+  await instance.warmUp();
+  assert.equal(fetches(), 1);
+  await instance.foregroundWindow();
+  await instance.clientVersions();
+  assert.equal(fetches(), 1, 'another app in the foreground changes nothing');
+
+  // Codex self-updated and restarted before it was ever seen: its first foreground sighting refreshes.
+  version = '26.999.0.0';
+  Object.assign(win32.state, { family: CODEX_PACKAGE_FAMILY, pid: 4242 });
+  await instance.composerFocused('codex');
+  assert.equal((await instance.clientVersions()).codex.value, '26.999.0.0');
+  assert.equal(fetches(), 2);
+  await instance.foregroundWindow();
+  await instance.clientVersions();
+  assert.equal(fetches(), 2, 'the same process again keeps the cache');
+
+  version = '27.0.0.0';
+  win32.state.pid = 5000; // the client restarted
+  await instance.foregroundWindow();
+  assert.equal((await instance.clientVersions()).codex.value, '27.0.0.0');
+  assert.equal(fetches(), 3);
+
+  Object.assign(win32.state, { family: CLAUDE_PACKAGE_FAMILY, pid: 777 });
+  await instance.foregroundWindow();
+  await instance.clientVersions();
+  assert.equal(fetches(), 4, 'a Claude process change refreshes too');
+  Object.assign(win32.state, { family: CODEX_PACKAGE_FAMILY, pid: 5000 });
+  await instance.foregroundWindow();
+  await instance.clientVersions();
+  assert.equal(fetches(), 4, 'returning to the known Codex process keeps the refreshed cache');
+});
+
+test('a process change seen while versions are being fetched is not lost', async () => {
+  let release;
+  const helper = fakeHelper(op => (op === 'clientVersions'
+    ? new Promise(resolve => { release = () => resolve({ ok: true, value: { codex: { version: '1.0.0.0' }, claude: { version: '2.0.0.0' } } }); })
+    : { ok: true, value: { pong: true } }));
+  helper.starts = 1;
+  const win32 = fakeWin32({ family: CODEX_PACKAGE_FAMILY });
+  const instance = createWindowsAdapter({ win32: async () => win32, helper });
+  await instance.foregroundWindow();
+  const pending = instance.clientVersions();
+  await new Promise(resolve => setImmediate(resolve));
+  win32.state.pid = 9999; // Codex restarts while the helper is still answering
+  await instance.foregroundWindow();
+  release();
+  await pending;
+  const before = helper.calls.length;
+  const next = instance.clientVersions();
+  await new Promise(resolve => setImmediate(resolve));
+  release();
+  await next;
+  assert.equal(helper.calls.length, before + 1, 'the answer fetched before the restart is not trusted for the new process');
+});

@@ -183,7 +183,10 @@ reported once and the last good profile stays.
 ### Qualify a client update
 
 Codex Desktop updates itself often, and each update disables Codex routing until its version is listed. A slot press
-then logs `focus-failed` with `reason: "client-unqualified"`, the `client` and the `observedVersion`. To qualify it:
+then logs `focus-failed` with `reason: "client-unqualified"`, the `client` and the `observedVersion`. The gate also runs
+again after verification and before every keystroke (composer shortcut, dictation chord, Send), so a client that
+updated while the bridge ran is caught before any input; Record and Send log `record-refused` or `send-refused` with
+the same reason and version. To qualify it:
 
 1. Check the selectors against [UIA-NOTES.md](src/windows/UIA-NOTES.md) for that version (the selected-row and
    composer structure), for example with the native check's read-only observations.

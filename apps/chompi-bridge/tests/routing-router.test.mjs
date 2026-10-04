@@ -260,6 +260,42 @@ test('an unqualified Codex version disables Codex only, because its UI selectors
   assert.deepEqual(target(ctx), { slot: 1, client: 'claude' }, 'Claude is unaffected');
 });
 
+test('a client update seen only after the link opens fails closed before any keystroke', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  let reads = 0;
+  // Cached version at the gate; the adapter re-reads after the updated client comes to the foreground.
+  ctx.adapter.clientVersions = async () => { ctx.adapter.calls.push(['clientVersions']); reads++; return { codex: known(reads === 1 ? '26.930.3930.0' : '26.1001.0.0'), claude: known('2.19675.0.0') }; };
+  ctx.press(SLOT(1));
+  await settle();
+  assert.deepEqual(ctx.adapter.opened, [`codex://threads/${tid(1)}`], 'the first gate passed on the cached version');
+  const failure = ctx.failures().at(-1);
+  assert.equal(failure.reason, 'client-unqualified');
+  assert.equal(failure.observedVersion, '26.1001.0.0');
+  assert.deepEqual(ctx.adapter.keys, [], 'not even the composer shortcut');
+  assert.equal(target(ctx), null);
+  assert.equal(ctx.router.status().slots[0].error, true);
+});
+
+test('Record and Send re-check the client version before their keystrokes', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  await ctx.focus(1);
+  ctx.adapter.keys.length = 0;
+  ctx.adapter.versions = { ...ctx.adapter.versions, codex: known('26.1001.0.0') };
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'client-unqualified');
+  assert.equal(ctx.lastLog('send-refused').observedVersion, '26.1001.0.0');
+  await ctx.focus(1);
+  ctx.adapter.versions = { ...ctx.adapter.versions, codex: known('26.930.3930.0') };
+  await ctx.focus(1);
+  ctx.adapter.keys.length = 0;
+  ctx.adapter.versions = { ...ctx.adapter.versions, codex: unknown('package not found') };
+  ctx.press(RECORD);
+  await settle();
+  assert.equal(ctx.lastLog('record-refused').reason, 'client-version-unknown');
+  assert.deepEqual(ctx.adapter.keys, [], 'no chord and no Enter');
+  assert.equal(target(ctx), null);
+});
+
 // Task switch
 
 test('matrix: a task switch between Record and Send clears the pending target and Send is refused', async t => {

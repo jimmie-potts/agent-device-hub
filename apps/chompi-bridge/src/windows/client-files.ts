@@ -12,49 +12,49 @@ const ROLLOUT = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a
 export interface CodexArchiveOptions {
   /** Longest one directory scan may run before its result is unknown (default 1 s). */
   scanTimeoutMs?: number;
-  /** How long a completed scan answers "not archived" (default 10 s). Archived IDs are remembered for good. */
-  negativeTtlMs?: number;
+  /** How long a complete scan answers, positive or negative, before the next lookup rescans (default 10 s). */
+  ttlMs?: number;
   now?: () => number;
 }
 
-type Scan = { complete: boolean; reason?: string; at: number };
+type Scan = { ids: Set<string>; complete: boolean; reason?: string; at: number };
 
 /**
  * Whether Codex has archived a thread: `archived_sessions/rollout-<timestamp>-<id>.jsonl` exists under the Codex
- * home. Reads directory entry names only, never file contents. One time-bounded scan records every archived ID,
- * so concurrent and nearby lookups for different slots share it; archived IDs stay cached, and a completed scan
- * answers "not archived" for `negativeTtlMs`. A scan that times out or fails still reports the IDs it found.
+ * home. Reads directory entry names only, never file contents. One time-bounded scan collects every archived ID,
+ * so concurrent and nearby lookups for different slots share it. A complete scan replaces the previous set and
+ * answers for `ttlMs`, so an unarchived thread reads as not archived after at most one TTL. A scan that times out
+ * or fails never replaces the complete set; it answers only the positive matches it read, otherwise unknown.
  */
 export class CodexArchiveIndex {
   private readonly home: string;
   private readonly scanTimeoutMs: number;
-  private readonly negativeTtlMs: number;
+  private readonly ttlMs: number;
   private readonly now: () => number;
-  private readonly archived = new Set<string>();
-  private last: Scan | null = null;
+  private complete: Scan | null = null;
   private inflight: Promise<Scan> | null = null;
 
   constructor(home: string, options: CodexArchiveOptions = {}) {
     this.home = home;
     this.scanTimeoutMs = options.scanTimeoutMs ?? 1000;
-    this.negativeTtlMs = options.negativeTtlMs ?? 10_000;
+    this.ttlMs = options.ttlMs ?? 10_000;
     this.now = options.now ?? Date.now;
   }
 
   async archivedThread(threadId: string): Promise<Observation<boolean>> {
     if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) return unknown('invalid-thread-id');
-    if (this.archived.has(threadId)) return known(true);
-    if (this.last?.complete && this.now() - this.last.at < this.negativeTtlMs) return known(false);
+    if (this.complete && this.now() - this.complete.at < this.ttlMs) return known(this.complete.ids.has(threadId));
     const scan = await (this.inflight ??= this.scan().finally(() => { this.inflight = null; }));
-    if (this.archived.has(threadId)) return known(true);
-    return scan.complete ? known(false) : unknown(scan.reason ?? 'codex-archive-unreadable');
+    if (scan.complete) return known(scan.ids.has(threadId));
+    return scan.ids.has(threadId) ? known(true) : unknown(scan.reason ?? 'codex-archive-unreadable');
   }
 
   private async scan(): Promise<Scan> {
     const started = this.now();
+    const ids = new Set<string>();
     const result = (complete: boolean, reason?: string): Scan => {
-      const scan: Scan = { complete, at: started, ...(reason ? { reason } : {}) };
-      if (complete) this.last = scan;
+      const scan: Scan = { ids, complete, at: started, ...(reason ? { reason } : {}) };
+      if (complete) this.complete = scan;
       return scan;
     };
     let directory;
@@ -73,7 +73,7 @@ export class CodexArchiveIndex {
       for await (const entry of directory) {
         if (this.now() - started > this.scanTimeoutMs) return result(false, 'codex-archive-timeout');
         const match = entry.isFile() ? ROLLOUT.exec(entry.name) : null;
-        if (match) this.archived.add(match[1]!);
+        if (match) ids.add(match[1]!);
       }
     } catch {
       return result(false, 'codex-archive-unreadable');

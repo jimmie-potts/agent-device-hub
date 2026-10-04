@@ -23,7 +23,7 @@ export interface WindowsAdapterOptions {
   /** Claude Desktop `claude-code-sessions` directory (default: under the package's `LocalCache` in `%LOCALAPPDATA%`). */
   claudeSessionsRoot?: string;
   env?: NodeJS.ProcessEnv;
-  /** Archive scan bounds and caching (defaults: 1 s scan, 10 s negative cache). */
+  /** Archive scan bound and answer TTL (defaults: 1 s scan, 10 s TTL). */
   codexArchive?: Omit<CodexArchiveOptions, 'now'>;
   /** Longest wait for the shell to accept a deep link (default 10 s). */
   openUriTimeoutMs?: number;
@@ -69,8 +69,17 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
   const now = options.now ?? Date.now;
   const versionTtlMs = options.versionTtlMs ?? 10 * 60_000;
   const openUriTimeoutMs = options.openUriTimeoutMs ?? 10_000;
-  let versions: { value: ClientVersions; at: number; starts: number | undefined } | null = null;
-  let versionsInflight: Promise<ClientVersions> | null = null;
+  let versions: { value: ClientVersions; at: number; starts: number | undefined; epoch: number } | null = null;
+  let versionsInflight: { promise: Promise<ClientVersions>; epoch: number } | null = null;
+  // Each client's last foreground process ID. A new or changed one (a restart, possibly after a self-update)
+  // advances the epoch, which invalidates cached versions, including a fetch already in flight.
+  const clientPids: Partial<Record<Client, number>> = {};
+  let pidEpoch = 0;
+  const noteClientProcess = (packageIdentity: string | null, pid: number) => {
+    for (const client of ['codex', 'claude'] as const) {
+      if (PACKAGE_FAMILIES[client] === packageIdentity && clientPids[client] !== pid) { clientPids[client] = pid; pidEpoch += 1; }
+    }
+  };
   let archive: { home: string; index: CodexArchiveIndex } | null = null;
 
   const win32 = async (): Promise<Win32Api | null> => {
@@ -103,6 +112,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       const root = loaded.rootOwner(hwnd) || hwnd;
       // A foreground change during the lookup would mix two windows' facts.
       if (loaded.foregroundWindow() !== hwnd) return unknown('foreground-changed');
+      noteClientProcess(identity.packageFamily, pid);
       const processName = identity.imagePath ? winPath.basename(identity.imagePath) : null;
       return known({ hwnd, root, pid, packageIdentity: identity.packageFamily, processName });
     } catch {
@@ -127,7 +137,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
     return known(value);
   }
 
-  async function fetchVersions(): Promise<ClientVersions> {
+  async function fetchVersions(epoch: number): Promise<ClientVersions> {
     const current = uia();
     const reply = await current.request('clientVersions');
     if (!reply.ok) {
@@ -142,7 +152,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       return unknown('helper-invalid-reply');
     };
     const value = { codex: one(values.codex), claude: one(values.claude) };
-    versions = { value, at: now(), starts: current.starts };
+    versions = { value, at: now(), starts: current.starts, epoch };
     return value;
   }
 
@@ -150,11 +160,17 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
     version: OS_ADAPTER_VERSION,
     platform: 'win32',
 
+    /** Cached; see "Adapter caches and their staleness" in UIA-NOTES.md for when it refreshes and how stale it can be. */
     async clientVersions(): Promise<ClientVersions> {
       if (closed) return { codex: unknown('adapter-closed'), claude: unknown('adapter-closed') };
-      // Cached for the helper's lifetime: a restart (new start count) or the TTL refreshes it.
-      if (versions && versions.starts === uia().starts && now() - versions.at < versionTtlMs) return versions.value;
-      return (versionsInflight ??= fetchVersions().finally(() => { versionsInflight = null; }));
+      // Cached while the helper and every seen client process stay the same, for at most the TTL.
+      if (versions && versions.epoch === pidEpoch && versions.starts === uia().starts && now() - versions.at < versionTtlMs) return versions.value;
+      if (versionsInflight?.epoch !== pidEpoch) {
+        const epoch = pidEpoch;
+        const promise = fetchVersions(epoch).finally(() => { if (versionsInflight?.promise === promise) versionsInflight = null; });
+        versionsInflight = { promise, epoch };
+      }
+      return versionsInflight!.promise;
     },
 
     async warmUp(): Promise<void> {
