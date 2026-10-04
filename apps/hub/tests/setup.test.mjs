@@ -121,3 +121,12 @@ test('Codex setup does not generate the Claude tool events',async t=>{
  const events=(await planSetup(input)).additions.map(entry=>entry.event);
  assert.ok(!events.includes('PostToolUse')&&!events.includes('PostToolUseFailure'));assert.ok(events.includes('Interrupt'));
 });
+test('setup selects lifecycle 1.2 explicitly and never changes an installed receipt in place',async t=>{
+ const input=await fixture(t),access=authority();input.source={...source,provider:'claude',client:'code'};
+ for(const lifecycleVersion of ['1.0','1.3',1.2,null])await assert.rejects(planSetup({...input,lifecycleVersion}),/invalid-setup/);
+ const selected={...input,lifecycleVersion:'1.2'};
+ await applySetup(selected,(await planSetup(selected)).digest,access);
+ assert.equal((await read(join(input.directory,'producer.json'))).lifecycleVersion,'1.2');assert.equal((await read(join(input.directory,'receipt.json'))).input.lifecycleVersion,'1.2');
+ for(const changed of [input,{...input,lifecycleVersion:'1.1'}])await assert.rejects(planSetup(changed),/setup-identity-conflict/);
+ await remove(input.directory,access);assert.equal(access.active.size,0);
+});

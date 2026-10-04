@@ -62,3 +62,13 @@ test('the host session ID survives envelope trimming before title and project',a
 test('an unsupported lifecycle selection is refused without an event',async()=>{
  for(const lifecycleVersion of ['1.0','1.3',1.2])assert.equal(await enrich(desktop,{lifecycleVersion}),null);
 });
+
+test('owner-side Codex title enrichment keeps the 1.2 envelope version',async t=>{
+ const {mkdtemp,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const home=await mkdtemp(join(tmpdir(),'codex-home-12-'));t.after(()=>rm(home,{recursive:true,force:true}));
+ await writeFile(join(home,'session_index.jsonl'),JSON.stringify({id:'session',thread_name:'Desktop title'})+'\n');
+ const base={apiVersion:'1.2',identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'source',sessionId:'session'},turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'turn.started'},observedAtMs:1000,ordering:{status:'unknown'}};
+ const event=await providers.enrichCodexTitle(base,home);
+ assert.equal(event.apiVersion,'1.2');assert.deepEqual(event.title,{value:'Desktop title',source:'provider'});clean(event);
+ assert.equal((await providers.enrichCodexTitle({...base,apiVersion:'1.0'},home)).title,undefined);
+});

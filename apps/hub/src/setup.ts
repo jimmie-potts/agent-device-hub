@@ -5,7 +5,7 @@ import {createEmitter,type SourceConfiguration} from '@jimmie-potts/agent-state/
 import {object,loopbackEndpoint,canonical} from './common.js';
 import {digest,privateDirectory,readPrivate,replacePrivate} from './setup-files.js';
 
-export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;lifecycleVersion?:'1.1';windowsDistribution?:string;credentialFile?:string};
+export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;lifecycleVersion?:'1.1'|'1.2';windowsDistribution?:string;credentialFile?:string};
 /** Implementations must persist grants/revocations and confirm the active owner's access state before resolving. */
 export type SetupAuthority={grant:(id:string,token:string,receiptDirectory:string)=>Promise<void>;revoke:(id:string,token:string,receiptDirectory:string)=>Promise<void>};
 type Entry={event:string;group:{hooks:{type:string;command:string;timeout:number;commandWindows?:string}[]}};
@@ -21,7 +21,7 @@ export function hookCommand(node:string,hook:string,config:string,distribution?:
  return {command,commandWindows:['wsl.exe','--distribution',distribution,'--exec',node,hook,config].map(v=>'"'+v+'"').join(' ')};
 }
 function validate(input:SetupInput){
- if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile','lifecycleVersion'].includes(k))||input.lifecycleVersion!==undefined&&input.lifecycleVersion!=='1.1'||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
+ if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile','lifecycleVersion'].includes(k))||input.lifecycleVersion!==undefined&&input.lifecycleVersion!=='1.1'&&input.lifecycleVersion!=='1.2'||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
  if(input.windowsDistribution!==undefined&&input.source.provider!=='codex')throw new Error('unsupported-windows-client');
  const emitter=createEmitter({source:input.source,enabled:false,send:async()=>{}});emitter.close();
  if(loopbackEndpoint(input.endpoint).pathname!=='/api/monitor/v1/events')throw new Error('invalid-endpoint');
