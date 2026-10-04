@@ -32,7 +32,7 @@ test('reducer, coordination, constants, snapshot-schema and new lifecycle-versio
  await withRelease(async release=>{
   await release.append('state','dist/reducer.js','\n// reducer change\n');
   await release.append('state','dist/index.js','\n// snapshot or coordination change\n');
-  await release.replace('state','dist/types.js',"export const VERSION = '3.5.0';","export const VERSION = '3.99.0';");
+  await release.replace('state','dist/types.js',"export const VERSION = '3.6.0';","export const VERSION = '3.99.0';");
   await release.append('state','schemas/snapshot-v1.2.schema.json');
   await release.write('state','schemas/snapshot-v1.3.schema.json','{}\n');
   await release.write('lifecycle','schemas/lifecycle-v1.2.schema.json','{}\n');

@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 3.5.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 3.6.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -167,7 +167,16 @@ call `maintain()` after an injected clock advance. Quiesced or stopped stores
 prune and expire when ownership resumes. Capacity rejection, after expiry, is
 observable and retains the remaining state and notices. A host must surface
 saturation for operator action; beyond expiry, it must not silently discard
-state to make room. Revision exhaustion also rejects admission.
+state to make room, with one exception for child records. Subagent records
+are short-lived and never stand alone, but each holds a slot for a day, so they
+could crowd new tasks out. When the owner is full and an event would create a
+root session (any record whose parent is not known), the owner retires the
+least recently active child record whose subtree holds no attention, together
+with its descendants, through the ordinary retirement path, then admits the
+root. Retirement guards reject the displaced child's delayed events, and each
+displacement adds one to the loss count. A new child never displaces anything,
+roots are never displaced, and with no eligible child the root is rejected as
+before. Revision exhaustion also rejects admission.
 
 Provider observations, calculated current state and diagnostics have separate
 roles. Envelopes preserve available qualified identity/order evidence; snapshots
@@ -227,7 +236,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 3.5.0 | Lifecycle envelopes 1.0, 1.1 and 1.2 from lifecycle package 1.2.0 |
+| Agent state 3.6.0 | Lifecycle envelopes 1.0, 1.1 and 1.2 from lifecycle package 1.2.0 |
 | Snapshots / durable exports | Closed snapshots 1.0, 1.1 and opt-in 1.2 and 1.3; durable 2.1 with 1.0/2.0 import; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -250,6 +259,7 @@ admission without changing those schemas.
 Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
 Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
+Package 3.6.0 lets a new root task displace the least recently active child record without attention when the owner is full ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)), without changing the schemas.
 Package 3.5.0 adds the lifecycle 1.2 Claude Desktop host session ID and opt-in snapshot 1.3 without changing the durable schemas.
 Package 3.4.0 maps Claude Code `PostToolUse` and `PostToolUseFailure` to known-ID resolutions and forgets same-turn approvals without a request ID on a known-ID resolution or turn end, without changing the schemas.
 Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
