@@ -197,7 +197,7 @@ installation effects, and reconciliation without duplicating the delivery engine
 ## Owning tracker closeout
 
 The same package exposes `tracker-closeout.mjs --config <private-config.json>`
-as the supervisor's pinned Hub closeout adapter. Invoke it only after the
+as the supervisor's pinned owning closeout adapter. Invoke it only after the
 supervisor has verified source checks, independent reviews, merged-main CI and
 the owning installation. It adds no scheduler or delivery worker. Its one
 proposal-only assessment counts against the original deadline and shared context
@@ -208,9 +208,21 @@ The request has exactly `schemaVersion: 1`, `operation` (`closeout` or
 `reconcile`), `repository`, `issue`, `pr`, `merge`, `installationReceipt`
 (`path` and SHA-256), `acceptedSourceOnly`, `requirementsBodySha256`,
 `requiredAcceptance`, `deadline`
-and `evidenceDirectory`. Repository is fixed to Hub. The adapter validates the
-full published install-receipt/1.0 contract, installation owner, successful
-outcome, exact target/running revision and healthy result. It also verifies the
+and `evidenceDirectory`. Trusted configuration selects one fixed repository
+policy; the request must match it:
+
+| Repository under `jimmie-potts` | Installation proof | Tracker projection |
+| --- | --- | --- |
+| `agent-device-hub` | `install-receipt/1.0`, runtime `hub` | Owning workflow labels and existing B.U.N.N.Y. item |
+| `codex-nanoleaf` | `install-receipt/1.0`, runtime `nanoleaf` | Owning workflow labels and existing B.U.N.N.Y. item |
+| `divoom-app-upgrade` | `install-receipt/1.0`, runtime `pixoo` | Owning workflow labels and existing B.U.N.N.Y. item |
+| `agent-skills` | `installed-files/1.0`, skills plan and manager/link readback | Preserve labels; no portfolio access or writes |
+| `dotfiles` | `installed-files/1.0`, canonical loading-link/file readback | Preserve labels; no portfolio access or writes |
+
+There is no custom policy path or plugin loading. Runtime profiles validate the
+full published receipt contract, installation owner, successful outcome, exact
+target/running revision and healthy result. Tool profiles validate the owning
+plan and file/link readback below, without a runtime-health claim. Both verify the
 merged PR and unchanged selected issue body. The worker's acceptance classes
 are a claim: a separate bounded assessment reviews the current body and public
 comments. `acceptedSourceOnly` is normally null. An explicitly accepted source-only
@@ -226,16 +238,71 @@ blocks automatic closure even if the worker omitted it.
 Closeout configuration contains `schemaVersion: 1`, `repository`, absolute `gh`,
 `installationId`, private `stateDirectory`, `capacityBytes` (1 MiB–1 GiB) and
 `planning`. The latter contains absolute `codex`, `python`, `checkout`,
-`planWork`, `recommendationPolicy`, `recommendations`, `helper`, plus `model`,
+`owningCheckout`, `planWork`, `recommendationPolicy`, `recommendations`, `helper`,
+plus `model`,
 `policyRevision`, `timeoutSeconds` (1–1800) and `files`. Use the installed shared
 execution-recommendation policy, the owning
 `docs/work-guide/work/recommendations.py`, its adjacent `story_sections.py`, and
 the packaged `recommendation.py` helper. Pin all these files, the resolved tools
 and inspected policy/control dependencies by SHA-256 in `files`; the supervisor
 also pins `gh`, the package and configuration. `policyRevision` is the accepted
-shared-policy commit. Models are Astra, Sol 6.1 or Luna by their exact Codex IDs.
+shared-policy commit. `checkout` is the Hub checkout that owns shared tracker
+procedures and recommendation mechanics; `owningCheckout` contains the selected
+repository's current source and instructions. Only Hub may omit `owningCheckout`,
+in which case it uses `checkout`. Pin the owning `AGENTS.md`, `README.md` and,
+for runtime repositories, `docs/sdlc.md`, plus the Hub checkout's
+`docs/tracker-reconciliation.md`, `docs/project-maintenance.md` and `docs/sdlc.md`
+in `planning.files`. Missing or changed instruction evidence blocks closeout.
+Models are Astra, Sol 6.1 or Luna by their exact Codex IDs.
 Evidence has a separate 16 MiB admission bound. Retention remains ADR 0011;
 capacity refusal never clears history.
+
+### Installed-files proof
+
+For tool profiles, configuration also supplies `installedFiles` with exact
+`configSha256` (the owning adapter's trusted configuration digest), `checkout`,
+`allowedPaths` and `protectedPaths`. Paths are repository relative. Dotfiles adds
+`link`, the existing absolute loading-link path. Skills adds `requiredSkills`
+and `links`, an ordered inventory of exact `{agent, skill, path}` entries for
+prequalified existing Codex/Claude loading links. Issue text and receipt content
+cannot widen these bounds. Dotfiles allows only configured `scripts/`, `tests/`
+and `docs/` files; its supervisor, installer and owning instructions remain
+protected. Skills allows the complete configured inventory under affected linked
+`skills/<name>/` directories and admitted accompanying `tests/` and `docs/` files;
+the allowlist must cover that full inventory, including unchanged skill files.
+Root instruction files, `scripts/` and the active `deliver-work`, `review-work`,
+`code-review`, `plan-work`, `tdd`, `writing-for-agents` and `unslop` skills are
+excluded. Protect every other active policy, installer and delivery dependency in
+the trusted configuration; their updates retain the stopped/restart boundary.
+
+The private receipt has exactly `schemaVersion: "installed-files/1.0"`,
+`repository`, `issue`, `owner`, `outcome: "succeeded"`, `targetRevision`, `plan`,
+`planSha256`, `readback` and `verifiedAt` (epoch seconds). Its identity must match
+the selected issue, configured installation owner and merged revision. The
+owning adapter verifies actual installed bytes before emitting it; closeout does
+not run an installer or inspect a service.
+
+The plan contains `schemaVersion: 1`, `repository`, `issue`, `owner`, `checkout`,
+`previousRevision`, `targetRevision`, `remoteMain`, `commits`, `files`,
+`preservedDirty`, `configSha256` and `deadline`. Files contain exactly `path`,
+`sha256`, `size` and Git `mode` (`100644` or `100755`). Dotfiles adds `link` with
+`path`, `target`, `device` and `inode`. Skills instead adds `requiredSkills` and
+`links`; each link adds `agent` and `skill` to those same link fields. Every
+configured required skill and changed skill needs a supported loading link.
+New, renamed, removed or missing-link work stays with its owning qualification.
+
+Readback contains `kind: "installed-files"`, `revision`, exact `files` and
+`preservedDirtySha256`. Dotfiles adds `linkTarget`, matching the checkout.
+Skills adds exact `links` and `managerStatus`, whose `codex` and `claude` entries
+each contain `sha256` and `status: "correct"`. Manager status is separate from
+client discovery or behavioral acceptance. Runtime health fields are rejected.
+
+The producer hashes `plan` and `preservedDirty` using Python JSON with sorted
+keys, separators `(',', ':')` and ASCII escaping. Closeout recomputes those
+digests from the original receipt bytes using the pinned Python executable;
+it does not reserialize the plan through JavaScript first. Full plans and
+preserved owner state remain private and are never supplied to the model or
+published in tracker comments.
 
 Discovery reads native parents, dependencies, dependents, selected children,
 children of the immediate parent, and explicit tracker links in the selected
@@ -252,8 +319,8 @@ unknown. It preserves parent/client/physical outcomes. Supported public effects
 are deliberately narrow: refresh an affected open issue's execution advice with
 the canonical parser, dry run and upsert; remove `blocked` only for the selected
 accepted sole dependency with no other owner hold; publish one fixed selected
-receipt comment; close the selected issue; and project Done onto its existing
-Project item. It does not close parents, create memberships, change commitment,
+receipt comment; close the selected issue; and, for runtime profiles, project
+Done onto its existing Project item. It does not close parents, create memberships, change commitment,
 reparent work or alter native relationships. Parent phase must already agree.
 Changed native meaning requires an owning reconciliation decision.
 
