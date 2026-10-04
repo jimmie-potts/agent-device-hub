@@ -29,7 +29,9 @@ async function collector(t,handler){
 }
 test('hook transports allowlisted metadata once and never emits agent output',async t=>{
   const received=[];const endpoint=await collector(t,(request,response)=>{let body='';request.on('data',chunk=>body+=chunk);request.on('end',()=>{received.push({url:request.url,method:request.method,body});response.writeHead(204);response.end();});});
-  await invoke(t,{source,endpoint,enabled:true,qualified:true,timeoutMs:250});
+  // This success path checks transport and privacy, not the deadline (covered below and by the
+  // 3 s elapsed bound). 250 ms left no headroom for process start under parallel suite load.
+  await invoke(t,{source,endpoint,enabled:true,qualified:true,timeoutMs:1000});
   assert.equal(received.length,1);assert.equal(received[0].method,'POST');assert.equal(received[0].url,'/v1/agent-events');
   assert.doesNotMatch(received[0].body,/PRIVATE_CANARY|prompt|transcript|tool_input/);assert.ok(Buffer.byteLength(received[0].body)<=2048);
   assert.equal(validateEvent(JSON.parse(received[0].body)).ok,true);
