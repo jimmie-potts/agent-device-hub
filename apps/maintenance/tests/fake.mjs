@@ -52,7 +52,10 @@ export async function fake(tool,path){
    f.queries??=[];f.queries.push(query);await save();
    const list=nodes=>({nodes,pageInfo:{hasNextPage:false}});
    const value={...issue,id:'issue-'+number,url:'https://github.com/'+repository+'/issues/'+number,state:issue.state.toUpperCase(),stateReason:issue.state==='closed'?'COMPLETED':null,updatedAt:'2026-10-03T00:00:00Z',labels:list(issue.labels),assignees:list([]),parent:null,blockedBy:list(issue.blockedBy??[]),blocking:list(issue.blocking??[]),subIssues:list([]),projectItems:list([])};
-   console.log(JSON.stringify({data:{repository:{issue:value},node:{fields:list([{id:'PVTSSF_lAHOAu24Wc4Bkz2NzhjjEkM',name:'Status',options:[{id:'done',name:'Done'}]}])}}}));return;
+   const data={repository:{issue:value}};
+   if(f.portfolioUnavailable)delete value.projectItems;
+   else data.node={fields:list([{id:'PVTSSF_lAHOAu24Wc4Bkz2NzhjjEkM',name:'Status',options:[{id:'done',name:'Done'}]}])};
+   console.log(JSON.stringify({data}));return;
   }
   if(!endpoint.startsWith('repos/'+(f.repository??'jimmie-potts/agent-device-hub')+'/'))throw new Error('wrong-repository-endpoint');
   if(endpoint.includes('/pulls/'))return console.log(JSON.stringify({merged:true,merge_commit_sha:'b'.repeat(40)}));

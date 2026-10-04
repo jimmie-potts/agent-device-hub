@@ -143,6 +143,23 @@ test('concrete tool CLI uses owning acceptance pins and never queries or mutates
   await assert.rejects(cli(f.configPath,f.request),/owning-acceptance-fingerprint-missing/);assert.deepEqual((await f.read()).calls,[]);
  }finally{await f.close();}
 });
+test('tool-selected adapter reads related runtime issues without portfolio access',async()=>{
+ const {closeoutFixture}=await import('./closeout-fixture.mjs');const {githubAdapter}=await import('../closeout/closeout.mjs');
+ for(const tool of ['dotfiles','agent-skills']){
+  const f=await closeoutFixture({repository:'jimmie-potts/'+tool,related:true});try{
+   const api=githubAdapter(f.config,f.request.deadline);
+   for(const runtime of ['agent-device-hub','codex-nanoleaf','divoom-app-upgrade']){
+    const repository='jimmie-potts/'+runtime;await f.change({repository,portfolioUnavailable:true});
+    const related=await api.issue(19,repository);
+    assert.equal(related.url,'https://github.com/'+repository+'/issues/19');
+    assert.equal(related.body,'## Acceptance\nDeliver the dependent source work.');assert.deepEqual(related.projects,[]);
+    assert.deepEqual(related.blockedBy,[]);assert.deepEqual(related.blocking,[]);
+   }
+   const remote=await f.read();assert.equal(remote.queries.length,3);
+   assert.ok(remote.queries.every(query=>!query.includes('ProjectV2')&&!query.includes('projectItems')));
+  }finally{await f.close();}
+ }
+});
 test('closes only the selected installed issue and is idempotent',async()=>{
  const f=await fixture();try{
   const first=await runCloseout(f.input,f.config,f.api,validateInstallReceipt);

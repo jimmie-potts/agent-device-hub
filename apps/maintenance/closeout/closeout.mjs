@@ -299,18 +299,18 @@ export function githubAdapter(config,deadline){
  const endpoint=n=>`repos/${repository}/issues/${n}`;
  return {
   async issue(n,selectedRepository=repository){
-   const policy=closeoutPolicy(selectedRepository);
+   const policy=closeoutPolicy(selectedRepository),portfolio=closeoutPolicy(repository).portfolio&&policy.portfolio;
    const [owner,name]=selectedRepository.split('/');
-   const projectFields=policy.portfolio?`node(id:"${PROJECT}"){... on ProjectV2{fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name}}}pageInfo{hasNextPage}}}}`:'';
-   const d=graph(`{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issue(number:${n}){${NODE}${policy.portfolio?PROJECT_ITEMS:''}}} ${projectFields}}`);
+   const projectFields=portfolio?`node(id:"${PROJECT}"){... on ProjectV2{fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name}}}pageInfo{hasNextPage}}}}`:'';
+   const d=graph(`{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issue(number:${n}){${NODE}${portfolio?PROJECT_ITEMS:''}}} ${projectFields}}`);
    const issue=d.repository?.issue;require(issue,'affected-issue-unavailable');
    let done=null;
-   if(policy.portfolio){
+   if(portfolio){
     const status=d.node?.fields.nodes.find(x=>x.id===STATUS);require(status?.name==='Status','project-policy-changed');
     const options=status.options.filter(x=>x.name==='Done');require(options.length===1,'project-done-option-unavailable');done=options[0].id;
    }
    return {...issue,assignees:issue.assignees.nodes.map(x=>x.login),labels:issue.labels.nodes.map(x=>x.name),blockedBy:issue.blockedBy.nodes,blocking:issue.blocking.nodes,subIssues:issue.subIssues.nodes,
-    projects:policy.portfolio?issue.projectItems.nodes.map(x=>({id:x.id,project:x.project.id,done,
+    projects:portfolio?issue.projectItems.nodes.map(x=>({id:x.id,project:x.project.id,done,
      values:Object.fromEntries(x.fieldValues.nodes.filter(y=>y.field).map(y=>[y.field.id,y.optionId]))})):[]};
   },
   async pull(n){return call([`repos/${repository}/pulls/${n}`]);},
