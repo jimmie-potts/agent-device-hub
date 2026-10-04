@@ -56,11 +56,14 @@ try{
    const response=spawnSync(process.execPath,[join(installed,'maintenance.mjs'),'--config',f.configPath],{cwd:consumer,input:JSON.stringify(f.request),encoding:'utf8'});
    assert.equal(response.status,0);assert.equal(JSON.parse(response.stdout).selections[0].issue,12);assert.equal((await f.read()).creates,1);
   }finally{await f.close();}
-  const {closeoutFixture}=await import('../apps/maintenance/tests/closeout-fixture.mjs');const tracker=await closeoutFixture({parent:scratch,helper:join(installed,'recommendation.py')});
-  try{
-   const response=spawnSync(process.execPath,[join(installed,'tracker-closeout.mjs'),'--config',tracker.configPath],{cwd:consumer,input:JSON.stringify(tracker.request),encoding:'utf8'});
-   assert.equal(response.status,0,response.stderr);const result=JSON.parse(response.stdout);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal((await tracker.read()).issues[0].state,'closed');
-  }finally{await tracker.close();}
+  const {closeoutFixture}=await import('../apps/maintenance/tests/closeout-fixture.mjs');
+  for(const name of ['agent-device-hub','codex-nanoleaf','divoom-app-upgrade','agent-skills','dotfiles']){
+   const tracker=await closeoutFixture({repository:'jimmie-potts/'+name,parent:scratch,helper:join(installed,'recommendation.py')});
+   try{
+    const response=spawnSync(process.execPath,[join(installed,'tracker-closeout.mjs'),'--config',tracker.configPath],{cwd:consumer,input:JSON.stringify(tracker.request),encoding:'utf8'});
+    assert.equal(response.status,0,response.stderr);const result=JSON.parse(response.stdout);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(result.repository,tracker.request.repository);assert.equal((await tracker.read()).issues[0].state,'closed');
+   }finally{await tracker.close();}
+  }
   const {fixture:installFixture,invoke}=await import('../apps/maintenance/tests/hub-install-fixture.mjs');const installer=await installFixture({parent:scratch});
   try{
    const response=await invoke(process.execPath,join(installed,'hub-supervisor-install.mjs'),installer.configPath,installer.request,consumer);
