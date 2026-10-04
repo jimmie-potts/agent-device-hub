@@ -7,7 +7,7 @@
  * Observations never return conversation text: titles are compared inside the adapter and
  * only a boolean or count crosses this boundary.
  */
-export const OS_ADAPTER_VERSION = 1;
+export const OS_ADAPTER_VERSION = 2;
 
 export type Client = 'codex' | 'claude';
 
@@ -68,10 +68,12 @@ export interface OsAdapter {
   scrollClient(client: Client, notches: number): Promise<Observation<boolean>>;
 
   /**
-   * Codex: whether the selected sidebar row's accessible name equals `title`, and how many open
-   * rows share that title. Compared inside the adapter; no title text is returned.
+   * Codex: whether the selected sidebar row shows the thread's name, and how many open rows share
+   * that name. The adapter takes the name Codex itself keeps for `threadId` and uses `fallbackTitle`
+   * (the Hub's title) only when Codex has none; with neither it answers unknown
+   * (`codex-title-missing`). Compared inside the adapter; no title text is returned.
    */
-  codexSelectedTitle(title: string): Promise<Observation<{ matches: boolean; sameTitleRows: number }>>;
+  codexSelectedThread(threadId: string, fallbackTitle: string | null): Promise<Observation<{ matches: boolean; sameTitleRows: number }>>;
 
   /** Whether keyboard focus is on the client's composer (an editable text element in its window). */
   composerFocused(client: Client): Promise<Observation<boolean>>;

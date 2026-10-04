@@ -5,7 +5,9 @@ export { HeldModifierError, KeyboardError, OpenUriError, type KeyboardErrorCode,
 export { encodeKeyboardInputs, INPUT_SIZE, Keyboard, VIRTUAL_KEYS, virtualKeyCode, type KeyboardApi, type KeyEvent } from './keyboard.js';
 export { encodeWheelInput, MAX_SCROLL_NOTCHES, WHEEL_DELTA, type ScreenPoint, type ScreenRect } from './mouse.js';
 export { parseDeepLink, type DeepLink } from './uri.js';
-export { claudeSessions, CodexArchiveIndex, codexArchived, type CodexArchiveOptions } from './client-files.js';
+export {
+  claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNames, MAX_THREAD_NAME, type CodexArchiveOptions, type CodexThreadNameOptions,
+} from './client-files.js';
 export {
   asciiJson, defaultSpawnHelper, encodeHelperCommand, helperScriptPath, UIA_HELPER_PROTOCOL, UiaHelper,
   type HelperChild, type HelperReply, type SpawnHelper, type UiaHelperLike, type UiaHelperOptions,

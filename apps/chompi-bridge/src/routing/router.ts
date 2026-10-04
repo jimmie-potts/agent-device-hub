@@ -286,7 +286,6 @@ export class TaskRouter {
     // The observed version is logged so the owner can qualify a client update (see the README).
     if (!gate.ok) return fail('target', gate.reason, { client, observedVersion: gate.observed });
     if (client === 'codex') {
-      if (!record.title) return fail('target', 'title-missing');
       const archived = await this.#call(() => this.#adapter.codexArchived(record.taskId));
       if (!alive()) return;
       if (!archived.ok || archived.value.status !== 'known') return fail('target', 'archive-unknown');
@@ -391,22 +390,23 @@ export class TaskRouter {
     return window.value.value.packageIdentity === CLIENT_PACKAGES[client] ? { ok: true } : { ok: false, reason: 'foreground-mismatch' };
   }
 
-  async #codexSelection(title: string | null): Promise<Check> {
-    if (!title) return { ok: false, reason: 'title-missing' };
-    const selection = await this.#call(() => this.#adapter.codexSelectedTitle(title));
+  /** The adapter compares the thread's Codex name, or the slot's Hub title when Codex has none. */
+  async #codexSelection(taskId: string, title: string | null): Promise<Check> {
+    const selection = await this.#call(() => this.#adapter.codexSelectedThread(taskId, title));
+    if (selection.ok && selection.value.status === 'unknown' && selection.value.reason === 'codex-title-missing') return { ok: false, reason: 'title-missing' };
     if (!selection.ok || selection.value.status !== 'known') return { ok: false, reason: 'selection-unknown' };
     if (!selection.value.value.matches) return { ok: false, reason: 'selection-mismatch' };
     return selection.value.value.sameTitleRows === 1 ? { ok: true } : { ok: false, reason: 'title-not-unique' };
   }
 
   /**
-   * After the link: the foreground package matches, and the exact task is selected. Codex: the selected row's title
-   * equals the slot's title and no other row shares it. Claude: only the target's `lastFocusedAt` moved past the press.
+   * After the link: the foreground package matches, and the exact task is selected. Codex: the selected row shows the
+   * thread's name and no other row shares it. Claude: only the target's `lastFocusedAt` moved past the press.
    */
   async #verifySelection(record: SlotRecord, pressedAt: number): Promise<Check> {
     const foreground = await this.#foreground(record.client);
     if (!foreground.ok) return foreground;
-    if (record.client === 'codex') return this.#codexSelection(record.title);
+    if (record.client === 'codex') return this.#codexSelection(record.taskId, record.title);
     const desktop = await this.#claudeRecords([record.taskId, ...this.#otherClaudeIds(record.taskId)]);
     if (!desktop) return { ok: false, reason: 'selection-unknown' };
     const target = desktop.find(s => s.localId === record.taskId);
@@ -430,7 +430,7 @@ export class TaskRouter {
     const foreground = await this.#foreground(target.client);
     if (!foreground.ok) return foreground;
     if (target.client === 'codex') {
-      const selection = await this.#codexSelection(target.title);
+      const selection = await this.#codexSelection(target.taskId, target.title);
       if (!selection.ok) return selection;
     } else {
       const desktop = await this.#claudeRecords([target.taskId, ...this.#otherClaudeIds(target.taskId)]);

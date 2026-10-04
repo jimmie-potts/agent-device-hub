@@ -864,7 +864,7 @@ HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
 checks that the named-pipe lock refuses a second holder and is released on
 exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
-Automation helper, the composer and Codex selected-title observations and the
+Automation helper, the composer and Codex selected-thread observations and the
 installed client versions. Its Win32 surface replaces `SendInput` and
 `ShellExecute` with throwing guards, so it types nothing and opens no link.
 It then reruns the portable suites except the codec fixtures, which need the

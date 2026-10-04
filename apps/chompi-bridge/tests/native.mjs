@@ -94,7 +94,7 @@ const composerStart = Date.now();
 const codexComposer = await adapter.composerFocused('codex');
 const composerMs = Date.now() - composerStart;
 assert.ok(codexComposer.status === 'known' ? typeof codexComposer.value === 'boolean' : typeof codexComposer.reason === 'string');
-const codexSelected = await adapter.codexSelectedTitle(`chompi-native-check-${randomUUID()}`);
+const codexSelected = await adapter.codexSelectedThread(randomUUID(), `chompi-native-check-${randomUUID()}`);
 if (codexSelected.status === 'known') assert.deepEqual(codexSelected.value, { matches: false, sameTitleRows: 0 }, 'a random title never matches');
 const approval = await adapter.approvalVisible('codex');
 assert.equal(approval.status, 'unknown');
@@ -151,7 +151,7 @@ console.log(JSON.stringify({
     clientVersionsAfterWarmUpMs: versionsAfterWarmUpMs,
     composerFocusedCodex: codexComposer,
     composerCheckMs: composerMs,
-    codexSelectedTitleRandom: codexSelected,
+    codexSelectedThreadRandom: codexSelected,
     approvalVisible: approval,
     clientVersions: { codex: versions.codex.value, claude: versions.claude.value },
     codexArchivedRandom: false,

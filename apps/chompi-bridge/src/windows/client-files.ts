@@ -88,6 +88,84 @@ export async function codexArchived(codexHome: string, threadId: string, options
   return new CodexArchiveIndex(codexHome, options).archivedThread(threadId);
 }
 
+export interface CodexThreadNameOptions {
+  /** Largest `session_index.jsonl` the reader parses (default 16 MiB); a larger file is unknown. */
+  maxBytes?: number;
+}
+
+/** The longest thread name the adapter compares, matching its title bound. */
+export const MAX_THREAD_NAME = 1024;
+
+type NameIndex = { mtimeMs: number; size: number; names: Map<string, string> };
+
+/**
+ * Codex's own name for a thread, the name its sidebar shows, from `<home>/session_index.jsonl`: one JSON object per
+ * line with `id`, `thread_name` and `updated_at`. Codex appends a line when a thread is named or renamed, so the
+ * entry with the latest `updated_at` wins and a later line wins a tie. Only those three keys are read, and names
+ * never leave the adapter. The parsed index is kept until the file's size or modification time changes.
+ */
+export class CodexThreadNames {
+  private readonly home: string;
+  private readonly maxBytes: number;
+  private cache: NameIndex | null = null;
+
+  constructor(home: string, options: CodexThreadNameOptions = {}) {
+    this.home = home;
+    this.maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
+  }
+
+  /** Known `null` when Codex has no name for the thread (or no index yet); unknown when the index cannot be read. */
+  async name(threadId: string): Promise<Observation<string | null>> {
+    if (typeof threadId !== 'string' || !THREAD_ID.test(threadId)) return unknown('invalid-thread-id');
+    const path = join(this.home, 'session_index.jsonl');
+    let handle;
+    try {
+      handle = await open(path, 'r');
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') return unknown('codex-index-unreadable');
+      try {
+        await stat(this.home);
+        return known(null);
+      } catch {
+        return unknown('codex-home-missing');
+      }
+    }
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) return unknown('codex-index-unreadable');
+      if (info.size > this.maxBytes) return unknown('codex-index-too-large');
+      if (!this.cache || this.cache.mtimeMs !== info.mtimeMs || this.cache.size !== info.size) {
+        const text = await handle.readFile('utf8');
+        if (Buffer.byteLength(text, 'utf8') > this.maxBytes) return unknown('codex-index-too-large');
+        this.cache = { mtimeMs: info.mtimeMs, size: info.size, names: parseThreadNames(text) };
+      }
+      return known(this.cache.names.get(threadId) ?? null);
+    } catch {
+      return unknown('codex-index-unreadable');
+    } finally {
+      await handle.close();
+    }
+  }
+}
+
+function parseThreadNames(text: string): Map<string, string> {
+  const latest = new Map<string, { name: string; at: number }>();
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+    const { id, thread_name: name, updated_at: updatedAt } = entry as Record<string, unknown>;
+    if (typeof id !== 'string' || !THREAD_ID.test(id)) continue;
+    if (typeof name !== 'string' || name.length === 0 || name.length > MAX_THREAD_NAME) continue;
+    const parsed = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
+    const at = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+    const previous = latest.get(id);
+    if (!previous || at >= previous.at) latest.set(id, { name, at });
+  }
+  return new Map([...latest].map(([id, { name }]) => [id, name]));
+}
+
 async function boundedDirectories(path: string, limit: number): Promise<string[] | 'too-large'> {
   const entries = await readdir(path, { withFileTypes: true });
   if (entries.length > limit) return 'too-large';

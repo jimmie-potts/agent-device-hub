@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeSessions, CodexArchiveIndex, codexArchived } from '../dist/windows/index.js';
+import { claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNames } from '../dist/windows/index.js';
 
 const thread = '019a3b1c-7d2e-7f00-8a11-0123456789ab';
 const other = '019a3b1c-7d2e-7f00-8a11-ba9876543210';
@@ -118,6 +118,52 @@ function claudeStore(t) {
   }));
   return { root, org, record };
 }
+
+const indexLine = (id, name, at) => JSON.stringify({ id, thread_name: name, updated_at: at });
+
+test('Codex thread names come from the session index; the latest update wins and a later line wins a tie', async t => {
+  const home = scratch(t);
+  writeFileSync(join(home, 'session_index.jsonl'), [
+    indexLine(thread, 'First name', '2026-10-03T14:00:10.359352509Z'),
+    indexLine(other, 'Other thread', '2026-10-03T15:00:00Z'),
+    indexLine(thread, 'Renamed', '2026-10-03T16:00:00.5Z'),
+    indexLine(thread, 'Older line written later', '2026-10-03T12:00:00Z'),
+    'not json',
+    JSON.stringify({ id: 'not-a-thread', thread_name: 'x', updated_at: '2026-10-03T17:00:00Z' }),
+    JSON.stringify({ id: other, thread_name: '', updated_at: '2026-10-03T18:00:00Z' }),
+    JSON.stringify({ id: other, thread_name: 'x'.repeat(1025), updated_at: '2026-10-03T18:00:00Z' }),
+    JSON.stringify([thread, 'array']),
+    indexLine(other, 'Tie later line', '2026-10-03T15:00:00Z'),
+    '',
+  ].join('\n'));
+  const names = new CodexThreadNames(home);
+  assert.deepEqual(await names.name(thread), { status: 'known', value: 'Renamed' });
+  assert.deepEqual(await names.name(other), { status: 'known', value: 'Tie later line' });
+  assert.deepEqual(await names.name('019a3b1c-7d2e-7f00-8a11-000000000000'), { status: 'known', value: null });
+  assert.deepEqual(await names.name('../etc'), { status: 'unknown', reason: 'invalid-thread-id' });
+});
+
+test('a missing index is no name, a missing Codex home is unknown, and an oversized index is unknown', async t => {
+  const home = scratch(t);
+  assert.deepEqual(await new CodexThreadNames(home).name(thread), { status: 'known', value: null });
+  assert.deepEqual(await new CodexThreadNames(join(home, 'absent')).name(thread), { status: 'unknown', reason: 'codex-home-missing' });
+  writeFileSync(join(home, 'session_index.jsonl'), indexLine(thread, 'Name', '2026-10-03T14:00:00Z'));
+  assert.deepEqual(await new CodexThreadNames(home, { maxBytes: 10 }).name(thread), { status: 'unknown', reason: 'codex-index-too-large' });
+  mkdirSync(join(home, 'dir-home'));
+  mkdirSync(join(home, 'dir-home', 'session_index.jsonl'));
+  const dirIndex = await new CodexThreadNames(join(home, 'dir-home')).name(thread);
+  assert.equal(dirIndex.status, 'unknown');
+});
+
+test('the parsed index is reused until the file changes', async t => {
+  const home = scratch(t);
+  const path = join(home, 'session_index.jsonl');
+  writeFileSync(path, indexLine(thread, 'Before', '2026-10-03T14:00:00Z') + '\n');
+  const names = new CodexThreadNames(home);
+  assert.deepEqual(await names.name(thread), { status: 'known', value: 'Before' });
+  writeFileSync(path, indexLine(thread, 'Before', '2026-10-03T14:00:00Z') + '\n' + indexLine(thread, 'After rename', '2026-10-03T15:00:00Z') + '\n');
+  assert.deepEqual(await names.name(thread), { status: 'known', value: 'After rename' });
+});
 
 test('Claude records return only the local ID, archive flag and focus time', async t => {
   const { root, record } = claudeStore(t);

@@ -64,12 +64,12 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 }
 
 /**
- * A scripted desktop behind OS adapter interface version 1. By default the apps behave as qualified:
+ * A scripted desktop behind OS adapter interface version 2. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
  * stamps the target's `lastFocusedAt` and raises Claude with its composer focused. Tests then break one step.
  */
 export class FakeAdapter {
-  version = 1;
+  version = 2;
   platform = 'win32';
   calls = [];
   keys = [];
@@ -80,6 +80,8 @@ export class FakeAdapter {
   foregroundUnknown = false;
   /** Codex sidebar rows: thread ID → title. */
   codexThreads = new Map();
+  /** Codex's own thread names (its session index); the sidebar shows `codexThreads`. */
+  codexNames = new Map();
   codexSelected = null;
   /** Archived Codex threads; `unknownArchive` makes every answer unknown. */
   codexArchivedIds = new Set();
@@ -149,9 +151,11 @@ export class FakeAdapter {
 
   async releaseAll() { this.calls.push(['releaseAll']); this.held.clear(); }
 
-  async codexSelectedTitle(title) {
-    const pending = this.#enter('codexSelectedTitle', [title]);
+  async codexSelectedThread(threadId, fallbackTitle) {
+    const pending = this.#enter('codexSelectedThread', [threadId, fallbackTitle]);
     if (pending) return pending;
+    const title = this.codexNames.get(threadId) ?? fallbackTitle;
+    if (!title) return unknown('codex-title-missing');
     if (this.foreground.packageIdentity !== CODEX_PACKAGE) return unknown('codex not foreground');
     const rows = [...this.codexThreads.values()].filter(value => value === title).length;
     return known({ matches: this.codexSelected !== null && this.codexThreads.get(this.codexSelected) === title, sameTitleRows: rows });

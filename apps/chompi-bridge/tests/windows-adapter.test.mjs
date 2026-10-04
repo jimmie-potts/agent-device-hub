@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY, createWindowsAdapter, HeldModifierError, OpenUriError,
@@ -37,10 +40,10 @@ function adapter(win32, helper = fakeHelper(() => ({ ok: false, reason: 'unused'
   return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', ...extra });
 }
 
-test('the Windows adapter implements interface version 1', async () => {
+test('the Windows adapter implements interface version 2', async () => {
   const instance = adapter(fakeWin32());
   assert.equal(instance.version, OS_ADAPTER_VERSION);
-  assert.equal(instance.version, 1);
+  assert.equal(instance.version, 2);
   assert.equal(instance.platform, 'win32');
   await instance.close();
 });
@@ -146,26 +149,48 @@ test('helper failures, malformed replies and foreground changes during a UI chec
   assert.deepEqual(await instance.composerFocused('codex'), { status: 'unknown', reason: 'foreground-changed' });
 });
 
-test('codexSelectedTitle compares inside the helper and returns only a boolean and a count', async () => {
+test('codexSelectedThread compares inside the helper and returns only a boolean and a count', async () => {
   const win32 = fakeWin32();
   let reply = { ok: true, value: { matches: true, sameTitleRows: 1 } };
   const helper = fakeHelper(() => reply);
   const instance = adapter(win32, helper);
-  const result = await instance.codexSelectedTitle(CANARY_TITLE);
+  const result = await instance.codexSelectedThread(thread, CANARY_TITLE);
   assert.deepEqual(result, { status: 'known', value: { matches: true, sameTitleRows: 1 } });
   assert.deepEqual(helper.calls[0], { op: 'codexSelectedTitle', hwnd: 0x1234, processId: 4242, title: CANARY_TITLE });
   assert.equal(JSON.stringify(result).includes('CANARY'), false);
   reply = { ok: true, value: { matches: true, sameTitleRows: 2, title: CANARY_TITLE } };
-  assert.deepEqual(await instance.codexSelectedTitle(CANARY_TITLE), { status: 'known', value: { matches: true, sameTitleRows: 2 } }, 'extra reply fields are dropped');
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'known', value: { matches: true, sameTitleRows: 2 } }, 'extra reply fields are dropped');
   reply = { ok: true, value: { matches: true, sameTitleRows: -1 } };
-  assert.deepEqual(await instance.codexSelectedTitle(CANARY_TITLE), { status: 'unknown', reason: 'helper-invalid-reply' });
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'helper-invalid-reply' });
   reply = { ok: false, reason: 'selected-row-count' };
-  assert.deepEqual(await instance.codexSelectedTitle(CANARY_TITLE), { status: 'unknown', reason: 'selected-row-count' });
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'selected-row-count' });
   for (const title of ['', 'x'.repeat(1025), 42]) {
-    assert.deepEqual(await instance.codexSelectedTitle(title), { status: 'unknown', reason: 'invalid-title' });
+    assert.deepEqual(await instance.codexSelectedThread(thread, title), { status: 'unknown', reason: 'invalid-title' });
+  }
+  for (const id of ['', 'codex://threads/x', 42]) {
+    assert.deepEqual(await instance.codexSelectedThread(id, CANARY_TITLE), { status: 'unknown', reason: 'invalid-thread-id' });
   }
   win32.state.family = CLAUDE_PACKAGE_FAMILY;
-  assert.deepEqual(await instance.codexSelectedTitle(CANARY_TITLE), { status: 'unknown', reason: 'codex-not-foreground' });
+  assert.deepEqual(await instance.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-not-foreground' });
+});
+
+test('codexSelectedThread prefers the name Codex keeps for the thread and needs a name from somewhere', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'chompi-codex-names-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const helper = fakeHelper(() => ({ ok: true, value: { matches: true, sameTitleRows: 1 } }));
+  const instance = adapter(fakeWin32(), helper, { codexHome: home });
+  assert.deepEqual(await instance.codexSelectedThread(thread, null), { status: 'unknown', reason: 'codex-title-missing' });
+  assert.equal(helper.calls.length, 0, 'no name means no UI query');
+  await instance.codexSelectedThread(thread, CANARY_TITLE);
+  assert.equal(helper.calls.at(-1).title, CANARY_TITLE, 'the Hub title is the fallback');
+  writeFileSync(join(home, 'session_index.jsonl'), JSON.stringify({ id: thread, thread_name: 'CANARY codex name', updated_at: '2026-10-04T10:00:00Z' }) + '\n');
+  const result = await instance.codexSelectedThread(thread, CANARY_TITLE);
+  assert.equal(helper.calls.at(-1).title, 'CANARY codex name', "Codex's own name wins over the Hub title");
+  assert.equal(JSON.stringify(result).includes('CANARY'), false);
+  const missingHome = adapter(fakeWin32(), helper, { codexHome: join(home, 'absent') });
+  assert.deepEqual(await missingHome.codexSelectedThread(thread, null), { status: 'unknown', reason: 'codex-home-missing' });
+  await missingHome.codexSelectedThread(thread, CANARY_TITLE);
+  assert.equal(helper.calls.at(-1).title, CANARY_TITLE, 'an unreadable index falls back to the Hub title');
 });
 
 test('approval-card detection is not qualified and stays unknown', async () => {
