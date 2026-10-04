@@ -181,13 +181,14 @@ Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal Depot CI has seven Linux jobs:
+Normal Depot CI has eight Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification |
 | Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, the Tidbyt controller and its Pillow golden-image check, performance checks and isolated package consumers |
 | Contracts and state, Python 3.14 | The same suites on the second supported Python version |
+| Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build/type, controller-backed browser fixtures and accessibility |
@@ -810,6 +811,57 @@ rollback. Nanoleaf exercises the real HTTP settings service with a disposable
 worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
+
+## CHOMPI controller checks
+
+Hub #741 adds the [CHOMPI HID protocol](../packages/chompi-protocol/README.md),
+the [controller firmware](../firmware/chompi-controller/README.md) and the
+[bridge transport core](../apps/chompi-bridge/README.md). Both sides test
+against `packages/chompi-protocol/fixtures/v1.json`.
+
+Firmware, from the repository root:
+
+```bash
+npm run test:firmware
+npm run test:firmware:arm
+```
+
+`test:firmware` builds and runs the pure C++ host tests with a C++17 compiler,
+AddressSanitizer and UndefinedBehaviorSanitizer: protocol vectors, debounce,
+encoder turn and click separation, the bounded queue, session `hello`, host
+timeout and two-part light frames. `test:firmware:arm` downloads GNU Arm
+Embedded Toolchain 10.3-2021.10 once into the user cache and verifies its
+SHA-256 (or uses `ARM_GCC_BIN`), fetches the pinned upstream sources into the
+ignored `firmware/chompi-controller/.upstream/`, builds `04_AGENT.bin` and runs
+the artifact check: memory regions, `boot_info` at `0x38800000`, the controller
+USB identity and the absence of MIDI, CDC and SD code. The Firmware CI job runs
+both. Neither flashes or opens a device; installation and physical behavior
+belong to #743.
+
+Bridge, with Node 24 from the assigned worktree root:
+
+```bash
+npm ci
+npm run build
+npm run typecheck
+npm run test:chompi-bridge
+```
+
+The suite runs every protocol vector and tests the connection manager against
+a fake transport and a manual clock: hello gating, epoch and sequence rules,
+synthetic releases on disconnect, stale handling, light frame split and resend,
+and bounded subscriptions. It also covers a simulator roundtrip, the
+single-instance lock across processes, the node-hid adapter against a stand-in
+module, and the CLI. No test loads node-hid or touches USB. The contracts CI job
+runs `npm run test:chompi-bridge:built` after the shared build.
+
+Run `npm run test:chompi-bridge:native:built` separately under native Windows
+Node 24 after a build, using an isolated runtime rather than changing the
+global Windows Node. It fails on other platforms. It enumerates HID devices
+read-only, checks that the matcher rejects the stock CHOMPI ID, checks that the
+named-pipe lock refuses a second holder and is released on exit and on kill,
+and reruns the portable suites. It opens no device. Linux CI does not qualify
+Windows HID or named pipes.
 
 ## Wispr Hub checks
 

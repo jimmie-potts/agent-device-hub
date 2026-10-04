@@ -39,8 +39,14 @@ version or an invalid field, and takes no action for it.
 | `0x03` | `heartbeat` | epoch u16, last applied LED frame u16, flags u8 (bit 0: host heartbeat current) |
 
 - The firmware picks a new random nonzero **epoch** at every boot and every USB
-  (re)enumeration and sends `hello` first. Input from an older epoch is
-  discarded by the bridge, so a reconnect can never replay a press.
+  (re)enumeration. It sends `hello` before any input whenever a host session
+  starts: on the first `host-heartbeat` after enumeration and on the first
+  `host-heartbeat` after a host timeout, because Windows discards reports sent
+  while no handle is open. The epoch may stay the same across a host timeout.
+  Input from an older epoch is discarded by the bridge, so a reconnect can never
+  replay a press. An epoch of 0 is invalid and the bridge rejects that `hello`.
+- On a host timeout the firmware clears its input queue and sends no input until
+  the next `hello`.
 - **Sequence** starts at 1 per epoch and wraps after 65535. The bridge ignores
   a duplicate or older sequence within an epoch.
 - The firmware never queues input while no host is connected. Queued input is
@@ -63,7 +69,9 @@ version or an invalid field, and takes no action for it.
 - Colors are RGB; the firmware converts to each chain's order (keys GRB, panel
   RGB) and applies its own caps (panel about 9%, keys about 25%) after the
   host's brightness percent.
-- The host sends `host-heartbeat` every 500 ms. Without one for 2 s the firmware
+- After opening the device the host stays silent for 2.5 s, longer than the
+  firmware's host timeout, then sends `host-heartbeat` every 500 ms and waits for
+  `hello`. Without a heartbeat for 2 s the firmware
   shows the disconnected pattern: a slow dim white breathe on the CHOMPI key LED
   only, with every other LED off. No task state uses that pattern.
 

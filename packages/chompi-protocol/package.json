@@ -1,0 +1,7 @@
+{
+  "name": "@jimmie-potts/chompi-protocol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Language-neutral CHOMPI HID protocol version 1 contract and fixture vectors",
+  "files": ["fixtures", "README.md"]
+}

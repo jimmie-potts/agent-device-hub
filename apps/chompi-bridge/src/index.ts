@@ -1,0 +1,11 @@
+export * from './protocol.js';
+export * from './bridge.js';
+export type { SubscriptionCloseReason } from './subscription.js';
+export type { HidDeviceInfo, Transport, TransportConnection, TransportHandlers } from './transport.js';
+export { CONTROLLER_IDENTITY, matchesController } from './matcher.js';
+export { ManualClock, systemClock, type Clock } from './clock.js';
+export { FakeTransport, FakeConnection } from './fake-transport.js';
+export { ChompiSimulator, type SimulatorCounters, type SimulatorOptions } from './simulator.js';
+export { createNodeHidTransport, loadNodeHid, type NodeHidHandle, type NodeHidModule } from './node-hid-transport.js';
+export { acquireInstanceLock, defaultLockPath, InstanceLockHeldError, type InstanceLock, type LockPathContext } from './lock.js';
+export * from './os-adapter.js';
