@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join,resolve } from 'node:path';
 import { NumericStore } from '../dist/store.js';
+import {diverseText} from './diverse-language.mjs';
 
 const namespace='11111111-1111-4111-8111-111111111111';
 const row=(id,words=10)=>({id,timestamp:'2026-10-01T01:00:00Z',status:'formatted',numWords:words,duration:5,speechDuration:3,numWordsCorrected:null,numDictionaryReplacements:null,appName:'Slack',invalid:[]});
@@ -66,6 +67,15 @@ test('an aggregation memory budget failure preserves contributions and the previ
  store=new NumericStore({...options,maxMemoryBytes:1});
  try{assert.throws(()=>store.ingest([row('a',99)],'2026-10-03T16:00:00.000Z'),/source-capacity/);}finally{store.close();}
  store=open();assert.deepEqual(store.snapshot(),before);assert.equal(store.pending(),null);store.close();
+});
+
+test('active language batch capacity rollback preserves the last snapshot and retained contributions',t=>{
+ const {open}=setup(t);let store=open();const before=collect(store,[row('original')]);
+ const rows=Array.from({length:7},(_,i)=>({...row('diverse-'+i,1800),language:{raw:diverseText(1800,i*1800),formatted:null,observed:null,language:'en',observation:'unknown'}}));
+ assert.throws(()=>store.ingest(rows,'2026-10-02T16:00:00.000Z',{language:{enabled:true}}),/aggregate-capacity/);
+ assert.deepEqual(store.snapshot(),before);assert.equal(store.pending(),null);store.close();
+ store=open();assert.deepEqual(store.snapshot(),before);
+ assert.equal(collect(store,[]).numeric.totals.words,10);store.close();
 });
 
 test('language derivatives replace late edits and survive retry restart pruning and zone rebuild',t=>{

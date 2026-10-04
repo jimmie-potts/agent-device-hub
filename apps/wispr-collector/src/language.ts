@@ -146,28 +146,33 @@ export function analyzeStages(input:LanguageInput,excludedTerms:readonly string[
 export type RetainedLanguage={sourceTime:number;app:App;features:LanguageFeatures|null};
 const rankKinds=['words','usefulWords','phrases','changes'] as const;
 type Ranked=Map<string,{occurrences:number;dictations:number}>;
-/** Each input is one distinct private contribution, never a daily top-N table. */
-export function aggregateLanguage(rows:Iterable<RetainedLanguage>,presets:readonly PresetWindow[],timezone:string):LanguageSection {
-  const groups:{table:LanguageTable;maps:Record<typeof rankKinds[number],Ranked>}[]=[];
-  const index=new Map<string,typeof groups[number]>();
+/** Each input is one distinct private contribution, never a daily top-N table.
+ * Store callers provide a fresh transactional iterator for each bounded pass. */
+export function aggregateLanguage(rows:readonly RetainedLanguage[]|(()=>Iterable<RetainedLanguage>),presets:readonly PresetWindow[],timezone:string):LanguageSection {
+  const readRows=typeof rows==='function'?rows:()=>rows;
+  const tables=new Map<string,LanguageTable>();
+  const corpora=['raw','formatted','observed'] as const;
   const subgroups:[App|'all',Category|'all'][]=[['all','all'],...CATEGORIES.map(c=>['all',c] as ['all',Category]),...APPS.flatMap(a=>[[a,'all'],[a,appCategory(a)]] as [App,Category|'all'][])];
-  for(const preset of presets)for(const [app,category] of subgroups)for(const corpus of ['raw','formatted','observed'] as const){
-    const table:LanguageTable={preset:preset.key,app,category,corpus,words:[],usefulWords:[],phrases:[],changes:[],omitted:{words:0,usefulWords:0,phrases:0,changes:0},coverage:{eligible:0,missing:0,unsupportedLanguage:0,oversized:0,uncertain:0,longChanges:0},comparison:corpus==='raw'?'none':corpus==='formatted'?'raw-to-formatted':'formatted-to-observed',finality:'unknown',insertions:0,deletions:0,substitutions:0,comparedDictations:0,changedDictations:0};
-    const group={table,maps:{words:new Map(),usefulWords:new Map(),phrases:new Map(),changes:new Map()}};
-    groups.push(group);index.set(JSON.stringify([preset.key,app,category,corpus]),group);
-  }
-  let keys=0;
-  const add=(map:Ranked,text:string,occurrences:number)=>{
-    let count=map.get(text);
-    if(!count){if(++keys>250_000)throw new Error('aggregate-capacity');count={occurrences:0,dictations:0};map.set(text,count);}
-    count.occurrences+=occurrences;count.dictations++;
-  };
-  for(const row of rows){
-    const date=localDate(row.sourceTime,timezone),category=appCategory(row.app);
-    for(const preset of presets){
+  // Count only one preset/corpus at a time; finalized top-N tables are bounded.
+  for(const preset of presets)for(const corpus of corpora){
+    const groups:{table:LanguageTable;maps:Record<typeof rankKinds[number],Ranked>}[]=[];
+    const index=new Map<string,typeof groups[number]>();
+    for(const [app,category] of subgroups){
+      const table:LanguageTable={preset:preset.key,app,category,corpus,words:[],usefulWords:[],phrases:[],changes:[],omitted:{words:0,usefulWords:0,phrases:0,changes:0},coverage:{eligible:0,missing:0,unsupportedLanguage:0,oversized:0,uncertain:0,longChanges:0},comparison:corpus==='raw'?'none':corpus==='formatted'?'raw-to-formatted':'formatted-to-observed',finality:'unknown',insertions:0,deletions:0,substitutions:0,comparedDictations:0,changedDictations:0};
+      const group={table,maps:{words:new Map(),usefulWords:new Map(),phrases:new Map(),changes:new Map()}};
+      groups.push(group);index.set(JSON.stringify([app,category]),group);
+    }
+    let keys=0;
+    const add=(map:Ranked,text:string,occurrences:number)=>{
+      let count=map.get(text);
+      if(!count){if(++keys>250_000)throw new Error('aggregate-capacity');count={occurrences:0,dictations:0};map.set(text,count);}
+      count.occurrences+=occurrences;count.dictations++;
+    };
+    for(const row of readRows()){
+      const date=localDate(row.sourceTime,timezone),category=appCategory(row.app);
       if(date>preset.to||(preset.from!==null&&date<preset.from))continue;
-      for(const [app,cat] of [['all','all'],['all',category],[row.app,'all'],[row.app,category]])for(const corpus of ['raw','formatted','observed'] as const){
-        const {table,maps}=index.get(JSON.stringify([preset.key,app,cat,corpus]))!;
+      for(const [app,cat] of [['all','all'],['all',category],[row.app,'all'],[row.app,category]]){
+        const {table,maps}=index.get(JSON.stringify([app,cat]))!;
         const stage=row.features?.[corpus];
         if(!stage){table.coverage.uncertain++;continue;}
         const reasons=new Set<StageReason>();if(stage.reason)reasons.add(stage.reason);if(stage.comparisonReason)reasons.add(stage.comparisonReason);
@@ -184,15 +189,19 @@ export function aggregateLanguage(rows:Iterable<RetainedLanguage>,presets:readon
         }
       }
     }
+    for(const {table,maps} of groups){
+      for(const kind of rankKinds){
+        const qualified=[...maps[kind]].filter(([,c])=>c.dictations>=3).sort((a,b)=>b[1].occurrences-a[1].occurrences||b[1].dictations-a[1].dictations||ordinal(a[0],b[0]));
+        table.omitted[kind]=Math.max(0,qualified.length-100);
+        if(kind==='changes')table.changes=qualified.slice(0,100).map(([key,count])=>{const [before,after]=JSON.parse(key) as [string,string];return {before,after,...count};});
+        else table[kind]=qualified.slice(0,100).map(([text,count])=>({text,...count}));
+        maps[kind].clear();
+      }
+      tables.set(JSON.stringify([preset.key,table.app,table.category,corpus]),table);
+    }
   }
-  for(const {table,maps} of groups)for(const kind of rankKinds){
-    const qualified=[...maps[kind]].filter(([,c])=>c.dictations>=3).sort((a,b)=>b[1].occurrences-a[1].occurrences||b[1].dictations-a[1].dictations||ordinal(a[0],b[0]));
-    table.omitted[kind]=Math.max(0,qualified.length-100);
-    if(kind==='changes')table.changes=qualified.slice(0,100).map(([key,count])=>{const [before,after]=JSON.parse(key) as [string,string];return {before,after,...count};});
-    else table[kind]=qualified.slice(0,100).map(([text,count])=>({text,...count}));
-    maps[kind].clear();
-  }
-  return {availability:'available',algorithmVersion:LANGUAGE_VERSION,stopwordVersion:STOPWORD_VERSION,tables:groups.map(g=>g.table)};
+  // Retain the released preset/app/category/corpus order independently of passes.
+  return {availability:'available',algorithmVersion:LANGUAGE_VERSION,stopwordVersion:STOPWORD_VERSION,tables:presets.flatMap(preset=>subgroups.flatMap(([app,category])=>corpora.map(corpus=>tables.get(JSON.stringify([preset.key,app,category,corpus]))!)))};
 }
 
 /** Hash options so private owner exclusion strings are not copied into store metadata. */

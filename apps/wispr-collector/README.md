@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.2.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.3.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
@@ -209,9 +209,15 @@ anonymous. Unordered private derivatives can still reveal wording.
 Every preset and supported app/category/corpus group is computed from all
 eligible retained contributions. Support requires three distinct dictations in
 that exact group; repetitions count separately. Each ranking is capped at 100
-qualified entries with an omitted count. Up to 250,000 distinct intermediate
-ranking keys are allowed per snapshot; exceeding this or the existing memory,
-store or publication limits fails visibly and preserves the previous commit.
+qualified entries with an omitted count. Each preset/corpus batch allows up to
+250,000 simultaneously active intermediate ranking keys across its app/category
+groups and ranking kinds. Batches release their full maps before the next pass;
+completed batches retain only the capped tables. This replaces the former
+cumulative per-snapshot key ceiling without increasing the existing memory,
+source or command budgets. Every batch rereads the same transactional retained
+state; collection still scans the source and analyzes eligible records on every
+run. Exceeding an active batch, memory, store or publication limit fails visibly
+and preserves the previous commit.
 Coverage reasons can overlap eligible lexical records: for example, formatted
 words may be available while the missing raw stage prevents their comparison.
 

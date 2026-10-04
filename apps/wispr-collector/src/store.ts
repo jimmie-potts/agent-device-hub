@@ -148,7 +148,7 @@ export class NumericStore {
     publishTextRevocation(join(this.directory,'status.json'),meta.snapshot,meta.generation,meta.revision+1,at);
     this.transaction(()=>{
       const snapshot={...meta.snapshot,revision:meta.revision+1,generatedAt:at,presets:presetWindows(at,meta.timezone)};
-      snapshot.language=aggregateLanguage(this.languageContributions(policy),snapshot.presets,meta.timezone);
+      snapshot.language=aggregateLanguage(()=>this.languageContributions(policy),snapshot.presets,meta.timezone);
       this.save({...meta,languagePolicy:policy,revision:snapshot.revision,snapshot,pending:true});
     });
   }
@@ -188,7 +188,7 @@ export class NumericStore {
         const last=gaps.at(-1);if(last&&last.to===previous&&last.reason===reason)last.to=observedAt;else gaps.push({from:previous,to:observedAt,reason});
       }
       const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone:meta.timezone,now:observedAt,gaps});
-      if(policy)snapshot.language=aggregateLanguage(this.languageContributions(policy),snapshot.presets,meta.timezone);
+      if(policy)snapshot.language=aggregateLanguage(()=>this.languageContributions(policy),snapshot.presets,meta.timezone);
       const baseline=meta.dictionaryBaseline??meta.snapshot.dictionary;
       snapshot.dictionary=dictionarySnapshot(baseline,options.dictionary??snapshot.dictionary,meta.dictionaryResetPending);
       const dictionaryBaseline={...snapshot.dictionary,localUsage:snapshot.dictionary.localUsage??baseline.localUsage,remoteUsage:snapshot.dictionary.remoteUsage??baseline.remoteUsage};
@@ -208,7 +208,7 @@ export class NumericStore {
       const meta=this.metadata();if(meta.pending)throw new Error('publication-pending');
       const snapshot=aggregate(this.contributions(),{namespace:meta.namespace,generation:meta.generation,revision:meta.revision+1,timezone,now:generatedAt,gaps:meta.snapshot.coverage.gaps});
       snapshot.lastSuccessAt=meta.snapshot.lastSuccessAt;snapshot.dictionary=meta.snapshot.dictionary;
-      if(meta.languagePolicy&&meta.snapshot.language.availability==='available')snapshot.language=aggregateLanguage(this.languageContributions(meta.languagePolicy),snapshot.presets,timezone);
+      if(meta.languagePolicy&&meta.snapshot.language.availability==='available')snapshot.language=aggregateLanguage(()=>this.languageContributions(meta.languagePolicy!),snapshot.presets,timezone);
       if(!validateSnapshot(snapshot).ok)throw new Error('invalid-zone-rebuild');
       this.save({...meta,timezone,revision:snapshot.revision,snapshot,pending:true});return snapshot;
     });
