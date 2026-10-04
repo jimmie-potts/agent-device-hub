@@ -170,9 +170,10 @@ constants, snapshot-schema and new lifecycle schema files pass this check; an
 edit inside the durable validator or a lifecycle module does not. A synthetic
 probe then checks that the agent-state entrypoint still exports the durable
 validator, writes state with the target, including session titles, projects and
-a known parent, and reopens it with the previous release. A durable-surface change, a probe failure or a missing file refuses
-before outage with `install-rollback-unqualified`; the operation's evidence file
-records the qualification reason. A future state-format change needs separate
+a known parent, and reopens it with the previous release. A durable-surface
+change, a probe failure or a missing file refuses before outage with
+`install-rollback-unqualified`; the operation's evidence file records the
+qualification reason. A future state-format change needs separate
 reviewed qualification. [`compatibility.ts`](src/install/compatibility.ts) classifies
 every durable file.
 

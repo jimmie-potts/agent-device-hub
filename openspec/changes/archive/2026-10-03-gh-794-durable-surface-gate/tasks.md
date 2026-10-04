@@ -17,4 +17,4 @@
 ## 4. Review round 1
 
 - [x] 4.1 Make every lifecycle module durable with an initially empty non-durable list, and require the agent-state entrypoint to export the fingerprinted `validateExport` and `migrateExport` in both probe modes. Evidence: the loosened parent-rule counterexample and a poisoned lifecycle `index.js` refuse with `durable-implementation-unqualified`, a rebinding entrypoint fails with `durable-reopen-probe-failed`, and all three failed against the reviewed head.
-- [x] 4.2 Add the `cross-source-parent` negative case to the lifecycle 1.0 corpus, and correct the fail-closed and invariant wording in the design, spec, install contract and setup guide. Evidence: lifecycle TypeScript and Python contract tests and the workflow checks pass.
+- [x] 4.2 Pin the cross-source parent rejection in a Hub-owned test (`apps/hub/tests/durable-parent-rule.test.mjs`), leaving the published lifecycle 1.1.0 corpus unchanged, and correct the fail-closed and invariant wording in the design, spec, install contract and setup guide. Evidence: the Hub test, the unchanged lifecycle contract tests and the workflow checks pass.
