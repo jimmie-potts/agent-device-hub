@@ -617,7 +617,7 @@ labels win; the UI shows a shared title when no label exists and preserves an
 untitled ID fallback. Label commands accept at most 80 Unicode scalar values.
 
 The optional setup input `lifecycleVersion:"1.1"` produces metadata-capable
-hooks for an upgraded owner. Existing receipts/configurations without it stay
+hooks for an upgraded owner; `"1.2"` also carries the Claude Desktop session ID. Existing receipts/configurations without it stay
 1.0. Changing an installed receipt or producer file manually is not an upgrade
 procedure. The source tests use synthetic settings only. For matching Desktop
 sources, the owner enriches 1.1 events from its configured `codexDesktop.home`
@@ -626,10 +626,34 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.4.1 uses agent-state 3.4.0 and lifecycle 1.1.0. Durable 2.1 is not readable
-by old owners. Package publication is source delivery, not installation;
+Hub 0.6.0 uses agent-state 3.5.0 and lifecycle 1.2.0. Durable 2.1 is not readable
+by owners older than 0.4.0. Package publication is source delivery, not installation;
 real-client rename observations and physical presentation require separate
 owner-authorized acceptance.
+
+## Claude Desktop session IDs
+
+Request `/api/monitor/v1/sessions?snapshotVersion=1.3` for each record's optional
+`hostSessionId`, the Claude Desktop `local_<uuid>` that the CHOMPI bridge
+([#742](https://github.com/jimmie-potts/agent-device-hub/issues/742)) uses to
+open the exact Code session. Snapshot 1.3 is 1.2 plus that field; the default,
+1.1 and 1.2 projections and the dashboard are unchanged. `hub_sessions` reads
+1.3, and its query matching is unchanged.
+
+The field arrives only from a Claude producer that selected lifecycle 1.2 and
+ran under `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Claude CLI and Codex records
+carry none. The owner keeps the value in memory for its lifetime and never in
+the store, exports or backups. After a Hub restart it is absent until that
+session's next accepted lifecycle event, so routing consumers keep their own
+cache. It is never a session identity: a Claude `/clear` retires the old hook
+session, and the new hook session is a separate record with the same value.
+See the [agent-state guide](../../packages/agent-state/README.md#claude-desktop-host-session-id)
+and [provider qualification](../../docs/provider-qualification.md#claude-desktop-host-session-id).
+
+Select lifecycle 1.2 only after the owner runs Hub 0.6.0 or later; an older
+owner rejects every 1.2 event. Before rolling the Hub back below 0.6.0, return
+the producer to its previous version. The setup step is in
+[Select a lifecycle version](SETUP.md#select-a-lifecycle-version).
 
 ## Read-only Pixoo catalog
 

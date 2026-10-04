@@ -126,7 +126,9 @@ Lifecycle 1.1 carries bounded title/source and project display metadata. Project
 identity remains separate; hooks send only the cwd basename for display. Explicit
 owner labels precede agent labels and provider titles. Neutral IDs remain the
 fallback. No local reader or personal configuration changes merely because the
-policy permits a field.
+policy permits a field. Lifecycle 1.2 adds an optional Claude Desktop host
+session ID read from the hook environment. The owner keeps it in memory only,
+exposes it through opt-in snapshot 1.3, and never treats it as identity.
 
 Hooks remain bounded, observational and fail-open. Device/collector failure must
 not deny an agent action, change permissions or hold work waiting. MCP is the
