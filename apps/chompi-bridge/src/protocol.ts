@@ -45,11 +45,11 @@ const u16 = (r: Uint8Array, at: number) => r[at]! | (r[at + 1]! << 8);
 const u32 = (r: Uint8Array, at: number) => (r[at]! | (r[at + 1]! << 8) | (r[at + 2]! << 16) | (r[at + 3]! << 24)) >>> 0;
 const i8 = (value: number) => (value << 24) >> 24;
 
-/** Shared header checks, in the contract's order: length, type, version. */
+/** Shared header checks, in the contract's order: length, version, then type. Field checks follow. */
 function header(report: Uint8Array, types: readonly number[]): RejectReason | undefined {
   if (report.length !== REPORT_BYTES) return 'invalid-length';
-  if (!types.includes(report[0]!)) return 'unknown-type';
   if (report[1] !== PROTOCOL_VERSION) return 'unsupported-version';
+  if (!types.includes(report[0]!)) return 'unknown-type';
   return undefined;
 }
 
@@ -70,7 +70,7 @@ export function decodeDeviceReport(report: Uint8Array): DecodeResult<DeviceMessa
   switch (report[0]) {
     case TYPE.hello: {
       const [controls, encoders, leds] = [report[7]!, report[8]!, report[9]!];
-      if (controls !== CONTROL_COUNT || encoders !== ENCODER_COUNT || leds !== LED_COUNT) return reject('incompatible-device');
+      if (epoch === 0 || controls !== CONTROL_COUNT || encoders !== ENCODER_COUNT || leds !== LED_COUNT) return reject('incompatible-device');
       return { ok: true, message: { type: 'hello', version: 1, epoch, firmware: [report[4]!, report[5]!, report[6]!], controls, encoders, leds } };
     }
     case TYPE.input: {
@@ -110,7 +110,10 @@ export function isRgb(value: unknown): value is Rgb {
   return Array.isArray(value) && value.length === 3 && value.every(channel => isInt(channel, 0, 255));
 }
 
-/** Encodes a message to a zero-filled 64-byte report. Throws RangeError for any message a receiver would reject. */
+/**
+ * Encodes a message to a zero-filled 64-byte report. Throws RangeError for any message a receiver would reject,
+ * except `hello` compatibility (epoch 0, other counts), which tests need to produce.
+ */
 export function encodeReport(message: Message): Uint8Array {
   const r = new Uint8Array(REPORT_BYTES);
   const put16 = (at: number, value: number) => { r[at] = value & 0xff; r[at + 1] = value >> 8; };

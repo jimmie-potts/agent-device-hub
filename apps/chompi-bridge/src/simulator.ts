@@ -18,8 +18,10 @@ export interface SimulatorOptions {
 export interface SimulatorCounters {
   /** Device reports sent while no host handle was open, which the OS discards. */
   lostReports: number;
-  /** Inputs not sent because no host heartbeat was current; the firmware never queues them. */
+  /** Inputs not sent because no host session was current; the firmware never queues them. */
   droppedWithoutHost: number;
+  /** Releases not sent because their press was never reported in the current host session. */
+  suppressedReleases: number;
   /** Host reports the device rejected, by contract reason. */
   rejected: Partial<Record<RejectReason, number>>;
 }
@@ -44,12 +46,14 @@ class SimulatorConnection implements TransportConnection {
 }
 
 /**
- * The device side of protocol v1, for routing development and tests without hardware. It sends `hello` at
- * enumeration and again whenever host heartbeats resume after the 2 s host timeout, numbers inputs per epoch,
- * sends heartbeats every 500 ms, applies two-part LED frames and drops input while no host heartbeat is current.
+ * The device side of protocol v1, for routing development and tests without hardware. A host session starts with
+ * the first host heartbeat after enumeration or after the 2 s host timeout, and the device answers it with `hello`.
+ * On a host timeout it turns its lights off, reports frame 0 and forgets which keys it reported down; a key held
+ * when a session starts stays silent until released and pressed again. Inputs are numbered per epoch, wrapping
+ * from 65535 to 1; heartbeats go out every 500 ms; LED frames apply when both parts arrive.
  */
 export class ChompiSimulator {
-  readonly counters: SimulatorCounters = { lostReports: 0, droppedWithoutHost: 0, rejected: {} };
+  readonly counters: SimulatorCounters = { lostReports: 0, droppedWithoutHost: 0, suppressedReleases: 0, rejected: {} };
   readonly transport: Transport;
   readonly #clock: Clock;
   readonly #nextEpoch: () => number;
@@ -57,6 +61,9 @@ export class ChompiSimulator {
   readonly #descriptor: HidDeviceInfo;
   readonly #connections = new Set<SimulatorConnection>();
   readonly #pressed = new Set<number>();
+  readonly #reported = new Set<number>();
+  #hostSession = false;
+  #dropHost = false;
   #plugged = false;
   #epoch = 0;
   #sequence = 0;
@@ -95,11 +102,11 @@ export class ChompiSimulator {
   get appliedFrame(): number { return this.#appliedFrame; }
   get brightnessPercent(): number { return this.#brightness; }
   get profileVersion(): number { return this.#profileVersion; }
-  get hostAlive(): boolean { return this.#hostSeenAt !== undefined && this.#clock.now() - this.#hostSeenAt < HOST_TIMEOUT_MS; }
+  get hostAlive(): boolean { this.#checkHostTimeout(); return this.#hostSession; }
   /** `disconnected` is the firmware's dim breathe on the CHOMPI key; `host` shows the host's last frame. */
   get display(): 'disconnected' | 'host' { return this.#plugged && this.hostAlive ? 'host' : 'disconnected'; }
 
-  /** USB enumeration: a new epoch, sequence restart and an immediate `hello`. */
+  /** USB enumeration: a new epoch and sequence. `hello` waits for the first host heartbeat. */
   plug(): void {
     if (this.#plugged) return;
     this.#plugged = true;
@@ -108,8 +115,9 @@ export class ChompiSimulator {
     this.#epoch = epoch;
     this.#sequence = 0;
     this.#hostSeenAt = undefined;
+    this.#hostSession = false;
+    this.#reported.clear();
     this.#heartbeatTimer = this.#clock.setInterval(() => this.#heartbeat(), HEARTBEAT_MS);
-    this.#sendHello();
   }
 
   /** Removes the device: every host handle closes and nothing more is sent. Physical key state is kept. */
@@ -118,6 +126,8 @@ export class ChompiSimulator {
     this.#plugged = false;
     this.#clock.clearInterval(this.#heartbeatTimer);
     this.#hostSeenAt = undefined;
+    this.#hostSession = false;
+    this.#reported.clear();
     for (const connection of [...this.#connections]) {
       this.detach(connection);
       queueMicrotask(() => connection.handlers.closed());
@@ -133,12 +143,16 @@ export class ChompiSimulator {
   /** Stops or resumes device heartbeats, to exercise the host's stale handling. */
   pauseHeartbeats(paused: boolean): void { this.#heartbeatsPaused = paused; }
 
+  /** Discards every host report while true, as a stalled host or USB path would. */
+  dropHostReports(drop: boolean): void { this.#dropHost = drop; }
+
   /** Sends any report, valid or not, to the open host handles. */
   sendRaw(report: Uint8Array): void { this.#deliver(Uint8Array.from(report)); }
 
   /** @internal Host report arrival. */
   receive(report: Uint8Array): void {
-    if (!this.#plugged) return;
+    if (!this.#plugged || this.#dropHost) return;
+    this.#checkHostTimeout();
     const decoded = decodeHostReport(report);
     if (!decoded.ok) {
       this.counters.rejected[decoded.reason] = (this.counters.rejected[decoded.reason] ?? 0) + 1;
@@ -146,13 +160,16 @@ export class ChompiSimulator {
     }
     const message = decoded.message;
     if (message.type === 'host-heartbeat') {
-      const resumed = !this.hostAlive;
       this.#hostSeenAt = this.#clock.now();
       this.#brightness = message.brightnessPercent;
       this.#profileVersion = message.profileVersion;
-      if (resumed) this.#sendHello();
+      if (!this.#hostSession) {
+        this.#hostSession = true;
+        this.#sendHello();
+      }
       return;
     }
+    if (!this.#hostSession) return;
     if (this.#pending?.frame !== message.frame) this.#pending = { frame: message.frame, parts: [undefined, undefined] };
     this.#pending.parts[message.part] = message.colors;
     const [first, second] = this.#pending.parts;
@@ -170,7 +187,7 @@ export class ChompiSimulator {
   }
 
   #input(control: number, kind: InputKind, delta: number): void {
-    const sequence = (this.#sequence + 1) & 0xffff;
+    const sequence = this.#sequence >= 0xffff ? 1 : this.#sequence + 1;
     const report = encodeReport({ type: 'input', version: 1, epoch: this.#epoch || 1, sequence, control, kind, delta });
     if (kind === 'press') this.#pressed.add(control);
     if (kind === 'release') this.#pressed.delete(control);
@@ -178,8 +195,23 @@ export class ChompiSimulator {
       this.counters.droppedWithoutHost++;
       return;
     }
+    if (kind === 'press') this.#reported.add(control);
+    if (kind === 'release' && !this.#reported.delete(control)) {
+      this.counters.suppressedReleases++;
+      return;
+    }
     this.#sequence = sequence;
     this.#deliver(report);
+  }
+
+  /** Ends the host session once no host heartbeat arrived for 2 s. */
+  #checkHostTimeout(): void {
+    if (!this.#hostSession || (this.#hostSeenAt !== undefined && this.#clock.now() - this.#hostSeenAt < HOST_TIMEOUT_MS)) return;
+    this.#hostSession = false;
+    this.#reported.clear();
+    this.#leds = Array.from({ length: LED_COUNT }, () => [0, 0, 0] as const);
+    this.#appliedFrame = 0;
+    this.#pending = undefined;
   }
 
   #sendHello(): void {
@@ -188,6 +220,7 @@ export class ChompiSimulator {
 
   #heartbeat(): void {
     if (!this.#plugged || this.#heartbeatsPaused) return;
+    this.#checkHostTimeout();
     this.#deliver(encodeReport({ type: 'heartbeat', version: 1, epoch: this.#epoch, ledFrame: this.#appliedFrame, hostAlive: this.hostAlive }));
   }
 

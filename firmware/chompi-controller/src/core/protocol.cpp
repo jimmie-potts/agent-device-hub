@@ -149,6 +149,7 @@ uint8_t LedsPartCount(uint8_t part)
 
 Reason Decode(const uint8_t* d, size_t length, Message* out)
 {
+    // Precedence is normative: length, version, type, then fields.
     if(d == nullptr || length != kReportSize)
         return Reason::InvalidLength;
     if(d[1] != kProtocolVersion)
@@ -162,8 +163,9 @@ Reason Decode(const uint8_t* d, size_t length, Message* out)
     switch(m.type)
     {
         case MessageType::Hello:
-            if(d[7] != kControlCount || d[8] != kEncoderCount
-               || d[9] != kLedCount)
+            // Epoch 0 is never valid; other counts mean another device.
+            if(ReadU16(d + 2) == 0 || d[7] != kControlCount
+               || d[8] != kEncoderCount || d[9] != kLedCount)
                 return Reason::IncompatibleDevice;
             m.hello.epoch       = ReadU16(d + 2);
             m.hello.firmware[0] = d[4];

@@ -19,6 +19,9 @@ identity and UI checks sit behind one OS adapter interface. Boundaries and the o
   `chompi-bridge-already-running` without opening the device. The operating system releases the lock when the
   holder exits. A Unix socket file left by a killed holder is replaced only after a connection probe is refused and
   only when it is a socket owned by the same user in a directory nobody else can write.
+  Known limit: if two instances of the same user recover the same stale Unix socket at the same moment, both could
+  end up holding a lock. Unix hosts are not qualified for the bridge; Windows uses a named pipe, which leaves no
+  file behind and has no such window.
 - **Exact device.** The bridge opens only a HID interface with VID `0x1209`, PID `0x000C`, product
   `Agent Controller`, usage page `0xFF00` and usage `0x01`, and, when given `--serial`, that serial. Two matching
   controllers without a serial are refused. The stock CHOMPI presents MIDI under `0483:5740` and never matches;
@@ -27,10 +30,10 @@ identity and UI checks sit behind one OS adapter interface. Boundaries and the o
 
 ## Connection behavior
 
-- After opening, the bridge stays silent for 2.5 s. A device that was already running sent its `hello` at
-  enumeration, before this handle existed. The silence outlasts the firmware's 2 s host timeout, so the next host
-  heartbeat counts as a host arriving and the firmware sends `hello` again (see [Open protocol points](#open-protocol-points)).
-  If no `hello` comes within 3 s more, the bridge closes the handle and enumerates again.
+- After opening, the bridge stays silent for 2.5 s, longer than the firmware's 2 s host timeout. The firmware sends
+  `hello` with the first host heartbeat after enumeration or after a host timeout, so the next heartbeat starts a
+  fresh host session even when the device was already enumerated. If no `hello` comes within 3 s more, the bridge
+  closes the handle and enumerates again.
 - Input counts only after a compatible `hello` (34 controls, 6 encoders, 35 LEDs, nonzero epoch). Input from any
   other epoch is dropped. Within an epoch, a duplicate or older sequence is dropped, using 16-bit serial-number
   order so wraparound is accepted. A repeated press and a release without a press are dropped too.
@@ -42,10 +45,22 @@ identity and UI checks sit behind one OS adapter interface. Boundaries and the o
 - On disconnect, epoch change or stop, every held control gets a synthetic `release` (with `synthetic: true` and the
   reason) before `disconnected`, so nothing stays held. A reconnect needs a new handle and a new `hello`, and never
   replays input.
+- **Firmware host-session restart.** A device heartbeat whose host-current flag is clear, or a `hello` on the current
+  epoch, means the firmware restarted its host session: it turned its lights off, reports frame 0 and forgot which
+  keys it reported down. The bridge releases every held control with reason `session-restart`, stops trusting the
+  applied light frame and ignores input until that `hello`. On the `hello` it resets the sequence baseline and
+  resends its current light frame under a new frame number. Keys still held then need a fresh press. If the flag
+  drops and no `hello` follows within 5.5 s, the bridge closes the handle with reason `hello-timeout` and enumerates
+  again. After the releases it emits one `session-restart` event per restart; a flag drop followed by the
+  firmware's same-epoch `hello` is one restart, and that `hello` completes it.
 - LED frames go out as the protocol's two parts. The first frame of a connection waits for the device heartbeat, so
-  its frame number follows the device's last applied frame. A frame the device has not reported as applied is resent
-  every second. Frames are at most one per 40 ms; a newer frame replaces a waiting one. The last frame is sent again
-  after a reconnect.
+  its frame number follows the device's last applied frame. Frame numbers skip 0, which the firmware reports after a
+  host timeout. A frame the device has not reported as applied is resent every second. Frames are at most one per
+  40 ms; a newer frame replaces a waiting one. The last frame is sent again after a reconnect or session restart.
+  `status().appliedLedFrame` is the bridge's own last frame once the device reports it, and null otherwise.
+- A brightness change sends an early host heartbeat at most once per 40 ms; a burst coalesces to the newest value,
+  so it cannot fill the bounded write queue (32 writes) and drop a healthy link.
+- `stop()` waits for an open in flight and closes that handle before it resolves.
 - Malformed or incompatible reports are counted by reason in `status().counters` and otherwise ignored.
 
 ## Interface for #742 (version 1)
@@ -57,7 +72,7 @@ const lock = await acquireInstanceLock();          // before any device open
 const bridge = createChompiBridge({ transport: createNodeHidTransport(), profileVersion: 1 });
 bridge.start();
 for await (const event of bridge.events()) {
-  // event.type: 'connected' | 'input' | 'stale' | 'recovered' | 'disconnected'
+  // event.type: 'connected' | 'input' | 'stale' | 'recovered' | 'session-restart' | 'disconnected'
 }
 bridge.setLeds(colors);      // 35 [r, g, b] triples, LED index order from the protocol README
 bridge.setBrightness(40);    // 0-100, before the firmware's own caps
@@ -70,8 +85,12 @@ await lock.release();
   `control` is the protocol control ID (1-34 clicks, 41-46 turns); `delta` is nonzero only for turns (positive is
   clockwise). Synthetic releases have `sequence: null` and a `reason`.
 - `stale` and `recovered`: `{ epoch }`.
+- `session-restart`: `{ epoch, cause }`, with cause `host-flag-dropped` or `same-epoch-hello`. The firmware restarted
+  its host session in the same epoch. Synthetic releases for every held control come first, and input after the
+  event is fresh, so a consumer should drop anything pending, such as a selected target. It comes once per restart:
+  the `hello` that follows a flag drop does not emit a second one.
 - `disconnected`: `{ epoch, reason }`, with reason `device-closed`, `transport-error`, `heartbeat-timeout`,
-  `epoch-change` or `stopped`.
+  `hello-timeout`, `epoch-change` or `stopped`. A synthetic release can also carry `stale` or `session-restart`.
 - Every event has `at`, the clock time in milliseconds.
 
 Each subscription is a bounded queue (256 events by default, `events({ limit })`). A subscriber that falls behind is
@@ -79,9 +98,12 @@ closed with `closedReason: 'overflow'` and its queue is discarded, so it never s
 treat that end like a disconnect. `BRIDGE_INTERFACE_VERSION` increments on any breaking change to these types.
 
 For development without hardware, `ChompiSimulator` plays the device side of protocol v1 behind the same
-`Transport` interface: `plug`, `unplug`, `press`, `release`, `click`, `turn`, `pauseHeartbeats`, `sendRaw`, plus the
-applied `leds`, `brightnessPercent` and `display` (`host` or `disconnected`). `ManualClock` runs the bridge and
-simulator in virtual time. `FakeTransport` is the lower-level test double.
+`Transport` interface: `plug`, `unplug`, `press`, `release`, `click`, `turn`, `pauseHeartbeats`, `dropHostReports`,
+`sendRaw`, plus the applied `leds`, `appliedFrame`, `brightnessPercent`, `pressed` and `display` (`host` or
+`disconnected`). It follows the firmware rules: `hello` only with the first host heartbeat after enumeration or a
+host timeout; on a timeout, lights off, frame 0 and reported keys forgotten; keys held at session start stay silent
+until pressed again; sequence wraps from 65535 to 1. `ManualClock` runs the bridge and simulator in virtual time.
+`FakeTransport` is the lower-level test double.
 
 The OS adapter (`OsAdapter`, version 0) is only a type and a Windows stub whose methods reject with
 `os-adapter-not-implemented`. #742 implements it; nothing here sends keystrokes or opens links.
@@ -132,12 +154,3 @@ platforms. It enumerates HID devices read-only, checks that the matcher rejects 
 the named-pipe lock refuses a second holder and is released on exit and on kill, and reruns the portable suites
 except the codec fixtures (whose workspace symlink Windows does not follow on a `\\wsl.localhost` checkout). It
 opens no device. Linux CI does not qualify Windows HID or named pipes.
-
-## Open protocol points
-
-- Protocol v1 says the firmware sends `hello` at boot and at USB enumeration. A bridge that starts or restarts while
-  the device stays enumerated would never see it. The bridge assumes the firmware also sends `hello` when host
-  heartbeats resume after its 2 s host timeout, as the simulator does. The firmware and protocol README need to
-  state this before #743.
-- The firmware should discard its input queue when the host times out, so a bridge restart inside the timeout does
-  not receive presses from the gap. The bridge's quiet period already forces that timeout.

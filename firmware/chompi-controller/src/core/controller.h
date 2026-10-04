@@ -35,8 +35,9 @@ class Controller
     //
     // A host session starts on the first valid host heartbeat after an
     // enumeration or after a 2 s host timeout. hello (with the current epoch)
-    // is then sent before any input. A timeout clears the queue; the epoch
-    // stays until the next enumeration.
+    // is then sent before any input. A timeout clears the queue, forgets
+    // reported keys, turns the lights off and resets the reported light frame
+    // to 0; the epoch stays until the next enumeration.
     void OnUsbConfigured(uint16_t epoch, uint32_t now);
     // The configuration went away (bus reset, unplug, deconfigure).
     void OnUsbDeconfigured();

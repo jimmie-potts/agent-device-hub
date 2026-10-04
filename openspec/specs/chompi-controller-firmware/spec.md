@@ -14,7 +14,7 @@ The controller firmware SHALL enumerate as one vendor-defined HID interface with
 - **THEN** valid reports round-trip to the stated message and invalid reports are rejected with the stated reason and cause no action
 
 ### Requirement: Session start and replay protection
-The firmware SHALL pick a new random nonzero epoch at every boot and USB enumeration, SHALL send `hello` before any input when a host session starts (the first host heartbeat after enumeration or after a host timeout), and SHALL number input events from 1 within an epoch. It MUST NOT queue input while no host session is active and MUST clear its input queue on host timeout.
+The firmware SHALL pick a new random nonzero epoch at every boot and USB enumeration, SHALL send `hello` before any input when a host session starts (the first host heartbeat after enumeration or after a host timeout), and SHALL number input events from 1 within an epoch. It MUST NOT queue input while no host session is active. On host timeout it MUST clear its input queue, turn its lights off and report light frame 0 until a new frame is applied.
 
 #### Scenario: Bridge restarts while the device stays enumerated
 - **WHEN** host heartbeats stop for more than 2 s and later resume
@@ -25,7 +25,7 @@ The firmware SHALL pick a new random nonzero epoch at every boot and USB enumera
 - **THEN** the oldest are dropped and keys that are physically up still produce releases
 
 ### Requirement: Physical input semantics
-The firmware SHALL debounce keys, report press and release separately, report encoder turns with signed nonzero deltas separately from encoder clicks, and SHALL NOT report the far-left switch. It MUST leave the shipping-mode and test-mode boot holds unchanged.
+The firmware SHALL debounce keys, report press and release separately, report encoder turns with signed nonzero deltas separately from encoder clicks, and SHALL NOT report the far-left switch. It MUST NOT reuse the stock shipping-mode or test-mode boot holds as controls.
 
 #### Scenario: Encoder turn versus click
 - **WHEN** an encoder is turned while its click is held

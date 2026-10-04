@@ -292,6 +292,26 @@ TEST("protocol: hello counts must match this device")
           == Reason::IncompatibleDevice);
 }
 
+TEST("protocol: a hello with epoch 0 is an incompatible device")
+{
+    CHECK(DecodeVec(Report({0x01, 0x01, 0, 0, 0, 1, 0, 34, 6, 35}))
+          == Reason::IncompatibleDevice);
+    CHECK(DecodeVec(Report({0x01, 0x01, 0, 1, 0, 1, 0, 34, 6, 35})) == Reason::Ok);
+}
+
+TEST("protocol: checks run in order length, version, type, fields")
+{
+    // Short report with a bad version and an unknown type: length wins.
+    std::vector<uint8_t> short_report = {0x7f, 0x02, 0x00};
+    CHECK(DecodeVec(short_report) == Reason::InvalidLength);
+    // Unknown type with another version: version wins.
+    CHECK(DecodeVec(Report({0x7f, 0x02})) == Reason::UnsupportedVersion);
+    // Known type, wrong version and a bad field: version wins.
+    CHECK(DecodeVec(Report({0x82, 0x02, 0, 0, 0, 0, 200})) == Reason::UnsupportedVersion);
+    // Unknown type on version 1: type before any field check.
+    CHECK(DecodeVec(Report({0x04, 0x01, 0, 0, 0, 0, 0xFF, 9, 9})) == Reason::UnknownType);
+}
+
 TEST("protocol: the firmware hello matches the fixture identity")
 {
     const HelloMsg hello = MakeHello(0x1234);

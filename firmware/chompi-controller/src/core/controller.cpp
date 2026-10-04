@@ -138,7 +138,10 @@ void Controller::HostLost()
     queue_.Clear(); // nothing waiting is ever replayed
     reported_down_ = 0;
     suppressed_    = 0;
-    ClearLights();  // a stale frame never comes back
+    // A stale frame never comes back, and heartbeats report frame 0 until the
+    // host applies a new one, so the bridge knows to resend.
+    ClearLights();
+    last_applied_frame_ = 0;
 }
 
 void Controller::HostFound(uint64_t down_mask)

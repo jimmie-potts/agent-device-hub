@@ -1,11 +1,11 @@
 # Third-party notices
 
-This directory holds no upstream source trees or binaries.
+This directory contains no upstream source trees or binaries. At build time,
 `scripts/fetch-upstream.sh` downloads the pinned upstream sources into the
-ignored `.upstream/` directory at build time. Each component keeps its own
-license files and file headers there. The built image `04_AGENT.bin` contains
-code from the components marked "linked" below, so anyone who redistributes
-the image must ship these notices with it.
+ignored `.upstream/` directory, where each component keeps its own license
+files and file headers. The built image `04_AGENT.bin` contains code from the
+components listed under "Linked into the image". Anyone who redistributes the
+image must include these notices.
 
 ## CHOMPI firmware, launcher and USB storage fork (MIT)
 
@@ -18,8 +18,8 @@ the image must ship these notices with it.
 Adapted files, each marked in its header:
 
 - `src/core/input.cpp`: quadrature rules from `firmware/chompi-wave/code/src/encoder.cpp`.
-- `src/core/hardware_map.h`, `src/core/leds.cpp`: bit order and LED positions from
-  `hardware.h` and `TestPage.h`.
+- `src/core/hardware_map.h`, `src/core/leds.*`: bit order, LED positions,
+  colour orders and caps from `hardware.h`, `TestPage.h` and `temp_led_stuff.h`.
 - `src/hw/board.*`: from `firmware/chompi-launcher/code/src/hardware.h`.
 - `src/hw/led_driver.*`: from `firmware/chompi-launcher/code/src/temp_led_stuff.h`.
 - `src/hw/usb_switch.*`: from `UsbTakeOver()` and `ServiceUsbSwitch()` in
@@ -55,9 +55,9 @@ SOFTWARE.
 
 CHOMPI's `THIRD_PARTY.md` credits Electrosmith for the hardware design, the
 original firmware platform and the Daisy Bootloader. CHOMPI Club's
-`TRADEMARKS.md` keeps the CHOMPI name and marks outside the MIT grant. This
-firmware therefore presents itself as "Agent Controller" and does not claim to
-be a CHOMPI Club release.
+`TRADEMARKS.md` excludes the CHOMPI name and marks from the MIT grant, so this
+firmware calls itself "Agent Controller" and does not claim to be a CHOMPI
+Club release.
 
 ## Linked into the image
 
@@ -66,14 +66,14 @@ be a CHOMPI Club release.
 | libDaisy, Electrosmith's CHOMPI adaptation of v5.4.0 (`build/libdaisy.a`, headers, `core/startup_stm32h750xx.c`) | (c) 2019 Electrosmith | MIT | Linked prebuilt from `firmware/chompi-wave/code/libs/libDaisy`. Its `LICENSE` is in `.upstream/` |
 | STM32H7 HAL and LL drivers, STM32H7xx CMSIS device headers | (c) 2017-2019 STMicroelectronics | BSD-3-Clause | Inside `libdaisy.a`, per file headers |
 | STM32 USB Device Library core, libDaisy `usbd_conf.c` | (c) 2015-2019 STMicroelectronics | ST Ultimate Liberty license SLA0044 | Inside `libdaisy.a`. SLA0044 allows use only with ST microcontrollers; the CHOMPI's Daisy Seed uses an STM32H750 |
-| STM32 USB Host Library core, libDaisy `usbh_conf.c` (parts) | (c) 2015-2019 STMicroelectronics | ST Ultimate Liberty license SLA0044 | Linked only because libDaisy's shared `OTG_HS_IRQHandler` references the host handle. Host mode is never started |
+| STM32 USB Host Library core, libDaisy `usbh_conf.c` (parts) | (c) 2015-2019 STMicroelectronics | ST Ultimate Liberty license SLA0044 | Linked because libDaisy's shared `OTG_HS_IRQHandler` references the host handle. The firmware never starts host mode |
 | CMSIS core headers | (c) 2009-2016 ARM Limited | Apache-2.0 | Headers only |
 | newlib-nano, libgcc | GNU Arm Embedded Toolchain 10.3-2021.10 | BSD-style newlib licenses; GCC Runtime Library Exception | From the compiler |
 
 ## Not used
 
-- **DaisySP** (MIT, Electrosmith): not fetched or linked, because the
-  controller has no DSP.
+- **DaisySP** (MIT, Electrosmith): not fetched or linked; the controller has
+  no DSP.
 - **FatFs** (ChaN's BSD-style license): not linked. The controller never
   mounts the card, and `scripts/check-artifact.sh` fails if any FatFs or SD
   symbol is present.

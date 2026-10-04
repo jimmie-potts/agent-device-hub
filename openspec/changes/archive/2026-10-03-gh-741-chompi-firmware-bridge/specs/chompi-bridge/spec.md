@@ -9,28 +9,32 @@ The bridge SHALL open only a HID interface matching VID `1209`, PID `000C`, prod
 
 #### Scenario: Incompatible hello
 - **WHEN** a matching device sends a `hello` with another version, epoch 0 or wrong counts
-- **THEN** the bridge accepts no input from it and reports `incompatible-device`
+- **THEN** the bridge accepts no input from it and reports `unsupported-version` for the version and `incompatible-device` otherwise
 
 ### Requirement: Replay-free input with releases on loss
-The bridge SHALL drop input from older epochs, duplicate or older sequences within an epoch, repeated presses and unmatched releases. On stale heartbeat, disconnect or epoch change it SHALL emit synthetic releases for every held control before reporting the state change, and SHALL ignore input until the device session is healthy again.
+The bridge SHALL drop input from older epochs, duplicate or older sequences within an epoch, repeated presses and unmatched releases. On stale heartbeat, disconnect, epoch change or a firmware host-session restart (a current-epoch `hello` or a dropped host-current flag) it SHALL emit synthetic releases for every held control before reporting the state change, and SHALL ignore input until the device session is healthy again.
 
 #### Scenario: Unplug during a held key
 - **WHEN** the device disconnects while a key is held
 - **THEN** subscribers receive a synthetic release and a `disconnected` event, and nothing from the old epoch is delivered after reconnect
+
+#### Scenario: Firmware host-session restart
+- **WHEN** the device sends a `hello` on the current epoch after a host timeout
+- **THEN** the bridge releases every held control, emits one `session-restart` event and resends its current light frame, so lights never stay dark while reported applied
 
 #### Scenario: Bridge restart with device enumerated
 - **WHEN** the bridge opens a device that is already enumerated
 - **THEN** it stays silent longer than the firmware host timeout, then heartbeats and waits for a fresh `hello` before accepting input
 
 ### Requirement: One writer
-The bridge SHALL acquire a per-user single-instance lock before enumerating or opening any device, and a second instance SHALL exit with a distinct status without opening a device. The lock SHALL be released when the holding process exits, including on kill.
+The bridge SHALL acquire a per-user single-instance lock before opening any device; read-only enumeration needs no lock, and a second instance SHALL exit with a distinct status without opening a device. The lock SHALL be released when the holding process exits, including on kill.
 
 #### Scenario: Overlapping start
 - **WHEN** a second bridge starts while the first holds the lock
 - **THEN** the second exits with the lock-held status and the first keeps the device
 
 ### Requirement: Event and light interface
-The bridge SHALL expose a versioned interface with `connected`, `input`, `stale`, `recovered` and `disconnected` events through bounded subscriptions, and `setLeds` and `setBrightness` commands. A subscriber that overflows SHALL be closed rather than receive a partial stream. Light frames SHALL be sent as two parts with bounded rate and periodic resend. The interface SHALL carry no task semantics.
+The bridge SHALL expose a versioned interface with `connected`, `input`, `stale`, `recovered`, `session-restart` and `disconnected` events through bounded subscriptions, and `setLeds` and `setBrightness` commands. A subscriber that overflows SHALL be closed rather than receive a partial stream. Light frames SHALL be sent as two parts with bounded rate and periodic resend. The interface SHALL carry no task semantics.
 
 #### Scenario: Slow subscriber
 - **WHEN** a subscriber's queue exceeds its bound

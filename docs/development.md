@@ -860,7 +860,8 @@ Node 24 after a build, using an isolated runtime rather than changing the
 global Windows Node. It fails on other platforms. It enumerates HID devices
 read-only, checks that the matcher rejects the stock CHOMPI ID, checks that the
 named-pipe lock refuses a second holder and is released on exit and on kill,
-and reruns the portable suites. It opens no device. Linux CI does not qualify
+and reruns the portable suites except the codec fixtures, which need the
+protocol workspace link. It opens no device. Linux CI does not qualify
 Windows HID or named pipes.
 
 ## Wispr Hub checks

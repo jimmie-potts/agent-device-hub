@@ -142,7 +142,6 @@ test('a new epoch on the same handle ends the old connection first', async t => 
   const s = await setup(t);
   const c = s.connection();
   c.inject(input(0x1234, 1, 5, 'press'));
-  c.inject(hello(0x1234));
   await settle();
   s.events.drain();
   c.inject(hello(0x9999));
@@ -164,7 +163,7 @@ test('the bridge sends host heartbeats every 500 ms with the profile version and
   for (let i = 0; i < 4; i++) { s.connection().inject(heartbeat(0x1234)); await advance(s.clock, 500); }
   assert.equal(beats().length, 5);
   s.bridge.setBrightness(25);
-  await settle();
+  await advance(s.clock, DEFAULT_TIMING.commandMinIntervalMs + 10, 10);
   assert.deepEqual(beats().at(-1), { type: 'host-heartbeat', version: 1, profileVersion: 3, brightnessPercent: 25 });
   assert.equal(beats().length, 6);
   for (const bad of [-1, 101, 2.5, Number.NaN]) assert.throws(() => s.bridge.setBrightness(bad), RangeError);
@@ -350,7 +349,7 @@ test('a failed write is a transport error that releases held controls', async t 
   s.events.drain();
   s.transport.failWrites = true;
   s.bridge.setBrightness(10);
-  await settle();
+  await advance(s.clock, DEFAULT_TIMING.commandMinIntervalMs + 10, 10);
   assert.deepEqual(strip(s.events.drain()).map(e => [e.type, e.reason]), [['input', 'transport-error'], ['disconnected', 'transport-error']]);
   assert.equal(s.connection().closed, true);
 });
@@ -361,8 +360,143 @@ test('writes that stop completing are bounded and end the connection', async t =
   await settle();
   s.events.drain();
   s.transport.hangWrites = true;
-  for (let i = 0; i < 40; i++) s.bridge.setBrightness(i % 100);
-  await settle();
+  for (let i = 0; i < 40 && s.bridge.status().state === 'connected'; i++) {
+    s.connection().inject(heartbeat(0x1234));
+    await advance(s.clock, DEFAULT_TIMING.hostHeartbeatMs);
+  }
   assert.deepEqual(strip(s.events.drain()).map(e => [e.type, e.reason]), [['input', 'transport-error'], ['disconnected', 'transport-error']]);
   assert.equal(s.connection().closed, true);
+});
+
+test('a burst of brightness changes coalesces and cannot overflow the write queue', async t => {
+  const s = await setup(t);
+  s.connection().inject(heartbeat(0x1234));
+  await settle();
+  s.events.drain();
+  s.transport.hangWrites = true;
+  for (let i = 0; i <= 100; i++) s.bridge.setBrightness(i);
+  await advance(s.clock, DEFAULT_TIMING.commandMinIntervalMs + 10, 10);
+  assert.equal(s.bridge.status().state, 'connected', 'a healthy link is not dropped by a burst');
+  assert.deepEqual(s.events.drain(), []);
+
+  const healthy = await setup(t);
+  const before = sent(healthy.connection()).filter(m => m.type === 'host-heartbeat').length;
+  for (let i = 0; i <= 100; i++) healthy.bridge.setBrightness(100 - i);
+  await advance(healthy.clock, DEFAULT_TIMING.commandMinIntervalMs + 10, 10);
+  const beats = sent(healthy.connection()).filter(m => m.type === 'host-heartbeat').slice(before);
+  assert.ok(beats.length <= 2, `burst sent ${beats.length} heartbeats`);
+  assert.equal(beats.at(-1).brightnessPercent, 0, 'the newest value wins');
+});
+
+test('stop waits for an open in flight and closes that handle', async t => {
+  const s = await setup(t, { epoch: 0, devices: [] });
+  let release;
+  s.transport.openGate = new Promise(resolve => { release = resolve; });
+  s.transport.devices = [CONTROLLER];
+  await advance(s.clock, DEFAULT_TIMING.reconnectMs);
+  assert.equal(s.transport.opens.length, 1);
+  let stopped = false;
+  const stopping = s.bridge.stop().then(() => { stopped = true; });
+  await settle();
+  assert.equal(stopped, false, 'stop does not resolve while the open is in flight');
+  release();
+  await stopping;
+  assert.equal(s.transport.connection.closed, true);
+  assert.equal(s.bridge.status().state, 'stopped');
+});
+
+test('a dropped host-current flag and then a same-epoch hello restart the session', async t => {
+  const s = await setup(t);
+  const c = s.connection();
+  c.inject(heartbeat(0x1234, 5));
+  s.bridge.setLeds(colors(2));
+  c.inject(input(0x1234, 1, 26, 'press'));
+  await settle();
+  c.inject(heartbeat(0x1234, 6));
+  await settle();
+  assert.equal(s.bridge.status().appliedLedFrame, 6);
+  s.events.drain();
+  const ledCount = () => sent(c).filter(m => m.type === 'leds').length;
+  const ledsBefore = ledCount();
+
+  c.inject(heartbeat(0x1234, 0, false));
+  c.inject(heartbeat(0x1234, 0, false));
+  await settle();
+  assert.deepEqual(strip(s.events.drain()), [
+    { type: 'input', epoch: 0x1234, sequence: null, control: 26, kind: 'release', delta: 0, synthetic: true, reason: 'session-restart' },
+    { type: 'session-restart', epoch: 0x1234, cause: 'host-flag-dropped' },
+  ], 'releases come first, then one session-restart however many heartbeats repeat the drop');
+  assert.equal(s.bridge.status().appliedLedFrame, null, 'a frame the firmware cleared is not reported as applied');
+  c.inject(input(0x1234, 2, 3, 'press'));
+  await settle();
+  assert.deepEqual(s.events.drain(), [], 'no input until the firmware sends hello again');
+
+  c.inject(hello(0x1234));
+  c.inject(input(0x1234, 1, 26, 'release'));
+  c.inject(input(0x1234, 2, 26, 'press'));
+  await settle();
+  const leds = sent(c).filter(m => m.type === 'leds').slice(ledsBefore);
+  assert.deepEqual(leds.map(m => [m.frame, m.part]), [[7, 0], [7, 1]], 'the current frame is resent under a new number');
+  assert.deepEqual([...leds[0].colors, ...leds[1].colors], colors(2));
+  assert.deepEqual(strip(s.events.drain()), [
+    { type: 'input', epoch: 0x1234, sequence: 2, control: 26, kind: 'press', delta: 0, synthetic: false },
+  ], 'the hello after a drop completes that restart; it is not a second one');
+  assert.equal(s.bridge.status().counters.repeatedPress, 0);
+  assert.equal(s.bridge.status().counters.sessionRestarts, 1);
+  assert.equal(s.bridge.status().state, 'connected');
+  c.inject(heartbeat(0x1234, 0));
+  await settle();
+  assert.equal(s.bridge.status().appliedLedFrame, null);
+  c.inject(heartbeat(0x1234, 7));
+  await settle();
+  assert.equal(s.bridge.status().appliedLedFrame, 7);
+  assert.ok(ledCount() > ledsBefore);
+});
+
+test('a same-epoch hello without a prior timeout also restarts the session', async t => {
+  const s = await setup(t);
+  const c = s.connection();
+  c.inject(heartbeat(0x1234, 1));
+  s.bridge.setLeds(colors(5));
+  c.inject(input(0x1234, 40, 26, 'press'));
+  await settle();
+  s.events.drain();
+  const ledsBefore = sent(c).filter(m => m.type === 'leds').length;
+  c.inject(hello(0x1234));
+  c.inject(input(0x1234, 1, 26, 'press'));
+  await settle();
+  assert.deepEqual(strip(s.events.drain()), [
+    { type: 'input', epoch: 0x1234, sequence: null, control: 26, kind: 'release', delta: 0, synthetic: true, reason: 'session-restart' },
+    { type: 'session-restart', epoch: 0x1234, cause: 'same-epoch-hello' },
+    { type: 'input', epoch: 0x1234, sequence: 1, control: 26, kind: 'press', delta: 0, synthetic: false },
+  ]);
+  assert.deepEqual(sent(c).filter(m => m.type === 'leds').slice(ledsBefore).map(m => [m.frame, m.part]), [[3, 0], [3, 1]]);
+  assert.equal(s.bridge.status().counters.repeatedPress, 0);
+
+  c.inject(hello(0x1234));
+  c.inject(hello(0x1234));
+  await settle();
+  assert.deepEqual(strip(s.events.drain()), [
+    { type: 'input', epoch: 0x1234, sequence: null, control: 26, kind: 'release', delta: 0, synthetic: true, reason: 'session-restart' },
+    { type: 'session-restart', epoch: 0x1234, cause: 'same-epoch-hello' },
+    { type: 'session-restart', epoch: 0x1234, cause: 'same-epoch-hello' },
+  ], 'each same-epoch hello is its own restart, with one event each');
+  assert.equal(s.bridge.status().counters.sessionRestarts, 3);
+});
+
+test('a session restart without a new hello reopens the device', async t => {
+  const s = await setup(t);
+  const c = s.connection();
+  c.inject(heartbeat(0x1234, 0, false));
+  for (let i = 0; i < 14; i++) { c.inject(heartbeat(0x1234, 0, true)); await advance(s.clock, 500); }
+  assert.equal(c.closed, true);
+  assert.deepEqual(strip(s.events.drain()).slice(-1), [{ type: 'disconnected', epoch: 0x1234, reason: 'hello-timeout' }]);
+});
+
+test('LED frame numbers skip 0, which the firmware reports after a host timeout', async t => {
+  const s = await setup(t);
+  s.connection().inject(heartbeat(0x1234, 0xffff));
+  s.bridge.setLeds(colors(1));
+  await settle();
+  assert.deepEqual(sent(s.connection()).filter(m => m.type === 'leds').map(m => m.frame), [1, 1]);
 });

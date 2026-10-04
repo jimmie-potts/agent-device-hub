@@ -38,6 +38,8 @@ export class FakeTransport implements Transport {
   failWrites = false;
   /** Writes never complete, as with a stalled device. */
   hangWrites = false;
+  /** When set, each open waits for this promise before completing. */
+  openGate: Promise<unknown> | undefined;
 
   constructor(devices: HidDeviceInfo[] = []) { this.devices = devices; }
 
@@ -45,6 +47,7 @@ export class FakeTransport implements Transport {
 
   async open(device: HidDeviceInfo, handlers: TransportHandlers): Promise<TransportConnection> {
     this.opens.push(device.path ?? '');
+    if (this.openGate) await this.openGate;
     if (this.failOpen) throw new Error('fake-open-failed');
     const connection = new FakeConnection(this, handlers);
     this.connections.push(connection);

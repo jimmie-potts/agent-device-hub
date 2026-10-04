@@ -28,7 +28,9 @@ storage interfaces.
 Every report is exactly 64 bytes. Byte 0 is the message type and byte 1 the
 protocol version (`1`). Multi-byte integers are little-endian. Unused bytes are
 zero and ignored. A receiver drops a report with an unknown type, another
-version or an invalid field, and takes no action for it.
+version or an invalid field, and takes no action for it. Checks run in this
+order, and the first failure names the reason: length, version, type, then
+fields. A `hello` with epoch 0 is `incompatible-device`.
 
 ### Device to host
 
@@ -45,10 +47,16 @@ version or an invalid field, and takes no action for it.
   while no handle is open. The epoch may stay the same across a host timeout.
   Input from an older epoch is discarded by the bridge, so a reconnect can never
   replay a press. An epoch of 0 is invalid and the bridge rejects that `hello`.
-- On a host timeout the firmware clears its input queue and sends no input until
-  the next `hello`.
-- **Sequence** starts at 1 per epoch and wraps after 65535. The bridge ignores
-  a duplicate or older sequence within an epoch.
+- On a host timeout the firmware clears its input queue, turns its lights off,
+  forgets which keys it reported down and reports light frame 0 until a new
+  frame is applied. It sends no input until the next `hello`, and keys still
+  held then send nothing until released and pressed again.
+- A `hello` on the current epoch, or a device `heartbeat` whose host-current
+  flag drops, means the firmware restarted the host session. The bridge treats
+  it like a reconnect: it releases every held control and resends its current
+  light frame.
+- **Sequence** starts at 1 per epoch and wraps from 65535 to 1, skipping 0.
+  The bridge ignores a duplicate or older sequence within an epoch.
 - The firmware never queues input while no host is connected. Queued input is
   bounded (32 events); on overflow it drops the oldest and still sends releases
   for keys that are physically up.

@@ -598,6 +598,52 @@ TEST("lights: disconnected pattern until a host is live, cleared after loss")
     CHECK(AllOff(shown));
 }
 
+TEST("lights: a host timeout reports frame 0 and stays dark until a new frame")
+{
+    FakeHost h;
+    h.Connect();
+    Rgb part[kMaxLedsPerPart];
+    std::memset(part, 120, sizeof(part));
+    h.SendLeds(7, 0, part);
+    h.SendLeds(7, 1, part);
+    h.Run(500, true);
+    std::vector<Message> beats = h.Of(MessageType::Heartbeat);
+    REQUIRE(!beats.empty());
+    CHECK_EQ(beats.back().heartbeat.led_frame, 7);
+
+    h.Run(Controller::kHostTimeoutMs + 500); // the host stops heartbeating
+    CHECK(!h.c.connected());
+    CHECK_EQ(h.c.last_applied_frame(), 0);
+
+    h.received.clear();
+    h.Beat(); // the host resumes but has not resent its frame
+    h.Run(1000, true);
+    beats = h.Of(MessageType::Heartbeat);
+    REQUIRE(!beats.empty());
+    for(const Message& m : beats)
+    {
+        CHECK(m.heartbeat.host_alive);
+        CHECK_EQ(m.heartbeat.led_frame, 0);
+    }
+    ChainFrame shown;
+    h.c.Render(h.now, &shown);
+    CHECK(AllOff(shown));
+
+    // Half a frame changes nothing; the full frame applies and is reported.
+    h.SendLeds(8, 0, part);
+    CHECK_EQ(h.c.last_applied_frame(), 0);
+    h.c.Render(h.now, &shown);
+    CHECK(AllOff(shown));
+    h.SendLeds(8, 1, part);
+    h.received.clear();
+    h.Run(500, true);
+    beats = h.Of(MessageType::Heartbeat);
+    REQUIRE(!beats.empty());
+    CHECK_EQ(beats.back().heartbeat.led_frame, 8);
+    h.c.Render(h.now, &shown);
+    CHECK_EQ(shown.keys[0][0], 120 / 4);
+}
+
 TEST("lights: host brightness percent scales before the caps")
 {
     FakeHost h;
