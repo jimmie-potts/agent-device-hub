@@ -1,0 +1,11 @@
+{
+  "name": "@jimmie-potts/chompi-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "bin": { "chompi-bridge": "./bin/chompi-bridge.mjs" },
+  "devDependencies": { "@jimmie-potts/chompi-protocol": "1.0.0" },
+  "optionalDependencies": { "node-hid": "3.4.0" }
+}

@@ -247,12 +247,12 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('Depot CI runs seven Linux jobs and retains every suite', () => {
+test('Depot CI runs eight Linux jobs and retains every suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/ci.yml'), 'utf8'));
   const guide = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 7, 'normal CI must run exactly seven jobs');
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 8, 'normal CI must run exactly eight jobs');
   assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -262,8 +262,9 @@ test('Depot CI runs seven Linux jobs and retains every suite', () => {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'node --test docs/work-guide/contracts/records.test.mjs',
       'node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs', 'npm run test:preflight'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built'],
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
+    firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
     'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host'],
   };
@@ -271,6 +272,7 @@ test('Depot CI runs seven Linux jobs and retains every suite', () => {
     workflow: 'Workflow checks on ${{ matrix.os }}',
     contracts: 'Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}',
     dashboard: 'Dashboard browser and contracts on ${{ matrix.os }}',
+    firmware: 'Firmware host tests and ARM build on ${{ matrix.os }}',
     mcp: 'MCP on ${{ matrix.os }}',
     'app-verify': 'App verification on ${{ matrix.os }}',
   };
@@ -337,6 +339,7 @@ const builtPayloads = {
   'test:app-verify': 'node --test --test-concurrency=1 packages/app-verify/tests/*.test.mjs',
   'test:app-verify:package': 'node scripts/package-app-verify.mjs --test',
   'test:hub:verify': 'node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs',
+  'test:chompi-bridge': 'node --test apps/chompi-bridge/tests/*.test.mjs',
 };
 
 test('built variants retain every original test payload and standalone build', () => {

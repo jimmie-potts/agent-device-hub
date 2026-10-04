@@ -87,7 +87,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.match(report.notice, new RegExp(HEAD));
 });
 
-test('the real Depot configuration enumerates the seven expected jobs and filters guide-only changes', () => {
+test('the real Depot configuration enumerates the eight expected jobs and filters guide-only changes', () => {
   const workflows = ['ci.yml', 'work-guide.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true });
   assert.deepEqual(source.jobs.map(item => item.name).sort(), [
@@ -95,18 +95,19 @@ test('the real Depot configuration enumerates the seven expected jobs and filter
     'Checks / Contracts and state Python 3.12 on ubuntu-latest',
     'Checks / Contracts and state Python 3.14 on ubuntu-latest',
     'Checks / Dashboard browser and contracts on ubuntu-latest',
+    'Checks / Firmware host tests and ARM build on ubuntu-latest',
     'Checks / MCP on ubuntu-latest',
     'Checks / Workflow checks on ubuntu-latest',
     'Work guide / Work guide build and browser checks',
   ]);
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true });
-  assert.equal(push.jobs.length, 7);
+  assert.equal(push.jobs.length, 8);
   const guide = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/outputs/agent-device-work-guides.html'], filesComplete: true });
   assert.deepEqual(guide.jobs, []);
   assert.equal(guide.filtered.length, 2);
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false });
-  assert.equal(incomplete.jobs.length, 7, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 8, 'an incomplete file list keeps every job expected');
   const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true });
   assert.deepEqual(branchPush.jobs, []);
 });
