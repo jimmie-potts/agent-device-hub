@@ -64,8 +64,12 @@ to 1.2:
    and a **new** private receipt directory. Review it and run `applySetup` with
    its digest and the Hub authority.
 4. Confirm with `inspectSetup` that the new receipt is installed and enabled.
-   Then check that a Desktop session's next event shows its `hostSessionId` in
-   `/api/monitor/v1/sessions?snapshotVersion=1.3` and a CLI session shows none.
+   Then check that a Desktop session's next state-changing lifecycle event shows
+   its `hostSessionId` in `/api/monitor/v1/sessions?snapshotVersion=1.3`, and
+   that a CLI session shows none. Compare the value with that session's record
+   in Claude Desktop's local session store, read by key only as the
+   [CHOMPI qualification](../../docs/chompi-controller-qualification.md)
+   describes. Record only the IDs, never session content.
 
 Monitoring pauses between steps 2 and 3. Keep the removed receipt for audit.
 Personal client settings change only through these reviewed operations; do not

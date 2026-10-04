@@ -349,11 +349,15 @@ object; the default is `process.env`.
 The owner keeps the latest value per session record **in memory for the owner's
 lifetime**. A committed lifecycle 1.2 event sets the value when present and
 clears it when absent. A 1.0 or 1.1 event leaves it unchanged, and duplicate,
-stale or rejected events do not touch it. The value changes only with a
-committed revision, so change subscribers see it. It is removed with its record
-on retirement, expiry or startup settlement. Deduplication, ordering,
-retirement, generations and the journal never read it, and the owner never
-merges records that share one. A Claude `/clear` therefore retires the old hook
+stale or rejected events do not touch it. A record whose parent is known never
+carries a value, whichever event made the parent known. The value changes only
+after the durable commit succeeds and before the revision is published, so
+change subscribers see it and an in-flight commit never shows it early. It is
+removed with its record on retirement, expiry or startup settlement. It is
+never stored and never an identity, ordering, retirement or merge key, and the
+owner never merges records that share one. Content-kind deduplication keys
+hash the whole envelope, so they include it, as they include the title and
+project. A Claude `/clear` therefore retires the old hook
 session, and the new hook session is a separate record with the same value.
 
 The owner admits 1.2 envelopes through `@jimmie-potts/agent-lifecycle-contracts/v1.2`. Stored-session checks in `validation.ts` keep using the frozen 1.0/1.1 root module.

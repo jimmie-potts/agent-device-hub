@@ -644,8 +644,8 @@ The field arrives only from a Claude producer that selected lifecycle 1.2 and
 ran under `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Claude CLI and Codex records
 carry none. The owner keeps the value in memory for its lifetime and never in
 the store, exports or backups. After a Hub restart it is absent until that
-session's next accepted lifecycle event, so routing consumers keep their own
-cache. It is never a session identity: a Claude `/clear` retires the old hook
+session's next committed lifecycle 1.2 event that changes state, so routing
+consumers keep their own cache. A record with a known parent never carries it. It is never a session identity: a Claude `/clear` retires the old hook
 session, and the new hook session is a separate record with the same value.
 See the [agent-state guide](../../packages/agent-state/README.md#claude-desktop-host-session-id)
 and [provider qualification](../../docs/provider-qualification.md#claude-desktop-host-session-id).
