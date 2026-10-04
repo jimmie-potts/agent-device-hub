@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.3.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.4.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
@@ -209,15 +209,19 @@ anonymous. Unordered private derivatives can still reveal wording.
 Every preset and supported app/category/corpus group is computed from all
 eligible retained contributions. Support requires three distinct dictations in
 that exact group; repetitions count separately. Each ranking is capped at 100
-qualified entries with an omitted count. Each preset/corpus batch allows up to
+qualified entries with an omitted count. Each working partition allows up to
 250,000 simultaneously active intermediate ranking keys across its app/category
-groups and ranking kinds. Batches release their full maps before the next pass;
-completed batches retain only the capped tables. This replaces the former
-cumulative per-snapshot key ceiling without increasing the existing memory,
-source or command budgets. Every batch rereads the same transactional retained
-state; collection still scans the source and analyzes eligible records on every
-run. Exceeding an active batch, memory, store or publication limit fails visibly
-and preserves the previous commit.
+groups and ranking kinds. A batch that fits uses one pass. An oversized batch
+releases its partial maps and retries in sixteen disjoint key partitions. Each
+key's occurrences and distinct-dictation support remain together; bounded local
+candidates merge into exact global top-100 tables and omitted counts. Coverage
+and comparisons count once. Completed partitions release their maps.
+Every pass rereads the same transactional retained state; collection still scans
+the source and analyzes eligible records on every run. Larger batches can require
+seventeen retained-store scans per preset/corpus including the rejected first
+pass. Source, memory, command, store and publication budgets remain unchanged.
+An excessive partition or another budget still fails visibly and preserves the
+previous commit; this is finite qualification, not unlimited capacity.
 Coverage reasons can overlap eligible lexical records: for example, formatted
 words may be available while the missing raw stage prevents their comparison.
 

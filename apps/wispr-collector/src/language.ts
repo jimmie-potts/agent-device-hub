@@ -145,62 +145,94 @@ export function analyzeStages(input:LanguageInput,excludedTerms:readonly string[
 
 export type RetainedLanguage={sourceTime:number;app:App;features:LanguageFeatures|null};
 const rankKinds=['words','usefulWords','phrases','changes'] as const;
-type Ranked=Map<string,{occurrences:number;dictations:number}>;
-/** Each input is one distinct private contribution, never a daily top-N table.
- * Store callers provide a fresh transactional iterator for each bounded pass. */
+type RankKind=typeof rankKinds[number];
+type RankedEntry=[string,{occurrences:number;dictations:number}];
+type Ranked=Map<string,RankedEntry[1]>;
+const partitionFull=Symbol('ranking-partition-full');
+const rankOrder=(a:RankedEntry,b:RankedEntry)=>b[1].occurrences-a[1].occurrences||b[1].dictations-a[1].dictations||ordinal(a[0],b[0]);
+/** Stable disjoint assignment; collisions share a working set, never a count. */
+function keyPartition(text:string):number {
+  let hash=2166136261;
+  for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);
+  return hash>>>28;
+}
+const corpora=['raw','formatted','observed'] as const;
+type Corpus=typeof corpora[number];
+const subgroups:[App|'all',Category|'all'][]=[['all','all'],...CATEGORIES.map(c=>['all',c] as ['all',Category]),...APPS.flatMap(a=>[[a,'all'],[a,appCategory(a)]] as [App,Category|'all'][])];
+
+function rankingBatch(readRows:()=>Iterable<RetainedLanguage>,preset:PresetWindow,corpus:Corpus,timezone:string,partitions:1|16):LanguageTable[] {
+  const groups:{table:LanguageTable;maps:Record<RankKind,Ranked>;best:Record<RankKind,RankedEntry[]>;qualified:Record<RankKind,number>}[]=[];
+  const index=new Map<string,typeof groups[number]>();
+  for(const [app,category] of subgroups){
+    const table:LanguageTable={preset:preset.key,app,category,corpus,words:[],usefulWords:[],phrases:[],changes:[],omitted:{words:0,usefulWords:0,phrases:0,changes:0},coverage:{eligible:0,missing:0,unsupportedLanguage:0,oversized:0,uncertain:0,longChanges:0},comparison:corpus==='raw'?'none':corpus==='formatted'?'raw-to-formatted':'formatted-to-observed',finality:'unknown',insertions:0,deletions:0,substitutions:0,comparedDictations:0,changedDictations:0};
+    const group={table,maps:{words:new Map(),usefulWords:new Map(),phrases:new Map(),changes:new Map()},best:{words:[],usefulWords:[],phrases:[],changes:[]},qualified:{words:0,usefulWords:0,phrases:0,changes:0}};
+    groups.push(group);index.set(JSON.stringify([app,category]),group);
+  }
+  try{
+    for(let partition=0;partition<partitions;partition++){
+      let keys=0;
+      const add=(map:Ranked,text:string,occurrences:number)=>{
+        let count=map.get(text);
+        if(!count){if(++keys>250_000)throw partitionFull;count={occurrences:0,dictations:0};map.set(text,count);}
+        count.occurrences+=occurrences;count.dictations++;
+      };
+      const select=(counts:Counts):Counts=>partitions===1?counts:counts.filter(([text])=>keyPartition(text)===partition);
+      for(const row of readRows()){
+        const date=localDate(row.sourceTime,timezone),category=appCategory(row.app);
+        if(date>preset.to||(preset.from!==null&&date<preset.from))continue;
+        const stage=row.features?.[corpus],comparison=stage?.comparison;
+        // Hash each record's key once per pass, then reuse across its four groups.
+        const selected:Record<RankKind,Counts>={words:stage?.reason===null?select(stage.words):[],usefulWords:stage?.reason===null?select(stage.usefulWords):[],phrases:stage?.reason===null?select(stage.phrases):[],changes:select(comparison?.pairs.map(([before,after,count])=>[JSON.stringify([before,after]),count])??[])};
+        for(const [app,cat] of [['all','all'],['all',category],[row.app,'all'],[row.app,category]]){
+          const {table,maps}=index.get(JSON.stringify([app,cat]))!;
+          if(!stage){if(partition===0)table.coverage.uncertain++;continue;}
+          if(partition===0){
+            const reasons=new Set<StageReason>();if(stage.reason)reasons.add(stage.reason);if(stage.comparisonReason)reasons.add(stage.comparisonReason);
+            for(const reason of reasons)table.coverage[reason]++;
+            if(stage.reason===null)table.coverage.eligible++;
+            if(comparison){
+              table.comparedDictations++;if(comparison.changed)table.changedDictations++;
+              table.insertions+=comparison.insertions;table.deletions+=comparison.deletions;table.substitutions+=comparison.substitutions;table.coverage.longChanges+=comparison.longChanges;
+            }
+          }
+          for(const kind of rankKinds)for(const [text,count] of selected[kind])add(maps[kind],text,count);
+        }
+      }
+      for(const group of groups)for(const kind of rankKinds){
+        const qualified=[...group.maps[kind]].filter(([,count])=>count.dictations>=3).sort(rankOrder);
+        group.qualified[kind]+=qualified.length;
+        // A global top-100 key must appear in its own partition's top 100.
+        group.best[kind]=[...group.best[kind],...qualified.slice(0,100)].sort(rankOrder).slice(0,100);
+        group.maps[kind].clear();
+      }
+    }
+    for(const {table,best,qualified} of groups)for(const kind of rankKinds){
+      table.omitted[kind]=Math.max(0,qualified[kind]-100);
+      if(kind==='changes')table.changes=best[kind].map(([key,count])=>{const [before,after]=JSON.parse(key) as [string,string];return {before,after,...count};});
+      else table[kind]=best[kind].map(([text,count])=>({text,...count}));
+    }
+    return groups.map(group=>group.table);
+  }finally{
+    // An overflowed attempt must release partial maps before the bounded retry.
+    for(const group of groups)for(const kind of rankKinds)group.maps[kind].clear();
+  }
+}
+
+/** Each input is one distinct contribution; every bounded pass reopens its reader. */
 export function aggregateLanguage(rows:readonly RetainedLanguage[]|(()=>Iterable<RetainedLanguage>),presets:readonly PresetWindow[],timezone:string):LanguageSection {
   const readRows=typeof rows==='function'?rows:()=>rows;
   const tables=new Map<string,LanguageTable>();
-  const corpora=['raw','formatted','observed'] as const;
-  const subgroups:[App|'all',Category|'all'][]=[['all','all'],...CATEGORIES.map(c=>['all',c] as ['all',Category]),...APPS.flatMap(a=>[[a,'all'],[a,appCategory(a)]] as [App,Category|'all'][])];
-  // Count only one preset/corpus at a time; finalized top-N tables are bounded.
   for(const preset of presets)for(const corpus of corpora){
-    const groups:{table:LanguageTable;maps:Record<typeof rankKinds[number],Ranked>}[]=[];
-    const index=new Map<string,typeof groups[number]>();
-    for(const [app,category] of subgroups){
-      const table:LanguageTable={preset:preset.key,app,category,corpus,words:[],usefulWords:[],phrases:[],changes:[],omitted:{words:0,usefulWords:0,phrases:0,changes:0},coverage:{eligible:0,missing:0,unsupportedLanguage:0,oversized:0,uncertain:0,longChanges:0},comparison:corpus==='raw'?'none':corpus==='formatted'?'raw-to-formatted':'formatted-to-observed',finality:'unknown',insertions:0,deletions:0,substitutions:0,comparedDictations:0,changedDictations:0};
-      const group={table,maps:{words:new Map(),usefulWords:new Map(),phrases:new Map(),changes:new Map()}};
-      groups.push(group);index.set(JSON.stringify([app,category]),group);
-    }
-    let keys=0;
-    const add=(map:Ranked,text:string,occurrences:number)=>{
-      let count=map.get(text);
-      if(!count){if(++keys>250_000)throw new Error('aggregate-capacity');count={occurrences:0,dictations:0};map.set(text,count);}
-      count.occurrences+=occurrences;count.dictations++;
-    };
-    for(const row of readRows()){
-      const date=localDate(row.sourceTime,timezone),category=appCategory(row.app);
-      if(date>preset.to||(preset.from!==null&&date<preset.from))continue;
-      for(const [app,cat] of [['all','all'],['all',category],[row.app,'all'],[row.app,category]]){
-        const {table,maps}=index.get(JSON.stringify([app,cat]))!;
-        const stage=row.features?.[corpus];
-        if(!stage){table.coverage.uncertain++;continue;}
-        const reasons=new Set<StageReason>();if(stage.reason)reasons.add(stage.reason);if(stage.comparisonReason)reasons.add(stage.comparisonReason);
-        for(const reason of reasons)table.coverage[reason]++;
-        if(stage.reason===null){
-          table.coverage.eligible++;
-          for(const kind of ['words','usefulWords','phrases'] as const)for(const [text,count] of stage[kind])add(maps[kind],text,count);
-        }
-        const comparison=stage.comparison;
-        if(comparison){
-          table.comparedDictations++;if(comparison.changed)table.changedDictations++;
-          table.insertions+=comparison.insertions;table.deletions+=comparison.deletions;table.substitutions+=comparison.substitutions;table.coverage.longChanges+=comparison.longChanges;
-          for(const [before,after,count] of comparison.pairs)add(maps.changes,JSON.stringify([before,after]),count);
-        }
+    let batch:LanguageTable[];
+    try{batch=rankingBatch(readRows,preset,corpus,timezone,1);}catch(error){
+      if(error!==partitionFull)throw error;
+      try{batch=rankingBatch(readRows,preset,corpus,timezone,16);}catch(retryError){
+        if(retryError===partitionFull)throw new Error('aggregate-capacity');
+        throw retryError;
       }
     }
-    for(const {table,maps} of groups){
-      for(const kind of rankKinds){
-        const qualified=[...maps[kind]].filter(([,c])=>c.dictations>=3).sort((a,b)=>b[1].occurrences-a[1].occurrences||b[1].dictations-a[1].dictations||ordinal(a[0],b[0]));
-        table.omitted[kind]=Math.max(0,qualified.length-100);
-        if(kind==='changes')table.changes=qualified.slice(0,100).map(([key,count])=>{const [before,after]=JSON.parse(key) as [string,string];return {before,after,...count};});
-        else table[kind]=qualified.slice(0,100).map(([text,count])=>({text,...count}));
-        maps[kind].clear();
-      }
-      tables.set(JSON.stringify([preset.key,table.app,table.category,corpus]),table);
-    }
+    for(const table of batch)tables.set(JSON.stringify([preset.key,table.app,table.category,corpus]),table);
   }
-  // Retain the released preset/app/category/corpus order independently of passes.
   return {availability:'available',algorithmVersion:LANGUAGE_VERSION,stopwordVersion:STOPWORD_VERSION,tables:presets.flatMap(preset=>subgroups.flatMap(([app,category])=>corpora.map(corpus=>tables.get(JSON.stringify([preset.key,app,category,corpus]))!)))};
 }
 

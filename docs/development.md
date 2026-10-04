@@ -903,9 +903,11 @@ unknown source language, edit finality and counter windows remain explicit.
 
 Ranking regressions cover diverse retained text across overlapping presets,
 repeatable batch reads, stable table order and exact support/top-100/omitted
-values. An excessive active batch must still reject and preserve the committed
-store. The native capacity script also qualifies synthetic diverse-language
-import, repeat, restart and zone rebuild, reporting elapsed time and peak RSS.
+values. A batch that exceeds one working map must merge exact partitioned results;
+an adversarial partition that still exceeds its bound must reject and preserve
+the committed store. The native capacity script also qualifies synthetic diverse-language
+import, repeat, restart and zone rebuild, reporting elapsed time and peak RSS,
+plus the full production CLI on oversized synthetic ranking batches.
 These measurements qualify the synthetic retained-store path, not performance
 on the owner's installed history or the entire supervised command.
 

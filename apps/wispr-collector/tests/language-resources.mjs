@@ -8,14 +8,17 @@ import {diverseText} from './diverse-language.mjs';
 export function qualifyLanguageResources(root){
  mkdirSync(root,{recursive:true});const directory=mkdtempSync(join(root,'language-resources-'));
  const options={directory,namespace:'11111111-1111-4111-8111-111111111111',sourceIdentity:'synthetic-language',timezone:'UTC'};
- const text=diverseText(1800),now='2026-10-02T12:00:00.000Z';
- const rows=Array.from({length:3},(_,i)=>({id:String(i),timestamp:'2026-10-02T10:00:00Z',status:'formatted',numWords:1800,duration:5,speechDuration:3,numWordsCorrected:null,numDictionaryReplacements:null,appName:'Slack',invalid:[],language:{raw:text,formatted:text,observed:null,language:'en',observation:'unknown'}}));
+ const now='2026-10-02T12:00:00.000Z';
+ const rows=Array.from({length:42},(_,i)=>{
+  const text=diverseText(900,Math.floor(i/3)*900);
+  return {id:String(i),timestamp:'2026-10-02T10:00:00Z',status:'formatted',numWords:900,duration:5,speechDuration:3,numWordsCorrected:null,numDictionaryReplacements:null,appName:'Slack',invalid:[],language:{raw:text,formatted:text,observed:null,language:'en',observation:'unknown'}};
+ });
  let store;const start=performance.now();
  try{
   store=new NumericStore(options);
   const first=store.ingest(rows,now,{language:{enabled:true}});store.markPublished(first.revision);
   const t=first.language.tables.find(t=>t.preset==='all'&&t.app==='all'&&t.category==='all'&&t.corpus==='raw');
-  assert.equal(t.words.length,100);assert.equal(t.omitted.words,1700);assert.equal(t.omitted.phrases,7090);
+  assert.equal(t.words.length,100);assert.equal(t.omitted.words,12500);assert.equal(t.omitted.phrases,50160);
   const repeat=store.ingest(rows,now,{language:{enabled:true}});store.markPublished(repeat.revision);assert.deepEqual(repeat.language,first.language);
   store.close();store=new NumericStore(options);
   const restored=store.rebuildZone('America/New_York',now);assert.deepEqual(restored.language,first.language);
