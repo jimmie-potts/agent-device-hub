@@ -20,8 +20,9 @@ Bundle inspection read code, key names and schemas, never task content.
 
 ## Evidence classes and setup
 
-`D` means official documentation, `S` inspected source, built output or
-installed bundle, `O` owner decision or report, and `L` an authorized live
+`D` means official documentation, `S` inspected source, built output,
+installed bundle, local configuration or filesystem artifact, `O` owner
+decision or report, and `L` an authorized live
 observation. This report contains no `L` evidence. `?` marks an unverified
 point that #743 must observe.
 
@@ -34,7 +35,7 @@ point that #743 must observe.
 | Codex Desktop | AppX `OpenAI.Codex` 26.930.3930.0, package family `OpenAI.Codex_2p2nqsd0c76g0`, window process `ChatGPT.exe`, window title "ChatGPT" |
 | Claude Desktop | AppX `Claude` 2.19675.0.0, package family `Claude_pzs8sxrjxfjjc`; bundled Claude Code 2.1.286 running in WSL |
 | Wispr Flow | 1.6.1034; push-to-talk is left Ctrl + left Win (`S`, current preferences) |
-| Windows device history | The owner's CHOMPI enumerated before as `USB\VID_0483&PID_5740` with a MIDI endpoint named "CHOMPI". It was unplugged on the collection date |
+| Windows device history (`S`) | The owner's CHOMPI enumerated before as `USB\VID_0483&PID_5740` with a MIDI endpoint named "CHOMPI". It was unplugged on the collection date |
 
 Local builds with GCC 10.3.1 all succeeded: upstream WAVE (200,100 bytes),
 launcher v1.1 WAVE (200,736), the v1.1 launcher (124,956) and USB storage
@@ -55,6 +56,8 @@ Given in conversation on October 3, 2026 and recorded on
   `claude://code/continue` link with the fail-closed checks below.
 - The Claude Desktop session ID comes from the Hub's own hook, through a new
   versioned lifecycle field. Personal hook settings stay unchanged.
+- The Hub keeps that ID in memory only, with no stored-format change, and
+  the bridge remembers each slot's ID across Hub restarts.
 - If Claude Desktop archive is not observable to the Hub, an explicit CHOMPI
   gesture releases a Claude slot.
 
@@ -114,9 +117,11 @@ on the same ST core as `1209:C0A1`.
 ### Firmware base and launcher (`S`)
 
 CHOMPI apps are `BOOT_SRAM` images that run from SRAM at `0x24000000`; the
-launcher accepts images up to 512 KiB. A controller built from WAVE's hardware
-layer and the launcher's USB switch, LED teardown and HID class code, without
-DSP, should be near the launcher's size, leaving roughly 100 KiB of code space
+launcher accepts images up to 512 KiB, but code must fit the 232 KiB
+`SRAM_EXEC` region of the app linker script. A controller built from WAVE's
+hardware layer, the launcher's USB switch and LED teardown, and a HID class
+following the USB storage firmware's pattern, without DSP, should be near the
+launcher's size (about 125 KB), leaving roughly 100 KiB of that region
 (`?` until built).
 
 Every launcher firmware must carry the `BACKUP_SRAM` linker fix so libDaisy's
@@ -148,8 +153,10 @@ restart.
 
 Recovery, in order: power cycle; restore card files from the backup over USB
 storage, or swap in the stock card; reflash the bootloader at
-<https://flash.daisy.audio> in ROM DFU mode. The owner's unit ships bootloader
-V6.2.0; the published source is 6.4-beta.
+<https://flash.daisy.audio> in ROM DFU mode. Reflashing the bootloader is
+outside the epic's current authority and needs a separate owner decision.
+Stock units ship bootloader v6.2 (`S`); the owner's unit is unverified until
+#743, and the published source is 6.4-beta.
 
 USB storage is a separate firmware that hands the whole card to the PC as a
 SCSI block device. It renames the card `CHOMPI-SD` and runs at about 1 MB/s.
@@ -174,10 +181,11 @@ storage firmware's pattern of a custom class on libDaisy's ST core, about
 with no install or admin rights, reports arrive framed, and the bridge can open
 the device exclusively (share mode 0) to enforce one writer.
 
-The ID must not be `0483:5740` (TAPE, the picker and generic ST devices),
-`1209:C0A1` (USB storage) or Espressif `303A` with PIDs `8360`, `8297` or
-`8298`, which Codex Desktop claims for its own Work Louder "Codex Micro"
-controller. #741 selects the ID and documents it.
+The ID must not be `0483:5740` (TAPE, the picker and generic ST devices) or
+`1209:C0A1` (USB storage), and must avoid PIDs `8360`, `8297` and `8298` under
+any VID: Codex Desktop claims those, with Espressif VID `303A` and usage page
+`0xFF00`, for its own Work Louder "Codex Micro" controller, and its filter
+checks the PID and usage page. #741 selects the ID and documents it.
 
 **Fallback: USB CDC ACM.** It is the smallest firmware change, but it is a byte
 stream needing framing, drops data on a busy transmit, shares the generic ST
@@ -189,35 +197,47 @@ event or LED channel).
 
 ## Desktop clients
 
+Each row's status is **Supported**, **Unsupported** or **Unverified**, with its
+evidence class. Supported from `D` or `S` evidence still needs the #743 live
+observation before anything depends on it in installed use.
+
 ### Codex Desktop
 
-| Capability | Result | Evidence |
-| --- | --- | --- |
-| Exact task identity | Supported. Hub `sessionId` = Codex hook `session_id` = Desktop thread UUID = deep-link `<thread-id>` | `S`: `packages/agent-state/src/providers.ts`, deep-link schema in the bundle; [provider qualification](provider-qualification.md) |
-| Opening an existing task | Supported. `codex://threads/<id>` is registered as an AppX protocol; the running instance raises its window and navigates. An unknown ID raises the window and leaves the previous task selected, without creating a task | `D`: [Codex commands](https://learn.chatgpt.com/docs/reference/commands); `S`: manifest and main-process handler. Foreground behavior under Windows focus rules `?` |
-| Selected-task verification | No exact-ID route. The title is static and no local state records the selection. UI Automation may expose the selected sidebar row and its title | `S`; UIA `?` |
-| Lifecycle, attention, archive | Supported in the Hub today: activity, `attention.approval` and unread. `SessionEnd` retires the session on archive or delete, but also on normal close and after 30 minutes idle, so it is not an archive signal by itself. Archived threads appear as `archived_sessions/rollout-<timestamp>-<id>.jsonl` filenames in the Codex home | `D`, `S`: [provider qualification](provider-qualification.md), `apps/hub/src/codex-desktop.ts`; archive end accepted in #218 |
-| Composer focus | Supported: `Alt+L` moves focus to the main composer | `S`: bundle command table |
-| Pending approval | Partial. Enter approves and Esc declines an open approval card. The Hub marker can outlive the request, which only over-blocks | `D`, `S`; Enter in a focused composer while a card is open `?` |
-| Send | Keystroke only. Enter sends (`composerEnterBehavior = "enter"` in the owner's config); mid-turn Enter queues. No non-keystroke send route | `S` |
-| Model and effort | `Ctrl+Shift+M` opens the model picker and `Alt+M` the recent combinations. Effort increase/decrease/cycle commands exist without default keys; binding one is a personal settings change. Per-task values are not observable locally | `D`, `S` |
-| Plugins, custom UI, app-server | Cannot select, focus or send into another task. The Desktop app-server is a private stdio child; a second app-server would compete as a writer | `D`, `S` |
+| Capability | Status | Detail | Evidence |
+| --- | --- | --- | --- |
+| Exact task identity | Supported | Hub `sessionId` = Codex hook `session_id` = Desktop thread UUID = deep-link `<thread-id>` | `S`: `packages/agent-state/src/providers.ts`, deep-link schema in the bundle; [provider qualification](provider-qualification.md) |
+| Opening an existing task | Supported | `codex://threads/<id>` is registered as an AppX protocol; the running instance raises its window and navigates. An unknown ID raises the window and leaves the previous task selected, without creating a task. Foreground behavior under Windows focus rules is unverified | `D`: [Codex commands](https://learn.chatgpt.com/docs/reference/commands); `S`: manifest and main-process handler |
+| Selected-task verification by exact ID | Unsupported | The window title is static and no local state records the selection | `S` |
+| Selected-task verification by UI Automation | Unverified | UIA may expose the selected sidebar row and its title; a title is not an exact identity | `S`: DOM attributes in the bundle are not UIA properties |
+| Lifecycle and attention feed | Supported | The Hub already receives activity, `attention.approval` (no request ID) and unread for Codex Desktop | `S`: `providers.ts`, `apps/hub/src/codex-desktop.ts`; installed since #191 |
+| Archive signal | Supported | `SessionEnd` retires the session on archive or delete, but also on normal close and after 30 minutes idle and unopened in any connected client, so it is not an archive signal by itself. Archived threads appear as `archived_sessions/rollout-<timestamp>-<id>.jsonl` filenames in the Codex home | `D`, `S`: [provider qualification](provider-qualification.md); archive end accepted in #218 |
+| Composer focus | Supported | `Alt+L` moves focus to the main composer | `S`: bundle command table |
+| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. Whether Enter in a focused composer approves while a card is open is unverified. The Hub marker can outlive the request, which only over-blocks | `D`, `S` |
+| Send | Supported | Keystroke only: Enter sends (`composerEnterBehavior = "enter"` in the owner's Codex config); mid-turn Enter queues. No non-keystroke send route exists | `S` |
+| Model change | Supported | `Ctrl+Shift+M` opens the model picker and `Alt+M` the recent model and effort combinations | `D`, `S` |
+| Effort change | Unverified | Increase, decrease and cycle commands exist without default keys. Binding one is a personal settings change outside the epic's current authority | `S` |
+| Model and effort readback | Unsupported | Per-task values are not observable locally; config values are defaults only | `S` |
+| Plugins, custom UI, app-server control of another task | Unsupported | None can select, focus or send into another task. The Desktop app-server is a private stdio child; a second app-server would compete as a writer | `D`, `S` |
 
 ### Claude Desktop Code tab
 
-| Capability | Result | Evidence |
-| --- | --- | --- |
-| Documented links | `claude://code/new[?q,folder]` only, which creates a session. Chat and project links do not reach Code sessions | `D`: [Claude Desktop links](https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link) |
-| Opening an existing session | **Undocumented.** `claude://code/continue?session=local_<id>` opens that exact session if it exists and is not archived; otherwise it silently shows the Code home. The app builds this link itself for its taskbar Jump List | `S`: main-process URL handler in the installed bundle. Accepted by the owner with fail-closed checks |
-| Unsafe undocumented links | `code/needs-input` opens a different waiting session when the ID is absent. `claude://resume` imports or unarchives sessions. Never use either | `S` |
-| Session identity | Desktop's `local_<uuid>` differs from the hook `session_id`, which changes on `/clear`. The Desktop ID survives `/clear`. The Code process environment carries `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`; that hook processes inherit them is `?` | `S`: Desktop session store and process environment |
-| Hub distinguishes Desktop from CLI | Unsupported today; both use client `code` and one source | `S`: `providers.ts`, provider qualification |
-| Selected-session verification | Undocumented: when a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. Window title is always "Claude" | `S`; split panes and pop-out windows `?` |
-| Archive | Observable in the same private store (`isArchived`, `archived-sessions.idx`). Archiving stops the Code process; whether that emits `SessionEnd` is `?` | `S` |
-| Composer focus, pending permission | Composer state is not stored locally (`?`, UIA `HasKeyboardFocus` check). The Hub's `attention.approval` covers permission prompts; whether Enter approves a focused permission card is `?` | `S` |
-| Send | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
-| Model and effort | Menu shortcuts are documented for macOS (Cmd+Shift+I, Cmd+Shift+E); the Windows mapping is `?`. Stored per-session values are readable | `D`, `S` |
-| Mods | A mod can fill and submit its own session's prompt and fetch outbound, but cannot select a session, raise the window or listen. Enabling one is a personal plugin change outside current authority | `D`: [Claude mods](https://claude.com/blog/claude-code-mods); `S` |
+| Capability | Status | Detail | Evidence |
+| --- | --- | --- | --- |
+| Documented links to an existing Code session | Unsupported | Only `claude://code/new[?q,folder]` is documented, and it creates a session. Chat and project links do not reach Code sessions | `D`: [Claude Desktop links](https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link) |
+| Opening an existing session by undocumented link | Supported, undocumented | `claude://code/continue?session=local_<id>` opens that exact session if it exists and is not archived; otherwise it silently shows the Code home. The app builds this link itself for its taskbar Jump List. Any Desktop update can change it | `S`: main-process URL handler in the installed bundle. Accepted by the owner with fail-closed checks |
+| Unsafe undocumented links | Unsupported | `code/needs-input` opens a different waiting session when the ID is absent. `claude://resume` imports or unarchives sessions. Never use either | `S` |
+| Desktop session identity | Supported, undocumented | Desktop's `local_<uuid>` differs from the hook `session_id`, which changes on `/clear`; the Desktop ID survives `/clear` | `S`: Desktop session store |
+| Desktop ID available to hooks | Unverified | Desktop-hosted Code processes carry `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Hook processes are expected to inherit them; the installed observation in [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784) confirms it. If they do not, Claude routing stays disabled | `S`: Code process environment |
+| Lifecycle and attention feed | Supported | Desktop-hosted Code sessions load the WSL user settings that run the installed Hub producer for every hooked event, so activity, `attention.approval` for permission prompts and session ends reach the Hub like other Claude Code sessions. A live Desktop session in the feed is still to be observed | `S`: user hook configuration, `providers.ts`; [provider qualification](provider-qualification.md) |
+| Hub distinguishes Desktop from CLI | Unsupported | Both use client `code` and one source today | `S`: `providers.ts`, provider qualification |
+| Selected-session verification | Supported, undocumented | When a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. The window title is always "Claude". Split panes and pop-out windows are unverified | `S` |
+| Archive signal | Supported, undocumented | The same private store records `isArchived` and an `archived-sessions.idx` index. Archiving stops the Code process; whether that emits `SessionEnd` is unverified | `S` |
+| Composer focus | Unverified | Composer state is not stored locally; a UIA keyboard-focus check is the planned route | `S` |
+| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts. Whether Enter approves a focused permission card is unverified | `S` |
+| Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
+| Model and effort change | Unverified | Menu shortcuts are documented for macOS (Cmd+Shift+I, Cmd+Shift+E); the Windows mapping is unverified | `D` |
+| Model and effort readback | Supported, undocumented | Stored per-session values are readable | `S` |
+| Mods controlling a session from outside | Unsupported | A mod can fill and submit its own session's prompt and fetch outbound, but cannot select a session, raise the window or listen. Enabling one is a personal plugin change outside the epic's current authority | `D`: [Claude mods](https://claude.com/blog/claude-code-mods); `S` |
 
 ## Routing design
 
@@ -272,8 +292,9 @@ invalid and sends nothing. A task switch invalidates pending input.
 
 ### Dictation and Send
 
-- **Record (proposed `KEY_26`)** holds left Ctrl + left Win for Wispr only after
-  the composer check passes, and releases on key release. Release inserts a
+- **Record (proposed `KEY_26`)** holds left Ctrl + left Win for Wispr, which
+  dictates through the computer microphone, only after the composer check
+  passes, and releases on key release. Release inserts a
   draft and never sends. Disconnect, reload or a task switch releases held keys.
 - **Big-wheel click** sends one Enter to the verified composer. It is blocked
   while the Hub shows `attention.approval` for that session, or the approval
@@ -293,8 +314,9 @@ released only by explicit archive or the owner's release gesture:
 - Codex: an `archived_sessions` filename for the thread ID, read by name only.
 - Claude: the Desktop record's `isArchived` flag, read by key only. This
   undocumented store is the one the focus check already reads.
-- Either client: an explicit CHOMPI gesture, for example holding the slot key
-  with Loop, as the owner decided for Claude.
+- Claude: an explicit CHOMPI gesture, for example holding the slot key with
+  Loop, as the owner decided. Extending the gesture to Codex needs an owner
+  decision.
 
 Hub expiry after 24 hours without evidence never releases a slot.
 
@@ -334,7 +356,8 @@ that cannot be mistaken for any task state.
 ## Owner-operated trial plan (#743)
 
 Preparation: connect CHOMPI directly by USB-C; back up the stock card through
-the reader; install the launcher; boot key 15 and copy
+the reader, because USB storage mode exists only after the launcher is
+installed; install the launcher; back up later changes over USB storage; boot key 15 and copy
 `/FIRMWARE/04_<NAME>.bin`; install the bridge for the owner's user; create
 throwaway Codex and Claude tasks, including two with the same title.
 
@@ -347,7 +370,8 @@ throwaway Codex and Claude tasks, including two with the same title.
    with unknown, archived and duplicate-title targets.
 4. Check whether Enter in a focused composer approves an open approval or
    permission card, and confirm Send stays blocked while attention is open.
-5. Record → Wispr → draft → wheel Send in each client; confirm one send, no
+5. Record → Wispr with the computer microphone → draft → wheel Send in each
+   client; confirm one send, no
    send from small knobs, and no send on release.
 6. Observe active, idle, attention and disconnected lights; press a flashing
    key and confirm attention remains.
@@ -360,19 +384,34 @@ throwaway Codex and Claude tasks, including two with the same title.
 10. Check whether Claude archive emits `SessionEnd`, and the Claude release
     gesture.
 
-## Dependent work
+## Findings for dependent work
 
-- [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741) is
-  ready: the stack (vendor HID on libDaisy's ST core), boot layout (slot 04,
-  `BACKUP_SRAM` fix, launcher USB switch and teardown) and Windows boundary are
-  selected.
-- A new prerequisite carries the Claude Desktop session ID through the Hub
-  hook as a versioned lifecycle field and exposes it in the session snapshot.
-  It blocks [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742)'s
-  Claude routing.
-- [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742) stays
-  blocked on #741 and that prerequisite. Its Codex path needs UI Automation
-  verification, which #743 qualifies.
-- Model and effort control for #744 depends on per-client shortcuts that are
-  undocumented on Windows or need a personal key binding; #743 records what is
-  available before #744 is refined.
+GitHub issues own status and blocked-by relationships. These are the findings
+each dependent issue must use.
+
+- [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741), firmware
+  and bridge: vendor HID on libDaisy's ST core with a new VID/PID; slot 04;
+  the `BACKUP_SRAM` fix; the launcher's USB switch and LED teardown; the
+  minimal protocol above; one exclusive Windows writer; C#/.NET 8 is the
+  suggested bridge language.
+- [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784): the
+  owner-selected Hub hook field that carries the Claude Desktop session ID. Its
+  installed observation is the first check that hooks see
+  `CLAUDE_CODE_HOST_SESSION_ID`.
+- [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742), task
+  routing: Claude routing consumes #784's field and the bridge's own
+  archive and focus reads. Codex verification needs UI Automation, which #743
+  qualifies. Reading archive and focus evidence for slot bookkeeping must not
+  reinterpret lifecycle state; #742 confirms that boundary.
+- [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743), first
+  installed trial: also depends on #784 for Claude routing, and adds the hook
+  environment check (trial step 2), approval-guard checks and big-wheel
+  identification to its original plan.
+- [#744](https://github.com/jimmie-potts/agent-device-hub/issues/744) and
+  [#745](https://github.com/jimmie-potts/agent-device-hub/issues/745), knobs and
+  their installed check: Codex model change has default shortcuts, but Codex
+  effort change needs a personal key binding, and Claude's Windows model and
+  effort shortcuts are unverified. A personal binding needs owner authority
+  beyond the current epic grant. Until #743 records what is available, knob 1
+  and knob 2 "for each client" may need an explicit scope decision before #745
+  can close.
