@@ -16,7 +16,7 @@ test('the shipped default profile validates with the owner-decided mappings', as
   assert.equal(profile.schemaVersion, 1);
   assert.deepEqual(profile.controls.slots, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.equal(profile.controls.record, 26);
-  assert.deepEqual(profile.controls.send, [33]);
+  assert.deepEqual(profile.controls.send, [33, 27]);
   assert.equal(profile.controls.back, 28);
   assert.equal(profile.controls.scroll, 45);
   assert.deepEqual(profile.scroll, { notchesPerStep: 1, invert: false });

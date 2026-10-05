@@ -575,6 +575,26 @@ test('matrix: duplicate or repeated wheel clicks produce one Enter at most', asy
   assert.equal(ctx.adapter.enters, 2, 'a deliberate later Send to the same verified task works');
 });
 
+test('matrix: a wheel click and Play share one repeat window', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  await ctx.focus(1);
+  await ctx.click(WHEEL);
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 1);
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 2, 'Play sends after the window');
+  const refusals = () => ctx.logs.filter(entry => entry.type === 'send-refused').length;
+  const before = refusals();
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 2, 'the wheel inside the window after Play types nothing');
+  assert.equal(refusals(), before + 1);
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+});
+
 test('matrix: an uncertain Send is never retried and clears the target', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
@@ -670,17 +690,22 @@ test('a Claude Send is refused once another session became visible after verific
 test('small-knob clicks, the volume click and encoder turns never send', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
-  for (const control of [29, 30, 31, 32, 34, PLAY]) await ctx.click(control);
+  for (const control of [29, 30, 31, 32, 34]) await ctx.click(control);
   for (const control of [41, 42, 43, 44, 45, 46]) { ctx.turn(control, 3); ctx.turn(control, -2); await settle(); }
   assert.equal(ctx.adapter.enters, 0);
   assert.deepEqual(target(ctx), { slot: 1, client: 'codex' }, 'knobs and scrolling leave the target alone');
 });
 
-test('Play sends only when the profile maps it to Send', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)], profile: withProfile({ controls: { ...base.controls, send: [33, 27] } }) });
+test('Play sends with the default profile, and only when the profile maps it to Send', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   await ctx.click(PLAY);
   assert.equal(ctx.adapter.enters, 1);
+
+  const unmapped = await setup(t, { sessions: [codexTask(1)], profile: withProfile({ controls: { ...base.controls, send: [33] } }) });
+  await unmapped.focus(1);
+  await unmapped.click(PLAY);
+  assert.equal(unmapped.adapter.enters, 0);
 });
 
 test('Send while Record is held is refused', async t => {
