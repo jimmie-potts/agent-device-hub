@@ -7,7 +7,7 @@ The [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743) trial ca
 
 ## What Changes
 
-- A read-only helper operation, `approvalVisible`, scoped to the client's own foreground window and process like `composerFocused`. It runs one bounded `FindAll` by control type and counts elements by class token: Claude's approval cards, or Codex's composers.
+- A read-only helper operation, `approvalVisible`, scoped to the client's own foreground window and process like `composerFocused`. It runs one `FindAll` over the window's control view and counts elements by class token: elements of any control type carrying Claude's approval-card token, or Codex's `Edit` composers.
 - The adapter answers Claude as `true` while any card exists and `false` when none does. It answers Codex as `false` only while exactly one composer exists, and unknown when there is none (`codex-composer-absent`) or several (`codex-composer-count`). A client not in front, a helper failure, a malformed reply or a foreground change is unknown.
 - The router is unchanged: it refuses Send unless the answer is known `false`, and the Hub approval check stays.
 - The OS adapter interface version stays 2, because `approvalVisible` already exists with the same signature.
