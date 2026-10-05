@@ -271,12 +271,15 @@ test('pages: an interrupted write leaves its temporary file behind and the last 
     const errors = [];
     const failing = await open(t, dir, { pages: 2, onWriteError: error => errors.push(error) });
     chmodSync(join(dir, 'state'), 0o500);
-    t.after(() => chmodSync(join(dir, 'state'), 0o700));
-    failing.store.reconcile(candidates(many(17)));
-    await assert.rejects(failing.store.flush());
-    assert.equal(errors.length, 1, 'the failure is reported');
-    assert.equal(readFileSync(path, 'utf8'), good, 'the old file is intact');
-    assert.equal(failing.store.get(17).taskId, tid(17), 'memory stays authoritative and the next change retries');
+    try {
+      failing.store.reconcile(candidates(many(17)));
+      await assert.rejects(failing.store.flush());
+      assert.equal(errors.length, 1, 'the failure is reported');
+      assert.equal(readFileSync(path, 'utf8'), good, 'the old file is intact');
+      assert.equal(failing.store.get(17).taskId, tid(17), 'memory stays authoritative and the next change retries');
+    } finally {
+      chmodSync(join(dir, 'state'), 0o700);
+    }
   }
 });
 

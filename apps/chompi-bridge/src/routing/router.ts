@@ -4,7 +4,8 @@ import type { CardButtons, ClaudeDesktopSession, Client, ForegroundWindow, Obser
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
-import type { RoutingProfile } from './profile.js';
+import { PAGE_TURN, type RoutingProfile } from './profile.js';
+import { Detent } from './detent.js';
 import { SLOT_COUNT, candidatesFromSessions, sessionsForSlot, slotKey, type SlotReleaseReason, type SlotRecord, type SlotStore } from './slots.js';
 
 /** Package families the qualification report recorded for each Desktop client. Fixed in code, never configurable. */
@@ -40,6 +41,12 @@ export interface RouterStatus {
   dictating: boolean;
   feed: FeedStatus;
   overflow: number;
+  /** The visible task page (1-based) and the page count (#822). */
+  page: number;
+  pages: number;
+  /** Assigned slots beyond the profile's pages: kept, but without visible keys until the pages return. */
+  beyondPages: number;
+  /** The visible page's 15 slots, key 1 first. */
   slots: { slot: number; client: Client | null; state: SlotState; error: boolean }[];
 }
 
@@ -123,6 +130,9 @@ export class TaskRouter {
   #stepping = false;
   #lastTurnAt = Number.NEGATIVE_INFINITY;
   #card: { client: Client; at: number; state: CardState } | null = null;
+  /** The visible task page (1-based); not persisted, so the bridge starts on page 1 (#822). */
+  #page = 1;
+  readonly #pageDetent = new Detent();
   /** The card button the wheel's own step focused, on which card; a card press needs it (owner decision on #821). */
   #chosen: { client: Client; cardId: string; index: number } | null = null;
   /** Until when the big-wheel LEDs show a refused or uncertain Send or card press. */
@@ -144,6 +154,7 @@ export class TaskRouter {
     this.#profile = options.profile;
     this.#clock = options.clock ?? systemClock;
     this.#log = options.log ?? (() => undefined);
+    this.#slots.setPages(this.#profile.pages.count);
   }
 
   start(): void {
@@ -152,6 +163,7 @@ export class TaskRouter {
     this.#render(true);
     this.#renderTimer = this.#clock.setInterval(() => this.#render(), RENDER_TICK_MS);
     this.#startArchiveTimer();
+    this.#reportBeyondPages();
   }
 
   /** Releases held keys, stops timers and flushes slot state. Nothing pending runs afterwards. */
@@ -174,7 +186,13 @@ export class TaskRouter {
       dictating: this.#chordDown,
       feed: this.#feed.status,
       overflow: this.#overflow,
-      slots: this.#slotLights(now).map((light, i) => ({ slot: i + 1, client: this.#slots.get(i + 1)?.client ?? null, ...light })),
+      page: this.#page,
+      pages: this.#profile.pages.count,
+      beyondPages: this.#slots.beyondPages().length,
+      slots: this.#slotLights(now).map((light, i) => {
+        const slot = this.#slotOnPage(i + 1);
+        return { slot, client: this.#slots.get(slot)?.client ?? null, ...light };
+      }),
     };
   }
 
@@ -182,6 +200,12 @@ export class TaskRouter {
   setProfile(profile: RoutingProfile): void {
     const archiveChanged = profile.timing.archiveCheckMs !== this.#profile.timing.archiveCheckMs;
     this.#profile = profile;
+    // Fewer pages never drop or move a task: the store keeps slots beyond them, and the visible page is clamped.
+    this.#slots.setPages(profile.pages.count);
+    this.#page = Math.min(this.#page, profile.pages.count);
+    this.#pageDetent.reset();
+    if (this.#feed.status !== 'unavailable') this.#reconcile();
+    this.#reportBeyondPages();
     this.invalidate('profile-reload');
     this.#lights.setBrightness(profile.brightnessPercent);
     if (archiveChanged && !this.#closed) this.#startArchiveTimer();
@@ -235,7 +259,8 @@ export class TaskRouter {
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
       // The big wheel scrolls or answers a card; every other turn is inert here (the knobs belong to #744).
-      if (event.control === controls.scroll) this.#wheelTurn(event.delta);
+      if (event.control === PAGE_TURN) this.#pageTurn(event.delta);
+      else if (event.control === controls.scroll) this.#wheelTurn(event.delta);
       return;
     }
     if (event.kind === 'release') {
@@ -249,8 +274,8 @@ export class TaskRouter {
       this.#wheelCounts = 0;
       this.#stepsPending = 0;
     }
-    const slot = controls.slots.indexOf(event.control) + 1;
-    if (slot > 0) this.#slotPress(slot);
+    const key = controls.slots.indexOf(event.control) + 1;
+    if (key > 0) this.#slotPress(this.#slotOnPage(key));
     else if (event.control === controls.record) this.#track(this.#recordPress());
     else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
@@ -622,7 +647,7 @@ export class TaskRouter {
 
   #back(): void {
     const now = this.#clock.now();
-    const slotsHeld = this.#profile.controls.slots.map((control, i) => ({ slot: i + 1, since: this.#held.get(control) })).filter(h => h.since !== undefined);
+    const slotsHeld = this.#profile.controls.slots.map((control, i) => ({ slot: this.#slotOnPage(i + 1), since: this.#held.get(control) })).filter(h => h.since !== undefined);
     if (slotsHeld.length === 0) return this.invalidate('back');
     if (slotsHeld.length > 1) return;
     const [{ slot, since }] = slotsHeld as [{ slot: number; since: number }];
@@ -794,9 +819,41 @@ export class TaskRouter {
     this.#render();
   }
 
+  // Pages (#822)
+
+  /** The slot a key (1-15) shows on the visible page. */
+  #slotOnPage(key: number): number { return (this.#page - 1) * SLOT_COUNT + key; }
+
+  /**
+   * A knob 4 turn pages the slot keys, one page per `pages.stepCounts` counts with the card steps' reversal rule,
+   * stopping at the first and last page. Paging is never input: it calls no adapter, types, focuses or acknowledges
+   * nothing, and only changes which slots the keys show.
+   */
+  #pageTurn(delta: number): void {
+    const steps = this.#pageDetent.turn(delta, this.#profile.pages.stepCounts);
+    if (steps === 0) return;
+    const page = Math.max(1, Math.min(this.#profile.pages.count, this.#page + steps));
+    if (page === this.#page) return;
+    this.#page = page;
+    this.#log({ type: 'page', page, pages: this.#profile.pages.count });
+    this.#render();
+  }
+
+  /** Whether a slot outside the visible page, beyond the pages included, holds a task with attention. */
+  #hiddenAttention(): boolean {
+    const first = this.#slotOnPage(1);
+    return this.#slots.entries().some(record => (record.slot < first || record.slot >= first + SLOT_COUNT)
+      && slotState(record, sessionsForSlot(record, this.#feed.sessions), this.#feed.status) === 'attention');
+  }
+
+  #reportBeyondPages(): void {
+    const count = this.#slots.beyondPages().length;
+    if (count > 0) this.#log({ type: 'slots-beyond-pages', count, pages: this.#profile.pages.count });
+  }
+
   #slotLights(now: number): SlotLight[] {
     return Array.from({ length: SLOT_COUNT }, (_, i) => {
-      const slot = i + 1;
+      const slot = this.#slotOnPage(i + 1);
       const record = this.#slots.get(slot);
       const until = this.#errors.get(slot);
       if (until !== undefined && until <= now) this.#errors.delete(slot);
@@ -813,6 +870,7 @@ export class TaskRouter {
     const half = Math.max(1, Math.floor(this.#profile.timing.attentionPulseMs / 2));
     const frame = renderFrame({
       profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, wheelError: now < this.#wheelErrorUntil,
+      page: { number: this.#page, hiddenAttention: this.#hiddenAttention() },
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });
     const signature = JSON.stringify(frame);

@@ -1014,11 +1014,16 @@ test('the router lights slots from feed state only and pulses attention; the whe
 });
 
 test('overflow is reported without moving existing slots', async t => {
+  // Since #822 a sixteenth task takes slot 16 on page 2; overflow needs every page full (see the pages tests).
   const sessions = Array.from({ length: 16 }, (_, i) => codexTask(i + 1));
   const ctx = await setup(t, { sessions });
-  assert.equal(ctx.router.status().overflow, 1);
-  assert.equal(ctx.lastLog('overflow').count, 1);
+  assert.equal(ctx.router.status().overflow, 0);
   assert.equal(ctx.slots.get(15).taskId, tid(15));
+  assert.equal(ctx.slots.get(16).taskId, tid(16));
+  const one = await setup(t, { sessions, profile: withProfile({ pages: { count: 1 } }) });
+  assert.equal(one.router.status().overflow, 1, 'with one page the sixteenth task overflows as before');
+  assert.equal(one.lastLog('overflow').count, 1);
+  assert.equal(one.slots.get(15).taskId, tid(15));
 });
 
 // Scroll
@@ -1708,8 +1713,9 @@ test('pages: a profile reload with fewer pages clamps the visible page and keeps
   assert.deepEqual(ctx.lastLog('slots-beyond-pages'), { type: 'slots-beyond-pages', count: 5, pages: 2 });
   ctx.router.setProfile(withProfile({ pages: { count: 4 } }));
   assert.equal(ctx.router.status().beyondPages, 0);
-  ctx.turn(KNOB4, 2 * PAGE_STEP);
-  assert.equal(ctx.router.status().slots[0].slot, 46 - 15, 'page 3 shows slot 31 again');
+  assert.equal(page(ctx), 2, 'the page stays where it was clamped');
+  ctx.turn(KNOB4, PAGE_STEP);
+  assert.equal(ctx.router.status().slots[0].slot, 31, 'page 3 shows slot 31 again');
   assert.equal(ctx.router.status().slots[0].client, 'codex');
 });
 

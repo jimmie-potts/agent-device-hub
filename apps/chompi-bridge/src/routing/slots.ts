@@ -5,12 +5,20 @@ import { HOST_SESSION_ID, type FeedSession } from './feed.js';
 import { writePrivateFileAtomic } from './files.js';
 
 /**
- * Task slots: the 15 lower keys, assigned first-free and kept until explicit archive evidence or the Claude release
- * gesture. The store is the bridge's own private file, separate from Hub retention; Hub retirement, expiry, idle and a
- * stale feed never free a slot.
+ * Task slots: pages of 15 (the 15 lower keys), assigned first-free across all pages and kept until explicit archive
+ * evidence or the Claude release gesture. Page p holds slots 15(p-1)+1 to 15p. The store is the bridge's own private
+ * file, separate from Hub retention; Hub retirement, expiry, idle and a stale feed never free a slot.
  */
+/** Slots per page: the 15 slot keys. */
 export const SLOT_COUNT = 15;
-export const SLOT_STATE_VERSION = 1;
+/** The most pages a profile can ask for, and so the highest slot a file can hold (15 x 8). */
+export const MAX_PAGES = 8;
+export const MAX_SLOTS = SLOT_COUNT * MAX_PAGES;
+/**
+ * Version 2 (#822) numbers slots 1-120 across pages. Version 1 files (slots 1-15) are read as page 1 and rewritten as
+ * version 2 at the next change; a version 1 reader refuses version 2 files (see the README for rollback).
+ */
+export const SLOT_STATE_VERSION = 2;
 const MAX_RELEASED = 256;
 
 /** A task the feed offers for a slot. `taskId` is the Codex thread ID or the Claude Desktop `local_<id>`. */
@@ -111,6 +119,8 @@ export function sessionsForSlot(record: SlotRecord, sessions: readonly FeedSessi
 
 export interface SlotStoreOptions {
   clock?: Clock;
+  /** Pages of 15 slots new tasks may take (1-8, default 1). The router sets it from the profile. */
+  pages?: number;
   /** Called when persisting fails; the in-memory slots stay authoritative and the next change retries. */
   onWriteError?: (error: Error) => void;
 }
@@ -126,11 +136,13 @@ export class SlotStore {
   #dirty = false;
   #writing: Promise<void> | undefined;
   #writeError: Error | undefined;
+  #pages = 1;
 
   private constructor(path: string, options: SlotStoreOptions) {
     this.#path = path;
     this.#clock = options.clock ?? systemClock;
     this.#onWriteError = options.onWriteError;
+    this.setPages(options.pages ?? 1);
   }
 
   /** Loads the slot file, or starts empty when it does not exist. An unreadable or invalid file throws `SlotStateError`. */
@@ -145,6 +157,21 @@ export class SlotStore {
     if (text !== undefined) store.#load(text);
     return store;
   }
+
+  /** Slots new tasks may take: 15 per page. */
+  get capacity(): number { return SLOT_COUNT * this.#pages; }
+
+  /**
+   * Sets the page count. Fewer pages never drop or move a task: slots beyond the last page keep their tasks (and stay
+   * in the file) without visible keys, take no new task, and show again when the pages return.
+   */
+  setPages(pages: number): void {
+    if (!Number.isInteger(pages) || pages < 1 || pages > MAX_PAGES) throw new RangeError(`pages must be an integer 1-${MAX_PAGES}`);
+    this.#pages = pages;
+  }
+
+  /** Assigned slots beyond the current pages. */
+  beyondPages(): SlotRecord[] { return this.entries().filter(record => record.slot > this.capacity); }
 
   entries(): SlotRecord[] { return [...this.#slots.values()].sort((a, b) => a.slot - b.slot).map(record => ({ ...record })); }
   get(slot: number): SlotRecord | undefined { const record = this.#slots.get(slot); return record && { ...record }; }
@@ -213,7 +240,7 @@ export class SlotStore {
   }
 
   #lowestFree(): number | undefined {
-    for (let slot = 1; slot <= SLOT_COUNT; slot++) if (!this.#slots.has(slot)) return slot;
+    for (let slot = 1; slot <= this.capacity; slot++) if (!this.#slots.has(slot)) return slot;
     return undefined;
   }
 
@@ -253,12 +280,14 @@ export class SlotStore {
     const fail = (message: string): never => { throw new SlotStateError(`slot state ${message}`); };
     if (typeof value !== 'object' || value === null || Array.isArray(value)) fail('must be an object');
     const state = value as Record<string, unknown>;
-    if (state.schemaVersion !== SLOT_STATE_VERSION) fail('has an unsupported schemaVersion');
+    // Version 1 (one page of 15) is read as page 1; it is written back as version 2 at the next change.
+    if (state.schemaVersion !== 1 && state.schemaVersion !== SLOT_STATE_VERSION) fail('has an unsupported schemaVersion');
+    const maxSlot = state.schemaVersion === 1 ? SLOT_COUNT : MAX_SLOTS;
     if (Object.keys(state).some(key => !['schemaVersion', 'slots', 'released'].includes(key))) fail('has an unknown field');
-    if (!Array.isArray(state.slots) || state.slots.length > SLOT_COUNT) fail('slots must be an array of at most 15');
+    if (!Array.isArray(state.slots) || state.slots.length > maxSlot) fail(`slots must be an array of at most ${maxSlot}`);
     const keys = new Set<string>();
     for (const [i, entry] of (state.slots as unknown[]).entries()) {
-      const record = validRecord(entry);
+      const record = validRecord(entry, maxSlot);
       if (!record) fail(`slots[${i}] is invalid`);
       if (this.#slots.has(record!.slot) || keys.has(slotKey(record!))) fail(`slots[${i}] repeats a slot or task`);
       this.#slots.set(record!.slot, record!);
@@ -282,11 +311,11 @@ function validTask(value: Record<string, unknown>): boolean {
   return (codex || claude) && [value.hostId, value.sourceId].every(id => typeof id === 'string' && HUB_ID.test(id));
 }
 
-function validRecord(entry: unknown): SlotRecord | undefined {
+function validRecord(entry: unknown, maxSlot: number): SlotRecord | undefined {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return undefined;
   const value = entry as Record<string, unknown>;
   if (Object.keys(value).length !== RECORD_FIELDS.length || !RECORD_FIELDS.every(field => field in value)) return undefined;
-  if (!Number.isInteger(value.slot) || (value.slot as number) < 1 || (value.slot as number) > SLOT_COUNT) return undefined;
+  if (!Number.isInteger(value.slot) || (value.slot as number) < 1 || (value.slot as number) > maxSlot) return undefined;
   if (value.client !== value.provider || !validTask(value)) return undefined;
   if (typeof value.sessionId !== 'string' || !HUB_ID.test(value.sessionId)) return undefined;
   if (value.title !== null && (typeof value.title !== 'string' || value.title.length === 0 || [...value.title].length > 160)) return undefined;

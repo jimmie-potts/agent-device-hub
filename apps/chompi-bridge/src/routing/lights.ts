@@ -45,6 +45,8 @@ export interface RenderInput {
   recording: boolean;
   /** A refused or uncertain Send or card press: both big-wheel LEDs show the error color. */
   wheelError?: boolean;
+  /** The visible task page (1-based) for knob 4's LED, and whether a hidden page holds a task with attention. */
+  page?: { number: number; hiddenAttention: boolean };
   pulseOn: boolean;
 }
 
@@ -52,13 +54,15 @@ export const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * fa
 
 /** The two big-wheel LEDs (protocol LED indices 30 and 31). */
 export const WHEEL_LEDS: readonly number[] = [30, 31];
+/** Small knob 4's LED (protocol LED index 29): the page indicator (#822). */
+export const PAGE_LED = 29;
 
 /**
  * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to
  * flash a refused or uncertain Send or card press (not a `repeat` bounce or a Send abandoned for Record): readiness is
  * decided at the press, and nothing polls the window in front to show it.
  */
-export function renderFrame({ profile, slots, recording, wheelError = false, pulseOn }: RenderInput): Rgb[] {
+export function renderFrame({ profile, slots, recording, wheelError = false, page, pulseOn }: RenderInput): Rgb[] {
   const frame: Rgb[] = Array.from({ length: LED_COUNT }, () => OFF);
   const { colors } = profile;
   slots.forEach((light, i) => {
@@ -72,5 +76,7 @@ export function renderFrame({ profile, slots, recording, wheelError = false, pul
   const record = ledIndex(profile.controls.record);
   if (recording && record !== undefined) frame[record] = colors.record;
   if (wheelError) for (const index of WHEEL_LEDS) frame[index] = colors.error;
+  // Knob 4's LED shows the visible page; it alternates with the attention color while a hidden page has attention.
+  if (page) frame[PAGE_LED] = page.hiddenAttention && pulseOn ? colors.attention : colors.pages[page.number - 1] ?? OFF;
   return frame.map(([r, g, b]) => [r, g, b] as const);
 }
