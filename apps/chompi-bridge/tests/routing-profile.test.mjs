@@ -113,6 +113,26 @@ test('card settings are optional, field by field, and bounded', () => {
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), sendToOtherApps: true })), ['profile.sendToOtherApps: unknown field'], 'Send never reaches other apps');
 });
 
+test('page settings are optional and bounded, with one color per page (#822)', () => {
+  const profile = validateProfile(shipped());
+  assert.deepEqual(profile.pages, { count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS });
+  assert.equal(profile.colors.pages.length, 8);
+  assert.equal(new Set(profile.colors.pages.map(c => JSON.stringify(c))).size, 8, 'distinct page colors');
+  for (const color of profile.colors.pages) assert.notDeepEqual(color, profile.colors.attention, 'no page color looks like attention');
+  assert.deepEqual(validateProfile(installedTrialProfile()).pages, { count: 4, stepCounts: 6 }, 'an earlier profile keeps validating');
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { count: 2 } }).pages, { count: 2, stepCounts: 6 });
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { stepCounts: 12 } }).pages, { count: 4, stepCounts: 12 });
+  for (const count of [0, 9, 1.5, '4']) assert.match(issues(() => validateProfile({ ...shipped(), pages: { count } }))[0], /^profile\.pages\.count: must be an integer 1-8$/);
+  for (const stepCounts of [0, 97]) assert.match(issues(() => validateProfile({ ...shipped(), pages: { stepCounts } }))[0], /^profile\.pages\.stepCounts: must be an integer 1-96$/);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), pages: { count: 2, knob: 43 } })), ['profile.pages.knob: unknown field']);
+  const red = [255, 0, 0];
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { count: 2 }, colors: { ...shipped().colors, pages: [red, [0, 0, 255]] } }).colors.pages, [red, [0, 0, 255]]);
+  assert.match(issues(() => validateProfile({ ...shipped(), pages: { count: 3 }, colors: { ...shipped().colors, pages: [red, red] } }))[0],
+    /^profile\.colors\.pages: must list a color for each of the 3 pages$/);
+  assert.match(issues(() => validateProfile({ ...shipped(), colors: { ...shipped().colors, pages: [[0, 0, 256], red, red, red] } }))[0], /^profile\.colors\.pages\[0\]: /);
+  assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, scroll: 43 } }))[0], /knob 4/, 'knob 4\'s turn pages and cannot scroll');
+});
+
 test('scroll settings are bounded', () => {
   assert.match(issues(() => validateProfile({ ...shipped(), scroll: { notchesPerStep: 0, invert: false } }))[0], /^profile\.scroll\.notchesPerStep: /);
   assert.match(issues(() => validateProfile({ ...shipped(), scroll: { notchesPerStep: 1, invert: 'yes' } }))[0], /^profile\.scroll\.invert: /);

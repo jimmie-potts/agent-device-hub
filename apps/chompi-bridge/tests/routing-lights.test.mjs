@@ -91,6 +91,16 @@ test('the Record LED shows dictation and the wheel LEDs stay off otherwise', () 
   assert.equal(ledIndex(33), undefined, 'encoder clicks have no single key LED');
 });
 
+test('knob 4\'s LED shows the visible page and alternates with attention while a hidden page has attention (#822)', () => {
+  const steady = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true, page: { number: 2, hiddenAttention: false } });
+  assert.deepEqual(steady[29], profile.colors.pages[1]);
+  const on = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true, page: { number: 3, hiddenAttention: true } });
+  const off = renderFrame({ profile, slots: blank(), recording: false, pulseOn: false, page: { number: 3, hiddenAttention: true } });
+  assert.deepEqual(on[29], profile.colors.attention);
+  assert.deepEqual(off[29], profile.colors.pages[2]);
+  for (let i = 0; i < 35; i++) if (i !== 29) assert.deepEqual(steady[i], [0, 0, 0], `LED ${i} is unaffected`);
+});
+
 test('custom slot controls map to their own key LEDs', () => {
   const custom = validateProfile({ ...JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')), controls: { ...profile.controls, slots: [11, 12, 13, 14, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } });
   const slots = blank();
