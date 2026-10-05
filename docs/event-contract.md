@@ -1,5 +1,12 @@
 # B.U.N.N.Y. event profile 1.0
 
+> [ADR 0012](decisions/0012-bunny-event-platform.md) supersedes this profile's
+> staged-adoption scope. Profile 2.0 replaces it in
+> [#828](https://github.com/jimmie-potts/agent-device-hub/issues/828). This
+> document remains the released 1.0 source contract for each component until
+> that component's own cutover child in
+> [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) lands.
+
 This is an additive source contract for staged adoption. It defines event records
 and reference decisions; no current producer, transport, notification service or
 device adopts it merely because its schema validates. Existing

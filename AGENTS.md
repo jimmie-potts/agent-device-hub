@@ -6,6 +6,14 @@ Read the README sections relevant to the task for current implementation state
 and setup. For planning or delivery, read docs/sdlc.md and the exact GitHub
 issue. Before changing ownership, provider contracts, APIs, state, integration
 or hosting, read docs/architecture.md and the linked device contracts.
+Before designing or changing communication between components, read
+[ADR 0012](docs/decisions/0012-bunny-event-platform.md). This covers events,
+commands, replies, errors, message formats, consumer state and trace
+propagation, and all such work follows that ADR.
+[Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
+the cutover. Until a component's own child delivery lands, extend its released
+1.x contract only additively. This includes the owner's CHOMPI work. Do not add
+another message format, error shape or new path that polls the Hub for state.
 GitHub issues own the delivery sequence, acceptance criteria, dependencies and
 status; do not copy issue lists or dependency chains into repository docs.
 
@@ -160,11 +168,15 @@ collected personal data out of Git and every GitHub publication surface,
 including private repositories, issue/PR text, logs, artifacts and attachments.
 Retain personal data from owner-selected sources privately, including logs and
 telemetry; credentials, authentication tokens and secrets remain excluded.
+Retained personal data may be used in Claude and Codex prompts, within the
+existing collection and sharing choices. This selects no new source. New work
+needs no clearing, erasure or retention-expiry features (ADR 0011 amendment,
+2026-10-05).
 Before changing collection, retention, diagnostics, export or evidence publication,
 read [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
 collection and sharing boundaries. Use synthetic or sanitized publication copies
 without stripping the private originals. Preserve explicit collection/sharing
-choices, clear/recovery behavior and device authorization. Only fields declared
+choices, existing clear/recovery behavior and device authorization. Only fields declared
 by the selected versioned contract are transmitted; prompt, response and
 transcript-content capture requires its separate implementation under Hub #425.
 Preserve explicit-label precedence and neutral fallbacks for untitled sessions.
