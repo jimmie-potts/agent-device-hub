@@ -102,8 +102,8 @@ personal content even from local output. Its replacement must distinguish
 private retained evidence from publishable evidence without silently widening
 existing exporters or closed schemas. The [event contract](../event-contract.md)
 still bounds transport records; bounded delivery does not establish archival
-retention. [ADR 0010](0010-shared-event-contracts.md) keeps history separate
-from latest-state and notification delivery.
+retention. [ADR 0012](0012-bunny-event-platform.md), which superseded ADR 0010,
+keeps history separate from latest-state and notification delivery.
 
 Wispr adoption must address the three-dictation ranking threshold, whole-stage
 sensitivity suppression and the lack of retained source text. Removing a
@@ -143,10 +143,14 @@ The owner decided the following on 2026-10-05:
   above that this direction does not approve transmission to a model. Any other
   model, cloud service, device or sharing destination still needs its own
   decision.
-- New work needs no clearing, erasure or retention-expiry features. Existing
-  clear behavior may keep its current meaning, but new designs do not have to
-  add it. Capture as much as the owner-selected sources provide, and keep it
-  locally.
+- New work needs no clearing, erasure or retention-expiry features. Capture
+  as much as the owner-selected sources provide, and keep it in private
+  owner-controlled storage.
+- Existing explicit opt-out and clear behavior keeps its current meaning. The
+  rule above that it remains supported until a separately scoped change
+  preserves its meaning still applies.
+- Existing collection and sharing choices still apply. This amendment selects no
+  new source or reader.
 - The GitHub boundary is unchanged. So is the exclusion of credentials,
   authentication tokens, API keys and secrets.
 

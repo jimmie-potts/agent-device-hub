@@ -1,7 +1,9 @@
 # ADR 0012: One event and messaging platform for every component
 
 Status: accepted on 2026-10-05. Supersedes [ADR 0010](0010-shared-event-contracts.md).
-Delivery: [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827).
+This decision implements and installs nothing by itself. The children of
+[epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
+source delivery, installation and physical acceptance, as well as delivery order.
 
 ## Context
 
@@ -18,8 +20,9 @@ their own formats.
 
 On 2026-10-04 and 2026-10-05 the owner asked for a well-designed event platform
 that powers all communication between components, captures history and follows
-one format everywhere. The owner wants this delivered before other feature work.
-The one exception is the CHOMPI agent-controls integration already in progress.
+one format everywhere. The owner wants it delivered before other feature work,
+apart from the CHOMPI agent-controls integration already in progress. Epic #827
+records that sequencing.
 
 ## Decision
 
@@ -30,13 +33,18 @@ Nanoleaf, Pixoo and future repositories: events, commands, replies and errors.
 Log and trace conventions also follow it. Any new or changed communication
 between components follows this ADR.
 
+Until a component's own cutover child lands, the component may extend its
+released 1.x contract additively. This includes the owner's CHOMPI work. It adds
+no new message format, error shape or new path that polls the Hub for state.
+
 Existing formats move by full cutover:
 - Each contract gets a 2.0 version that follows these conventions.
 - Each component moves in its own delivery, with a short period where both
   versions work.
 - The 1.x formats, routes and controller HTTP command ports are removed once
   every installed consumer runs 2.0.
-- Released 1.x artifacts stay unchanged until that removal.
+- Released 1.x artifacts stay compatible until that removal: additive changes
+  only.
 
 ### Broker
 
@@ -45,6 +53,7 @@ Existing formats move by full cutover:
 - Each service has its own credentials, limited to the subjects it owns or reads.
 - Stream, retention and limit configuration lives in this repository.
 - The bus works without internet access.
+- The owner approved installing this service on the runtime host on 2026-10-05.
 
 ### Message kinds
 
@@ -81,10 +90,14 @@ Existing formats move by full cutover:
 - A consumer starts from the latest state event per subject, then follows live
   events. It drops duplicates and stale revisions, and ignores commands or
   effects past their expiry.
-- This delivery has no replay of any kind:
-  - no rebuild from the log;
-  - no history replay into views;
-  - no catch-up for displays.
+- This delivery has no replay. Here, replay means redelivering past
+  occurrences or effects to views or devices. That rules out:
+  - rebuilding views from the log;
+  - replaying history into views;
+  - catch-up for displays.
+
+  Loading the latest state per subject is not replay. Neither is redelivering
+  an unacknowledged message to a durable reader.
 - Only the history store and the Hub's tracker of high-impact messages read
   durably. A slow consumer lags only itself.
 
@@ -104,8 +117,9 @@ State events and telemetry are not tracked.
 ### Inbox and history
 
 - One shared Hub inbox holds turn-ended notices and failed or uncertain
-  operations. Items survive restarts until handled. Handling an item once clears
-  it everywhere; dismissing it on a display is a separate fact.
+  operations. Items survive restarts until handled, with no expiry and no
+  automatic clearing. Handling an item once clears it everywhere; dismissing it
+  on a display is a separate fact.
 - Long-term history is a private SQLite store fed from the bus, with no time
   limit, a dashboard timeline and a read API. Broker retention is not history.
   Viewing history never triggers devices or automation.
@@ -130,10 +144,18 @@ State events and telemetry are not tracked.
   - `detail` is optional; `requestId` and `traceId` appear when known.
   - MCP protocol errors keep the MCP specification.
 - Each document carries one schema identifier, `<family>/<major>.<minor>`:
-  messages in `dataschema`, HTTP and stored documents in `schema`. Routes carry
-  only the major version.
-- JSON fields are camelCase. Log records keep OpenTelemetry field names as the
-  one deliberate exception.
+  - A message carries it as the absolute URI
+    `https://bunny.invalid/events/<family>/<major>.<minor>` in `dataschema`, as
+    CloudEvents requires.
+  - HTTP and stored documents carry the same suffix in `schema`.
+  - Routes carry only the major version.
+- Event `id` values keep profile 1.0's identifier rule: 1 to 128 letters,
+  digits, underscores, dots or hyphens. The retry identity stays
+  `(source, id)`. Requests carry a `requestId`. Controllers keep their
+  `{epoch, sequence}` ticket ordering.
+- JSON payload fields are camelCase. There are two deliberate exceptions:
+  CloudEvents context attributes keep their lowercase names, and log records
+  keep OpenTelemetry field names.
 - Envelope `time` is RFC 3339 UTC with milliseconds. Payload instants are
   integer `<name>AtMs`.
 
@@ -144,7 +166,8 @@ State events and telemetry are not tracked.
 - Every log line carries `trace_id` and `span_id` under the
   [diagnostic contract](../observability-contract.md), so one request can be
   followed through every component.
-- Telemetry is never acknowledged and may drop under pressure.
+- Telemetry is never acknowledged. Its existing bounded queues can drop records
+  under pressure. The diagnostic contract makes that loss visible.
 - Viewing traces in Grafana belongs to
   [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).
 
@@ -170,11 +193,13 @@ reactions stay on the home network.
 Profile 2.0 drops profile 1.0's privacy-based field exclusions.
 [ADR 0011](0011-private-personal-data-retention.md), as amended on 2026-10-05,
 governs personal data:
-- It stays on this machine.
-- It may be used in Claude and Codex prompts.
+- It is stored only in private owner-controlled storage on the runtime host.
+- It may be sent to Claude and Codex in prompts.
 - It never goes to GitHub.
 
-Credentials, tokens and secrets never enter messages, logs or history.
+Credentials, tokens and secrets never enter messages, logs or history. Prompt,
+response and transcript capture remains separate work in
+[#425](https://github.com/jimmie-potts/agent-device-hub/issues/425).
 
 ## Alternatives and consequences
 
@@ -196,12 +221,22 @@ The consequences:
   receiving and commands fail; owners keep committing, and the outbox drains
   when the broker returns.
 - The cutover touches every component in three repositories, and working
-  features can regress during it. Each step is installed and checked before the
-  next.
+  features can regress during it. Each step is merged, and installed where its
+  delivery target says so, before work that depends on it starts.
 - Consumer views are eventually consistent, so every consumer must handle
   duplicates and lag.
 - Broker data, consumer state, history and backups add operational work.
-- Feature work pauses until the epic completes, except the CHOMPI integration.
+- No replay: a consumer that was down misses occurrences such as `turn.ended`
+  and sees only the latest state. The shared inbox and history are where missed
+  occurrences remain visible.
+- Live-only commands: a command to an offline controller is lost, not queued.
+  The owner sees it as failed or uncertain and can resend it.
+- Tracking: each tracked kind needs a deadline. Uncertain items need a person to
+  decide, because nothing retries them automatically.
+- 256 KiB cap: content above it needs a second fetch by reference from its
+  owner.
+- Client library only: we maintain one adapter per language and give up direct
+  use of broker-specific features.
 
 Reassess if a device cannot keep its behavior under the cutover, if the runtime
 moves hosts or to the cloud, or if a second operator or remote access is

@@ -47,6 +47,9 @@ collected personal data out of every GitHub publication surface. Private
 retention does not expand source selection, sharing or command authority.
 Existing versioned contracts remain in force until their scoped replacements
 are delivered; a bounded snapshot or diagnostic stream is not a complete archive.
+The 2026-10-05 [amendment](decisions/0011-private-personal-data-retention.md#amendment-2026-10-05)
+allows retained data in Claude and Codex prompts and requires no new clearing
+features.
 
 ## Ownership
 
@@ -82,27 +85,30 @@ their tests, policies and capability specifications.
 
 ## Event and messaging platform
 
-[ADR 0012](decisions/0012-bunny-event-platform.md) defines how every component
-communicates, and supersedes ADR 0010's staged adoption.
+[ADR 0012](decisions/0012-bunny-event-platform.md) selects how every component
+will communicate, and supersedes ADR 0010's staged adoption. None of it is
+implemented yet.
 
-- **Bus.** A local NATS JetStream bus connects all components.
-- **Publishing.** Owners publish full-record state events and occurrence events
-  through an outbox. One owner holds each fact, and one writer controls each
-  device.
-- **Consumers.** Each consumer keeps its own store, built from the events it
-  receives.
-- **Commands.** Commands are live-only requests with expiry. The Hub tracks
-  device commands, moments, mode changes and notices from accepted to
+- **Bus.** A local NATS JetStream bus will connect all components.
+- **Publishing.** Owners will publish full-record state events and occurrence
+  events through an outbox. One owner holds each fact, and one writer controls
+  each device.
+- **Consumers.** Each consumer will keep its own store, built from the events
+  it receives.
+- **Commands.** Commands will be live-only requests with expiry. The Hub will
+  track device commands, moments, mode changes and notices from accepted to
   completed.
-- **Conventions.** Events, commands, replies and errors share one CloudEvents
-  profile, one error body and one set of naming and version conventions.
+- **Conventions.** Events, commands, replies and errors will share one
+  CloudEvents profile, one error body and one set of naming and version
+  conventions.
 - **Edges.** Hooks, the dashboard and MCP clients reach only the Hub over HTTP.
-- **No replay.** Nothing replays old events or old device effects.
+- **No replay.** Past occurrences or effects are never redelivered to views or
+  devices.
 
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)
 delivers the cutover. Until each component's child delivery lands, its released
 1.x contract and the [event profile 1.0](event-contract.md) stay authoritative
-for that component.
+for that component. A component may extend them only additively.
 
 ## Installed release ownership
 
