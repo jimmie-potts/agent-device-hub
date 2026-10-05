@@ -97,7 +97,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   for (const control of [29, 30, 31, 32]) simulator.click(control);
   await run(300);
   assert.equal(adapter.enters, 1, 'small-knob clicks never send');
-  assert.deepEqual(simulator.leds[0], JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')).colors.selected, 'the device shows the selected slot');
+  assert.deepEqual(simulator.leds[0], JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')).colors.idle, 'the device shows the focused slot\'s task state, not a selection');
 
   // A profile edit is applied without a restart, and the firmware hears the new profile version.
   assert.equal(simulator.profileVersion, 1);

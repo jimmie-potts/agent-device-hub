@@ -8,7 +8,7 @@ import { claudeTask, codexTask, view } from './routing-helpers.mjs';
 const profile = validateProfile(JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')));
 const record = { slot: 1, client: 'codex', provider: 'codex', hubClient: 'desktop', hostId: 'pc', sourceId: 'codex-desktop', taskId: 'x', sessionId: 'x', title: 'T', assignedAt: 0 };
 const state = (session, feed = 'current') => slotState(record, session ? view([session]).sessions : [], feed);
-const blank = () => Array.from({ length: 15 }, () => ({ state: 'empty', error: false, selected: false }));
+const blank = () => Array.from({ length: 15 }, () => ({ state: 'empty', error: false }));
 
 test('activity, attention, notice acknowledgment, read evidence and freshness stay distinct', () => {
   assert.equal(state(codexTask(1, { activity: 'active' })), 'active');
@@ -39,50 +39,44 @@ test('unknown, ended and stale never use the completion color', () => {
   for (const name of ['unknown', 'ended', 'stale']) {
     const slots = blank();
     slots[0].state = name;
-    assert.notDeepEqual(renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: true })[0], profile.colors.unread);
+    assert.notDeepEqual(renderFrame({ profile, slots, recording: false, pulseOn: true })[0], profile.colors.unread);
   }
 });
 
-test('the frame maps slots to their key LEDs, pulses attention and overlays error and selection', () => {
+test('the frame maps slots to their key LEDs, pulses attention and overlays error', () => {
   const slots = blank();
   slots[0].state = 'active';
   slots[1].state = 'attention';
-  slots[2] = { state: 'idle', error: true, selected: false };
-  slots[3] = { state: 'idle', error: false, selected: true };
-  const on = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: true });
-  const off = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: false });
+  slots[2] = { state: 'idle', error: true };
+  const on = renderFrame({ profile, slots, recording: false, pulseOn: true });
+  const off = renderFrame({ profile, slots, recording: false, pulseOn: false });
   assert.equal(on.length, 35);
   assert.deepEqual(on[0], profile.colors.active);
   assert.deepEqual(on[1], profile.colors.attention);
   assert.notDeepEqual(off[1], on[1], 'attention pulses');
   assert.deepEqual(off[0], on[0], 'only attention pulses');
   assert.deepEqual(on[2], profile.colors.error);
-  assert.deepEqual(on[3], profile.colors.selected);
   assert.deepEqual(on[4], [0, 0, 0]);
   for (let i = 15; i < 35; i++) assert.deepEqual(on[i], [0, 0, 0], `LED ${i} stays off`);
 });
 
-test('a selected key with attention keeps pulsing, so focus never looks like acknowledgment', () => {
+test('slot keys show task state only: a retired selected color never appears', () => {
+  const withLegacy = validateProfile({ ...JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')), colors: { ...profile.colors, selected: [255, 255, 255] } });
   const slots = blank();
-  slots[0] = { state: 'attention', error: false, selected: true };
-  slots[1] = { state: 'active', error: false, selected: true };
-  const on = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: true });
-  const off = renderFrame({ profile, slots, recording: false, send: 'none', pulseOn: false });
-  assert.notDeepEqual(on[0], off[0], 'attention still pulses on the selected key');
-  assert.deepEqual(on[0], profile.colors.attention);
-  assert.deepEqual(off[0], profile.colors.selected);
-  assert.deepEqual(on[1], profile.colors.selected, 'a selected key without attention is steady');
-  assert.deepEqual(off[1], profile.colors.selected);
+  slots[0] = { state: 'attention', error: false };
+  slots[1] = { state: 'active', error: false };
+  const frames = [true, false].map(pulseOn => renderFrame({ profile: withLegacy, slots, recording: false, pulseOn }));
+  for (const frame of frames) assert.ok(frame.every(color => JSON.stringify(color) !== '[255,255,255]'), 'no key is white');
+  assert.deepEqual(frames[0][1], profile.colors.active);
 });
 
-test('Record and the wheel LEDs show dictation and Send readiness', () => {
-  const ready = renderFrame({ profile, slots: blank(), recording: true, send: 'ready', pulseOn: true });
-  assert.deepEqual(ready[ledIndex(26)], profile.colors.record);
-  assert.deepEqual(ready[30], profile.colors.sendReady);
-  assert.deepEqual(ready[31], profile.colors.sendReady);
-  const blocked = renderFrame({ profile, slots: blank(), recording: false, send: 'blocked', pulseOn: true });
-  assert.deepEqual(blocked[30], profile.colors.sendBlocked);
-  assert.deepEqual(blocked[ledIndex(26)], [0, 0, 0]);
+test('the Record LED shows dictation and the wheel LEDs stay off', () => {
+  const recording = renderFrame({ profile, slots: blank(), recording: true, pulseOn: true });
+  assert.deepEqual(recording[ledIndex(26)], profile.colors.record);
+  assert.deepEqual(recording[30], [0, 0, 0]);
+  assert.deepEqual(recording[31], [0, 0, 0]);
+  const idle = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true });
+  assert.deepEqual(idle[ledIndex(26)], [0, 0, 0]);
   assert.equal(ledIndex(1), 0);
   assert.equal(ledIndex(25), 24);
   assert.equal(ledIndex(27), 32);
@@ -94,5 +88,5 @@ test('custom slot controls map to their own key LEDs', () => {
   const custom = validateProfile({ ...JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')), controls: { ...profile.controls, slots: [11, 12, 13, 14, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } });
   const slots = blank();
   slots[0].state = 'active';
-  assert.deepEqual(renderFrame({ profile: custom, slots, recording: false, send: 'none', pulseOn: true })[10], custom.colors.active);
+  assert.deepEqual(renderFrame({ profile: custom, slots, recording: false, pulseOn: true })[10], custom.colors.active);
 });
