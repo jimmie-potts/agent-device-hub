@@ -8,4 +8,4 @@
 - [x] 2.1 Record the card structure, versions and re-qualification rule in `UIA-NOTES.md`, and update the bridge README, the qualification report and the development guide (evidence: the "Approval cards" section in `UIA-NOTES.md`, step 1 of "Qualify a client update" in the README, and the approval-guard rows in `docs/chompi-controller-qualification.md`).
 - [x] 2.2 Run build, typecheck, the bridge suite and the workflow checks; record results in the PR.
 - [x] 2.3 Synchronize the specs and archive this change before final review (evidence: `openspec/specs/chompi-bridge/spec.md` and `openspec/specs/chompi-task-routing/spec.md` match the deltas here, and `openspec validate --all --strict` passes).
-- [ ] 2.4 Native Windows check on the trial host (coordinator); record its receipt in the PR. The live guard checks belong to the #743 trial.
+- [x] 2.4 Native Windows check on the trial host (coordinator); record its receipt in the PR. The live guard checks belong to the #743 trial.
