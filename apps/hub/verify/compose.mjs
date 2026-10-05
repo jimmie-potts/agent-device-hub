@@ -365,7 +365,8 @@ const aliasOf = consumer => /** @type {Record<string, {alias: string}>} */ (PAIR
 
 /**
  * One pass of the pairing checks. Reads only: a snapshot read through the Hub
- * is the Hub's ordinary read path and changes no controller.
+ * is the Hub's ordinary read path and changes no controller. Consumer reads use
+ * the dashboard's versioned path, so a broken device card cannot pass (Hub #856).
  * @param {Env} env @param {Composition} composition
  * @returns {Promise<Check[]>}
  */
@@ -389,7 +390,7 @@ async function pairingChecks(env, composition) {
   for (const consumer of consumers(composition)) {
     const alias = aliasOf(consumer.id);
     try {
-      const snapshot = await hubRead(env, hub, `/api/controllers/v1/${alias}/snapshot`);
+      const snapshot = await hubRead(env, hub, `/api/controllers/v1/${alias}/snapshot?apiVersion=1.1`);
       add(`hub-reads-${consumer.id}`, snapshot.status === 200, `the Hub's ${alias} snapshot answered ${snapshot.status}${snapshot.body?.error?.code ? ` ${snapshot.body.error.code}` : ''}`);
     } catch (error) {
       add(`hub-reads-${consumer.id}`, false, `the Hub's ${alias} snapshot is unreadable (${/** @type {Error} */ (error).name})`);
@@ -1339,7 +1340,13 @@ function arity(positional, count, operation) {
  * @param {{env?: Env, stdout?: Progress, stderr?: Progress, hubRoot?: string, manifest?: string, readyTimeoutMs?: number}} [options]
  */
 export async function runCompose(argv, options = {}) {
-  const env = options.env ?? process.env;
+  let env = options.env ?? process.env;
+  // Every adapter writes proof beside the Hub's, under the canonical Hub checkout. Without this a
+  // consumer in a disposable checkout keeps its receipts there and loses them on removal (Hub #856).
+  if (!env.APP_VERIFY_PROOF_ROOT) {
+    const root = await proofRoot(env, options.hubRoot).catch(() => undefined);
+    if (root) env = {...env, APP_VERIFY_PROOF_ROOT: root};
+  }
   const stdout = options.stdout ?? (/** @param {string} line */ line => void process.stdout.write(line + '\n'));
   const progress = options.stderr ?? (/** @param {string} line */ line => void process.stderr.write(line + '\n'));
   const io = {env, progress, hubRoot: options.hubRoot};

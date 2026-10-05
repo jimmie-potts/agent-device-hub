@@ -340,6 +340,21 @@ test('an installed port announced during pairing fails the start and cleans up',
   }
 });
 
+test('readiness fails when the dashboard\'s versioned read of a consumer fails', {skip, timeout: 240000}, async () => {
+  const w = await world({faults: {nanoleaf: 'versioned-read-fails'}});
+  try {
+    const result = await w.start();
+    assert.equal(result.code, 1);
+    assert.equal(result.result.cause, 'readiness-timeout');
+    assert.match(result.result.detail, /hub-reads-nanoleaf: the Hub's \S+ snapshot answered 503/);
+    const c = await w.composition(result.result.compositionId);
+    assert.ok(c.readiness.checks.some(k => k.id === 'hub-reads-pixoo' && k.outcome === 'passed'), 'the healthy consumer is reported healthy');
+    assert.equal(w.units(), '');
+  } finally {
+    await w.close();
+  }
+});
+
 test('readiness fails truthfully when a consumer never reads the Hub feed', {skip, timeout: 240000}, async () => {
   const w = await world({faults: {pixoo: 'no-feed'}});
   try {
