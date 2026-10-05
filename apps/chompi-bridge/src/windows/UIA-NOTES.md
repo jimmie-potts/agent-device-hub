@@ -92,16 +92,96 @@ It never reads a Name, Value or focus. The adapter decides:
 Re-qualify both selectors, with a card open in each client, when either client's version changes or a new kind
 of card appears.
 
+## Card answers
+
+Added for [#821](https://github.com/jimmie-potts/agent-device-hub/issues/821). The big wheel answers an open card
+through UI Automation focus and invoke.
+
+### Keyboard qualification
+
+Probed live on October 5, 2026, in throwaway tasks, on Codex `26.930.3930.0` and Claude `2.19675.0.0`.
+
+- **Claude question card:**
+  - Arrow keys do nothing while the composer has focus. In the composer, Up and Down walk the prompt history.
+  - Shift+Tab from the composer reaches the options only after a varying number of presses.
+  - Once focus is in the option list, Up and Down move between options. The last option is a free-text "Other"
+    field that captures the arrows.
+  - Enter on a focused option picks it.
+- **Codex escalation card:**
+  - Focus starts on a card button. Shift+Tab moves to Deny, and Tab leaves the card.
+  - Down scrolls the chat.
+  - Enter on the focused button activates it (Deny was declined).
+
+Keystroke navigation is therefore unreliable: the composer history and the "Other" field capture the arrows, and
+the number of Shift+Tab presses varies. The helper moves focus and presses buttons directly instead. The client draws
+its own focus ring.
+
+### Operations
+
+Three helper operations serve the adapter's `cardButtons`, `focusCardButton` and `invokeCardButton`. Each one:
+
+- runs against the client's own foreground top-level window and process (`TargetWindow`), like the other window
+  checks, and refuses any other window (`window-mismatch`);
+- finds the card container (below);
+- lists the card's actionable buttons with one bounded `FindAll(Descendants)` of `Button` elements under a
+  `CacheRequest`.
+
+The operations return counts, indexes and booleans only. They never read a Name or Value.
+
+- **Actionable buttons:**
+  - enabled `Button` elements that support Invoke and do not support ExpandCollapse, in tree order;
+  - more than 64 is an error (`card-too-many-buttons`);
+  - text fields are `Edit` elements and are never listed;
+  - a disabled button, such as Claude's submit beside an empty "Other" field, is skipped;
+  - menu buttons (ExpandCollapse) are skipped because their menus open outside the card.
+- **`cardButtons`** returns `{ cards, buttons, focused }`, plus `composers` for Codex. `focused` is the index of the
+  listed button that equals `AutomationElement.FocusedElement` (`Automation.Compare`), or -1.
+- **`focusCardButton(index, count)`** refuses an invalid index (`invalid-card-index`), no card (`card-absent`) or a
+  button count that differs from `count` (`card-changed`). It then sets keyboard focus on that button and returns the
+  focused index.
+- **`invokeCardButton(index, count)`** runs the same checks, then presses the button only when it equals the focused
+  element, and returns `{ invoked: false }` otherwise.
+
+These two are the only helper code that changes UI state. A static test pins `SetFocus` to the first and `Invoke` to
+the second. The bridge starts the helper with a short `-EncodedCommand` loader that reads `uia-helper.ps1`, because
+the script with these operations no longer fits a Windows command line as base64 UTF-16.
+
+### Card containers
+
+- **Claude** (question and permission cards): the one element of any control type carrying `epitaxy-approval-card`.
+  - In the probe, the permission card lists three answers.
+  - The question card lists five buttons in tree order: one above the options, the option buttons, and the enabled
+    button after the "Other" field. Its disabled submit button and its menu button are skipped.
+  - The composer keeps focus when either card opens, so `focused` starts at -1.
+  - No token element is no card. Several are unknown (`card-count`).
+- **Codex** (escalation card): the card has no class token, so it is found by structure. In the probe, the focused
+  card button's control-view parent is a `Group` (class `contents`) that directly holds the card's prompt text and
+  three buttons: Deny, the button that starts with focus (both Invoke) and a menu button (ExpandCollapse only).
+  - The container is that parent `Group`, but only while all of these hold:
+    - the window has no `ProseMirror` composer;
+    - the focused element is in the window's process and inside the window (bounded parent walk);
+    - the focused element is an actionable `Button`;
+    - its parent `Group` holds at least two actionable buttons.
+  - The adapter decides:
+    - one composer is no card;
+    - no composer without such a group is unknown (`codex-card-unestablished`), and the wheel then does nothing;
+    - several composers are unknown (`codex-composer-count`).
+  - Residual: any Codex view without a composer whose focused button sits in such a group counts as a card. Only the
+    escalation card was observed.
+
+Re-qualify the containers, the button order and a still-click press, with a harmless card in a throwaway task, when
+either client's version changes.
+
 ## Not established
 
 - **Other card kinds.** Only Claude's question and permission cards and Codex's escalation card were opened.
   The rules assume that other kinds, such as a Codex patch approval, carry the same token (Claude) or also
-  replace the composer (Codex). Two other guards remain: the composer-focus re-check before Send refuses while
-  focus is on a card's button, and the Hub's `approval` attention refuses Send for the task.
+  replace the composer (Codex). One other guard remains: the composer-focus check before Send refuses while
+  focus is on a card's button. Since #821, Send no longer checks the Hub's `approval` attention.
 - **A Codex card with its own `ProseMirror` field.** A card that replaced the composer with its own
   `ProseMirror` `Edit`, such as a feedback box, would count as the one composer. If that field held focus with a
-  writable value, `composerFocused` would pass too, leaving only the Hub's `approval` attention to block Send.
-  No such card was observed.
+  writable value, `composerFocused` would pass too, and Send would type Enter into that field, as a keyboard would.
+  The owner accepted this residual on #821. No such card was observed.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

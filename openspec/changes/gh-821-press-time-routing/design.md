@@ -81,7 +81,7 @@ The repeat window starts before the keystroke, so even an uncertain Enter blocks
   - `Edit` fields, such as Claude's "Other" text field, are not buttons and are never focused.
   - A disabled button, such as Claude's submit next to an empty "Other" field, is skipped.
 - **Index order follows the client.**
-  - In the probed Claude question card, the actionable buttons in tree order are a header button, the three options and the enabled submit button beside the "Other" field.
+  - In the probed Claude question card, the five actionable buttons in tree order are one above the options, the option buttons, and the enabled button after the "Other" field.
   - In the permission card they are its three answers.
   - In the Codex escalation card they are Deny and the button that starts with focus.
 - **Wheel turns.**
