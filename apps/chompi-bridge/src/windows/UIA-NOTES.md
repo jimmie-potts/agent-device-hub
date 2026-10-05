@@ -59,11 +59,44 @@ can change any of this. Re-qualify it alongside the bridge's qualified-version l
 - a bounded parent walk reaches that window;
 - the element is an `Edit` with the class token `ProseMirror` and a writable `ValuePattern`.
 
+## Approval cards
+
+Found on October 5, 2026 during the #743 trial, on Codex `26.930.3930.0` and Claude `2.19675.0.0`, by the same
+kind of read-only structure probe. Throwaway tasks opened the cards; the probe ran before, during and after each one.
+
+- **Claude.** An `AskUserQuestion` question card and a Bash permission card each render as exactly one `Group`
+  whose class list contains the token `epitaxy-approval-card`. It sits in the approval dock above the composer.
+  The composer `Edit` (`tiptap ProseMirror`) stays present and keeps keyboard focus while the card is open, so
+  composer focus alone cannot block Send. After the card closes, no element carries the token.
+- **Codex.** The escalation approval card has no distinctive class token. It replaces the composer: while it is
+  open, the window has no `Edit` with the `ProseMirror` token, and keyboard focus is on one of the card's
+  `Button`s, which Enter would activate. Before and after, the window has exactly one such `Edit`, focused.
+  Only this escalation card was observed. The owner's Codex configuration never asks for approval, so the card
+  appeared only after one throwaway task was switched to an asking mode.
+
+The helper's `approvalVisible` operation runs against the client's own foreground window and process, as
+`composerFocused` does, and refuses any other window (`window-mismatch`). It runs one `FindAll` over the window's
+descendants with a control-type condition (`Group` for Claude, `Edit` for Codex), caches only `ClassName` and
+counts the elements that carry the token. Offscreen elements count, so a pending card scrolled out of view still
+blocks Send. It never reads a Name or Value. The adapter decides:
+
+- Claude: `true` when at least one card exists, `false` when none does.
+- Codex: `false` only when exactly one composer exists. No composer is `unknown` (`codex-composer-absent`)
+  rather than `true`: the evidence shows that a card removes the composer, not that a missing composer means a
+  card, because another view could hide it too. Several composers are `unknown` (`codex-composer-count`). The
+  router refuses Send on every answer except `false`.
+- Either client not in front is `unknown` (`<client>-not-foreground`), as is any helper failure, malformed
+  reply or foreground change during the check.
+
+Re-qualify both selectors, with a card open in each client, when either client's version changes or a new kind
+of card appears.
+
 ## Not established
 
-- **Approval and permission cards.** None was open during probing, and opening one would need input. Both
-  clients therefore return `unknown` (`approval-detection-unqualified`) from `approvalVisible`. The core
-  fails closed, so Send stays blocked until #743 observes a card and qualifies a selector.
+- **Other card kinds.** Only Claude's question and permission cards and Codex's escalation card were opened.
+  The rules assume that other kinds, such as a Codex patch approval, carry the same token (Claude) or also
+  replace the composer (Codex). The composer-focus re-check before Send is a second guard: it refuses while
+  focus is on a card's button.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

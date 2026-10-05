@@ -23,7 +23,7 @@ Bundle inspection read code, key names and schemas, never task content.
 `D` means official documentation, `S` inspected source, built output,
 installed bundle, local configuration or filesystem artifact, `O` owner
 decision or report, and `L` an authorized live
-observation. This report contains no `L` evidence. `?` marks an unverified
+observation; the only `L` rows come from the #743 trial. `?` marks an unverified
 point that #743 must observe.
 
 | Item | Checked revision or version |
@@ -220,7 +220,7 @@ observation before anything depends on it in installed use.
 | Lifecycle and attention feed | Supported | The Hub already receives activity, `attention.approval` (no request ID) and unread for Codex Desktop | `S`: `providers.ts`, `apps/hub/src/codex-desktop.ts`; installed since #191 |
 | Archive signal | Supported | `SessionEnd` retires the session on archive or delete, but also on normal close and after 30 minutes idle and unopened in any connected client, so it is not an archive signal by itself. Archived threads appear as `archived_sessions/rollout-<timestamp>-<id>.jsonl` filenames in the Codex home | `D`, `S`: [provider qualification](provider-qualification.md); archive end accepted in #218 |
 | Composer focus | Supported | `Alt+L` moves focus to the main composer | `S`: bundle command table |
-| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. Whether Enter in a focused composer approves while a card is open is unverified. The Hub marker can outlive the request, which only over-blocks | `D`, `S` |
+| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run. The Hub marker can outlive the request, which only over-blocks | `D`, `S`, `L` |
 | Send | Supported | Keystroke only: Enter sends (`composerEnterBehavior = "enter"` in the owner's Codex config); mid-turn Enter queues. No non-keystroke send route exists | `S` |
 | Model change | Supported | `Ctrl+Shift+M` opens the model picker and `Alt+M` the recent model and effort combinations | `D`, `S` |
 | Effort change | Unverified | Increase, decrease and cycle commands exist without default keys. Binding one is a personal settings change outside the epic's current authority | `S` |
@@ -241,7 +241,7 @@ observation before anything depends on it in installed use.
 | Selected-session verification | Supported, undocumented | When a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. The window title is always "Claude". Split panes and pop-out windows are unverified | `S` |
 | Archive signal | Supported, undocumented | The same private store records `isArchived` and an `archived-sessions.idx` index. Archiving stops the Code process; whether that emits `SessionEnd` is unverified | `S` |
 | Composer focus | Unverified | Composer state is not stored locally; a UIA keyboard-focus check is the planned route | `S` |
-| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts. Whether Enter approves a focused permission card is unverified | `S` |
+| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run | `S`, `L` |
 | Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
 | Model and effort change | Unverified | Menu shortcuts are documented for macOS (Cmd+Shift+I, Cmd+Shift+E); the Windows mapping is unverified | `D` |
 | Model and effort readback | Supported, undocumented | Stored per-session values are readable | `S` |
@@ -327,7 +327,8 @@ invalid and sends nothing. A task switch invalidates pending input.
   draft and never sends. Disconnect, reload or a task switch releases held keys.
 - **Big-wheel click** sends one Enter to the verified composer. It is blocked
   while the Hub shows `attention.approval` for that session, or the approval
-  check is unknown, because Enter approves an open request in Codex. An
+  check finds a card or is unknown, because Enter approves an open request in
+  Codex. An
   uncertain Send is never retried. Small-knob clicks never send.
 - Avoid controls that collide with Wispr (left Ctrl + left Win, Ctrl+Win+Space,
   Esc dismiss) or Codex (Ctrl+Space, Ctrl+Q, Alt+L, Alt+M).

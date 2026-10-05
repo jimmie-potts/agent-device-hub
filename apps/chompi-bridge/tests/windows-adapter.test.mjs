@@ -225,12 +225,63 @@ test('codexSelectedThread prefers the name Codex keeps for the thread and fails 
   assert.deepEqual(await unset.codexSelectedThread(thread, CANARY_TITLE), { status: 'unknown', reason: 'codex-home-unset' });
 });
 
-test('approval-card detection is not qualified and stays unknown', async () => {
-  const helper = fakeHelper(() => ({ ok: true, value: {} }));
-  const instance = adapter(fakeWin32(), helper);
-  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'approval-detection-unqualified' });
-  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'approval-detection-unqualified' });
-  assert.equal(helper.calls.length, 0);
+test('Claude approval visibility counts approval cards in its foreground window', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  win32.state.root = 0x1200;
+  let reply = { ok: true, value: { approvalCards: 1 } };
+  const helper = fakeHelper(() => reply);
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'known', value: true });
+  assert.deepEqual(helper.calls, [{ op: 'approvalVisible', client: 'claude', hwnd: 0x1200, processId: 4242 }]);
+  reply = { ok: true, value: { approvalCards: 0 } };
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'known', value: false });
+  reply = { ok: true, value: { approvalCards: 2 } };
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'known', value: true }, 'several cards are still visible');
+  for (const value of [{}, { approvalCards: -1 }, { approvalCards: 1.5 }, { approvalCards: '1' }, { composers: 1 }, null, 7]) {
+    reply = { ok: true, value };
+    assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+  }
+  reply = { ok: false, reason: 'window-mismatch' };
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'window-mismatch' });
+  reply = { ok: false, reason: 'Not A Reason' };
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'helper-error' });
+});
+
+test('Codex approval visibility is false only while exactly one composer exists, because a card replaces it', async () => {
+  const win32 = fakeWin32();
+  let reply = { ok: true, value: { composers: 1 } };
+  const helper = fakeHelper(() => reply);
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'known', value: false });
+  assert.deepEqual(helper.calls, [{ op: 'approvalVisible', client: 'codex', hwnd: 0x1234, processId: 4242 }]);
+  reply = { ok: true, value: { composers: 0 } };
+  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'codex-composer-absent' });
+  reply = { ok: true, value: { composers: 2 } };
+  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'codex-composer-count' });
+  for (const value of [{}, { composers: -1 }, { composers: true }, { approvalCards: 0 }, null]) {
+    reply = { ok: true, value };
+    assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+  }
+  reply = { ok: false, reason: 'helper-timeout' };
+  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'helper-timeout' });
+});
+
+test('approval visibility is unknown when the client is not in front or the foreground moves during the check', async () => {
+  const win32 = fakeWin32();
+  const helper = fakeHelper(() => ({ ok: true, value: { approvalCards: 0 } }));
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'claude-not-foreground' });
+  win32.state.family = CLAUDE_PACKAGE_FAMILY;
+  assert.deepEqual(await instance.approvalVisible('codex'), { status: 'unknown', reason: 'codex-not-foreground' });
+  win32.state.hwnd = 0;
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'claude-not-foreground' }, 'no foreground window');
+  assert.equal(helper.calls.length, 0, 'no UI query for a window that is not the client');
+  win32.state.hwnd = 0x1234;
+  helper.request = async () => { win32.state.hwnd = 0x7777; return { ok: true, value: { approvalCards: 0 } }; };
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'foreground-changed' });
+  assert.deepEqual(await instance.approvalVisible('other'), { status: 'unknown', reason: 'invalid-client' });
+  await instance.close();
+  assert.deepEqual(await instance.approvalVisible('claude'), { status: 'unknown', reason: 'adapter-closed' });
 });
 
 test('clientVersions returns versions only and marks anything else unknown', async () => {
