@@ -25,5 +25,9 @@ void ServiceUsbSwitch(Board& board, uint32_t now);
 // Gives the lines back to the charger, as at power-on.
 void UsbReleaseLines(Board& board);
 
+// Takes the lines back to the Daisy and ends any pending lend, before a USB
+// restart (#743).
+void UsbReclaimLines(Board& board);
+
 } // namespace hw
 } // namespace agentctl

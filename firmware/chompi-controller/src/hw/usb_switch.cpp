@@ -92,5 +92,12 @@ void ServiceUsbSwitch(Board& board, uint32_t now)
 
 void UsbReleaseLines(Board& board) { board.usb_sw.Write(false); }
 
+void UsbReclaimLines(Board& board)
+{
+    board.usb_sw.Write(true);
+    usb_handoff = false;
+    usb_lent    = false;
+}
+
 } // namespace hw
 } // namespace agentctl
