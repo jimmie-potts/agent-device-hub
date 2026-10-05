@@ -336,7 +336,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
      * The helper reports `{ cards, buttons, focused }` (Codex adds `composers` and `selectedRows`); the adapter decides.
      * Claude: no card element is no card, one is the card, several are unknown. Codex: one composer is no card; no
      * composer is a card only with exactly one selected sidebar row and exactly one on-screen group holding text and two
-     * or more actionable buttons, with no focused button outside it; anything else, or several composers, is unknown.
+     * or more actionable buttons, wherever keyboard focus is; anything else, or several composers, is unknown.
      * Containers and button rules are in UIA-NOTES.md ("Card answers").
      */
     async cardButtons(client: Client): Promise<Observation<CardButtons | null>> {
@@ -344,23 +344,23 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       if (!isClient(client)) return unknown('invalid-client');
       type Reply = { kind: 'none' } | { kind: 'card'; card: CardButtons } | { kind: 'unknown'; reason: string };
       const reply = await windowQuery<Reply>(client, 'cardButtons', { client }, value => {
-        const { cards, buttons, focused, composers, selectedRows, cardGroups, focusElsewhere, cardId } = record(value);
+        const { cards, buttons, focused, composers, selectedRows, cardGroups, cardId } = record(value);
         if (!isCount(cards, 100000) || !isCount(buttons, MAX_CARD_BUTTONS)) return null;
         const index = focusedIndex(focused, buttons);
         if (index === undefined) return null;
         if (client === 'codex') {
-          if (!isCount(composers, 100000) || !isCount(selectedRows, 100000) || !isCount(cardGroups, MAX_CARD_GROUPS) || typeof focusElsewhere !== 'boolean') return null;
+          if (!isCount(composers, 100000) || !isCount(selectedRows, 100000) || !isCount(cardGroups, MAX_CARD_GROUPS)) return null;
           if (composers > 1) return { kind: 'unknown', reason: 'codex-composer-count' };
           if (composers === 1) return cards === 0 ? { kind: 'none' } : null;
           if (cards === 0) {
             // A Codex card belongs to the thread view (one selected sidebar row) and is the one on-screen group holding
-            // text and at least two actionable buttons; a focused button outside that group makes it unknown.
+            // text and at least two actionable buttons, wherever keyboard focus is.
             if (selectedRows !== 1) return { kind: 'unknown', reason: 'codex-selected-row-count' };
             if (cardGroups === 0) return { kind: 'unknown', reason: 'codex-card-unestablished' };
             if (cardGroups > 1) return { kind: 'unknown', reason: 'codex-card-ambiguous' };
-            return focusElsewhere ? { kind: 'unknown', reason: 'codex-card-focus-elsewhere' } : null;
+            return null;
           }
-          if (selectedRows !== 1 || cardGroups !== 1 || focusElsewhere) return null;
+          if (selectedRows !== 1 || cardGroups !== 1) return null;
         } else if (cards === 0) return { kind: 'none' };
         if (cards > 1) return { kind: 'unknown', reason: 'card-count' };
         if (typeof cardId !== 'string' || !CARD_ID.test(cardId)) return null;

@@ -152,7 +152,7 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
-const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
+const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
 test('the shipped helper script changes UI state only inside the two card operations', () => {
   // #821 deliberately narrows the old "never focuses or invokes" rule: FocusCardButton may set focus and
@@ -292,8 +292,9 @@ test('a Codex card is found by structure, without needing focus: one on-screen g
   assert.match(codex, /if \(\$groups\.Count -gt \$MaxCardGroups\) \{ Fail 'card-too-many-groups' \}/, 'bounded');
   assert.match(codex, /if \(\[bool\]\$group\.GetCachedPropertyValue\(\$AE::IsOffscreenProperty\)\) \{ continue \}/, 'off-screen groups are ignored');
   assert.match(codex, /\$none\.cardGroups = \$candidates\.Count\n\s+if \(\$candidates\.Count -ne 1\) \{ return \$none \}/, 'zero or several candidates: no card');
-  assert.match(codex, /\(FocusedIndex \$card\.buttons\) -lt 0 -and \(InsideWindow \$focused \$window\)\) \{ \$none\.focusElsewhere = \$true; return \$none \}/,
-    'a focused button outside the group: no card');
+  assert.equal(/FocusedElement|focusElsewhere|InsideWindow/.test(codex), false,
+    'focus never decides the Codex card: a focused sidebar row or menu button outside the stops leaves it established');
+  assert.match(codex, /return @\{ composers = 0; selectedRows = 1; cardGroups = 1; cards = 1; container = \$card\.group; buttons = \$card\.buttons \}/);
   assert.equal(/GetParent|TreeWalker/.test(codex), false, 'the card no longer starts from the focused button');
   const stops = functionBody(script, 'CodexGroupStops');
   assert.match(stops, /\$group\.FindAll\(\$Scope::Children, \$TextOrButton\)/, 'one cached read of the direct children per candidate');

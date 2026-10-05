@@ -123,17 +123,6 @@ function ApprovalVisible($request) {
 }
 
 # Card answers (#821). Counts and indexes only; no Name or Value is read.
-function InsideWindow($element, $window) {
-  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-  $node = $element
-  for ($depth = 0; $null -ne $node; $depth++) {
-    if ($depth -ge 256) { Fail 'focus-ancestry-too-deep' }
-    if ([System.Windows.Automation.Automation]::Compare($node, $window)) { return $true }
-    $node = $walker.GetParent($node)
-  }
-  return $false
-}
-
 # Actionable buttons in tree order: enabled Buttons with Invoke and without ExpandCollapse (menus open outside the card).
 # More than 64 Button elements in scope, before that filter, is an error.
 function CardButtonList($container, $scope) {
@@ -174,7 +163,7 @@ function FocusedIndex($buttons) {
 
 # Claude: the one element with the approval-card token. Codex (no token): only while no composer exists and exactly one
 # sidebar row is selected, the one on-screen Group directly holding at least one Text element and at least two actionable
-# buttons; a focused button outside it makes the card unknown.
+# buttons, wherever keyboard focus is.
 function CardContainer($request, $window) {
   $client = [string]$request.client
   $cache = New-Object System.Windows.Automation.CacheRequest
@@ -202,7 +191,7 @@ function CardContainer($request, $window) {
     if ($element.Cached.ControlType.Id -eq $EditId) { if (HasToken $classes $ComposerToken) { $composers++ } }
     elseif ($classes -and $classes.StartsWith($CodexRowPrefix, $Ordinal) -and (HasToken $classes $CodexSelectedToken)) { $selectedRows++ }
   }
-  $none = @{ composers = $composers; selectedRows = $selectedRows; cardGroups = 0; focusElsewhere = $false; cards = 0 }
+  $none = @{ composers = $composers; selectedRows = $selectedRows; cardGroups = 0; cards = 0 }
   if ($composers -ne 0 -or $selectedRows -ne 1) { return $none }
   # Codex does not reliably give its card keyboard focus, so the card is found by structure, not from focus: the one
   # on-screen Group that directly holds a Text element and at least two actionable buttons.
@@ -222,12 +211,9 @@ function CardContainer($request, $window) {
   }
   $none.cardGroups = $candidates.Count
   if ($candidates.Count -ne 1) { return $none }
+  # Focus elsewhere (Codex may leave it on the sidebar row) does not matter: a press needs a wheel step confirmed on a stop.
   $card = $candidates[0]
-  # A focused button elsewhere in the window means the structure does not match what the owner sees: unknown.
-  $focused = $AE::FocusedElement
-  if ($null -ne $focused -and $focused.Current.ProcessId -eq [int]$request.processId -and $focused.Current.ControlType.Id -eq $ButtonId -and
-    (FocusedIndex $card.buttons) -lt 0 -and (InsideWindow $focused $window)) { $none.focusElsewhere = $true; return $none }
-  return @{ composers = 0; selectedRows = 1; cardGroups = 1; focusElsewhere = $false; cards = 1; container = $card.group; buttons = $card.buttons }
+  return @{ composers = 0; selectedRows = 1; cardGroups = 1; cards = 1; container = $card.group; buttons = $card.buttons }
 }
 
 # A Codex card candidate's stops: its actionable direct-child buttons in tree order, when it also directly holds at
@@ -263,7 +249,7 @@ function CardButtons($request) {
   $card = CardContainer $request $window
   $value = [ordered]@{}
   if ([string]$request.client -eq 'codex') {
-    $value.composers = $card.composers; $value.selectedRows = $card.selectedRows; $value.cardGroups = $card.cardGroups; $value.focusElsewhere = $card.focusElsewhere
+    $value.composers = $card.composers; $value.selectedRows = $card.selectedRows; $value.cardGroups = $card.cardGroups
   }
   $value.cards = $card.cards
   if ($card.cards -eq 1) { $value.buttons = $card.buttons.Count; $value.focused = FocusedIndex $card.buttons; $value.cardId = CardId $card.container }

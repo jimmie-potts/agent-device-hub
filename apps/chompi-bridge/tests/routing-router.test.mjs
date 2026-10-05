@@ -1527,6 +1527,17 @@ test('card: a Codex card with nothing focused: one clockwise step focuses Deny a
   assert.deepEqual(approve.adapter.cardFocused, [['codex', 1]], 'a counter-clockwise step focuses the last stop, approve');
 });
 
+test('card: a Codex card stays usable while focus rests on a button outside it, such as the sidebar row', async t => {
+  // The adapter reports the card with no stop focused (focused: null) wherever focus is outside its stops.
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, null);
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0]], 'one clockwise step focuses Deny');
+  assert.equal(ctx.logs.filter(l => l.type === 'card-unknown').length, 0, 'the card was never unknown');
+});
+
 test('scroll counts never shorten the first card step', async t => {
   const ctx = await setup(t);
   front(ctx, 'claude');

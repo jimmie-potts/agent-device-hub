@@ -314,8 +314,8 @@ test('Claude card buttons come from the one approval card in its foreground wind
 
 test('a Codex card is the one on-screen group with text and two actionable buttons in the thread view, focused or not', async () => {
   const win32 = fakeWin32();
-  const base = { composers: 0, selectedRows: 1, cardGroups: 1, focusElsewhere: false };
-  let reply = { ok: true, value: { composers: 1, selectedRows: 1, cardGroups: 0, focusElsewhere: false, cards: 0, buttons: 0, focused: -1 } };
+  const base = { composers: 0, selectedRows: 1, cardGroups: 1 };
+  let reply = { ok: true, value: { composers: 1, selectedRows: 1, cardGroups: 0, cards: 0, buttons: 0, focused: -1 } };
   const helper = fakeHelper(() => reply);
   const instance = adapter(win32, helper);
   assert.deepEqual(await instance.cardButtons('codex'), { status: 'known', value: null }, 'a composer is present: no card');
@@ -330,8 +330,10 @@ test('a Codex card is the one on-screen group with text and two actionable butto
     'no on-screen group with text and two actionable buttons: off-screen message actions and the text-less side strip never count');
   reply = { ok: true, value: { ...base, cardGroups: 2, cards: 0, buttons: 0, focused: -1 } };
   assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-card-ambiguous' }, 'two candidate groups');
-  reply = { ok: true, value: { ...base, focusElsewhere: true, cards: 0, buttons: 0, focused: -1 } };
-  assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-card-focus-elsewhere' }, 'a focused button outside the group');
+  // Codex may leave keyboard focus on the sidebar row, a button outside the card group: the card stays established.
+  reply = { ok: true, value: { ...base, cards: 1, buttons: 2, focused: -1, cardId: '42.-9.4' } };
+  assert.deepEqual(await instance.cardButtons('codex'), { status: 'known', value: { id: '42.-9.4', count: 2, focused: null } },
+    'a focused sidebar-like button outside the group still gives the card, with no stop focused');
   for (const selectedRows of [0, 2]) {
     reply = { ok: true, value: { ...base, selectedRows, cardGroups: 0, cards: 0, buttons: 0, focused: -1 } };
     assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-selected-row-count' },
@@ -345,10 +347,8 @@ test('a Codex card is the one on-screen group with text and two actionable butto
     { cards: 1, buttons: 2, focused: 0 },
     { composers: 0, selectedRows: 1, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
     { ...base, cardGroups: 513, cards: 0, buttons: 0, focused: -1 },
-    { ...base, focusElsewhere: 'no', cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
     { ...base, selectedRows: 2, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
     { ...base, cardGroups: 2, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
-    { ...base, focusElsewhere: true, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
     { ...base, composers: 1, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
     { ...base, cards: 0, buttons: 0, focused: -1 },
     { ...base, composers: -1, cards: 0, buttons: 0, focused: -1 },
@@ -357,6 +357,7 @@ test('a Codex card is the one on-screen group with text and two actionable butto
     assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
   }
 });
+
 test('focusing and pressing a card button pass only an index and a count and read back indexes and booleans', async () => {
   const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
   let reply = { ok: true, value: { focused: 1 } };
