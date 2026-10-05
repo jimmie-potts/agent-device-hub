@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { HELPER_FOCUS_SETTLE_MS } from './routing-helpers.mjs';
 import { asciiJson, encodeHelperCommand, HELPER_LOADER, HELPER_SCRIPT_ENV, helperLaunch, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
 
 /** A scripted stand-in for the PowerShell helper process. */
@@ -259,6 +260,7 @@ test('FocusCardButton reads focus back in a bounded poll, because Claude applies
   const script = readFileSync(helperScriptPath(), 'utf8');
   assert.match(script, /^\$FocusPollMs = 25$/m);
   assert.match(script, /^\$FocusSettleMs = 400$/m, 'well inside the 4 s helper request timeout and the 2 s adapter call timeout');
+  assert.equal(HELPER_FOCUS_SETTLE_MS, 400, 'the routing fake adapter models the same read-back bound');
   const body = functionBody(script, 'FocusCardButton');
   const setFocus = body.indexOf('.SetFocus()');
   const poll = body.indexOf('while ($observed -ne $index -and $clock.ElapsedMilliseconds -lt $FocusSettleMs) {');
