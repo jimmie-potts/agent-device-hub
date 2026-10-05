@@ -1506,6 +1506,27 @@ test('card: a still click during a lagging focus read-back is refused and presse
   assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]], 'a later still click presses the chosen option');
 });
 
+test('card: a Codex card with nothing focused: one clockwise step focuses Deny and a still click presses it', async t => {
+  // Live check on 2026-10-05: Codex gave its escalation card no keyboard focus.
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, null);
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0]], 'the first stop, Deny');
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 0]]);
+  assert.equal(ctx.adapter.enters, 0);
+
+  const approve = await setup(t);
+  front(approve, 'codex');
+  approve.adapter.openCard('codex', 2, null);
+  approve.turn(45, -STEP);
+  await settle();
+  assert.deepEqual(approve.adapter.cardFocused, [['codex', 1]], 'a counter-clockwise step focuses the last stop, approve');
+});
+
 test('scroll counts never shorten the first card step', async t => {
   const ctx = await setup(t);
   front(ctx, 'claude');

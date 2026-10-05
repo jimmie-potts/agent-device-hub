@@ -10,6 +10,11 @@ Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $Scope = [System.Windows.Automation.TreeScope]
 $EditId = [System.Windows.Automation.ControlType]::Edit.Id
+$ButtonId = [System.Windows.Automation.ControlType]::Button.Id
+$TextId = [System.Windows.Automation.ControlType]::Text.Id
+$TextOrButton = [System.Windows.Automation.OrCondition]::new([System.Windows.Automation.Condition[]]@(
+  (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)),
+  (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button))))
 $Ordinal = [System.StringComparison]::Ordinal
 $Packages = [ordered]@{ codex = 'OpenAI.Codex_2p2nqsd0c76g0'; claude = 'Claude_pzs8sxrjxfjjc' }
 $CodexRowPrefix = 'group relative cursor-interaction'
@@ -17,6 +22,8 @@ $CodexSelectedToken = 'bg-primary-ghost-hover'
 $ComposerToken = 'ProseMirror'
 $ClaudeApprovalToken = 'epitaxy-approval-card'
 $MaxCardButtons = 64
+# Codex cards are found among the window's Group elements; more than this many is not qualified.
+$MaxCardGroups = 512
 # Claude answer rows (and its "Other" row) carry this class token; header, footer and submit buttons do not.
 $ClaudeAnswerToken = 'text-left'
 # Claude applies focus asynchronously: after a focus request, read focus back every 25 ms for at most 400 ms.
@@ -166,8 +173,8 @@ function FocusedIndex($buttons) {
 }
 
 # Claude: the one element with the approval-card token. Codex (no token): only while no composer exists and exactly one
-# sidebar row is selected, the control-view parent Group of the focused actionable button, holding at least one Text
-# child and at least two actionable buttons as direct children.
+# sidebar row is selected, the one on-screen Group directly holding at least one Text element and at least two actionable
+# buttons; a focused button outside it makes the card unknown.
 function CardContainer($request, $window) {
   $client = [string]$request.client
   $cache = New-Object System.Windows.Automation.CacheRequest
@@ -195,18 +202,57 @@ function CardContainer($request, $window) {
     if ($element.Cached.ControlType.Id -eq $EditId) { if (HasToken $classes $ComposerToken) { $composers++ } }
     elseif ($classes -and $classes.StartsWith($CodexRowPrefix, $Ordinal) -and (HasToken $classes $CodexSelectedToken)) { $selectedRows++ }
   }
-  $none = @{ composers = $composers; selectedRows = $selectedRows; cards = 0 }
+  $none = @{ composers = $composers; selectedRows = $selectedRows; cardGroups = 0; focusElsewhere = $false; cards = 0 }
   if ($composers -ne 0 -or $selectedRows -ne 1) { return $none }
+  # Codex does not reliably give its card keyboard focus, so the card is found by structure, not from focus: the one
+  # on-screen Group that directly holds a Text element and at least two actionable buttons.
+  $groupCache = New-Object System.Windows.Automation.CacheRequest
+  $groupCache.Add($AE::ClassNameProperty)
+  $groupCache.Add($AE::IsOffscreenProperty)
+  $groupCache.Push()
+  try {
+    $groups = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Group)))
+  } finally { $groupCache.Pop() }
+  if ($groups.Count -gt $MaxCardGroups) { Fail 'card-too-many-groups' }
+  $candidates = New-Object 'System.Collections.Generic.List[object]'
+  foreach ($group in $groups) {
+    if ([bool]$group.GetCachedPropertyValue($AE::IsOffscreenProperty)) { continue }
+    $stops = CodexGroupStops $group
+    if ($null -ne $stops) { $candidates.Add(@{ group = $group; buttons = $stops }) }
+  }
+  $none.cardGroups = $candidates.Count
+  if ($candidates.Count -ne 1) { return $none }
+  $card = $candidates[0]
+  # A focused button elsewhere in the window means the structure does not match what the owner sees: unknown.
   $focused = $AE::FocusedElement
-  if ($null -eq $focused -or $focused.Current.ProcessId -ne [int]$request.processId -or $focused.Current.ControlType.Id -ne [System.Windows.Automation.ControlType]::Button.Id) { return $none }
-  if (-not (InsideWindow $focused $window)) { return $none }
-  $parent = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($focused)
-  if ($null -eq $parent -or $parent.Current.ControlType.Id -ne [System.Windows.Automation.ControlType]::Group.Id) { return $none }
-  $texts = $parent.FindAll($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)))
-  if ($texts.Count -lt 1) { return $none }
-  $buttons = CardButtonList $parent $Scope::Children
-  if ($buttons.Count -lt 2 -or (FocusedIndex $buttons) -lt 0) { return $none }
-  return @{ composers = 0; selectedRows = 1; cards = 1; container = $parent; buttons = $buttons }
+  if ($null -ne $focused -and $focused.Current.ProcessId -eq [int]$request.processId -and $focused.Current.ControlType.Id -eq $ButtonId -and
+    (FocusedIndex $card.buttons) -lt 0 -and (InsideWindow $focused $window)) { $none.focusElsewhere = $true; return $none }
+  return @{ composers = 0; selectedRows = 1; cardGroups = 1; focusElsewhere = $false; cards = 1; container = $card.group; buttons = $card.buttons }
+}
+
+# A Codex card candidate's stops: its actionable direct-child buttons in tree order, when it also directly holds at
+# least one Text element and at most 64 Button children; otherwise $null. One FindAll of its children, cached.
+function CodexGroupStops($group) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ControlTypeProperty)
+  $cache.Add($AE::IsEnabledProperty)
+  $cache.Add($AE::IsInvokePatternAvailableProperty)
+  $cache.Add($AE::IsExpandCollapsePatternAvailableProperty)
+  $cache.Push()
+  try { $children = $group.FindAll($Scope::Children, $TextOrButton) } finally { $cache.Pop() }
+  $texts = 0; $buttons = 0
+  $stops = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
+  foreach ($child in $children) {
+    $type = $child.Cached.ControlType.Id
+    if ($type -eq $TextId) { $texts++ }
+    elseif ($type -eq $ButtonId) {
+      $buttons++
+      if ([bool]$child.GetCachedPropertyValue($AE::IsEnabledProperty) -and [bool]$child.GetCachedPropertyValue($AE::IsInvokePatternAvailableProperty) -and
+        -not [bool]$child.GetCachedPropertyValue($AE::IsExpandCollapsePatternAvailableProperty)) { $stops.Add($child) }
+    }
+  }
+  if ($texts -lt 1 -or $buttons -gt $MaxCardButtons -or $stops.Count -lt 2) { return $null }
+  return ,$stops
 }
 
 # The card's identity: its container's UI Automation runtime ID, assumed never shared by a new card. An ID, not text.
@@ -216,7 +262,9 @@ function CardButtons($request) {
   $window = TargetWindow $request
   $card = CardContainer $request $window
   $value = [ordered]@{}
-  if ([string]$request.client -eq 'codex') { $value.composers = $card.composers; $value.selectedRows = $card.selectedRows }
+  if ([string]$request.client -eq 'codex') {
+    $value.composers = $card.composers; $value.selectedRows = $card.selectedRows; $value.cardGroups = $card.cardGroups; $value.focusElsewhere = $card.focusElsewhere
+  }
   $value.cards = $card.cards
   if ($card.cards -eq 1) { $value.buttons = $card.buttons.Count; $value.focused = FocusedIndex $card.buttons; $value.cardId = CardId $card.container }
   else { $value.buttons = 0; $value.focused = -1; $value.cardId = '' }

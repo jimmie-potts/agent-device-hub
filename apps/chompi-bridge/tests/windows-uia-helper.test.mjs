@@ -152,7 +152,7 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
-const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'ClaudeStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
+const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
 test('the shipped helper script changes UI state only inside the two card operations', () => {
   // #821 deliberately narrows the old "never focuses or invokes" rule: FocusCardButton may set focus and
@@ -237,11 +237,6 @@ test('the card operations are scoped to the target window, bounded, and read no 
   assert.match(list, /-gt \$MaxCardButtons\) \{ Fail 'card-too-many-buttons' \}/);
   const container = functionBody(script, 'CardContainer');
   assert.match(container, /HasToken \$element\.Cached\.ClassName \$ClaudeApprovalToken/, 'Claude: the approval-card token');
-  assert.match(container, /ControlType\]::Group/, 'Codex: the focused button\'s parent group');
-  assert.match(container, /CardButtonList \$parent \$Scope::Children/, 'Codex: the group holds the buttons directly');
-  assert.match(container, /-lt 2/, 'Codex: at least two actionable buttons');
-  assert.match(container, /\$parent\.FindAll\(\$Scope::Children, \(Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Text\)\)\)/, 'Codex: and at least one Text child');
-  assert.match(container, /\$texts\.Count -lt 1\) \{ return \$none \}/);
   assert.match(container, /\$classes\.StartsWith\(\$CodexRowPrefix, \$Ordinal\) -and \(HasToken \$classes \$CodexSelectedToken\)/, 'Codex: selected sidebar rows are counted');
   assert.match(container, /\$selectedRows -ne 1\) \{ return \$none \}/, 'Codex: exactly one selected row, the thread view');
   assert.match(functionBody(script, 'CardRequest'), /\(CardId \$card\.container\), \[string\]\$request\.cardId, \$Ordinal\)\) \{ Fail 'card-changed' \}/, 'focus and press act only on the card named');
@@ -280,8 +275,34 @@ test('a Claude question card stops only on its answer rows; permission cards and
   assert.match(functionBody(script, 'CardButtonList'), /\$cache\.Add\(\$AE::ClassNameProperty\)/);
   const container = functionBody(script, 'CardContainer');
   assert.match(container, /buttons = \(ClaudeStops \(CardButtonList \$cards\[0\] \$Scope::Descendants\)\)/, 'Claude cards use the stop rule');
-  assert.match(container, /\$buttons = CardButtonList \$parent \$Scope::Children\n/, 'Codex cards do not');
+  assert.match(container, /\$stops = CodexGroupStops \$group\n/, 'Codex cards do not');
   assert.equal(container.match(/ClaudeStops/g).length, 1);
+});
+
+test('a Codex card is found by structure, without needing focus: one on-screen group with text and two actionable buttons', () => {
+  // Live check on 2026-10-05: Codex showed its escalation card with no element focused, so the card cannot be found
+  // from the focused button.
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /^\$MaxCardGroups = 512$/m);
+  const container = functionBody(script, 'CardContainer');
+  const codex = container.slice(container.indexOf('$composers = 0; $selectedRows = 0'));
+  assert.match(codex, /if \(\$composers -ne 0 -or \$selectedRows -ne 1\) \{ return \$none \}/, 'a composer present, or not exactly one selected row: no search');
+  assert.match(codex, /\$groupCache\.Add\(\$AE::ClassNameProperty\)\n\s+\$groupCache\.Add\(\$AE::IsOffscreenProperty\)/, 'one cached FindAll of Group elements');
+  assert.match(codex, /\$window\.FindAll\(\$Scope::Descendants, \(Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Group\)\)\)/);
+  assert.match(codex, /if \(\$groups\.Count -gt \$MaxCardGroups\) \{ Fail 'card-too-many-groups' \}/, 'bounded');
+  assert.match(codex, /if \(\[bool\]\$group\.GetCachedPropertyValue\(\$AE::IsOffscreenProperty\)\) \{ continue \}/, 'off-screen groups are ignored');
+  assert.match(codex, /\$none\.cardGroups = \$candidates\.Count\n\s+if \(\$candidates\.Count -ne 1\) \{ return \$none \}/, 'zero or several candidates: no card');
+  assert.match(codex, /\(FocusedIndex \$card\.buttons\) -lt 0 -and \(InsideWindow \$focused \$window\)\) \{ \$none\.focusElsewhere = \$true; return \$none \}/,
+    'a focused button outside the group: no card');
+  assert.equal(/GetParent|TreeWalker/.test(codex), false, 'the card no longer starts from the focused button');
+  const stops = functionBody(script, 'CodexGroupStops');
+  assert.match(stops, /\$group\.FindAll\(\$Scope::Children, \$TextOrButton\)/, 'one cached read of the direct children per candidate');
+  assert.match(stops, /if \(\$texts -lt 1 -or \$buttons -gt \$MaxCardButtons -or \$stops\.Count -lt 2\) \{ return \$null \}/,
+    'a group without text (the side strip), with over 64 buttons or with fewer than two actionable buttons (message actions) is not a card');
+  assert.match(stops, /-not \[bool\]\$child\.GetCachedPropertyValue\(\$AE::IsExpandCollapsePatternAvailableProperty\)/, 'the menu button is not a stop');
+  for (const forbidden of [/NameProperty(?<!ClassNameProperty)/, /\.Name\b/, /ValuePattern/, /\.Value\b/]) {
+    assert.equal(forbidden.test(stops) || forbidden.test(codex), false, `the Codex card search must not use ${forbidden}`);
+  }
 });
 
 const NON_ASCII_TITLES = ['Résumé café', 'Plan \u2014 review', '\u4efb\u52a1\u8def\u7531', 'Ship it \u{1f680}', 'mixed \u00e9\u2014\u4e2d\u{1f600}\u0000\u007f'];
