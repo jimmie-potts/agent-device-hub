@@ -48,6 +48,12 @@ which owns installation and physical acceptance; neither is complete.
 - Sends a `heartbeat` every 500 ms with the last applied frame (0 after a
   host timeout until a new frame applies) and whether the host heartbeat is
   current.
+- Recovers its USB connection without a power cycle. Once the device has been
+  unconfigured for 3 s, after an unplug and replug, a cable bump or a brief drop
+  of the data lines, it restarts its USB device (detach, re-initialize,
+  re-attach) and retries every 5 s; the host then enumerates it again and a new
+  epoch starts. A configured device, including one suspended under a sleeping
+  host, is never restarted.
 
 It never mounts the SD card, so it cannot change music data. It has no audio,
 no MIDI and no CDC serial port, and it does not present the stock
