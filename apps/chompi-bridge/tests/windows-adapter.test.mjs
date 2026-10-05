@@ -37,7 +37,8 @@ function fakeHelper(handler) {
 }
 
 function adapter(win32, helper = fakeHelper(() => ({ ok: false, reason: 'unused' })), extra = {}) {
-  return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', ...extra });
+  // A fixed empty environment: results must not depend on the host's Program Files or profile.
+  return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', env: {}, ...extra });
 }
 
 test('the Windows adapter implements interface version 2', async () => {
@@ -46,6 +47,24 @@ test('the Windows adapter implements interface version 2', async () => {
   assert.equal(instance.version, 2);
   assert.equal(instance.platform, 'win32');
   await instance.close();
+});
+
+test('foregroundWindow takes the package family from a WindowsApps image path when the process has no identity', async () => {
+  // Codex Desktop 26.930's window process (ChatGPT.exe) runs from its package folder without package identity.
+  const win32 = fakeWin32({ family: null, image: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' });
+  const instance = adapter(win32, undefined, { programFiles: 'C:\\Program Files' });
+  assert.deepEqual(await instance.foregroundWindow(), { status: 'known', value: { packageIdentity: CODEX_PACKAGE_FAMILY, processName: 'ChatGPT.exe' } });
+  win32.state.image = 'C:\\Users\\me\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\ChatGPT.exe';
+  assert.deepEqual(await instance.foregroundWindow(), { status: 'known', value: { packageIdentity: null, processName: 'ChatGPT.exe' } }, 'outside WindowsApps: none');
+  win32.state.family = CLAUDE_PACKAGE_FAMILY;
+  win32.state.image = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';
+  assert.equal((await instance.foregroundWindow()).value.packageIdentity, CLAUDE_PACKAGE_FAMILY, 'a real package identity always wins');
+  await instance.close();
+  // Default root: the 64-bit Program Files (ProgramW6432) wins over a 32-bit ProgramFiles.
+  const fromEnv = adapter(fakeWin32({ family: null, image: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' }),
+    undefined, { env: { ProgramW6432: 'C:\\Program Files', ProgramFiles: 'C:\\Program Files (x86)' } });
+  assert.equal((await fromEnv.foregroundWindow()).value.packageIdentity, CODEX_PACKAGE_FAMILY);
+  await fromEnv.close();
 });
 
 test('foregroundWindow reports package identity and process image name only', async () => {
@@ -330,6 +349,31 @@ test('a new foreground process ID for a client invalidates the cached versions',
   await instance.foregroundWindow();
   await instance.clientVersions();
   assert.equal(fetches(), 4, 'returning to the known Codex process keeps the refreshed cache');
+});
+
+test('a new process of an identity-less Codex window invalidates the cached versions too', async () => {
+  let version = '26.930.3930.0';
+  const helper = fakeHelper(op => (op === 'ping'
+    ? { ok: true, value: { pong: true } }
+    : { ok: true, value: { codex: { version }, claude: { version: '2.19675.0.0' } } }));
+  helper.starts = 1;
+  const image = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';
+  const win32 = fakeWin32({ family: null, image });
+  const instance = createWindowsAdapter({ win32: async () => win32, helper, env: {}, programFiles: 'C:\\Program Files' });
+  const fetches = () => helper.calls.filter(call => call.op === 'clientVersions').length;
+  await instance.warmUp();
+  await instance.foregroundWindow();
+  await instance.clientVersions();
+  const seen = fetches();
+  version = '27.0.0.0';
+  win32.state.pid = 9000; // Codex restarted after an update
+  await instance.foregroundWindow();
+  assert.equal((await instance.clientVersions()).codex.value, '27.0.0.0', 'the derived family tracks the client process');
+  assert.equal(fetches(), seen + 1);
+  helper.calls.length = 0;
+  await instance.composerFocused('codex');
+  assert.equal(helper.calls.some(call => call.op === 'composerFocused'), true, 'the helper is asked about the identity-less Codex window');
+  await instance.close();
 });
 
 test('a process change seen while versions are being fetched is not lost', async () => {

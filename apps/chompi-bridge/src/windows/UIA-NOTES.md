@@ -14,7 +14,8 @@ can change any of this. Re-qualify it alongside the bridge's qualified-version l
 - The window title is static, so the helper never reads it.
 - Chromium keeps a focused element inside a background window. `AutomationElement.FocusedElement` named the
   Codex composer `Edit` while an unpackaged terminal was the Win32 foreground window. So the adapter first
-  checks `GetForegroundWindow` and the package family. It sends the helper a request only for the client's
+  checks `GetForegroundWindow` and the package family (Codex's window process has no package identity, so the
+  adapter takes its family from its `WindowsApps` package folder). It sends the helper a request only for the client's
   own foreground top-level window (`GA_ROOTOWNER`), and checks the foreground again after the reply.
 - Walking the Codex tree with `TreeWalker.ControlViewWalker` loops back into the window's own subtree under a
   `RootView` pane. `FindAll` does not loop, so the helper uses `FindAll` with conditions, plus a bounded

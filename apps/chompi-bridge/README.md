@@ -117,8 +117,11 @@ conversation text crosses it. `createOsAdapter()` returns the Windows adapter (`
 unsupported adapter elsewhere, whose observations are all `unknown`, so every focus fails closed and nothing is typed.
 
 The Windows adapter uses [koffi](https://koffi.dev/) FFI for `SendInput`, `GetForegroundWindow`, package identity and
-`ShellExecute`, and a long-lived PowerShell UI Automation helper (`src/windows/uia-helper.ps1`, started with
-`-EncodedCommand`) for the composer and Codex selected-row checks. It reads Codex archive filenames and Claude Desktop
+`ShellExecute`. A window process without package identity, such as Codex Desktop's `ChatGPT.exe`, is identified by the
+installed package folder its image runs from directly under the 64-bit Program Files' `WindowsApps` (`ProgramW6432`,
+else `ProgramFiles`, on a drive letter), which only the installer can
+write; a real package identity always wins. A long-lived PowerShell UI Automation helper (`src/windows/uia-helper.ps1`,
+started with `-EncodedCommand`) handles the composer and Codex selected-row checks. It reads Codex archive filenames and Claude Desktop
 session records by name and key only, and Codex's own thread names from `session_index.jsonl` in the Codex home (only
 `id`, `thread_name` and `updated_at`; a thread's last line is its current name). Its observations follow the clients' current UI, recorded in
 [UIA-NOTES.md](src/windows/UIA-NOTES.md):

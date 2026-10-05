@@ -8,6 +8,7 @@ import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
 import { KeyboardError, OpenUriError } from './errors.js';
 import { Keyboard } from './keyboard.js';
 import { MAX_SCROLL_NOTCHES, pointInRect, WHEEL_DELTA } from './mouse.js';
+import { packageFamilyFromImagePath } from './package-path.js';
 import { UiaHelper, type UiaHelperLike, type UiaHelperOptions } from './uia-helper.js';
 import { parseDeepLink, THREAD_ID } from './uri.js';
 import { loadWin32Api, type Win32Api } from './win32.js';
@@ -18,6 +19,8 @@ export interface WindowsAdapterOptions {
   /** The UI Automation helper (default: a `UiaHelper` started on first use). */
   helper?: UiaHelperLike;
   helperOptions?: UiaHelperOptions;
+  /** Program Files folder whose `WindowsApps` holds installed packages (default: `ProgramW6432`, else `ProgramFiles`). */
+  programFiles?: string;
   /** Codex home (default: `CODEX_HOME`, else `%USERPROFILE%\.codex`). */
   codexHome?: string;
   /** Claude Desktop `claude-code-sessions` directory (default: under the package's `LocalCache` in `%LOCALAPPDATA%`). */
@@ -98,6 +101,7 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
   };
   const uia = () => (helper ??= new UiaHelper(options.helperOptions));
 
+  const programFiles = () => options.programFiles ?? env.ProgramW6432 ?? env.ProgramFiles;
   const codexHome = () => options.codexHome ?? env.CODEX_HOME ?? (env.USERPROFILE ? winPath.join(env.USERPROFILE, '.codex') : undefined);
   const claudeRoot = () => options.claudeSessionsRoot
     ?? (env.LOCALAPPDATA ? winPath.join(env.LOCALAPPDATA, 'Packages', CLAUDE_PACKAGE_FAMILY, 'LocalCache', 'Roaming', 'Claude', 'claude-code-sessions') : undefined);
@@ -116,9 +120,11 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       const root = loaded.rootOwner(hwnd) || hwnd;
       // A foreground change during the lookup would mix two windows' facts.
       if (loaded.foregroundWindow() !== hwnd) return unknown('foreground-changed');
-      noteClientProcess(identity.packageFamily, pid);
+      // Codex Desktop's window process runs from its package folder without package identity.
+      const packageIdentity = identity.packageFamily ?? packageFamilyFromImagePath(identity.imagePath, programFiles());
+      noteClientProcess(packageIdentity, pid);
       const processName = identity.imagePath ? winPath.basename(identity.imagePath) : null;
-      return known({ hwnd, root, pid, packageIdentity: identity.packageFamily, processName });
+      return known({ hwnd, root, pid, packageIdentity, processName });
     } catch {
       return unknown('win32-call-failed');
     }
