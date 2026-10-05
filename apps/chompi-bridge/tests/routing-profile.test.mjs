@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
-import { advance, settle, tempDir } from './routing-helpers.mjs';
+import { advance, onCleanup, settle, tempDir } from './routing-helpers.mjs';
 
 const shipped = () => JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8'));
 const issues = fn => { try { fn(); } catch (error) { assert.ok(error instanceof ProfileError, String(error)); assert.equal(error.code, 'invalid-profile'); return error.issues; } assert.fail('expected ProfileError'); };
@@ -134,7 +134,7 @@ test('reload swaps in a valid edit, keeps the last good profile on an invalid on
   const reloaded = [], rejected = [];
   const initial = await loadProfile(path);
   const watcher = new ProfileWatcher({ path, initial, clock, onReload: p => reloaded.push(p), onReject: e => rejected.push(e) });
-  t.after(() => watcher.stop());
+  onCleanup(t, () => watcher.stop());
 
   assert.equal(await watcher.check(), 'unchanged');
   writeFileSync(path, JSON.stringify({ ...shipped(), brightnessPercent: 10 }));

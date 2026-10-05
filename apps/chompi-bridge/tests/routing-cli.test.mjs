@@ -9,7 +9,7 @@ import { ChompiSimulator } from '../dist/simulator.js';
 import { FakeTransport } from '../dist/fake-transport.js';
 import { DEFAULT_PROFILE_PATH } from '../dist/routing/profile.js';
 import { CONTROLLER } from './helpers.mjs';
-import { FakeAdapter, FakeHub, advance, codexTask, settle, tempDir, tid } from './routing-helpers.mjs';
+import { FakeAdapter, FakeHub, advance, codexTask, onCleanup, settle, tempDir, tid } from './routing-helpers.mjs';
 
 const TOKEN = 'cli-secret-token-abcdef';
 
@@ -64,7 +64,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   const clock = new ManualClock(1_700_000_000_000);
   const simulator = new ChompiSimulator({ clock });
   simulator.plug();
-  t.after(() => simulator.unplug());
+  onCleanup(t, () => simulator.unplug());
   const hub = new FakeHub();
   hub.sessions = [codexTask(1)];
   const adapter = new FakeAdapter(clock);
@@ -133,7 +133,7 @@ test('routing warms the adapter first and releases keys on exit and on an uncaug
   const clock = new ManualClock(1_700_000_000_000);
   const simulator = new ChompiSimulator({ clock });
   simulator.plug();
-  t.after(() => simulator.unplug());
+  onCleanup(t, () => simulator.unplug());
   const hub = new FakeHub();
   const adapter = new FakeAdapter(clock);
   const hooks = Object.assign(new EventEmitter(), { exits: [], exit(code) { this.exits.push(code); } });

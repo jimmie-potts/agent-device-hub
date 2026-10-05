@@ -4,14 +4,16 @@ import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'n
 import { join } from 'node:path';
 import { SLOT_COUNT, SlotStateError, SlotStore, candidatesFromSessions, sessionsForSlot } from '../dist/routing/slots.js';
 import { ManualClock } from '../dist/clock.js';
-import { claudeTask, codexTask, hubSession, lid, tempDir, tid, view } from './routing-helpers.mjs';
+import { claudeTask, codexTask, hubSession, lid, onCleanup, tempDir, tid, view } from './routing-helpers.mjs';
 
 const candidates = sessions => candidatesFromSessions(view(sessions).sessions);
 const assignment = store => Object.fromEntries(store.entries().map(r => [r.slot, r.taskId]));
 
 async function open(t, dir = tempDir(t)) {
   const path = join(dir, 'state', 'slots.json');
-  return { path, dir, store: await SlotStore.open(path, { clock: new ManualClock(1_700_000_000_000) }) };
+  const store = await SlotStore.open(path, { clock: new ManualClock(1_700_000_000_000) });
+  onCleanup(t, () => store.flush());
+  return { path, dir, store };
 }
 
 test('first-free assignment uses the lowest free slot and sorts simultaneous discoveries deterministically', async t => {
