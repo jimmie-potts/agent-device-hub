@@ -585,9 +585,13 @@ test('matrix: a wheel click and Play share one repeat window', async t => {
   assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
   await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
   await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 2, 'Play sends after the window');
+  const refusals = () => ctx.logs.filter(entry => entry.type === 'send-refused').length;
+  const before = refusals();
   await advance(ctx.clock, 200, 50);
   await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 2, 'Play then the wheel also types one Enter');
+  assert.equal(ctx.adapter.enters, 2, 'the wheel inside the window after Play types nothing');
+  assert.equal(refusals(), before + 1);
   assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
 });
 
