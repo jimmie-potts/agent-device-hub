@@ -260,10 +260,12 @@ colors, so focusing a task never looks like acknowledging it. The Record LED sho
     the front;
   - the exact task is selected. Codex: the thread's name (Codex's own, else the Hub's title) is on the selected row
     and on no other row. Claude: only the target's `lastFocusedAt` moved past the press. Claude Desktop stamps it
-    only when the selection changes, so a press for the session Claude already shows verifies another way: before
-    the link, Claude was in front and the target's `lastFocusedAt` was strictly the newest of every known Desktop
-    session; after the link, it still is and no other session's moved past the press. A tie, an incomplete read or
-    any unknown answer does not count;
+    only when the selection changes, so a press for the session Claude already shows also verifies when Claude was
+    in front before the link and the target was strictly newest among known sessions (slot records and Hub
+    `hostSessionId`s, read completely), and after the link it still is and no other session's moved past the press.
+    A tie, Claude not in front, an incomplete read or any unknown answer gives no extra evidence; the advance rule
+    applies. Residual: the window's view is unobserved, so Code home, the Chat tab or an unknown session in front is
+    covered only by the link navigating;
   - the composer has focus.
 
   Observations are polled; the link and keystrokes are never repeated.
