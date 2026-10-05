@@ -85,20 +85,21 @@ function ComposerFocused($request) {
   return @{ focused = (-not $pattern.Current.IsReadOnly) }
 }
 
-# Claude: approval and question cards in the window, offscreen ones included. Codex: composers in the window, because
-# its approval card replaces the composer. Counts class tokens only; the adapter decides.
+# Claude: elements of any control type carrying the approval-card token (its question and permission cards), offscreen
+# ones included. Codex: composers, because its approval card replaces the composer. Searches the control view and
+# counts class tokens only; the adapter decides.
 function ApprovalVisible($request) {
   $window = TargetWindow $request
   switch ([string]$request.client) {
-    'claude' { $type = [System.Windows.Automation.ControlType]::Group; $token = $ClaudeApprovalToken; $key = 'approvalCards' }
-    'codex' { $type = [System.Windows.Automation.ControlType]::Edit; $token = $ComposerToken; $key = 'composers' }
+    'claude' { $condition = [System.Windows.Automation.Condition]::TrueCondition; $token = $ClaudeApprovalToken; $key = 'approvalCards' }
+    'codex' { $condition = Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit); $token = $ComposerToken; $key = 'composers' }
     default { Fail 'invalid-client' }
   }
   $cache = New-Object System.Windows.Automation.CacheRequest
   $cache.Add($AE::ClassNameProperty)
   $cache.Push()
   try {
-    $elements = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty $type))
+    $elements = $window.FindAll($Scope::Descendants, $condition)
   } finally { $cache.Pop() }
   $count = 0
   foreach ($element in $elements) {

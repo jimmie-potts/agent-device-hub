@@ -76,9 +76,10 @@ kind of read-only structure probe. Throwaway tasks opened the cards; the probe r
 
 The helper's `approvalVisible` operation runs against the client's own foreground window and process, as
 `composerFocused` does, and refuses any other window (`window-mismatch`). It runs one `FindAll` over the window's
-descendants with a control-type condition (`Group` for Claude, `Edit` for Codex), caches only `ClassName` and
-counts the elements that carry the token. Offscreen elements count, so a pending card scrolled out of view still
-blocks Send. It never reads a Name or Value. The adapter decides:
+control-view descendants, caches only `ClassName` and counts the elements that carry the token. For Claude it
+checks every element, whatever its control type, so a card that stops being a `Group` still counts. For Codex it
+checks only `Edit` elements. Offscreen elements count, so a pending card scrolled out of view still blocks Send.
+It never reads a Name, Value or focus. The adapter decides:
 
 - Claude: `true` when at least one card exists, `false` when none does.
 - Codex: `false` only when exactly one composer exists. No composer is `unknown` (`codex-composer-absent`)
@@ -95,8 +96,12 @@ of card appears.
 
 - **Other card kinds.** Only Claude's question and permission cards and Codex's escalation card were opened.
   The rules assume that other kinds, such as a Codex patch approval, carry the same token (Claude) or also
-  replace the composer (Codex). The composer-focus re-check before Send is a second guard: it refuses while
-  focus is on a card's button.
+  replace the composer (Codex). Two other guards remain: the composer-focus re-check before Send refuses while
+  focus is on a card's button, and the Hub's `approval` attention refuses Send for the task.
+- **A Codex card with its own `ProseMirror` field.** A card that replaced the composer with its own
+  `ProseMirror` `Edit`, such as a feedback box, would count as the one composer. If that field held focus with a
+  writable value, `composerFocused` would pass too, leaving only the Hub's `approval` attention to block Send.
+  No such card was observed.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

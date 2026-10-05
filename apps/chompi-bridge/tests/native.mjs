@@ -95,6 +95,19 @@ if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   assert.deepEqual(Object.keys(counted.value), ['composers']);
   assert.ok(Number.isInteger(counted.value.composers) && counted.value.composers >= 0);
 }
+// The same count against the running Claude Desktop window, found read-only by its package folder.
+const claudeWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+  '$p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -like \'*\\WindowsApps\\Claude_*__pzs8sxrjxfjjc\\*\' } | Select-Object -First 1; if ($p) { "$([long]$p.MainWindowHandle) $($p.Id)" }'],
+{ encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
+let claudeApprovalCount = 'claude-not-running';
+if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
+  const approvalStart = Date.now();
+  const counted = await helper.request('approvalVisible', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
+  claudeApprovalCount = { ...counted, ms: Date.now() - approvalStart };
+  assert.equal(counted.ok, true, `approvalVisible: ${counted.reason ?? ''}`);
+  assert.deepEqual(Object.keys(counted.value), ['approvalCards']);
+  assert.ok(Number.isInteger(counted.value.approvalCards) && counted.value.approvalCards >= 0);
+}
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);
 await adapter.releaseAll();
@@ -162,6 +175,7 @@ console.log(JSON.stringify({
     codexSelectedThreadRandom: codexSelected,
     approvalVisible: approval,
     codexApprovalCount,
+    claudeApprovalCount,
     clientVersions: { codex: versions.codex.value, claude: versions.claude.value },
     codexArchivedRandom: false,
     claudeSessionsEmpty: [],

@@ -167,10 +167,12 @@ test('the helper approval check is scoped to the target window, bounded and read
   assert.ok(body, 'ApprovalVisible is a top-level function');
   assert.match(body, /^\s+\$window = TargetWindow \$request$/m, 'it refuses a window that is not the requested process');
   assert.match(script, /\$ClaudeApprovalToken = 'epitaxy-approval-card'/);
-  assert.match(body, /'claude' \{ \$type = \[System\.Windows\.Automation\.ControlType\]::Group; \$token = \$ClaudeApprovalToken; \$key = 'approvalCards' \}/);
-  assert.match(body, /'codex' \{ \$type = \[System\.Windows\.Automation\.ControlType\]::Edit; \$token = \$ComposerToken; \$key = 'composers' \}/);
+  // Claude counts the token on every element, so a card under another control type cannot read as absent.
+  assert.match(body, /'claude' \{ \$condition = \[System\.Windows\.Automation\.Condition\]::TrueCondition; \$token = \$ClaudeApprovalToken; \$key = 'approvalCards' \}/);
+  assert.match(body, /'codex' \{ \$condition = Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Edit\); \$token = \$ComposerToken; \$key = 'composers' \}/);
+  assert.equal(/ControlType\]::Group/.test(body), false, 'the Claude count is not limited to Group elements');
   assert.match(body, /HasToken \$element\.Cached\.ClassName \$token/);
-  assert.match(body, /\$window\.FindAll\(\$Scope::Descendants, /);
+  assert.match(body, /\$window\.FindAll\(\$Scope::Descendants, \$condition\)/);
   assert.match(body, /\$cache\.Add\(\$AE::ClassNameProperty\)/);
   for (const forbidden of [/TreeWalker/, /NameProperty(?<!ClassNameProperty)/, /\.Name\b/, /ValuePattern/, /\.Value\b/, /FocusedElement/]) {
     assert.equal(forbidden.test(body), false, `approval check must not use ${forbidden}`);
@@ -179,7 +181,7 @@ test('the helper approval check is scoped to the target window, bounded and read
   assert.match(body, /Fail 'invalid-client'/);
 });
 
-const NON_ASCII_TITLES =['Résumé café', 'Plan \u2014 review', '\u4efb\u52a1\u8def\u7531', 'Ship it \u{1f680}', 'mixed \u00e9\u2014\u4e2d\u{1f600}\u0000\u007f'];
+const NON_ASCII_TITLES = ['Résumé café', 'Plan \u2014 review', '\u4efb\u52a1\u8def\u7531', 'Ship it \u{1f680}', 'mixed \u00e9\u2014\u4e2d\u{1f600}\u0000\u007f'];
 
 /** Windows PowerShell 5.1 reads redirected stdin in the console code page; decoding bytes as Latin-1 models that. */
 const powershellStyleDecode = line => JSON.parse(Buffer.from(line, 'utf8').toString('latin1'));

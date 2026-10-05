@@ -209,7 +209,11 @@ updated while the bridge ran is caught before any input; Record and Send log `re
 the same reason and version. To qualify it:
 
 1. Check the selectors against [UIA-NOTES.md](src/windows/UIA-NOTES.md) for that version (the selected-row and
-   composer structure), for example with the native check's read-only observations.
+   composer structure), for example with the native check's read-only observations. Re-check the
+   [approval-card selectors](src/windows/UIA-NOTES.md#approval-cards) too, as in the #743 trial: open a harmless
+   approval or permission card in a throwaway task in that client, and confirm that a Claude card still carries
+   `epitaxy-approval-card`, or that a Codex card still replaces the composer, and that the client reads as having
+   no card again once it closes.
 2. Add the logged `observedVersion` to `qualifiedVersions.codex` (or `.claude`) in the profile. Keep earlier versions
    only while they can still be installed.
 3. Save the file. The bridge reloads it within `timing.profilePollMs` and logs `profile-applied`; no restart is needed.
