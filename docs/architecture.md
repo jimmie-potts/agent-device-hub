@@ -80,17 +80,29 @@ Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
 
-## Shared event contract
+## Event and messaging platform
 
-The [event profile](event-contract.md) and [ADR 0010](decisions/0010-shared-event-contracts.md)
-define a language-neutral CloudEvents envelope for staged adoption. The Hub owns
-its registry and shared validation; producers own their facts and consumers retain
-their authorization, state and device boundaries. The profile separates latest-state
-recovery, actionable notification recovery after confirmed durable acceptance and
-live-only effects. It does not select a broker, storage service or Effect runtime,
-and does not replace released lifecycle/controller formats. Current retained
-notices and their recovery limits are assessed in the profile; complete history
-remains distinct from notification delivery.
+[ADR 0012](decisions/0012-bunny-event-platform.md) defines how every component
+communicates, and supersedes ADR 0010's staged adoption.
+
+- **Bus.** A local NATS JetStream bus connects all components.
+- **Publishing.** Owners publish full-record state events and occurrence events
+  through an outbox. One owner holds each fact, and one writer controls each
+  device.
+- **Consumers.** Each consumer keeps its own store, built from the events it
+  receives.
+- **Commands.** Commands are live-only requests with expiry. The Hub tracks
+  device commands, moments, mode changes and notices from accepted to
+  completed.
+- **Conventions.** Events, commands, replies and errors share one CloudEvents
+  profile, one error body and one set of naming and version conventions.
+- **Edges.** Hooks, the dashboard and MCP clients reach only the Hub over HTTP.
+- **No replay.** Nothing replays old events or old device effects.
+
+[Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)
+delivers the cutover. Until each component's child delivery lands, its released
+1.x contract and the [event profile 1.0](event-contract.md) stay authoritative
+for that component.
 
 ## Installed release ownership
 

@@ -1,6 +1,7 @@
 # ADR 0010: Shared event profile with staged adoption
 
-Status: accepted for source definition; runtime adoption remains scoped work.
+Status: superseded by [ADR 0012](0012-bunny-event-platform.md) on 2026-10-05.
+It was accepted for source definition, with runtime adoption left to scoped work.
 
 ## Context
 

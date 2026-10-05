@@ -1,6 +1,7 @@
 # ADR 0011: Retain personal data privately and keep it out of GitHub
 
-Status: accepted direction on 2026-10-03. Runtime adoption requires scoped,
+Status: accepted direction on 2026-10-03; amended on 2026-10-05 (see the
+[amendment](#amendment-2026-10-05)). Runtime adoption requires scoped,
 versioned implementation and its own source and installed evidence.
 Policy delivery: [Hub #775](https://github.com/jimmie-potts/agent-device-hub/issues/775).
 
@@ -132,3 +133,23 @@ publication, with credential protection retained.
 The policy grants no new host, service, installation, personal-setting change,
 source read or device command. Reassess these assumptions when another operator,
 remote service or sharing destination is actually selected.
+
+## Amendment, 2026-10-05
+
+The owner decided the following on 2026-10-05:
+
+- Retained personal data may be included in prompts or other information sent
+  to Claude and Codex. For those two assistants, this replaces the statement
+  above that this direction does not approve transmission to a model. Any other
+  model, cloud service, device or sharing destination still needs its own
+  decision.
+- New work needs no clearing, erasure or retention-expiry features. Existing
+  clear behavior may keep its current meaning, but new designs do not have to
+  add it. Capture as much as the owner-selected sources provide, and keep it
+  locally.
+- The GitHub boundary is unchanged. So is the exclusion of credentials,
+  authentication tokens, API keys and secrets.
+
+[ADR 0012](0012-bunny-event-platform.md) applies this policy to the B.U.N.N.Y.
+message platform. Its event profile 2.0 carries personal fields that profile 1.0
+excluded.
