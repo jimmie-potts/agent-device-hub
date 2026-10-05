@@ -150,7 +150,7 @@ session records by name and key only, and Codex's own thread names from `session
 - `cardButtons`, `focusCardButton` and `invokeCardButton` answer a card with the big wheel. They count the open
   card's actionable buttons (enabled `Button` elements with Invoke and without ExpandCollapse, in tree order; more
   than 64 `Button` elements in scope, before that filter, is `unknown`) and report the focused one's index and the
-  card's identity (its container's UI Automation runtime ID, not text). They move keyboard focus to one of them, or
+  card's identity (its container's UI Automation runtime ID, not text; that a new card never shares it is assumed). They move keyboard focus to one of them, or
   press the focused one. They return counts, indexes, booleans and that ID only, and never read a Name or Value.
   - Claude's card is the one element carrying `epitaxy-approval-card`.
   - Codex's card is the focused button's parent `Group`, only while no composer exists, exactly one sidebar row is
@@ -281,7 +281,8 @@ Slot keys show task state only. Nothing marks a selected task, because Send acts
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
 while dictating. The big-wheel LEDs show nothing about readiness: Send and card navigation are decided at the press,
 and nothing polls the window in front to light them. A refused or uncertain Send or card press (Play or the wheel
-click) flashes both big-wheel LEDs in the `error` color for `timing.errorFlashMs` (owner decision on #821). The screen
+click) flashes both big-wheel LEDs in the `error` color for `timing.errorFlashMs` (owner decision on #821). A `repeat`
+bounce right after a Send and a Send abandoned because Record was pressed (`superseded`) do not flash. The screen
 shows what is in front and the card's own focus ring. The disconnected pattern is the firmware's own.
 
 ### Safety rules
@@ -311,7 +312,8 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
   - Record is not held.
 
   Anything else refuses with a reason code, and any other app in front gets nothing (`not-agent-client`). An
-  uncertain keystroke is never retried. A refusal or uncertain keystroke flashes the big-wheel LEDs red.
+  uncertain keystroke is never retried. A refusal or uncertain keystroke flashes the big-wheel LEDs red, except a
+  `repeat` bounce right after a Send and a Send abandoned because Record was pressed (`superseded`).
 - Cut assurances (owner decision on #821):
   - **No Hub check on Send.** Hub `approval` attention and a stale feed no longer block Send. The bridge's own card
     and composer checks are its only guards.
@@ -319,13 +321,15 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
     composer and accept Enter, as a keyboard would. No such card was observed.
   - **Record works anywhere.** Record holds the dictation chord whatever is in front, a card's free-text field
     included, and releases it with Record. Release never sends. A Record press is never refused: it abandons a Send
-    still checking the window (`superseded`), and during a Send's Enter keystroke the chord goes down right after it.
+    still checking the window (`superseded`), even when Record is released again before the check ends, and during a
+    Send's Enter keystroke the chord goes down right after it.
 - Card answers: while a card is open in a qualified Codex or Claude window in front:
   - A big-wheel turn moves keyboard focus one actionable button per `cards.stepCounts` encoder counts. The count
     restarts on a reversal, so a small wiggle back never steps back. Steps stop at the first and last button.
   - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
     least one deliberate step is needed: a Codex card opens with its approve button focused, and a click without a
-    turn presses nothing (`card-nothing-chosen`). The click also needs `cards.clickStillMs` without a turn and no step
+    turn presses nothing (`card-nothing-chosen`). A step clamped at the first or last button chooses the button that
+    keeps focus, so one clockwise turn chooses that approve button. The click also needs `cards.clickStillMs` without a turn and no step
     in flight. Turning while the click is held moves nothing, and the press clears partial rotation. Wheel actions
     outside a card clear partial rotation, so scroll counts never shorten the first card step.
   - Play is refused (`approval-visible` for a Claude card, `composer-unfocused` for a Codex card). An unknown card state, including a Codex view without a composer whose

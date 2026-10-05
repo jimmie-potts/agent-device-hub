@@ -420,8 +420,9 @@ that cannot be mistaken for any task state.
 | Codex card with its own focused `ProseMirror` field | Accepted residual (#821): counts as the composer and accepts Enter; not observed |
 | Card open: wheel turn | Focus moves one actionable button per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped |
 | Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
-| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red |
-| Codex view without a composer and without exactly one selected sidebar row (settings, a dialog), or whose focused button's group lacks a text element or two actionable buttons | Card state unknown: the wheel does nothing |
+| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. One clockwise step on such a Codex card chooses approve (clamped at the end) |
+| A card replaced by another with the same buttons | Assumed: the new card has a new runtime ID, so the earlier choice does not apply; the installed check below confirms it for a multi-question Claude card |
+| Codex view without a composer and without exactly one selected sidebar row, or whose focused button's group lacks a text element or two actionable buttons | Card state unknown: the wheel does nothing. That settings pages and dialogs fall here is unverified; the installed check below confirms it |
 | Codex thread view without a composer whose focused button sits in a group with text and two or more actionable buttons | Narrowed residual: treated as a card; a press still needs a deliberate wheel step and a still click |
 | Scroll, then a card opens | Earlier scroll counts never shorten the first card step |
 | Card open: still wheel click on a focused button | That one button pressed through UI Automation, never retried; no Enter |
@@ -463,6 +464,19 @@ throwaway Codex and Claude tasks, including two with the same title.
    controller and confirm saved assets and slots.
 10. Check whether Claude archive emits `SessionEnd`, and the Claude release
     gesture.
+
+## Installed checks for #821
+
+With harmless cards in throwaway tasks, after the bridge with #821 is installed:
+
+1. Open Codex settings, and a Codex confirmation dialog if one is at hand, and confirm that the wheel does nothing
+   there and the bridge logs `card-unknown` (`cardButtons` reads unknown).
+2. Answer a multi-question Claude question card with the wheel. After the card moves to its next question, click
+   the wheel without turning it and confirm that nothing is pressed (`card-nothing-chosen`); then step and press.
+3. On a Codex approval card, turn the wheel one step clockwise and click: approve is pressed once. Without a turn,
+   a click presses nothing and the wheel LEDs flash red.
+4. Click into a task with the mouse and send with Play; pick a Claude question option and a permission option
+   with the wheel; confirm that a light wheel touch while clicking does not change the option.
 
 ## Findings for dependent work
 

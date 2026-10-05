@@ -55,8 +55,8 @@ const WHEEL_LEDS = [30, 31];
 
 /**
  * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to
- * flash a refused or uncertain Send or card press: readiness is decided at the press, and nothing polls the window in
- * front to show it.
+ * flash a refused or uncertain Send or card press (not a `repeat` bounce or a Send abandoned for Record): readiness is
+ * decided at the press, and nothing polls the window in front to show it.
  */
 export function renderFrame({ profile, slots, recording, wheelError = false, pulseOn }: RenderInput): Rgb[] {
   const frame: Rgb[] = Array.from({ length: LED_COUNT }, () => OFF);

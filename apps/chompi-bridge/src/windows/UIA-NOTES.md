@@ -127,8 +127,8 @@ Three helper operations serve the adapter's `cardButtons`, `focusCardButton` and
   (descendants of Claude's card, direct children of Codex's group).
 
 The operations return counts, indexes, booleans and the card's identity only. They never read a Name or Value. The
-identity is the container's UI Automation runtime ID joined with dots: an opaque ID that a new card never shares, not
-window text.
+identity is the container's UI Automation runtime ID joined with dots: an opaque ID, not window text. That a new card
+never shares it is an assumption (see "Not established").
 
 - **Actionable buttons:**
   - enabled `Button` elements that support Invoke and do not support ExpandCollapse, in tree order;
@@ -151,8 +151,9 @@ path in the `CHOMPI_UIA_HELPER_SCRIPT` environment variable, because the script 
 Windows command line as base64 UTF-16. The path is never embedded in a PowerShell string, so no character in it,
 typographic apostrophes included, can end one.
 
-The router presses only a button its own wheel step moved to, on the same card (by `cardId`), so a Codex card's
-initially focused approve button is never pressed by a click alone.
+The router presses only a button its own wheel step chose, on the same card (by `cardId`), so a Codex card's
+initially focused approve button is never pressed by a click alone. A step clamped at an end chooses the button that
+keeps focus, so one clockwise turn chooses that approve button.
 
 ### Card containers
 
@@ -182,6 +183,8 @@ initially focused approve button is never pressed by a click alone.
     - several composers are unknown (`codex-composer-count`).
   - Not seen directly: the probe printed truncated class lists, so the selected row while a card is open is inferred
     from the thread view; the installed card check confirms it.
+  - Unverified: that Codex settings pages and dialogs have no selected sidebar row, so they read unknown. The
+    installed trial opens Codex settings and checks that `cardButtons` reads unknown.
   - Residual: another composer-less element of the thread view with the same shape would count as a card. A press
     there still needs a deliberate wheel step to the button and a still click. Only the escalation card was observed.
 
@@ -198,6 +201,12 @@ either client's version changes.
   `ProseMirror` `Edit`, such as a feedback box, would count as the one composer. If that field held focus with a
   writable value, `composerFocused` would pass too, and Send would type Enter into that field, as a keyboard would.
   The owner accepted this residual on #821. No such card was observed.
+- **Card identity across cards.** The card answers assume that a new card's container never has the runtime ID of
+  an earlier card's, so a wheel choice cannot carry over. Chromium is expected to give each new accessibility node a
+  new ID, but this was not observed live. In particular, a Claude question card with several questions may keep its
+  container while it moves to the next question; then a choice made on one question would still match. The installed
+  trial answers a multi-question Claude card with the wheel and checks that a click after a question change, without a
+  new step, presses nothing.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

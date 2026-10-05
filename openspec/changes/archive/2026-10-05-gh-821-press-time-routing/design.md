@@ -54,13 +54,14 @@ The repeat window starts before the keystroke, so even an uncertain Enter blocks
 ### Record
 
 - Record presses the dictation chord down at once and releases it on the Record release, including a synthetic release. There is no foreground, card or composer check.
-- A Record press is never refused. It abandons a Send whose checks are still running (the Send's own liveness check sees Record held and logs `superseded`).
+- A Record press is never refused. It abandons a Send whose checks are still running: the Send captures the Record press counter when it starts, and any Record press or release since then, even a quick tap already released, makes its liveness check fail with `superseded`.
 - During a Send's actual Enter keystroke, the chord goes down right after that keystroke completes, so its modifiers can never join the Enter. This was chosen over refusing Record during the keystroke, because the owner wants Record with no checks and the wait is one keystroke (bounded by the adapter timeout). A Record released before that keystroke ends presses nothing.
 - If the chord fails to go down, the router releases every held key and logs `record-refused` with `dictation-keys-failed`.
 - A release that arrives while the chord is going down still sends the key-up afterwards, as before.
 
 ### Card answers
 
+- **Card identity is assumed unique.** Each card is named by its container's runtime ID, and the wheel's choice applies only to that ID. That a new card never reuses an earlier card's ID is assumed, not observed; a multi-question Claude card might keep its container across questions. The installed trial checks it.
 - **Card state.** The adapter's `cardButtons(client)` answers in one of three ways:
   - `null` when no card is open;
   - the card's identity (its container's UI Automation runtime ID, an opaque ID and not window text), the number of actionable buttons and the index of the focused one (`null` when focus is on none of them);
@@ -77,7 +78,7 @@ The repeat window starts before the keystroke, so even an uncertain Enter blocks
   - the focused element is an actionable button inside the window;
   - the group directly holds at least one `Text` element (the probed card holds two: its prompt) and at least two actionable buttons, including the focused one.
 
-  One composer means no card. No composer without exactly one selected row and such a group, or several composers, means unknown. The probe printed truncated class lists, so the selected row during an open card was not seen directly; the installed card check confirms it.
+  One composer means no card. No composer without exactly one selected row and such a group, or several composers, means unknown. That Codex settings pages and dialogs have no selected row is expected but unverified; the installed trial opens Codex settings and checks that `cardButtons` reads unknown. The probe printed truncated class lists, so the selected row during an open card was not seen directly; the installed card check confirms it.
 - **Actionable buttons** are the card's `Button` elements (descendants of Claude's card, direct children of Codex's group) that are enabled, support Invoke and do not support ExpandCollapse, in tree order. More than 64 `Button` elements in that scope, counted before this filter, is unknown (`card-too-many-buttons`).
   - Excluding ExpandCollapse is stricter than excluding ExpandCollapse-only controls. A menu opens outside the card, where card navigation cannot reach, so the wheel never opens one.
   - `Edit` fields, such as Claude's "Other" text field, are not buttons and are never focused.
@@ -99,7 +100,7 @@ The repeat window starts before the keystroke, so even an uncertain Enter blocks
     - the last turn was at least `cards.clickStillMs` before the press (`card-wheel-moving`);
     - no step is in flight (`card-busy`);
     - a button has focus (`card-nothing-focused`);
-    - the wheel's own step moved focus to that button on that same card (`card-nothing-chosen`). Owner decision on #821: a Codex card opens with its approve button focused, and a click without a turn must not approve it. At least one deliberate step is needed;
+    - the wheel's own step chose that button on that same card (`card-nothing-chosen`). A step chooses the button focused after it, including a step clamped at the first or last button that leaves focus where it was, so one clockwise turn chooses a Codex card's approve button, which opens focused as the last button; Owner decision on #821: a Codex card opens with its approve button focused, and a click without a turn must not approve it. At least one deliberate step is needed;
     - the repeat window has passed;
     - Record is not held.
   - The press calls `invokeCardButton(client, cardId, index, count)`. The helper answers unknown (`card-changed`) when that card is gone or replaced or its button count changed, and `false` (`card-focus-moved`) when the button no longer has keyboard focus; only then does it invoke.
@@ -119,7 +120,7 @@ The repeat window starts before the keystroke, so even an uncertain Enter blocks
 
 - Slot keys show task state only. A "selected" key would have to follow the mouse, so it is removed along with the target.
 - The wheel's Send-readiness LEDs depended on the target's Hub state, and showing readiness for the window in front would need polling, so they are removed.
-- The wheel LEDs light only to report a refusal (owner decision on #821, issuecomment-5999101534): a refused or uncertain Send or card press flashes both in the error color for `timing.errorFlashMs`. The router's existing render tick ends the flash; nothing polls the desktop. This restores the device feedback the old target model gave through the slot key's error flash.
+- The wheel LEDs light only to report a refusal (owner decision on #821, issuecomment-5999101534): a refused or uncertain Send or card press flashes both in the error color for `timing.errorFlashMs`. A `repeat` (a bounce right after a successful Send) and `superseded` (Record pressed on purpose) do not flash, because neither is a failure. The router's existing render tick ends the flash; nothing polls the desktop. This restores the device feedback the old target model gave through the slot key's error flash.
 - A refused slot press still flashes its key.
 
 ### Profile compatibility

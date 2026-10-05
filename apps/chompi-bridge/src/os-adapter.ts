@@ -46,7 +46,10 @@ export interface ClaudeDesktopSession {
 
 /** The open card's actionable buttons (enabled, invokable, not menus), counted in tree order. */
 export interface CardButtons {
-  /** The card's identity for this window: an opaque UI Automation runtime ID that a new card never shares; no text. */
+  /**
+   * The card's identity for this window: an opaque UI Automation runtime ID, no text. A new card is assumed never to
+   * share it (not yet established live; see UIA-NOTES.md "Not established").
+   */
   id: string;
   /** How many actionable buttons the card has (0-64). */
   count: number;

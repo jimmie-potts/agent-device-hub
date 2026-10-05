@@ -194,7 +194,7 @@ function CardContainer($request, $window) {
   return @{ composers = 0; selectedRows = 1; cards = 1; container = $parent; buttons = $buttons }
 }
 
-# The card's identity: its container's UI Automation runtime ID, which a new card never shares. An ID, not window text.
+# The card's identity: its container's UI Automation runtime ID, assumed never shared by a new card. An ID, not text.
 function CardId($container) { return (($container.GetRuntimeId()) -join '.') }
 
 function CardButtons($request) {
