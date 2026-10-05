@@ -9,11 +9,15 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+
+// The stand-in adapters report the workspace app-verify core, so the expected versions follow its package.
+const CORE_VERSION = JSON.parse(await readFile(new URL('../../../../packages/app-verify/package.json', import.meta.url), 'utf8')).version;
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const root = fileURLToPath(new URL('../../../..', import.meta.url)).replace(/\/$/, '');
 const compose = join(root, 'apps/hub/verify/compose.mjs');
@@ -61,11 +65,11 @@ async function world({faults = {}, hubRun = [process.execPath, 'scripts/verify.m
   const nanoleaf = await standIn(base, 'nl', {kind: 'nanoleaf', app: `${tag}-nl`, fault: faults.nanoleaf});
   const pixoo = await standIn(base, 'px', {kind: 'pixoo', app: `${tag}-px`, fault: faults.pixoo});
   const manifest = join(base, 'compose.json');
-  const service = (id, app, revision) => ({id, role: 'consumer', app, repository: `stand-in/${id}`, revision, coreVersion: '1.3.0', scenario: 'hub-paired', run: [process.execPath, 'scripts/verify.mjs']});
+  const service = (id, app, revision) => ({id, role: 'consumer', app, repository: `stand-in/${id}`, revision, coreVersion: CORE_VERSION, scenario: 'hub-paired', run: [process.execPath, 'scripts/verify.mjs']});
   const writeManifest = pins => writeFile(manifest, JSON.stringify({manifestVersion: 'hub-compose/1', services: [
     service('nanoleaf', `${tag}-nl`, pins?.nanoleaf ?? nanoleaf.revision),
     service('pixoo', `${tag}-px`, pins?.pixoo ?? pixoo.revision),
-    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: '1.3.0', scenario: 'integrated', run: hubRun},
+    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: CORE_VERSION, scenario: 'integrated', run: hubRun},
   ]}));
   await writeManifest();
   const outputs = [];
@@ -167,7 +171,7 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
     const adapters = await w.run('start', '--manifest', w.manifest, '--checkout', `nanoleaf=${w.nanoleaf.checkout}`, '--checkout', `pixoo=${w.pixoo.checkout}`, '--unpinned');
     assert.equal(adapters.code, 1);
     assert.equal(adapters.result.error, 'identity-mismatch');
-    assert.match(adapters.result.detail, /^nanoleaf: core 1\.3\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
+    assert.match(adapters.result.detail, new RegExp(`^nanoleaf: core ${escapeRegExp(CORE_VERSION)}, pinned 1\\.0\\.0; pixoo: no scenario no-such-scenario`));
     assert.equal(existsSync(join(w.base, 'p')) && (await readdir(join(w.base, 'p'))).length > 0, false, 'no composition or proof was created');
     assert.equal(existsSync(join(w.base, 's')), false, 'no runtime directory was created');
     assert.equal(w.units(), '', 'no unit was started');
@@ -708,7 +712,14 @@ const waitFor = async (read, predicate, detail, timeout = 15000) => {
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 };
-const resetControl = (w, service, mode) => writeFile(join(w.base, 's', service.runId, 'fixture-reset.json'), JSON.stringify({mode}), {mode: 0o600});
+// Replace the marker atomically: the fixture seeds poll it, and a read between a plain write's truncate and
+// write sees an empty file, so the reset failed with "Unexpected end of JSON input" under load (#665).
+const resetControl = async (w, service, mode) => {
+  const path = join(w.base, 's', service.runId, 'fixture-reset.json');
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify({mode}), {mode: 0o600});
+  await rename(temporary, path);
+};
 async function proofBytes(c) {
   const entries = [];
   for (const service of c.services) for (const path of await files(join(service.proofDir, 'verified'))) {
