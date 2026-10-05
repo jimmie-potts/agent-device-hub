@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -712,7 +712,14 @@ const waitFor = async (read, predicate, detail, timeout = 15000) => {
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 };
-const resetControl = (w, service, mode) => writeFile(join(w.base, 's', service.runId, 'fixture-reset.json'), JSON.stringify({mode}), {mode: 0o600});
+// Replace the marker atomically: the fixture seeds poll it, and a read between a plain write's truncate and
+// write sees an empty file, so the reset failed with "Unexpected end of JSON input" under load (#665).
+const resetControl = async (w, service, mode) => {
+  const path = join(w.base, 's', service.runId, 'fixture-reset.json');
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify({mode}), {mode: 0o600});
+  await rename(temporary, path);
+};
 async function proofBytes(c) {
   const entries = [];
   for (const service of c.services) for (const path of await files(join(service.proofDir, 'verified'))) {
