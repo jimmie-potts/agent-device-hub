@@ -77,7 +77,7 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Second row, 10 black keys | `KEY_16`-`KEY_25` | Reserved for #744 utility actions |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
 | Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
-| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-4 for #744. Clicks are on the button chain |
+| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) stays unassigned. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume. Holding its click at boot enters test mode |
 | Far-left two-position switch | `SW_TOG` | Stays unmapped |
@@ -490,6 +490,19 @@ With harmless cards in throwaway tasks, after the bridge with #821 is installed:
 6. In a long Codex thread (many messages), open a harmless approval card and confirm the wheel still steps and
    presses. More than 512 `Group` elements makes the card read unknown (`card-too-many-groups`) and the wheel inert;
    if that happens, record the thread length so the bound can be revisited.
+
+## Installed checks for #822
+
+After the bridge with task pages is installed, with more than 15 open throwaway tasks:
+
+1. Confirm that tasks beyond the first 15 get keys on page 2 and later, and that no `overflow` is logged until every
+   page is full.
+2. Turn knob 4 lightly and confirm that nothing changes; turn it one deliberate step and confirm that the keys show
+   page 2 and knob 4's LED changes to page 2's color. Confirm that paging opens and types nothing.
+3. On page 2, press a task's key and confirm that the bridge opens that task (slot 16 or later).
+4. While page 2 is visible, let a task on page 1 raise attention, and confirm that knob 4's LED alternates with the
+   attention color without switching pages.
+5. Restart the bridge and confirm that every task keeps its key and page, and that the keys show page 1.
 
 ## Findings for dependent work
 

@@ -192,7 +192,7 @@ Windows adapter. Any failure exits 1 before the controller opens: `chompi-bridge
 the adapter when it offers `warmUp()` (the UI Automation helper and cached client versions) and logs `adapter-ready` or
 `adapter-warm-up-failed`, all before the controller connects, and only then connects the controller, the feed and the
 router. It prints JSON lines with slot numbers and reason codes only: link events,
-`feed`, `slot-assigned`, `overflow`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
+`feed`, `slot-assigned`, `overflow`, `page`, `slots-beyond-pages`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
 `invalidated`, `profile-rejected`, `dictation-started`, `record-refused`, the card events `card-step`,
 `card-pressed`, `card-refused` (reasons `card-wheel-moving`, `card-busy`, `card-nothing-focused`, `card-nothing-chosen`,
 `card-focus-moved`), `card-press-uncertain`, `card-step-failed` and `card-unknown`, and similar. `sent`,
@@ -207,15 +207,16 @@ controller and desktop is #743 work and needs the owner's device authorization.
 
 | Field | Default |
 | --- | --- |
-| `controls.slots` | Keys 1-15; slot *n* is the *n*th entry |
+| `controls.slots` | Keys 1-15; key *n* shows slot (visible page - 1) x 15 + *n* |
 | `controls.record` | 26, the CHOMPI key, held for dictation |
 | `controls.send` | `[33, 27]`, the big-wheel click and Play; each runs the same guarded Send at the press. On an open card the big-wheel click presses the focused card button instead; Play never does |
 | `controls.back` | 28, Loop: alone it releases held keys and cancels a focus in progress; with a held Claude slot key it is the release gesture |
 | `controls.scroll` | 45, the big-wheel turn: scrolls the conversation, or steps through an open card's buttons. Its click is the turn ID minus 12 (33) |
 | `scroll` | `notchesPerStep` 1 (1-10 wheel notches per encoder count) and `invert` `false` (clockwise scrolls down) |
+| `pages` (optional, not in the shipped profile) | `count` 4 (1-8 task pages of 15 slots, so 60 tasks) and `stepCounts` (1-96 knob 4 counts per page, defaulting to the card step constant). Small knob 4's turn (control 43) pages; it is reserved, so `controls.scroll` can never be 43. Its click (control 31) is unassigned |
 | `cards` (optional, not in the shipped profile) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly; one slow full turn each way measured about 25 counts per revolution on the trial device (2026-10-05), so 6 is about a quarter turn. The step default lives in one constant, `DEFAULT_CARD_STEP_COUNTS` in `src/routing/profile.ts`; a profile value overrides it |
 | `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows` |
-| `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
+| `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `colors.pages` (optional) lists knob 4's LED color per page, page 1 first, at least one per page; the defaults are cyan, magenta, green, grey-white, blue, pink, lime and teal, none of them the attention orange. `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
 | `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s |
 | `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone; see [Qualify a client update](#qualify-a-client-update) |
 
@@ -265,12 +266,37 @@ routing stays off; the bridge asks for 1.3 again every 5 minutes and on every re
 ### Slots
 
 Root Codex Desktop threads are keyed by thread ID and root Claude Desktop sessions by `hostSessionId` (the
-`local_<id>` that survives `/clear`), each with its Hub host and source. New tasks take the lowest free of slots 1-15
-in provider, client, host, source and task ID order; assigned tasks never move. Overflow is reported and nothing is
-evicted. A slot is released only when the adapter reports the Codex thread archived or the Claude record archived
+`local_<id>` that survives `/clear`), each with its Hub host and source. Slots come in pages of 15 (`pages.count`,
+default 4): page *p* holds slots 15(*p*-1)+1 to 15*p*. New tasks take the lowest free slot across all pages in
+provider, client, host, source and task ID order; assigned tasks never move to another slot or page. Overflow is
+reported only when every page is full, and nothing is evicted. A slot is released only when the adapter reports the Codex thread archived or the Claude record archived
 (checked every 30 s and at each press), or by the Claude release gesture (hold the slot key 800 ms, then press Loop).
 Hub retirement, expiry, idle and a stale feed never release. A released task returns only with newer activity. The
-slots live in `<state>/slots.json`, written 0600 through a temporary file and rename; an invalid file stops start-up.
+slots live in `<state>/slots.json`, written 0600 through a temporary file and rename by the bridge alone; an invalid
+file stops start-up.
+
+#### Task pages
+
+- Turning small knob 4 (control 43) shows the next or previous page, one page per `pages.stepCounts` counts. A
+  reversal restarts the count, so a light touch or a wiggle never pages, and paging stops at the first and last page.
+  Paging only changes which slots the keys show: it sends no input, opens or focuses nothing and calls no adapter.
+- Slot keys, the release gesture and the key lights act on the visible page. The bridge starts on page 1 and does
+  not remember the page across restarts; a profile reload keeps the page, clamped to the new count. A `page` line is
+  logged on every change.
+- If the profile asks for fewer pages than an assigned slot needs, that task is kept (never dropped or moved) without
+  a visible key and takes no new task; the bridge logs `slots-beyond-pages` with the count. Archive evidence still
+  releases it, and it shows again when the pages return.
+
+#### Slot file versions and rollback
+
+- The slot file is `schemaVersion: 2` (slots 1-120). A version 1 file from an earlier bridge loads unchanged onto
+  page 1; opening alone writes nothing, and the first slot change rewrites it as version 2.
+- An earlier bridge (5add03a and before) reads only version 1 and stops at start-up with
+  `chompi-bridge-state-invalid: slot state has an unsupported schemaVersion`. To roll back:
+  1. Stop the bridge.
+  2. Copy `<state>/slots.json` to a backup.
+  3. In `slots.json`, remove every entry of `slots` whose `slot` is above 15, and set `schemaVersion` to 1.
+  4. Start the earlier bridge. Tasks that lost their slot get one again when a slot frees up, first-free.
 
 ### Lights
 
@@ -285,6 +311,11 @@ slots live in `<state>/slots.json`, written 0600 through a temporary file and re
 | `ended` | The Hub no longer lists the session, or it ended; the slot is kept |
 | `stale` | The feed is stale or unavailable |
 | `error` | A refused slot press on its key, or a refused or uncertain Send or card press on both big-wheel LEDs, for 1.5 s |
+
+Slot keys show the visible page's slots, and keys for its empty slots stay off. Small knob 4's LED shows the visible
+page in its `colors.pages` color; while a task on any other page has attention, it alternates between the page color
+and the attention color on the attention pulse. Only attention shows there; other states show on the keys when their
+page is visible.
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
