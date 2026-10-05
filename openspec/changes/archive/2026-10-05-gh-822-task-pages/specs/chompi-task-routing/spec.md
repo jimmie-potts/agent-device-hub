@@ -32,7 +32,7 @@ The bridge SHALL assign root Codex Desktop threads (keyed by thread ID) and root
 - **THEN** distinct identities get distinct slots and one Desktop ID is one slot shown from its newest record
 
 ### Requirement: Release only on explicit evidence
-The bridge SHALL release a slot only when the adapter reports the Codex thread archived, the Claude Desktop record archived, or the owner's Claude release gesture (slot key held for the configured hold, then Loop) is used. Absence from the feed, Hub retirement or expiry, idle, a stale feed, a missing Desktop record and unknown observations MUST NOT release a slot. A released task SHALL stay out of the slots until it shows lifecycle evidence newer than its release. The gesture on a Codex slot SHALL only light the error state. Release SHALL work the same on every page: the gesture acts on the slot the held key shows on the visible page, and archive evidence releases a slot on any page, hidden or beyond the profile's pages.
+The bridge SHALL release a slot only when the adapter reports the Codex thread archived, the Claude Desktop record archived, or the owner's Claude release gesture (slot key held for the configured hold, then Loop) is used. Absence from the feed, Hub retirement or expiry, idle, a stale feed, a missing Desktop record and unknown observations MUST NOT release a slot. A released task SHALL stay out of the slots until it shows lifecycle evidence newer than its release. The gesture on a Codex slot SHALL only light the error state. Release SHALL work the same on every page: the gesture SHALL release the absolute slot the held key showed when it was pressed, even if the visible page changed during the hold, and archive evidence releases a slot on any page, hidden or beyond the profile's pages.
 
 #### Scenario: Hub retires a session after idle
 - **WHEN** the Hub drops a slotted session
@@ -45,6 +45,10 @@ The bridge SHALL release a slot only when the adapter reports the Codex thread a
 #### Scenario: Release on another page
 - **WHEN** page 2 is visible and the owner holds key 2 past the hold time and presses Loop, or a task on a hidden page is archived
 - **THEN** slot 17, or the archived task's slot, is released and persisted, and no other slot changes
+
+#### Scenario: Paging during the release hold
+- **WHEN** the owner holds key 2 on page 1, turns knob 4 to page 2 and presses Loop after the hold time
+- **THEN** slot 2 is released, not slot 17
 
 ### Requirement: Distinct state lights
 The bridge SHALL light each slot from the newest Hub record for its task, keeping activity, attention, notice acknowledgment, read evidence and freshness distinct. Attention SHALL pulse. Slot keys SHALL show task state only: no key marks a selected or targeted task, so focusing a task never looks like acknowledging it. Only an idle task with an unacknowledged completion notice and no `read` evidence SHALL use the completion color. Unknown activity, uncertain freshness, restart uncertainty, ended and a stale or unavailable feed MUST NOT use the completion color. A refused slot press SHALL light that key's error state briefly. The big-wheel LEDs SHALL stay off, because Send and card answers are decided at the press and nothing polls the window in front, except that a refused or uncertain Send or card press SHALL light both in the error color for the profile's error flash time; a Send refused as a `repeat` within the repeat window or abandoned because Record was pressed (`superseded`) SHALL NOT flash. Slot keys SHALL show the visible page's slots, and keys for its empty slots SHALL stay off. Small knob 4's LED SHALL show the visible page in that page's color (`colors.pages`), and while any task on another page, including slots beyond the profile's pages, has attention it SHALL alternate between the page color and the attention color on the attention pulse; it shows no other state. The renderer SHALL provide a state label for every slot.
@@ -75,7 +79,7 @@ The bridge SHALL read one JSON profile with `schemaVersion: 1` of at most 64 KiB
 ## ADDED Requirements
 
 ### Requirement: Task pages with small knob 4
-A small knob 4 turn (control 43) SHALL change the visible task page by one page per `pages.stepCounts` encoder counts, counted in one accumulator that restarts at zero on a direction reversal, and SHALL stop at the first and last page. Slot keys 1-15 SHALL act on slot (visible page - 1) x 15 + key for focus, the release gesture and lights. The bridge SHALL start on page 1 and SHALL NOT persist the visible page; a profile reload SHALL clamp it to the new page count. Paging MUST NOT send input, call the OS adapter, type, focus a client, change the foreground or acknowledge anything; it only changes which slots the keys show. Knob 4's click (control 31) SHALL stay unassigned.
+A small knob 4 turn (control 43) SHALL change the visible task page by one page per `pages.stepCounts` encoder counts, counted in one accumulator that restarts at zero on a direction reversal, and SHALL stop at the first and last page. Slot keys 1-15 SHALL act on slot (visible page - 1) x 15 + key for focus, the release gesture and lights. The bridge SHALL start on page 1 and SHALL NOT persist the visible page; a profile reload SHALL clamp it to the new page count. Paging MUST NOT send input, call the OS adapter, type, focus a client, change the foreground or acknowledge anything; it only changes which slots the keys show. Knob 4's click (control 31) SHALL stay unassigned: profile validation SHALL reject mapping it to any control.
 
 #### Scenario: Page with a deliberate turn
 - **WHEN** the owner turns knob 4 by fewer counts than a page step, then completes the step, then wiggles back by fewer counts than a step

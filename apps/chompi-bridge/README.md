@@ -280,12 +280,15 @@ file stops start-up.
 - Turning small knob 4 (control 43) shows the next or previous page, one page per `pages.stepCounts` counts. A
   reversal restarts the count, so a light touch or a wiggle never pages, and paging stops at the first and last page.
   Paging only changes which slots the keys show: it sends no input, opens or focuses nothing and calls no adapter.
-- Slot keys, the release gesture and the key lights act on the visible page. The bridge starts on page 1 and does
+- Slot keys, the release gesture and the key lights act on the visible page. A held key keeps the slot it showed when
+  pressed, so paging during the release gesture's hold still releases that slot. The bridge starts on page 1 and does
   not remember the page across restarts; a profile reload keeps the page, clamped to the new count. A `page` line is
   logged on every change.
 - If the profile asks for fewer pages than an assigned slot needs, that task is kept (never dropped or moved) without
   a visible key and takes no new task; the bridge logs `slots-beyond-pages` with the count. Archive evidence still
-  releases it, and it shows again when the pages return.
+  releases it, and it shows again when the pages return. Its attention still pulses knob 4's LED; to clear that
+  pulse, raise `pages.count` so its page has keys again and handle the task there, or release the task (archive it, or
+  use the release gesture once its page is visible).
 
 #### Slot file versions and rollback
 
@@ -296,7 +299,9 @@ file stops start-up.
   1. Stop the bridge.
   2. Copy `<state>/slots.json` to a backup.
   3. In `slots.json`, remove every entry of `slots` whose `slot` is above 15, and set `schemaVersion` to 1.
-  4. Start the earlier bridge. Tasks that lost their slot get one again when a slot frees up, first-free.
+  4. If you added `pages` or `colors.pages` to the profile, remove them: an earlier bridge rejects unknown profile
+     fields and would keep its last good profile, or refuse to start with this one.
+  5. Start the earlier bridge. Tasks that lost their slot get one again when a slot frees up, first-free.
 
 ### Lights
 
@@ -314,8 +319,8 @@ file stops start-up.
 
 Slot keys show the visible page's slots, and keys for its empty slots stay off. Small knob 4's LED shows the visible
 page in its `colors.pages` color; while a task on any other page has attention, it alternates between the page color
-and the attention color on the attention pulse. Only attention shows there; other states show on the keys when their
-page is visible.
+and the attention color on the attention pulse. Only attention shows there, a pickup default pending the owner's
+confirmation; other states, such as an unread completion, show on the keys when their page is visible.
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`

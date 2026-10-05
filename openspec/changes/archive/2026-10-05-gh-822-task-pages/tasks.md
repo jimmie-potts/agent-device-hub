@@ -14,3 +14,8 @@
 - [x] 3.2 Run build, typecheck, the bridge suite, OpenSpec validation and the workflow checks; record results in the PR.
 - [x] 3.3 Synchronize the spec and archive this change (evidence: the synced `chompi-task-routing` spec matches the delta).
 - [x] 3.4 Hand the reinstall and the installed checks (more than 15 tasks, paging with knob 4, opening a page-2 task, the hidden-page attention light) to the coordinator and owner (evidence: their receipts go in the PR and on #822, not in this change).
+
+## 4. Review (PR #852)
+
+- [x] 4.1 Release the slot a held key showed when pressed, share the `Detent` with the big wheel, reserve knob 4's click in profile validation and retitle the downgrade test (evidence: the paging-during-hold router test and the knob 4 click profile assertions).
+- [x] 4.2 Mark the attention-only indicator as a pickup default pending the owner, add the unread and paging-during-hold installed checks, and add the rollback profile step and the beyond-pages attention note to the README (evidence: README, design and the qualification report).

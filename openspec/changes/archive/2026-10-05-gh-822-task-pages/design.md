@@ -36,12 +36,12 @@ The bridge's slot store (`state/slots.json`) keeps up to 15 slots in a private f
 ### Router
 
 - **Paging.**
-  - Knob 4's turn goes through a small `Detent` helper: one page per `pages.stepCounts` counts, an accumulator that restarts on a reversal, and clamping at the ends.
+  - Knob 4's turn goes through a small `Detent` helper, shared with the big wheel's card steps (each knob has its own instance): one page per `pages.stepCounts` counts, an accumulator that restarts on a reversal, and clamping at the ends.
   - `pages.stepCounts` defaults to the card step constant, so both knobs feel the same.
   - A page change logs `page` and re-renders. Nothing else happens: no adapter call, keystroke, focus or Hub contact.
 - **Visible page.**
   - It starts at 1 and is not persisted, so after a restart the keys show page 1.
-  - Slot keys map to (page - 1) x 15 + key for focus, the release gesture and lights.
+  - Slot keys map to (page - 1) x 15 + key for focus, the release gesture and lights. A held key keeps the absolute slot it showed when it went down, so paging during the release gesture's hold cannot release another task.
   - A reload clamps the page to the new count and resets the knob's partial rotation.
 - **Overflow.** Reported only when every page is full, because the store only fails to place a task then.
 
@@ -50,14 +50,15 @@ The bridge's slot store (`state/slots.json`) keeps up to 15 slots in a private f
 - Keys show the visible page's slots, and empty slots stay off.
 - Knob 4's LED (index 29) shows `colors.pages[page - 1]`.
 - While any task outside the visible page has attention (the slot's state is `attention`, which needs a current feed), the LED alternates between the attention color and the page color on the existing attention pulse. That includes slots beyond the profile's pages.
-- Only attention shows there; other states show on the keys when their page is visible.
+- Only attention shows there, a pickup default pending the owner's confirmation; other states show on the keys when their page is visible. The installed checks include an unread task on a hidden page to settle it.
 - **Default page colors:** cyan, magenta, green, grey-white, blue, pink, lime and teal. They are distinct from each other and from the attention orange, so the alternation reads as attention.
 
 ## Risks
 
 - A slot file written by this bridge is unreadable by older bridges until the documented pruning step. The bridge's own error names the file, and the README gives the step.
-- Hidden-page tasks show only attention on the indicator. Activity, completion and stale states of hidden tasks are seen only by paging. The owner chose this.
-- Paging while a slot key is held changes which slot the release gesture names. The gesture uses the page visible when Loop is pressed.
+- Hidden-page tasks show only attention on the indicator. Activity, completion and stale states of hidden tasks are seen only by paging. This is the pickup default, pending the owner's confirmation at the installed check.
+- A slot beyond the profile's pages has no key, so its attention pulses the indicator until `pages.count` is raised or the task is released; the README says how.
+- Knob 4's click (31) is reserved: profile validation rejects mapping it to Record or Back, and Send already refuses every small-knob click.
 
 ## Persistent-state walkthrough
 
