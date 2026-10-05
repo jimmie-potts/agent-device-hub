@@ -123,14 +123,15 @@ function InsideWindow($element, $window) {
 }
 
 # Actionable buttons in tree order: enabled Buttons with Invoke and without ExpandCollapse (menus open outside the card).
-function CardButtonList($container) {
+# More than 64 Button elements in scope, before that filter, is an error.
+function CardButtonList($container, $scope) {
   $cache = New-Object System.Windows.Automation.CacheRequest
   $cache.Add($AE::IsEnabledProperty)
   $cache.Add($AE::IsInvokePatternAvailableProperty)
   $cache.Add($AE::IsExpandCollapsePatternAvailableProperty)
   $cache.Push()
   try {
-    $found = $container.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button)))
+    $found = $container.FindAll($scope, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button)))
   } finally { $cache.Pop() }
   if ($found.Count -gt $MaxCardButtons) { Fail 'card-too-many-buttons' }
   $list = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
@@ -149,53 +150,71 @@ function FocusedIndex($buttons) {
   return -1
 }
 
-# Claude: the one element with the approval-card token. Codex (no token): only while no composer exists, the control-view
-# parent Group of the focused actionable button, holding at least two actionable buttons.
+# Claude: the one element with the approval-card token. Codex (no token): only while no composer exists and exactly one
+# sidebar row is selected, the control-view parent Group of the focused actionable button, holding at least one Text
+# child and at least two actionable buttons as direct children.
 function CardContainer($request, $window) {
+  $client = [string]$request.client
   $cache = New-Object System.Windows.Automation.CacheRequest
   $cache.Add($AE::ClassNameProperty)
+  $cache.Add($AE::ControlTypeProperty)
   $cache.Push()
   try {
-    if ([string]$request.client -eq 'claude') { $elements = $window.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) }
-    elseif ([string]$request.client -eq 'codex') { $elements = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit))) }
+    if ($client -eq 'claude') { $elements = $window.FindAll($Scope::Descendants, [System.Windows.Automation.Condition]::TrueCondition) }
+    elseif ($client -eq 'codex') {
+      $types = [System.Windows.Automation.OrCondition]::new([System.Windows.Automation.Condition[]]@(
+        (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)), (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button))))
+      $elements = $window.FindAll($Scope::Descendants, $types)
+    }
     else { Fail 'invalid-client' }
   } finally { $cache.Pop() }
-  if ([string]$request.client -eq 'claude') {
+  if ($client -eq 'claude') {
     $cards = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
     foreach ($element in $elements) { if (HasToken $element.Cached.ClassName $ClaudeApprovalToken) { $cards.Add($element) } }
     if ($cards.Count -ne 1) { return @{ cards = $cards.Count } }
-    return @{ cards = 1; buttons = (CardButtonList $cards[0]) }
+    return @{ cards = 1; container = $cards[0]; buttons = (CardButtonList $cards[0] $Scope::Descendants) }
   }
-  $composers = 0
-  foreach ($element in $elements) { if (HasToken $element.Cached.ClassName $ComposerToken) { $composers++ } }
-  $none = @{ composers = $composers; cards = 0 }
-  if ($composers -ne 0) { return $none }
+  $composers = 0; $selectedRows = 0
+  foreach ($element in $elements) {
+    $classes = $element.Cached.ClassName
+    if ($element.Cached.ControlType.Id -eq $EditId) { if (HasToken $classes $ComposerToken) { $composers++ } }
+    elseif ($classes -and $classes.StartsWith($CodexRowPrefix, $Ordinal) -and (HasToken $classes $CodexSelectedToken)) { $selectedRows++ }
+  }
+  $none = @{ composers = $composers; selectedRows = $selectedRows; cards = 0 }
+  if ($composers -ne 0 -or $selectedRows -ne 1) { return $none }
   $focused = $AE::FocusedElement
   if ($null -eq $focused -or $focused.Current.ProcessId -ne [int]$request.processId -or $focused.Current.ControlType.Id -ne [System.Windows.Automation.ControlType]::Button.Id) { return $none }
   if (-not (InsideWindow $focused $window)) { return $none }
   $parent = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($focused)
   if ($null -eq $parent -or $parent.Current.ControlType.Id -ne [System.Windows.Automation.ControlType]::Group.Id) { return $none }
-  $buttons = CardButtonList $parent
+  $texts = $parent.FindAll($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)))
+  if ($texts.Count -lt 1) { return $none }
+  $buttons = CardButtonList $parent $Scope::Children
   if ($buttons.Count -lt 2 -or (FocusedIndex $buttons) -lt 0) { return $none }
-  return @{ composers = 0; cards = 1; buttons = $buttons }
+  return @{ composers = 0; selectedRows = 1; cards = 1; container = $parent; buttons = $buttons }
 }
+
+# The card's identity: its container's UI Automation runtime ID, which a new card never shares. An ID, not window text.
+function CardId($container) { return (($container.GetRuntimeId()) -join '.') }
 
 function CardButtons($request) {
   $window = TargetWindow $request
   $card = CardContainer $request $window
   $value = [ordered]@{}
-  if ([string]$request.client -eq 'codex') { $value.composers = $card.composers }
+  if ([string]$request.client -eq 'codex') { $value.composers = $card.composers; $value.selectedRows = $card.selectedRows }
   $value.cards = $card.cards
-  if ($card.cards -eq 1) { $value.buttons = $card.buttons.Count; $value.focused = FocusedIndex $card.buttons } else { $value.buttons = 0; $value.focused = -1 }
+  if ($card.cards -eq 1) { $value.buttons = $card.buttons.Count; $value.focused = FocusedIndex $card.buttons; $value.cardId = CardId $card.container }
+  else { $value.buttons = 0; $value.focused = -1; $value.cardId = '' }
   return $value
 }
 
-# The open card's buttons, when the request names a valid index into an unchanged count.
+# The open card's buttons, when the request names a valid index into it and the card is still the one named.
 function CardRequest($request, $window) {
   $index = $request.index; $count = $request.count
   if (-not (($index -is [int] -or $index -is [long]) -and ($count -is [int] -or $count -is [long]) -and $index -ge 0 -and $index -lt $count -and $count -le $MaxCardButtons)) { Fail 'invalid-card-index' }
   $card = CardContainer $request $window
   if ($card.cards -ne 1) { Fail 'card-absent' }
+  if (-not [string]::Equals((CardId $card.container), [string]$request.cardId, $Ordinal)) { Fail 'card-changed' }
   return ,$card.buttons
 }
 

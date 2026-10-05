@@ -17,10 +17,6 @@
     "notchesPerStep": 1,
     "invert": false
   },
-  "cards": {
-    "stepCounts": 6,
-    "clickStillMs": 250
-  },
   "colors": {
     "empty": [0, 0, 0],
     "active": [0, 90, 255],

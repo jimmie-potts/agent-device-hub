@@ -289,19 +289,20 @@ test('approval visibility is unknown when the client is not in front or the fore
 test('Claude card buttons come from the one approval card in its foreground window', async () => {
   const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
   win32.state.root = 0x1200;
-  let reply = { ok: true, value: { cards: 1, buttons: 5, focused: -1 } };
+  let reply = { ok: true, value: { cards: 1, buttons: 5, focused: -1, cardId: '42.7.4' } };
   const helper = fakeHelper(() => reply);
   const instance = adapter(win32, helper);
-  assert.deepEqual(await instance.cardButtons('claude'), { status: 'known', value: { count: 5, focused: null } }, 'the composer keeps focus when a card opens');
+  assert.deepEqual(await instance.cardButtons('claude'), { status: 'known', value: { id: '42.7.4', count: 5, focused: null } }, 'the composer keeps focus when a card opens');
   assert.deepEqual(helper.calls, [{ op: 'cardButtons', client: 'claude', hwnd: 0x1200, processId: 4242 }]);
-  reply = { ok: true, value: { cards: 1, buttons: 3, focused: 2 } };
-  assert.deepEqual(await instance.cardButtons('claude'), { status: 'known', value: { count: 3, focused: 2 } });
+  reply = { ok: true, value: { cards: 1, buttons: 3, focused: 2, cardId: '42.7.5' } };
+  assert.deepEqual(await instance.cardButtons('claude'), { status: 'known', value: { id: '42.7.5', count: 3, focused: 2 } });
   reply = { ok: true, value: { cards: 0, buttons: 0, focused: -1 } };
   assert.deepEqual(await instance.cardButtons('claude'), { status: 'known', value: null }, 'no card');
   reply = { ok: true, value: { cards: 2, buttons: 0, focused: -1 } };
   assert.deepEqual(await instance.cardButtons('claude'), { status: 'unknown', reason: 'card-count' }, 'several cards are not qualified');
   for (const value of [{}, { cards: 1, buttons: 65, focused: -1 }, { cards: 1, buttons: 2, focused: 2 }, { cards: 1, buttons: 2, focused: -2 },
-    { cards: 1, buttons: 2.5, focused: -1 }, { cards: '1', buttons: 2, focused: 0 }, { cards: 1, buttons: 2 }, null, 7]) {
+    { cards: 1, buttons: 2.5, focused: -1 }, { cards: '1', buttons: 2, focused: 0 }, { cards: 1, buttons: 2 },
+    { cards: 1, buttons: 2, focused: 0 }, { cards: 1, buttons: 2, focused: 0, cardId: 'Allow once' }, { cards: 1, buttons: 2, focused: 0, cardId: 42 }, null, 7]) {
     reply = { ok: true, value };
     assert.deepEqual(await instance.cardButtons('claude'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
   }
@@ -311,20 +312,27 @@ test('Claude card buttons come from the one approval card in its foreground wind
   assert.deepEqual(await instance.cardButtons('claude'), { status: 'unknown', reason: 'window-mismatch' });
 });
 
-test('a Codex card exists only while no composer exists and the container is established', async () => {
+test('a Codex card exists only while no composer exists, one sidebar row is selected and the container is established', async () => {
   const win32 = fakeWin32();
-  let reply = { ok: true, value: { composers: 1, cards: 0, buttons: 0, focused: -1 } };
+  let reply = { ok: true, value: { composers: 1, selectedRows: 1, cards: 0, buttons: 0, focused: -1 } };
   const helper = fakeHelper(() => reply);
   const instance = adapter(win32, helper);
   assert.deepEqual(await instance.cardButtons('codex'), { status: 'known', value: null }, 'one composer: no card');
   assert.deepEqual(helper.calls, [{ op: 'cardButtons', client: 'codex', hwnd: 0x1234, processId: 4242 }]);
-  reply = { ok: true, value: { composers: 0, cards: 1, buttons: 2, focused: 1 } };
-  assert.deepEqual(await instance.cardButtons('codex'), { status: 'known', value: { count: 2, focused: 1 } });
-  reply = { ok: true, value: { composers: 0, cards: 0, buttons: 0, focused: -1 } };
-  assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-card-unestablished' });
-  reply = { ok: true, value: { composers: 2, cards: 0, buttons: 0, focused: -1 } };
+  reply = { ok: true, value: { composers: 0, selectedRows: 1, cards: 1, buttons: 2, focused: 1, cardId: '42.-9.3' } };
+  assert.deepEqual(await instance.cardButtons('codex'), { status: 'known', value: { id: '42.-9.3', count: 2, focused: 1 } });
+  reply = { ok: true, value: { composers: 0, selectedRows: 1, cards: 0, buttons: 0, focused: -1 } };
+  assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-card-unestablished' }, 'no group with text and two buttons around the focused button');
+  for (const selectedRows of [0, 2]) {
+    reply = { ok: true, value: { composers: 0, selectedRows, cards: 0, buttons: 0, focused: -1 } };
+    assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-selected-row-count' },
+      `${selectedRows} selected rows: not the thread view (settings, dialogs), so the wheel stays inert`);
+  }
+  reply = { ok: true, value: { composers: 2, selectedRows: 1, cards: 0, buttons: 0, focused: -1 } };
   assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'codex-composer-count' });
-  for (const value of [{ cards: 1, buttons: 2, focused: 0 }, { composers: 1, cards: 1, buttons: 2, focused: 0 }, { composers: -1, cards: 0, buttons: 0, focused: -1 }]) {
+  for (const value of [{ cards: 1, buttons: 2, focused: 0 }, { composers: 0, cards: 1, buttons: 2, focused: 0 },
+    { composers: 0, selectedRows: 2, cards: 1, buttons: 2, focused: 0, cardId: '1.2' }, { composers: 1, selectedRows: 1, cards: 1, buttons: 2, focused: 0, cardId: '1.2' },
+    { composers: -1, selectedRows: 1, cards: 0, buttons: 0, focused: -1 }]) {
     reply = { ok: true, value };
     assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
   }
@@ -335,33 +343,39 @@ test('focusing and pressing a card button pass only an index and a count and rea
   let reply = { ok: true, value: { focused: 1 } };
   const helper = fakeHelper(() => reply);
   const instance = adapter(win32, helper);
-  assert.deepEqual(await instance.focusCardButton('claude', 1, 3), { status: 'known', value: 1 });
-  assert.deepEqual(helper.calls.at(-1), { op: 'focusCardButton', client: 'claude', index: 1, count: 3, hwnd: 0x1234, processId: 4242 });
+  assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', 1, 3), { status: 'known', value: 1 });
+  assert.deepEqual(helper.calls.at(-1), { op: 'focusCardButton', client: 'claude', cardId: '42.7.5', index: 1, count: 3, hwnd: 0x1234, processId: 4242 });
   reply = { ok: true, value: { focused: -1 } };
-  assert.deepEqual(await instance.focusCardButton('claude', 1, 3), { status: 'known', value: null }, 'focus landed on none of the card buttons');
+  assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', 1, 3), { status: 'known', value: null }, 'focus landed on none of the card buttons');
   for (const value of [{ focused: 3 }, { focused: '1' }, {}, null]) {
     reply = { ok: true, value };
-    assert.deepEqual(await instance.focusCardButton('claude', 1, 3), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+    assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', 1, 3), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
   }
   reply = { ok: false, reason: 'card-changed' };
-  assert.deepEqual(await instance.focusCardButton('claude', 1, 3), { status: 'unknown', reason: 'card-changed' });
+  assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', 1, 3), { status: 'unknown', reason: 'card-changed' });
 
   reply = { ok: true, value: { invoked: true } };
-  assert.deepEqual(await instance.invokeCardButton('claude', 2, 3), { status: 'known', value: true });
-  assert.deepEqual(helper.calls.at(-1), { op: 'invokeCardButton', client: 'claude', index: 2, count: 3, hwnd: 0x1234, processId: 4242 });
+  assert.deepEqual(await instance.invokeCardButton('claude', '42.7.5', 2, 3), { status: 'known', value: true });
+  assert.deepEqual(helper.calls.at(-1), { op: 'invokeCardButton', client: 'claude', cardId: '42.7.5', index: 2, count: 3, hwnd: 0x1234, processId: 4242 });
   reply = { ok: true, value: { invoked: false } };
-  assert.deepEqual(await instance.invokeCardButton('claude', 2, 3), { status: 'known', value: false }, 'focus moved: nothing pressed');
+  assert.deepEqual(await instance.invokeCardButton('claude', '42.7.5', 2, 3), { status: 'known', value: false }, 'focus moved: nothing pressed');
   for (const value of [{ invoked: 'yes' }, {}, null]) {
     reply = { ok: true, value };
-    assert.deepEqual(await instance.invokeCardButton('claude', 2, 3), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+    assert.deepEqual(await instance.invokeCardButton('claude', '42.7.5', 2, 3), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
   }
 
   const calls = helper.calls.length;
   for (const [index, count] of [[-1, 3], [3, 3], [1.5, 3], ['1', 3], [0, 0], [0, 65], [0, 2.5]]) {
-    assert.deepEqual(await instance.focusCardButton('claude', index, count), { status: 'unknown', reason: 'invalid-card-index' }, `${index}/${count}`);
-    assert.deepEqual(await instance.invokeCardButton('claude', index, count), { status: 'unknown', reason: 'invalid-card-index' }, `${index}/${count}`);
+    assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', index, count), { status: 'unknown', reason: 'invalid-card-index' }, `${index}/${count}`);
+    assert.deepEqual(await instance.invokeCardButton('claude', '42.7.5', index, count), { status: 'unknown', reason: 'invalid-card-index' }, `${index}/${count}`);
   }
+  for (const cardId of ['', 'Allow once', 7, null, '1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16.17']) {
+    assert.deepEqual(await instance.focusCardButton('claude', cardId, 0, 2), { status: 'unknown', reason: 'invalid-card-id' }, String(cardId));
+    assert.deepEqual(await instance.invokeCardButton('claude', cardId, 0, 2), { status: 'unknown', reason: 'invalid-card-id' }, String(cardId));
+  }
+  reply = { ok: false, reason: 'card-changed' };
   assert.equal(helper.calls.length, calls, 'invalid arguments never reach the helper');
+  assert.deepEqual(await instance.invokeCardButton('claude', '42.7.6', 2, 3), { status: 'unknown', reason: 'card-changed' }, 'another card or a changed count is unknown, not false');
 });
 
 test('card operations query no window when the client is not in front, and a foreground change is unknown', async () => {
@@ -369,17 +383,17 @@ test('card operations query no window when the client is not in front, and a for
   const helper = fakeHelper(() => ({ ok: true, value: { invoked: true } }));
   const instance = adapter(win32, helper);
   assert.deepEqual(await instance.cardButtons('claude'), { status: 'unknown', reason: 'claude-not-foreground' });
-  assert.deepEqual(await instance.focusCardButton('claude', 0, 2), { status: 'unknown', reason: 'claude-not-foreground' });
-  assert.deepEqual(await instance.invokeCardButton('claude', 0, 2), { status: 'unknown', reason: 'claude-not-foreground' });
+  assert.deepEqual(await instance.focusCardButton('claude', '42.7.5', 0, 2), { status: 'unknown', reason: 'claude-not-foreground' });
+  assert.deepEqual(await instance.invokeCardButton('claude', '42.7.5', 0, 2), { status: 'unknown', reason: 'claude-not-foreground' });
   assert.equal(helper.calls.length, 0);
   helper.request = async () => { win32.state.hwnd = 0x7777; return { ok: true, value: { invoked: true } }; };
-  assert.deepEqual(await instance.invokeCardButton('codex', 0, 2), { status: 'unknown', reason: 'foreground-changed' });
-  for (const call of [() => instance.cardButtons('other'), () => instance.focusCardButton('other', 0, 2), () => instance.invokeCardButton('other', 0, 2)]) {
+  assert.deepEqual(await instance.invokeCardButton('codex', '42.7.5', 0, 2), { status: 'unknown', reason: 'foreground-changed' });
+  for (const call of [() => instance.cardButtons('other'), () => instance.focusCardButton('other', '42.7.5', 0, 2), () => instance.invokeCardButton('other', '42.7.5', 0, 2)]) {
     assert.deepEqual(await call(), { status: 'unknown', reason: 'invalid-client' });
   }
   await instance.close();
   assert.deepEqual(await instance.cardButtons('codex'), { status: 'unknown', reason: 'adapter-closed' });
-  assert.deepEqual(await instance.invokeCardButton('codex', 0, 2), { status: 'unknown', reason: 'adapter-closed' });
+  assert.deepEqual(await instance.invokeCardButton('codex', '42.7.5', 0, 2), { status: 'unknown', reason: 'adapter-closed' });
 });
 
 test('clientVersions returns versions only and marks anything else unknown', async () => {

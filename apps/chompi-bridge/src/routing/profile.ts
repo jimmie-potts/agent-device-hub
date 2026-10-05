@@ -5,9 +5,10 @@ import type { Rgb } from '../protocol.js';
 import { readBoundedFile } from './files.js';
 
 /**
- * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app shortcuts
- * they use, colors, timings and big-wheel card navigation. Fields added after the first release are optional. It is data only: no URIs, paths, commands or package identities, and key names come
- * from an allowlist, so loading it can never run anything.
+ * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app
+ * shortcuts they use, colors, timings and big-wheel card navigation. Fields added after the first release are
+ * optional. It is data only: no URIs, paths, commands or package identities, and key names come from an
+ * allowlist, so loading it can never run anything.
  */
 export const PROFILE_SCHEMA_VERSION = 1;
 export const MAX_PROFILE_BYTES = 64 * 1024;
@@ -46,7 +47,12 @@ export interface CardSettings {
   /** How long the wheel must be still before a click presses a card button. */
   readonly clickStillMs: number;
 }
-export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: 6, clickStillMs: 250 });
+/**
+ * Encoder counts per card step: about a quarter turn at an assumed 24 counts per revolution. This is the one place to
+ * change the default once the big wheel's counts per revolution are measured; the shipped profile does not repeat it.
+ */
+export const DEFAULT_CARD_STEP_COUNTS = 6;
+export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, clickStillMs: 250 });
 const CARD_BOUNDS: Record<keyof CardSettings, [number, number, string]> = { stepCounts: [1, 96, ''], clickStillMs: [0, 2000, ' ms'] };
 
 export interface RoutingTiming {

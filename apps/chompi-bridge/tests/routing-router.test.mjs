@@ -681,6 +681,7 @@ test('matrix: an uncertain Send is never retried; a later press is a new Send', 
   await ctx.click(WHEEL);
   assert.equal(ctx.adapter.count('sendKeys'), 1, 'one Enter attempt');
   assert.deepEqual(ctx.lastLog('send-uncertain'), { type: 'send-uncertain', client: 'codex', reason: 'rejected' });
+  for (const index of [30, 31]) assert.deepEqual(ctx.lights.last[index], PROFILE.colors.error, 'the wheel LEDs flash the error color');
   await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs * 3, 100);
   assert.equal(ctx.adapter.count('sendKeys'), 1, 'nothing retries it');
   delete ctx.adapter.reject.sendKeys;
@@ -768,7 +769,7 @@ test('Record pressed and released at once still releases the chord', async t => 
   assert.equal(ctx.adapter.enters, 0);
 });
 
-test('Record is refused while Send is typing, and a failed chord releases every key', async t => {
+test('Record during a Send check presses the chord at once and abandons that Send', async t => {
   const ctx = await setup(t);
   front(ctx, 'codex');
   ctx.adapter.hang.approvalVisible = true;
@@ -776,11 +777,55 @@ test('Record is refused while Send is typing, and a failed chord releases every 
   await settle();
   ctx.press(RECORD);
   await settle();
-  assert.equal(ctx.lastLog('record-refused').reason, 'send-in-progress');
-  assert.equal(ctx.adapter.held.size, 0);
-  ctx.release(RECORD);
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }], 'Record has no checks and is never refused');
   await advance(ctx.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
-  delete ctx.adapter.hang.approvalVisible;
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.equal(ctx.adapter.enters, 0);
+  assert.equal(ctx.logs.filter(l => l.type === 'record-refused').length, 0);
+});
+
+test('Record during the Enter keystroke presses the chord right after it, so no modifier joins the Enter', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  let finishEnter;
+  const realSend = ctx.adapter.sendKeys.bind(ctx.adapter);
+  ctx.adapter.sendKeys = async request => {
+    if (request.keys.includes('Enter')) await new Promise(resolve => { finishEnter = resolve; });
+    return realSend(request);
+  };
+  ctx.press(PLAY);
+  await settle();
+  assert.equal(typeof finishEnter, 'function', 'the Enter keystroke is in flight');
+  ctx.press(RECORD);
+  await settle();
+  assert.deepEqual(ctx.adapter.keys, [], 'the chord waits for the keystroke');
+  finishEnter();
+  await settle();
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['Enter'] }, { action: 'down', keys: ['LeftControl', 'LeftWindows'] }]);
+  assert.equal(ctx.lastLog('sent').client, 'codex', 'the Send was already typing and completes');
+  ctx.release(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 0);
+
+  const early = await setup(t);
+  front(early, 'codex');
+  const realEarly = early.adapter.sendKeys.bind(early.adapter);
+  let finishEarly;
+  early.adapter.sendKeys = async request => {
+    if (request.keys.includes('Enter')) await new Promise(resolve => { finishEarly = resolve; });
+    return realEarly(request);
+  };
+  early.press(PLAY);
+  await settle();
+  early.press(RECORD);
+  early.release(RECORD);
+  finishEarly();
+  await settle();
+  assert.deepEqual(early.adapter.keys, [{ action: 'tap', keys: ['Enter'] }], 'a Record released before the keystroke ends presses nothing');
+});
+
+test('a chord that fails to go down releases every key', async t => {
+  const ctx = await setup(t);
   ctx.adapter.reject.sendKeys = new Error('SendInput inserted 0 of 2 events');
   const releases = ctx.adapter.count('releaseAll');
   ctx.press(RECORD);
@@ -1230,7 +1275,8 @@ test('card: a Codex card starts on its focused button; the wheel reaches Deny an
 });
 
 test('card: when the card closes the wheel scrolls again and its click sends', async t => {
-  const ctx = await claudeCard(t, 2, 0);
+  const ctx = await claudeCard(t, 2);
+  ctx.turn(45, STEP);
   await advance(ctx.clock, STILL, 50);
   await ctx.click(WHEEL);
   assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
@@ -1241,7 +1287,7 @@ test('card: when the card closes the wheel scrolls again and its click sends', a
   await advance(ctx.clock, 600, 100);
   ctx.turn(45, STEP);
   await settle();
-  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 1]], 'a new card turns the wheel back into card navigation');
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0], ['claude', 1]], 'a new card turns the wheel back into card navigation');
   ctx.adapter.closeCard('claude'); // closed with the mouse
   await advance(ctx.clock, 600, 100);
   ctx.turn(45, 2);
@@ -1276,7 +1322,10 @@ test('card: an unknown card state or Codex container makes the wheel inert', asy
 });
 
 test('card: a press that fails or finds focus moved is never retried', async t => {
-  const ctx = await claudeCard(t, 3, 2);
+  const ctx = await claudeCard(t, 3);
+  ctx.turn(45, 3 * STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 2]]);
   ctx.adapter.reject.invokeCardButton = new Error('UIA invoke failed');
   await advance(ctx.clock, STILL, 50);
   await ctx.click(WHEEL);
@@ -1285,6 +1334,8 @@ test('card: a press that fails or finds focus moved is never retried', async t =
   assert.equal(ctx.adapter.count('invokeCardButton'), 1);
   delete ctx.adapter.reject.invokeCardButton;
   ctx.adapter.invokeCardButton = async (...args) => { ctx.adapter.calls.push(['invokeCardButton', ...args]); return known(false); };
+  ctx.turn(45, -STEP); // the failed press used up the choice; step again
+  await advance(ctx.clock, STILL, 50);
   await ctx.click(WHEEL);
   assert.equal(ctx.lastLog('card-refused').reason, 'card-focus-moved');
   assert.equal(ctx.adapter.count('invokeCardButton'), 2);
@@ -1315,6 +1366,90 @@ test('card: steps follow the profile threshold and stillness', async t => {
   await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
   await ctx.click(WHEEL);
   assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
+});
+
+test('card: a click presses only a button the wheel itself moved to on this card', async t => {
+  // Owner decision on #821: a Codex card opens with its approve button focused, and a click without a turn must not
+  // approve it.
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(ctx.adapter.cardPressed, [], 'the focused approve button is not pressed');
+  assert.equal(ctx.adapter.enters, 0);
+  ctx.turn(45, -STEP);
+  await settle();
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0], ['codex', 1]]);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'after a deliberate step back to it, it is');
+
+  const moved = await claudeCard(t, 3);
+  moved.turn(45, STEP);
+  await settle();
+  moved.adapter.cards.claude.focused = 2; // the mouse moved focus within the card after the step
+  await advance(moved.clock, STILL, 50);
+  await moved.click(WHEEL);
+  assert.equal(moved.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(moved.adapter.cardPressed, []);
+
+  const reopened = await claudeCard(t, 2);
+  reopened.turn(45, STEP);
+  await settle();
+  reopened.adapter.closeCard('claude'); // answered with the mouse; the wheel never sees it close
+  reopened.adapter.openCard('claude', 2, 0); // a new card with the same buttons, focused on the same index by the client
+  await advance(reopened.clock, 600, 100);
+  await reopened.click(WHEEL);
+  assert.equal(reopened.lastLog('card-refused').reason, 'card-nothing-chosen', 'a choice never carries to another card');
+  assert.deepEqual(reopened.adapter.cardPressed, []);
+});
+
+test('scroll counts never shorten the first card step', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  ctx.turn(45, STEP - 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.scrolled, [['claude', -(STEP - 2)]]);
+  ctx.adapter.openCard('claude', 3);
+  await advance(ctx.clock, 600, 100);
+  ctx.turn(45, 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'the earlier scroll counts were dropped');
+  ctx.turn(45, STEP - 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]], 'a full step of turns made on the card');
+});
+
+test('a refused or uncertain Send or card press flashes the wheel LEDs red for the error flash time', async t => {
+  const ctx = await setup(t);
+  const wheel = () => [ctx.lights.last[30], ctx.lights.last[31]];
+  const off = [[0, 0, 0], [0, 0, 0]];
+  const red = [PROFILE.colors.error, PROFILE.colors.error];
+  ctx.adapter.foreground = { ...TERMINAL };
+  await ctx.click(PLAY);
+  assert.deepEqual(wheel(), red, 'a refused Send');
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  assert.deepEqual(wheel(), off, 'the flash ends on the render tick; nothing polls the desktop');
+  front(ctx, 'codex');
+  await ctx.click(PLAY);
+  assert.deepEqual(wheel(), off, 'a Send that types its Enter does not flash');
+  ctx.adapter.openCard('codex', 2, 1);
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(wheel(), red, 'a refused card press');
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  ctx.turn(45, -STEP);
+  await advance(ctx.clock, STILL, 50);
+  ctx.adapter.reject.invokeCardButton = new Error('UIA invoke failed');
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-press-uncertain').reason, 'rejected');
+  assert.deepEqual(wheel(), red, 'an uncertain card press');
+  assert.equal(ctx.adapter.enters, 1);
 });
 
 test('on a platform without an adapter every focus and Send fails closed and nothing is typed', async t => {

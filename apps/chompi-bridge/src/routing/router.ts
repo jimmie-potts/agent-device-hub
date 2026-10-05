@@ -1,6 +1,6 @@
 import type { BridgeEvent } from '../bridge.js';
 import { systemClock, type Clock } from '../clock.js';
-import type { CardButtons, ClaudeDesktopSession, Client, ForegroundWindow, OsAdapter } from '../os-adapter.js';
+import type { CardButtons, ClaudeDesktopSession, Client, ForegroundWindow, Observation, OsAdapter } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
@@ -66,6 +66,12 @@ const CARD_REUSE_MS = 500;
 /** Protocol turn IDs 41-46 pair with click IDs 29-34: the big wheel's click is its turn ID minus 12. */
 const TURN_TO_CLICK = 12;
 
+/** The reason code of an adapter call that failed, timed out or answered unknown. */
+function reasonOf<T>(call: Call<Observation<T>>): string {
+  if (!call.ok) return call.reason;
+  return call.value.status === 'unknown' ? call.value.reason : 'unknown';
+}
+
 /** The Desktop client a foreground window belongs to by package identity, or null for any other app or no window. */
 function clientOf(window: ForegroundWindow | null): Client | null {
   if (!window) return null;
@@ -100,7 +106,11 @@ export class TaskRouter {
   /** Physically held controls and when they were pressed, from bridge events. */
   readonly #held = new Map<number, number>();
   #recordHeld = false;
+  /** Incremented by every Record press and release; a press waiting for an Enter tap checks it is still current. */
+  #recordToken = 0;
   #chordDown = false;
+  /** The Enter keystroke of a Send while it is being typed; Record presses its chord right after it. */
+  #tapping: Promise<unknown> | null = null;
   /** A Send or card press is being checked or typed. */
   #sending = false;
   /** The last Send keystroke or card press, for the shared repeat window. */
@@ -113,6 +123,10 @@ export class TaskRouter {
   #stepping = false;
   #lastTurnAt = Number.NEGATIVE_INFINITY;
   #card: { client: Client; at: number; state: CardState } | null = null;
+  /** The card button the wheel's own step focused, on which card; a card press needs it (owner decision on #821). */
+  #chosen: { client: Client; cardId: string; index: number } | null = null;
+  /** Until when the big-wheel LEDs show a refused or uncertain Send or card press. */
+  #wheelErrorUntil = Number.NEGATIVE_INFINITY;
   readonly #errors = new Map<number, number>();
   #overflow = 0;
   #startedAt = 0;
@@ -184,8 +198,10 @@ export class TaskRouter {
     this.#scrollPending = 0;
     this.#stepsPending = 0;
     this.#card = null;
+    this.#chosen = null;
     this.#chordDown = false;
     this.#recordHeld = false;
+    this.#recordToken++;
     void this.#releaseAll();
     if (had) this.#log({ type: 'invalidated', reason });
     this.#render();
@@ -479,11 +495,18 @@ export class TaskRouter {
 
   // Record
 
-  /** Holds the dictation chord like a keyboard shortcut: no foreground, card or composer check (#821). */
+  /**
+   * Holds the dictation chord like a keyboard shortcut: no foreground, card or composer check (#821). A press abandons a
+   * Send still being checked; during a Send's Enter keystroke, the chord goes down right after it, so its modifiers can
+   * never join that Enter.
+   */
   async #recordPress(): Promise<void> {
     this.#recordHeld = true;
-    // A held chord would add modifiers to an Enter being typed.
-    if (this.#sending) { this.#log({ type: 'record-refused', reason: 'send-in-progress' }); return; }
+    const token = ++this.#recordToken;
+    if (this.#tapping) {
+      await this.#tapping;
+      if (token !== this.#recordToken || this.#closed) return;
+    }
     this.#chordDown = true;
     this.#render();
     const down = await this.#call(() => this.#adapter.sendKeys({ action: 'down', keys: this.#profile.shortcuts.dictation }));
@@ -499,6 +522,7 @@ export class TaskRouter {
 
   async #recordRelease(): Promise<void> {
     this.#recordHeld = false;
+    this.#recordToken++;
     if (!this.#chordDown) return;
     this.#chordDown = false;
     this.#render();
@@ -516,7 +540,7 @@ export class TaskRouter {
    */
   async #send(control: number): Promise<void> {
     const pressedAt = this.#held.get(control) ?? this.#clock.now();
-    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); };
+    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); this.#flashWheel(); };
     if (this.#sending) return refuse('send-in-progress');
     if (this.#clock.now() - this.#lastSendAt < this.#profile.timing.sendRepeatWindowMs) return refuse('repeat');
     if (this.#recordHeld || this.#chordDown) return refuse('dictating');
@@ -547,9 +571,15 @@ export class TaskRouter {
       if (!approval.ok || approval.value.status !== 'known') return refuse('approval-unknown', { client });
       if (approval.value.value) return refuse('approval-visible', { client });
       this.#lastSendAt = this.#clock.now();
-      const sent = await this.#call(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.send }));
+      const tap = this.#call(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.send }));
+      this.#tapping = tap;
+      const sent = await tap;
+      this.#tapping = null;
       if (sent.ok) this.#log({ type: 'sent', client });
-      else this.#log({ type: 'send-uncertain', client, reason: sent.reason });
+      else {
+        this.#log({ type: 'send-uncertain', client, reason: sent.reason });
+        this.#flashWheel();
+      }
     } finally {
       this.#sending = false;
       this.#render();
@@ -562,15 +592,20 @@ export class TaskRouter {
    * permission request (owner decision on #821); it is a client UI action, never a Hub acknowledgement.
    */
   async #cardPress(client: Client, card: CardButtons, pressedAt: number): Promise<void> {
-    const refuse = (reason: string) => { this.#log({ type: 'card-refused', client, reason }); };
+    const refuse = (reason: string) => { this.#log({ type: 'card-refused', client, reason }); this.#flashWheel(); };
     if (pressedAt - this.#lastTurnAt < this.#profile.cards.clickStillMs) return refuse('card-wheel-moving');
     if (this.#stepping) return refuse('card-busy');
     if (card.focused === null) return refuse('card-nothing-focused');
+    // Only a button the wheel itself moved to on this card: a Codex card opens with its approve button focused.
+    const chosen = this.#chosen;
+    if (!chosen || chosen.client !== client || chosen.cardId !== card.id || chosen.index !== card.focused) return refuse('card-nothing-chosen');
     this.#lastSendAt = this.#clock.now();
     this.#card = null;
-    const pressed = await this.#call(() => this.#adapter.invokeCardButton(client, card.focused!, card.count));
+    this.#chosen = null;
+    const pressed = await this.#call(() => this.#adapter.invokeCardButton(client, card.id, card.focused!, card.count));
     if (!pressed.ok || pressed.value.status !== 'known') {
-      this.#log({ type: 'card-press-uncertain', client, reason: pressed.ok && pressed.value.status === 'unknown' ? pressed.value.reason : pressed.ok ? 'unknown' : pressed.reason });
+      this.#log({ type: 'card-press-uncertain', client, reason: reasonOf(pressed) });
+      this.#flashWheel();
       return;
     }
     if (!pressed.value.value) return refuse('card-focus-moved');
@@ -623,7 +658,9 @@ export class TaskRouter {
     if (!this.#wheelBusy) this.#track(this.#drainWheel());
   }
 
+  /** Drops pending wheel work, and partial rotation with it, so no earlier turn shortens a later card step. */
   #clearWheel(): void {
+    this.#wheelCounts = 0;
     this.#scrollPending = 0;
     this.#stepsPending = 0;
   }
@@ -647,7 +684,9 @@ export class TaskRouter {
           continue;
         }
         if (mode.kind !== 'scroll') return this.#clearWheel();
+        // Outside a card, rotation only scrolls: partial rotation never carries into the first step of a later card.
         this.#stepsPending = 0;
+        this.#wheelCounts = 0;
         if (this.#scrollPending === 0) continue;
         const notches = Math.max(-MAX_NOTCHES_PER_CALL, Math.min(MAX_NOTCHES_PER_CALL, this.#scrollPending));
         this.#scrollPending -= notches;
@@ -656,7 +695,7 @@ export class TaskRouter {
         if (!scrolled.ok || scrolled.value.status !== 'known') {
           // Unknown: drop what is pending rather than retry; the next turn tries again.
           this.#scrollPending = 0;
-          this.#log({ type: 'scroll-unknown', client, reason: scrolled.ok && scrolled.value.status === 'unknown' ? scrolled.value.reason : scrolled.ok ? 'unknown' : scrolled.reason });
+          this.#log({ type: 'scroll-unknown', client, reason: reasonOf(scrolled) });
           return;
         }
         if (!scrolled.value.value) { this.#scrollPending = 0; return; }
@@ -674,7 +713,7 @@ export class TaskRouter {
   async #wheelMode(): Promise<WheelMode> {
     const window = await this.#call(() => this.#adapter.foregroundWindow());
     const client = window.ok && window.value.status === 'known' ? clientOf(window.value.value) : null;
-    if (!client) { this.#card = null; return { kind: 'none' }; }
+    if (!client) { this.#card = null; this.#chosen = null; return { kind: 'none' }; }
     const cached = this.#card;
     let state: CardState;
     if (cached && cached.client === client && this.#clock.now() - cached.at < CARD_REUSE_MS) state = cached.state;
@@ -692,10 +731,11 @@ export class TaskRouter {
     const answer = await this.#call(() => this.#adapter.cardButtons(client));
     let state: CardState;
     if (!answer.ok || answer.value.status !== 'known') {
-      const reason = answer.ok && answer.value.status === 'unknown' ? answer.value.reason : answer.ok ? 'unknown' : answer.reason;
+      const reason = reasonOf(answer);
       state = { kind: 'unknown', reason };
       this.#log({ type: 'card-unknown', client, reason });
     } else state = answer.value.value ? { kind: 'card', card: { ...answer.value.value } } : { kind: 'none' };
+    if (state.kind !== 'card' || this.#chosen?.client !== client || this.#chosen.cardId !== state.card.id) this.#chosen = null;
     this.#card = { client, at: this.#clock.now(), state };
     return state;
   }
@@ -708,15 +748,17 @@ export class TaskRouter {
     if (index === card.focused) return;
     this.#stepping = true;
     try {
-      const moved = await this.#call(() => this.#adapter.focusCardButton(client, index, card.count));
+      const moved = await this.#call(() => this.#adapter.focusCardButton(client, card.id, index, card.count));
       if (!moved.ok || moved.value.status !== 'known') {
         this.#card = null;
-        this.#log({ type: 'card-step-failed', client, reason: moved.ok && moved.value.status === 'unknown' ? moved.value.reason : moved.ok ? 'unknown' : moved.reason });
+        this.#chosen = null;
+        this.#log({ type: 'card-step-failed', client, reason: reasonOf(moved) });
         return;
       }
       const focused = moved.value.value;
+      this.#chosen = focused === index ? { client, cardId: card.id, index } : null;
       if (this.#card?.client === client && this.#card.state.kind === 'card') {
-        this.#card = { client, at: this.#clock.now(), state: { kind: 'card', card: { count: card.count, focused } } };
+        this.#card = { client, at: this.#clock.now(), state: { kind: 'card', card: { id: card.id, count: card.count, focused } } };
       }
       this.#log({ type: 'card-step', client, index: focused, count: card.count });
     } finally {
@@ -725,6 +767,12 @@ export class TaskRouter {
   }
 
   // Lights
+
+  /** The big-wheel LEDs show the error color briefly for a refused or uncertain Send or card press (owner, #821). */
+  #flashWheel(): void {
+    this.#wheelErrorUntil = this.#clock.now() + this.#profile.timing.errorFlashMs;
+    this.#render();
+  }
 
   #flash(slot: number): void {
     this.#errors.set(slot, this.#clock.now() + this.#profile.timing.errorFlashMs);
@@ -749,7 +797,7 @@ export class TaskRouter {
     const now = this.#clock.now();
     const half = Math.max(1, Math.floor(this.#profile.timing.attentionPulseMs / 2));
     const frame = renderFrame({
-      profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown,
+      profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, wheelError: now < this.#wheelErrorUntil,
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });
     const signature = JSON.stringify(frame);

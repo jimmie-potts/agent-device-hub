@@ -100,7 +100,7 @@ if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   const card = await helper.request('cardButtons', { client: 'codex', hwnd: codexWindow[0], processId: codexWindow[1] });
   codexCardButtons = { ...card, ms: Date.now() - cardStart };
   assert.equal(card.ok, true, `cardButtons: ${card.reason ?? ''}`);
-  assert.deepEqual(Object.keys(card.value), ['composers', 'cards', 'buttons', 'focused']);
+  assert.deepEqual(Object.keys(card.value), ['composers', 'selectedRows', 'cards', 'buttons', 'focused', 'cardId']);
 }
 // The same count against the running Claude Desktop window, found read-only by its package folder.
 const claudeWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
@@ -119,7 +119,7 @@ if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
   const card = await helper.request('cardButtons', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
   claudeCardButtons = { ...card, ms: Date.now() - cardStart };
   assert.equal(card.ok, true, `cardButtons: ${card.reason ?? ''}`);
-  assert.deepEqual(Object.keys(card.value), ['cards', 'buttons', 'focused']);
+  assert.deepEqual(Object.keys(card.value), ['cards', 'buttons', 'focused', 'cardId']);
 }
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);

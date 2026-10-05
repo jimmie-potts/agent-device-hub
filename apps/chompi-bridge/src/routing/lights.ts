@@ -43,16 +43,22 @@ export interface RenderInput {
   /** Index 0 is slot 1. */
   slots: readonly SlotLight[];
   recording: boolean;
+  /** A refused or uncertain Send or card press: both big-wheel LEDs show the error color. */
+  wheelError?: boolean;
   pulseOn: boolean;
 }
 
 const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * factor), Math.round(g * factor), Math.round(b * factor)];
 
+/** The two big-wheel LEDs (protocol LED indices 30 and 31). */
+const WHEEL_LEDS = [30, 31];
+
 /**
- * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off, including the big wheel's: Send and
- * card answers are decided at the press, and nothing polls the window in front to show them.
+ * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to
+ * flash a refused or uncertain Send or card press: readiness is decided at the press, and nothing polls the window in
+ * front to show it.
  */
-export function renderFrame({ profile, slots, recording, pulseOn }: RenderInput): Rgb[] {
+export function renderFrame({ profile, slots, recording, wheelError = false, pulseOn }: RenderInput): Rgb[] {
   const frame: Rgb[] = Array.from({ length: LED_COUNT }, () => OFF);
   const { colors } = profile;
   slots.forEach((light, i) => {
@@ -65,5 +71,6 @@ export function renderFrame({ profile, slots, recording, pulseOn }: RenderInput)
   });
   const record = ledIndex(profile.controls.record);
   if (recording && record !== undefined) frame[record] = colors.record;
+  if (wheelError) for (const index of WHEEL_LEDS) frame[index] = colors.error;
   return frame.map(([r, g, b]) => [r, g, b] as const);
 }

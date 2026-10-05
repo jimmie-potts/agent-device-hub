@@ -46,6 +46,8 @@ export interface ClaudeDesktopSession {
 
 /** The open card's actionable buttons (enabled, invokable, not menus), counted in tree order. */
 export interface CardButtons {
+  /** The card's identity for this window: an opaque UI Automation runtime ID that a new card never shares; no text. */
+  id: string;
   /** How many actionable buttons the card has (0-64). */
   count: number;
   /** The index of the one with keyboard focus, or null when focus is on none of them. */
@@ -101,16 +103,17 @@ export interface OsAdapter {
   cardButtons(client: Client): Promise<Observation<CardButtons | null>>;
 
   /**
-   * Moves keyboard focus to actionable button `index` of the open card, refusing (unknown) when the card no longer has
-   * `count` actionable buttons. Answers the focused index afterwards, or null when focus is on none of them.
+   * Moves keyboard focus to actionable button `index` of the open card `cardId`. Answers unknown when that card is gone
+   * or no longer has `count` actionable buttons; otherwise the focused index afterwards, or null when focus is on none.
    */
-  focusCardButton(client: Client, index: number, count: number): Promise<Observation<number | null>>;
+  focusCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<number | null>>;
 
   /**
-   * Presses actionable button `index` of the open card only when it has keyboard focus and the card still has `count`
-   * actionable buttons: known `true` when pressed, known `false` when it refused. Never retried by the caller.
+   * Presses actionable button `index` of the open card `cardId`: unknown when that card is gone or no longer has `count`
+   * actionable buttons, known `false` when the button does not have keyboard focus, and known `true` when pressed.
+   * Never retried by the caller.
    */
-  invokeCardButton(client: Client, index: number, count: number): Promise<Observation<boolean>>;
+  invokeCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<boolean>>;
 
   /** Codex: whether a thread ID appears as an archived rollout filename. Reads names only. */
   codexArchived(threadId: string): Promise<Observation<boolean>>;

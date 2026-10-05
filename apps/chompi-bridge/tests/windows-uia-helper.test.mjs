@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { asciiJson, encodeHelperCommand, helperLoader, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
+import { asciiJson, encodeHelperCommand, HELPER_LOADER, HELPER_SCRIPT_ENV, helperLaunch, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
 
 /** A scripted stand-in for the PowerShell helper process. */
 class FakeChild extends EventEmitter {
@@ -149,10 +149,11 @@ test('requests after close are refused without spawning', async () => {
 });
 
 /** The body of a top-level helper function, or undefined. */
-const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1];
-const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'FocusedIndex', 'CardContainer', 'CardButtons', 'FocusCardButton', 'InvokeCardButton'];
+const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
+  ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
+const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
-test('the shipped helper script changes UI state only inside the two card operations, and fits one PowerShell command line', () => {
+test('the shipped helper script changes UI state only inside the two card operations', () => {
   // #821 deliberately narrows the old "never focuses or invokes" rule: FocusCardButton may set focus and
   // InvokeCardButton may invoke, each on one button of the open card. Everything else stays read-only.
   const script = readFileSync(helperScriptPath(), 'utf8');
@@ -174,39 +175,23 @@ test('the shipped helper script changes UI state only inside the two card operat
   assert.equal(/SetFocus/.test(invokeBody), false, 'InvokeCardButton never moves focus');
 });
 
-test('the helper starts from a short encoded loader that runs the shipped script file', () => {
+test('the helper starts from a short encoded loader that reads the script path from its environment', () => {
   // The script with the card operations is longer than a Windows command line allows as base64 UTF-16 (32767
-  // characters), so only a loader is encoded; it reads the same shipped file the inline script came from.
-  const script = readFileSync(helperScriptPath(), 'utf8');
-  assert.ok(encodeHelperCommand(script).length > 0);
-  const loader = helperLoader('C:\\Users\\o\'neil\\bridge\\src\\windows\\uia-helper.ps1');
-  assert.equal(loader, ". ([System.Management.Automation.ScriptBlock]::Create([System.IO.File]::ReadAllText('C:\\Users\\o''neil\\bridge\\src\\windows\\uia-helper.ps1', [System.Text.Encoding]::UTF8)))",
-    'the path is one single-quoted literal with quotes doubled');
-  const encoded = encodeHelperCommand(helperLoader(helperScriptPath()));
-  assert.ok(encoded.length < 4000, `encoded loader is ${encoded.length} characters`);
-  assert.equal(Buffer.from(encoded, 'base64').toString('utf16le'), helperLoader(helperScriptPath()));
-  assert.match(script, /^[\x00-\x7f]*$/, 'the script is ASCII, so its UTF-8 read is exact');
-});
-
-test('the helper approval check is scoped to the target window, bounded and reads class names only', () => {
-  const script = readFileSync(helperScriptPath(), 'utf8');
-  assert.match(script, /'approvalVisible' \{ \$value = ApprovalVisible \$request \}/);
-  const body = /^function ApprovalVisible\(\$request\) \{\n([\s\S]*?)\n\}$/m.exec(script)?.[1];
-  assert.ok(body, 'ApprovalVisible is a top-level function');
-  assert.match(body, /^\s+\$window = TargetWindow \$request$/m, 'it refuses a window that is not the requested process');
-  assert.match(script, /\$ClaudeApprovalToken = 'epitaxy-approval-card'/);
-  // Claude counts the token on every element, so a card under another control type cannot read as absent.
-  assert.match(body, /'claude' \{ \$condition = \[System\.Windows\.Automation\.Condition\]::TrueCondition; \$token = \$ClaudeApprovalToken; \$key = 'approvalCards' \}/);
-  assert.match(body, /'codex' \{ \$condition = Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Edit\); \$token = \$ComposerToken; \$key = 'composers' \}/);
-  assert.equal(/ControlType\]::Group/.test(body), false, 'the Claude count is not limited to Group elements');
-  assert.match(body, /HasToken \$element\.Cached\.ClassName \$token/);
-  assert.match(body, /\$window\.FindAll\(\$Scope::Descendants, \$condition\)/);
-  assert.match(body, /\$cache\.Add\(\$AE::ClassNameProperty\)/);
-  for (const forbidden of [/TreeWalker/, /NameProperty(?<!ClassNameProperty)/, /\.Name\b/, /ValuePattern/, /\.Value\b/, /FocusedElement/]) {
-    assert.equal(forbidden.test(body), false, `approval check must not use ${forbidden}`);
+  // characters), so only a loader is encoded. The path travels in the environment, never inside the command, so no
+  // character in it can end a PowerShell string: PowerShell treats typographic apostrophes (U+2018-U+201B) as quotes.
+  assert.equal(HELPER_LOADER, `. ([System.Management.Automation.ScriptBlock]::Create([System.IO.File]::ReadAllText($env:${HELPER_SCRIPT_ENV}, [System.Text.Encoding]::UTF8)))`);
+  for (const path of ["C:\\Users\\o'neil\\uia-helper.ps1", 'C:\\Users\\o\u2018ne\u2019il\u201a\u201b\\uia-helper.ps1', 'C:\\Users\\"x"; Start-Process calc\\uia-helper.ps1']) {
+    const launch = helperLaunch(path, { SystemRoot: 'C:\\Windows', KEEP: '1' });
+    assert.equal(launch.env[HELPER_SCRIPT_ENV], path, 'the exact path, unquoted');
+    assert.equal(launch.env.KEEP, '1', 'the rest of the environment is kept');
+    assert.ok(launch.command.startsWith('C:\\Windows') && /WindowsPowerShell.v1\.0.powershell\.exe$/.test(launch.command), 'Windows PowerShell 5.1 by absolute path');
+    assert.deepEqual(launch.args.slice(0, -1), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand']);
+    const decoded = Buffer.from(launch.args.at(-1), 'base64').toString('utf16le');
+    assert.equal(decoded, HELPER_LOADER);
+    assert.equal(decoded.includes('Users'), false, 'the command carries no path');
   }
-  assert.match(body, /return @\{ \$key = \$count \}/);
-  assert.match(body, /Fail 'invalid-client'/);
+  assert.ok(encodeHelperCommand(HELPER_LOADER).length < 4000);
+  assert.match(readFileSync(helperScriptPath(), 'utf8'), /^[\x00-\x7f]*$/, 'the script is ASCII, so its UTF-8 read is exact');
 });
 
 test('the card operations are scoped to the target window, bounded, and read no Name or Value', () => {
@@ -225,13 +210,20 @@ test('the card operations are scoped to the target window, bounded, and read no 
   }
   assert.match(script, /\$MaxCardButtons = 64/);
   const list = functionBody(script, 'CardButtonList');
-  assert.match(list, /\.FindAll\(\$Scope::Descendants, \(Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Button\)\)\)/, 'buttons only: text fields are never listed');
+  assert.match(list, /\.FindAll\(\$scope, \(Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Button\)\)\)/, 'buttons only: text fields are never listed');
   for (const property of ['IsEnabledProperty', 'IsInvokePatternAvailableProperty', 'IsExpandCollapsePatternAvailableProperty']) assert.match(list, new RegExp(`\\$cache\\.Add\\(\\$AE::${property}\\)`));
   assert.match(list, /-gt \$MaxCardButtons\) \{ Fail 'card-too-many-buttons' \}/);
   const container = functionBody(script, 'CardContainer');
   assert.match(container, /HasToken \$element\.Cached\.ClassName \$ClaudeApprovalToken/, 'Claude: the approval-card token');
   assert.match(container, /ControlType\]::Group/, 'Codex: the focused button\'s parent group');
+  assert.match(container, /CardButtonList \$parent \$Scope::Children/, 'Codex: the group holds the buttons directly');
   assert.match(container, /-lt 2/, 'Codex: at least two actionable buttons');
+  assert.match(container, /\$parent\.FindAll\(\$Scope::Children, \(Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Text\)\)\)/, 'Codex: and at least one Text child');
+  assert.match(container, /\$texts\.Count -lt 1\) \{ return \$none \}/);
+  assert.match(container, /\$classes\.StartsWith\(\$CodexRowPrefix, \$Ordinal\) -and \(HasToken \$classes \$CodexSelectedToken\)/, 'Codex: selected sidebar rows are counted');
+  assert.match(container, /\$selectedRows -ne 1\) \{ return \$none \}/, 'Codex: exactly one selected row, the thread view');
+  assert.match(functionBody(script, 'CardRequest'), /\(CardId \$card\.container\), \[string\]\$request\.cardId, \$Ordinal\)\) \{ Fail 'card-changed' \}/, 'focus and press act only on the card named');
+  assert.match(functionBody(script, 'CardId'), /GetRuntimeId\(\)/, 'a card is identified by its runtime ID, not text');
   for (const name of ['FocusCardButton', 'InvokeCardButton']) {
     const body = functionBody(script, name);
     assert.match(body, /\$buttons\.Count -ne \$count\) \{ Fail 'card-changed' \}/, `${name} refuses a changed card`);

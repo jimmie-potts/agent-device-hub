@@ -21,8 +21,8 @@ test('an unsupported platform observes nothing and refuses every action', async 
   assert.deepEqual(await adapter.claudeSessions([]), unknown);
   assert.deepEqual(await adapter.scrollClient('codex', 1), unknown);
   assert.deepEqual(await adapter.cardButtons('claude'), unknown);
-  assert.deepEqual(await adapter.focusCardButton('claude', 0, 2), unknown);
-  assert.deepEqual(await adapter.invokeCardButton('claude', 0, 2), unknown);
+  assert.deepEqual(await adapter.focusCardButton('claude', '42.1', 0, 2), unknown);
+  assert.deepEqual(await adapter.invokeCardButton('claude', '42.1', 0, 2), unknown);
   for (const call of [adapter.sendKeys({ action: 'tap', keys: ['Enter'] }), adapter.openUri('codex://threads/x')]) {
     await assert.rejects(call, error => error instanceof OsAdapterNotImplementedError && error.code === 'os-adapter-not-implemented');
   }

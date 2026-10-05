@@ -199,15 +199,17 @@ export class FakeAdapter {
   /** When set, `scrollClient` answers this observation (for example `known(false)`: pointer outside the window). */
   scrollAnswer = null;
 
-  /** Open cards per client: null, 'unknown' (container not established) or { buttons, focused } (index or null). */
+  /** Open cards per client: null, 'unknown' (container not established) or { id, buttons, focused } (index or null). */
   cards = { codex: null, claude: null };
+  /** Every opened card gets a new identity, as a new UI Automation element does. */
+  cardSerial = 0;
   /** Card buttons the adapter focused and pressed: [client, index]. */
   cardFocused = [];
   cardPressed = [];
 
   /** Opens a card the way the qualified clients show one: Claude keeps its composer, Codex's card replaces it. */
   openCard(client, buttons, focused = null) {
-    this.cards[client] = { buttons, focused };
+    this.cards[client] = { id: `42.${++this.cardSerial}`, buttons, focused };
     if (client === 'claude') this.approval.claude = known(true);
     else { this.approval.codex = unknown('codex-composer-absent'); this.composer.codex = false; }
   }
@@ -231,29 +233,29 @@ export class FakeAdapter {
     if (pending) return pending;
     const card = this.#card(client);
     if (card.status !== 'known') return card;
-    return known(card.value ? { count: card.value.buttons, focused: card.value.focused } : null);
+    return known(card.value ? { id: card.value.id, count: card.value.buttons, focused: card.value.focused } : null);
   }
 
-  async focusCardButton(client, index, count) {
-    const pending = this.#enter('focusCardButton', [client, index, count]);
+  async focusCardButton(client, cardId, index, count) {
+    const pending = this.#enter('focusCardButton', [client, cardId, index, count]);
     if (pending) return pending;
     const card = this.#card(client);
     if (card.status !== 'known') return card;
     if (!card.value) return unknown('card-absent');
-    if (card.value.buttons !== count) return unknown('card-changed');
+    if (card.value.id !== cardId || card.value.buttons !== count) return unknown('card-changed');
     if (index < 0 || index >= count) return unknown('card-index');
     card.value.focused = index;
     this.cardFocused.push([client, index]);
     return known(index);
   }
 
-  async invokeCardButton(client, index, count) {
-    const pending = this.#enter('invokeCardButton', [client, index, count]);
+  async invokeCardButton(client, cardId, index, count) {
+    const pending = this.#enter('invokeCardButton', [client, cardId, index, count]);
     if (pending) return pending;
     const card = this.#card(client);
     if (card.status !== 'known') return card;
     if (!card.value) return unknown('card-absent');
-    if (card.value.buttons !== count) return unknown('card-changed');
+    if (card.value.id !== cardId || card.value.buttons !== count) return unknown('card-changed');
     if (card.value.focused !== index) return known(false);
     this.cardPressed.push([client, index]);
     this.closeCard(client);

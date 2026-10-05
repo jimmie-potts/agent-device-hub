@@ -69,6 +69,8 @@ const focusedIndex = (value: unknown, count: number): number | null | undefined 
 /** A valid index into a card of `count` actionable buttons. */
 const validCardIndex = (index: unknown, count: unknown): boolean =>
   isCount(count, MAX_CARD_BUTTONS) && count >= 1 && isCount(index, MAX_CARD_BUTTONS) && index < count;
+/** A card identity: a UI Automation runtime ID joined with dots. */
+const CARD_ID = /^-?\d{1,10}(\.-?\d{1,10}){0,15}$/;
 
 /**
  * The Windows OS adapter (interface version 3). Keystrokes, foreground identity and deep links use Win32 through
@@ -329,9 +331,10 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
     },
 
     /**
-     * The helper reports `{ cards, buttons, focused }` (Codex adds `composers`); the adapter decides. Claude: no card
-     * element is no card, one is the card, several are unknown. Codex: one composer is no card; no composer is a card
-     * only when the helper established its container, and unknown otherwise; several composers are unknown.
+     * The helper reports `{ cards, buttons, focused }` (Codex adds `composers` and `selectedRows`); the adapter decides.
+     * Claude: no card element is no card, one is the card, several are unknown. Codex: one composer is no card; no
+     * composer is a card only when the helper established its container with exactly one selected sidebar row, and
+     * unknown otherwise; several composers are unknown.
      * Containers and button rules are in UIA-NOTES.md ("Card answers").
      */
     async cardButtons(client: Client): Promise<Observation<CardButtons | null>> {
@@ -339,40 +342,45 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       if (!isClient(client)) return unknown('invalid-client');
       type Reply = { kind: 'none' } | { kind: 'card'; card: CardButtons } | { kind: 'unknown'; reason: string };
       const reply = await windowQuery<Reply>(client, 'cardButtons', { client }, value => {
-        const { cards, buttons, focused, composers } = record(value);
+        const { cards, buttons, focused, composers, selectedRows, cardId } = record(value);
         if (!isCount(cards, 100000) || !isCount(buttons, MAX_CARD_BUTTONS)) return null;
         const index = focusedIndex(focused, buttons);
         if (index === undefined) return null;
         if (client === 'codex') {
-          if (!isCount(composers, 100000)) return null;
+          if (!isCount(composers, 100000) || !isCount(selectedRows, 100000)) return null;
           if (composers > 1) return { kind: 'unknown', reason: 'codex-composer-count' };
           if (composers === 1) return cards === 0 ? { kind: 'none' } : null;
-          if (cards === 0) return { kind: 'unknown', reason: 'codex-card-unestablished' };
+          // A Codex card also needs exactly one selected sidebar row: the card belongs to the thread view.
+          if (cards === 0) return { kind: 'unknown', reason: selectedRows === 1 ? 'codex-card-unestablished' : 'codex-selected-row-count' };
+          if (selectedRows !== 1) return null;
         } else if (cards === 0) return { kind: 'none' };
         if (cards > 1) return { kind: 'unknown', reason: 'card-count' };
-        return { kind: 'card', card: { count: buttons, focused: index } };
+        if (typeof cardId !== 'string' || !CARD_ID.test(cardId)) return null;
+        return { kind: 'card', card: { id: cardId, count: buttons, focused: index } };
       }, unknown(`${client}-not-foreground`));
       if (reply.status === 'unknown') return reply;
       if (reply.value.kind === 'unknown') return unknown(reply.value.reason);
       return known(reply.value.kind === 'card' ? reply.value.card : null);
     },
 
-    async focusCardButton(client: Client, index: number, count: number): Promise<Observation<number | null>> {
+    async focusCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<number | null>> {
       if (closed) return unknown('adapter-closed');
       if (!isClient(client)) return unknown('invalid-client');
+      if (typeof cardId !== 'string' || !CARD_ID.test(cardId)) return unknown('invalid-card-id');
       if (!validCardIndex(index, count)) return unknown('invalid-card-index');
-      const reply = await windowQuery<{ focused: number | null }>(client, 'focusCardButton', { client, index, count }, value => {
+      const reply = await windowQuery<{ focused: number | null }>(client, 'focusCardButton', { client, cardId, index, count }, value => {
         const focused = focusedIndex(record(value).focused, count);
         return focused === undefined ? null : { focused };
       }, unknown(`${client}-not-foreground`));
       return reply.status === 'unknown' ? reply : known(reply.value.focused);
     },
 
-    async invokeCardButton(client: Client, index: number, count: number): Promise<Observation<boolean>> {
+    async invokeCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<boolean>> {
       if (closed) return unknown('adapter-closed');
       if (!isClient(client)) return unknown('invalid-client');
+      if (typeof cardId !== 'string' || !CARD_ID.test(cardId)) return unknown('invalid-card-id');
       if (!validCardIndex(index, count)) return unknown('invalid-card-index');
-      return windowQuery(client, 'invokeCardButton', { client, index, count }, value => {
+      return windowQuery(client, 'invokeCardButton', { client, cardId, index, count }, value => {
         const { invoked } = record(value);
         return typeof invoked === 'boolean' ? invoked : null;
       }, unknown(`${client}-not-foreground`));
