@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeSnapshot } from '../dist/routing/feed.js';
+import { hubEnvelope, hubSession } from '../dist/sim/hub.js';
 import { helperScriptPath } from '../dist/windows/index.js';
 
 /** The helper's focus read-back bound (`$FocusSettleMs` in uia-helper.ps1), so the fake models the shipped helper. */
@@ -55,34 +56,12 @@ export function tempDir(t, prefix = 'chompi-routing-') {
 export const tid = n => `019a0000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 export const lid = n => `local_00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-/** One snapshot 1.3 session record as the Hub serves it. */
-export function hubSession({
-  provider = 'codex', client = provider === 'codex' ? 'desktop' : 'code', hostId = 'pc', sourceId = provider === 'codex' ? 'codex-desktop' : 'claude-code',
-  sessionId, parent = { status: 'top-level' }, activity = 'idle', attention = [], notices = [], read = 'unknown', freshness = 'current',
-  restartUncertain = false, title, hostSessionId, lastEvidenceAtMs = 1_000,
-} = {}) {
-  return {
-    generation: 1,
-    identity: { provider, client, hostId, sourceId, sessionId },
-    turn: { status: 'unknown' }, parent, activity,
-    attention: attention.map((kind, i) => ({ id: { status: 'known', id: `a${i}` }, kind, turn: { status: 'unknown' } })),
-    notices: notices.map((acknowledgedBy, i) => ({ id: String(i).padStart(64, 'a'), kind: 'turn-ended', turn: { status: 'unknown' }, acknowledgedBy })),
-    read, unavailable: [], ordering: { status: 'unknown' }, lastEvidenceAtMs, observedAtMs: lastEvidenceAtMs,
-    observationAgeMs: 0, freshness, restartUncertain, children: { active: 0, uncertain: 0 },
-    ...(title === undefined ? {} : { title: { value: title, source: 'native' } }),
-    ...(hostSessionId === undefined ? {} : { hostSessionId }),
-  };
-}
+/** Snapshot 1.3 records and envelopes come from the synthetic Hub feed that verification runs serve (#853). */
+export { hubSession };
+export const envelope = hubEnvelope;
 
 export const codexTask = (n, options = {}) => hubSession({ sessionId: tid(n), title: `Task ${n}`, ...options });
 export const claudeTask = (n, options = {}) => hubSession({ provider: 'claude', sessionId: `claude-session-${n}`, hostSessionId: lid(n), title: `Claude ${n}`, ...options });
-
-export function envelope(sessions, { version = '1.3', revision = 1, collector = 'running' } = {}) {
-  return {
-    apiVersion: '1.0', ownerId: 'owner-1', connection: 'current', admissionRejected: 0, nextRequestId: 'r1',
-    snapshot: { apiVersion: version, revision, asOfMs: 5_000, collector, lossCount: 0, sessions },
-  };
-}
 
 /** A feed view as the feed client produces it, through the real normalizer. */
 export function view(sessions, { status = 'current', revision = 1 } = {}) {
