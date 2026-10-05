@@ -300,7 +300,13 @@ dismisses attention. Before any input:
    in the #743 trial). A name any other thread in that index also has fails
    closed too, because collapsed, archived or deleted rows are not in the
    sidebar's count. Claude: only the target session's `lastFocusedAt` moved past the
-   press time and no other session's is newer.
+   press time and no other session's is newer. Claude stamps `lastFocusedAt` only
+   when the selection changes, so a link to the session it already shows moves
+   nothing (found in the #743 trial). That press also verifies when, before the
+   link, Claude owned the foreground and a complete read of every known Desktop
+   session showed the target's `lastFocusedAt` strictly newest, and after the
+   link it still is and no other session's moved past the press. A tie, Claude
+   not in front or any unknown read fails closed as before.
 4. **Composer.** Codex sends `Alt+L`; both clients then require UI Automation
    keyboard focus on the composer.
 5. **Unsupported client version.** The bridge keeps a list of qualified

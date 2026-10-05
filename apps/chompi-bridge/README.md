@@ -257,7 +257,11 @@ colors, so focusing a task never looks like acknowledging it. The Record LED sho
   - the fixed link brings the expected package family (`OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`) to
     the front;
   - the exact task is selected. Codex: the thread's name (Codex's own, else the Hub's title) is on the selected row
-    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press;
+    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press. Claude Desktop stamps it
+    only when the selection changes, so a press for the session Claude already shows verifies another way: before
+    the link, Claude was in front and the target's `lastFocusedAt` was strictly the newest of every known Desktop
+    session; after the link, it still is and no other session's moved past the press. A tie, an incomplete read or
+    any unknown answer does not count;
   - the composer has focus.
 
   Observations are polled; the link and keystrokes are never repeated.
