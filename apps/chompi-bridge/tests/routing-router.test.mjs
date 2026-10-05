@@ -1466,6 +1466,29 @@ test('a repeat bounce or a Send abandoned for Record does not flash the wheel LE
   assert.deepEqual(wheel(), [PROFILE.colors.error, PROFILE.colors.error], 'other refusals still flash');
 });
 
+test('card: focus that Claude applies within the helper\'s read-back poll is chosen; later focus is not', async t => {
+  // Live check on 2026-10-05: Claude reported no focus right after SetFocus and the requested button 300 ms later.
+  const ctx = await claudeCard(t, 3);
+  ctx.adapter.focusLagMs = 300; // within the helper's 400 ms poll: the reply names the requested index
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'claude', index: 0, count: 3 });
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
+
+  const late = await claudeCard(t, 3);
+  late.adapter.focusLagMs = 600; // past the poll: the reply says no button has focus
+  late.turn(45, STEP);
+  await settle();
+  assert.deepEqual(late.lastLog('card-step'), { type: 'card-step', client: 'claude', index: null, count: 3 });
+  await advance(late.clock, 700, 50);
+  assert.equal(late.adapter.cards.claude.focused, 0, 'focus landed after the reply');
+  await late.click(WHEEL);
+  assert.equal(late.lastLog('card-refused').reason, 'card-nothing-chosen', 'a choice is recorded only when the reply names the requested button');
+  assert.deepEqual(late.adapter.cardPressed, []);
+});
+
 test('scroll counts never shorten the first card step', async t => {
   const ctx = await setup(t);
   front(ctx, 'claude');

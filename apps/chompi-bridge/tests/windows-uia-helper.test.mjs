@@ -151,7 +151,7 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
-const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
+const CARD_FUNCTIONS = ['InsideWindow', 'CardButtonList', 'ClaudeStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
 test('the shipped helper script changes UI state only inside the two card operations', () => {
   // #821 deliberately narrows the old "never focuses or invokes" rule: FocusCardButton may set focus and
@@ -253,6 +253,33 @@ test('the card operations are scoped to the target window, bounded, and read no 
   const compare = invoke.indexOf('[System.Windows.Automation.Automation]::Compare($buttons[$index], $focused)');
   assert.ok(compare > 0 && compare < invoke.indexOf('.Invoke()'), 'InvokeCardButton checks keyboard focus before it invokes');
   assert.match(invoke, /return @\{ invoked = \$false \}/);
+});
+
+test('FocusCardButton reads focus back in a bounded poll, because Claude applies focus asynchronously', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /^\$FocusPollMs = 25$/m);
+  assert.match(script, /^\$FocusSettleMs = 400$/m, 'well inside the 4 s helper request timeout and the 2 s adapter call timeout');
+  const body = functionBody(script, 'FocusCardButton');
+  const setFocus = body.indexOf('.SetFocus()');
+  const poll = body.indexOf('while ($observed -ne $index -and $clock.ElapsedMilliseconds -lt $FocusSettleMs) {');
+  assert.ok(setFocus > 0 && poll > setFocus, 'the poll follows the single SetFocus');
+  assert.match(body, /\$clock = \[System\.Diagnostics\.Stopwatch\]::StartNew\(\)/, 'a monotonic bound');
+  assert.match(body, /Start-Sleep -Milliseconds \$FocusPollMs/);
+  assert.equal(body.match(/\$observed = FocusedIndex \$buttons/g)?.length, 2, 'focus is only compared, never read as text');
+  assert.match(body, /return @\{ focused = \$observed \}/, 'the reply shape is unchanged: the index observed, or -1');
+});
+
+test('a Claude question card stops only on its answer rows; permission cards and Codex keep every actionable button', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /^\$ClaudeAnswerToken = 'text-left'$/m);
+  const stops = functionBody(script, 'ClaudeStops');
+  assert.match(stops, /HasToken \$b\.Cached\.ClassName \$ClaudeAnswerToken/, 'an exact class token, not text');
+  assert.match(stops, /if \(\$answers\.Count -gt 0\) \{ return ,\$answers \}\n\s+return ,\$buttons/, 'no answer row: every actionable button');
+  assert.match(functionBody(script, 'CardButtonList'), /\$cache\.Add\(\$AE::ClassNameProperty\)/);
+  const container = functionBody(script, 'CardContainer');
+  assert.match(container, /buttons = \(ClaudeStops \(CardButtonList \$cards\[0\] \$Scope::Descendants\)\)/, 'Claude cards use the stop rule');
+  assert.match(container, /\$buttons = CardButtonList \$parent \$Scope::Children\n/, 'Codex cards do not');
+  assert.equal(container.match(/ClaudeStops/g).length, 1);
 });
 
 const NON_ASCII_TITLES = ['Résumé café', 'Plan \u2014 review', '\u4efb\u52a1\u8def\u7531', 'Ship it \u{1f680}', 'mixed \u00e9\u2014\u4e2d\u{1f600}\u0000\u007f'];

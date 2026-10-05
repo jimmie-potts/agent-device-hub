@@ -17,6 +17,11 @@ $CodexSelectedToken = 'bg-primary-ghost-hover'
 $ComposerToken = 'ProseMirror'
 $ClaudeApprovalToken = 'epitaxy-approval-card'
 $MaxCardButtons = 64
+# Claude answer rows (and its "Other" row) carry this class token; header, footer and submit buttons do not.
+$ClaudeAnswerToken = 'text-left'
+# Claude applies focus asynchronously: after a focus request, read focus back every 25 ms for at most 400 ms.
+$FocusPollMs = 25
+$FocusSettleMs = 400
 
 # Requests arrive ASCII-only (non-ASCII as \uXXXX escapes, which ConvertFrom-Json decodes). Replies are escaped
 # the same way, so neither direction depends on the console code page.
@@ -126,6 +131,7 @@ function InsideWindow($element, $window) {
 # More than 64 Button elements in scope, before that filter, is an error.
 function CardButtonList($container, $scope) {
   $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ClassNameProperty)
   $cache.Add($AE::IsEnabledProperty)
   $cache.Add($AE::IsInvokePatternAvailableProperty)
   $cache.Add($AE::IsExpandCollapsePatternAvailableProperty)
@@ -140,6 +146,15 @@ function CardButtonList($container, $scope) {
       -not [bool]$b.GetCachedPropertyValue($AE::IsExpandCollapsePatternAvailableProperty)) { $list.Add($b) }
   }
   return ,$list
+}
+
+# Claude's wheel stops: when any actionable button carries the answer token (a question card), only those buttons, the
+# answer rows and "Other", in tree order, as Up and Down move inside its option list; otherwise (a permission card) all.
+function ClaudeStops($buttons) {
+  $answers = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
+  foreach ($b in $buttons) { if (HasToken $b.Cached.ClassName $ClaudeAnswerToken) { $answers.Add($b) } }
+  if ($answers.Count -gt 0) { return ,$answers }
+  return ,$buttons
 }
 
 function FocusedIndex($buttons) {
@@ -172,7 +187,7 @@ function CardContainer($request, $window) {
     $cards = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
     foreach ($element in $elements) { if (HasToken $element.Cached.ClassName $ClaudeApprovalToken) { $cards.Add($element) } }
     if ($cards.Count -ne 1) { return @{ cards = $cards.Count } }
-    return @{ cards = 1; container = $cards[0]; buttons = (CardButtonList $cards[0] $Scope::Descendants) }
+    return @{ cards = 1; container = $cards[0]; buttons = (ClaudeStops (CardButtonList $cards[0] $Scope::Descendants)) }
   }
   $composers = 0; $selectedRows = 0
   foreach ($element in $elements) {
@@ -224,7 +239,14 @@ function FocusCardButton($request) {
   $index = [int]$request.index; $count = [int]$request.count
   if ($buttons.Count -ne $count) { Fail 'card-changed' }
   $buttons[$index].SetFocus()
-  return @{ focused = (FocusedIndex $buttons) }
+  # Focus lands asynchronously in Claude; reply with the index observed once it settles or the bound runs out.
+  $clock = [System.Diagnostics.Stopwatch]::StartNew()
+  $observed = FocusedIndex $buttons
+  while ($observed -ne $index -and $clock.ElapsedMilliseconds -lt $FocusSettleMs) {
+    Start-Sleep -Milliseconds $FocusPollMs
+    $observed = FocusedIndex $buttons
+  }
+  return @{ focused = $observed }
 }
 
 function InvokeCardButton($request) {
