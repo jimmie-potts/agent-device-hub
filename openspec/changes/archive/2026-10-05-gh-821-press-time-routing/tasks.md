@@ -15,3 +15,11 @@
 - [x] 3.2 Run build, typecheck, the bridge suite, OpenSpec validation and the workflow checks; record the results in the PR.
 - [x] 3.3 Synchronize the specs and archive this change before final review (evidence: `openspec/specs/chompi-task-routing/spec.md` and `openspec/specs/chompi-bridge/spec.md` match the deltas, and `openspec validate --all --strict` passes).
 - [x] 3.4 Hand the native Windows check (`npm run test:chompi-bridge:native:built`, now with the read-only card read), the bridge installation and the live card checks on the trial host to the coordinator and owner (evidence: their receipts go in the PR and on #821, not in this change; source work does not claim them).
+
+## 4. Review round (PR #825)
+
+- [x] 4.1 Narrow the Codex card container to the thread view (exactly one selected sidebar row) and a group directly holding a text element and at least two actionable buttons (evidence: the Codex card tests in `windows-adapter.test.mjs`, the container checks in `windows-uia-helper.test.mjs`, the matrix rows in the qualification report).
+- [x] 4.2 Press only a button the wheel's own step moved to on the same card, identified by its runtime ID (evidence: "card: a click presses only a button the wheel itself moved to on this card" in `routing-router.test.mjs`).
+- [x] 4.3 Flash both big-wheel LEDs in the error color for a refused or uncertain Send or card press (evidence: the refusal-light tests in `routing-router.test.mjs` and `routing-lights.test.mjs`).
+- [x] 4.4 Never refuse Record: supersede a Send still checking and press the chord right after an Enter being typed (evidence: the two Record-during-Send tests in `routing-router.test.mjs`).
+- [x] 4.5 Clear partial rotation outside a card, keep the measured step default in one constant, and pass the helper script path through the environment (evidence: "scroll counts never shorten the first card step", the shipped-profile test and the loader test).

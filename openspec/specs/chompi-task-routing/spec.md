@@ -37,7 +37,7 @@ The bridge SHALL release a slot only when the adapter reports the Codex thread a
 - **THEN** that slot is released and persisted, and the Claude session is not placed again until it shows new activity
 
 ### Requirement: Distinct state lights
-The bridge SHALL light each slot from the newest Hub record for its task, keeping activity, attention, notice acknowledgment, read evidence and freshness distinct. Attention SHALL pulse. Slot keys SHALL show task state only: no key marks a selected or targeted task, so focusing a task never looks like acknowledging it. Only an idle task with an unacknowledged completion notice and no `read` evidence SHALL use the completion color. Unknown activity, uncertain freshness, restart uncertainty, ended and a stale or unavailable feed MUST NOT use the completion color. A refused slot press SHALL light that key's error state briefly. The big-wheel LEDs SHALL stay off, because Send and card answers are decided at the press and nothing polls the window in front. The renderer SHALL provide a state label for every slot.
+The bridge SHALL light each slot from the newest Hub record for its task, keeping activity, attention, notice acknowledgment, read evidence and freshness distinct. Attention SHALL pulse. Slot keys SHALL show task state only: no key marks a selected or targeted task, so focusing a task never looks like acknowledging it. Only an idle task with an unacknowledged completion notice and no `read` evidence SHALL use the completion color. Unknown activity, uncertain freshness, restart uncertainty, ended and a stale or unavailable feed MUST NOT use the completion color. A refused slot press SHALL light that key's error state briefly. The big-wheel LEDs SHALL stay off, because Send and card answers are decided at the press and nothing polls the window in front, except that a refused or uncertain Send or card press SHALL light both in the error color for the profile's error flash time. The renderer SHALL provide a state label for every slot.
 
 #### Scenario: Unknown never looks completed
 - **WHEN** a session's freshness is uncertain or the feed is stale while a completion notice is unacknowledged
@@ -87,7 +87,7 @@ A slot key press SHALL cancel any focus still in progress, release every held ke
 - **THEN** nothing is typed, not even the composer shortcut, the key lights its error state and the log names the observed version
 
 ### Requirement: Dictation like a keyboard shortcut
-Record SHALL hold the profile's dictation chord when it is pressed and release it on the Record release, including a synthetic one, with no foreground, card or composer check, so Wispr dictates into whatever is in front, a card's free-text field included. Record SHALL be refused only while a Send is typing. If the chord cannot be pressed, the bridge SHALL release every key it holds. Releasing Record MUST NOT send.
+Record SHALL hold the profile's dictation chord when it is pressed and release it on the Record release, including a synthetic one, with no foreground, card or composer check, so Wispr dictates into whatever is in front, a card's free-text field included. A Record press SHALL never be refused: it SHALL abandon a Send whose checks are still running, and a press during a Send's Enter keystroke SHALL press the chord right after that keystroke, so the chord's modifiers never join the Enter. If the chord cannot be pressed, the bridge SHALL release every key it holds. Releasing Record MUST NOT send.
 
 #### Scenario: Record then release
 - **WHEN** the owner holds Record with any app in front and releases it
@@ -96,6 +96,10 @@ Record SHALL hold the profile's dictation chord when it is pressed and release i
 #### Scenario: Record while a card is open
 - **WHEN** the owner holds Record while a Claude card is open
 - **THEN** the chord goes down, because Record makes no card check
+
+#### Scenario: Record during a Send
+- **WHEN** the owner presses Record while a Send is still checking the window in front, or while its Enter is being typed
+- **THEN** the checking Send is abandoned and the chord goes down at once, or the chord goes down right after the Enter
 
 ### Requirement: Explicit single Send
 Send SHALL be evaluated when a Send control is pressed, against the foreground window at that moment, and SHALL type exactly one Enter only when the foreground app's package family is Codex or Claude Desktop, that client's version is qualified, the adapter reports composer focus as known `true` and approval visibility as known `false`, the repeat window since the last Send or card press has passed, no other Send or card press is running and Record is not held. Anything else SHALL refuse with a reason code and type nothing; with any other app in front, or no window, Send SHALL refuse as `not-agent-client`. Send SHALL NOT depend on an earlier slot press and SHALL NOT consult the Hub: neither Hub `approval` attention nor a stale or unavailable feed blocks it, and the adapter's card check, which reports Claude question and permission cards alike, is its only approval guard. An uncertain keystroke MUST NOT be retried. Small-knob clicks, the volume click, encoder turns, slot keys, Record and Back MUST NOT send, and the profile MUST NOT be able to map them to Send. While a card is open the big-wheel click SHALL answer the card instead of sending, and Play MUST NOT press a card button.
@@ -110,7 +114,7 @@ Send SHALL be evaluated when a Send control is pressed, against the foreground w
 
 #### Scenario: Another app in front
 - **WHEN** a Send control is pressed while an app other than Codex or Claude Desktop is in front
-- **THEN** Send is refused as `not-agent-client` and nothing is typed
+- **THEN** Send is refused as `not-agent-client`, nothing is typed and the big-wheel LEDs flash the error color
 
 #### Scenario: Pending approval
 - **WHEN** Play is pressed while the adapter reports an approval card visible in the client in front
@@ -155,7 +159,7 @@ A bridge `stale`, `session-restart` or `disconnected` event, an overflowed event
 - **THEN** the chord is released, no draft is sent and nothing is typed by the reconnect, and a Send pressed after the reconnect is a new press evaluated against the window then in front
 
 ### Requirement: Versioned profile with atomic reload
-The bridge SHALL read one JSON profile with `schemaVersion: 1` of at most 64 KiB containing control mappings, key names limited to those the OS adapter can type, colors, brightness, timings, optional card-navigation settings and qualified versions for both clients, and no URIs, paths, commands or package identities. Fields added after the first release SHALL be optional with documented defaults: `cards.stepCounts` (encoder counts per card step, 1-96, default 6) and `cards.clickStillMs` (wheel stillness before a card press, 0-2000 ms, default 250). Colors that no longer have a meaning (`selected`, `sendReady` and `sendBlocked`) SHALL be accepted when present and ignored, so an existing profile keeps loading. Validation SHALL reject unknown fields and invalid values with path-qualified messages. A changed valid profile SHALL be swapped in whole; an invalid or unreadable one SHALL be reported once and the last good profile kept. A swap SHALL cancel pending actions and release keys without replaying input, and SHALL send the new profile version in the following host heartbeats. A missing or invalid profile at start SHALL exit before any device opens.
+The bridge SHALL read one JSON profile with `schemaVersion: 1` of at most 64 KiB containing control mappings, key names limited to those the OS adapter can type, colors, brightness, timings, optional card-navigation settings and qualified versions for both clients, and no URIs, paths, commands or package identities. Fields added after the first release SHALL be optional with documented defaults: `cards.stepCounts` (encoder counts per card step, 1-96, default 6, about a quarter turn at the about 25 counts per revolution measured on the trial device on 2026-10-05) and `cards.clickStillMs` (wheel stillness before a card press, 0-2000 ms, default 250). Colors that no longer have a meaning (`selected`, `sendReady` and `sendBlocked`) SHALL be accepted when present and ignored, so an existing profile keeps loading. Validation SHALL reject unknown fields and invalid values with path-qualified messages. A changed valid profile SHALL be swapped in whole; an invalid or unreadable one SHALL be reported once and the last good profile kept. A swap SHALL cancel pending actions and release keys without replaying input, and SHALL send the new profile version in the following host heartbeats. A missing or invalid profile at start SHALL exit before any device opens.
 
 #### Scenario: Invalid edit
 - **WHEN** the profile is edited to map Send to a small-knob click, or to use a key name the adapter cannot type
@@ -181,7 +185,7 @@ The bridge SHALL read `GET /api/monitor/v1/sessions?snapshotVersion=1.3` and fol
 - **THEN** at most one snapshot is in flight and one more pending, and no notification is replayed as input
 
 ### Requirement: Card answers with the big wheel
-While the adapter reports a card in the foreground Codex or Claude window at a qualified version, big-wheel turns SHALL move keyboard focus between the card's actionable buttons, in the order the adapter reports them. One step SHALL take `cards.stepCounts` encoder counts, counted in a single accumulator that restarts at zero on a direction reversal, so a small reversal never steps back. Clockwise steps SHALL move to later buttons and steps SHALL stop at the first and last button. With no card button focused, the first clockwise step SHALL focus the first button and the first counter-clockwise step the last. A big-wheel click SHALL press the focused card button only when the wheel has not turned for `cards.clickStillMs` before the press, no step is in flight, the repeat window has passed and Record is not held. Rotation while the click is held SHALL be discarded, and the press SHALL clear partial rotation and steps not yet sent. The press SHALL go through the adapter, which presses the button only if it still has keyboard focus and the card still has the same number of actionable buttons. An uncertain press MUST NOT be retried. When the card state or the Codex card container is unknown, turns and clicks SHALL do nothing: they neither scroll nor send. Play MUST NOT press a card button. This deliberately relaxes the rule that a PROMPTI action never approves anything, for this one gesture only: a still big-wheel click on a focused card button may approve a permission request. It is a client UI action and never a Hub acknowledgement, and slot keys, Play and Record still approve nothing.
+While the adapter reports a card in the foreground Codex or Claude window at a qualified version, big-wheel turns SHALL move keyboard focus between the card's actionable buttons, in the order the adapter reports them. One step SHALL take `cards.stepCounts` encoder counts, counted in a single accumulator that restarts at zero on a direction reversal, so a small reversal never steps back. Clockwise steps SHALL move to later buttons and steps SHALL stop at the first and last button. With no card button focused, the first clockwise step SHALL focus the first button and the first counter-clockwise step the last. A big-wheel click SHALL press the focused card button only when the wheel's own step moved focus to that button on that same card, as the adapter identifies the card, so at least one deliberate step is needed and a button the client focused itself, such as a Codex card's approve button, is never pressed by a click alone; and only when the wheel has not turned for `cards.clickStillMs` before the press, no step is in flight, the repeat window has passed and Record is not held. Otherwise the click SHALL press nothing. Rotation while the click is held SHALL be discarded, and the press SHALL clear partial rotation and steps not yet sent. The press SHALL go through the adapter, which presses the button only if it still has keyboard focus, in the same card with the same number of actionable buttons. An uncertain press MUST NOT be retried. When the card state or the Codex card container is unknown, turns and clicks SHALL do nothing: they neither scroll nor send. Partial rotation SHALL be cleared whenever the wheel acts outside a card, so earlier scroll counts never shorten the first card step. Play MUST NOT press a card button. This deliberately relaxes the rule that a PROMPTI action never approves anything, for this one gesture only: a still big-wheel click on a card button the wheel moved to may approve a permission request. It is a client UI action and never a Hub acknowledgement, and slot keys, Play and Record still approve nothing.
 
 #### Scenario: Step through a card
 - **WHEN** a Claude permission card is open with the composer focused and the owner turns the wheel clockwise by one step's counts, then by fewer counts than a step
@@ -192,8 +196,12 @@ While the adapter reports a card in the foreground Codex or Claude window at a q
 - **THEN** focus stays on the button it reached
 
 #### Scenario: Still click presses the focused button
-- **WHEN** the wheel has been still for the stillness time and the owner clicks it while a card button has focus
+- **WHEN** the wheel has been still for the stillness time and the owner clicks it while the card button the wheel moved to has focus
 - **THEN** the adapter presses that button once and no Enter is typed
+
+#### Scenario: Click without a step
+- **WHEN** a Codex card opens with its approve button focused, or focus moved to another button or card since the wheel's last step, and the owner clicks the wheel without turning it
+- **THEN** no button is pressed, nothing is typed and the big-wheel LEDs flash the error color
 
 #### Scenario: Click while turning
 - **WHEN** the wheel click arrives within the stillness time after a turn, or while a step is in flight
@@ -201,12 +209,16 @@ While the adapter reports a card in the foreground Codex or Claude window at a q
 
 #### Scenario: Play on a card
 - **WHEN** Play is pressed while a card is open
-- **THEN** no button is pressed and Send is refused as `approval-visible`
+- **THEN** no button is pressed and Send is refused, as `approval-visible` for a Claude card and as `composer-unfocused` for a Codex card, whose focus is on a card button
 
 #### Scenario: Card closes
 - **WHEN** the card closes after a press or with the mouse
 - **THEN** within the observation reuse time the wheel scrolls again and its click is Send
 
 #### Scenario: Codex card container unknown
-- **WHEN** Codex shows no composer and its card container cannot be established
+- **WHEN** Codex shows no composer and its card container cannot be established, as in a view without exactly one selected sidebar row
 - **THEN** wheel turns and clicks do nothing: nothing scrolls, nothing is focused or pressed and no Enter is typed
+
+#### Scenario: Scroll before a card
+- **WHEN** the owner scrolls by fewer counts than a step and a card then opens
+- **THEN** the first card step still needs a full step of turns made on the card

@@ -123,28 +123,36 @@ Three helper operations serve the adapter's `cardButtons`, `focusCardButton` and
 - runs against the client's own foreground top-level window and process (`TargetWindow`), like the other window
   checks, and refuses any other window (`window-mismatch`);
 - finds the card container (below);
-- lists the card's actionable buttons with one bounded `FindAll(Descendants)` of `Button` elements under a
-  `CacheRequest`.
+- lists the card's actionable buttons with one bounded `FindAll` of `Button` elements under a `CacheRequest`
+  (descendants of Claude's card, direct children of Codex's group).
 
-The operations return counts, indexes and booleans only. They never read a Name or Value.
+The operations return counts, indexes, booleans and the card's identity only. They never read a Name or Value. The
+identity is the container's UI Automation runtime ID joined with dots: an opaque ID that a new card never shares, not
+window text.
 
 - **Actionable buttons:**
   - enabled `Button` elements that support Invoke and do not support ExpandCollapse, in tree order;
-  - more than 64 is an error (`card-too-many-buttons`);
+  - more than 64 `Button` elements in that scope, counted before any filter, is an error (`card-too-many-buttons`);
   - text fields are `Edit` elements and are never listed;
   - a disabled button, such as Claude's submit beside an empty "Other" field, is skipped;
   - menu buttons (ExpandCollapse) are skipped because their menus open outside the card.
-- **`cardButtons`** returns `{ cards, buttons, focused }`, plus `composers` for Codex. `focused` is the index of the
-  listed button that equals `AutomationElement.FocusedElement` (`Automation.Compare`), or -1.
-- **`focusCardButton(index, count)`** refuses an invalid index (`invalid-card-index`), no card (`card-absent`) or a
-  button count that differs from `count` (`card-changed`). It then sets keyboard focus on that button and returns the
-  focused index.
-- **`invokeCardButton(index, count)`** runs the same checks, then presses the button only when it equals the focused
-  element, and returns `{ invoked: false }` otherwise.
+- **`cardButtons`** returns `{ cards, buttons, focused, cardId }`, plus `composers` and `selectedRows` for Codex.
+  `focused` is the index of the listed button that equals `AutomationElement.FocusedElement` (`Automation.Compare`),
+  or -1.
+- **`focusCardButton(cardId, index, count)`** refuses an invalid index (`invalid-card-index`), no card
+  (`card-absent`), another card or a button count that differs from `count` (`card-changed`); the adapter reports
+  these as unknown. It then sets keyboard focus on that button and returns the focused index.
+- **`invokeCardButton(cardId, index, count)`** runs the same checks (unknown when they fail), then presses the
+  button only when it equals the focused element, and returns `{ invoked: false }` otherwise.
 
 These two are the only helper code that changes UI state. A static test pins `SetFocus` to the first and `Invoke` to
-the second. The bridge starts the helper with a short `-EncodedCommand` loader that reads `uia-helper.ps1`, because
-the script with these operations no longer fits a Windows command line as base64 UTF-16.
+the second. The bridge starts the helper with a short `-EncodedCommand` loader that reads `uia-helper.ps1` from the
+path in the `CHOMPI_UIA_HELPER_SCRIPT` environment variable, because the script with these operations no longer fits a
+Windows command line as base64 UTF-16. The path is never embedded in a PowerShell string, so no character in it,
+typographic apostrophes included, can end one.
+
+The router presses only a button its own wheel step moved to, on the same card (by `cardId`), so a Codex card's
+initially focused approve button is never pressed by a click alone.
 
 ### Card containers
 
@@ -155,19 +163,27 @@ the script with these operations no longer fits a Windows command line as base64
   - The composer keeps focus when either card opens, so `focused` starts at -1.
   - No token element is no card. Several are unknown (`card-count`).
 - **Codex** (escalation card): the card has no class token, so it is found by structure. In the probe, the focused
-  card button's control-view parent is a `Group` (class `contents`) that directly holds the card's prompt text and
-  three buttons: Deny, the button that starts with focus (both Invoke) and a menu button (ExpandCollapse only).
+  card button's control-view parent is a `Group` (class `contents`) that directly holds two `Text` elements (the
+  card's prompt) and three buttons: Deny, the button that starts with focus (both Invoke) and a menu button
+  (ExpandCollapse only).
   - The container is that parent `Group`, but only while all of these hold:
     - the window has no `ProseMirror` composer;
+    - exactly one sidebar row is selected: a `Button` whose class starts with `group relative cursor-interaction` and
+      carries `bg-primary-ghost-hover`, as in the selected-row rule above. This ties the card to the thread view, so
+      settings pages and dialogs without a selected row never count. One `FindAll` of `Edit` and `Button` elements,
+      caching class names and control types only, counts composers and selected rows;
     - the focused element is in the window's process and inside the window (bounded parent walk);
     - the focused element is an actionable `Button`;
-    - its parent `Group` holds at least two actionable buttons.
+    - its parent `Group` directly holds at least one `Text` element and at least two actionable buttons.
   - The adapter decides:
     - one composer is no card;
+    - no composer and not exactly one selected row is unknown (`codex-selected-row-count`);
     - no composer without such a group is unknown (`codex-card-unestablished`), and the wheel then does nothing;
     - several composers are unknown (`codex-composer-count`).
-  - Residual: any Codex view without a composer whose focused button sits in such a group counts as a card. Only the
-    escalation card was observed.
+  - Not seen directly: the probe printed truncated class lists, so the selected row while a card is open is inferred
+    from the thread view; the installed card check confirms it.
+  - Residual: another composer-less element of the thread view with the same shape would count as a card. A press
+    there still needs a deliberate wheel step to the button and a still click. Only the escalation card was observed.
 
 Re-qualify the containers, the button order and a still-click press, with a harmless card in a throwaway task, when
 either client's version changes.

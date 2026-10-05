@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
+import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
 import { advance, settle, tempDir } from './routing-helpers.mjs';
 
@@ -25,7 +25,9 @@ test('the shipped default profile validates with the owner-decided mappings', as
   assert.deepEqual(profile.shortcuts.dictation, ['LeftControl', 'LeftWindows']);
   assert.deepEqual(profile.qualifiedVersions.claude, ['2.19675.0.0']);
   assert.deepEqual(profile.qualifiedVersions.codex, ['26.930.3930.0'], 'Codex selectors are version-dependent too');
-  assert.deepEqual(profile.cards, { stepCounts: 6, clickStillMs: 250 }, 'a quarter turn at an assumed 24 counts per revolution');
+  assert.deepEqual(profile.cards, { stepCounts: 6, clickStillMs: 250 }, 'about a quarter turn at the measured 25 counts per revolution');
+  assert.equal(DEFAULT_CARD_STEP_COUNTS, 6);
+  assert.equal('cards' in shipped(), false, 'the shipped profile leaves the step default to the one constant in profile.ts');
   for (const name of ['selected', 'sendReady', 'sendBlocked']) assert.equal(name in profile.colors, false, `${name} has no meaning in the press-time model`);
   assert.ok(Object.isFrozen(profile) && Object.isFrozen(profile.controls.slots), 'a loaded profile is immutable');
 });

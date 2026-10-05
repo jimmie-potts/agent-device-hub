@@ -19,8 +19,8 @@ In the [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743) trial
   - Big-wheel turns move keyboard focus between the card's actionable buttons, one button per software detent.
   - A big-wheel click presses the focused button, but only after the wheel has been still for a short time.
   - An unknown card state makes turns and clicks do nothing.
-- **Software detents.** The encoder is smooth. One card step needs `cards.stepCounts` encoder counts (default 6, about a quarter turn at an assumed 24 counts per revolution), and the count restarts on a direction reversal. A click is accepted after `cards.clickStillMs` of stillness (default 250 ms). Both settings are optional.
-- **Lights.** Slot keys show task state only. The "selected" key color and the Send-readiness wheel LEDs are removed. Their colors stay accepted in profiles and are ignored.
+- **Software detents.** The encoder is smooth. One card step needs `cards.stepCounts` encoder counts (default 6, about a quarter turn at the about 25 counts per revolution measured on the trial device on 2026-10-05), and the count restarts on a direction reversal. A click is accepted after `cards.clickStillMs` of stillness (default 250 ms), and only on a button the wheel itself moved to. Both settings are optional.
+- **Lights.** Slot keys show task state only. The "selected" key color and the Send-readiness wheel LEDs are removed; their colors stay accepted in profiles and are ignored. The wheel LEDs flash the error color for a refused or uncertain Send or card press.
 - **OS adapter interface version 3.** It adds `cardButtons`, `focusCardButton` and `invokeCardButton`. These are the first helper operations that change UI state: they focus or press a button only inside the open card, after checking the card's identity, and return only counts, indexes and booleans.
 
 ## Capabilities
@@ -32,4 +32,4 @@ In the [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743) trial
 
 ## Impact
 
-This change affects the bridge package only, with no Hub, agent-state, lifecycle or controller-contract change. Two assurances are cut deliberately, as listed in the design: the Hub approval check on Send and the checks on Record. Installation means reinstalling the per-user bridge on the trial host under epic #738's grant. The live card checks belong to this story's installed trial, and the physical tuning of the detents belongs to #745. #744 builds its knob actions on this model.
+This change affects the bridge package only, with no Hub, agent-state, lifecycle or controller-contract change. Two assurances are cut deliberately, as listed in the design: the Hub approval check on Send and the checks on Record. Installation means reinstalling the per-user bridge on the trial host under epic #738's grant. The live card checks, including the feel of the measured detent default, belong to this story's installed trial. #744 builds its knob actions on this model.

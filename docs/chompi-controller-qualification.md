@@ -332,15 +332,18 @@ target and a task chosen with the mouse could not be sent to.
   through the computer microphone, whenever it is pressed, and releases on key
   release. There is no foreground, card or composer check, so dictation works
   in any app, a card's free-text field included. Release inserts a draft and
-  never sends. Disconnect, reload, Back, a task switch and shutdown release
+  never sends. A Record press is never refused: it abandons a Send still
+  checking the window, and during a Send's Enter keystroke the chord goes down
+  right after it. Disconnect, reload, Back, a task switch and shutdown release
   held keys.
 - **Big-wheel click or Play** (the default profile maps both; owner choice in
   the #743 trial) sends one Enter at the press only when Codex or Claude
   Desktop is in front at a qualified version, its composer has focus, the
   bridge's card check finds no card (Enter approves an open request in Codex),
   the repeat window has passed and Record is not held. Any other app in front
-  gets nothing. An uncertain Send is never retried. Small-knob clicks never
-  send.
+  gets nothing. An uncertain Send is never retried. A refused or uncertain
+  Send or card press flashes both big-wheel LEDs in the error color (owner
+  decision on #821). Small-knob clicks never send.
 - **Cut assurances** (owner decision on #821): Send no longer checks the Hub's
   `attention.approval` or the feed's freshness; the card and composer checks
   are its only guards. A Codex card with its own focused `ProseMirror` field
@@ -348,14 +351,19 @@ target and a task chosen with the mouse could not be sent to.
 - **Card answers.** While a card is open in a qualified Codex or Claude window
   in front, big-wheel turns move keyboard focus between the card's actionable
   buttons through UI Automation, one button per software detent
-  (`cards.stepCounts`, default 6 counts, about a quarter turn at an assumed 24
-  counts per revolution, restarting on a reversal), and a big-wheel click
-  presses the focused button only after `cards.clickStillMs` (default 250 ms)
-  of stillness. Play is refused on a card. An unknown card state, including a
-  Codex view whose card container cannot be established, makes the wheel do
-  nothing. Codex cards are identified by structure, which is a residual: see
-  the [UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#card-answers).
-  #745 tunes the detent and stillness on the device.
+  (`cards.stepCounts`, default 6 counts, about a quarter turn at the about 25
+  counts per revolution measured on the trial device on 2026-10-05,
+  restarting on a reversal). A big-wheel click presses the focused button only
+  when the wheel's own step moved focus to it on that card, after
+  `cards.clickStillMs` (default 250 ms) of stillness; a Codex card's initially
+  focused approve button is never pressed by a click alone. Play is refused on
+  a card. An unknown card state, including a Codex view whose card container
+  cannot be established, makes the wheel do nothing. Codex cards are
+  identified by structure (no composer, exactly one selected sidebar row, and a
+  focused button in a group holding text and two or more actionable buttons),
+  which leaves a narrowed residual: see the
+  [UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#card-answers).
+  #821's installed trial checks the feel of the detent and stillness.
 - Avoid controls that collide with Wispr (left Ctrl + left Win, Ctrl+Win+Space,
   Esc dismiss) or Codex (Ctrl+Space, Ctrl+Q, Alt+L, Alt+M).
 
@@ -404,13 +412,18 @@ that cannot be mistaken for any task state.
 | Two live tasks with the same title | Codex verification fails closed; Claude still verifies by ID |
 | Target app not foreground after open | No input |
 | Send with no slot press, Codex or Claude in front at a qualified version, composer focused, no card | One Enter to the task in front (press-time model, #821) |
-| Send with another app in front, an unknown foreground, an unqualified or unknown client version, the composer unfocused or unknown, or Record held | Send refused; nothing typed |
+| Send with another app in front, an unknown foreground, an unqualified or unknown client version, the composer unfocused or unknown, or Record held | Send refused; nothing typed; wheel LEDs flash red |
+| Record pressed while a Send is checking, or while its Enter is typed | Chord pressed at once and the checking Send abandoned, or chord pressed right after the Enter |
 | Task switch between Record and Send | Chord released; the next Send is evaluated at its own press |
 | Approval or question card visible, or card state unknown | Send and Play refused; key press does not approve or acknowledge |
 | Hub `approval` attention or a stale feed without a visible card | Cut assurance (#821): Send types one Enter; the card and composer checks are its only guards |
 | Codex card with its own focused `ProseMirror` field | Accepted residual (#821): counts as the composer and accepts Enter; not observed |
 | Card open: wheel turn | Focus moves one actionable button per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped |
-| Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed |
+| Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
+| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red |
+| Codex view without a composer and without exactly one selected sidebar row (settings, a dialog), or whose focused button's group lacks a text element or two actionable buttons | Card state unknown: the wheel does nothing |
+| Codex thread view without a composer whose focused button sits in a group with text and two or more actionable buttons | Narrowed residual: treated as a card; a press still needs a deliberate wheel step and a still click |
+| Scroll, then a card opens | Earlier scroll counts never shorten the first card step |
 | Card open: still wheel click on a focused button | That one button pressed through UI Automation, never retried; no Enter |
 | Card state or Codex card container unknown | Wheel does nothing: no scroll, step, press or Enter |
 | Duplicate or repeated Send click (wheel or Play), or card press; Send outcome uncertain | One Enter or press at most; no retry |

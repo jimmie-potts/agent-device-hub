@@ -122,7 +122,8 @@ The Windows adapter uses [koffi](https://koffi.dev/) FFI for `SendInput`, `GetFo
 installed package folder its image runs from directly under the 64-bit Program Files' `WindowsApps` (`ProgramW6432`,
 else `ProgramFiles`, on a drive letter), which only the installer can
 write; a real package identity always wins. A long-lived PowerShell UI Automation helper (`src/windows/uia-helper.ps1`,
-started by a short `-EncodedCommand` loader that reads that file) handles the composer, Codex selected-row and
+started by a short `-EncodedCommand` loader that reads the file named in its `CHOMPI_UIA_HELPER_SCRIPT` environment
+variable, so the path never sits inside a PowerShell string) handles the composer, Codex selected-row and
 approval-card checks and the card answers. It reads Codex archive filenames and Claude Desktop
 session records by name and key only, and Codex's own thread names from `session_index.jsonl` in the Codex home (only
 `id`, `thread_name` and `updated_at`; a thread's last line is its current name). Its observations follow the clients' current UI, recorded in
@@ -147,14 +148,16 @@ session records by name and key only, and Codex's own thread names from `session
   (`codex-composer-count`) is `unknown`. A client not in front (`codex-not-foreground`, `claude-not-foreground`)
   or any helper failure is `unknown` too. The router refuses Send unless the answer is `false`.
 - `cardButtons`, `focusCardButton` and `invokeCardButton` answer a card with the big wheel. They count the open
-  card's actionable buttons (enabled `Button` elements with Invoke and without ExpandCollapse, in tree order, at most
-  64) and report the focused one's index. They move keyboard focus to one of them, or press the focused one. They
-  return counts, indexes and booleans only, and never read a Name or Value.
+  card's actionable buttons (enabled `Button` elements with Invoke and without ExpandCollapse, in tree order; more
+  than 64 `Button` elements in scope, before that filter, is `unknown`) and report the focused one's index and the
+  card's identity (its container's UI Automation runtime ID, not text). They move keyboard focus to one of them, or
+  press the focused one. They return counts, indexes, booleans and that ID only, and never read a Name or Value.
   - Claude's card is the one element carrying `epitaxy-approval-card`.
-  - Codex's card is the focused button's parent `Group`, only while no composer exists and the group holds at
-    least two actionable buttons.
-  - A focus or press refuses when the card's button count changed. A press requires the button to still have
-    keyboard focus.
+  - Codex's card is the focused button's parent `Group`, only while no composer exists, exactly one sidebar row is
+    selected (the thread view) and the group directly holds a `Text` element and at least two actionable buttons.
+    Otherwise it is `unknown` (`codex-selected-row-count`, `codex-card-unestablished`).
+  - A focus or press names the card by its identity and is `unknown` (`card-changed`) when that card is gone or
+    replaced or its button count changed. A press answers `false` when the button no longer has keyboard focus.
   - These two are the only helper operations that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#card-answers).
 
 The built code reads the helper script from `src/windows/` (`dist/windows` resolves `../../src/windows/`), so an
@@ -182,7 +185,8 @@ the adapter when it offers `warmUp()` (the UI Automation helper and cached clien
 router. It prints JSON lines with slot numbers and reason codes only: link events,
 `feed`, `slot-assigned`, `overflow`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
 `invalidated`, `profile-rejected`, `dictation-started`, `record-refused`, the card events `card-step`,
-`card-pressed`, `card-refused`, `card-press-uncertain`, `card-step-failed` and `card-unknown`, and similar. `sent`,
+`card-pressed`, `card-refused` (reasons `card-wheel-moving`, `card-busy`, `card-nothing-focused`, `card-nothing-chosen`,
+`card-focus-moved`), `card-press-uncertain`, `card-step-failed` and `card-unknown`, and similar. `sent`,
 `send-refused` and the card events name the `client`. Card events carry button indexes and counts, never option text. A Claude `focused` line carries `evidence`: `advanced` when the target's
 `lastFocusedAt` moved past the press, or `already-newest` when it was already strictly the newest (see the safety
 rules); a Codex `focused` line has no `evidence` field. It never prints titles, text or the token. Starting it against the real
@@ -200,7 +204,7 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | `controls.back` | 28, Loop: alone it releases held keys and cancels a focus in progress; with a held Claude slot key it is the release gesture |
 | `controls.scroll` | 45, the big-wheel turn: scrolls the conversation, or steps through an open card's buttons. Its click is the turn ID minus 12 (33) |
 | `scroll` | `notchesPerStep` 1 (1-10 wheel notches per encoder count) and `invert` `false` (clockwise scrolls down) |
-| `cards` (optional) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly and its counts per revolution are not established; 6 is about a quarter turn at an assumed 24, and #745 tunes both |
+| `cards` (optional, not in the shipped profile) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly; one slow full turn each way measured about 25 counts per revolution on the trial device (2026-10-05), so 6 is about a quarter turn. The step default lives in one constant, `DEFAULT_CARD_STEP_COUNTS` in `src/routing/profile.ts`; a profile value overrides it |
 | `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows` |
 | `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
 | `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s |
@@ -271,13 +275,14 @@ slots live in `<state>/slots.json`, written 0600 through a temporary file and re
 | `unknown` | Unknown activity, uncertain freshness or restart uncertainty |
 | `ended` | The Hub no longer lists the session, or it ended; the slot is kept |
 | `stale` | The feed is stale or unavailable |
-| `error` | A refused action, for 1.5 s |
+| `error` | A refused slot press on its key, or a refused or uncertain Send or card press on both big-wheel LEDs, for 1.5 s |
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
-while dictating. The big-wheel LEDs stay off: Send readiness and card navigation are decided at the press, and nothing
-polls the window in front to light them. The screen shows what is in front and the card's own focus ring. The
-disconnected pattern is the firmware's own.
+while dictating. The big-wheel LEDs show nothing about readiness: Send and card navigation are decided at the press,
+and nothing polls the window in front to light them. A refused or uncertain Send or card press (Play or the wheel
+click) flashes both big-wheel LEDs in the `error` color for `timing.errorFlashMs` (owner decision on #821). The screen
+shows what is in front and the card's own focus ring. The disconnected pattern is the firmware's own.
 
 ### Safety rules
 
@@ -306,26 +311,31 @@ disconnected pattern is the firmware's own.
   - Record is not held.
 
   Anything else refuses with a reason code, and any other app in front gets nothing (`not-agent-client`). An
-  uncertain keystroke is never retried.
+  uncertain keystroke is never retried. A refusal or uncertain keystroke flashes the big-wheel LEDs red.
 - Cut assurances (owner decision on #821):
   - **No Hub check on Send.** Hub `approval` attention and a stale feed no longer block Send. The bridge's own card
     and composer checks are its only guards.
   - **Codex cards with their own field.** A Codex card with its own focused `ProseMirror` field would count as the
     composer and accept Enter, as a keyboard would. No such card was observed.
   - **Record works anywhere.** Record holds the dictation chord whatever is in front, a card's free-text field
-    included, and releases it with Record. Release never sends. It is refused only while a Send is typing.
+    included, and releases it with Record. Release never sends. A Record press is never refused: it abandons a Send
+    still checking the window (`superseded`), and during a Send's Enter keystroke the chord goes down right after it.
 - Card answers: while a card is open in a qualified Codex or Claude window in front:
   - A big-wheel turn moves keyboard focus one actionable button per `cards.stepCounts` encoder counts. The count
     restarts on a reversal, so a small wiggle back never steps back. Steps stop at the first and last button.
-  - A big-wheel click presses the focused button only after `cards.clickStillMs` without a turn, with no step in
-    flight. Turning while the click is held moves nothing, and the press clears partial rotation.
-  - Play is refused (`approval-visible`). An unknown card state, including a Codex view without a composer whose
+  - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
+    least one deliberate step is needed: a Codex card opens with its approve button focused, and a click without a
+    turn presses nothing (`card-nothing-chosen`). The click also needs `cards.clickStillMs` without a turn and no step
+    in flight. Turning while the click is held moves nothing, and the press clears partial rotation. Wheel actions
+    outside a card clear partial rotation, so scroll counts never shorten the first card step.
+  - Play is refused (`approval-visible` for a Claude card, `composer-unfocused` for a Codex card). An unknown card state, including a Codex view without a composer whose
     card container cannot be established, makes the wheel do nothing: no scroll, no step, no press, no Enter.
   - This click is the one controller gesture that may approve a permission request (owner decision on #744 and
     #821). It is a client UI action, never a Hub acknowledgement.
-  - Residual: Codex cards are identified by structure, so a Codex view without a composer whose focused button sits
-    in a group of two or more actionable buttons is treated as a card. After a press, Claude can leave focus off the
-    composer, and Send then refuses until the composer has focus again.
+  - Residual: Codex cards are identified by structure. A composer-less thread view (one selected sidebar row) whose
+    focused button sits in a group with text and two or more actionable buttons is treated as a card; settings and
+    dialogs without a selected row are not. A press there still needs a deliberate step and a still click. After a
+    press, Claude can leave focus off the composer, and Send then refuses until the composer has focus again.
 - Outside a card, a big-wheel turn scrolls the foreground Codex or Claude window through the adapter's `scrollClient`
   mouse-wheel primitive, which acts only while that client is in front with the pointer inside it. The wheel never
   types or selects a task, never runs while Record is held, and is not retried when the adapter answers `false` or

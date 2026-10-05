@@ -38,8 +38,8 @@ export type ColorName = typeof COLOR_NAMES[number];
 export const RETIRED_COLOR_NAMES = ['selected', 'sendReady', 'sendBlocked'] as const;
 
 /**
- * Big-wheel card navigation. The encoder turns smoothly and its counts per revolution are not established; the
- * defaults assume about 24, so a step is about a quarter turn. #745's physical acceptance tunes them.
+ * Big-wheel card navigation. The encoder turns smoothly; one slow full turn each way on the trial device on
+ * 2026-10-05 measured about 25 counts per revolution.
  */
 export interface CardSettings {
   /** Encoder counts per card step; the count restarts on a direction reversal. */
@@ -48,8 +48,8 @@ export interface CardSettings {
   readonly clickStillMs: number;
 }
 /**
- * Encoder counts per card step: about a quarter turn at an assumed 24 counts per revolution. This is the one place to
- * change the default once the big wheel's counts per revolution are measured; the shipped profile does not repeat it.
+ * Encoder counts per card step: about a quarter turn at the measured 25 counts per revolution. This is the one place
+ * the default lives; the shipped profile does not repeat it, and a profile's `cards.stepCounts` overrides it.
  */
 export const DEFAULT_CARD_STEP_COUNTS = 6;
 export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, clickStillMs: 250 });

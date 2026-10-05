@@ -1129,7 +1129,7 @@ async function claudeCard(t, buttons = 3, focusedIndex = null, options = {}) {
   return ctx;
 }
 
-test('the default card detent is a quarter turn at 24 counts and the stillness 250 ms', () => {
+test('the default card detent is about a quarter turn at the measured 25 counts and the stillness 250 ms', () => {
   assert.equal(STEP, 6);
   assert.equal(STILL, 250);
 });

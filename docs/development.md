@@ -882,7 +882,7 @@ simulator: profile validation and reload, the read-only feed client (GET-only,
 refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
 token-file privacy), slot assignment, release and persistence, state lights,
 each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
-answers (#821: detents, click stillness and unknown card states), loss handling,
+answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or

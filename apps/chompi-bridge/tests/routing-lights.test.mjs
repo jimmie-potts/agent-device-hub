@@ -70,7 +70,14 @@ test('slot keys show task state only: a retired selected color never appears', (
   assert.deepEqual(frames[0][1], profile.colors.active);
 });
 
-test('the Record LED shows dictation and the wheel LEDs stay off', () => {
+test('the wheel LEDs flash the error color only for a refused or uncertain Send or card press', () => {
+  const flashed = renderFrame({ profile, slots: blank(), recording: false, wheelError: true, pulseOn: true });
+  assert.deepEqual(flashed[30], profile.colors.error);
+  assert.deepEqual(flashed[31], profile.colors.error);
+  for (let i = 0; i < 35; i++) if (i !== 30 && i !== 31) assert.deepEqual(flashed[i], [0, 0, 0], `LED ${i} is unaffected`);
+});
+
+test('the Record LED shows dictation and the wheel LEDs stay off otherwise', () => {
   const recording = renderFrame({ profile, slots: blank(), recording: true, pulseOn: true });
   assert.deepEqual(recording[ledIndex(26)], profile.colors.record);
   assert.deepEqual(recording[30], [0, 0, 0]);
