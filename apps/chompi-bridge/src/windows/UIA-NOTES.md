@@ -136,12 +136,20 @@ never shares it is an assumption (see "Not established").
   - text fields are `Edit` elements and are never listed;
   - a disabled button, such as Claude's submit beside an empty "Other" field, is skipped;
   - menu buttons (ExpandCollapse) are skipped because their menus open outside the card.
+- **Stops:** the wheel steps between the card's stops, and counts and indexes refer to them.
+  - A Claude card with at least one actionable button carrying the class token `text-left` stops only on those
+    buttons, in tree order: a question card's answer rows and its "Other" row. Up and Down move the same way inside
+    the option list.
+  - Any other card, such as a Claude permission card or a Codex card, stops on every actionable button.
+  - The token is matched exactly (`HasToken`) on the cached class list; no text is read.
 - **`cardButtons`** returns `{ cards, buttons, focused, cardId }`, plus `composers` and `selectedRows` for Codex.
   `focused` is the index of the listed button that equals `AutomationElement.FocusedElement` (`Automation.Compare`),
   or -1.
 - **`focusCardButton(cardId, index, count)`** refuses an invalid index (`invalid-card-index`), no card
   (`card-absent`), another card or a button count that differs from `count` (`card-changed`); the adapter reports
-  these as unknown. It then sets keyboard focus on that button and returns the focused index.
+  these as unknown. It then sets keyboard focus on that stop and reads focus back every 25 ms, for at most 400 ms on a
+  `Stopwatch`, until focus is on that stop. It returns the index it observed, or -1. Claude applies focus
+  asynchronously (see "Live findings"), and 400 ms stays well inside the adapter and helper timeouts.
 - **`invokeCardButton(cardId, index, count)`** runs the same checks (unknown when they fail), then presses the
   button only when it equals the focused element, and returns `{ invoked: false }` otherwise.
 
@@ -158,9 +166,12 @@ keeps focus, so one clockwise turn chooses that approve button.
 ### Card containers
 
 - **Claude** (question and permission cards): the one element of any control type carrying `epitaxy-approval-card`.
-  - In the probe, the permission card lists three answers.
-  - The question card lists five buttons in tree order: one above the options, the option buttons, and the enabled
-    button after the "Other" field. Its disabled submit button and its menu button are skipped.
+  - In the probe, the permission card's three answers are `cds-reset group/btn` buttons without `text-left`, so all
+    three are stops.
+  - A question card's actionable buttons are, in tree order: a header button, the option rows, the "Other" row and a
+    footer button. Its disabled submit button and its menu button are skipped. The option rows (`... rounded-[5px]
+    px-md py-md text-left ...`) and the "Other" row (`... text-body text-primary text-left ...`) carry `text-left`,
+    and the header and footer (`cds-reset group/btn ...`) do not, so the stops are the option rows and "Other".
   - The composer keeps focus when either card opens, so `focused` starts at -1.
   - No token element is no card. Several are unknown (`card-count`).
 - **Codex** (escalation card): the card has no class token, so it is found by structure. In the probe, the focused
@@ -188,8 +199,24 @@ keeps focus, so one clockwise turn chooses that approve button.
   - Residual: another composer-less element of the thread view with the same shape would count as a card. A press
     there still needs a deliberate wheel step to the button and a still click. Only the escalation card was observed.
 
-Re-qualify the containers, the button order and a still-click press, with a harmless card in a throwaway task, when
-either client's version changes.
+Re-qualify the containers, the stops (a Claude question card stops on its answers only, a permission card on all its
+buttons), the focus read-back and a still-click press, with a harmless card in a throwaway task, when either client's
+version changes. If Claude renames `text-left`, question cards fall back to every actionable button, which is wider
+but still safe.
+
+### Live findings (2026-10-05)
+
+The installed bridge was checked on a Claude question card with three options:
+
+- **Asynchronous focus.**
+  - The wheel logged `card-step` for buttons 1 to 3, but every still click was refused as `card-nothing-chosen`.
+  - Probing the open card directly with the installed helper: before the step, `cardButtons` gave 6 buttons and no
+    focus. `focusCardButton` for button 2 replied that nothing was focused, and 300 ms later `cardButtons` reported
+    button 2 focused.
+  - Claude applies focus asynchronously, so the helper now reads it back in the bounded poll above.
+- **Shift+Tab stops.** The wheel walked all six actionable buttons, the same stops as Shift+Tab, including the
+  header and footer buttons. The owner expects the answers only, as Up and Down inside the option list, which led to
+  the `text-left` stop rule above.
 
 ## Not established
 

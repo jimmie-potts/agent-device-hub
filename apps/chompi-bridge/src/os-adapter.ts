@@ -44,14 +44,17 @@ export interface ClaudeDesktopSession {
   lastFocusedAt: number | null;
 }
 
-/** The open card's actionable buttons (enabled, invokable, not menus), counted in tree order. */
+/**
+ * The open card's wheel stops, counted in tree order: its actionable buttons (enabled, invokable, not menus), or for a
+ * Claude question card only its answer rows and "Other" row.
+ */
 export interface CardButtons {
   /**
    * The card's identity for this window: an opaque UI Automation runtime ID, no text. A new card is assumed never to
    * share it (not yet established live; see UIA-NOTES.md "Not established").
    */
   id: string;
-  /** How many actionable buttons the card has (0-64). */
+  /** How many stops the card has (0-64). */
   count: number;
   /** The index of the one with keyboard focus, or null when focus is on none of them. */
   focused: number | null;
@@ -107,7 +110,8 @@ export interface OsAdapter {
 
   /**
    * Moves keyboard focus to actionable button `index` of the open card `cardId`. Answers unknown when that card is gone
-   * or no longer has `count` actionable buttons; otherwise the focused index afterwards, or null when focus is on none.
+   * or no longer has `count` stops; otherwise the focused index once focus settles (a client may apply focus
+   * asynchronously, so the adapter reads it back for a short bounded time), or null when focus is on none by then.
    */
   focusCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<number | null>>;
 
