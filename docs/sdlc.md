@@ -329,8 +329,9 @@ device output, and the code, configuration or assets that serve them, including
 refactors of those paths. A change has **no observable behavior** only when it
 cannot alter any of that. Examples: prose documentation, contracts or library
 code that no running application serves yet, test-only changes, and logging
-that changes no user-facing or device-facing output. The generated work guide
-keeps its own CI browser checks and needs no Acceptance review.
+that changes no user-facing or device-facing output. A change entirely under
+`docs/work-guide/` keeps the guide's own browser checks and needs no Acceptance
+review.
 
 Verification has three tiers.
 
@@ -345,8 +346,8 @@ Verification has three tiers.
    these steps:
    1. Create a detached worktree of the exact reviewed head under the main
       checkout's `.local/worktrees/` or `.local/scratch/<task>/`. Install and
-      build it there: `fnm exec --using=.nvmrc -- npm ci` and
-      `npm run build`. For a composition, also prepare clean consumer
+      build it there with `fnm exec --using=.nvmrc -- npm ci` and
+      `fnm exec --using=.nvmrc -- npm run build`. For a composition, also prepare clean consumer
       checkouts at their `compose.json` pins in the same place. Never write
       to the coordinator's worktree.
    2. From that worktree, start a disposable verification run with synthetic
