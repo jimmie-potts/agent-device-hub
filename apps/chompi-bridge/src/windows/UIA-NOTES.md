@@ -193,23 +193,32 @@ keeps focus, so one clockwise turn chooses that approve button.
     - exactly one `Group` that is not offscreen directly holds at least one `Text` element and at least two
       actionable buttons. One `FindAll` of the window's `Group` elements caches class names and offscreen state
       only (more than 512 is unknown, `card-too-many-groups`). Each on-screen group's direct `Text` and `Button`
-      children are read in one cached `FindAll` (a group with more than 64 `Button` children is not a candidate);
-    - no `Button` of the window outside that group has keyboard focus.
+      children are read in one cached `FindAll` (a group with more than 64 `Button` children is not a candidate).
+  - Keyboard focus does not decide the card. Codex may leave focus on the sidebar row after a thread opens, or the
+    owner may focus the card's menu button or anything else; the card stays established and `focused` is -1 until a
+    stop has focus. Safety does not rest on focus here: a press needs a wheel step that the read-back confirms on a
+    stop, a fresh focus read at the click and a `Compare` with the focused element before `Invoke`.
   - The stops are the group's actionable direct-child buttons in tree order (Deny, then approve). `focused` is the
     focused stop's index, or -1 when nothing in the card has focus. With no focus, the first clockwise step focuses
     Deny and a counter-clockwise step focuses approve.
   - The adapter decides:
     - one composer is no card;
     - no composer and not exactly one selected row is unknown (`codex-selected-row-count`);
-    - no candidate group is unknown (`codex-card-unestablished`), several are unknown (`codex-card-ambiguous`), and
-      a focused button outside the one candidate is unknown (`codex-card-focus-elsewhere`); the wheel then does nothing;
+    - no candidate group is unknown (`codex-card-unestablished`) and several are unknown (`codex-card-ambiguous`);
+      the wheel then does nothing;
     - several composers are unknown (`codex-composer-count`).
   - Seen live: installed check 4 read one selected sidebar row while the card was open.
   - Unverified: that Codex settings pages and dialogs have no selected sidebar row, so they read unknown. The
     installed trial opens Codex settings and checks that `cardButtons` reads unknown.
-  - Residual: in a composer-less thread view, another single on-screen group with the same shape would count as a
-    card. A press there still needs a deliberate wheel step to the button and a still click. Only the escalation card
-    was observed.
+  - Nearest non-card shape: the thread scroll layout (`group/thread-scroll-layout ...`) directly holds many `Text`
+    elements (59 in the probe with the card) and one actionable `Button`, so it is not a candidate. If it gained a
+    second actionable direct `Button` while a card is open, the read would find two candidates and stay unknown
+    (`codex-card-ambiguous`, an inert wheel).
+  - Residual: in a composer-less thread view without a card, another single on-screen group with the same shape,
+    such as that layout with a second actionable button, would count as a card. A press there still needs a
+    deliberate wheel step to the button and a still click. Only the escalation card was observed.
+  - A very long thread can hold more than 512 `Group` elements; the read is then unknown (`card-too-many-groups`)
+    and the wheel is inert on a card there. The installed checks include a long thread.
 
 Re-qualify the containers, the stops (a Claude question card stops on its answers only, a permission card on all its
 buttons), the focus read-back and a still-click press, with a harmless card in a throwaway task, when either client's

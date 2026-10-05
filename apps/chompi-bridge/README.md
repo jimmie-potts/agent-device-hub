@@ -161,8 +161,10 @@ session records by name and key only, and Codex's own thread names from `session
   - Codex's card is found by structure, because Codex does not reliably give it focus: while no composer exists and
     exactly one sidebar row is selected (the thread view), it is the one on-screen `Group` that directly holds a
     `Text` element and at least two actionable buttons, whose actionable buttons (Deny, then approve) are its stops.
-    Otherwise it is `unknown`: `codex-selected-row-count`, `codex-card-unestablished` (no such group),
-    `codex-card-ambiguous` (several) or `codex-card-focus-elsewhere` (a focused button outside the group).
+    Keyboard focus does not decide it: with focus on the sidebar row or any other button outside the stops, the card
+    stays established with no stop focused. Otherwise it is `unknown`: `codex-selected-row-count`,
+    `codex-card-unestablished` (no such group), `codex-card-ambiguous` (several) or `card-too-many-groups` (more than
+    512 groups, as a very long thread can have).
   - A focus or press names the card by its identity and is `unknown` (`card-changed`) when that card is gone or
     replaced or its button count changed. A press answers `false` when the button no longer has keyboard focus.
   - These two are the only helper operations that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#card-answers).

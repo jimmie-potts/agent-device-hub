@@ -9,10 +9,10 @@ Installed check 4 of [#821](https://github.com/jimmie-potts/agent-device-hub/iss
   - exactly one selected sidebar row;
   - exactly one on-screen `Group` that directly holds at least one `Text` element and at least two actionable buttons. That group is the card.
 - The stops are the group's actionable direct-child buttons, Deny then approve, and the focused index is -1 when none has focus.
-- The helper reports `cardGroups` and `focusElsewhere`, and the adapter decides:
+- The helper reports `cardGroups`, and the adapter decides:
   - zero candidates is `codex-card-unestablished`;
-  - several candidates is `codex-card-ambiguous`;
-  - a focused button outside the group is `codex-card-focus-elsewhere`.
+  - several candidates is `codex-card-ambiguous`.
+- Keyboard focus does not decide the card. Focus on the sidebar row or any other button outside the stops leaves the card established with no stop focused. A first draft made that case unknown; the PR #845 review dropped it, because Codex may leave focus on the sidebar row, and a press is already guarded by the confirmed wheel step and the focus check before invoke.
 - The search is bounded: one cached list of Group elements, unknown above 512 (`card-too-many-groups`), plus one cached child read per on-screen candidate.
 - With no initial focus, the first clockwise step focuses Deny and a counter-clockwise step focuses approve. The clamp rule applies once a stop is focused.
 - README, UIA-NOTES and the qualification report record the rule and the live finding.
@@ -26,4 +26,4 @@ Installed check 4 of [#821](https://github.com/jimmie-potts/agent-device-hub/iss
 
 ## Impact
 
-This change affects the bridge package only. The adapter interface keeps version 3: the reply gains two Codex fields that the adapter alone reads. Installation is a bridge reinstall on the trial host, and installed check 4 repeats.
+This change affects the bridge package only. The adapter interface keeps version 3: the reply gains one Codex field, `cardGroups`, that the adapter alone reads. Installation is a bridge reinstall on the trial host, and installed check 4 repeats.

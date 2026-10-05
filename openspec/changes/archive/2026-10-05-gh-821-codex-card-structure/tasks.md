@@ -8,3 +8,8 @@
 - [x] 2.2 Run build, typecheck, the bridge suite, OpenSpec validation and the workflow checks; record results in the PR.
 - [x] 2.3 Synchronize the specs and archive this change (evidence: the synced `chompi-bridge` and `chompi-task-routing` specs match the deltas).
 - [x] 2.4 Hand the native check, the reinstall and installed check 4 to the coordinator and owner: a Codex escalation card without focus answers with a still click after one step; receipts go in the PR and on #821, not in this change.
+
+## 3. Review (PR #845)
+
+- [x] 3.1 Drop the focus-elsewhere rule, so a Codex card stays established with focus outside its stops (evidence: the adapter case, the static no-focus assertion and the router test for focus outside the stops).
+- [x] 3.2 Name the thread scroll layout as the nearest non-card shape in UIA-NOTES and add a long-thread installed check (evidence: UIA-NOTES and installed check 6 in the qualification report).

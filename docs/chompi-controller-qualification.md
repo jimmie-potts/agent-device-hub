@@ -423,7 +423,8 @@ that cannot be mistaken for any task state.
 | Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
 | Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. One clockwise step on such a Codex card chooses approve (clamped at the end) |
 | A card replaced by another with the same buttons | Assumed: the new card has a new runtime ID, so the earlier choice does not apply; the installed check below confirms it for a multi-question Claude card |
-| Codex view without a composer and without exactly one selected sidebar row, or without exactly one on-screen group holding a text element and two actionable buttons, or with a focused button outside that group | Card state unknown: the wheel does nothing. That settings pages and dialogs fall here is unverified; the installed check below confirms it |
+| Codex view without a composer and without exactly one selected sidebar row, without exactly one on-screen group holding a text element and two actionable buttons, or with more than 512 groups (a very long thread) | Card state unknown: the wheel does nothing. That settings pages and dialogs fall here is unverified; the installed check below confirms it |
+| Codex card with focus on the sidebar row or another button outside its stops | Still a card, with no stop focused; one clockwise step focuses Deny |
 | Codex card shown with no element focused (installed check 4, 2026-10-05) | Found by structure: one clockwise step focuses Deny (the first stop), one counter-clockwise step focuses approve (the last); a still click presses the stop reached |
 | Codex thread view without a composer with exactly one on-screen group holding text and two or more actionable buttons that is not a card | Narrowed residual: treated as a card; a press still needs a deliberate wheel step and a still click |
 | Scroll, then a card opens | Earlier scroll counts never shorten the first card step |
@@ -485,6 +486,9 @@ With harmless cards in throwaway tasks, after the bridge with #821 is installed:
    header or footer buttons, and that a still click right after a step presses the option reached (the 2026-10-05
    live check found every click refused while Claude applied focus late). On a permission card, confirm that the
    wheel steps through all its answers.
+6. In a long Codex thread (many messages), open a harmless approval card and confirm the wheel still steps and
+   presses. More than 512 `Group` elements makes the card read unknown (`card-too-many-groups`) and the wheel inert;
+   if that happens, record the thread length so the bound can be revisited.
 
 ## Findings for dependent work
 
