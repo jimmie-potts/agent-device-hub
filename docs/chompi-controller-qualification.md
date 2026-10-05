@@ -374,7 +374,7 @@ that cannot be mistaken for any task state.
 | Claude Desktop ID unknown, malformed or archived | No link opened; error light |
 | Hub retires a session after idle, close or `/clear` | Slot kept; key shows ended; it still opens the same task |
 | Link opened but a different task stays selected (Codex unknown ID; Claude Code home when the target is not strictly newest among known sessions) | Verification fails; nothing typed |
-| Claude in front on Code home or the Chat tab, the target strictly newest among known sessions, and the link does not navigate | Accepted residual: verification passes. The #743 trial checks that the link navigates |
+| Claude in front on Code home, the Chat tab or a session the bridge does not know, the target strictly newest among known sessions, and the link does not navigate | Accepted residual: verification passes. The #743 trial checks that the link navigates |
 | Two live tasks with the same title | Codex verification fails closed; Claude still verifies by ID |
 | Target app not foreground after open | No input |
 | Task switch between Record and Send | Pending target cleared; Send refused |
