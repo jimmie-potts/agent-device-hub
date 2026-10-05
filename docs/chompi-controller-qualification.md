@@ -32,7 +32,7 @@ point that #743 must observe.
 | Multi-firmware launcher | [`sfaber02/CHOMPI` launcher-v1.1](https://github.com/sfaber02/CHOMPI/releases/tag/launcher-v1.1) at `79ea9e7e18f1ca6057ce35ae1a3a17d47f8a4415` (v1.0 at `614a7cfd`) |
 | USB storage firmware | [`lnetzel/CHOMPI-lnetzel` usb-storage-v1.0](https://github.com/lnetzel/CHOMPI-lnetzel/releases/tag/usb-storage-v1.0). The release binary is byte-identical to a build of `a609509475a2949baf916a82686aaceff804447f` (`perf/faster-transfers`), not of the tag `7c452f0` |
 | Compiler | GNU Arm Embedded Toolchain 10.3-2021.10 (GCC 10.3.1), the libDaisy-supported version |
-| Codex Desktop | AppX `OpenAI.Codex` 26.930.3930.0, package family `OpenAI.Codex_2p2nqsd0c76g0`, window process `ChatGPT.exe`, window title "ChatGPT" |
+| Codex Desktop | AppX `OpenAI.Codex` 26.930.3930.0, package family `OpenAI.Codex_2p2nqsd0c76g0`, window process `ChatGPT.exe` (runs from the package folder without package identity, found in the #743 trial; the bridge identifies it by that folder), window title "ChatGPT" |
 | Claude Desktop | AppX `Claude` 2.19675.0.0, package family `Claude_pzs8sxrjxfjjc`; bundled Claude Code 2.1.286 running in WSL |
 | Wispr Flow | 1.6.1034; push-to-talk is left Ctrl + left Win (`S`, current preferences) |
 | Windows device history (`S`) | The owner's CHOMPI enumerated before as `USB\VID_0483&PID_5740` with a MIDI endpoint named "CHOMPI". It was unplugged on the collection date |

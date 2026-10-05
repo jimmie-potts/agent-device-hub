@@ -48,6 +48,19 @@ test('the Windows adapter implements interface version 2', async () => {
   await instance.close();
 });
 
+test('foregroundWindow takes the package family from a WindowsApps image path when the process has no identity', async () => {
+  // Codex Desktop 26.930's window process (ChatGPT.exe) runs from its package folder without package identity.
+  const win32 = fakeWin32({ family: null, image: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' });
+  const instance = adapter(win32, undefined, { programFiles: 'C:\\Program Files' });
+  assert.deepEqual(await instance.foregroundWindow(), { status: 'known', value: { packageIdentity: CODEX_PACKAGE_FAMILY, processName: 'ChatGPT.exe' } });
+  win32.state.image = 'C:\\Users\\me\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\ChatGPT.exe';
+  assert.deepEqual(await instance.foregroundWindow(), { status: 'known', value: { packageIdentity: null, processName: 'ChatGPT.exe' } }, 'outside WindowsApps: none');
+  win32.state.family = CLAUDE_PACKAGE_FAMILY;
+  win32.state.image = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.930.3930.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';
+  assert.equal((await instance.foregroundWindow()).value.packageIdentity, CLAUDE_PACKAGE_FAMILY, 'a real package identity always wins');
+  await instance.close();
+});
+
 test('foregroundWindow reports package identity and process image name only', async () => {
   const win32 = fakeWin32();
   const instance = adapter(win32);
