@@ -6,7 +6,7 @@ import { readBoundedFile } from './files.js';
 
 /**
  * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app shortcuts
- * they use, colors and timings. It is data only: no URIs, paths, commands or package identities, and key names come
+ * they use, colors, timings and big-wheel card navigation. Fields added after the first release are optional. It is data only: no URIs, paths, commands or package identities, and key names come
  * from an allowlist, so loading it can never run anything.
  */
 export const PROFILE_SCHEMA_VERSION = 1;
@@ -28,8 +28,26 @@ export const KEY_NAMES: readonly string[] = Object.freeze([
 export const SMALL_KNOB_CLICKS: readonly number[] = Object.freeze([29, 30, 31, 32]);
 export const VOLUME_CLICK = 34;
 
-export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'selected', 'record', 'sendReady', 'sendBlocked'] as const;
+export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
 export type ColorName = typeof COLOR_NAMES[number];
+/**
+ * Colors the press-time model (#821) retired: the selected key and the Send-readiness wheel LEDs. A profile may still
+ * list them, as the one installed for the #743 trial does; they must be valid colors and are otherwise ignored.
+ */
+export const RETIRED_COLOR_NAMES = ['selected', 'sendReady', 'sendBlocked'] as const;
+
+/**
+ * Big-wheel card navigation. The encoder turns smoothly and its counts per revolution are not established; the
+ * defaults assume about 24, so a step is about a quarter turn. #745's physical acceptance tunes them.
+ */
+export interface CardSettings {
+  /** Encoder counts per card step; the count restarts on a direction reversal. */
+  readonly stepCounts: number;
+  /** How long the wheel must be still before a click presses a card button. */
+  readonly clickStillMs: number;
+}
+export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: 6, clickStillMs: 250 });
+const CARD_BOUNDS: Record<keyof CardSettings, [number, number, string]> = { stepCounts: [1, 96, ''], clickStillMs: [0, 2000, ' ms'] };
 
 export interface RoutingTiming {
   verifyTimeoutMs: number;
@@ -74,6 +92,8 @@ export interface RoutingProfile {
   };
   /** Big-wheel scrolling of the client conversation through the adapter's mouse-wheel primitive. */
   readonly scroll: { readonly notchesPerStep: number; readonly invert: boolean };
+  /** Optional in the file; absent fields take `DEFAULT_CARD_SETTINGS`. */
+  readonly cards: CardSettings;
   readonly colors: Readonly<Record<ColorName, Rgb>>;
   readonly brightnessPercent: number;
   readonly timing: Readonly<RoutingTiming>;
@@ -173,13 +193,30 @@ function shortcuts(value: unknown, issues: Issues): RoutingProfile['shortcuts'] 
 function colors(value: unknown, issues: Issues): RoutingProfile['colors'] | undefined {
   const path = 'profile.colors';
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
-  if (!fields(value, path, COLOR_NAMES, [], issues)) return undefined;
+  if (!fields(value, path, COLOR_NAMES, RETIRED_COLOR_NAMES, issues)) return undefined;
   const before = issues.length;
-  for (const name of COLOR_NAMES) {
+  for (const name of [...COLOR_NAMES, ...RETIRED_COLOR_NAMES]) {
+    if (!(name in value)) continue;
     const color = value[name];
     if (!Array.isArray(color) || color.length !== 3 || !color.every(c => isInt(c, 0, 255))) issues.push(`${path}.${name}: must be [r, g, b] with integers 0-255`);
   }
-  return issues.length > before ? undefined : value as unknown as RoutingProfile['colors'];
+  if (issues.length > before) return undefined;
+  return Object.fromEntries(COLOR_NAMES.map(name => [name, value[name]])) as unknown as RoutingProfile['colors'];
+}
+
+function cards(value: unknown, issues: Issues): CardSettings | undefined {
+  const path = 'profile.cards';
+  if (value === undefined) return DEFAULT_CARD_SETTINGS;
+  if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
+  const names = Object.keys(CARD_BOUNDS) as (keyof CardSettings)[];
+  if (!fields(value, path, [], names, issues)) return undefined;
+  const before = issues.length;
+  for (const name of names) {
+    const [min, max, unit] = CARD_BOUNDS[name];
+    if (name in value && !isInt(value[name], min, max)) issues.push(`${path}.${name}: must be an integer ${min}-${max}${unit}`);
+  }
+  if (issues.length > before) return undefined;
+  return { ...DEFAULT_CARD_SETTINGS, ...value as Partial<CardSettings> };
 }
 
 function scroll(value: unknown, issues: Issues): RoutingProfile['scroll'] | undefined {
@@ -235,7 +272,7 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (!isObject(input)) throw new ProfileError(['profile: must be a JSON object']);
   const value = structuredClone(input) as Record<string, unknown>;
   const required = ['schemaVersion', 'profileVersion', 'controls', 'shortcuts', 'scroll', 'colors', 'brightnessPercent', 'timing', 'qualifiedVersions'];
-  fields(value, 'profile', required, [], issues);
+  fields(value, 'profile', required, ['cards'], issues);
   if ('schemaVersion' in value && value.schemaVersion !== PROFILE_SCHEMA_VERSION) issues.push(`profile.schemaVersion: must be ${PROFILE_SCHEMA_VERSION}`);
   if ('profileVersion' in value && !isInt(value.profileVersion, 0, 0xffffffff)) issues.push('profile.profileVersion: must be an integer 0-4294967295');
   if ('brightnessPercent' in value && !isInt(value.brightnessPercent, 0, 100)) issues.push('profile.brightnessPercent: must be an integer 0-100');
@@ -243,6 +280,7 @@ export function validateProfile(input: unknown): RoutingProfile {
     controls: 'controls' in value ? controls(value.controls, issues) : undefined,
     shortcuts: 'shortcuts' in value ? shortcuts(value.shortcuts, issues) : undefined,
     scroll: 'scroll' in value ? scroll(value.scroll, issues) : undefined,
+    cards: cards(value.cards, issues),
     colors: 'colors' in value ? colors(value.colors, issues) : undefined,
     timing: 'timing' in value ? timing(value.timing, issues) : undefined,
     qualifiedVersions: 'qualifiedVersions' in value ? versions(value.qualifiedVersions, issues) : undefined,
@@ -250,7 +288,8 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (issues.length) throw new ProfileError(issues);
   return deepFreeze({
     schemaVersion: PROFILE_SCHEMA_VERSION, profileVersion: value.profileVersion as number, brightnessPercent: value.brightnessPercent as number,
-    controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, colors: parts.colors!, timing: parts.timing!, qualifiedVersions: parts.qualifiedVersions!,
+    controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, cards: { ...parts.cards! }, colors: parts.colors!, timing: parts.timing!,
+    qualifiedVersions: parts.qualifiedVersions!,
   });
 }
 

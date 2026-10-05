@@ -1,7 +1,7 @@
 import { win32 as winPath } from 'node:path';
 import {
-  OS_ADAPTER_VERSION, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
-  type Observation, type OsAdapter,
+  OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow,
+  type KeyRequest, type Observation, type OsAdapter,
 } from '../os-adapter.js';
 import { claudeSessions, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
@@ -54,14 +54,26 @@ const known = <T>(value: T): Observation<T> => ({ status: 'known', value });
 const VERSION = /^\d{1,9}(\.\d{1,9}){1,3}$/;
 const REASON = /^[a-z0-9-]{1,64}$/;
 const MAX_TITLE = 1024;
+/** The helper's bound on a card's actionable buttons. */
+const MAX_CARD_BUTTONS = 64;
 
 interface Foreground { hwnd: number; root: number; pid: number; packageIdentity: string | null; processName: string | null }
 
 const isClient = (client: unknown): client is Client => client === 'codex' || client === 'claude';
 
+const isCount = (n: unknown, max: number): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= max;
+const record = (value: unknown) => (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+/** A helper's focused-index answer: -1 is none, otherwise an index below `count`. */
+const focusedIndex = (value: unknown, count: number): number | null | undefined =>
+  value === -1 ? null : isCount(value, MAX_CARD_BUTTONS) && value < count ? value : undefined;
+/** A valid index into a card of `count` actionable buttons. */
+const validCardIndex = (index: unknown, count: unknown): boolean =>
+  isCount(count, MAX_CARD_BUTTONS) && count >= 1 && isCount(index, MAX_CARD_BUTTONS) && index < count;
+
 /**
- * The Windows OS adapter (interface version 2). Keystrokes, foreground identity and deep links use Win32 through
- * koffi; UI checks go to a read-only UI Automation helper scoped to the client's foreground top-level window; the
+ * The Windows OS adapter (interface version 3). Keystrokes, foreground identity and deep links use Win32 through
+ * koffi; UI checks go to a UI Automation helper scoped to the client's foreground top-level window, which changes UI
+ * state only to focus or press one button of an open card (#821); the
  * Codex archive and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
  * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. Nothing here logs.
  */
@@ -314,6 +326,56 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       // No composer is not proof of a card (another view could hide it), and several composers are unqualified.
       if (count.value === 0) return unknown('codex-composer-absent');
       return count.value === 1 ? known(false) : unknown('codex-composer-count');
+    },
+
+    /**
+     * The helper reports `{ cards, buttons, focused }` (Codex adds `composers`); the adapter decides. Claude: no card
+     * element is no card, one is the card, several are unknown. Codex: one composer is no card; no composer is a card
+     * only when the helper established its container, and unknown otherwise; several composers are unknown.
+     * Containers and button rules are in UIA-NOTES.md ("Card answers").
+     */
+    async cardButtons(client: Client): Promise<Observation<CardButtons | null>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      type Reply = { kind: 'none' } | { kind: 'card'; card: CardButtons } | { kind: 'unknown'; reason: string };
+      const reply = await windowQuery<Reply>(client, 'cardButtons', { client }, value => {
+        const { cards, buttons, focused, composers } = record(value);
+        if (!isCount(cards, 100000) || !isCount(buttons, MAX_CARD_BUTTONS)) return null;
+        const index = focusedIndex(focused, buttons);
+        if (index === undefined) return null;
+        if (client === 'codex') {
+          if (!isCount(composers, 100000)) return null;
+          if (composers > 1) return { kind: 'unknown', reason: 'codex-composer-count' };
+          if (composers === 1) return cards === 0 ? { kind: 'none' } : null;
+          if (cards === 0) return { kind: 'unknown', reason: 'codex-card-unestablished' };
+        } else if (cards === 0) return { kind: 'none' };
+        if (cards > 1) return { kind: 'unknown', reason: 'card-count' };
+        return { kind: 'card', card: { count: buttons, focused: index } };
+      }, unknown(`${client}-not-foreground`));
+      if (reply.status === 'unknown') return reply;
+      if (reply.value.kind === 'unknown') return unknown(reply.value.reason);
+      return known(reply.value.kind === 'card' ? reply.value.card : null);
+    },
+
+    async focusCardButton(client: Client, index: number, count: number): Promise<Observation<number | null>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (!validCardIndex(index, count)) return unknown('invalid-card-index');
+      const reply = await windowQuery<{ focused: number | null }>(client, 'focusCardButton', { client, index, count }, value => {
+        const focused = focusedIndex(record(value).focused, count);
+        return focused === undefined ? null : { focused };
+      }, unknown(`${client}-not-foreground`));
+      return reply.status === 'unknown' ? reply : known(reply.value.focused);
+    },
+
+    async invokeCardButton(client: Client, index: number, count: number): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (!validCardIndex(index, count)) return unknown('invalid-card-index');
+      return windowQuery(client, 'invokeCardButton', { client, index, count }, value => {
+        const { invoked } = record(value);
+        return typeof invoked === 'boolean' ? invoked : null;
+      }, unknown(`${client}-not-foreground`));
     },
 
     async codexArchived(threadId: string) {

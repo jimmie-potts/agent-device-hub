@@ -1,6 +1,6 @@
 import type { BridgeEvent } from '../bridge.js';
 import { systemClock, type Clock } from '../clock.js';
-import type { ClaudeDesktopSession, Client, OsAdapter } from '../os-adapter.js';
+import type { CardButtons, ClaudeDesktopSession, Client, ForegroundWindow, OsAdapter } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
@@ -36,21 +36,22 @@ export interface RouterOptions {
 }
 
 export interface RouterStatus {
-  target: { slot: number; client: Client } | null;
   focusing: number | null;
   dictating: boolean;
-  send: 'none' | 'ready' | 'blocked';
   feed: FeedStatus;
   overflow: number;
-  slots: { slot: number; client: Client | null; state: SlotState; error: boolean; selected: boolean }[];
+  slots: { slot: number; client: Client | null; state: SlotState; error: boolean }[];
 }
 
-interface Target { slot: number; client: Client; key: string; taskId: string; title: string | null }
 type Call<T> = { ok: true; value: T } | { ok: false; reason: 'timeout' | 'rejected' };
 type Check = { ok: true } | { ok: false; reason: string; observedVersion?: string | null };
 /** Which Claude evidence verified the selection; logged on `focused` as a reason code. Codex verification has none. */
 type ClaudeEvidence = 'advanced' | 'already-newest';
 type Verified = { ok: true; evidence?: ClaudeEvidence } | { ok: false; reason: string };
+
+/** A card observation of the window in front, as the wheel last read it. */
+type CardState = { kind: 'none' } | { kind: 'card'; card: CardButtons } | { kind: 'unknown'; reason: string };
+type WheelMode = { kind: 'none' } | { kind: 'inert' } | { kind: 'scroll'; client: Client } | { kind: 'card'; client: Client; card: CardButtons };
 
 const RENDER_TICK_MS = 100;
 /** Desktop IDs per `claudeSessions` call; more are read in several calls, never truncated. */
@@ -58,6 +59,18 @@ const CLAUDE_IDS_PER_CALL = 64;
 /** Bounds on wheel notches: per adapter call, and waiting while a call runs. */
 const MAX_NOTCHES_PER_CALL = 10;
 const MAX_PENDING_NOTCHES = 50;
+/** Bound on card steps waiting while a focus call runs. */
+const MAX_PENDING_STEPS = 64;
+/** How long wheel turns reuse a card observation; a click always reads afresh. Nothing polls in between. */
+const CARD_REUSE_MS = 500;
+/** Protocol turn IDs 41-46 pair with click IDs 29-34: the big wheel's click is its turn ID minus 12. */
+const TURN_TO_CLICK = 12;
+
+/** The Desktop client a foreground window belongs to by package identity, or null for any other app or no window. */
+function clientOf(window: ForegroundWindow | null): Client | null {
+  if (!window) return null;
+  return (Object.keys(CLIENT_PACKAGES) as Client[]).find(client => CLIENT_PACKAGES[client] === window.packageIdentity) ?? null;
+}
 
 /** Whether `localId`'s `lastFocusedAt` is known and greater than every other record's; a tie is not newest. */
 function strictlyNewest(desktop: readonly ClaudeDesktopSession[], localId: string): boolean {
@@ -68,8 +81,10 @@ function strictlyNewest(desktop: readonly ClaudeDesktopSession[], localId: strin
 }
 
 /**
- * Turns bridge events and Hub feed views into fail-closed task focus, dictation and Send. Every keystroke follows a
- * verified target; any doubt refuses, lights the key's error state and leaves no target. It has no Hub write path.
+ * Turns bridge events and Hub feed views into slot lights, fail-closed task focus, dictation, Send and big-wheel card
+ * answers. A slot press opens and verifies its task; it arms nothing. Send and card answers are evaluated against the
+ * window in front when they are pressed, and Record holds the dictation chord like a keyboard shortcut (#821). Any
+ * doubt refuses and types nothing. It has no Hub write path.
  */
 export class TaskRouter {
   readonly #adapter: OsAdapter;
@@ -81,18 +96,23 @@ export class TaskRouter {
   #feed: FeedView = { status: 'unavailable', revision: null, snapshotVersion: null, sessions: [], reason: 'connecting' };
   /** Incremented by every invalidation; async steps stop when it changes. */
   #generation = 0;
-  #target: Target | null = null;
   #focusing: number | null = null;
   /** Physically held controls and when they were pressed, from bridge events. */
   readonly #held = new Map<number, number>();
   #recordHeld = false;
-  #recordToken = 0;
   #chordDown = false;
+  /** A Send or card press is being checked or typed. */
   #sending = false;
+  /** The last Send keystroke or card press, for the shared repeat window. */
   #lastSendAt = Number.NEGATIVE_INFINITY;
-  /** Wheel notches waiting for the single scroll worker (positive scrolls up, as the adapter defines). */
+  /** Big wheel: partial rotation toward the next card step, and work waiting for the single wheel worker. */
+  #wheelCounts = 0;
   #scrollPending = 0;
-  #scrolling = false;
+  #stepsPending = 0;
+  #wheelBusy = false;
+  #stepping = false;
+  #lastTurnAt = Number.NEGATIVE_INFINITY;
+  #card: { client: Client; at: number; state: CardState } | null = null;
   readonly #errors = new Map<number, number>();
   #overflow = 0;
   #startedAt = 0;
@@ -125,7 +145,6 @@ export class TaskRouter {
     if (this.#closed) return;
     this.#closed = true;
     this.#generation++;
-    this.#target = null;
     this.#chordDown = false;
     for (const timer of [this.#renderTimer, this.#archiveTimer]) if (timer !== undefined) this.#clock.clearInterval(timer);
     for (const [timer, settle] of this.#callTimers) { this.#clock.clearTimeout(timer); settle(); }
@@ -137,17 +156,15 @@ export class TaskRouter {
   status(): RouterStatus {
     const now = this.#clock.now();
     return {
-      target: this.#target && { slot: this.#target.slot, client: this.#target.client },
       focusing: this.#focusing,
       dictating: this.#chordDown,
-      send: this.#sendState(),
       feed: this.#feed.status,
       overflow: this.#overflow,
       slots: this.#slotLights(now).map((light, i) => ({ slot: i + 1, client: this.#slots.get(i + 1)?.client ?? null, ...light })),
     };
   }
 
-  /** Applies a validated profile whole: clears the target, releases keys and replays nothing. */
+  /** Applies a validated profile whole: cancels pending actions, releases keys and replays nothing. */
   setProfile(profile: RoutingProfile): void {
     const archiveChanged = profile.timing.archiveCheckMs !== this.#profile.timing.archiveCheckMs;
     this.#profile = profile;
@@ -158,15 +175,17 @@ export class TaskRouter {
     this.#render(true);
   }
 
-  /** Clears the target and any dictation, and releases every key the adapter holds. */
+  /** Cancels a focus in progress, pending wheel work and any dictation, and releases every key the adapter holds. */
   invalidate(reason: string): void {
     this.#generation++;
-    const had = this.#target !== null || this.#focusing !== null || this.#chordDown || this.#recordHeld;
-    this.#target = null;
+    const had = this.#focusing !== null || this.#chordDown || this.#recordHeld || this.#scrollPending !== 0 || this.#stepsPending !== 0;
     this.#focusing = null;
+    this.#wheelCounts = 0;
+    this.#scrollPending = 0;
+    this.#stepsPending = 0;
+    this.#card = null;
     this.#chordDown = false;
     this.#recordHeld = false;
-    this.#recordToken++;
     void this.#releaseAll();
     if (had) this.#log({ type: 'invalidated', reason });
     this.#render();
@@ -199,8 +218,8 @@ export class TaskRouter {
     }
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
-      // The big wheel scrolls; every other turn is inert here (the knobs belong to #744).
-      if (event.control === controls.scroll) this.#scrollTurn(event.delta);
+      // The big wheel scrolls or answers a card; every other turn is inert here (the knobs belong to #744).
+      if (event.control === controls.scroll) this.#wheelTurn(event.delta);
       return;
     }
     if (event.kind === 'release') {
@@ -209,10 +228,15 @@ export class TaskRouter {
       return;
     }
     this.#held.set(event.control, this.#clock.now());
+    if (event.control === this.#wheelClick()) {
+      // A wheel press clears partial rotation and steps not yet sent, so a light touch while clicking moves nothing.
+      this.#wheelCounts = 0;
+      this.#stepsPending = 0;
+    }
     const slot = controls.slots.indexOf(event.control) + 1;
     if (slot > 0) this.#slotPress(slot);
     else if (event.control === controls.record) this.#track(this.#recordPress());
-    else if (controls.send.includes(event.control)) this.#track(this.#send());
+    else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
     // Every other control is inert here: small knobs, the volume knob and unmapped keys belong to #744.
   }
@@ -232,7 +256,7 @@ export class TaskRouter {
     const record = this.#slots.release(slot, reason);
     if (!record) return;
     this.#log({ type: 'slot-released', slot, client: record.client, reason });
-    if (this.#target?.slot === slot || this.#focusing === slot) this.invalidate('slot-released');
+    if (this.#focusing === slot) this.invalidate('slot-released');
     if (this.#feed.status !== 'unavailable') this.#reconcile();
     this.#render();
   }
@@ -363,8 +387,8 @@ export class TaskRouter {
 
     const current = this.#slots.get(slot);
     if (!current || slotKey(current) !== slotKey(record)) return fail('target', 'slot-changed');
+    // The task is in front with its composer focused. Nothing is armed: Send and Record act on whatever is in front.
     this.#focusing = null;
-    this.#target = { slot, client, key: slotKey(record), taskId: record.taskId, title: record.title };
     this.#log({ type: 'focused', slot, client, ...(evidence ? { evidence } : {}) });
     this.#render();
   }
@@ -453,69 +477,28 @@ export class TaskRouter {
     return focused.value.value ? { ok: true } : { ok: false, reason: 'composer-unfocused' };
   }
 
-  /** The single-pass check before Record or Send: still the same task, in front, with the composer focused. */
-  async #recheck(target: Target): Promise<Check> {
-    const record = this.#slots.get(target.slot);
-    if (!record || slotKey(record) !== target.key) return { ok: false, reason: 'no-target' };
-    const gate = await this.#versionGate(target.client);
-    if (!gate.ok) return { ok: false, reason: gate.reason, observedVersion: gate.observed };
-    const foreground = await this.#foreground(target.client);
-    if (!foreground.ok) return foreground;
-    if (target.client === 'codex') {
-      const selection = await this.#codexSelection(target.taskId, target.title);
-      if (!selection.ok) return selection;
-    } else {
-      const desktop = await this.#claudeRecords([target.taskId, ...this.#otherClaudeIds(target.taskId)]);
-      if (!desktop) return { ok: false, reason: 'selection-unknown' };
-      const own = desktop.find(s => s.localId === target.taskId);
-      if (!own || own.isArchived || own.lastFocusedAt === null) return { ok: false, reason: 'selection-mismatch' };
-      if (desktop.some(s => s.localId !== target.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > own.lastFocusedAt!)) {
-        return { ok: false, reason: 'selection-mismatch' };
-      }
-    }
-    return this.#composer(target.client);
-  }
-
-  /** Drops a target whose re-check failed, lighting its key. */
-  #dropTarget(target: Target): void {
-    if (this.#target !== target) return;
-    this.#target = null;
-    this.#flash(target.slot);
-    this.#render();
-  }
-
   // Record
 
+  /** Holds the dictation chord like a keyboard shortcut: no foreground, card or composer check (#821). */
   async #recordPress(): Promise<void> {
     this.#recordHeld = true;
-    const token = ++this.#recordToken;
-    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'record-refused', reason, ...extra }); this.#render(); };
-    const target = this.#target;
-    if (!target) return refuse('no-target');
-    if (this.#sending) return refuse('send-in-progress');
-    const generation = this.#generation;
-    const check = await this.#recheck(target);
-    const current = () => this.#recordHeld && token === this.#recordToken && generation === this.#generation && this.#target === target && !this.#closed;
-    if (!current()) return;
-    if (!check.ok) {
-      this.#dropTarget(target);
-      return refuse(check.reason, check.observedVersion === undefined ? {} : { observedVersion: check.observedVersion });
-    }
+    // A held chord would add modifiers to an Enter being typed.
+    if (this.#sending) { this.#log({ type: 'record-refused', reason: 'send-in-progress' }); return; }
     this.#chordDown = true;
     this.#render();
     const down = await this.#call(() => this.#adapter.sendKeys({ action: 'down', keys: this.#profile.shortcuts.dictation }));
     if (!down.ok) {
       this.#chordDown = false;
       await this.#releaseAll();
-      this.#dropTarget(target);
-      return refuse('dictation-keys-failed');
+      this.#log({ type: 'record-refused', reason: 'dictation-keys-failed' });
+      this.#render();
+      return;
     }
-    if (this.#chordDown) this.#log({ type: 'dictation-started', slot: target.slot });
+    if (this.#chordDown) this.#log({ type: 'dictation-started' });
   }
 
   async #recordRelease(): Promise<void> {
     this.#recordHeld = false;
-    this.#recordToken++;
     if (!this.#chordDown) return;
     this.#chordDown = false;
     this.#render();
@@ -524,57 +507,74 @@ export class TaskRouter {
     this.#log({ type: 'dictation-ended' });
   }
 
-  // Send
+  // Send and card presses
 
-  #hubApprovalPending(target: Target): boolean {
-    const record = this.#slots.get(target.slot);
-    return !!record && sessionsForSlot(record, this.#feed.sessions).some(session => session.attention.includes('approval'));
-  }
-
-  #sendState(): RouterStatus['send'] {
-    if (!this.#target) return 'none';
-    return this.#feed.status !== 'current' || this.#hubApprovalPending(this.#target) ? 'blocked' : 'ready';
-  }
-
-  /** One Enter to the verified composer, or nothing. An uncertain keystroke is never retried. */
-  async #send(): Promise<void> {
-    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); this.#render(); };
+  /**
+   * One Enter to the composer of the Codex or Claude window in front, or nothing (#821). Evaluated at the press: the
+   * foreground client, its version, composer focus and the adapter's card check. The Hub is not consulted. The big
+   * wheel's click answers an open card instead. An uncertain keystroke is never retried.
+   */
+  async #send(control: number): Promise<void> {
+    const pressedAt = this.#held.get(control) ?? this.#clock.now();
+    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); };
     if (this.#sending) return refuse('send-in-progress');
     if (this.#clock.now() - this.#lastSendAt < this.#profile.timing.sendRepeatWindowMs) return refuse('repeat');
-    const target = this.#target;
-    if (!target) return refuse('no-target');
     if (this.#recordHeld || this.#chordDown) return refuse('dictating');
-    if (this.#feed.status !== 'current') return refuse('feed-not-current');
-    if (this.#hubApprovalPending(target)) return refuse('hub-approval-pending');
     this.#sending = true;
     try {
       const generation = this.#generation;
-      const alive = () => generation === this.#generation && this.#target === target && !this.#closed && !this.#recordHeld;
-      const check = await this.#recheck(target);
+      const alive = () => generation === this.#generation && !this.#closed && !this.#recordHeld;
+      const window = await this.#call(() => this.#adapter.foregroundWindow());
       if (!alive()) return refuse('superseded');
-      if (!check.ok) {
-        this.#dropTarget(target);
-        return refuse(check.reason, check.observedVersion === undefined ? {} : { observedVersion: check.observedVersion });
+      if (!window.ok || window.value.status !== 'known') return refuse('foreground-unknown');
+      const client = clientOf(window.value.value);
+      if (!client) return refuse('not-agent-client');
+      const gate = await this.#versionGate(client);
+      if (!alive()) return refuse('superseded');
+      // The observed version is logged so the owner can qualify a client update (see the README).
+      if (!gate.ok) return refuse(gate.reason, { client, observedVersion: gate.observed });
+      if (control === this.#wheelClick()) {
+        const card = await this.#observeCard(client);
+        if (!alive()) return refuse('superseded');
+        if (card.kind === 'unknown') return refuse('card-unknown', { client });
+        if (card.kind === 'card') return await this.#cardPress(client, card.card, pressedAt);
       }
-      const approval = await this.#call(() => this.#adapter.approvalVisible(target.client));
+      const composer = await this.#composer(client);
       if (!alive()) return refuse('superseded');
-      if (!approval.ok || approval.value.status !== 'known') return refuse('approval-unknown');
-      if (approval.value.value) return refuse('approval-visible');
-      if (this.#feed.status !== 'current') return refuse('feed-not-current');
-      if (this.#hubApprovalPending(target)) return refuse('hub-approval-pending');
+      if (!composer.ok) return refuse(composer.reason, { client });
+      const approval = await this.#call(() => this.#adapter.approvalVisible(client));
+      if (!alive()) return refuse('superseded');
+      if (!approval.ok || approval.value.status !== 'known') return refuse('approval-unknown', { client });
+      if (approval.value.value) return refuse('approval-visible', { client });
       this.#lastSendAt = this.#clock.now();
       const sent = await this.#call(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.send }));
-      if (sent.ok) {
-        this.#log({ type: 'sent', slot: target.slot, client: target.client });
-        return;
-      }
-      this.#log({ type: 'send-uncertain', slot: target.slot, client: target.client, reason: sent.reason });
-      if (this.#target === target) this.#target = null;
-      this.#flash(target.slot);
+      if (sent.ok) this.#log({ type: 'sent', client });
+      else this.#log({ type: 'send-uncertain', client, reason: sent.reason });
     } finally {
       this.#sending = false;
       this.#render();
     }
+  }
+
+  /**
+   * A still big-wheel click on an open card presses its focused button through the adapter, which presses only a
+   * button that still has keyboard focus in an unchanged card. This is the one controller gesture that may approve a
+   * permission request (owner decision on #821); it is a client UI action, never a Hub acknowledgement.
+   */
+  async #cardPress(client: Client, card: CardButtons, pressedAt: number): Promise<void> {
+    const refuse = (reason: string) => { this.#log({ type: 'card-refused', client, reason }); };
+    if (pressedAt - this.#lastTurnAt < this.#profile.cards.clickStillMs) return refuse('card-wheel-moving');
+    if (this.#stepping) return refuse('card-busy');
+    if (card.focused === null) return refuse('card-nothing-focused');
+    this.#lastSendAt = this.#clock.now();
+    this.#card = null;
+    const pressed = await this.#call(() => this.#adapter.invokeCardButton(client, card.focused!, card.count));
+    if (!pressed.ok || pressed.value.status !== 'known') {
+      this.#log({ type: 'card-press-uncertain', client, reason: pressed.ok && pressed.value.status === 'unknown' ? pressed.value.reason : pressed.ok ? 'unknown' : pressed.reason });
+      return;
+    }
+    if (!pressed.value.value) return refuse('card-focus-moved');
+    this.#log({ type: 'card-pressed', client, index: card.focused, count: card.count });
   }
 
   // Back and release gesture
@@ -597,30 +597,61 @@ export class TaskRouter {
     this.#releaseSlot(slot, 'release-gesture');
   }
 
-  // Scroll
+  // Big wheel
+
+  #wheelClick(): number { return this.#profile.controls.scroll - TURN_TO_CLICK; }
 
   /**
-   * A big-wheel turn scrolls the client conversation through the adapter's mouse-wheel primitive: the target's client,
-   * or without a target the foreground client when it is Codex or Claude. Clockwise scrolls down unless inverted.
-   * Scroll never types, selects a task or changes the target, never runs during dictation and is never retried.
+   * A big-wheel turn. Outside a card it scrolls the foreground client's conversation through the adapter's mouse-wheel
+   * primitive (clockwise scrolls down unless inverted). On a card it moves focus one actionable button per
+   * `cards.stepCounts` encoder counts, counted in one accumulator that restarts on a direction reversal. Rotation while
+   * the wheel's click is held is discarded. The wheel never types, selects a task or runs during dictation.
    */
-  #scrollTurn(delta: number): void {
-    if (delta === 0 || this.#recordHeld || this.#chordDown) return;
+  #wheelTurn(delta: number): void {
+    if (delta === 0) return;
+    this.#lastTurnAt = this.#clock.now();
+    if (this.#recordHeld || this.#chordDown || this.#held.has(this.#wheelClick())) return;
+    if (this.#wheelCounts !== 0 && Math.sign(delta) !== Math.sign(this.#wheelCounts)) this.#wheelCounts = 0;
+    this.#wheelCounts += delta;
+    const { stepCounts } = this.#profile.cards;
+    const steps = Math.trunc(this.#wheelCounts / stepCounts);
+    this.#wheelCounts -= steps * stepCounts;
+    this.#stepsPending = Math.max(-MAX_PENDING_STEPS, Math.min(MAX_PENDING_STEPS, this.#stepsPending + steps));
     const { notchesPerStep, invert } = this.#profile.scroll;
     const notches = -delta * notchesPerStep * (invert ? -1 : 1);
     this.#scrollPending = Math.max(-MAX_PENDING_NOTCHES, Math.min(MAX_PENDING_NOTCHES, this.#scrollPending + notches));
-    if (!this.#scrolling) this.#track(this.#drainScroll());
+    if (!this.#wheelBusy) this.#track(this.#drainWheel());
   }
 
-  async #drainScroll(): Promise<void> {
-    this.#scrolling = true;
+  #clearWheel(): void {
+    this.#scrollPending = 0;
+    this.#stepsPending = 0;
+  }
+
+  /** The single wheel worker: turns that arrive while it waits coalesce. Nothing is retried. */
+  async #drainWheel(): Promise<void> {
+    this.#wheelBusy = true;
     try {
-      while (this.#scrollPending !== 0 && !this.#closed) {
+      while ((this.#scrollPending !== 0 || this.#stepsPending !== 0) && !this.#closed) {
+        if (this.#recordHeld || this.#chordDown) return this.#clearWheel();
+        const generation = this.#generation;
+        const mode = await this.#wheelMode();
+        // An invalidation cleared what was pending; re-read whatever arrived since.
+        if (generation !== this.#generation) continue;
+        if (this.#closed || this.#recordHeld || this.#chordDown) return this.#clearWheel();
+        if (mode.kind === 'card') {
+          this.#scrollPending = 0;
+          const steps = this.#stepsPending;
+          this.#stepsPending = 0;
+          if (steps !== 0) await this.#cardStep(mode.client, mode.card, steps);
+          continue;
+        }
+        if (mode.kind !== 'scroll') return this.#clearWheel();
+        this.#stepsPending = 0;
+        if (this.#scrollPending === 0) continue;
         const notches = Math.max(-MAX_NOTCHES_PER_CALL, Math.min(MAX_NOTCHES_PER_CALL, this.#scrollPending));
         this.#scrollPending -= notches;
-        if (this.#recordHeld || this.#chordDown) { this.#scrollPending = 0; return; }
-        const client = this.#target?.client ?? await this.#foregroundClient();
-        if (!client || this.#recordHeld || this.#chordDown || this.#closed) { this.#scrollPending = 0; return; }
+        const { client } = mode;
         const scrolled = await this.#call(() => this.#adapter.scrollClient(client, notches));
         if (!scrolled.ok || scrolled.value.status !== 'known') {
           // Unknown: drop what is pending rather than retry; the next turn tries again.
@@ -631,16 +662,66 @@ export class TaskRouter {
         if (!scrolled.value.value) { this.#scrollPending = 0; return; }
       }
     } finally {
-      this.#scrolling = false;
+      this.#wheelBusy = false;
     }
   }
 
-  /** The foreground Desktop client by package identity, or null for any other app or an unknown answer. */
-  async #foregroundClient(): Promise<Client | null> {
+  /**
+   * What the wheel does in the window in front: nothing for another app; scroll for a client at an unqualified
+   * version (card selectors are version-dependent) or without a card; card steps on a card; and nothing at all
+   * while the card state is unknown. A card observation is reused for `CARD_REUSE_MS`.
+   */
+  async #wheelMode(): Promise<WheelMode> {
     const window = await this.#call(() => this.#adapter.foregroundWindow());
-    if (!window.ok || window.value.status !== 'known' || window.value.value === null) return null;
-    const identity = window.value.value.packageIdentity;
-    return (Object.keys(CLIENT_PACKAGES) as Client[]).find(client => CLIENT_PACKAGES[client] === identity) ?? null;
+    const client = window.ok && window.value.status === 'known' ? clientOf(window.value.value) : null;
+    if (!client) { this.#card = null; return { kind: 'none' }; }
+    const cached = this.#card;
+    let state: CardState;
+    if (cached && cached.client === client && this.#clock.now() - cached.at < CARD_REUSE_MS) state = cached.state;
+    else {
+      const gate = await this.#versionGate(client);
+      if (!gate.ok) { this.#card = null; return { kind: 'scroll', client }; }
+      state = await this.#observeCard(client);
+    }
+    if (state.kind === 'card') return { kind: 'card', client, card: state.card };
+    return state.kind === 'none' ? { kind: 'scroll', client } : { kind: 'inert' };
+  }
+
+  /** Reads the card in the client's window afresh and keeps it for the wheel. Unknown is logged with its reason. */
+  async #observeCard(client: Client): Promise<CardState> {
+    const answer = await this.#call(() => this.#adapter.cardButtons(client));
+    let state: CardState;
+    if (!answer.ok || answer.value.status !== 'known') {
+      const reason = answer.ok && answer.value.status === 'unknown' ? answer.value.reason : answer.ok ? 'unknown' : answer.reason;
+      state = { kind: 'unknown', reason };
+      this.#log({ type: 'card-unknown', client, reason });
+    } else state = answer.value.value ? { kind: 'card', card: { ...answer.value.value } } : { kind: 'none' };
+    this.#card = { client, at: this.#clock.now(), state };
+    return state;
+  }
+
+  /** Moves card focus by `steps`, stopping at the first and last button; the first step from no focus enters at an end. */
+  async #cardStep(client: Client, card: CardButtons, steps: number): Promise<void> {
+    if (card.count === 0) return;
+    const from = card.focused ?? (steps > 0 ? -1 : card.count);
+    const index = Math.max(0, Math.min(card.count - 1, from + steps));
+    if (index === card.focused) return;
+    this.#stepping = true;
+    try {
+      const moved = await this.#call(() => this.#adapter.focusCardButton(client, index, card.count));
+      if (!moved.ok || moved.value.status !== 'known') {
+        this.#card = null;
+        this.#log({ type: 'card-step-failed', client, reason: moved.ok && moved.value.status === 'unknown' ? moved.value.reason : moved.ok ? 'unknown' : moved.reason });
+        return;
+      }
+      const focused = moved.value.value;
+      if (this.#card?.client === client && this.#card.state.kind === 'card') {
+        this.#card = { client, at: this.#clock.now(), state: { kind: 'card', card: { count: card.count, focused } } };
+      }
+      this.#log({ type: 'card-step', client, index: focused, count: card.count });
+    } finally {
+      this.#stepping = false;
+    }
   }
 
   // Lights
@@ -659,7 +740,6 @@ export class TaskRouter {
       return {
         state: slotState(record, record ? sessionsForSlot(record, this.#feed.sessions) : [], this.#feed.status),
         error: until !== undefined && until > now,
-        selected: this.#target?.slot === slot,
       };
     });
   }
@@ -669,7 +749,7 @@ export class TaskRouter {
     const now = this.#clock.now();
     const half = Math.max(1, Math.floor(this.#profile.timing.attentionPulseMs / 2));
     const frame = renderFrame({
-      profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, send: this.#sendState(),
+      profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown,
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });
     const signature = JSON.stringify(frame);

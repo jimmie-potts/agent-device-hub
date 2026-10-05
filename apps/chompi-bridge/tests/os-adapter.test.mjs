@@ -32,7 +32,7 @@ test('an unsupported platform observes nothing and refuses every action', async 
 
 test('createOsAdapter picks the Windows adapter only on Windows', async () => {
   const adapter = createOsAdapter();
-  assert.equal(adapter.version, 2);
+  assert.equal(adapter.version, 3);
   assert.equal(adapter.platform, process.platform === 'win32' ? 'win32' : process.platform);
   if (process.platform !== 'win32') assert.deepEqual(await adapter.foregroundWindow(), { status: 'unknown', reason: 'os-adapter-not-implemented' });
   await adapter.close();

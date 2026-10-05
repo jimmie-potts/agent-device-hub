@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { asciiJson, encodeHelperCommand, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
+import { asciiJson, encodeHelperCommand, helperLoader, helperScriptPath, UiaHelper } from '../dist/windows/index.js';
 
 /** A scripted stand-in for the PowerShell helper process. */
 class FakeChild extends EventEmitter {
@@ -172,9 +172,20 @@ test('the shipped helper script changes UI state only inside the two card operat
   assert.equal(/\.Invoke\(|InvokePattern\]::Pattern/.test(focusBody), false, 'FocusCardButton never invokes');
   assert.equal(invokeBody.match(/\.Invoke\(\)/g)?.length, 1, 'InvokeCardButton invokes once');
   assert.equal(/SetFocus/.test(invokeBody), false, 'InvokeCardButton never moves focus');
-  const encoded = encodeHelperCommand(script);
-  assert.ok(encoded.length < 30000, `encoded helper is ${encoded.length} characters; Windows allows 32767 per command line`);
-  assert.equal(Buffer.from(encoded, 'base64').toString('utf16le'), script);
+});
+
+test('the helper starts from a short encoded loader that runs the shipped script file', () => {
+  // The script with the card operations is longer than a Windows command line allows as base64 UTF-16 (32767
+  // characters), so only a loader is encoded; it reads the same shipped file the inline script came from.
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.ok(encodeHelperCommand(script).length > 0);
+  const loader = helperLoader('C:\\Users\\o\'neil\\bridge\\src\\windows\\uia-helper.ps1');
+  assert.equal(loader, ". ([System.Management.Automation.ScriptBlock]::Create([System.IO.File]::ReadAllText('C:\\Users\\o''neil\\bridge\\src\\windows\\uia-helper.ps1', [System.Text.Encoding]::UTF8)))",
+    'the path is one single-quoted literal with quotes doubled');
+  const encoded = encodeHelperCommand(helperLoader(helperScriptPath()));
+  assert.ok(encoded.length < 4000, `encoded loader is ${encoded.length} characters`);
+  assert.equal(Buffer.from(encoded, 'base64').toString('utf16le'), helperLoader(helperScriptPath()));
+  assert.match(script, /^[\x00-\x7f]*$/, 'the script is ASCII, so its UTF-8 read is exact');
 });
 
 test('the helper approval check is scoped to the target window, bounded and reads class names only', () => {
