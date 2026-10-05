@@ -1408,6 +1408,64 @@ test('card: a click presses only a button the wheel itself moved to on this card
   assert.deepEqual(reopened.adapter.cardPressed, []);
 });
 
+test('card: one clockwise step chooses a Codex card\'s focused approve button, clamped at the end', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1); // approve is the last button and opens focused
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'focus is already on the last button; nothing moves');
+  assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'codex', index: 1, count: 2 });
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'one deliberate turn and a still click approve');
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('Record pressed and released during a Send check abandons that Send', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  let answer;
+  ctx.adapter.approvalVisible = async client => { ctx.adapter.calls.push(['approvalVisible', client]); return new Promise(resolve => { answer = resolve; }); };
+  ctx.press(PLAY);
+  await settle();
+  ctx.press(RECORD);
+  await settle();
+  ctx.release(RECORD);
+  await settle();
+  answer(known(false));
+  await settle();
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.equal(ctx.adapter.enters, 0, 'the quick tap still abandons the Send');
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }, { action: 'up', keys: ['LeftControl', 'LeftWindows'] }]);
+});
+
+test('a repeat bounce or a Send abandoned for Record does not flash the wheel LEDs', async t => {
+  const ctx = await setup(t);
+  const wheel = () => [ctx.lights.last[30], ctx.lights.last[31]];
+  const off = [[0, 0, 0], [0, 0, 0]];
+  front(ctx, 'codex');
+  await ctx.click(WHEEL);
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+  assert.deepEqual(wheel(), off, 'a bounce right after a Send is not shown as a failure');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  ctx.adapter.hang.approvalVisible = true;
+  ctx.press(PLAY);
+  await settle();
+  ctx.press(RECORD);
+  await advance(ctx.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.deepEqual(wheel(), off, 'Record was pressed on purpose');
+  ctx.release(RECORD);
+  delete ctx.adapter.hang.approvalVisible;
+  ctx.adapter.composer.codex = false;
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'composer-unfocused');
+  assert.deepEqual(wheel(), [PROFILE.colors.error, PROFILE.colors.error], 'other refusals still flash');
+});
+
 test('scroll counts never shorten the first card step', async t => {
   const ctx = await setup(t);
   front(ctx, 'claude');

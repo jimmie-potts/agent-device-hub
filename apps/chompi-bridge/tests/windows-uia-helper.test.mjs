@@ -194,6 +194,27 @@ test('the helper starts from a short encoded loader that reads the script path f
   assert.match(readFileSync(helperScriptPath(), 'utf8'), /^[\x00-\x7f]*$/, 'the script is ASCII, so its UTF-8 read is exact');
 });
 
+test('the helper approval check is scoped to the target window, bounded and reads class names only', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /'approvalVisible' \{ \$value = ApprovalVisible \$request \}/);
+  const body = /^function ApprovalVisible\(\$request\) \{\n([\s\S]*?)\n\}$/m.exec(script)?.[1];
+  assert.ok(body, 'ApprovalVisible is a top-level function');
+  assert.match(body, /^\s+\$window = TargetWindow \$request$/m, 'it refuses a window that is not the requested process');
+  assert.match(script, /\$ClaudeApprovalToken = 'epitaxy-approval-card'/);
+  // Claude counts the token on every element, so a card under another control type cannot read as absent.
+  assert.match(body, /'claude' \{ \$condition = \[System\.Windows\.Automation\.Condition\]::TrueCondition; \$token = \$ClaudeApprovalToken; \$key = 'approvalCards' \}/);
+  assert.match(body, /'codex' \{ \$condition = Condition \$AE::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Edit\); \$token = \$ComposerToken; \$key = 'composers' \}/);
+  assert.equal(/ControlType\]::Group/.test(body), false, 'the Claude count is not limited to Group elements');
+  assert.match(body, /HasToken \$element\.Cached\.ClassName \$token/);
+  assert.match(body, /\$window\.FindAll\(\$Scope::Descendants, \$condition\)/);
+  assert.match(body, /\$cache\.Add\(\$AE::ClassNameProperty\)/);
+  for (const forbidden of [/TreeWalker/, /NameProperty(?<!ClassNameProperty)/, /\.Name\b/, /ValuePattern/, /\.Value\b/, /FocusedElement/]) {
+    assert.equal(forbidden.test(body), false, `approval check must not use ${forbidden}`);
+  }
+  assert.match(body, /return @\{ \$key = \$count \}/);
+  assert.match(body, /Fail 'invalid-client'/);
+});
+
 test('the card operations are scoped to the target window, bounded, and read no Name or Value', () => {
   const script = readFileSync(helperScriptPath(), 'utf8');
   for (const op of ['cardButtons', 'focusCardButton', 'invokeCardButton']) {

@@ -540,14 +540,20 @@ export class TaskRouter {
    */
   async #send(control: number): Promise<void> {
     const pressedAt = this.#held.get(control) ?? this.#clock.now();
-    const refuse = (reason: string, extra: Record<string, unknown> = {}) => { this.#log({ type: 'send-refused', reason, ...extra }); this.#flashWheel(); };
+    const refuse = (reason: string, extra: Record<string, unknown> = {}) => {
+      this.#log({ type: 'send-refused', reason, ...extra });
+      // No red flash for a bounce right after a Send (`repeat`) or a deliberate Record press (`superseded`).
+      if (reason !== 'repeat' && reason !== 'superseded') this.#flashWheel();
+    };
     if (this.#sending) return refuse('send-in-progress');
     if (this.#clock.now() - this.#lastSendAt < this.#profile.timing.sendRepeatWindowMs) return refuse('repeat');
     if (this.#recordHeld || this.#chordDown) return refuse('dictating');
     this.#sending = true;
     try {
       const generation = this.#generation;
-      const alive = () => generation === this.#generation && !this.#closed && !this.#recordHeld;
+      // Any Record press or release since this Send began abandons it, even a quick tap already released.
+      const recordToken = this.#recordToken;
+      const alive = () => generation === this.#generation && !this.#closed && !this.#recordHeld && recordToken === this.#recordToken;
       const window = await this.#call(() => this.#adapter.foregroundWindow());
       if (!alive()) return refuse('superseded');
       if (!window.ok || window.value.status !== 'known') return refuse('foreground-unknown');
@@ -740,12 +746,21 @@ export class TaskRouter {
     return state;
   }
 
-  /** Moves card focus by `steps`, stopping at the first and last button; the first step from no focus enters at an end. */
+  /**
+   * Moves card focus by `steps`, stopping at the first and last button; the first step from no focus enters at an end.
+   * The button focused after the step is the wheel's choice for the next click, even when a clamped step did not move.
+   */
   async #cardStep(client: Client, card: CardButtons, steps: number): Promise<void> {
     if (card.count === 0) return;
     const from = card.focused ?? (steps > 0 ? -1 : card.count);
     const index = Math.max(0, Math.min(card.count - 1, from + steps));
-    if (index === card.focused) return;
+    if (index === card.focused) {
+      // A deliberate step clamped at an end leaves focus where it is and chooses that button, so one clockwise turn
+      // chooses a Codex card's approve button, which opens focused as the last button. The click re-reads focus.
+      this.#chosen = { client, cardId: card.id, index };
+      this.#log({ type: 'card-step', client, index, count: card.count });
+      return;
+    }
     this.#stepping = true;
     try {
       const moved = await this.#call(() => this.#adapter.focusCardButton(client, card.id, index, card.count));
