@@ -64,6 +64,7 @@ test('a Codex key press opens the exact thread, verifies selection and composer,
   assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedThread' && c[1] === tid(2) && c[2] === 'Task 2'));
   assert.ok(ctx.adapter.count('codexArchived') >= 1, 'the target check reads archive evidence first');
   assert.equal(ctx.lastLog('focused').slot, 2);
+  assert.equal('evidence' in ctx.lastLog('focused'), false, 'Codex verification logs no Claude evidence code');
   assert.ok(!JSON.stringify(ctx.logs).includes('Task 2'), 'logs never carry titles');
 });
 
@@ -254,6 +255,8 @@ test('Claude verification fails when the link shows Code home or another session
   const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
   ctx.adapter.appsFollowLinks = false;
   ctx.adapter.foreground = { packageIdentity: CLAUDE_PACKAGE, processName: 'claude.exe' };
+  // The fed sessions tie on lastFocusedAt, so no session is strictly the newest and only the advance rule applies.
+  // With a strictly newest target this case passes: see the accepted residual test below.
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch', 'Code home: the target was never stamped');
@@ -284,6 +287,7 @@ test('a press for the Claude session already selected in front verifies by its a
   const focusedAt = ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt;
   await ctx.focus(1);
   assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.equal(ctx.lastLog('focused').evidence, 'already-newest', 'the log names the evidence');
   assert.equal(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt, focusedAt, 'Claude stamped nothing');
   assert.deepEqual(ctx.adapter.opened, [`claude://code/continue?session=${lid(1)}`], 'the link opens once');
   assert.deepEqual(ctx.adapter.keys, [], 'no keystroke is added');
@@ -302,6 +306,45 @@ test('a press for another Claude session while Claude is in front still verifies
   await ctx.focus(1);
   assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
   assert.ok(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt > pressedAt, 'the link changed the selection');
+  assert.equal(ctx.lastLog('focused').evidence, 'advanced', 'the log names the evidence');
+});
+
+test('an unknown foreground before the link gives no already-selected evidence; the advance rule applies', async t => {
+  for (const stamps of [false, true]) {
+    const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+    claudeShowing(ctx, lid(1));
+    const realForeground = ctx.adapter.foregroundWindow.bind(ctx.adapter);
+    ctx.adapter.foregroundWindow = async () => (ctx.adapter.opened.length === 0 ? unknown('no foreground') : realForeground());
+    const record = ctx.adapter.claudeRecords.get(lid(1));
+    const realOpen = ctx.adapter.openUri.bind(ctx.adapter);
+    ctx.adapter.openUri = async uri => {
+      const focusedAt = record.lastFocusedAt;
+      await realOpen(uri);
+      record.lastFocusedAt = stamps ? ctx.clock.now() + 1 : focusedAt;
+    };
+    ctx.press(SLOT(1));
+    await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+    if (stamps) {
+      assert.deepEqual(target(ctx), { slot: 1, client: 'claude' }, 'an advance still verifies');
+      assert.equal(ctx.lastLog('focused').evidence, 'advanced');
+    } else {
+      assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch', 'without an advance nothing verifies');
+      assert.equal(target(ctx), null);
+    }
+    assert.deepEqual(ctx.adapter.keys, []);
+  }
+});
+
+test('accepted residual: Claude in front on Code home with the target strictly newest verifies when the link does not navigate', async t => {
+  // The window's view is unobserved. Owner decision on #743: a strictly newest target with Claude in front counts as
+  // selected; only the link navigating covers Code home, the Chat tab and sessions the bridge does not know.
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(1));
+  ctx.adapter.claudeSelected = null; // Code home: no session shown
+  ctx.adapter.appsFollowLinks = false;
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.equal(ctx.lastLog('focused').evidence, 'already-newest');
 });
 
 test('matrix: an already-selected Claude target that is not strictly the newest fails closed', async t => {

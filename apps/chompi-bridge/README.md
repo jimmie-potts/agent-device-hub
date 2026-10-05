@@ -165,7 +165,9 @@ the adapter when it offers `warmUp()` (the UI Automation helper and cached clien
 `adapter-warm-up-failed`, all before the controller connects, and only then connects the controller, the feed and the
 router. It prints JSON lines with slot numbers and reason codes only: link events,
 `feed`, `slot-assigned`, `overflow`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
-`invalidated`, `profile-rejected` and similar. It never prints titles, text or the token. Starting it against the real
+`invalidated`, `profile-rejected` and similar. A Claude `focused` line carries `evidence`: `advanced` when the target's
+`lastFocusedAt` moved past the press, or `already-newest` when it was already strictly the newest (see the safety
+rules); a Codex `focused` line has no `evidence` field. It never prints titles, text or the token. Starting it against the real
 controller and desktop is #743 work and needs the owner's device authorization.
 
 ### Profile
