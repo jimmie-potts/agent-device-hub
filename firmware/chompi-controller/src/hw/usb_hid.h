@@ -36,6 +36,9 @@ void UsbHidStop();
 // Increments on every SET_CONFIGURATION, i.e. every enumeration.
 uint32_t UsbHidGeneration();
 bool     UsbHidConfigured();
+// The host addressed the device but did not configure it, also while
+// suspended in that state.
+bool     UsbHidAddressedUnconfigured();
 
 // True when configured, not suspended and the IN endpoint is idle.
 bool UsbHidCanSend();

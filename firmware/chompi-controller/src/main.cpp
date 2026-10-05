@@ -9,6 +9,7 @@
 #include "core/epoch.h"
 #include "core/input.h"
 #include "core/usb_descriptors.h"
+#include "core/usb_recovery.h"
 #include "daisy_seed.h"
 #include "hw/board.h"
 #include "hw/led_driver.h"
@@ -22,6 +23,7 @@ namespace
 hw::Board    board;
 Controller   controller;
 InputScanner scanner;
+UsbRecovery  usb_recovery;
 char         serial[kUsbSerialDigits + 1];
 
 constexpr uint32_t kLedRefreshMs   = 10;
@@ -69,6 +71,19 @@ int main()
     {
         const uint32_t now = daisy::System::GetNow();
         hw::ServiceUsbSwitch(board, now);
+
+        // #743: the device stack does not recover from a disconnect by itself.
+        // Detach and re-attach; the controller sees a new enumeration below.
+        // Port detection lends the lines to the charger for about 1.5 s; the
+        // decision waits until they are back.
+        if(!hw::UsbLinesLent()
+           && usb_recovery.Update(now, hw::UsbHidConfigured(),
+                                  hw::UsbHidAddressedUnconfigured()))
+        {
+            hw::UsbHidStop();
+            hw::UsbReclaimLines(board, now);
+            hw::UsbHidInit(serial);
+        }
 
         // Every enumeration starts a new epoch.
         const uint32_t generation = hw::UsbHidGeneration();

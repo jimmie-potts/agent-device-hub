@@ -48,6 +48,15 @@ which owns installation and physical acceptance; neither is complete.
 - Sends a `heartbeat` every 500 ms with the last applied frame (0 after a
   host timeout until a new frame applies) and whether the host heartbeat is
   current.
+- Recovers its USB connection without a power cycle. Once the device has been
+  unconfigured and unaddressed for 3 s, after an unplug and replug, a cable
+  bump or a brief drop of the data lines, it restarts its USB device (detach,
+  re-initialize, re-attach) and retries every 5 s; the host then enumerates it
+  again and a new epoch starts. A device the host addressed but left unconfigured (a disabled
+  device, a failed driver install, or an enumeration stuck after its address)
+  waits 10 s and then backs off, doubling up to 320 s between restarts. A
+  configured device, including one suspended under a sleeping host, is never
+  restarted, and no restart cuts short the charger's port detection.
 
 It never mounts the SD card, so it cannot change music data. It has no audio,
 no MIDI and no CDC serial port, and it does not present the stock
@@ -76,7 +85,7 @@ the controller, power-cycle the CHOMPI.
 
 | Path | Contents |
 | --- | --- |
-| `src/core/` | Pure C++ with no hardware dependency: protocol codec, debounce and encoder decoding, the event queue, epoch choice, the session controller, light rendering and the USB descriptors |
+| `src/core/` | Pure C++ with no hardware dependency: protocol codec, debounce and encoder decoding, the event queue, epoch choice, the session controller, light rendering, the USB descriptors and the USB recovery decision |
 | `src/hw/` | Board layer on libDaisy: inputs and charger (`board`), the WS2812 DMA driver (`led_driver`), the USB switch handshake (`usb_switch`) and the vendor HID class (`usb_hid`) |
 | `src/main.cpp` | Main loop |
 | `test/` | Host tests and a small JSON reader for the shared fixtures |
