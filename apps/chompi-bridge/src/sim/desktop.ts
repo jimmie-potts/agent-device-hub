@@ -54,16 +54,16 @@ export interface CodexThread { id: string; title: string; archived: boolean }
 export interface ClaudeSession { localId: string; title: string; isArchived: boolean; lastFocusedAt: number | null }
 
 export type DesktopLogEntry =
-  | { at: number; kind: 'key'; action: KeyRequest['action']; keys: string[]; window: WindowId | null }
-  | { at: number; kind: 'link'; client: Client; task: string; followed: boolean }
-  | { at: number; kind: 'submit'; client: Client; text: string }
-  | { at: number; kind: 'card-focus'; client: Client; index: number }
-  | { at: number; kind: 'card-press'; client: Client; index: number; stop: string; card: CardKind }
-  | { at: number; kind: 'scroll'; client: Client; notches: number }
-  | { at: number; kind: 'dictation'; client: Client | null; text: string }
-  | { at: number; kind: 'operator'; action: string };
+  | { at: number; seq: number; kind: 'key'; action: KeyRequest['action']; keys: string[]; window: WindowId | null }
+  | { at: number; seq: number; kind: 'link'; client: Client; task: string; followed: boolean }
+  | { at: number; seq: number; kind: 'submit'; client: Client; text: string }
+  | { at: number; seq: number; kind: 'card-focus'; client: Client; index: number }
+  | { at: number; seq: number; kind: 'card-press'; client: Client; index: number; stop: string; card: CardKind }
+  | { at: number; seq: number; kind: 'scroll'; client: Client; notches: number }
+  | { at: number; seq: number; kind: 'dictation'; client: Client | null; text: string }
+  | { at: number; seq: number; kind: 'operator'; action: string };
 
-type LogInput = DesktopLogEntry extends infer T ? T extends unknown ? Omit<T, 'at'> : never : never;
+type LogInput = DesktopLogEntry extends infer T ? T extends unknown ? Omit<T, 'at' | 'seq'> : never : never;
 
 export interface DesktopSnapshot {
   foreground: WindowId | null;
@@ -99,6 +99,7 @@ export class SimulatedDesktop {
   readonly #held = new Set<string>();
   #dictating = false;
   #cardSerial = 0;
+  #logSeq = 0;
   #listeners = new Set<() => void>();
 
   constructor(options: SimulatedDesktopOptions = {}) { this.clock = options.clock ?? systemClock; }
@@ -360,7 +361,7 @@ export class SimulatedDesktop {
   }
 
   #record(entry: LogInput): void {
-    this.log.push({ at: this.clock.now(), ...entry } as DesktopLogEntry);
+    this.log.push({ at: this.clock.now(), seq: ++this.#logSeq, ...entry } as DesktopLogEntry);
     if (this.log.length > MAX_LOG) this.log.splice(0, this.log.length - MAX_LOG);
     this.#changed();
   }
