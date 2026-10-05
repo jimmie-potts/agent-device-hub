@@ -1,7 +1,8 @@
 // Hub #853: each boundary check of a CHOMPI bridge verification run passes on a correct run and fails when the
-// run crosses its boundary. The crossing runs are real: the server starts the bridge CLI without --simulate,
-// without --desktop sim, or pointed at the installed Hub's port. The module guard and the run's fetch refuse
-// each attempt before it reaches hardware, the desktop or a service, and the check reports it.
+// run crosses its boundary. The crossing runs are real: the server starts the bridge CLI without --simulate (the
+// guard refuses node-hid), without --desktop sim (the platform adapter is created; on Linux it is the unsupported
+// adapter, so nothing is refused and the check fails on the adapter count), or pointed at the installed Hub's port
+// (the run's fetch refuses every request before it connects).
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';

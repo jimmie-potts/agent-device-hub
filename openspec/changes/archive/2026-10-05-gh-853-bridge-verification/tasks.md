@@ -14,8 +14,12 @@
 - [x] 3.2 Control page with keyboard operation and accessibility (evidence: `npm run test:chompi-bridge:browser`, axe WCAG 2.1 A and AA at 1440 px and phone width).
 - [x] 3.3 One disposable run on the WSL host: start, one scenario capture with a screenshot, stop and cleanup (evidence: the run ID and proof under the main checkout's `.local/evidence/verify/`, recorded in the PR).
 
-## 4. Documentation and validation
+## 4. Review (PR #855)
 
-- [x] 4.1 Adapter README, bridge README, docs/app-verification.md, docs/development.md and docs/sdlc.md.
-- [x] 4.2 Build, typecheck, the bridge suites, OpenSpec validation and the workflow checks; results in the PR.
-- [x] 4.3 Synchronize the specs and archive this change.
+- [x] 4.1 Address round 1: Tier 2 waits for readiness and the page gates Run scenario (`verify/tests/scenario-ready.test.mjs`); type-check the run's modules; byte-bounded request bodies; lights named by role (`tests/panel.test.mjs`); an accurate reconnect title; no stray axe video; per-crossing boundary wording; the one-run rule; negative controls labelled.
+
+## 5. Documentation and validation
+
+- [x] 5.1 Adapter README, bridge README, docs/app-verification.md, docs/development.md and docs/sdlc.md.
+- [x] 5.2 Build, typecheck, the bridge suites, OpenSpec validation and the workflow checks; results in the PR.
+- [x] 5.3 Synchronize the specs and archive this change.

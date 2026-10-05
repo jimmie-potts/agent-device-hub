@@ -57,6 +57,8 @@ try {
     await until(async () => (await state()).controller.pressed.includes(26), 'Record held');
     await until(async () => (await record.getAttribute('aria-pressed')) === 'true', 'aria-pressed true');
     await until(async () => (await state()).desktop.held.length === 2, 'the dictation chord is held');
+    // The held Record key reads "record", though the record and error colors are both red.
+    await page.getByRole('button', { name: 'Record (CHOMPI key), light record', exact: true }).waitFor({ timeout: 5000 });
     await page.keyboard.up('Space');
     await until(async () => !(await state()).controller.pressed.includes(26), 'Record released');
     await until(async () => (await record.getAttribute('aria-pressed')) === 'false', 'aria-pressed false');

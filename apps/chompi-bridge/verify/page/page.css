@@ -41,6 +41,7 @@ input, select { border: 1px solid #6b7180; border-radius: 6px; padding: .25rem .
 .facts div { display: flex; gap: .35rem; }
 .facts dt { font-weight: 600; }
 .facts dd { margin: 0; }
+.control-banner { margin: .4rem 0 0; padding: .4rem .6rem; border: 2px solid var(--bad); border-radius: 6px; color: var(--bad); font-weight: 600; }
 .action-status { margin: .4rem 0 0; color: var(--muted); min-height: 1.4em; }
 
 main {

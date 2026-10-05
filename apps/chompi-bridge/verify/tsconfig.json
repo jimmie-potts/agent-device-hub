@@ -6,10 +6,15 @@
     "checkJs": true,
     "rootDir": "../../..",
     "outDir": "dist-check",
-    "lib": ["ES2023", "DOM"]
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
   "include": [
     "plugin.mjs",
-    "boundaries.mjs"
+    "boundaries.mjs",
+    "seed.mjs",
+    "server.mjs",
+    "serve.mjs",
+    "guard.mjs",
+    "scenarios.mjs"
   ]
 }

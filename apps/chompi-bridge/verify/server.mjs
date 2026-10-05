@@ -12,8 +12,11 @@
 //
 // A seed may name a `fault` that crosses one boundary, only so tests can prove its check fails:
 // `hid-device` (no --simulate: the HID transport is created and node-hid is refused), `desktop-calls` (no --desktop
-// sim: the platform adapter is created) and `installed-hub` (the feed origin is the installed Hub's port; every
+// sim: the platform adapter is created, which on Linux is the unsupported adapter, so nothing is refused) and `installed-hub` (the feed origin is the installed Hub's port; every
 // request is refused before it is sent).
+//
+// A catalog scenario started from the page waits until the run is ready (controller connected, feed current, every
+// seeded task on a lit slot key), so its first press is never lost to a controller that is still connecting.
 import { blockedModules } from './guard.mjs';
 import { createServer } from 'node:http';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -27,35 +30,48 @@ import { isPressControl, isTurnControl } from '../dist/protocol.js';
 import { loadOsAdapter } from '../dist/routing/index.js';
 import { DEFAULT_PROFILE_PATH } from '../dist/routing/profile.js';
 import { SyntheticHub } from '../dist/sim/hub.js';
-import { CONTROL, PANEL_ENCODERS, PANEL_KEYS } from '../dist/sim/panel.js';
-import { SCENARIOS, runScenario, seedDesktop, seedHub, taskIds } from '../dist/sim/scenarios.js';
+import { CONTROL, PANEL_ENCODERS, PANEL_KEYS, describeLights } from '../dist/sim/panel.js';
+import { READY_STEP, SCENARIOS, ready, readiness, runScenario, seedDesktop, seedHub, taskIds } from '../dist/sim/scenarios.js';
 import { RUN_SCENARIOS } from './seed.mjs';
 
 export { RUN_SCENARIOS, seedRun } from './seed.mjs';
 
 const PAGE = fileURLToPath(new URL('page/', import.meta.url));
+/** @typedef {import('../dist/cli.js').SimulationParts} SimulationParts */
+/** @typedef {import('../dist/sim/scenarios.js').Harness} Harness */
+/** @typedef {import('../dist/sim/scenarios.js').StepResult} StepResult */
+/** @typedef {import('../dist/sim/scenarios.js').BridgeLogLine} BridgeLogLine */
+/** @typedef {import('node:http').IncomingMessage} IncomingMessage */
+/** @typedef {import('node:http').ServerResponse} ServerResponse */
+/** @typedef {{id: string, title: string, state: 'running' | 'passed' | 'failed', steps: StepResult[], error?: string}} ScenarioRun */
+
+/** @type {Readonly<Record<string, [string, string]>>} */
 const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/page.js': ['page.js', 'text/javascript; charset=utf-8'], '/page.css': ['page.css', 'text/css; charset=utf-8'] };
 const FAULTS = new Set(['hid-device', 'desktop-calls', 'installed-hub']);
 const INSTALLED_HUB = 'http://127.0.0.1:8788';
 const MAX_BODY = 8 * 1024;
 const MAX_LOG = 2000;
 const TEXT = /^[\x20-\x7e]{1,200}$/;
+/** @type {Record<'approval' | 'question', Record<'codex' | 'claude', string[]>>} */
 const CARD_STOPS = {
   approval: { codex: ['Deny', 'Approve'], claude: ['Allow once', 'Allow always', 'Deny'] },
   question: { codex: ['Synthetic answer A', 'Synthetic answer B', 'Other'], claude: ['Synthetic answer A', 'Synthetic answer B', 'Synthetic answer C', 'Other'] },
 };
 
 class Refusal extends Error {
+  /** @param {number} status @param {string} code */
   constructor(status, code) { super(code); this.status = status; }
 }
 
+/** @param {number} ms @returns {Promise<void>} */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Starts the run's listener and bridge.
- * @param {{dataDir: string, port?: number, proof?: {proofDir: string, runId: string} | null, echo?: (line: string) => void, processHooks?: any}} options
+ * @param {{dataDir: string, port?: number, proof?: {proofDir: string, runId: string} | null, echo?: (line: string) => void,
+ *   processHooks?: import('../dist/cli.js').ProcessHooks, readyTimeoutMs?: number}} options
  */
-export async function startServer({ dataDir, port = 0, proof = null, echo = () => {}, processHooks }) {
+export async function startServer({ dataDir, port = 0, proof = null, echo = () => {}, processHooks, readyTimeoutMs = 20_000 }) {
   if (process.platform === 'win32') throw new Error('chompi-start-failed: unsupported-platform');
   const config = JSON.parse(await readFile(join(dataDir, 'scenario.json'), 'utf8'));
   const definition = RUN_SCENARIOS[config.name];
@@ -67,25 +83,31 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
   if (Buffer.byteLength(lockPath) > 107) throw new Error('chompi-start-failed: socket-path-too-long');
   const proofHandler = proof ? createProofHandler(proof) : null;
 
-  /** @type {any} */
-  let parts = {};
+  /** @type {SimulationParts} */
+  let parts = { simulator: undefined, desktop: undefined };
+  /** @type {Record<string, any>} */
   let profile = JSON.parse(await readFile(paths.profile, 'utf8'));
+  /** @type {BridgeLogLine[]} */
   const logs = [];
   let logCount = 0;
+  /** @type {{hidTransports: number, platformAdapters: number, requests: {origin: string, path: string}[], refused: string[]}} */
   const boundary = { hidTransports: 0, platformAdapters: 0, requests: [], refused: [] };
+  /** @type {ScenarioRun | null} */
   let scenarioRun = null;
+  /** @type {number | null} */
   let exit = null;
 
   const hub = new SyntheticHub({ token });
   seedHub(hub, definition.seed);
 
   const server = createServer((request, response) => { void handle(request, response); });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
-  const bound = server.address().port;
+  await /** @type {Promise<void>} */ (new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); }); }));
+  const bound = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
   const origin = `http://127.0.0.1:${bound}`;
   const feedOrigin = definition.fault === 'installed-hub' ? INSTALLED_HUB : origin;
 
   // The bridge's only network path: this listener. Anything else is refused before a connection is made.
+  /** @type {typeof fetch} */
   const guardedFetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     boundary.requests.push({ origin: url.origin, path: url.pathname });
@@ -98,10 +120,12 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
   };
 
   const sink = {
+    /** @param {string} text */
     write(text) {
       for (const line of String(text).split('\n')) {
         if (!line) continue;
         echo(line);
+        /** @type {BridgeLogLine} */
         let value;
         try { value = JSON.parse(line); } catch { value = { type: 'stderr', text: line.slice(0, 200) }; }
         logs.push(value);
@@ -116,7 +140,9 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     ...(definition.fault === 'hid-device' ? [] : ['--simulate']),
     ...(definition.fault === 'desktop-calls' ? [] : ['--desktop', 'sim']),
     '--profile', paths.profile, '--hub', feedOrigin, '--token-file', paths.token, '--state', paths.state];
-  let bridgeDone;
+  /** @type {Promise<number>} */
+  let bridgeDone = Promise.resolve(1);
+  /** @type {Promise<boolean>} */
   const simulated = new Promise(resolve => {
     const running = main(argv, {
       stdout: sink, stderr: sink, env, fetch: guardedFetch, signal: abort.signal,
@@ -129,7 +155,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
         resolve(true);
       },
     });
-    running.then(code => { exit = code; resolve(false); }, error => { exit = 1; sink.write(`chompi-bridge-crashed: ${error?.message ?? error}`); resolve(false); });
+    running.then(code => { exit = code; resolve(false); }, (/** @type {any} */ error) => { exit = 1; sink.write(`chompi-bridge-crashed: ${error?.message ?? error}`); resolve(false); });
     bridgeDone = running.catch(() => 1);
   });
   const started = await Promise.race([simulated, sleep(15_000).then(() => false)]);
@@ -141,11 +167,12 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     throw new Error(`chompi-start-failed: bridge-not-started${exit === null ? '' : `-${exit}`}`);
   }
 
-  /** The live harness for the scenario catalog: real time, this run's parts. */
+  /** The live harness for the scenario catalog: real time, this run's parts (both exist for a catalog scenario). */
+  /** @type {Harness} */
   const harness = {
     tier: 'run',
-    get simulator() { return parts.simulator; },
-    get desktop() { return parts.desktop; },
+    get simulator() { return /** @type {NonNullable<SimulationParts['simulator']>} */ (parts.simulator); },
+    get desktop() { return /** @type {NonNullable<SimulationParts['desktop']>} */ (parts.desktop); },
     hub,
     logs: () => logs,
     profile: () => profile,
@@ -159,7 +186,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
   async function slotsFile() {
     try {
       const value = JSON.parse(await readFile(join(paths.state, 'slots.json'), 'utf8'));
-      return Array.isArray(value.slots) ? value.slots.map(s => ({ slot: s.slot, client: s.client, taskId: s.taskId })) : [];
+      return Array.isArray(value.slots) ? value.slots.map((/** @type {any} */ s) => ({ slot: s.slot, client: s.client, taskId: s.taskId })) : [];
     } catch {
       return [];
     }
@@ -177,14 +204,23 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     };
   }
 
+  /** Whether a catalog scenario may start: the run is simulated and ready, or why not. */
+  function runReady() {
+    if (!parts.simulator || !parts.desktop) return 'this run has no simulated controller or desktop';
+    return readiness(harness, definition.seed);
+  }
+
   async function state() {
     const simulator = parts.simulator;
     const desktop = parts.desktop;
     return {
+      ready: runReady(),
       run: { scenario: config.name, description: definition.description, catalog: definition.catalog ?? null, fault: definition.fault ?? null, bridge: exit === null ? 'running' : `exited ${exit}` },
       controller: simulator ? {
         plugged: simulator.plugged, display: simulator.display, epoch: simulator.epoch, profileVersion: simulator.profileVersion,
         brightness: simulator.brightnessPercent, pressed: simulator.pressed, leds: simulator.leds,
+        // Each LED named by what its role can show (slot state, record, wheel error), not by the first matching color.
+        lights: describeLights(/** @type {any} */ (profile), simulator.leds),
       } : null,
       colors: profile.colors,
       profileVersion: profile.profileVersion,
@@ -197,6 +233,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     };
   }
 
+  /** @param {'codex' | 'claude'} client */
   function nextTask(client) {
     const used = hub.sessions().map(s => Number(/(\d+)$/.exec(s.sessionId)?.[1] ?? 0));
     const n = Math.max(0, ...used) + 1;
@@ -208,16 +245,21 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     return { sessionId: ids.sessionId };
   }
 
+  /** @param {unknown} value @returns {'codex' | 'claude'} */
   const client = value => {
     if (value !== 'codex' && value !== 'claude') throw new Refusal(400, 'invalid-client');
     return value;
   };
+  /** @param {unknown} value @returns {string} */
   const session = value => {
     if (typeof value !== 'string' || !hub.session(value)) throw new Refusal(404, 'unknown-session');
     return value;
   };
 
-  /** One operator action. Every value is checked; nothing here can reach outside the run. */
+  /**
+   * One operator action. Every value is checked; nothing here can reach outside the run.
+   * @param {string} area @param {Record<string, any>} input @returns {Promise<unknown>}
+   */
   async function act(area, input) {
     const { simulator, desktop } = parts;
     if (area === 'controller') {
@@ -227,7 +269,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (op === 'unplug') return simulator.unplug();
       if (['press', 'release', 'click'].includes(op)) {
         if (!isPressControl(control)) throw new Refusal(400, 'invalid-control');
-        return simulator[op](control);
+        return simulator[/** @type {'press' | 'release' | 'click'} */ (op)](control);
       }
       if (op === 'turn') {
         if (!isTurnControl(control) || !Number.isInteger(delta) || delta === 0 || delta < -127 || delta > 127) throw new Refusal(400, 'invalid-turn');
@@ -249,6 +291,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (op === 'clear') return desktop.clearComposer(client(input.client));
       if (op === 'composer-focus') return desktop.focusComposer(client(input.client), input.focused === true);
       if (op === 'open-card') {
+        /** @type {'question' | 'approval' | null} */
         const kind = input.kind === 'question' ? 'question' : input.kind === 'approval' ? 'approval' : null;
         if (!kind) throw new Refusal(400, 'invalid-card');
         const c = client(input.client);
@@ -281,7 +324,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     if (area === 'profile') {
       if (input.op !== 'alternate' && input.op !== 'default') throw new Refusal(400, 'invalid-op');
       const shipped = JSON.parse(await readFile(DEFAULT_PROFILE_PATH, 'utf8'));
-      await harness.writeProfile(current => ({
+      await harness.writeProfile((/** @type {Record<string, any>} */ current) => ({
         ...current, profileVersion: current.profileVersion + 1,
         colors: { ...current.colors, idle: input.op === 'alternate' ? [120, 0, 120] : shipped.colors.idle },
       }));
@@ -294,11 +337,21 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (!parts.simulator || !parts.desktop) throw new Refusal(409, 'run-not-simulated');
       if (scenarioRun?.state === 'running') throw new Refusal(409, 'scenario-running');
       if (scenarioRun) throw new Refusal(409, 'scenario-already-ran; reseed the run to run it again');
-      scenarioRun = { id: scenario.id, title: scenario.title, state: 'running', steps: [] };
-      void runScenario(scenario, harness, step => scenarioRun.steps.push(step)).then(
-        result => { scenarioRun = { ...scenarioRun, state: result.outcome }; },
-        error => { scenarioRun = { ...scenarioRun, state: 'failed', error: String(error?.message ?? error) }; },
-      );
+      /** @type {ScenarioRun} */
+      const run = { id: scenario.id, title: scenario.title, state: 'running', steps: [] };
+      scenarioRun = run;
+      void (async () => {
+        // Like Tier 1: the first step acts only once the run is ready. A run that never gets there records a failed
+        // readiness step with what it saw, rather than a press the controller never received.
+        const ok = await ready(harness, definition.seed, readyTimeoutMs);
+        if (ok !== true) {
+          run.steps.push({ name: READY_STEP, kind: 'expect', outcome: 'failed', detail: ok });
+          run.state = 'failed';
+          return;
+        }
+        const result = await runScenario(scenario, harness, step => run.steps.push(step));
+        run.state = result.outcome;
+      })().catch((/** @type {any} */ error) => { run.state = 'failed'; run.error = String(error?.message ?? error); });
       return { id: scenario.id };
     }
     throw new Refusal(404, 'not-found');
@@ -308,20 +361,27 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
     'cross-origin-opener-policy': 'same-origin', 'cross-origin-resource-policy': 'same-origin',
   };
+  /** @param {ServerResponse} response @param {number} status @param {any} body */
   const send = (response, status, body, type = 'application/json') => {
     response.writeHead(status, { ...SECURITY, 'content-type': type });
     response.end(type === 'application/json' ? JSON.stringify(body) : body);
   };
 
+  /** @param {IncomingMessage} request @returns {Promise<Record<string, any>>} */
   async function readJson(request) {
     if (!/^application\/json(?:;|$)/.test(request.headers['content-type'] ?? '')) throw new Refusal(415, 'json-required');
     const site = request.headers['sec-fetch-site'];
     if ((request.headers.origin !== undefined && request.headers.origin !== origin) || (site !== undefined && site !== 'same-origin' && site !== 'none')) throw new Refusal(403, 'cross-origin');
-    let body = '';
+    /** @type {Buffer[]} */
+    const chunks = [];
+    let size = 0;
     for await (const chunk of request) {
-      body += chunk;
-      if (body.length > MAX_BODY) throw new Refusal(413, 'too-large');
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+      if (size > MAX_BODY) throw new Refusal(413, 'too-large');
+      chunks.push(buffer);
     }
+    const body = Buffer.concat(chunks).toString('utf8');
     try {
       const value = JSON.parse(body || '{}');
       if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error();
@@ -331,12 +391,13 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     }
   }
 
+  /** @param {IncomingMessage} request @param {ServerResponse} response */
   async function feed(request, response) {
     const controller = new AbortController();
     response.on('close', () => controller.abort());
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) if (typeof value === 'string') headers.set(name, value);
-    const answer = await hub.handle(new Request(`${origin}${request.url}`, { method: request.method, headers, signal: controller.signal }));
+    const answer = await hub.handle(new Request(`${origin}${request.url}`, { method: request.method ?? 'GET', headers, signal: controller.signal }));
     response.writeHead(answer.status, { ...SECURITY, ...Object.fromEntries(answer.headers) });
     response.flushHeaders();
     if (!answer.body) return response.end();
@@ -353,6 +414,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     response.end();
   }
 
+  /** @param {IncomingMessage} request @param {ServerResponse} response */
   async function handle(request, response) {
     try {
       if (request.headers.host !== `127.0.0.1:${bound}`) return send(response, 421, { error: 'wrong-host' });
@@ -386,6 +448,7 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
     }
   }
 
+  /** @type {Promise<number> | undefined} */
   let closing;
   const close = () => closing ??= (async () => {
     abort.abort();

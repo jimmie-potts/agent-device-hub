@@ -32,13 +32,13 @@ The bridge already had a portable routing core, a protocol-level controller simu
 
 - A resolve hook (`verify/guard.mjs`), installed before any bridge code runs, refuses and records `node-hid`, `koffi` and `@koromix/*`. Both are loaded lazily by the bridge, so a correct run never asks for them.
 - The bridge's `fetch` refuses any origin but the run's own before connecting. The instance lock lives in the run's data directory (`XDG_RUNTIME_DIR`).
-- The checks `no-hid-device`, `no-desktop-calls` and `own-feed-only` read the run's boundary report. Three negative-control seeds cross one boundary each (no `--simulate`, no `--desktop sim`, the installed Hub's port), and tests start those runs and show that each check fails while the guard or the run's `fetch` refuses the attempt.
+- The checks `no-hid-device`, `no-desktop-calls` and `own-feed-only` read the run's boundary report. Three negative-control seeds cross one boundary each (no `--simulate`, no `--desktop sim`, the installed Hub's port), and tests start those runs and show that each check fails. Without `--simulate` the guard refuses `node-hid`; without `--desktop sim` the platform adapter is created (on Linux the unsupported adapter, so nothing is refused and the check fails on the adapter count); against the installed Hub's port the run's `fetch` refuses every request before it connects.
 
 ### Scenario format and tiers
 
 - A scenario is an ID, a title, a seed (tasks, foreground, selection, composers, cards) and steps. A step is an action, an expectation within a bound or an observation that must hold for a while. Checks return `true` or what was observed.
 - Tier 1 (`startMemoryHarness`) runs the real CLI with `--simulate --desktop sim` on a `ManualClock`, with the feed in memory and its files in a temporary directory. Tier 2 runs the same steps in real time inside the run, started from the page, with one capture step per scenario.
-- Seeding happens before the router starts: the Hub part before the CLI runs, the desktop part in `onSimulation`. Readiness waits until the controller is connected, the feed is current and every seeded task holds a lit slot key.
+- Seeding happens before the router starts: the Hub part before the CLI runs, the desktop part in `onSimulation`. Readiness waits until the controller is connected, the feed is current and every seeded task holds a lit slot key. Both tiers wait for it before the first step (PR #855 review: a Tier 2 run started right after a reseed lost its first press); the page's run control stays disabled until then.
 
 ### Control page
 

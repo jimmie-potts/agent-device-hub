@@ -28,7 +28,9 @@ if (unknown.length) {
 let failed = 0;
 for (const scenario of SCENARIOS.filter(s => ids.length === 0 || ids.includes(s.id))) {
   const started = Date.now();
+  /** @type {import('../dist/sim/scenarios.js').ScenarioResult & {error?: string}} */
   let result;
+  /** @type {import('../dist/sim/memory.js').MemoryHarness | undefined} */
   let harness;
   try {
     harness = await startMemoryHarness(scenario.seed);
@@ -36,15 +38,16 @@ for (const scenario of SCENARIOS.filter(s => ids.length === 0 || ids.includes(s.
       if (!json) process.stdout.write(`  ${step.outcome === 'passed' ? 'ok  ' : 'FAIL'} ${step.kind.padEnd(6)} ${step.name}${step.detail ? ` (${step.detail})` : ''}\n`);
     });
   } catch (error) {
-    result = { id: scenario.id, title: scenario.title, tier: 'memory', outcome: 'failed', steps: [], error: error.message };
+    result = { id: scenario.id, title: scenario.title, tier: 'memory', outcome: 'failed', steps: [], error: error instanceof Error ? error.message : String(error) };
   }
   const code = harness ? await harness.close() : null;
   if (result.outcome === 'passed' && code !== 0) result = { ...result, outcome: 'failed', error: `the bridge exited ${code}` };
   if (result.outcome !== 'passed') failed++;
   if (json) process.stdout.write(`${JSON.stringify({ ...result, ms: Date.now() - started })}\n`);
   else {
+    const shown = harness;
     process.stdout.write(`${result.outcome === 'passed' ? 'passed' : 'FAILED'} ${scenario.id}: ${scenario.title} (${Date.now() - started} ms)${result.error ? `\n  ${result.error}` : ''}\n`);
-    if (result.outcome !== 'passed' && harness) process.stdout.write(`  bridge output tail:\n${harness.output().trim().split('\n').slice(-15).map(line => `    ${line}`).join('\n')}\n`);
+    if (result.outcome !== 'passed' && shown) process.stdout.write(`  bridge output tail:\n${shown.output().trim().split('\n').slice(-15).map(line => `    ${line}`).join('\n')}\n`);
   }
 }
 if (!json) process.stdout.write(`${failed ? `${failed} scenario(s) failed` : 'all scenarios passed'}\n`);

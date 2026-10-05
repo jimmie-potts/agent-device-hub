@@ -89,7 +89,9 @@ const scenarioSteps = Object.fromEntries(CATALOG.map(id => [`scenario-${id}`, {
   viewport: { width: 1440, height: 1100 },
   run: async (/** @type {any} */ t) => {
     await open(t);
-    await t.page.getByRole('button', { name: 'Run scenario', exact: true }).click();
+    const run = t.page.getByRole('button', { name: 'Run scenario', exact: true });
+    await t.expect('Run scenario is enabled once the run is ready', () => run.and(t.page.locator(':enabled')).waitFor({ timeout: 20000 }));
+    await run.click();
     const outcome = t.page.locator('#scenario-outcome');
     await outcome.filter({ hasText: /: (passed|failed)/ }).waitFor({ timeout: 60000 });
     const state = await harness(t, '/api/harness/state');
@@ -182,7 +184,8 @@ export default definePlugin({
         });
         await t.expect('the page has no WCAG 2.1 A or AA violations', async () => {
           const { AxeBuilder } = await import('@axe-core/playwright');
-          const result = await new AxeBuilder({ page: t.page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+          // Legacy mode runs axe in this page only; otherwise axe opens a blank page whose video would sit beside interaction.webm.
+          const result = await new AxeBuilder({ page: t.page }).setLegacyMode(true).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
           if (result.violations.length) throw new Error(JSON.stringify(result.violations.map((/** @type {any} */ v) => ({ id: v.id, nodes: v.nodes.length }))));
         });
         await boundariesHold(t);
@@ -216,7 +219,7 @@ export default definePlugin({
     },
     ...scenarioSteps,
     'control-attention-light': {
-      description: 'Negative control: expects attention on a slot key while no task needs attention, and must fail',
+      description: 'Negative control, not a catalog scenario: expects attention on a slot key while no task needs attention, so it must fail',
       scenario: 'desk-basic',
       run: async t => {
         await open(t);

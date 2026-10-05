@@ -6,12 +6,14 @@ import './guard.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+/** @param {string} name */
 const argument = name => {
   const index = process.argv.indexOf(name);
   if (index < 0 || !process.argv[index + 1]) throw new Error(`missing ${name}`);
   return process.argv[index + 1];
 };
 
+/** @type {Awaited<ReturnType<typeof import('./server.mjs').startServer>>} */
 let run;
 try {
   const dataDir = argument('--data');
@@ -19,7 +21,7 @@ try {
   const proof = JSON.parse(await readFile(join(dataDir, 'proof.json'), 'utf8').catch(error => { if (error.code === 'ENOENT') return 'null'; throw error; }));
   const { startServer } = await import('./server.mjs');
   run = await startServer({ dataDir, port, proof, echo: line => process.stdout.write(`${line}\n`) });
-} catch (error) {
+} catch (/** @type {any} */ error) {
   const cause = /^chompi-start-failed: [a-z0-9-]+$/.exec(String(error?.message ?? ''))?.[0] ?? `chompi-start-failed${typeof error?.code === 'string' && /^E[A-Z]+$/.test(error.code) ? `: ${error.code}` : ''}`;
   process.stderr.write(`${cause}\n`);
   process.exit(1);

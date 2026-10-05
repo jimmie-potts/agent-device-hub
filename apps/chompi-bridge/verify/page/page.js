@@ -42,16 +42,7 @@ function post(area, body, label) {
   return queue;
 }
 
-// Light names: the profile color a LED shows, or its RGB value.
-function lightName(rgb) {
-  if (!rgb || !latest) return 'unknown';
-  if (rgb.every(v => v === 0)) return 'off';
-  const colors = latest.colors ?? {};
-  for (const [name, value] of Object.entries(colors)) if (value.every((v, i) => v === rgb[i])) return name;
-  const pulse = colors.attention?.map(v => Math.round(v * 0.2));
-  if (pulse && pulse.every((v, i) => v === rgb[i])) return 'attention (pulse low)';
-  return `rgb ${rgb.join(', ')}`;
-}
+// Light names come from the run: each LED is named by what its role can show (describeLights), never by color alone.
 const cssColor = rgb => rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#000';
 
 // Controller
@@ -154,7 +145,7 @@ function renderController(controller) {
     const rgb = controller?.leds[index];
     const color = cssColor(rgb);
     if (led.style.backgroundColor !== color) led.style.backgroundColor = color;
-    setText(light, controller ? lightName(rgb) : 'unavailable');
+    setText(light, controller ? controller.lights[index] : 'unavailable');
     if (button) setAttr(button, 'aria-label', `${label}, light ${light.textContent}`);
   }
   for (const [control, button] of keyButtons) setAttr(button, 'aria-pressed', String(!!controller?.pressed.includes(control)));
@@ -309,10 +300,15 @@ function renderScenario(state) {
     setText($('scenario-text'), `This run is seeded with "${run.scenario}": ${run.description}. To run a catalog scenario here, reseed the run with npm run -s verify:chompi -- scenario <run-id> <scenario>.`);
     button.hidden = true;
   } else {
-    setText($('scenario-text'), `Seeded with the catalog scenario "${run.catalog}". Run it once from this fresh state; its steps drive this page's controller, desktop and Hub.`);
+    // The button waits until the run is ready, so the scenario's first press reaches a connected controller.
+    const waiting = state.ready === true ? '' : ` Waiting for the run to be ready (${state.ready}).`;
+    setText($('scenario-text'), `Seeded with the catalog scenario "${run.catalog}". Run it once from this fresh state; its steps drive this page's controller, desktop and Hub.${state.scenario ? '' : waiting}`);
     button.hidden = false;
-    button.disabled = !!state.scenario;
+    button.disabled = !!state.scenario || state.ready !== true;
   }
+  const control = $('run-control');
+  control.hidden = !run.fault;
+  if (run.fault) setText(control, `Negative control run, not a catalog scenario: ${run.description}. Its start fails a boundary check by design.`);
   const result = state.scenario;
   const outcome = $('scenario-outcome');
   setText(outcome, result ? `${result.id}: ${result.state}${result.error ? ` (${result.error})` : ''}` : '');

@@ -220,7 +220,7 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
   },
   {
     id: 'reconnect-no-replay',
-    title: 'A controller or Hub reconnect releases held keys and replays nothing; only a fresh press acts',
+    title: 'Unplugging the controller releases the held chord; neither its reconnect nor a Hub stream restart replays anything; only a fresh press acts',
     seed: { ...DESK_BASIC, desktop: { foreground: 'codex', selected: { codex: 1 }, composers: { codex: { focused: true, text: 'synthetic draft' } } } },
     steps: [
       act('hold the CHOMPI key', h => h.simulator.press(CONTROL.record)),
@@ -267,18 +267,24 @@ export interface ScenarioResult { id: string; title: string; tier: Harness['tier
 
 const POLL_MS = 50;
 
-/** Waits until the controller is connected, the feed is current and every seeded task holds a lit slot key. */
+/** The name of the step a run records when it never became ready, so the failure is not a lost press. */
+export const READY_STEP = 'the run is ready: controller connected, feed current, every seeded task on a lit slot key';
+
+/** Whether the controller is connected, the feed is current and every seeded task holds a lit slot key, or why not. */
+export function readiness(h: Harness, seed: RunSeed): true | string {
+  if (!h.simulator) return 'no simulated controller';
+  if (h.simulator.display !== 'host') return 'controller not connected';
+  if (logged(h, 'feed').at(-1)?.status !== 'current') return 'feed not current';
+  const assigned = logged(h, 'slot-assigned');
+  if (assigned.length < seed.tasks.length) return `${assigned.length} of ${seed.tasks.length} tasks have a slot`;
+  // Every assigned slot key is lit: the controller applied a frame that shows the task states.
+  const dark = assigned.filter(line => same(h.simulator.leds[(line.slot as number) - 1], [0, 0, 0]));
+  return dark.length === 0 || `slot ${dark.map(line => line.slot).join(', ')} not lit yet`;
+}
+
+/** Waits until `readiness` holds, within `withinMs`. Both tiers wait before a scenario's first step. */
 export async function ready(h: Harness, seed: RunSeed, withinMs = 15_000): Promise<true | string> {
-  const check = (): true | string => {
-    if (h.simulator.display !== 'host') return 'controller not connected';
-    if (logged(h, 'feed').at(-1)?.status !== 'current') return 'feed not current';
-    const assigned = logged(h, 'slot-assigned');
-    if (assigned.length < seed.tasks.length) return `${assigned.length} of ${seed.tasks.length} tasks have a slot`;
-    // Every assigned slot key is lit: the controller applied a frame that shows the task states.
-    const dark = assigned.filter(line => same(h.simulator.leds[(line.slot as number) - 1], [0, 0, 0]));
-    return dark.length === 0 || `slot ${dark.map(line => line.slot).join(', ')} not lit yet`;
-  };
-  return poll(h, check, withinMs);
+  return poll(h, () => readiness(h, seed), withinMs);
 }
 
 async function poll(h: Harness, check: Check | (() => true | string), withinMs: number): Promise<true | string> {

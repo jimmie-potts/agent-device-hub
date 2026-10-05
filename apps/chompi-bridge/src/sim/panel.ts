@@ -1,3 +1,6 @@
+import type { Rgb } from '../protocol.js';
+import { ledIndex } from '../routing/lights.js';
+
 /**
  * The CHOMPI panel as protocol v1 numbers it (packages/chompi-protocol/README.md "Control and LED IDs"), for the
  * verification run's control page and the scenario catalog (#853). Encoder numbers follow the firmware: the four small
@@ -31,3 +34,54 @@ export const PANEL_ENCODERS: readonly PanelEncoder[] = Object.freeze([
 export const CONTROL = Object.freeze({ record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45 });
 /** The big wheel's two LEDs. */
 export const WHEEL_LEDS: readonly number[] = Object.freeze([30, 31]);
+
+/** Which routing light an LED can show, from the profile's controls. */
+export type LightRole = 'slot' | 'record' | 'wheel' | 'unused';
+
+/** The colors each role can show, as the router renders them (`renderFrame`): slot states and the error flash, the Record color, the wheel's error flash. */
+const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze({
+  slot: ['active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error'],
+  record: ['record'],
+  wheel: ['error'],
+  unused: [],
+});
+/** Attention alternates with this fraction of its color (`PULSE_LOW` in routing/lights.ts). */
+const PULSE_LOW = 0.2;
+
+export interface LightProfile {
+  controls: { slots: readonly number[]; record: number };
+  colors: Readonly<Record<string, readonly number[]>>;
+}
+
+export function lightRoles(profile: LightProfile): LightRole[] {
+  const roles: LightRole[] = Array.from({ length: 35 }, () => 'unused');
+  for (const control of profile.controls.slots) {
+    const index = ledIndex(control);
+    if (index !== undefined) roles[index] = 'slot';
+  }
+  const record = ledIndex(profile.controls.record);
+  if (record !== undefined) roles[record] = 'record';
+  for (const index of WHEEL_LEDS) roles[index] = 'wheel';
+  return roles;
+}
+
+/**
+ * Names each LED by what its role can show, never by the first profile color that happens to match: the held Record
+ * key reads "record" even when the record and error colors are the same red. Off is "off"; an unexpected color is
+ * named by its RGB value.
+ */
+export function describeLights(profile: LightProfile, leds: readonly Rgb[]): string[] {
+  const roles = lightRoles(profile);
+  return leds.map((rgb, i) => {
+    if (rgb.every(v => v === 0)) return 'off';
+    const role = roles[i] ?? 'unused';
+    const match = (color: readonly number[] | undefined) => !!color && color.every((v, c) => v === rgb[c]);
+    // The error flash overrides a slot's state color, so a slot that is red reads "error" before any state.
+    const names = role === 'slot' ? ['error', ...ROLE_NAMES.slot.filter(n => n !== 'error')] : ROLE_NAMES[role];
+    const name = names.find(n => match(profile.colors[n]));
+    if (name) return name;
+    const attention = profile.colors.attention;
+    if (role === 'slot' && attention && match(attention.map(v => Math.round(v * PULSE_LOW)))) return 'attention (pulse low)';
+    return `rgb ${rgb.join(', ')}`;
+  });
+}
