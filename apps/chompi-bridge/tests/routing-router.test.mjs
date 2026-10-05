@@ -1675,6 +1675,19 @@ test('pages: the Claude release gesture frees a slot on page 2', async t => {
   assert.equal(ctx.slots.get(2).taskId, lid(2), 'page 1 is untouched');
 });
 
+test('pages: the release gesture releases the slot its key showed when pressed, even after paging during the hold', async t => {
+  const ctx = await setup(t, { sessions: Array.from({ length: 17 }, (_, i) => claudeTask(i + 1)) });
+  ctx.press(SLOT(2)); // slot 2 on page 1
+  ctx.turn(KNOB4, PAGE_STEP); // page 2, where key 2 would be slot 17
+  assert.equal(page(ctx), 2);
+  await advance(ctx.clock, PROFILE.timing.releaseHoldMs + 50, 50);
+  ctx.press(LOOP);
+  await settle();
+  assert.equal(ctx.slots.get(2), undefined, 'slot 2 is released');
+  assert.equal(ctx.slots.get(17).taskId, lid(17), 'slot 17 is untouched');
+  assert.deepEqual([ctx.lastLog('slot-released').slot, ctx.lastLog('slot-released').reason], [2, 'release-gesture']);
+});
+
 test('pages: overflow is reported only when every page is full', async t => {
   const full = await setup(t, { sessions: codexMany(60) });
   assert.equal(full.router.status().overflow, 0);

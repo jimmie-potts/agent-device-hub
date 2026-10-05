@@ -29,6 +29,8 @@ export const KEY_NAMES: readonly string[] = Object.freeze([
 export const SMALL_KNOB_CLICKS: readonly number[] = Object.freeze([29, 30, 31, 32]);
 /** Small knob 4's turn (`ENC_3`, the rightmost small knob): it pages tasks (#822) and is never mapped to anything else. */
 export const PAGE_TURN = 43;
+/** Small knob 4's click: unassigned while its turn pages tasks (#822), so no control may map it. */
+export const PAGE_CLICK = 31;
 export const VOLUME_CLICK = 34;
 
 export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
@@ -187,7 +189,13 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
     if (!isInt(control, 1, 34)) { issues.push(`${where}: ${JSON.stringify(control)} is not a click control 1-34`); return false; }
     return true;
   };
-  if (click(value.record, `${path}.record`)) claim(value.record as number, `${path}.record`);
+  // Knob 4's click stays unassigned (#822); Send already refuses every small-knob click.
+  const assignable = (control: unknown, where: string): boolean => {
+    if (!click(control, where)) return false;
+    if (control === PAGE_CLICK) { issues.push(`${where}: ${PAGE_CLICK} is small knob 4's click, which stays unassigned`); return false; }
+    return true;
+  };
+  if (assignable(value.record, `${path}.record`)) claim(value.record as number, `${path}.record`);
   const send = value.send;
   if (!Array.isArray(send) || send.length < 1 || send.length > 3) issues.push(`${path}.send: must list 1-3 click controls`);
   else for (const [i, control] of send.entries()) {
@@ -197,7 +205,7 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
     else if (control === VOLUME_CLICK) issues.push(`${where}: ${control} is the volume knob click and can never send`);
     else claim(control, where);
   }
-  if (click(value.back, `${path}.back`)) claim(value.back as number, `${path}.back`);
+  if (assignable(value.back, `${path}.back`)) claim(value.back as number, `${path}.back`);
   if (!isInt(value.scroll, 41, 46)) issues.push(`${path}.scroll: ${JSON.stringify(value.scroll)} is not a turn control 41-46`);
   else if (value.scroll === PAGE_TURN) issues.push(`${path}.scroll: ${PAGE_TURN} is knob 4's turn, which pages tasks`);
   if (issues.length > before) return undefined;

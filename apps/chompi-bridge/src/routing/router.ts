@@ -112,6 +112,8 @@ export class TaskRouter {
   #focusing: number | null = null;
   /** Physically held controls and when they were pressed, from bridge events. */
   readonly #held = new Map<number, number>();
+  /** The absolute slot each held slot key showed when it went down, so paging during a hold cannot change it (#822). */
+  readonly #heldSlots = new Map<number, number>();
   #recordHeld = false;
   /** Incremented by every Record press and release; a press waiting for an Enter tap checks it is still current. */
   #recordToken = 0;
@@ -123,7 +125,7 @@ export class TaskRouter {
   /** The last Send keystroke or card press, for the shared repeat window. */
   #lastSendAt = Number.NEGATIVE_INFINITY;
   /** Big wheel: partial rotation toward the next card step, and work waiting for the single wheel worker. */
-  #wheelCounts = 0;
+  readonly #wheelDetent = new Detent();
   #scrollPending = 0;
   #stepsPending = 0;
   #wheelBusy = false;
@@ -218,7 +220,7 @@ export class TaskRouter {
     this.#generation++;
     const had = this.#focusing !== null || this.#chordDown || this.#recordHeld || this.#scrollPending !== 0 || this.#stepsPending !== 0;
     this.#focusing = null;
-    this.#wheelCounts = 0;
+    this.#wheelDetent.reset();
     this.#scrollPending = 0;
     this.#stepsPending = 0;
     this.#card = null;
@@ -249,6 +251,7 @@ export class TaskRouter {
       case 'session-restart':
       case 'disconnected':
         this.#held.clear();
+        this.#heldSlots.clear();
         this.invalidate(event.type);
         return;
       case 'recovered':
@@ -265,17 +268,22 @@ export class TaskRouter {
     }
     if (event.kind === 'release') {
       this.#held.delete(event.control);
+      this.#heldSlots.delete(event.control);
       if (event.control === controls.record) this.#track(this.#recordRelease());
       return;
     }
     this.#held.set(event.control, this.#clock.now());
     if (event.control === this.#wheelClick()) {
       // A wheel press clears partial rotation and steps not yet sent, so a light touch while clicking moves nothing.
-      this.#wheelCounts = 0;
+      this.#wheelDetent.reset();
       this.#stepsPending = 0;
     }
     const key = controls.slots.indexOf(event.control) + 1;
-    if (key > 0) this.#slotPress(this.#slotOnPage(key));
+    if (key > 0) {
+      const slot = this.#slotOnPage(key);
+      this.#heldSlots.set(event.control, slot);
+      this.#slotPress(slot);
+    }
     else if (event.control === controls.record) this.#track(this.#recordPress());
     else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
@@ -647,7 +655,10 @@ export class TaskRouter {
 
   #back(): void {
     const now = this.#clock.now();
-    const slotsHeld = this.#profile.controls.slots.map((control, i) => ({ slot: this.#slotOnPage(i + 1), since: this.#held.get(control) })).filter(h => h.since !== undefined);
+    // The slot each held key showed when it went down, whatever page is visible now.
+    const slotsHeld = this.#profile.controls.slots
+      .map(control => ({ slot: this.#heldSlots.get(control), since: this.#held.get(control) }))
+      .filter((h): h is { slot: number; since: number } => h.slot !== undefined && h.since !== undefined);
     if (slotsHeld.length === 0) return this.invalidate('back');
     if (slotsHeld.length > 1) return;
     const [{ slot, since }] = slotsHeld as [{ slot: number; since: number }];
@@ -677,11 +688,7 @@ export class TaskRouter {
     if (delta === 0) return;
     this.#lastTurnAt = this.#clock.now();
     if (this.#recordHeld || this.#chordDown || this.#held.has(this.#wheelClick())) return;
-    if (this.#wheelCounts !== 0 && Math.sign(delta) !== Math.sign(this.#wheelCounts)) this.#wheelCounts = 0;
-    this.#wheelCounts += delta;
-    const { stepCounts } = this.#profile.cards;
-    const steps = Math.trunc(this.#wheelCounts / stepCounts);
-    this.#wheelCounts -= steps * stepCounts;
+    const steps = this.#wheelDetent.turn(delta, this.#profile.cards.stepCounts);
     this.#stepsPending = Math.max(-MAX_PENDING_STEPS, Math.min(MAX_PENDING_STEPS, this.#stepsPending + steps));
     const { notchesPerStep, invert } = this.#profile.scroll;
     const notches = -delta * notchesPerStep * (invert ? -1 : 1);
@@ -691,7 +698,7 @@ export class TaskRouter {
 
   /** Drops pending wheel work, and partial rotation with it, so no earlier turn shortens a later card step. */
   #clearWheel(): void {
-    this.#wheelCounts = 0;
+    this.#wheelDetent.reset();
     this.#scrollPending = 0;
     this.#stepsPending = 0;
   }
@@ -717,7 +724,7 @@ export class TaskRouter {
         if (mode.kind !== 'scroll') return this.#clearWheel();
         // Outside a card, rotation only scrolls: partial rotation never carries into the first step of a later card.
         this.#stepsPending = 0;
-        this.#wheelCounts = 0;
+        this.#wheelDetent.reset();
         if (this.#scrollPending === 0) continue;
         const notches = Math.max(-MAX_NOTCHES_PER_CALL, Math.min(MAX_NOTCHES_PER_CALL, this.#scrollPending));
         this.#scrollPending -= notches;

@@ -131,6 +131,11 @@ test('page settings are optional and bounded, with one color per page (#822)', (
     /^profile\.colors\.pages: must list a color for each of the 3 pages$/);
   assert.match(issues(() => validateProfile({ ...shipped(), colors: { ...shipped().colors, pages: [[0, 0, 256], red, red, red] } }))[0], /^profile\.colors\.pages\[0\]: /);
   assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, scroll: 43 } }))[0], /knob 4/, 'knob 4\'s turn pages and cannot scroll');
+  for (const field of ['record', 'back']) {
+    assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, [field]: 31 } })),
+      [`profile.controls.${field}: 31 is small knob 4's click, which stays unassigned`]);
+  }
+  assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, send: [31] } }))[0], /small-knob click and can never send/);
 });
 
 test('scroll settings are bounded', () => {

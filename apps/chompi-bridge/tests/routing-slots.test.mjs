@@ -283,7 +283,9 @@ test('pages: an interrupted write leaves its temporary file behind and the last 
   }
 });
 
-test('pages: downgrade: a version 2 file is refused by a version 1 reader; the documented rollback makes it readable', async t => {
+test('pages: downgrade: a version 2 file is not a valid version 1 file, and the documented rollback makes it one', async t => {
+  // This store's version 1 path stands in for the pre-#822 reader (5add03a), which accepted exactly that format and
+  // refused any other schemaVersion.
   const dir = tempDir(t);
   const { store, path } = await open(t, dir, { pages: 2 });
   store.reconcile(candidates(many(18)));
