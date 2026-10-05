@@ -1,40 +1,9 @@
-# chompi-task-routing Specification
+## RENAMED Requirements
 
-## Purpose
+- FROM: `### Requirement: Dictation after a verified target`
+- TO: `### Requirement: Dictation like a keyboard shortcut`
 
-Define how the CHOMPI bridge maps stable task keys to Codex and Claude Desktop tasks from the Hub feed: slot assignment and release, light states, the fail-closed focus and composer checks, Wispr dictation, explicit Send, wheel scrolling and the versioned JSON profile.
-
-## Requirements
-
-### Requirement: Stable first-free task slots
-The bridge SHALL assign root Codex Desktop threads (keyed by thread ID) and root Claude Desktop sessions (keyed by `hostSessionId`) to the lowest free of slots 1-15, keyed by the full provider, client, host, source and task identity. Simultaneous discoveries SHALL be placed in provider, client, host, source and task ID order. Assigned slots MUST NOT move. When all slots are full the bridge SHALL report overflow without moving or evicting a slot. Slots SHALL persist in a private bridge file written atomically, separate from Hub retention, and an invalid file SHALL stop start-up rather than reassign slots. Sessions with a known parent SHALL NOT receive slots.
-
-#### Scenario: First free slot after a release
-- **WHEN** slots 1 and 2 hold tasks A and C, slot 1 is released, and tasks B and D appear in one snapshot
-- **THEN** B takes slot 1 and D takes slot 3, and C stays in slot 2
-
-#### Scenario: Restart and reconnect
-- **WHEN** the bridge restarts, the controller reconnects or the Hub restarts and omits the Desktop ID until the next event
-- **THEN** every task keeps its slot and its key still shows that task's state
-
-#### Scenario: Full capacity
-- **WHEN** a sixteenth task appears
-- **THEN** it is reported as overflow, no slot changes, and the next freed slot goes to the first overflow task in sort order
-
-#### Scenario: Duplicates
-- **WHEN** two tasks share a title, one thread ID appears from two sources, or one Claude Desktop ID has two Hub records after `/clear`
-- **THEN** distinct identities get distinct slots and one Desktop ID is one slot shown from its newest record
-
-### Requirement: Release only on explicit evidence
-The bridge SHALL release a slot only when the adapter reports the Codex thread archived, the Claude Desktop record archived, or the owner's Claude release gesture (slot key held for the configured hold, then Loop) is used. Absence from the feed, Hub retirement or expiry, idle, a stale feed, a missing Desktop record and unknown observations MUST NOT release a slot. A released task SHALL stay out of the slots until it shows lifecycle evidence newer than its release. The gesture on a Codex slot SHALL only light the error state.
-
-#### Scenario: Hub retires a session after idle
-- **WHEN** the Hub drops a slotted session
-- **THEN** the slot is kept, its key shows ended and pressing it opens the same task
-
-#### Scenario: Claude release gesture
-- **WHEN** the owner holds a Claude slot's key past the hold time and presses Loop
-- **THEN** that slot is released and persisted, and the Claude session is not placed again until it shows new activity
+## MODIFIED Requirements
 
 ### Requirement: Distinct state lights
 The bridge SHALL light each slot from the newest Hub record for its task, keeping activity, attention, notice acknowledgment, read evidence and freshness distinct. Attention SHALL pulse. Slot keys SHALL show task state only: no key marks a selected or targeted task, so focusing a task never looks like acknowledging it. Only an idle task with an unacknowledged completion notice and no `read` evidence SHALL use the completion color. Unknown activity, uncertain freshness, restart uncertainty, ended and a stale or unavailable feed MUST NOT use the completion color. A refused slot press SHALL light that key's error state briefly. The big-wheel LEDs SHALL stay off, because Send and card answers are decided at the press and nothing polls the window in front, except that a refused or uncertain Send or card press SHALL light both in the error color for the profile's error flash time; a Send refused as a `repeat` within the repeat window or abandoned because Record was pressed (`superseded`) SHALL NOT flash. The renderer SHALL provide a state label for every slot.
@@ -183,6 +152,8 @@ The bridge SHALL read `GET /api/monitor/v1/sessions?snapshotVersion=1.3` and fol
 #### Scenario: Notification burst
 - **WHEN** several change notifications arrive together
 - **THEN** at most one snapshot is in flight and one more pending, and no notification is replayed as input
+
+## ADDED Requirements
 
 ### Requirement: Card answers with the big wheel
 While the adapter reports a card in the foreground Codex or Claude window at a qualified version, big-wheel turns SHALL move keyboard focus between the card's actionable buttons, in the order the adapter reports them. One step SHALL take `cards.stepCounts` encoder counts, counted in a single accumulator that restarts at zero on a direction reversal, so a small reversal never steps back. Clockwise steps SHALL move to later buttons and steps SHALL stop at the first and last button. With no card button focused, the first clockwise step SHALL focus the first button and the first counter-clockwise step the last. A big-wheel click SHALL press the focused card button only when the wheel's own step chose that button on that same card, as the adapter identifies the card; a step SHALL choose the button focused after it, including a step clamped at the first or last button that leaves focus where it was, so at least one deliberate step is needed and a button the client focused itself, such as a Codex card's approve button, is never pressed by a click alone; and only when the wheel has not turned for `cards.clickStillMs` before the press, no step is in flight, the repeat window has passed and Record is not held. Otherwise the click SHALL press nothing. Rotation while the click is held SHALL be discarded, and the press SHALL clear partial rotation and steps not yet sent. The press SHALL go through the adapter, which presses the button only if it still has keyboard focus, in the same card with the same number of actionable buttons. An uncertain press MUST NOT be retried. When the card state or the Codex card container is unknown, turns and clicks SHALL do nothing: they neither scroll nor send. Partial rotation SHALL be cleared whenever the wheel acts outside a card, so earlier scroll counts never shorten the first card step. Play MUST NOT press a card button. This deliberately relaxes the rule that a PROMPTI action never approves anything, for this one gesture only: a still big-wheel click on a card button the wheel's step chose may approve a permission request. It is a client UI action and never a Hub acknowledgement, and slot keys, Play and Record still approve nothing.

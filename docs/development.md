@@ -865,9 +865,10 @@ HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
 checks that the named-pipe lock refuses a second holder and is released on
 exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
-Automation helper, the composer, Codex selected-thread and approval-card
-observations and the installed client versions. Its Win32 surface replaces `SendInput` and
-`ShellExecute` with throwing guards, so it types nothing and opens no link.
+Automation helper, the composer, Codex selected-thread, approval-card and
+card-button observations and the installed client versions. Its Win32 surface replaces `SendInput` and
+`ShellExecute` with throwing guards, so it types nothing and opens no link. It
+reads card buttons only; it never focuses or presses one.
 It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
 Windows HID, named pipes, FFI or UI Automation.
@@ -880,15 +881,17 @@ a scripted fake OS adapter, a fake Hub `fetch`, `ManualClock` and the device
 simulator: profile validation and reload, the read-only feed client (GET-only,
 refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
 token-file privacy), slot assignment, release and persistence, state lights,
-each row of the no-misrouting matrix, Record and Send gating, big-wheel scrolling, loss handling,
+each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
+answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or
 Claude data or contact a Hub. `windows-adapter.test.mjs` checks how the
-Windows adapter reads the helper's approval-card counts for each client, and
-`windows-uia-helper.test.mjs` checks the helper operation's scope statically.
-Live focus, dictation placement, approval-card behavior and lights on the
-device belong to #743.
+Windows adapter reads the helper's approval-card counts and card-button
+replies for each client, and `windows-uia-helper.test.mjs` checks the helper
+operations' scope statically, including that only the two card operations
+focus or invoke anything. Live focus, dictation placement, card answers and
+lights on the device belong to the installed trials (#743, #821).
 
 ## Wispr Hub checks
 

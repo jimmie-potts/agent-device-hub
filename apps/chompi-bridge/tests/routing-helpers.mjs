@@ -64,13 +64,14 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 }
 
 /**
- * A scripted desktop behind OS adapter interface version 2. By default the apps behave as qualified:
+ * A scripted desktop behind OS adapter interface version 3. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
  * selects the target and raises Claude with its composer focused. Like Claude Desktop, the link stamps the target's
  * `lastFocusedAt` unless Claude was already in front with that session selected. Tests then break one step.
+ * Cards are scripted per client with `openCard`; pressing a card button closes the card as the clients do.
  */
 export class FakeAdapter {
-  version = 2;
+  version = 3;
   platform = 'win32';
   calls = [];
   keys = [];
@@ -195,11 +196,77 @@ export class FakeAdapter {
   /** Wheel notches the adapter applied, per call: [client, notches]. */
   scrolled = [];
   scrollUnknown = false;
+  /** When set, `scrollClient` answers this observation (for example `known(false)`: pointer outside the window). */
+  scrollAnswer = null;
+
+  /** Open cards per client: null, 'unknown' (container not established) or { id, buttons, focused } (index or null). */
+  cards = { codex: null, claude: null };
+  /** Every opened card gets a new identity, as a new UI Automation element does. */
+  cardSerial = 0;
+  /** Card buttons the adapter focused and pressed: [client, index]. */
+  cardFocused = [];
+  cardPressed = [];
+
+  /** Opens a card the way the qualified clients show one: Claude keeps its composer, Codex's card replaces it. */
+  openCard(client, buttons, focused = null) {
+    this.cards[client] = { id: `42.${++this.cardSerial}`, buttons, focused };
+    if (client === 'claude') this.approval.claude = known(true);
+    else { this.approval.codex = unknown('codex-composer-absent'); this.composer.codex = false; }
+  }
+
+  /** Closes a card, as answering it or the mouse does; Codex's composer comes back focused. */
+  closeCard(client) {
+    this.cards[client] = null;
+    this.approval[client] = known(false);
+    if (client === 'codex') this.composer.codex = true;
+  }
+
+  #card(client) {
+    if (this.foreground.packageIdentity !== (client === 'codex' ? CODEX_PACKAGE : CLAUDE_PACKAGE)) return unknown(`${client}-not-foreground`);
+    const card = this.cards[client];
+    if (card === 'unknown') return unknown('codex-card-unestablished');
+    return known(card);
+  }
+
+  async cardButtons(client) {
+    const pending = this.#enter('cardButtons', [client]);
+    if (pending) return pending;
+    const card = this.#card(client);
+    if (card.status !== 'known') return card;
+    return known(card.value ? { id: card.value.id, count: card.value.buttons, focused: card.value.focused } : null);
+  }
+
+  async focusCardButton(client, cardId, index, count) {
+    const pending = this.#enter('focusCardButton', [client, cardId, index, count]);
+    if (pending) return pending;
+    const card = this.#card(client);
+    if (card.status !== 'known') return card;
+    if (!card.value) return unknown('card-absent');
+    if (card.value.id !== cardId || card.value.buttons !== count) return unknown('card-changed');
+    if (index < 0 || index >= count) return unknown('card-index');
+    card.value.focused = index;
+    this.cardFocused.push([client, index]);
+    return known(index);
+  }
+
+  async invokeCardButton(client, cardId, index, count) {
+    const pending = this.#enter('invokeCardButton', [client, cardId, index, count]);
+    if (pending) return pending;
+    const card = this.#card(client);
+    if (card.status !== 'known') return card;
+    if (!card.value) return unknown('card-absent');
+    if (card.value.id !== cardId || card.value.buttons !== count) return unknown('card-changed');
+    if (card.value.focused !== index) return known(false);
+    this.cardPressed.push([client, index]);
+    this.closeCard(client);
+    return known(true);
+  }
 
   async scrollClient(client, notches) {
     const pending = this.#enter('scrollClient', [client, notches]);
     if (pending) return pending;
     if (this.scrollUnknown) return unknown('pointer position unknown');
+    if (this.scrollAnswer) return this.scrollAnswer;
     // Like the Windows adapter: wheel input only reaches a client that is in front.
     if (this.foreground.packageIdentity !== (client === 'codex' ? CODEX_PACKAGE : CLAUDE_PACKAGE)) return known(false);
     this.scrolled.push([client, notches]);

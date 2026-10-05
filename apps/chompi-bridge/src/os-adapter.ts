@@ -5,9 +5,12 @@
  *
  * Every observation returns `unknown` rather than guessing, and the core fails closed on it.
  * Observations never return conversation text: titles are compared inside the adapter and
- * only a boolean or count crosses this boundary.
+ * only a boolean, count or index crosses this boundary.
+ *
+ * Version 3 (#821) adds the card operations: the open approval or question card's actionable buttons,
+ * moving keyboard focus between them and pressing the focused one.
  */
-export const OS_ADAPTER_VERSION = 2;
+export const OS_ADAPTER_VERSION = 3;
 
 export type Client = 'codex' | 'claude';
 
@@ -39,6 +42,19 @@ export interface ClaudeDesktopSession {
   isArchived: boolean;
   /** Epoch milliseconds Desktop stamped when the session last became visible; null when absent. */
   lastFocusedAt: number | null;
+}
+
+/** The open card's actionable buttons (enabled, invokable, not menus), counted in tree order. */
+export interface CardButtons {
+  /**
+   * The card's identity for this window: an opaque UI Automation runtime ID, no text. A new card is assumed never to
+   * share it (not yet established live; see UIA-NOTES.md "Not established").
+   */
+  id: string;
+  /** How many actionable buttons the card has (0-64). */
+  count: number;
+  /** The index of the one with keyboard focus, or null when focus is on none of them. */
+  focused: number | null;
 }
 
 export interface OsAdapter {
@@ -82,6 +98,25 @@ export interface OsAdapter {
 
   /** Whether an approval or permission card is visible in the client's window. */
   approvalVisible(client: Client): Promise<Observation<boolean>>;
+
+  /**
+   * The card open in the client's foreground window: known `null` when there is none, its actionable buttons when
+   * there is exactly one, and unknown when the client is not in front or the card cannot be established.
+   */
+  cardButtons(client: Client): Promise<Observation<CardButtons | null>>;
+
+  /**
+   * Moves keyboard focus to actionable button `index` of the open card `cardId`. Answers unknown when that card is gone
+   * or no longer has `count` actionable buttons; otherwise the focused index afterwards, or null when focus is on none.
+   */
+  focusCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<number | null>>;
+
+  /**
+   * Presses actionable button `index` of the open card `cardId`: unknown when that card is gone or no longer has `count`
+   * actionable buttons, known `false` when the button does not have keyboard focus, and known `true` when pressed.
+   * Never retried by the caller.
+   */
+  invokeCardButton(client: Client, cardId: string, index: number, count: number): Promise<Observation<boolean>>;
 
   /** Codex: whether a thread ID appears as an archived rollout filename. Reads names only. */
   codexArchived(threadId: string): Promise<Observation<boolean>>;

@@ -83,6 +83,7 @@ const codexWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive'
 { encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
 let nonAsciiTitle = 'codex-not-running';
 let codexApprovalCount = 'codex-not-running';
+let codexCardButtons = 'codex-not-running';
 if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   const reply = await helper.request('codexSelectedTitle', { hwnd: codexWindow[0], processId: codexWindow[1], title: `\u00e9\u2014\u4e2d\u{1f600} ${randomUUID()}` });
   assert.deepEqual(reply, { ok: true, value: { matches: false, sameTitleRows: 0 } }, 'a non-ASCII random title verifies as no match without errors');
@@ -94,12 +95,19 @@ if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   assert.equal(counted.ok, true, `approvalVisible: ${counted.reason ?? ''}`);
   assert.deepEqual(Object.keys(counted.value), ['composers']);
   assert.ok(Number.isInteger(counted.value.composers) && counted.value.composers >= 0);
+  // The card read (#821) is read-only: it counts buttons and finds the focused index; it never focuses or presses.
+  const cardStart = Date.now();
+  const card = await helper.request('cardButtons', { client: 'codex', hwnd: codexWindow[0], processId: codexWindow[1] });
+  codexCardButtons = { ...card, ms: Date.now() - cardStart };
+  assert.equal(card.ok, true, `cardButtons: ${card.reason ?? ''}`);
+  assert.deepEqual(Object.keys(card.value), ['composers', 'selectedRows', 'cards', 'buttons', 'focused', 'cardId']);
 }
 // The same count against the running Claude Desktop window, found read-only by its package folder.
 const claudeWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
   '$p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -like \'*\\WindowsApps\\Claude_*__pzs8sxrjxfjjc\\*\' } | Select-Object -First 1; if ($p) { "$([long]$p.MainWindowHandle) $($p.Id)" }'],
 { encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
 let claudeApprovalCount = 'claude-not-running';
+let claudeCardButtons = 'claude-not-running';
 if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
   const approvalStart = Date.now();
   const counted = await helper.request('approvalVisible', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
@@ -107,6 +115,11 @@ if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
   assert.equal(counted.ok, true, `approvalVisible: ${counted.reason ?? ''}`);
   assert.deepEqual(Object.keys(counted.value), ['approvalCards']);
   assert.ok(Number.isInteger(counted.value.approvalCards) && counted.value.approvalCards >= 0);
+  const cardStart = Date.now();
+  const card = await helper.request('cardButtons', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
+  claudeCardButtons = { ...card, ms: Date.now() - cardStart };
+  assert.equal(card.ok, true, `cardButtons: ${card.reason ?? ''}`);
+  assert.deepEqual(Object.keys(card.value), ['cards', 'buttons', 'focused', 'cardId']);
 }
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);
@@ -119,6 +132,8 @@ const codexSelected = await adapter.codexSelectedThread(randomUUID(), `chompi-na
 if (codexSelected.status === 'known') assert.deepEqual(codexSelected.value, { matches: false, sameTitleRows: 0 }, 'a random title never matches');
 const approval = await adapter.approvalVisible('codex');
 assert.ok(approval.status === 'known' ? typeof approval.value === 'boolean' : typeof approval.reason === 'string');
+const cardButtons = await adapter.cardButtons('codex');
+assert.ok(cardButtons.status === 'known' ? cardButtons.value === null || Number.isInteger(cardButtons.value.count) : typeof cardButtons.reason === 'string');
 await adapter.warmUp();
 const versionsStart = Date.now();
 const versions = await adapter.clientVersions();
@@ -161,7 +176,7 @@ console.log(JSON.stringify({
   controllerMatches: controllers.length,
   lock: { secondHolderRefused: true, releasedOnExit: true, releasedOnKill: true },
   osAdapter: {
-    scope: 'read-only; SendInput (keys, wheel) and ShellExecute guarded, zero attempts',
+    scope: 'read-only; SendInput (keys, wheel) and ShellExecute guarded, zero attempts; no card button focused or pressed',
     ffiLoaded: true,
     foreground: foreground.value === null ? 'none' : foregroundPackage === CODEX_PACKAGE_FAMILY ? 'codex' : foregroundPackage === CLAUDE_PACKAGE_FAMILY ? 'claude' : foregroundPackage ? 'other-packaged' : 'unpackaged',
     releaseAllNoop: true,
@@ -176,6 +191,9 @@ console.log(JSON.stringify({
     approvalVisible: approval,
     codexApprovalCount,
     claudeApprovalCount,
+    cardButtonsCodex: cardButtons,
+    codexCardButtons,
+    claudeCardButtons,
     clientVersions: { codex: versions.codex.value, claude: versions.claude.value },
     codexArchivedRandom: false,
     claudeSessionsEmpty: [],

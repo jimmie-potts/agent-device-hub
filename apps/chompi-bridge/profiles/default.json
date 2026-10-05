@@ -27,10 +27,7 @@
     "unknown": [90, 0, 140],
     "stale": [100, 30, 0],
     "error": [255, 0, 0],
-    "selected": [255, 255, 255],
-    "record": [255, 0, 0],
-    "sendReady": [0, 255, 0],
-    "sendBlocked": [255, 120, 0]
+    "record": [255, 0, 0]
   },
   "brightnessPercent": 40,
   "timing": {

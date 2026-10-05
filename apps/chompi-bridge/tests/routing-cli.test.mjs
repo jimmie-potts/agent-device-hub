@@ -97,7 +97,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   for (const control of [29, 30, 31, 32]) simulator.click(control);
   await run(300);
   assert.equal(adapter.enters, 1, 'small-knob clicks never send');
-  assert.deepEqual(simulator.leds[0], JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')).colors.selected, 'the device shows the selected slot');
+  assert.deepEqual(simulator.leds[0], JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')).colors.idle, 'the device shows the focused slot\'s task state, not a selection');
 
   // A profile edit is applied without a restart, and the firmware hears the new profile version.
   assert.equal(simulator.profileVersion, 1);
@@ -120,7 +120,8 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   assert.ok(adapter.calls.some(c => c[0] === 'close'));
   const lines = streams.out().trim().split('\n').map(line => JSON.parse(line));
   const types = lines.map(l => l.type);
-  for (const type of ['connected', 'slot-assigned', 'focused', 'sent', 'invalidated']) assert.ok(types.includes(type), type);
+  // Nothing is armed by a slot press any more, so these presses cancel nothing and log no `invalidated` (#821).
+  for (const type of ['connected', 'slot-assigned', 'focused', 'sent', 'dictation-started']) assert.ok(types.includes(type), type);
   assert.ok(!streams.out().includes(TOKEN) && !streams.err().includes(TOKEN), 'the token is never printed');
   assert.ok(!streams.out().includes('Task 1'), 'titles are never printed');
   assert.ok(hub.requests.every(r => r.method === 'GET'));

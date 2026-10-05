@@ -220,7 +220,7 @@ observation before anything depends on it in installed use.
 | Lifecycle and attention feed | Supported | The Hub already receives activity, `attention.approval` (no request ID) and unread for Codex Desktop | `S`: `providers.ts`, `apps/hub/src/codex-desktop.ts`; installed since #191 |
 | Archive signal | Supported | `SessionEnd` retires the session on archive or delete, but also on normal close and after 30 minutes idle and unopened in any connected client, so it is not an archive signal by itself. Archived threads appear as `archived_sessions/rollout-<timestamp>-<id>.jsonl` filenames in the Codex home | `D`, `S`: [provider qualification](provider-qualification.md); archive end accepted in #218 |
 | Composer focus | Supported | `Alt+L` moves focus to the main composer | `S`: bundle command table |
-| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run. The Hub marker can outlive the request, which only over-blocks | `D`, `S`, `L` |
+| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run. Since #821 Send no longer reads the Hub marker, which could outlive the request | `D`, `S`, `L` |
 | Send | Supported | Keystroke only: Enter sends (`composerEnterBehavior = "enter"` in the owner's Codex config); mid-turn Enter queues. No non-keystroke send route exists | `S` |
 | Model change | Supported | `Ctrl+Shift+M` opens the model picker and `Alt+M` the recent model and effort combinations | `D`, `S` |
 | Effort change | Unverified | Increase, decrease and cycle commands exist without default keys. Binding one is a personal settings change outside the epic's current authority | `S` |
@@ -241,7 +241,7 @@ observation before anything depends on it in installed use.
 | Selected-session verification | Supported, undocumented | When a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. The window title is always "Claude". Split panes and pop-out windows are unverified | `S` |
 | Archive signal | Supported, undocumented | The same private store records `isArchived` and an `archived-sessions.idx` index. Archiving stops the Code process; whether that emits `SessionEnd` is unverified | `S` |
 | Composer focus | Unverified | Composer state is not stored locally; a UIA keyboard-focus check is the planned route | `S` |
-| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run | `S`, `L` |
+| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts, but since #821 Send relies on the bridge's own card check instead. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run | `S`, `L` |
 | Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
 | Model and effort change | Unverified | Menu shortcuts are documented for macOS (Cmd+Shift+I, Cmd+Shift+E); the Windows mapping is unverified | `D` |
 | Model and effort readback | Supported, undocumented | Stored per-session values are readable | `S` |
@@ -254,7 +254,9 @@ observation before anything depends on it in installed use.
 - The Hub in WSL stays the only agent-state owner. The bridge reads
   `GET /api/monitor/v1/sessions` and `/changes` with its own `read`-only
   credential over numeric loopback. It never ingests, acknowledges or
-  approves, and it adds no lifecycle reducer.
+  approves through the Hub, and it adds no lifecycle reducer. Since #821 a
+  still big-wheel click can press a button on an open card, which may approve a
+  permission request in the client's UI; that is not a Hub acknowledgement.
 - One Windows bridge process is the only CHOMPI writer. It takes a per-user
   single-instance lock before opening the device, and a second instance that
   cannot take the lock exits without opening it. The lock is portable (a held
@@ -282,7 +284,8 @@ stay JSON.
 ### Exact-task focus, fail closed
 
 A task key press selects and focuses only. It never acknowledges, approves or
-dismisses attention. Before any input:
+dismisses attention, and since #821 it arms nothing: Send and Record act on
+whatever is in front when they are pressed. Before any input:
 
 1. **Target check.** The slot's task still exists and is not archived. Codex:
    no `archived_sessions` filename carries the thread ID. Claude: the Desktop
@@ -316,21 +319,51 @@ dismisses attention. Before any input:
    client versions. An unknown Claude Desktop version disables Claude routing
    until it is re-qualified, because the link is undocumented.
 
-Any failed step lights the key's error state, keeps the previous target
-invalid and sends nothing. A task switch invalidates pending input.
+Any failed step lights the key's error state and sends nothing. A task switch
+releases held keys and cancels pending input.
 
 ### Dictation and Send
 
-- **Record (proposed `KEY_26`)** holds left Ctrl + left Win for Wispr, which
-  dictates through the computer microphone, only after the composer check
-  passes, and releases on key release. Release inserts a
-  draft and never sends. Disconnect, reload or a task switch releases held keys.
+The owner chose a keyboard-like model on #821 (2026-10-05); it replaced the
+#742 verified-target model, under which a reload or Back left Send without a
+target and a task chosen with the mouse could not be sent to.
+
+- **Record (`KEY_26`)** holds left Ctrl + left Win for Wispr, which dictates
+  through the computer microphone, whenever it is pressed, and releases on key
+  release. There is no foreground, card or composer check, so dictation works
+  in any app, a card's free-text field included. Release inserts a draft and
+  never sends. A Record press is never refused: it abandons a Send still
+  checking the window, and during a Send's Enter keystroke the chord goes down
+  right after it. Disconnect, reload, Back, a task switch and shutdown release
+  held keys.
 - **Big-wheel click or Play** (the default profile maps both; owner choice in
-  the #743 trial) sends one Enter to the verified composer. It is blocked
-  while the Hub shows `attention.approval` for that session, or the approval
-  check finds a card or is unknown, because Enter approves an open request in
-  Codex. An
-  uncertain Send is never retried. Small-knob clicks never send.
+  the #743 trial) sends one Enter at the press only when Codex or Claude
+  Desktop is in front at a qualified version, its composer has focus, the
+  bridge's card check finds no card (Enter approves an open request in Codex),
+  the repeat window has passed and Record is not held. Any other app in front
+  gets nothing. An uncertain Send is never retried. A refused or uncertain
+  Send or card press flashes both big-wheel LEDs in the error color (owner
+  decision on #821). Small-knob clicks never send.
+- **Cut assurances** (owner decision on #821): Send no longer checks the Hub's
+  `attention.approval` or the feed's freshness; the card and composer checks
+  are its only guards. A Codex card with its own focused `ProseMirror` field
+  would accept Enter, as a keyboard would. Record works anywhere.
+- **Card answers.** While a card is open in a qualified Codex or Claude window
+  in front, big-wheel turns move keyboard focus between the card's actionable
+  buttons through UI Automation, one button per software detent
+  (`cards.stepCounts`, default 6 counts, about a quarter turn at the about 25
+  counts per revolution measured on the trial device on 2026-10-05,
+  restarting on a reversal). A big-wheel click presses the focused button only
+  when the wheel's own step moved focus to it on that card, after
+  `cards.clickStillMs` (default 250 ms) of stillness; a Codex card's initially
+  focused approve button is never pressed by a click alone. Play is refused on
+  a card. An unknown card state, including a Codex view whose card container
+  cannot be established, makes the wheel do nothing. Codex cards are
+  identified by structure (no composer, exactly one selected sidebar row, and a
+  focused button in a group holding text and two or more actionable buttons),
+  which leaves a narrowed residual: see the
+  [UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#card-answers).
+  #821's installed trial checks the feel of the detent and stillness.
 - Avoid controls that collide with Wispr (left Ctrl + left Win, Ctrl+Win+Space,
   Esc dismiss) or Codex (Ctrl+Space, Ctrl+Q, Alt+L, Alt+M).
 
@@ -378,11 +411,25 @@ that cannot be mistaken for any task state.
 | Claude in front on Code home, the Chat tab or a session the bridge does not know, the target strictly newest among known sessions, and the link does not navigate | Accepted residual: verification passes. The #743 trial checks that the link navigates |
 | Two live tasks with the same title | Codex verification fails closed; Claude still verifies by ID |
 | Target app not foreground after open | No input |
-| Task switch between Record and Send | Pending target cleared; Send refused |
-| Approval pending on the target | Send refused; key press does not approve or acknowledge |
-| Duplicate or repeated Send click (wheel or Play); Send outcome uncertain | One Enter at most; no retry |
+| Send with no slot press, Codex or Claude in front at a qualified version, composer focused, no card | One Enter to the task in front (press-time model, #821) |
+| Send with another app in front, an unknown foreground, an unqualified or unknown client version, the composer unfocused or unknown, or Record held | Send refused; nothing typed; wheel LEDs flash red |
+| Record pressed while a Send is checking, or while its Enter is typed | Chord pressed at once and the checking Send abandoned, or chord pressed right after the Enter |
+| Task switch between Record and Send | Chord released; the next Send is evaluated at its own press |
+| Approval or question card visible, or card state unknown | Send and Play refused; key press does not approve or acknowledge |
+| Hub `approval` attention or a stale feed without a visible card | Cut assurance (#821): Send types one Enter; the card and composer checks are its only guards |
+| Codex card with its own focused `ProseMirror` field | Accepted residual (#821): counts as the composer and accepts Enter; not observed |
+| Card open: wheel turn | Focus moves one actionable button per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped |
+| Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
+| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. One clockwise step on such a Codex card chooses approve (clamped at the end) |
+| A card replaced by another with the same buttons | Assumed: the new card has a new runtime ID, so the earlier choice does not apply; the installed check below confirms it for a multi-question Claude card |
+| Codex view without a composer and without exactly one selected sidebar row, or whose focused button's group lacks a text element or two actionable buttons | Card state unknown: the wheel does nothing. That settings pages and dialogs fall here is unverified; the installed check below confirms it |
+| Codex thread view without a composer whose focused button sits in a group with text and two or more actionable buttons | Narrowed residual: treated as a card; a press still needs a deliberate wheel step and a still click |
+| Scroll, then a card opens | Earlier scroll counts never shorten the first card step |
+| Card open: still wheel click on a focused button | That one button pressed through UI Automation, never retried; no Enter |
+| Card state or Codex card container unknown | Wheel does nothing: no scroll, step, press or Enter |
+| Duplicate or repeated Send click (wheel or Play), or card press; Send outcome uncertain | One Enter or press at most; no retry |
 | Disconnect during Record hold | Modifiers released; no draft sent |
-| Reconnect or bridge restart | No replay; slots retained; fresh press required |
+| Reconnect or bridge restart | No replay; slots retained; each control acts on a fresh press, evaluated at that press |
 | Unqualified client version | That client's routing disabled; the other unaffected |
 | Second bridge instance, including an overlapping restart | Single-instance lock refused; the second instance exits before opening the device |
 | Legacy MIDI bridge running | Never sees the controller, which presents no MIDI |
@@ -417,6 +464,19 @@ throwaway Codex and Claude tasks, including two with the same title.
    controller and confirm saved assets and slots.
 10. Check whether Claude archive emits `SessionEnd`, and the Claude release
     gesture.
+
+## Installed checks for #821
+
+With harmless cards in throwaway tasks, after the bridge with #821 is installed:
+
+1. Open Codex settings, and a Codex confirmation dialog if one is at hand, and confirm that the wheel does nothing
+   there and the bridge logs `card-unknown` (`cardButtons` reads unknown).
+2. Answer a multi-question Claude question card with the wheel. After the card moves to its next question, click
+   the wheel without turning it and confirm that nothing is pressed (`card-nothing-chosen`); then step and press.
+3. On a Codex approval card, turn the wheel one step clockwise and click: approve is pressed once. Without a turn,
+   a click presses nothing and the wheel LEDs flash red.
+4. Click into a task with the mouse and send with Play; pick a Claude question option and a permission option
+   with the wheel; confirm that a light wheel touch while clicking does not change the option.
 
 ## Findings for dependent work
 

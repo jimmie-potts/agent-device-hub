@@ -11,7 +11,7 @@ export {
   type CodexThreadEntries, type CodexThreadName, type CodexThreadNameOptions,
 } from './client-files.js';
 export {
-  asciiJson, defaultSpawnHelper, encodeHelperCommand, helperScriptPath, UIA_HELPER_PROTOCOL, UiaHelper,
+  asciiJson, defaultSpawnHelper, encodeHelperCommand, HELPER_LOADER, HELPER_SCRIPT_ENV, helperLaunch, helperScriptPath, UIA_HELPER_PROTOCOL, UiaHelper,
   type HelperChild, type HelperReply, type SpawnHelper, type UiaHelperLike, type UiaHelperOptions,
 } from './uia-helper.js';
 export { loadWin32Api, type ProcessIdentity, type Win32Api } from './win32.js';

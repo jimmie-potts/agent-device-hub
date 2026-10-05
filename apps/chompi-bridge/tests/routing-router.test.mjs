@@ -51,7 +51,15 @@ async function setup(t, { sessions = [], status = 'current', profile = PROFILE, 
   return ctx;
 }
 
-const target = ctx => ctx.router.status().target;
+/** Slots whose focus verified, in order. A focus arms nothing: Send and Record never read it. */
+const focused = ctx => ctx.logs.filter(l => l.type === 'focused').map(l => l.slot);
+
+/** Puts `client` in front with its composer focused and no card, as a mouse click into a task would. */
+function front(ctx, client) {
+  ctx.adapter.foreground = client === 'codex' ? { packageIdentity: CODEX_PACKAGE, processName: 'ChatGPT.exe' } : { packageIdentity: CLAUDE_PACKAGE, processName: 'claude.exe' };
+  ctx.adapter.composer[client] = true;
+}
+const TERMINAL = { packageIdentity: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', processName: 'WindowsTerminal.exe' };
 
 // Focus: Codex
 
@@ -59,7 +67,7 @@ test('a Codex key press opens the exact thread, verifies selection and composer,
   const ctx = await setup(t, { sessions: [codexTask(1), codexTask(2)] });
   await ctx.focus(2);
   assert.deepEqual(ctx.adapter.opened, [`codex://threads/${tid(2)}`]);
-  assert.deepEqual(target(ctx), { slot: 2, client: 'codex' });
+  assert.deepEqual(focused(ctx), [2]);
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut');
   assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedThread' && c[1] === tid(2) && c[2] === 'Task 2'));
   assert.ok(ctx.adapter.count('codexArchived') >= 1, 'the target check reads archive evidence first');
@@ -74,7 +82,7 @@ test('matrix: a key for an empty slot opens nothing and lights the error state',
   assert.deepEqual(ctx.adapter.opened, []);
   assert.equal(ctx.failures().at(-1).reason, 'empty-slot');
   assert.equal(ctx.router.status().slots[4].error, true);
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   await advance(ctx.clock, PROFILE.timing.errorFlashMs + 50, 100);
   assert.equal(ctx.router.status().slots[4].error, false, 'the error flash ends');
 });
@@ -98,7 +106,7 @@ test('unknown archive evidence fails closed and keeps the slot', async t => {
   assert.equal(ctx.slots.get(1).taskId, tid(1));
 });
 
-test('matrix: a stale Hub feed with no cached target opens nothing; with a cached target the task still opens', async t => {
+test('matrix: a stale Hub feed with no cached slot opens nothing; with a cached slot the task still opens', async t => {
   const empty = await setup(t);
   empty.router.handleFeed({ status: 'unavailable', revision: null, snapshotVersion: null, sessions: [], reason: 'snapshot-http-503' });
   await empty.focus(1);
@@ -109,7 +117,7 @@ test('matrix: a stale Hub feed with no cached target opens nothing; with a cache
   cached.router.handleFeed(view([codexTask(1)], { status: 'stale' }));
   await cached.focus(1);
   assert.deepEqual(cached.adapter.opened, [`codex://threads/${tid(1)}`]);
-  assert.deepEqual(target(cached), { slot: 1, client: 'codex' });
+  assert.deepEqual(focused(cached), [1]);
 });
 
 test('matrix: a session the Hub retires after idle keeps its slot, shows ended and still opens the same task', async t => {
@@ -119,7 +127,7 @@ test('matrix: a session the Hub retires after idle keeps its slot, shows ended a
   assert.equal(ctx.router.status().slots[0].state, 'ended');
   await ctx.focus(1);
   assert.deepEqual(ctx.adapter.opened, [`codex://threads/${tid(1)}`]);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.deepEqual(focused(ctx), [1]);
 });
 
 test('matrix: link opened but a different Codex task stays selected; foreground alone is not enough', async t => {
@@ -132,7 +140,7 @@ test('matrix: link opened but a different Codex task stays selected; foreground 
   assert.equal(ctx.failures().at(-1).step, 'verify');
   assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch');
   assert.deepEqual(ctx.adapter.keys, [], 'nothing typed');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.ok(ctx.adapter.count('codexSelectedThread') > 3, 'verification polls within its bound');
   assert.ok(ctx.adapter.count('codexSelectedThread') <= Math.ceil(PROFILE.timing.verifyTimeoutMs / PROFILE.timing.verifyPollMs) + 1);
   assert.equal(ctx.adapter.count('openUri'), 1, 'the link is not reopened');
@@ -152,7 +160,7 @@ test('a Codex slot with neither a Codex name nor a Hub title cannot be verified'
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).reason, 'title-missing');
   assert.deepEqual(ctx.adapter.keys, [], 'nothing is typed');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.equal(ctx.adapter.count('openUri'), 1, 'the link opens once and is never repeated');
 });
 
@@ -165,7 +173,7 @@ test('matrix: a Codex name another thread also has fails closed even when that r
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).reason, 'title-not-unique');
   assert.deepEqual(ctx.adapter.keys, []);
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
 });
 
 test('a Codex slot without a Hub title verifies by the name Codex keeps for the thread', async t => {
@@ -173,7 +181,7 @@ test('a Codex slot without a Hub title verifies by the name Codex keeps for the 
   ctx.adapter.codexNames.set(tid(1), 'Codex name 1');
   ctx.adapter.codexThreads.set(tid(1), 'Codex name 1');
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.deepEqual(focused(ctx), [1]);
   assert.ok(ctx.adapter.calls.some(c => c[0] === 'codexSelectedThread' && c[1] === tid(1) && c[2] === null));
   assert.ok(!JSON.stringify(ctx.logs).includes('Codex name 1'), 'logs never carry titles');
 });
@@ -183,7 +191,7 @@ test('the Codex name takes precedence over a stale Hub title', async t => {
   ctx.adapter.codexNames.set(tid(1), 'Renamed in Codex');
   ctx.adapter.codexThreads.set(tid(1), 'Renamed in Codex');
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.deepEqual(focused(ctx), [1]);
   assert.ok(!JSON.stringify(ctx.logs).includes('Renamed in Codex') && !JSON.stringify(ctx.logs).includes('Old Hub title'), 'logs never carry names');
 });
 
@@ -196,13 +204,13 @@ test('matrix: the target app not in the foreground after open gets no input', as
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
-test('failed composer readiness leaves no target', async t => {
+test('failed composer readiness fails the focus', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   ctx.adapter.composerUnknown = true;
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).step, 'composer');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'the composer shortcut is sent once, never retried');
 });
 
@@ -212,7 +220,7 @@ test('an adapter call that never answers times out and fails closed', async t =>
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + PROFILE.timing.adapterTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).step, 'verify');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -222,7 +230,7 @@ test('a Claude key press opens the Desktop ID link and verifies by lastFocusedAt
   const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
   await ctx.focus(2);
   assert.deepEqual(ctx.adapter.opened, [`claude://code/continue?session=${lid(2)}`]);
-  assert.deepEqual(target(ctx), { slot: 2, client: 'claude' });
+  assert.deepEqual(focused(ctx), [2]);
   assert.deepEqual(ctx.adapter.keys, [], 'Claude needs no composer shortcut');
   assert.equal(ctx.adapter.foreground.packageIdentity, CLAUDE_PACKAGE);
 });
@@ -230,7 +238,7 @@ test('a Claude key press opens the Desktop ID link and verifies by lastFocusedAt
 test('matrix: two live tasks with the same title still verify by ID in Claude', async t => {
   const ctx = await setup(t, { sessions: [claudeTask(1, { title: 'Same' }), claudeTask(2, { title: 'Same' })] });
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.deepEqual(focused(ctx), [1]);
 });
 
 test('matrix: a Claude Desktop record that is missing, unreadable or archived opens nothing', async t => {
@@ -267,7 +275,7 @@ test('Claude verification fails when the link shows Code home or another session
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1).reason, 'selection-ambiguous');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
 });
 
 /** Puts Claude in front showing the session `id`, focused `ago` ms before now; the fed sessions are older. */
@@ -286,7 +294,7 @@ test('a press for the Claude session already selected in front verifies by its a
   claudeShowing(ctx, lid(1));
   const focusedAt = ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt;
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.deepEqual(focused(ctx), [1]);
   assert.equal(ctx.lastLog('focused').evidence, 'already-newest', 'the log names the evidence');
   assert.equal(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt, focusedAt, 'Claude stamped nothing');
   assert.deepEqual(ctx.adapter.opened, [`claude://code/continue?session=${lid(1)}`], 'the link opens once');
@@ -294,9 +302,6 @@ test('a press for the Claude session already selected in front verifies by its a
   const open = callIndex(ctx, c => c[0] === 'openUri');
   assert.ok(callIndex(ctx, c => c[0] === 'foregroundWindow') < open, 'the foreground was read before the link');
   assert.ok(callIndex(ctx, c => c[0] === 'claudeSessions' && c[1].length === 2) < open, 'every known record was read before the link');
-  ctx.press(RECORD);
-  await settle();
-  assert.equal(ctx.lastLog('dictation-started')?.slot, 1, 'the Record re-check accepts the target');
 });
 
 test('a press for another Claude session while Claude is in front still verifies by the advanced lastFocusedAt', async t => {
@@ -304,7 +309,7 @@ test('a press for another Claude session while Claude is in front still verifies
   claudeShowing(ctx, lid(2));
   const pressedAt = ctx.clock.now();
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.deepEqual(focused(ctx), [1]);
   assert.ok(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt > pressedAt, 'the link changed the selection');
   assert.equal(ctx.lastLog('focused').evidence, 'advanced', 'the log names the evidence');
 });
@@ -325,11 +330,11 @@ test('an unknown foreground before the link gives no already-selected evidence; 
     ctx.press(SLOT(1));
     await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
     if (stamps) {
-      assert.deepEqual(target(ctx), { slot: 1, client: 'claude' }, 'an advance still verifies');
+      assert.deepEqual(focused(ctx), [1], 'an advance still verifies');
       assert.equal(ctx.lastLog('focused').evidence, 'advanced');
     } else {
       assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch', 'without an advance nothing verifies');
-      assert.equal(target(ctx), null);
+      assert.deepEqual(focused(ctx), []);
     }
     assert.deepEqual(ctx.adapter.keys, []);
   }
@@ -343,7 +348,7 @@ test('accepted residual: Claude in front on Code home with the target strictly n
   ctx.adapter.claudeSelected = null; // Code home: no session shown
   ctx.adapter.appsFollowLinks = false;
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.deepEqual(focused(ctx), [1]);
   assert.equal(ctx.lastLog('focused').evidence, 'already-newest');
 });
 
@@ -356,7 +361,7 @@ test('matrix: an already-selected Claude target that is not strictly the newest 
     await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
     assert.equal(ctx.failures().at(-1)?.step, 'verify', name);
     assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch', name);
-    assert.equal(target(ctx), null, name);
+    assert.deepEqual(focused(ctx), [], name);
     assert.deepEqual(ctx.adapter.keys, [], name);
     assert.equal(ctx.adapter.count('openUri'), 1, `${name}: the link is not reopened`);
   }
@@ -373,7 +378,7 @@ test('an incomplete Claude read before the link gives no already-selected eviden
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -389,7 +394,7 @@ test('the already-selected evidence needs Claude in front before the link', asyn
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.adapter.foreground.packageIdentity, CLAUDE_PACKAGE, 'Claude is in front after the link');
   assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -402,7 +407,7 @@ test('an already-selected Claude target fails when another session moves past th
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1)?.step, 'verify');
   assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -416,7 +421,7 @@ test('an already-selected Claude target must still be strictly the newest after 
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -427,7 +432,7 @@ test('matrix: an unqualified client version disables that client only', async t 
   assert.equal(ctx.failures().at(-1).reason, 'client-unqualified');
   assert.deepEqual(ctx.adapter.opened, []);
   await ctx.focus(2);
-  assert.deepEqual(target(ctx), { slot: 2, client: 'codex' }, 'Codex is unaffected');
+  assert.equal(focused(ctx).at(-1), 2, 'Codex is unaffected');
   ctx.adapter.versions = { codex: known('26.930.3930.0'), claude: unknown('package not found') };
   await ctx.focus(1);
   assert.equal(ctx.failures().at(-1).reason, 'client-version-unknown');
@@ -444,7 +449,7 @@ test('an unqualified Codex version disables Codex only, because its UI selectors
   assert.equal(ctx.failures().at(-1).reason, 'client-version-unknown');
   assert.deepEqual(ctx.adapter.opened, []);
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' }, 'Claude is unaffected');
+  assert.equal(focused(ctx).at(-1), 1, 'Claude is unaffected');
 });
 
 test('a client update seen only after the link opens fails closed before any keystroke', async t => {
@@ -459,44 +464,43 @@ test('a client update seen only after the link opens fails closed before any key
   assert.equal(failure.reason, 'client-unqualified');
   assert.equal(failure.observedVersion, '26.1001.0.0');
   assert.deepEqual(ctx.adapter.keys, [], 'not even the composer shortcut');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   assert.equal(ctx.router.status().slots[0].error, true);
 });
 
-test('Record and Send re-check the client version before their keystrokes', async t => {
+test('Send gates the client version in front at the press; Record has no gate', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
-  ctx.adapter.keys.length = 0;
+  front(ctx, 'codex');
   ctx.adapter.versions = { ...ctx.adapter.versions, codex: known('26.1001.0.0') };
   await ctx.click(WHEEL);
   assert.equal(ctx.lastLog('send-refused').reason, 'client-unqualified');
-  assert.equal(ctx.lastLog('send-refused').observedVersion, '26.1001.0.0');
-  await ctx.focus(1);
-  ctx.adapter.versions = { ...ctx.adapter.versions, codex: known('26.930.3930.0') };
-  await ctx.focus(1);
-  ctx.adapter.keys.length = 0;
+  assert.equal(ctx.lastLog('send-refused').observedVersion, '26.1001.0.0', 'the log names the version to qualify');
   ctx.adapter.versions = { ...ctx.adapter.versions, codex: unknown('package not found') };
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'client-version-unknown');
+  assert.equal(ctx.adapter.enters, 0);
   ctx.press(RECORD);
   await settle();
-  assert.equal(ctx.lastLog('record-refused').reason, 'client-version-unknown');
-  assert.deepEqual(ctx.adapter.keys, [], 'no chord and no Enter');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }], 'Record holds the chord like a keyboard shortcut');
 });
 
 // Task switch
 
-test('matrix: a task switch between Record and Send clears the pending target and Send is refused', async t => {
+test('a slot press while Record is held ends dictation; the next Send is evaluated at its own press', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1), codexTask(2)] });
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  ctx.press(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 2);
   ctx.adapter.hang.codexArchived = true; // slot 2's check is still running when Send arrives
   ctx.press(SLOT(2));
   await settle();
-  assert.equal(target(ctx), null, 'the earlier target is gone at once');
-  assert.ok(ctx.adapter.count('releaseAll') >= 1);
+  assert.equal(ctx.adapter.held.size, 0, 'the chord is released at once');
+  assert.equal(ctx.router.status().dictating, false);
+  ctx.release(RECORD);
   await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 0);
-  assert.equal(ctx.lastLog('send-refused').reason, 'no-target');
+  assert.equal(ctx.adapter.enters, 1, 'Codex is still in front with its composer focused, so the fresh press sends');
+  assert.equal(ctx.lastLog('sent').client, 'codex');
 });
 
 test('a later key press cancels an earlier focus still in progress', async t => {
@@ -508,7 +512,7 @@ test('a later key press cancels an earlier focus still in progress', async t => 
   ctx.release(SLOT(1));
   await ctx.focus(2);
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
-  assert.deepEqual(target(ctx), { slot: 2, client: 'codex' });
+  assert.deepEqual(focused(ctx), [2]);
   assert.equal(ctx.failures().filter(f => f.slot === 1 && f.reason !== 'superseded').length, 0, 'the superseded attempt does not flash error');
 });
 
@@ -520,14 +524,14 @@ test('a task key press never acknowledges, approves or dismisses anything', asyn
   assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
 });
 
-test('a focused key with pending attention keeps pulsing and the press reaches no Hub', async t => {
+test('a focused key with pending attention keeps pulsing, shows no selection and the press reaches no Hub', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['approval'] })] });
   await ctx.focus(1);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.deepEqual(focused(ctx), [1]);
   const seen = new Set();
   for (let i = 0; i < 4; i++) { seen.add(JSON.stringify(ctx.lights.last[0])); await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2, 50); }
   assert.ok(seen.has(JSON.stringify(PROFILE.colors.attention)), 'the attention color still shows on the focused key');
-  assert.ok(seen.has(JSON.stringify(PROFILE.colors.selected)), 'alternating with the selected color');
+  assert.equal(seen.size, 2, 'it alternates between attention and its dimmed pulse only; no key marks a selection');
   assert.equal(ctx.router.status().slots[0].state, 'attention');
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut; nothing approves');
   assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
@@ -542,21 +546,96 @@ test('the Claude ambiguity check reads every known Desktop ID, beyond 63', async
   ctx.press(SLOT(1));
   await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
   assert.equal(ctx.failures().at(-1)?.reason, 'selection-ambiguous');
-  assert.equal(target(ctx), null);
+  assert.deepEqual(focused(ctx), []);
   const queried = new Set(ctx.adapter.calls.filter(c => c[0] === 'claudeSessions').flatMap(c => c[1]));
   assert.equal(queried.size, 80, 'every known Desktop ID was read');
 });
 
-// Send
+// Send at the press
 
-test('the big-wheel click sends the draft once to the verified composer', async t => {
+test('Send types one Enter into the Codex or Claude task in front with no slot press', async t => {
+  for (const client of ['codex', 'claude']) {
+    const ctx = await setup(t);
+    front(ctx, client); // chosen with the mouse
+    await ctx.click(PLAY);
+    assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['Enter'] }], client);
+    assert.deepEqual(ctx.lastLog('sent'), { type: 'sent', client }, client);
+    assert.deepEqual(ctx.adapter.opened, [], 'nothing was opened');
+    for (const name of ['foregroundWindow', 'clientVersions', 'composerFocused', 'approvalVisible']) assert.ok(ctx.adapter.count(name) >= 1, `${client}: ${name}`);
+    for (const name of ['codexSelectedThread', 'claudeSessions']) assert.equal(ctx.adapter.count(name), 0, `${client}: Send identifies no task (${name})`);
+    await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+    await ctx.click(WHEEL);
+    assert.equal(ctx.adapter.enters, 2, `${client}: the wheel click sends too`);
+  }
+});
+
+test('Send still acts on the window in front after a profile reload or Back', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
-  ctx.adapter.keys.length = 0;
+  ctx.router.setProfile(withProfile({ brightnessPercent: 15 }));
+  await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 1, 'a reload no longer leaves Send without a target');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(LOOP);
   await ctx.click(WHEEL);
-  assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['Enter'] }]);
-  assert.equal(ctx.lastLog('sent').slot, 1);
-  for (const name of ['foregroundWindow', 'codexSelectedThread', 'composerFocused', 'approvalVisible']) assert.ok(ctx.adapter.count(name) >= 1, name);
+  assert.equal(ctx.adapter.enters, 2, 'Back no longer leaves Send without a target');
+});
+
+test('matrix: Send with another app in front types nothing', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  await ctx.focus(1);
+  ctx.adapter.foreground = { ...TERMINAL };
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'not-agent-client');
+  ctx.adapter.foreground = { packageIdentity: null, processName: 'notepad.exe' };
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'not-agent-client');
+  ctx.adapter.foregroundUnknown = true;
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'foreground-unknown');
+  assert.equal(ctx.adapter.enters, 0);
+  assert.equal(ctx.adapter.count('composerFocused'), 1, 'only the focus checked its composer; Send asked no other app');
+});
+
+test('matrix: Send refuses a missing or unknown composer', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  ctx.adapter.composer.claude = false;
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'composer-unfocused');
+  ctx.adapter.composerUnknown = true;
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'composer-unknown');
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('matrix: a visible or unknown card refuses Send', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  ctx.adapter.approval.claude = known(true);
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'approval-visible');
+  ctx.adapter.approval.claude = unknown('no UIA tree');
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'approval-unknown');
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('cut: Hub approval attention and a stale feed no longer block Send', async t => {
+  // Owner decision on #821: the bridge's own card and composer checks are Send's only guards.
+  const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['approval'] }), claudeTask(2, { attention: ['question', 'input'] })] });
+  // Claude sorts first: slot 1 is the Claude task, slot 2 the Codex task with Hub approval attention.
+  await ctx.focus(2);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 1, 'Hub approval attention alone does not refuse');
+  await ctx.focus(1);
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 2, 'question and input attention do not refuse either');
+  ctx.router.handleFeed(view([codexTask(1)], { status: 'stale' }));
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 3, 'a stale feed does not refuse');
 });
 
 test('matrix: duplicate or repeated wheel clicks produce one Enter at most', async t => {
@@ -572,12 +651,12 @@ test('matrix: duplicate or repeated wheel clicks produce one Enter at most', asy
   assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
   await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
   await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 2, 'a deliberate later Send to the same verified task works');
+  assert.equal(ctx.adapter.enters, 2, 'a deliberate later Send works');
 });
 
 test('matrix: a wheel click and Play share one repeat window', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
+  const ctx = await setup(t);
+  front(ctx, 'codex');
   await ctx.click(WHEEL);
   await advance(ctx.clock, 200, 50);
   await ctx.click(PLAY);
@@ -595,96 +674,29 @@ test('matrix: a wheel click and Play share one repeat window', async t => {
   assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
 });
 
-test('matrix: an uncertain Send is never retried and clears the target', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
+test('matrix: an uncertain Send is never retried; a later press is a new Send', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
   ctx.adapter.reject.sendKeys = new Error('SendInput inserted 0 of 2 events');
   await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.count('sendKeys'), 2, 'Alt+L plus one Enter attempt');
-  assert.equal(ctx.lastLog('send-uncertain').slot, 1);
-  assert.equal(target(ctx), null);
-  assert.equal(ctx.router.status().slots[0].error, true);
+  assert.equal(ctx.adapter.count('sendKeys'), 1, 'one Enter attempt');
+  assert.deepEqual(ctx.lastLog('send-uncertain'), { type: 'send-uncertain', client: 'codex', reason: 'rejected' });
+  for (const index of [30, 31]) assert.deepEqual(ctx.lights.last[index], PROFILE.colors.error, 'the wheel LEDs flash the error color');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs * 3, 100);
+  assert.equal(ctx.adapter.count('sendKeys'), 1, 'nothing retries it');
   delete ctx.adapter.reject.sendKeys;
-  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs + 100, 100);
   await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 0, 'nothing typed later either: the target is gone');
+  assert.equal(ctx.adapter.enters, 1, 'a fresh press after the window is a new Send');
 });
 
 test('a Send keystroke that never returns is uncertain, not retried', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
+  const ctx = await setup(t);
+  front(ctx, 'claude');
   ctx.adapter.hang.sendKeys = true;
-  ctx.press(WHEEL);
+  ctx.press(PLAY);
   await advance(ctx.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
-  assert.equal(ctx.lastLog('send-uncertain').slot, 1);
-  assert.equal(ctx.adapter.count('sendKeys'), 2);
-});
-
-test('matrix: an approval pending on the target refuses Send', async t => {
-  // Claude sorts before Codex, so the Claude task holds slot 1 and the Codex task slot 2.
-  const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['approval'] }), claudeTask(2)] });
-  await ctx.focus(2);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'hub-approval-pending');
-  assert.equal(ctx.router.status().send, 'blocked');
-
-  await ctx.focus(1);
-  ctx.adapter.approval.claude = known(true);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'approval-visible');
-  ctx.adapter.approval.claude = unknown('no UIA tree');
-  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs + 100, 100);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'approval-unknown');
-  assert.equal(ctx.adapter.enters, 0);
-});
-
-test('question and input attention do not block Send', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['question', 'input'] })] });
-  await ctx.focus(1);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 1);
-});
-
-test('Send is refused while the feed is stale, because a pending approval would be unknown', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
-  ctx.router.handleFeed(view([codexTask(1)], { status: 'stale' }));
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'feed-not-current');
-  assert.equal(ctx.adapter.enters, 0);
-});
-
-test('Send re-verifies: focus moved to another app, another task or off the composer refuses it', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1), codexTask(2)] });
-  await ctx.focus(1);
-  ctx.adapter.foreground = { packageIdentity: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', processName: 'WindowsTerminal.exe' };
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'foreground-mismatch');
-  assert.equal(target(ctx), null, 'a failed re-check invalidates the target');
-
-  await ctx.focus(1);
-  ctx.adapter.codexSelected = tid(2);
-  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs + 100, 100);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'selection-mismatch');
-
-  await ctx.focus(1);
-  ctx.adapter.composer.codex = false;
-  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs + 100, 100);
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'composer-unfocused');
-  assert.equal(ctx.adapter.enters, 0);
-});
-
-test('a Claude Send is refused once another session became visible after verification', async t => {
-  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
-  await ctx.focus(1);
-  ctx.clock.advance(10);
-  ctx.adapter.claudeRecords.get(lid(2)).lastFocusedAt = ctx.clock.now();
-  await ctx.click(WHEEL);
-  assert.equal(ctx.lastLog('send-refused').reason, 'selection-mismatch');
-  assert.equal(ctx.adapter.enters, 0);
+  assert.equal(ctx.lastLog('send-uncertain').reason, 'timeout');
+  assert.equal(ctx.adapter.count('sendKeys'), 1);
 });
 
 test('small-knob clicks, the volume click and encoder turns never send', async t => {
@@ -693,7 +705,6 @@ test('small-knob clicks, the volume click and encoder turns never send', async t
   for (const control of [29, 30, 31, 32, 34]) await ctx.click(control);
   for (const control of [41, 42, 43, 44, 45, 46]) { ctx.turn(control, 3); ctx.turn(control, -2); await settle(); }
   assert.equal(ctx.adapter.enters, 0);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' }, 'knobs and scrolling leave the target alone');
 });
 
 test('Play sends with the default profile, and only when the profile maps it to Send', async t => {
@@ -709,8 +720,8 @@ test('Play sends with the default profile, and only when the profile maps it to 
 });
 
 test('Send while Record is held is refused', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
+  const ctx = await setup(t);
+  front(ctx, 'codex');
   ctx.press(RECORD);
   await settle();
   await ctx.click(WHEEL);
@@ -720,54 +731,111 @@ test('Send while Record is held is refused', async t => {
 
 // Record
 
-test('Record holds the Wispr chord only after a verified target, and its release inserts a draft without sending', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
-  ctx.adapter.keys.length = 0;
+test('Record holds the Wispr chord with any app in front, and its release never sends', async t => {
+  const ctx = await setup(t);
+  ctx.adapter.foreground = { ...TERMINAL };
   ctx.press(RECORD);
   await settle();
   assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }]);
   assert.equal(ctx.router.status().dictating, true);
+  assert.deepEqual(ctx.lastLog('dictation-started'), { type: 'dictation-started' });
   ctx.release(RECORD);
   await settle();
   assert.deepEqual(ctx.adapter.keys.at(-1), { action: 'up', keys: ['LeftControl', 'LeftWindows'] });
   assert.equal(ctx.adapter.enters, 0, 'release never sends');
   assert.equal(ctx.adapter.held.size, 0);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' }, 'the draft can be sent next');
+  for (const name of ['foregroundWindow', 'composerFocused', 'approvalVisible', 'cardButtons', 'clientVersions']) assert.equal(ctx.adapter.count(name), 0, `Record checks nothing (${name})`);
 });
 
-test('Record without a verified target presses nothing', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  ctx.press(RECORD);
-  await settle();
-  ctx.release(RECORD);
-  await settle();
-  assert.deepEqual(ctx.adapter.keys, []);
-  assert.equal(ctx.lastLog('record-refused').reason, 'no-target');
-});
-
-test('Record released before its checks finish presses nothing', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
-  ctx.adapter.keys.length = 0;
-  ctx.press(RECORD);
-  ctx.release(RECORD);
-  await settle();
-  assert.deepEqual(ctx.adapter.keys, []);
-  assert.equal(ctx.adapter.held.size, 0);
-});
-
-test('Record refuses when the composer lost focus', async t => {
-  const ctx = await setup(t, { sessions: [claudeTask(1)] });
-  await ctx.focus(1);
+test('cut: Record holds the chord while a card is open or the composer has no focus', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  ctx.adapter.openCard('claude', 4);
   ctx.adapter.composer.claude = false;
   ctx.press(RECORD);
   await settle();
-  assert.equal(ctx.lastLog('record-refused').reason, 'composer-unfocused');
-  assert.deepEqual(ctx.adapter.keys, []);
+  assert.equal(ctx.adapter.held.size, 2, 'dictation into a card field is allowed');
+  ctx.release(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 0);
 });
 
-test('matrix: a disconnect during a Record hold releases modifiers, sends no draft and needs a fresh press', async t => {
+test('Record pressed and released at once still releases the chord', async t => {
+  const ctx = await setup(t);
+  ctx.press(RECORD);
+  ctx.release(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 0);
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('Record during a Send check presses the chord at once and abandons that Send', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.hang.approvalVisible = true;
+  ctx.press(PLAY);
+  await settle();
+  ctx.press(RECORD);
+  await settle();
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }], 'Record has no checks and is never refused');
+  await advance(ctx.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.equal(ctx.adapter.enters, 0);
+  assert.equal(ctx.logs.filter(l => l.type === 'record-refused').length, 0);
+});
+
+test('Record during the Enter keystroke presses the chord right after it, so no modifier joins the Enter', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  let finishEnter;
+  const realSend = ctx.adapter.sendKeys.bind(ctx.adapter);
+  ctx.adapter.sendKeys = async request => {
+    if (request.keys.includes('Enter')) await new Promise(resolve => { finishEnter = resolve; });
+    return realSend(request);
+  };
+  ctx.press(PLAY);
+  await settle();
+  assert.equal(typeof finishEnter, 'function', 'the Enter keystroke is in flight');
+  ctx.press(RECORD);
+  await settle();
+  assert.deepEqual(ctx.adapter.keys, [], 'the chord waits for the keystroke');
+  finishEnter();
+  await settle();
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['Enter'] }, { action: 'down', keys: ['LeftControl', 'LeftWindows'] }]);
+  assert.equal(ctx.lastLog('sent').client, 'codex', 'the Send was already typing and completes');
+  ctx.release(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 0);
+
+  const early = await setup(t);
+  front(early, 'codex');
+  const realEarly = early.adapter.sendKeys.bind(early.adapter);
+  let finishEarly;
+  early.adapter.sendKeys = async request => {
+    if (request.keys.includes('Enter')) await new Promise(resolve => { finishEarly = resolve; });
+    return realEarly(request);
+  };
+  early.press(PLAY);
+  await settle();
+  early.press(RECORD);
+  early.release(RECORD);
+  finishEarly();
+  await settle();
+  assert.deepEqual(early.adapter.keys, [{ action: 'tap', keys: ['Enter'] }], 'a Record released before the keystroke ends presses nothing');
+});
+
+test('a chord that fails to go down releases every key', async t => {
+  const ctx = await setup(t);
+  ctx.adapter.reject.sendKeys = new Error('SendInput inserted 0 of 2 events');
+  const releases = ctx.adapter.count('releaseAll');
+  ctx.press(RECORD);
+  await settle();
+  assert.equal(ctx.lastLog('record-refused').reason, 'dictation-keys-failed');
+  assert.ok(ctx.adapter.count('releaseAll') > releases);
+  assert.equal(ctx.router.status().dictating, false);
+});
+
+test('matrix: a disconnect during a Record hold releases modifiers and replays nothing; a fresh press after reconnect is new', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.press(RECORD);
@@ -778,30 +846,29 @@ test('matrix: a disconnect during a Record hold releases modifiers, sends no dra
   await settle();
   assert.equal(ctx.adapter.held.size, 0);
   assert.ok(ctx.adapter.count('releaseAll') >= 1);
-  assert.equal(ctx.adapter.enters, 0);
-  assert.equal(target(ctx), null);
   ctx.bridge('connected', { firmware: [0, 1, 0] });
-  await ctx.click(WHEEL);
-  assert.equal(ctx.adapter.enters, 0, 'no replay after reconnect');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  assert.equal(ctx.adapter.enters, 0, 'the reconnect itself types nothing');
+  assert.equal(ctx.adapter.held.size, 0, 'and presses no chord');
   assert.equal(ctx.slots.get(1).taskId, tid(1), 'slots are retained');
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 1, 'a click after the reconnect is a new press, evaluated against the window in front');
 });
 
 for (const [name, events] of [
   ['session-restart', [['session-restart', { cause: 'same-epoch-hello' }]]],
   ['stale', [['stale', {}], ['recovered', {}]]],
 ]) {
-  test(`a bridge ${name} releases held keys and requires a fresh action`, async t => {
+  test(`a bridge ${name} releases held keys and replays nothing`, async t => {
     const ctx = await setup(t, { sessions: [codexTask(1)] });
     await ctx.focus(1);
     ctx.press(RECORD);
     await settle();
     ctx.synthetic(RECORD, name);
     for (const [type, extra] of events) ctx.bridge(type, extra);
-    await settle();
+    await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
     assert.equal(ctx.adapter.held.size, 0);
-    assert.equal(target(ctx), null);
-    await ctx.click(WHEEL);
-    assert.equal(ctx.adapter.enters, 0);
+    assert.equal(ctx.adapter.enters, 0, 'nothing typed without a fresh press');
   });
 }
 
@@ -812,16 +879,17 @@ test('matrix: a bridge restart keeps slots and replays nothing', async t => {
   await first.router.close();
   const second = await setup(t, { dir });
   assert.deepEqual(second.slots.entries().map(r => [r.slot, r.taskId]), [[1, lid(2)], [2, tid(1)]]);
-  assert.equal(target(second), null);
+  await advance(second.clock, 500, 100);
   assert.deepEqual(second.adapter.opened, []);
   assert.deepEqual(second.adapter.keys, []);
   await second.click(WHEEL);
   assert.equal(second.adapter.enters, 0);
+  assert.equal(second.lastLog('send-refused').reason, 'not-agent-client', 'a fresh press is evaluated against the window in front');
 });
 
 // Profile reload
 
-test('a profile reload clears the target, releases held keys, applies brightness and replays nothing', async t => {
+test('a profile reload ends dictation, releases held keys, applies brightness and replays nothing', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.press(RECORD);
@@ -830,7 +898,7 @@ test('a profile reload clears the target, releases held keys, applies brightness
   ctx.router.setProfile(withProfile({ brightnessPercent: 15 }));
   await settle();
   assert.equal(ctx.adapter.held.size, 0);
-  assert.equal(target(ctx), null);
+  assert.equal(ctx.router.status().dictating, false);
   assert.equal(ctx.lights.brightness.at(-1), 15);
   assert.equal(ctx.adapter.opened.length, opened, 'no earlier press is replayed');
   ctx.release(RECORD);
@@ -842,7 +910,6 @@ test('remapped controls apply to new presses only', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.router.setProfile(withProfile({ controls: { ...base.controls, send: [27] } }));
-  await ctx.focus(1);
   await ctx.click(WHEEL);
   assert.equal(ctx.adapter.enters, 0, 'the wheel is no longer Send');
   await ctx.click(PLAY);
@@ -865,7 +932,6 @@ test('the Claude release gesture frees the slot after the hold; on a Codex slot 
   await settle();
   assert.equal(ctx.slots.get(1), undefined);
   assert.equal(ctx.lastLog('slot-released').reason, 'release-gesture');
-  assert.equal(target(ctx), null);
   ctx.release(LOOP);
   ctx.release(SLOT(1));
   await ctx.slots.flush();
@@ -881,13 +947,21 @@ test('the Claude release gesture frees the slot after the hold; on a Codex slot 
   assert.equal(ctx.router.status().slots[1].error, true);
 });
 
-test('Back alone clears the target and releases keys', async t => {
+test('Back alone ends dictation, releases keys and cancels a focus in progress', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
-  await ctx.focus(1);
+  ctx.adapter.appsFollowLinks = false;
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, 300, 50);
+  ctx.release(SLOT(1));
+  ctx.press(RECORD);
+  await settle();
   await ctx.click(LOOP);
-  assert.equal(target(ctx), null);
+  assert.equal(ctx.adapter.held.size, 0);
   assert.ok(ctx.adapter.count('releaseAll') >= 1);
-  await ctx.click(WHEEL);
+  assert.equal(ctx.router.status().focusing, null);
+  assert.equal(ctx.lastLog('invalidated').reason, 'back');
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().length, 0, 'the cancelled focus reports nothing');
   assert.equal(ctx.adapter.enters, 0);
 });
 
@@ -916,7 +990,7 @@ test('a freed slot is reused deterministically by the next task', async t => {
 
 // Lights and overflow
 
-test('the router lights slots from feed state, marks the target and pulses attention', async t => {
+test('the router lights slots from feed state only and pulses attention; the wheel LEDs stay off', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1, { activity: 'active' }), codexTask(2, { attention: ['approval'] })] });
   await settle();
   const frame = ctx.lights.last;
@@ -925,13 +999,18 @@ test('the router lights slots from feed state, marks the target and pulses atten
   await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2 + 50, 50);
   assert.notDeepEqual(ctx.lights.last[1], PROFILE.colors.attention, 'attention pulses');
   await ctx.focus(1);
-  assert.deepEqual(ctx.lights.last[0], PROFILE.colors.selected);
-  assert.deepEqual(ctx.lights.last[30], PROFILE.colors.sendReady);
+  assert.deepEqual(ctx.lights.last[0], PROFILE.colors.active, 'a focused key still shows its task state, not a selection');
+  for (const index of [30, 31]) assert.deepEqual(ctx.lights.last[index], [0, 0, 0], 'no Send-readiness light');
+  ctx.adapter.openCard('codex', 2, 1);
+  ctx.turn(45, 6);
+  await settle();
+  for (const index of [30, 31]) assert.deepEqual(ctx.lights.last[index], [0, 0, 0], 'no card-mode light');
   ctx.router.handleFeed(view([], { status: 'stale' }));
   await settle();
   assert.deepEqual(ctx.lights.last[1], PROFILE.colors.stale, 'a stale feed is never shown as current state');
   assert.equal(ctx.lights.brightness[0], PROFILE.brightnessPercent);
   assert.deepEqual(ctx.router.status().slots[1].state, 'stale');
+  assert.equal('selected' in ctx.router.status().slots[0], false);
 });
 
 test('overflow is reported without moving existing slots', async t => {
@@ -944,9 +1023,7 @@ test('overflow is reported without moving existing slots', async t => {
 
 // Scroll
 
-// Scroll
-
-test('the big wheel scrolls the target client conversation without typing or changing the target', async t => {
+test('the big wheel scrolls the foreground client conversation without typing', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.adapter.keys.length = 0;
@@ -956,9 +1033,8 @@ test('the big wheel scrolls the target client conversation without typing or cha
   await settle();
   assert.deepEqual(ctx.adapter.scrolled, [['codex', -2], ['codex', 1]], 'clockwise scrolls down; positive notches scroll up');
   assert.deepEqual(ctx.adapter.keys, []);
-  assert.equal(ctx.adapter.enters, 0);
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
   assert.equal(ctx.adapter.count('openUri'), 1, 'scroll never selects a task');
+  assert.equal(ctx.adapter.count('cardButtons'), 1, 'one card observation serves turns within its reuse time');
 });
 
 test('scroll steps and direction come from the profile', async t => {
@@ -969,13 +1045,13 @@ test('scroll steps and direction come from the profile', async t => {
   assert.deepEqual(ctx.adapter.scrolled, [['codex', 3]]);
 });
 
-test('without a target the wheel scrolls the foreground Desktop client, and nothing else', async t => {
+test('the wheel scrolls the foreground Desktop client, and nothing else', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   ctx.adapter.foreground = { packageIdentity: CLAUDE_PACKAGE, processName: 'claude.exe' };
   ctx.turn(45, 1);
   await settle();
   assert.deepEqual(ctx.adapter.scrolled, [['claude', -1]]);
-  ctx.adapter.foreground = { packageIdentity: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', processName: 'WindowsTerminal.exe' };
+  ctx.adapter.foreground = { ...TERMINAL };
   ctx.turn(45, 1);
   await settle();
   assert.equal(ctx.adapter.count('scrollClient'), 1, 'another app in front gets no wheel input');
@@ -983,7 +1059,6 @@ test('without a target the wheel scrolls the foreground Desktop client, and noth
   ctx.turn(45, 1);
   await settle();
   assert.equal(ctx.adapter.count('scrollClient'), 1);
-  assert.equal(target(ctx), null, 'scrolling selects nothing');
   assert.deepEqual(ctx.adapter.opened, []);
 });
 
@@ -1002,7 +1077,7 @@ test('the wheel never scrolls while dictation is held', async t => {
   assert.deepEqual(ctx.adapter.scrolled, [['codex', -1]]);
 });
 
-test('an unknown or false scroll result is not retried and leaves state unchanged', async t => {
+test('an unknown or false scroll result is not retried', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.adapter.keys.length = 0;
@@ -1012,12 +1087,11 @@ test('an unknown or false scroll result is not retried and leaves state unchange
   assert.equal(ctx.adapter.count('scrollClient'), 1, 'no retry');
   assert.equal(ctx.lastLog('scroll-unknown').client, 'codex');
   ctx.adapter.scrollUnknown = false;
-  ctx.adapter.foreground = { packageIdentity: 'Other', processName: 'other.exe' };
-  ctx.turn(45, 1);
+  ctx.adapter.scrollAnswer = known(false); // the pointer is outside the window
+  ctx.turn(45, 25);
   await settle();
-  assert.equal(ctx.adapter.count('scrollClient'), 2);
-  assert.deepEqual(ctx.adapter.scrolled, [], 'the adapter answered false: nothing scrolled');
-  assert.deepEqual(target(ctx), { slot: 1, client: 'codex' });
+  assert.equal(ctx.adapter.count('scrollClient'), 2, 'a false answer drops the rest of the turn');
+  assert.deepEqual(ctx.adapter.scrolled, []);
   assert.deepEqual(ctx.adapter.keys, []);
   assert.equal(ctx.router.status().slots[0].error, false, 'scroll never flashes error');
 });
@@ -1039,10 +1113,404 @@ test('other encoder turns are inert', async t => {
   ctx.adapter.keys.length = 0;
   for (const control of [41, 42, 43, 44, 46]) { ctx.turn(control, 2); await settle(); }
   assert.equal(ctx.adapter.count('scrollClient'), 0);
+  assert.equal(ctx.adapter.count('cardButtons'), 0);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
-test('on a platform without an adapter every focus fails closed and nothing is typed', async t => {
+// Card answers with the big wheel
+
+const STEP = PROFILE.cards.stepCounts;
+const STILL = PROFILE.cards.clickStillMs;
+/** Claude in front with an open card whose composer kept focus, as the qualified client shows one. */
+async function claudeCard(t, buttons = 3, focusedIndex = null, options = {}) {
+  const ctx = await setup(t, options);
+  front(ctx, 'claude');
+  ctx.adapter.openCard('claude', buttons, focusedIndex);
+  return ctx;
+}
+
+test('the default card detent is about a quarter turn at the measured 25 counts and the stillness 250 ms', () => {
+  assert.equal(STEP, 6);
+  assert.equal(STILL, 250);
+});
+
+test('card: turns step focus one button per threshold, starting from the first', async t => {
+  const ctx = await claudeCard(t);
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]], 'the first clockwise step focuses the first button');
+  ctx.turn(45, STEP - 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]], 'less than a step moves nothing');
+  ctx.turn(45, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0], ['claude', 1]], 'the remainder adds up');
+  ctx.turn(45, 3 * STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused.at(-1), ['claude', 2], 'steps stop at the last button');
+  assert.deepEqual(ctx.adapter.scrolled, [], 'nothing scrolls on a card');
+  assert.equal(ctx.adapter.enters, 0);
+  assert.deepEqual(ctx.adapter.cardPressed, []);
+});
+
+test('card: the first counter-clockwise step focuses the last button', async t => {
+  const ctx = await claudeCard(t, 4);
+  ctx.turn(45, -STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 3]]);
+});
+
+test('card: a direction reversal restarts the count, so a small wiggle back never steps back', async t => {
+  const ctx = await claudeCard(t, 3, 1);
+  ctx.turn(45, STEP - 1);
+  ctx.turn(45, -(STEP - 1));
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'the reversal discards the forward progress and steps nowhere');
+  ctx.turn(45, 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'reversing again restarts again');
+  ctx.turn(45, STEP - 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 2]]);
+  ctx.turn(45, -2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 2]], 'a small turn back after a step does not step back');
+  ctx.turn(45, -(STEP - 2));
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused.at(-1), ['claude', 1], 'a full step back does');
+});
+
+test('card: a still wheel click presses the focused button once and types nothing', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.turn(45, STEP);
+  ctx.turn(45, STEP);
+  await settle();
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 1]]);
+  assert.deepEqual(ctx.lastLog('card-pressed'), { type: 'card-pressed', client: 'claude', index: 1, count: 3 });
+  assert.equal(ctx.adapter.enters, 0, 'a card press is not a Send');
+  assert.deepEqual(ctx.adapter.keys, []);
+  ctx.adapter.openCard('claude', 3, 0); // the next question
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.cardPressed.length, 1, 'the repeat window covers card presses');
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+});
+
+test('card: a click within the stillness time, or with nothing focused, presses nothing', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.turn(45, STEP);
+  await settle();
+  await advance(ctx.clock, STILL - 100, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-wheel-moving');
+  const idle = await claudeCard(t, 3);
+  await idle.click(WHEEL);
+  assert.equal(idle.lastLog('card-refused').reason, 'card-nothing-focused');
+  for (const c of [ctx, idle]) {
+    assert.deepEqual(c.adapter.cardPressed, []);
+    assert.equal(c.adapter.enters, 0, 'a refused card click never falls through to Send');
+  }
+});
+
+test('card: rotation while the click is held is discarded, and the press clears partial rotation', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.turn(45, STEP - 1);
+  await advance(ctx.clock, STILL, 50);
+  ctx.press(WHEEL);
+  await settle();
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-focused');
+  ctx.turn(45, 2 * STEP);
+  await settle();
+  ctx.release(WHEEL);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'turns during the click move nothing');
+  ctx.turn(45, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'the partial turn before the press was cleared');
+  ctx.turn(45, STEP - 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]]);
+});
+
+test('card: a click while a step is in flight presses nothing', async t => {
+  const ctx = await claudeCard(t, 3, 0);
+  ctx.adapter.hang.focusCardButton = true;
+  ctx.turn(45, STEP);
+  await advance(ctx.clock, STILL + 50, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-busy');
+  assert.deepEqual(ctx.adapter.cardPressed, []);
+});
+
+test('card: Play never presses a card button and is refused', async t => {
+  const ctx = await claudeCard(t, 3, 0);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'approval-visible');
+  assert.equal(ctx.adapter.count('invokeCardButton'), 0);
+  assert.equal(ctx.adapter.enters, 0);
+  const codex = await setup(t);
+  front(codex, 'codex');
+  codex.adapter.openCard('codex', 2, 1);
+  await advance(codex.clock, STILL, 50);
+  await codex.click(PLAY);
+  assert.equal(codex.lastLog('send-refused').reason, 'composer-unfocused', 'focus is on a Codex card button, not the composer');
+  assert.equal(codex.adapter.count('invokeCardButton'), 0);
+  assert.equal(codex.adapter.enters, 0);
+});
+
+test('card: a Codex card starts on its focused button; the wheel reaches Deny and a still click presses it', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1);
+  ctx.turn(45, -STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0]]);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 0]]);
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('card: when the card closes the wheel scrolls again and its click sends', async t => {
+  const ctx = await claudeCard(t, 2);
+  ctx.turn(45, STEP);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
+  ctx.turn(45, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.scrolled, [['claude', -1]], 'the click read the card afresh and dropped it');
+  ctx.adapter.openCard('claude', 2, 0);
+  await advance(ctx.clock, 600, 100);
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0], ['claude', 1]], 'a new card turns the wheel back into card navigation');
+  ctx.adapter.closeCard('claude'); // closed with the mouse
+  await advance(ctx.clock, 600, 100);
+  ctx.turn(45, 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.scrolled.at(-1), ['claude', -2], 'after the reuse time the wheel scrolls again');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 1);
+});
+
+test('card: an unknown card state or Codex container makes the wheel inert', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1);
+  ctx.adapter.cards.codex = 'unknown'; // no composer, and focus is not on a button the container rule accepts
+  ctx.turn(45, 3 * STEP);
+  await settle();
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'card-unknown');
+  assert.equal(ctx.adapter.count('scrollClient'), 0, 'nothing scrolls');
+  assert.equal(ctx.adapter.count('focusCardButton') + ctx.adapter.count('invokeCardButton'), 0, 'nothing is focused or pressed');
+  assert.equal(ctx.adapter.enters, 0, 'nothing is typed');
+  assert.equal(ctx.lastLog('card-unknown').client, 'codex');
+
+  const claude = await setup(t);
+  front(claude, 'claude');
+  claude.adapter.hang.cardButtons = true;
+  claude.turn(45, STEP);
+  await advance(claude.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
+  assert.equal(claude.adapter.count('scrollClient'), 0, 'a timed-out card read scrolls nothing');
+});
+
+test('card: a press that fails or finds focus moved is never retried', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.turn(45, 3 * STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 2]]);
+  ctx.adapter.reject.invokeCardButton = new Error('UIA invoke failed');
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.lastLog('card-press-uncertain'), { type: 'card-press-uncertain', client: 'claude', reason: 'rejected' });
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs * 3, 100);
+  assert.equal(ctx.adapter.count('invokeCardButton'), 1);
+  delete ctx.adapter.reject.invokeCardButton;
+  ctx.adapter.invokeCardButton = async (...args) => { ctx.adapter.calls.push(['invokeCardButton', ...args]); return known(false); };
+  ctx.turn(45, -STEP); // the failed press used up the choice; step again
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-focus-moved');
+  assert.equal(ctx.adapter.count('invokeCardButton'), 2);
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('card: an unqualified client never navigates cards; its wheel scrolls', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.adapter.versions = { ...ctx.adapter.versions, claude: known('2.20000.0.0') };
+  ctx.turn(45, STEP);
+  await settle();
+  assert.equal(ctx.adapter.count('cardButtons'), 0);
+  assert.deepEqual(ctx.adapter.scrolled, [['claude', -STEP]]);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'client-unqualified');
+  assert.equal(ctx.adapter.count('invokeCardButton'), 0);
+});
+
+test('card: steps follow the profile threshold and stillness', async t => {
+  const ctx = await claudeCard(t, 3, null, { profile: withProfile({ cards: { stepCounts: 2, clickStillMs: 600 } }) });
+  ctx.turn(45, 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]]);
+  await advance(ctx.clock, 400, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-wheel-moving');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
+});
+
+test('card: a click presses only a button the wheel itself moved to on this card', async t => {
+  // Owner decision on #821: a Codex card opens with its approve button focused, and a click without a turn must not
+  // approve it.
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(ctx.adapter.cardPressed, [], 'the focused approve button is not pressed');
+  assert.equal(ctx.adapter.enters, 0);
+  ctx.turn(45, -STEP);
+  await settle();
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0], ['codex', 1]]);
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'after a deliberate step back to it, it is');
+
+  const moved = await claudeCard(t, 3);
+  moved.turn(45, STEP);
+  await settle();
+  moved.adapter.cards.claude.focused = 2; // the mouse moved focus within the card after the step
+  await advance(moved.clock, STILL, 50);
+  await moved.click(WHEEL);
+  assert.equal(moved.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(moved.adapter.cardPressed, []);
+
+  const reopened = await claudeCard(t, 2);
+  reopened.turn(45, STEP);
+  await settle();
+  reopened.adapter.closeCard('claude'); // answered with the mouse; the wheel never sees it close
+  reopened.adapter.openCard('claude', 2, 0); // a new card with the same buttons, focused on the same index by the client
+  await advance(reopened.clock, 600, 100);
+  await reopened.click(WHEEL);
+  assert.equal(reopened.lastLog('card-refused').reason, 'card-nothing-chosen', 'a choice never carries to another card');
+  assert.deepEqual(reopened.adapter.cardPressed, []);
+});
+
+test('card: one clockwise step chooses a Codex card\'s focused approve button, clamped at the end', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  ctx.adapter.openCard('codex', 2, 1); // approve is the last button and opens focused
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'focus is already on the last button; nothing moves');
+  assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'codex', index: 1, count: 2 });
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'one deliberate turn and a still click approve');
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('Record pressed and released during a Send check abandons that Send', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  let answer;
+  ctx.adapter.approvalVisible = async client => { ctx.adapter.calls.push(['approvalVisible', client]); return new Promise(resolve => { answer = resolve; }); };
+  ctx.press(PLAY);
+  await settle();
+  ctx.press(RECORD);
+  await settle();
+  ctx.release(RECORD);
+  await settle();
+  answer(known(false));
+  await settle();
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.equal(ctx.adapter.enters, 0, 'the quick tap still abandons the Send');
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'down', keys: ['LeftControl', 'LeftWindows'] }, { action: 'up', keys: ['LeftControl', 'LeftWindows'] }]);
+});
+
+test('a repeat bounce or a Send abandoned for Record does not flash the wheel LEDs', async t => {
+  const ctx = await setup(t);
+  const wheel = () => [ctx.lights.last[30], ctx.lights.last[31]];
+  const off = [[0, 0, 0], [0, 0, 0]];
+  front(ctx, 'codex');
+  await ctx.click(WHEEL);
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+  assert.deepEqual(wheel(), off, 'a bounce right after a Send is not shown as a failure');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  ctx.adapter.hang.approvalVisible = true;
+  ctx.press(PLAY);
+  await settle();
+  ctx.press(RECORD);
+  await advance(ctx.clock, PROFILE.timing.adapterTimeoutMs + 100, 50);
+  assert.equal(ctx.lastLog('send-refused').reason, 'superseded');
+  assert.deepEqual(wheel(), off, 'Record was pressed on purpose');
+  ctx.release(RECORD);
+  delete ctx.adapter.hang.approvalVisible;
+  ctx.adapter.composer.codex = false;
+  await ctx.click(PLAY);
+  assert.equal(ctx.lastLog('send-refused').reason, 'composer-unfocused');
+  assert.deepEqual(wheel(), [PROFILE.colors.error, PROFILE.colors.error], 'other refusals still flash');
+});
+
+test('scroll counts never shorten the first card step', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  ctx.turn(45, STEP - 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.scrolled, [['claude', -(STEP - 2)]]);
+  ctx.adapter.openCard('claude', 3);
+  await advance(ctx.clock, 600, 100);
+  ctx.turn(45, 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'the earlier scroll counts were dropped');
+  ctx.turn(45, STEP - 2);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['claude', 0]], 'a full step of turns made on the card');
+});
+
+test('a refused or uncertain Send or card press flashes the wheel LEDs red for the error flash time', async t => {
+  const ctx = await setup(t);
+  const wheel = () => [ctx.lights.last[30], ctx.lights.last[31]];
+  const off = [[0, 0, 0], [0, 0, 0]];
+  const red = [PROFILE.colors.error, PROFILE.colors.error];
+  ctx.adapter.foreground = { ...TERMINAL };
+  await ctx.click(PLAY);
+  assert.deepEqual(wheel(), red, 'a refused Send');
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  assert.deepEqual(wheel(), off, 'the flash ends on the render tick; nothing polls the desktop');
+  front(ctx, 'codex');
+  await ctx.click(PLAY);
+  assert.deepEqual(wheel(), off, 'a Send that types its Enter does not flash');
+  ctx.adapter.openCard('codex', 2, 1);
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(wheel(), red, 'a refused card press');
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  ctx.turn(45, -STEP);
+  await advance(ctx.clock, STILL, 50);
+  ctx.adapter.reject.invokeCardButton = new Error('UIA invoke failed');
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-press-uncertain').reason, 'rejected');
+  assert.deepEqual(wheel(), red, 'an uncertain card press');
+  assert.equal(ctx.adapter.enters, 1);
+});
+
+test('on a platform without an adapter every focus and Send fails closed and nothing is typed', async t => {
   const clock = new ManualClock(1_700_000_000_000);
   const slots = await SlotStore.open(join(tempDir(t), 'slots.json'), { clock });
   const logs = [];
@@ -1051,13 +1519,14 @@ test('on a platform without an adapter every focus fails closed and nothing is t
   router.start();
   router.handleFeed(view([codexTask(1), claudeTask(2)]));
   let sequence = 1;
-  for (const control of [1, 2, WHEEL, RECORD]) {
+  for (const control of [1, 2, WHEEL, PLAY, RECORD]) {
     router.handleBridgeEvent({ type: 'input', at: clock.now(), epoch: 1, sequence: sequence++, control, kind: 'press', delta: 0, synthetic: false });
     await settle();
   }
   assert.deepEqual(logs.filter(l => l.type === 'focus-failed').map(l => l.reason), ['client-version-unknown', 'client-version-unknown']);
-  assert.equal(router.status().target, null);
   assert.equal(logs.filter(l => l.type === 'sent').length, 0);
+  assert.equal(logs.filter(l => l.type === 'focused').length, 0);
+  assert.equal(logs.filter(l => l.type === 'record-refused').at(-1).reason, 'dictation-keys-failed');
 });
 
 test('close releases held keys and stops timers', async t => {

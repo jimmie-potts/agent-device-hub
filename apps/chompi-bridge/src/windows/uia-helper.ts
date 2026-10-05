@@ -1,5 +1,5 @@
 import { spawn as spawnProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { accessSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
@@ -61,15 +61,34 @@ export function encodeHelperCommand(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
-/** Spawns Windows PowerShell 5.1 by absolute path with the helper script. */
+/** The environment variable that hands the helper loader its script path. */
+export const HELPER_SCRIPT_ENV = 'CHOMPI_UIA_HELPER_SCRIPT';
+
+/**
+ * The command the helper starts with: it reads the shipped script and runs it in place. The script itself outgrew a
+ * Windows command line (32767 characters) as base64 UTF-16 once the card operations arrived (#821), so only this
+ * loader is encoded. The path arrives in an environment variable rather than as a quoted literal, so no character in
+ * it (PowerShell also treats typographic apostrophes as quotes) can end the string. A script block created from text
+ * runs under `-ExecutionPolicy Bypass` like the inline script did.
+ */
+export const HELPER_LOADER = `. ([System.Management.Automation.ScriptBlock]::Create([System.IO.File]::ReadAllText($env:${HELPER_SCRIPT_ENV}, [System.Text.Encoding]::UTF8)))`;
+
+/** The PowerShell command line and environment that start the helper; the script path travels only in the environment. */
+export function helperLaunch(scriptPath: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
+  return {
+    command: join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeHelperCommand(HELPER_LOADER)],
+    env: { ...env, [HELPER_SCRIPT_ENV]: scriptPath },
+  };
+}
+
+/** Spawns Windows PowerShell 5.1 by absolute path with the helper loader. */
 export function defaultSpawnHelper(scriptPath = helperScriptPath(), env: NodeJS.ProcessEnv = process.env): SpawnHelper {
   return () => {
-    const script = readFileSync(scriptPath, 'utf8');
-    const powershell = join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    return spawnProcess(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeHelperCommand(script)], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    // A missing script fails the spawn here, as reading it inline did, rather than as a helper that exits.
+    accessSync(scriptPath, constants.R_OK);
+    const launch = helperLaunch(scriptPath, env);
+    return spawnProcess(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env: launch.env });
   };
 }
 

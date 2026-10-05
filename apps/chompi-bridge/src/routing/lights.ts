@@ -32,26 +32,33 @@ export function ledIndex(control: number): number | undefined {
   return ({ 26: 25, 27: 32, 28: 33 } as Record<number, number>)[control];
 }
 
-/** The two big-wheel LEDs (protocol LED indices 30 and 31). */
-const WHEEL_LEDS = [30, 31];
 const OFF: Rgb = [0, 0, 0];
 /** Attention alternates between its color and this fraction of it. */
 const PULSE_LOW = 0.2;
 
-export interface SlotLight { state: SlotState; error: boolean; selected: boolean }
+/** A slot key shows its task state only (#821): nothing marks a selected or targeted task. */
+export interface SlotLight { state: SlotState; error: boolean }
 export interface RenderInput {
   profile: RoutingProfile;
   /** Index 0 is slot 1. */
   slots: readonly SlotLight[];
   recording: boolean;
-  send: 'none' | 'ready' | 'blocked';
+  /** A refused or uncertain Send or card press: both big-wheel LEDs show the error color. */
+  wheelError?: boolean;
   pulseOn: boolean;
 }
 
 const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * factor), Math.round(g * factor), Math.round(b * factor)];
 
-/** The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. */
-export function renderFrame({ profile, slots, recording, send, pulseOn }: RenderInput): Rgb[] {
+/** The two big-wheel LEDs (protocol LED indices 30 and 31). */
+const WHEEL_LEDS = [30, 31];
+
+/**
+ * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to
+ * flash a refused or uncertain Send or card press (not a `repeat` bounce or a Send abandoned for Record): readiness is
+ * decided at the press, and nothing polls the window in front to show it.
+ */
+export function renderFrame({ profile, slots, recording, wheelError = false, pulseOn }: RenderInput): Rgb[] {
   const frame: Rgb[] = Array.from({ length: LED_COUNT }, () => OFF);
   const { colors } = profile;
   slots.forEach((light, i) => {
@@ -59,14 +66,11 @@ export function renderFrame({ profile, slots, recording, send, pulseOn }: Render
     if (index === undefined) return;
     let color: Rgb = colors[light.state];
     if (light.state === 'attention' && !pulseOn) color = scale(color, PULSE_LOW);
-    // Selection never hides attention: a selected key with attention pulses between the attention and selected
-    // colors, so focusing a task can never look like acknowledging it.
-    if (light.selected) color = light.state === 'attention' && pulseOn ? colors.attention : colors.selected;
     if (light.error) color = colors.error;
     frame[index] = color;
   });
   const record = ledIndex(profile.controls.record);
   if (recording && record !== undefined) frame[record] = colors.record;
-  if (send !== 'none') for (const index of WHEEL_LEDS) frame[index] = send === 'ready' ? colors.sendReady : colors.sendBlocked;
+  if (wheelError) for (const index of WHEEL_LEDS) frame[index] = colors.error;
   return frame.map(([r, g, b]) => [r, g, b] as const);
 }

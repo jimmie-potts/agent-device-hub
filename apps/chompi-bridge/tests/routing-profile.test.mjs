@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
+import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
 import { advance, settle, tempDir } from './routing-helpers.mjs';
 
@@ -25,6 +25,10 @@ test('the shipped default profile validates with the owner-decided mappings', as
   assert.deepEqual(profile.shortcuts.dictation, ['LeftControl', 'LeftWindows']);
   assert.deepEqual(profile.qualifiedVersions.claude, ['2.19675.0.0']);
   assert.deepEqual(profile.qualifiedVersions.codex, ['26.930.3930.0'], 'Codex selectors are version-dependent too');
+  assert.deepEqual(profile.cards, { stepCounts: 6, clickStillMs: 250 }, 'about a quarter turn at the measured 25 counts per revolution');
+  assert.equal(DEFAULT_CARD_STEP_COUNTS, 6);
+  assert.equal('cards' in shipped(), false, 'the shipped profile leaves the step default to the one constant in profile.ts');
+  for (const name of ['selected', 'sendReady', 'sendBlocked']) assert.equal(name in profile.colors, false, `${name} has no meaning in the press-time model`);
   assert.ok(Object.isFrozen(profile) && Object.isFrozen(profile.controls.slots), 'a loaded profile is immutable');
 });
 
@@ -79,6 +83,34 @@ test('shortcuts use only the key names the Windows adapter can type, and nothing
   assert.match(issues(withShortcuts({ dictation: ['LeftControl', 'K'] }))[0], /not a modifier/);
   assert.deepEqual(issues(withShortcuts({ scrollUp: ['J'] })), ['profile.shortcuts.scrollUp: unknown field'], 'scroll has no output keys yet');
   assert.match(issues(withShortcuts({ codexComposer: ['Enter'] }))[0], /must not include Enter/);
+});
+
+/** The profile installed for the #743 trial: the #820 Send mapping, the retired colors and no card settings. */
+function installedTrialProfile() {
+  const profile = shipped();
+  delete profile.cards;
+  profile.controls = { ...profile.controls, send: [33, 27] };
+  profile.colors = { ...profile.colors, selected: [255, 255, 255], sendReady: [0, 255, 0], sendBlocked: [255, 120, 0] };
+  return profile;
+}
+
+test('a profile from an earlier release still validates: card settings default and retired colors are ignored', () => {
+  const profile = validateProfile(installedTrialProfile());
+  assert.deepEqual(profile.controls.send, [33, 27]);
+  assert.deepEqual(profile.cards, { stepCounts: 6, clickStillMs: 250 });
+  for (const name of ['selected', 'sendReady', 'sendBlocked']) assert.equal(name in profile.colors, false, `${name} is accepted and ignored`);
+  assert.match(issues(() => validateProfile({ ...installedTrialProfile(), colors: { ...installedTrialProfile().colors, selected: [256, 0, 0] } }))[0], /^profile\.colors\.selected: /, 'a retired color must still be a color');
+});
+
+test('card settings are optional, field by field, and bounded', () => {
+  assert.deepEqual(validateProfile({ ...shipped(), cards: {} }).cards, { stepCounts: 6, clickStillMs: 250 });
+  assert.deepEqual(validateProfile({ ...shipped(), cards: { stepCounts: 12 } }).cards, { stepCounts: 12, clickStillMs: 250 });
+  assert.deepEqual(validateProfile({ ...shipped(), cards: { clickStillMs: 0 } }).cards, { stepCounts: 6, clickStillMs: 0 });
+  for (const stepCounts of [0, 97, 2.5, '6']) assert.match(issues(() => validateProfile({ ...shipped(), cards: { stepCounts } }))[0], /^profile\.cards\.stepCounts: must be an integer 1-96$/);
+  for (const clickStillMs of [-1, 2001, '250']) assert.match(issues(() => validateProfile({ ...shipped(), cards: { clickStillMs } }))[0], /^profile\.cards\.clickStillMs: must be an integer 0-2000 ms$/);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), cards: { stepCounts: 6, decayMs: 500 } })), ['profile.cards.decayMs: unknown field']);
+  assert.match(issues(() => validateProfile({ ...shipped(), cards: [6] }))[0], /^profile\.cards: must be an object$/);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), sendToOtherApps: true })), ['profile.sendToOtherApps: unknown field'], 'Send never reaches other apps');
 });
 
 test('scroll settings are bounded', () => {
