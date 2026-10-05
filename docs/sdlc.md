@@ -186,7 +186,9 @@ issue readback and installation authority.
 
 Refresh the repository-defined main, inspect worktrees and create
 codex/gh-<issue-number>-<slug> in an isolated worktree. One coordinator owns
-repository/GitHub writes. Reviewers are independent and read-only. Preserve
+repository/GitHub writes. Standards and Specification reviewers are independent
+and read-only. An Acceptance reviewer is independent and limited to the
+authority in [Acceptance review](#acceptance-review). Preserve
 other sessions' worktrees, branches, installations and ownership.
 
 New Tidbyt and LIFX work belongs in this monorepo under their scoped controller
@@ -290,7 +292,9 @@ permission to replace an owner.
    to clear a reference (the read can lag a few minutes), and read back the
    issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
+   fixed comparison through code-review. When the change has observable
+   behavior, also obtain an independent [Acceptance review](#acceptance-review)
+   of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
 4. Read all GitHub reviews/threads and verify the [Depot evidence](#depot-ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
@@ -316,6 +320,86 @@ permission to replace an owner.
    Do not close future implementation or device acceptance issues with a bootstrap.
 7. Clean up this delivery's own worktree and scratch as described in
    [Cleanup after delivery](#cleanup-after-delivery).
+
+### Acceptance review
+
+**Observable behavior** means anything a user or device could notice from a
+running application: pages, interactions, HTTP or MCP results, agent status,
+device output, and the code, configuration or assets that serve them, including
+refactors of those paths. A change has **no observable behavior** only when it
+cannot alter any of that. Examples: prose documentation, contracts or library
+code that no running application serves yet, test-only changes, and logging
+that changes no user-facing or device-facing output. A change entirely under
+`docs/work-guide/` keeps the guide's own browser checks and needs no Acceptance
+review.
+
+Verification has three tiers.
+
+1. **Automatic.** Once an application has a shared scenario catalog, every PR
+   runs it in CI through the in-memory end-to-end harness.
+   [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
+   adds both for the new runtime that
+   [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
+2. **Acceptance reviewer.** A PR with observable behavior gets a third
+   independent reviewer beside Standards and Specification. The reviewer has
+   no part in the implementation or the other review axes. It works through
+   these steps:
+   1. Create a detached worktree of the exact reviewed head under the main
+      checkout's `.local/worktrees/` or `.local/scratch/<task>/`. Install and
+      build it there with `fnm exec --using=.nvmrc -- npm ci` and
+      `fnm exec --using=.nvmrc -- npm run build`. For a composition, also prepare clean consumer
+      checkouts at their `compose.json` pins in the same place. Never write
+      to the coordinator's worktree.
+   2. From that worktree, start a disposable verification run with synthetic
+      data and simulated devices. Use the new runtime's adapter once #846
+      lands. Until then, use
+      `fnm exec --using=.nvmrc -- npm run -s verify -- <operation>` or the
+      `verify:compose` form in [app verification](app-verification.md). The
+      run must report a clean candidate, never `dirty`. A reviewer whose
+      sandbox cannot reach the user manager uses the
+      [host route](app-verification.md#explicit-host-route-for-codex-development-coordinators).
+   3. Exercise the story's acceptance scenarios as a user would, only against
+      the run's own endpoints: the browser dashboard, HTTP and MCP calls,
+      synthetic agent events and simulated device output.
+   4. Check each acceptance item against what the reviewer observed.
+   5. Stop the runs, confirm their cleanup, and remove the review worktree and
+      checkouts.
+   6. Return `satisfied` or `not satisfied`, with findings, the scenarios run
+      and the run IDs.
+
+   The reviewer's authority is limited to those steps:
+   - It may write only inside its review worktree, its runs' runtime roots and
+     its proof roots.
+   - It makes no source, branch, tracker or installed-system change.
+   - It never reads or calls installed services or their ports, personal
+     state or physical devices.
+
+   Its screenshots and video stay under the main checkout's
+   `.local/evidence/verify/`. The PR records only the verdict, the scenarios
+   and the run IDs.
+
+   A `not satisfied` verdict blocks merge like the other axes. After a fix, the
+   reviewer re-runs the affected scenarios on the new head. Run at most one
+   Acceptance run at a time on this host, because memory is the constraint. A
+   composition counts as one run.
+
+   A PR with no observable behavior skips this axis. It states "no observable
+   behavior" and why, and the Standards reviewer checks the claim against the
+   definition above. A user-requested read-only review or planning task starts
+   no runs.
+3. **Milestone sweep.** An epic may define installation milestones. A sweep
+   runs the milestone's scenario catalog against the installed system, and
+   adds physical checks where the milestone requires them. It runs only inside
+   that milestone's story, and only with the owner's explicit authorization
+   naming the installed target and the devices involved.
+   - The milestone story defines how synthetic inputs are kept apart from, or
+     removed from, installed state.
+   - Every scenario that commands a device follows the device-permission rules
+     in `AGENTS.md`.
+   - For visual confirmation, prefer camera frames over the owner's
+     description when a camera is attached (owner direction, 2026-10-04).
+     Camera frames show the owner's room, so keep them under the main
+     checkout's `.local/evidence/` and out of GitHub.
 
 ### Cleanup after delivery
 
@@ -400,8 +484,10 @@ verification.
 No project UI requires human approval, including new or materially changed Hub,
 dashboard, device-facing, Guide and Ask interfaces. Record the affected UI and
 applicable automated, browser, visual and accessibility evidence in the PR.
-Independent Standards and Specification reviews, applicable CI and guarded merge
-remain required. A missing required check or blocking finding still prevents merge.
+Independent Standards and Specification reviews, an
+[Acceptance review](#acceptance-review) for observable behavior, applicable CI
+and guarded merge remain required. A missing required check or blocking finding
+still prevents merge.
 
 This policy supersedes older human UI approval requirements in issues, plans and
 dated design snapshots. Preserve their design outcomes, validation, dependencies

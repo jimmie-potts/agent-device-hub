@@ -17,6 +17,9 @@ evidence. Do not equate CI with client or physical acceptance.
 
 Record base SHA, head SHA, merge-base, diff command and clean worktree.
 Record independent Standards and Specification reviews and finding dispositions.
+Record the independent Acceptance review: its verdict, the scenarios it ran and
+its disposable run IDs. For a PR with no observable behavior, state why instead,
+under [Acceptance review](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md#acceptance-review).
 For UI changes, record applicable automated, browser, visual and accessibility
 evidence under the [UI verification policy](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md#ui-approval-scope).
 Human UI approval is not required.
