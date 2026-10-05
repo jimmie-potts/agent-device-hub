@@ -27,4 +27,6 @@ test('anything else yields no family', () => {
   ]) assert.equal(packageFamilyFromImagePath(path, PF), null, String(path));
   assert.equal(packageFamilyFromImagePath('C:\\Program Files\\WindowsApps\\Claude_2.19675.0.0_x64__pzs8sxrjxfjjc\\Claude.exe', undefined), null, 'no Program Files');
   assert.equal(packageFamilyFromImagePath('C:\\Program Files\\WindowsApps\\Claude_2.19675.0.0_x64__pzs8sxrjxfjjc\\Claude.exe', 'relative\\path'), null, 'relative root');
+  assert.equal(packageFamilyFromImagePath('C:\\WindowsApps\\Claude_2.19675.0.0_x64__pzs8sxrjxfjjc\\Claude.exe', 'C:\\'), null, 'a drive root is not Program Files');
+  assert.equal(packageFamilyFromImagePath('\\\\server\\share\\WindowsApps\\Claude_2.19675.0.0_x64__pzs8sxrjxfjjc\\Claude.exe', '\\\\server\\share'), null, 'a network root is refused');
 });

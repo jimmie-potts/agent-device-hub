@@ -8,8 +8,8 @@ import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
 import { KeyboardError, OpenUriError } from './errors.js';
 import { Keyboard } from './keyboard.js';
 import { MAX_SCROLL_NOTCHES, pointInRect, WHEEL_DELTA } from './mouse.js';
-import { UiaHelper, type UiaHelperLike, type UiaHelperOptions } from './uia-helper.js';
 import { packageFamilyFromImagePath } from './package-path.js';
+import { UiaHelper, type UiaHelperLike, type UiaHelperOptions } from './uia-helper.js';
 import { parseDeepLink, THREAD_ID } from './uri.js';
 import { loadWin32Api, type Win32Api } from './win32.js';
 
