@@ -149,7 +149,9 @@ never shares it is an assumption (see "Not established").
   (`card-absent`), another card or a button count that differs from `count` (`card-changed`); the adapter reports
   these as unknown. It then sets keyboard focus on that stop and reads focus back every 25 ms, for at most 400 ms on a
   `Stopwatch`, until focus is on that stop. It returns the index it observed, or -1. Claude applies focus
-  asynchronously (see "Live findings"), and 400 ms stays well inside the adapter and helper timeouts.
+  asynchronously (see "Live findings"), and 400 ms stays well inside the adapter and helper timeouts. The router's
+  step stays in flight during the read-back, so a still click in that time is refused (`card-busy`) and presses
+  nothing: fail-closed, and the next click after the step completes works.
 - **`invokeCardButton(cardId, index, count)`** runs the same checks (unknown when they fail), then presses the
   button only when it equals the focused element, and returns `{ invoked: false }` otherwise.
 
@@ -166,8 +168,9 @@ keeps focus, so one clockwise turn chooses that approve button.
 ### Card containers
 
 - **Claude** (question and permission cards): the one element of any control type carrying `epitaxy-approval-card`.
-  - In the probe, the permission card's three answers are `cds-reset group/btn` buttons without `text-left`, so all
-    three are stops.
+  - In the probe, the permission card's three answers are `cds-reset group/btn` buttons. That they lack `text-left`,
+    so that all three are stops, is inferred: the probe truncates those long class lists. Installed check 5 in the
+    qualification report confirms it.
   - A question card's actionable buttons are, in tree order: a header button, the option rows, the "Other" row and a
     footer button. Its disabled submit button and its menu button are skipped. The option rows (`... rounded-[5px]
     px-md py-md text-left ...`) and the "Other" row (`... text-body text-primary text-left ...`) carry `text-left`,
@@ -234,6 +237,9 @@ The installed bridge was checked on a Claude question card with three options:
   container while it moves to the next question; then a choice made on one question would still match. The installed
   trial answers a multi-question Claude card with the wheel and checks that a click after a question change, without a
   new step, presses nothing.
+- **Other card shapes.** Only the question card with single-choice option rows and the permission card were probed.
+  Any other Claude card shape, for example a multi-select question with checkboxes, has no `text-left` buttons as far
+  as is known and falls back to every actionable button as a stop.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

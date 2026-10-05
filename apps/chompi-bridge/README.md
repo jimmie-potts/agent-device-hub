@@ -333,7 +333,8 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
     reversal, so a small wiggle back never steps back. Steps stop at the first and last stop. A Claude question
     card's stops are its answer rows and its "Other" row; other cards stop on every actionable button.
   - A step counts as chosen only when focus is seen on the requested stop within the helper's 400 ms read-back.
-    Focus that Claude applies later is not chosen, and a click then presses nothing.
+    Focus that Claude applies later is not chosen, and a click then presses nothing. A still click while a step's
+    read-back is still running is refused (`card-busy`) and presses nothing; click again once the step is done.
   - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
     least one deliberate step is needed: a Codex card opens with its approve button focused, and a click without a
     turn presses nothing (`card-nothing-chosen`). A step clamped at the first or last button chooses the button that
