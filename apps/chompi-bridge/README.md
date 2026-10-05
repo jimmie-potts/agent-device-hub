@@ -341,8 +341,9 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
     read-back is still running is refused (`card-busy`) and presses nothing; click again once the step is done.
   - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
     least one deliberate step is needed: when a Codex card opens with its approve button focused, a click without a
-    turn presses nothing (`card-nothing-chosen`). A step clamped at the first or last button chooses the button that
-    keeps focus, so one clockwise turn then chooses that approve button. When nothing has focus, as Codex often
+    turn presses nothing (`card-nothing-chosen`). A step that cannot move focus, because focus is already at the
+    first or last stop, chooses nothing and leaves any earlier choice from a real move, so on a card that opens with
+    approve focused the owner turns away and back before clicking (owner decision on #821). When nothing has focus, as Codex often
     leaves its card, the first clockwise step focuses Deny (the first stop) and a counter-clockwise step focuses
     approve (the last stop). The click also needs `cards.clickStillMs` without a turn and no step
     in flight. Turning while the click is held moves nothing, and the press clears partial rotation. Wheel actions

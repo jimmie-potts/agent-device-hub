@@ -1117,7 +1117,7 @@ test('other encoder turns are inert', async t => {
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
-// Card answers with the big wheel
+// Big-wheel card answers
 
 const STEP = PROFILE.cards.stepCounts;
 const STILL = PROFILE.cards.clickStillMs;

@@ -163,8 +163,8 @@ Windows command line as base64 UTF-16. The path is never embedded in a PowerShel
 typographic apostrophes included, can end one.
 
 The router presses only a button its own wheel step chose, on the same card (by `cardId`), so a Codex card's
-initially focused approve button is never pressed by a click alone. A step clamped at an end chooses the button that
-keeps focus, so one clockwise turn chooses that approve button.
+initially focused approve button is never pressed by a click alone. A step clamped at an end, which cannot move focus,
+chooses nothing, so that approve button is pressed only after the wheel moves away and back onto it.
 
 ### Card containers
 
