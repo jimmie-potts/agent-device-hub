@@ -165,7 +165,9 @@ the adapter when it offers `warmUp()` (the UI Automation helper and cached clien
 `adapter-warm-up-failed`, all before the controller connects, and only then connects the controller, the feed and the
 router. It prints JSON lines with slot numbers and reason codes only: link events,
 `feed`, `slot-assigned`, `overflow`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
-`invalidated`, `profile-rejected` and similar. It never prints titles, text or the token. Starting it against the real
+`invalidated`, `profile-rejected` and similar. A Claude `focused` line carries `evidence`: `advanced` when the target's
+`lastFocusedAt` moved past the press, or `already-newest` when it was already strictly the newest (see the safety
+rules); a Codex `focused` line has no `evidence` field. It never prints titles, text or the token. Starting it against the real
 controller and desktop is #743 work and needs the owner's device authorization.
 
 ### Profile
@@ -257,7 +259,13 @@ colors, so focusing a task never looks like acknowledging it. The Record LED sho
   - the fixed link brings the expected package family (`OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`) to
     the front;
   - the exact task is selected. Codex: the thread's name (Codex's own, else the Hub's title) is on the selected row
-    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press;
+    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press. Claude Desktop stamps it
+    only when the selection changes, so a press for the session Claude already shows also verifies when Claude was
+    in front before the link and the target was strictly newest among known sessions (slot records and Hub
+    `hostSessionId`s, read completely), and after the link it still is and no other session's moved past the press.
+    A tie, Claude not in front, an incomplete read or any unknown answer gives no extra evidence; the advance rule
+    applies. Residual: the window's view is unobserved, so Code home, the Chat tab or an unknown session in front is
+    covered only by the link navigating;
   - the composer has focus.
 
   Observations are polled; the link and keystrokes are never repeated.

@@ -66,7 +66,8 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 /**
  * A scripted desktop behind OS adapter interface version 2. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
- * stamps the target's `lastFocusedAt` and raises Claude with its composer focused. Tests then break one step.
+ * selects the target and raises Claude with its composer focused. Like Claude Desktop, the link stamps the target's
+ * `lastFocusedAt` unless Claude was already in front with that session selected. Tests then break one step.
  */
 export class FakeAdapter {
   version = 2;
@@ -88,6 +89,8 @@ export class FakeAdapter {
   unknownArchive = false;
   /** Claude Desktop records: local ID → { localId, isArchived, lastFocusedAt }. */
   claudeRecords = new Map();
+  /** The session Claude's window shows; a link to it while Claude is in front stamps nothing. */
+  claudeSelected = null;
   claudeUnknown = false;
   composer = { codex: false, claude: false };
   composerUnknown = false;
@@ -131,10 +134,13 @@ export class FakeAdapter {
     }
     const claude = /^claude:\/\/code\/continue\?session=(.+)$/.exec(uri);
     if (claude) {
+      const id = decodeURIComponent(claude[1]);
+      const reselect = this.foreground.packageIdentity === CLAUDE_PACKAGE && this.claudeSelected === id;
       this.foreground = { packageIdentity: CLAUDE_PACKAGE, processName: 'claude.exe' };
-      const record = this.claudeRecords.get(decodeURIComponent(claude[1]));
+      const record = this.claudeRecords.get(id);
       if (record && !record.isArchived) {
-        record.lastFocusedAt = this.clock.now() + 1;
+        if (!reselect) record.lastFocusedAt = this.clock.now() + 1;
+        this.claudeSelected = id;
         this.composer.claude = true;
       }
     }

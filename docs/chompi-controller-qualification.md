@@ -300,7 +300,16 @@ dismisses attention. Before any input:
    in the #743 trial). A name any other thread in that index also has fails
    closed too, because collapsed, archived or deleted rows are not in the
    sidebar's count. Claude: only the target session's `lastFocusedAt` moved past the
-   press time and no other session's is newer.
+   press time and no other session's is newer. Claude stamps `lastFocusedAt` only
+   when the selection changes, so a link to the session it already shows moves
+   nothing (found in the #743 trial). That press also verifies when Claude was
+   in front before the link and the target was strictly newest among known
+   sessions (slot records and Hub `hostSessionId`s, read completely), and after
+   the link it still is and no other session's moved past the press. A tie,
+   Claude not in front or any unknown read gives no extra evidence; the advance
+   rule applies. Residual: the window's view is unobserved, so Code home, the
+   Chat tab or an unknown session in front is covered only by the link
+   navigating; the composer check does not narrow it.
 4. **Composer.** Codex sends `Alt+L`; both clients then require UI Automation
    keyboard focus on the composer.
 5. **Unsupported client version.** The bridge keeps a list of qualified
@@ -363,7 +372,8 @@ that cannot be mistaken for any task state.
 | Key for an archived task, an empty slot or a stale Hub feed with no cached target | No link opened; error light |
 | Claude Desktop ID unknown, malformed or archived | No link opened; error light |
 | Hub retires a session after idle, close or `/clear` | Slot kept; key shows ended; it still opens the same task |
-| Link opened but a different task stays selected (Codex unknown ID, Claude Code home) | Verification fails; nothing typed |
+| Link opened but a different task stays selected (Codex unknown ID; Claude Code home when the target is not strictly newest among known sessions) | Verification fails; nothing typed |
+| Claude in front on Code home or the Chat tab, the target strictly newest among known sessions, and the link does not navigate | Accepted residual: verification passes. The #743 trial checks that the link navigates |
 | Two live tasks with the same title | Codex verification fails closed; Claude still verifies by ID |
 | Target app not foreground after open | No input |
 | Task switch between Record and Send | Pending target cleared; Send refused |
