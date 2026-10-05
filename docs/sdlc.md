@@ -290,7 +290,9 @@ permission to replace an owner.
    to clear a reference (the read can lag a few minutes), and read back the
    issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
+   fixed comparison through code-review. When the change has behavior a user or
+   device would notice, also obtain an independent [Acceptance review](#acceptance-review)
+   of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
 4. Read all GitHub reviews/threads and verify the [Depot evidence](#depot-ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
@@ -316,6 +318,52 @@ permission to replace an owner.
    Do not close future implementation or device acceptance issues with a bootstrap.
 7. Clean up this delivery's own worktree and scratch as described in
    [Cleanup after delivery](#cleanup-after-delivery).
+
+### Acceptance review
+
+Verification has three tiers.
+
+1. **Automatic.** Once an application has a shared scenario catalog, every PR
+   runs it in CI through the in-memory end-to-end harness.
+   [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846) adds
+   the catalog for the new runtime.
+2. **Acceptance reviewer.** A PR with behavior a user or device would notice
+   gets a third independent reviewer beside Standards and Specification. Such
+   behavior includes pages, interactions, HTTP or MCP results, agent status and
+   device output. The reviewer has no part in the implementation or the other
+   review axes, and works through these steps:
+   1. Start a disposable verification run of the exact reviewed head with
+      synthetic data and simulated devices. Use the new runtime's adapter once
+      #846 lands. Until then, use `npm run -s verify` or `npm run -s verify:compose`
+      ([app verification](app-verification.md)).
+   2. Exercise the story's acceptance scenarios as a user would: the browser
+      dashboard, HTTP and MCP calls, synthetic agent events and simulated
+      device output.
+   3. Check each acceptance item against what the reviewer observed.
+   4. Stop the runs and confirm their cleanup.
+   5. Return `satisfied` or `not satisfied`, with findings, the scenarios run
+      and the run IDs.
+
+   The reviewer may only start, use and stop its own disposable runs, and write
+   inside their runtime and proof roots. It makes no source, tracker,
+   installed-service or device change, and never uses personal state. Its
+   screenshots and video stay under `.local/evidence/verify/`. The PR records
+   only the verdict, the scenarios and the run IDs.
+
+   A `not satisfied` verdict blocks merge like the other axes. After a fix, the
+   reviewer re-runs the affected scenarios on the new head. Run at most one
+   Acceptance run at a time on this host, because memory is the constraint.
+
+   A PR with no runnable behavior skips this axis. That covers contracts or
+   library internals without a runnable surface, documentation (the generated
+   work guide keeps its own CI browser checks) and pure code moves. The PR states "no runnable behavior" and why, and the Standards
+   reviewer checks the claim.
+3. **Milestone sweep.** At an installation milestone, run the full scenario
+   catalog against the installed system. Where the milestone requires physical
+   checks, prefer camera frames over the owner's description when a camera is
+   attached. The device-permission rules in `AGENTS.md` still apply. Camera
+   frames show the owner's room, so keep them under `.local/evidence/` and out
+   of GitHub.
 
 ### Cleanup after delivery
 
@@ -400,8 +448,8 @@ verification.
 No project UI requires human approval, including new or materially changed Hub,
 dashboard, device-facing, Guide and Ask interfaces. Record the affected UI and
 applicable automated, browser, visual and accessibility evidence in the PR.
-Independent Standards and Specification reviews, applicable CI and guarded merge
-remain required. A missing required check or blocking finding still prevents merge.
+Independent Standards and Specification reviews, an [Acceptance review](#acceptance-review)
+for runnable behavior, applicable CI and guarded merge remain required. A missing required check or blocking finding still prevents merge.
 
 This policy supersedes older human UI approval requirements in issues, plans and
 dated design snapshots. Preserve their design outcomes, validation, dependencies
