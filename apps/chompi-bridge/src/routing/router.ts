@@ -56,6 +56,14 @@ const CLAUDE_IDS_PER_CALL = 64;
 const MAX_NOTCHES_PER_CALL = 10;
 const MAX_PENDING_NOTCHES = 50;
 
+/** Whether `localId`'s `lastFocusedAt` is known and greater than every other record's; a tie is not newest. */
+function strictlyNewest(desktop: readonly ClaudeDesktopSession[], localId: string): boolean {
+  const own = desktop.find(s => s.localId === localId);
+  if (!own || own.isArchived || own.lastFocusedAt === null) return false;
+  const focusedAt = own.lastFocusedAt;
+  return desktop.every(s => s.localId === localId || s.lastFocusedAt === null || s.lastFocusedAt < focusedAt);
+}
+
 /**
  * Turns bridge events and Hub feed views into fail-closed task focus, dictation and Send. Every keystroke follows a
  * verified target; any doubt refuses, lights the key's error state and leaves no target. It has no Hub write path.
@@ -279,6 +287,7 @@ export class TaskRouter {
     const record = this.#slots.get(slot);
     if (!record) return fail('target', 'empty-slot');
     const { client } = record;
+    let alreadyNewest = false;
 
     // 1. Target check
     const gate = await this.#versionGate(client);
@@ -303,6 +312,8 @@ export class TaskRouter {
         fail('target', 'archived');
         return this.#releaseSlot(slot, 'claude-archived');
       }
+      alreadyNewest = await this.#claudeAlreadyNewest(record.taskId);
+      if (!alive()) return;
     }
 
     // 2. Open
@@ -315,7 +326,7 @@ export class TaskRouter {
     const verifyStart = this.#clock.now();
     let verified: Check = { ok: false, reason: 'not-verified' };
     for (;;) {
-      verified = await this.#verifySelection(record, pressedAt);
+      verified = await this.#verifySelection(record, pressedAt, alreadyNewest);
       if (!alive()) return;
       if (verified.ok || this.#clock.now() - verifyStart + verifyPollMs > verifyTimeoutMs) break;
       await this.#sleep(verifyPollMs);
@@ -384,6 +395,17 @@ export class TaskRouter {
     return records;
   }
 
+  /**
+   * Before the link: Claude is in front and the target's `lastFocusedAt` is strictly the newest of every known Desktop
+   * session. Claude stamps `lastFocusedAt` only when the selection changes, so a link to the session it already shows
+   * moves nothing; this is the evidence verification accepts instead. Any unknown or failed read gives none.
+   */
+  async #claudeAlreadyNewest(taskId: string): Promise<boolean> {
+    if (!(await this.#foreground('claude')).ok) return false;
+    const desktop = await this.#claudeRecords([taskId, ...this.#otherClaudeIds(taskId)]);
+    return !!desktop && strictlyNewest(desktop, taskId);
+  }
+
   async #foreground(client: Client): Promise<Check> {
     const window = await this.#call(() => this.#adapter.foregroundWindow());
     if (!window.ok || window.value.status !== 'known' || window.value.value === null) return { ok: false, reason: 'foreground-unknown' };
@@ -404,18 +426,20 @@ export class TaskRouter {
 
   /**
    * After the link: the foreground package matches, and the exact task is selected. Codex: the selected row shows the
-   * thread's name and no other row shares it. Claude: only the target's `lastFocusedAt` moved past the press.
+   * thread's name and no other row shares it. Claude: only the target's `lastFocusedAt` moved past the press, or, when
+   * it was already strictly the newest before the link, it still is and no other session's moved past the press.
    */
-  async #verifySelection(record: SlotRecord, pressedAt: number): Promise<Check> {
+  async #verifySelection(record: SlotRecord, pressedAt: number, alreadyNewest: boolean): Promise<Check> {
     const foreground = await this.#foreground(record.client);
     if (!foreground.ok) return foreground;
     if (record.client === 'codex') return this.#codexSelection(record.taskId, record.title);
     const desktop = await this.#claudeRecords([record.taskId, ...this.#otherClaudeIds(record.taskId)]);
     if (!desktop) return { ok: false, reason: 'selection-unknown' };
     const target = desktop.find(s => s.localId === record.taskId);
-    if (!target || target.isArchived || target.lastFocusedAt === null || target.lastFocusedAt <= pressedAt) return { ok: false, reason: 'selection-mismatch' };
+    if (!target || target.isArchived || target.lastFocusedAt === null) return { ok: false, reason: 'selection-mismatch' };
     const moved = desktop.some(s => s.localId !== record.taskId && s.lastFocusedAt !== null && s.lastFocusedAt > pressedAt);
-    return moved ? { ok: false, reason: 'selection-ambiguous' } : { ok: true };
+    if (target.lastFocusedAt > pressedAt) return moved ? { ok: false, reason: 'selection-ambiguous' } : { ok: true };
+    return alreadyNewest && !moved && strictlyNewest(desktop, record.taskId) ? { ok: true } : { ok: false, reason: 'selection-mismatch' };
   }
 
   async #composer(client: Client): Promise<Check> {

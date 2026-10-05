@@ -267,6 +267,116 @@ test('Claude verification fails when the link shows Code home or another session
   assert.equal(target(ctx), null);
 });
 
+/** Puts Claude in front showing the session `id`, focused `ago` ms before now; the fed sessions are older. */
+function claudeShowing(ctx, id, ago = 1_000) {
+  ctx.adapter.foreground = { packageIdentity: CLAUDE_PACKAGE, processName: 'claude.exe' };
+  ctx.adapter.claudeSelected = id;
+  ctx.adapter.claudeRecords.get(id).lastFocusedAt = ctx.clock.now() - ago;
+  ctx.adapter.composer.claude = true;
+}
+
+/** Index of the first adapter call matching `predicate`, or -1. */
+const callIndex = (ctx, predicate) => ctx.adapter.calls.findIndex(predicate);
+
+test('a press for the Claude session already selected in front verifies by its already-newest lastFocusedAt', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(1));
+  const focusedAt = ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt;
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.equal(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt, focusedAt, 'Claude stamped nothing');
+  assert.deepEqual(ctx.adapter.opened, [`claude://code/continue?session=${lid(1)}`], 'the link opens once');
+  assert.deepEqual(ctx.adapter.keys, [], 'no keystroke is added');
+  const open = callIndex(ctx, c => c[0] === 'openUri');
+  assert.ok(callIndex(ctx, c => c[0] === 'foregroundWindow') < open, 'the foreground was read before the link');
+  assert.ok(callIndex(ctx, c => c[0] === 'claudeSessions' && c[1].length === 2) < open, 'every known record was read before the link');
+  ctx.press(RECORD);
+  await settle();
+  assert.equal(ctx.lastLog('dictation-started')?.slot, 1, 'the Record re-check accepts the target');
+});
+
+test('a press for another Claude session while Claude is in front still verifies by the advanced lastFocusedAt', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(2));
+  const pressedAt = ctx.clock.now();
+  await ctx.focus(1);
+  assert.deepEqual(target(ctx), { slot: 1, client: 'claude' });
+  assert.ok(ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt > pressedAt, 'the link changed the selection');
+});
+
+test('matrix: an already-selected Claude target that is not strictly the newest fails closed', async t => {
+  for (const [name, other] of [['tie', 0], ['another session newer', 500]]) {
+    const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+    claudeShowing(ctx, lid(1));
+    ctx.adapter.claudeRecords.get(lid(2)).lastFocusedAt = ctx.adapter.claudeRecords.get(lid(1)).lastFocusedAt + other;
+    ctx.press(SLOT(1));
+    await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+    assert.equal(ctx.failures().at(-1)?.step, 'verify', name);
+    assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch', name);
+    assert.equal(target(ctx), null, name);
+    assert.deepEqual(ctx.adapter.keys, [], name);
+    assert.equal(ctx.adapter.count('openUri'), 1, `${name}: the link is not reopened`);
+  }
+});
+
+test('an incomplete Claude read before the link gives no already-selected evidence', async t => {
+  const sessions = Array.from({ length: 80 }, (_, i) => claudeTask(i + 1));
+  const ctx = await setup(t, { sessions });
+  const id = ctx.slots.get(1).taskId;
+  claudeShowing(ctx, id);
+  const realRead = ctx.adapter.claudeSessions.bind(ctx.adapter);
+  // Before the link, the second bounded call (IDs 65 to 80) cannot be read; afterwards every call answers.
+  ctx.adapter.claudeSessions = async ids => (ctx.adapter.opened.length === 0 && ids.includes(lid(80)) ? unknown('store busy') : realRead(ids));
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
+  assert.equal(target(ctx), null);
+  assert.deepEqual(ctx.adapter.keys, []);
+});
+
+test('the already-selected evidence needs Claude in front before the link', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(1));
+  ctx.adapter.foreground = { packageIdentity: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', processName: 'WindowsTerminal.exe' };
+  // A link that raises Claude without stamping: only already-newest evidence could pass, and it must not apply.
+  const record = ctx.adapter.claudeRecords.get(lid(1));
+  const realOpen = ctx.adapter.openUri.bind(ctx.adapter);
+  ctx.adapter.openUri = async uri => { const focusedAt = record.lastFocusedAt; await realOpen(uri); record.lastFocusedAt = focusedAt; };
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.adapter.foreground.packageIdentity, CLAUDE_PACKAGE, 'Claude is in front after the link');
+  assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
+  assert.equal(target(ctx), null);
+  assert.deepEqual(ctx.adapter.keys, []);
+});
+
+test('an already-selected Claude target fails when another session moves past the press', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(1));
+  const realOpen = ctx.adapter.openUri.bind(ctx.adapter);
+  ctx.adapter.openUri = async uri => { await realOpen(uri); ctx.adapter.claudeRecords.get(lid(2)).lastFocusedAt = ctx.clock.now() + 2; };
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1)?.step, 'verify');
+  assert.equal(ctx.failures().at(-1).reason, 'selection-mismatch');
+  assert.equal(target(ctx), null);
+  assert.deepEqual(ctx.adapter.keys, []);
+});
+
+test('an already-selected Claude target must still be strictly the newest after the link', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)] });
+  claudeShowing(ctx, lid(1));
+  // A Desktop session the router learns of only after the link, focused after the target but before the press.
+  ctx.adapter.claudeRecords.set(lid(3), { localId: lid(3), isArchived: false, lastFocusedAt: ctx.clock.now() - 500 });
+  const realOpen = ctx.adapter.openUri.bind(ctx.adapter);
+  ctx.adapter.openUri = async uri => { await realOpen(uri); ctx.feed([claudeTask(1), claudeTask(2), claudeTask(3)]); };
+  ctx.press(SLOT(1));
+  await advance(ctx.clock, PROFILE.timing.verifyTimeoutMs + 200, 50);
+  assert.equal(ctx.failures().at(-1)?.reason, 'selection-mismatch');
+  assert.equal(target(ctx), null);
+  assert.deepEqual(ctx.adapter.keys, []);
+});
+
 test('matrix: an unqualified client version disables that client only', async t => {
   const ctx = await setup(t, { sessions: [claudeTask(1), codexTask(2)] });
   ctx.adapter.versions = { codex: known('26.930.3930.0'), claude: known('2.20000.0.0') };
