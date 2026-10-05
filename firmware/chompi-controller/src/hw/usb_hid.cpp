@@ -358,10 +358,12 @@ bool UsbHidConfigured() { return state.configured; }
 
 bool UsbHidAddressedUnconfigured()
 {
-    const uint8_t now = usb_device.dev_state;
+    const uint8_t dev_state = usb_device.dev_state;
+    const uint8_t old_state = usb_device.dev_old_state;
     return !state.configured
-           && (now == USBD_STATE_ADDRESSED
-               || (now == USBD_STATE_SUSPENDED && usb_device.dev_old_state == USBD_STATE_ADDRESSED));
+           && (dev_state == USBD_STATE_ADDRESSED
+               || (dev_state == USBD_STATE_SUSPENDED
+                   && old_state == USBD_STATE_ADDRESSED));
 }
 
 bool UsbHidCanSend()

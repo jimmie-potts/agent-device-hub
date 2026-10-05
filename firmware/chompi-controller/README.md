@@ -49,13 +49,14 @@ which owns installation and physical acceptance; neither is complete.
   host timeout until a new frame applies) and whether the host heartbeat is
   current.
 - Recovers its USB connection without a power cycle. Once the device has been
-  unconfigured for 3 s, after an unplug and replug, a cable bump or a brief drop
-  of the data lines, it restarts its USB device (detach, re-initialize,
+  unconfigured and unaddressed for 3 s, after an unplug and replug, a cable bump
+  or a brief drop of the data lines, it restarts its USB device (detach, re-initialize,
   re-attach) and retries every 5 s; the host then enumerates it again and a new
-  epoch starts. It restarts only a device the host has not addressed. A
+  epoch starts. A device the host addressed but left unconfigured (a disabled
+  device, a failed driver install, or an enumeration stuck after its address)
+  waits 10 s and then backs off, doubling up to 320 s between restarts. A
   configured device, including one suspended under a sleeping host, is never
-  restarted, nor is one the host addressed and left unconfigured (for example a
-  disabled device or a failed driver install).
+  restarted, and no restart cuts short the charger's port detection.
 
 It never mounts the SD card, so it cannot change music data. It has no audio,
 no MIDI and no CDC serial port, and it does not present the stock

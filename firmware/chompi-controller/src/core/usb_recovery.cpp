@@ -5,24 +5,37 @@ namespace agentctl
 
 bool UsbRecovery::Update(uint32_t now, bool configured, bool addressed)
 {
-    if(configured || addressed)
+    if(configured)
     {
-        waiting_   = false;
-        restarted_ = false;
+        waiting_            = false;
+        retrying_           = false;
+        addressed_restarts_ = 0;
         return false;
     }
-    if(!waiting_)
+    if(!waiting_ || addressed != addressed_)
     {
-        waiting_ = true;
-        since_   = now;
+        waiting_   = true;
+        addressed_ = addressed;
+        since_     = now;
         return false;
     }
-    const uint32_t from = restarted_ ? last_restart_ : since_;
-    const uint32_t wait = restarted_ ? kRetryMs : kSettleMs;
-    if(now - from < wait)
+    uint32_t wait;
+    if(addressed_)
+    {
+        const uint32_t level = addressed_restarts_ < 5 ? addressed_restarts_ : 5;
+        wait                 = kAddressedSettleMs << level;
+        if(wait > kAddressedMaxMs)
+            wait = kAddressedMaxMs;
+    }
+    else
+        wait = retrying_ ? kRetryMs : kSettleMs;
+    if(now - since_ < wait)
         return false;
-    restarted_    = true;
-    last_restart_ = now;
+    if(addressed_)
+        ++addressed_restarts_;
+    else
+        retrying_ = true;
+    since_ = now;
     return true;
 }
 

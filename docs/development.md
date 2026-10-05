@@ -829,7 +829,8 @@ npm run test:firmware:arm
 `test:firmware` builds and runs the pure C++ host tests with a C++17 compiler,
 AddressSanitizer and UndefinedBehaviorSanitizer: protocol vectors, debounce,
 encoder turn and click separation, the bounded queue, session `hello`, host
-timeout, two-part light frames, LED chain encoding and USB restart timing. `test:firmware:arm` downloads GNU Arm
+timeout, two-part light frames, LED chain encoding and USB restart timing and
+back-off. `test:firmware:arm` downloads GNU Arm
 Embedded Toolchain 10.3-2021.10 once into the user cache and verifies its
 SHA-256 (or uses `ARM_GCC_BIN`), fetches the pinned upstream sources into the
 ignored `firmware/chompi-controller/.upstream/`, builds `04_AGENT.bin` and runs

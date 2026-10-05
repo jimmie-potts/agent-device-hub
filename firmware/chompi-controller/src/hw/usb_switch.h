@@ -25,10 +25,14 @@ void ServiceUsbSwitch(Board& board, uint32_t now);
 // Gives the lines back to the charger, as at power-on.
 void UsbReleaseLines(Board& board);
 
-// Takes the lines back to the Daisy and ends any pending lend, before a USB
-// restart (#743). Like the other take-backs, it ignores an "unknown port"
-// result for 5 s so an interrupted detection does not lend the lines again
-// while the host enumerates.
+// True while the lines are lent to the charger for port detection (at most
+// about 1.5 s). The USB restart waits for the lend to end (#743).
+bool UsbLinesLent();
+
+// Takes the lines back to the Daisy before a USB restart (#743). Should a lend
+// still be pending, it ends it and, like the other take-backs, ignores an
+// "unknown port" result for 5 s; a routine restart starts no quiet window, so
+// port detection at the next plug-in is not suppressed.
 void UsbReclaimLines(Board& board, uint32_t now);
 
 } // namespace hw

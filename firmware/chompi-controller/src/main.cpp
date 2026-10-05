@@ -74,7 +74,11 @@ int main()
 
         // #743: the device stack does not recover from a disconnect by itself.
         // Detach and re-attach; the controller sees a new enumeration below.
-        if(usb_recovery.Update(now, hw::UsbHidConfigured(), hw::UsbHidAddressedUnconfigured()))
+        // Port detection lends the lines to the charger for about 1.5 s; the
+        // decision waits until they are back.
+        if(!hw::UsbLinesLent()
+           && usb_recovery.Update(now, hw::UsbHidConfigured(),
+                                  hw::UsbHidAddressedUnconfigured()))
         {
             hw::UsbHidStop();
             hw::UsbReclaimLines(board, now);

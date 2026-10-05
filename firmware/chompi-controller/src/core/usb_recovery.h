@@ -8,13 +8,13 @@
 //
 // It decides from the USB state alone. The charger's input-power reading is not
 // usable here: after an unplug it kept reporting no power while the host was
-// already enumerating the device. It restarts only a device that the host has
-// not even addressed (the stuck state the trial showed). A configured device,
-// including one suspended under a sleeping host, is never restarted, and
-// neither is one the host addressed and deliberately left unconfigured (a
-// disabled device node, a failed or slow driver install, SET_CONFIGURATION 0).
-// With no host attached the retries only re-attach the device, with a brief
-// main-loop pause for the stack re-initialization.
+// already enumerating the device. A configured device, including one suspended
+// under a sleeping host, is never restarted. A device the host has not
+// addressed restarts after 3 s and then every 5 s; with no host attached that
+// only re-attaches it, with a brief main-loop pause. A device the host
+// addressed but left unconfigured may be healthy (a disabled device node, a
+// failed or slow driver install, SET_CONFIGURATION 0) or stuck mid-enumeration,
+// so it waits 10 s and backs off, doubling up to 320 s between restarts.
 #pragma once
 
 #include <cstdint>
@@ -25,10 +25,12 @@ namespace agentctl
 class UsbRecovery
 {
   public:
-    // From becoming unconfigured and unaddressed to the first restart.
+    // Unaddressed: from becoming unconfigured to the first restart, then between restarts.
     static constexpr uint32_t kSettleMs = 3000;
-    // Between restarts while the device stays that way.
-    static constexpr uint32_t kRetryMs = 5000;
+    static constexpr uint32_t kRetryMs  = 5000;
+    // Addressed but unconfigured: the first wait, doubling per restart up to the cap.
+    static constexpr uint32_t kAddressedSettleMs = 10000;
+    static constexpr uint32_t kAddressedMaxMs    = 320000;
 
     // Call every loop pass. `now` is in milliseconds and may wrap. `addressed`
     // means the host gave the device an address but no configuration (also
@@ -37,10 +39,11 @@ class UsbRecovery
     bool Update(uint32_t now, bool configured, bool addressed);
 
   private:
-    bool     waiting_      = false;
-    uint32_t since_        = 0;
-    bool     restarted_    = false;
-    uint32_t last_restart_ = 0;
+    bool     waiting_            = false;
+    bool     addressed_          = false; // the state `since_` counts for
+    uint32_t since_              = 0;     // start of the current wait
+    bool     retrying_           = false; // an unaddressed restart already happened
+    uint32_t addressed_restarts_ = 0;     // back-off level, reset by a configuration
 };
 
 } // namespace agentctl
