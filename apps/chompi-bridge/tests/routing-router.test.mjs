@@ -7,7 +7,7 @@ import { createUnsupportedAdapter } from '../dist/windows/index.js';
 import { SlotStore } from '../dist/routing/slots.js';
 import { DEFAULT_PROFILE_PATH, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
-import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, HELPER_FOCUS_SETTLE_MS, advance, onCleanup, claudeTask, codexTask, known, lid, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
+import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, HELPER_FOCUS_SETTLE_MS, advance, claudeTask, codexTask, known, lid, onCleanup, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
 
 const base = JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8'));
 const PROFILE = validateProfile(base);

@@ -34,11 +34,12 @@ export function onCleanup(t, fn) {
   if (!stack) {
     cleanups.set(t, stack = []);
     t.after(async () => {
-      let failure;
+      const errors = [];
       while (stack.length) {
-        try { await stack.pop()(); } catch (error) { failure ??= error; }
+        try { await stack.pop()(); } catch (error) { errors.push(error); }
       }
-      if (failure) throw failure;
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'test cleanup failed');
     });
   }
   stack.push(fn);

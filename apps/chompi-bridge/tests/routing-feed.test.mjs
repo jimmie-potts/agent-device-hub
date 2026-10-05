@@ -4,7 +4,7 @@ import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHubFeed, normalizeSnapshot, readTokenFile, FeedConfigError } from '../dist/routing/feed.js';
 import { ManualClock } from '../dist/clock.js';
-import { FakeHub, advance, claudeTask, onCleanup, codexTask, envelope, hubSession, lid, settle, tempDir, tid } from './routing-helpers.mjs';
+import { FakeHub, advance, claudeTask, codexTask, envelope, hubSession, lid, onCleanup, settle, tempDir, tid } from './routing-helpers.mjs';
 
 const TOKEN = 'feed-secret-token-0123456789';
 const ORIGIN = 'http://127.0.0.1:8788';
