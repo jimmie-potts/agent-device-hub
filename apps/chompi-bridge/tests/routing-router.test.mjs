@@ -7,7 +7,7 @@ import { createUnsupportedAdapter } from '../dist/windows/index.js';
 import { SlotStore } from '../dist/routing/slots.js';
 import { DEFAULT_PROFILE_PATH, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
-import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, HELPER_FOCUS_SETTLE_MS, advance, claudeTask, codexTask, known, lid, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
+import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, HELPER_FOCUS_SETTLE_MS, advance, claudeTask, codexTask, known, lid, onCleanup, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
 
 const base = JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8'));
 const PROFILE = validateProfile(base);
@@ -22,7 +22,7 @@ async function setup(t, { sessions = [], status = 'current', profile = PROFILE, 
   const slots = await SlotStore.open(join(dir, 'slots.json'), { clock });
   const logs = [];
   const router = new TaskRouter({ adapter, lights, slots, profile, clock, log: event => logs.push(event) });
-  t.after(() => router.close());
+  onCleanup(t, () => router.close());
   router.start();
   let sequence = 1;
   const event = (control, kind, extra = {}) => ({ type: 'input', at: clock.now(), epoch: 7, sequence: sequence++, control, kind, delta: 0, synthetic: false, ...extra });
@@ -1587,7 +1587,7 @@ test('on a platform without an adapter every focus and Send fails closed and not
   const slots = await SlotStore.open(join(tempDir(t), 'slots.json'), { clock });
   const logs = [];
   const router = new TaskRouter({ adapter: createUnsupportedAdapter('linux'), lights: new FakeLights(), slots, profile: PROFILE, clock, log: e => logs.push(e) });
-  t.after(() => router.close());
+  onCleanup(t, () => router.close());
   router.start();
   router.handleFeed(view([codexTask(1), claudeTask(2)]));
   let sequence = 1;

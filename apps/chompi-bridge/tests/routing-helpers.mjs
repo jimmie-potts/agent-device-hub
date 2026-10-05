@@ -22,9 +22,32 @@ export async function advance(clock, ms, step = 25) {
   for (let elapsed = 0; elapsed < ms; elapsed += step) { clock.advance(Math.min(step, ms - elapsed)); await settle(); }
 }
 
+const cleanups = new WeakMap();
+
+/**
+ * Runs `fn` after the test, in reverse registration order. `node:test` runs `t.after` hooks in registration order,
+ * which would remove a temporary directory before the router, slot store or watcher writing into it has closed
+ * (#806). Registering both through here closes the writers first, then removes the directory.
+ */
+export function onCleanup(t, fn) {
+  let stack = cleanups.get(t);
+  if (!stack) {
+    cleanups.set(t, stack = []);
+    t.after(async () => {
+      const errors = [];
+      while (stack.length) {
+        try { await stack.pop()(); } catch (error) { errors.push(error); }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'test cleanup failed');
+    });
+  }
+  stack.push(fn);
+}
+
 export function tempDir(t, prefix = 'chompi-routing-') {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  onCleanup(t, () => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 

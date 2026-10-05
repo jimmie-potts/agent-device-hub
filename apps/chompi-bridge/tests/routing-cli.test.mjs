@@ -9,7 +9,7 @@ import { ChompiSimulator } from '../dist/simulator.js';
 import { FakeTransport } from '../dist/fake-transport.js';
 import { DEFAULT_PROFILE_PATH } from '../dist/routing/profile.js';
 import { CONTROLLER } from './helpers.mjs';
-import { FakeAdapter, FakeHub, advance, codexTask, settle, tempDir, tid } from './routing-helpers.mjs';
+import { FakeAdapter, FakeHub, advance, codexTask, onCleanup, settle, tempDir, tid } from './routing-helpers.mjs';
 
 const TOKEN = 'cli-secret-token-abcdef';
 
@@ -64,7 +64,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
   const clock = new ManualClock(1_700_000_000_000);
   const simulator = new ChompiSimulator({ clock });
   simulator.plug();
-  t.after(() => simulator.unplug());
+  onCleanup(t, () => simulator.unplug());
   const hub = new FakeHub();
   hub.sessions = [codexTask(1)];
   const adapter = new FakeAdapter(clock);
@@ -76,6 +76,7 @@ test('run with a profile wires lock, bridge, feed and router: a slot press opens
     process: Object.assign(new EventEmitter(), { exit() { throw new Error('unexpected exit'); } }),
     createHidTransport: () => simulator.transport, createOsAdapter: async () => adapter,
   });
+  onCleanup(t, async () => { controller.abort(); await running.catch(() => {}); });
   // Virtual time with Hub heartbeats every 100 ms, as the real Hub sends every second.
   const run = async ms => { for (let elapsed = 0; elapsed < ms; elapsed += 100) { if (hub.stream && !hub.stream.closed) hub.heartbeat(); await advance(clock, 100, 50); } };
   // The token file read runs on the libuv pool, outside virtual time.
@@ -133,7 +134,7 @@ test('routing warms the adapter first and releases keys on exit and on an uncaug
   const clock = new ManualClock(1_700_000_000_000);
   const simulator = new ChompiSimulator({ clock });
   simulator.plug();
-  t.after(() => simulator.unplug());
+  onCleanup(t, () => simulator.unplug());
   const hub = new FakeHub();
   const adapter = new FakeAdapter(clock);
   const hooks = Object.assign(new EventEmitter(), { exits: [], exit(code) { this.exits.push(code); } });
@@ -143,6 +144,7 @@ test('routing warms the adapter first and releases keys on exit and on an uncaug
     ...streams, env: { XDG_RUNTIME_DIR: paths.runtime }, clock, fetch: hub.fetch, signal: controller.signal, process: hooks,
     createHidTransport: () => simulator.transport, createOsAdapter: async () => adapter,
   });
+  onCleanup(t, async () => { controller.abort(); await running.catch(() => {}); });
   for (let i = 0; i < 100 && !streams.out().includes('adapter-ready'); i++) { await new Promise(resolve => setTimeout(resolve, 5)); await advance(clock, 50, 50); }
   const ready = JSON.parse(streams.out().split('\n').find(line => line.includes('adapter-ready')));
   assert.deepEqual(ready.result, { codex: '26.930.3930.0', claude: '2.19675.0.0' });
