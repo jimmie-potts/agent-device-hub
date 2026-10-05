@@ -26,8 +26,10 @@ void ServiceUsbSwitch(Board& board, uint32_t now);
 void UsbReleaseLines(Board& board);
 
 // Takes the lines back to the Daisy and ends any pending lend, before a USB
-// restart (#743).
-void UsbReclaimLines(Board& board);
+// restart (#743). Like the other take-backs, it ignores an "unknown port"
+// result for 5 s so an interrupted detection does not lend the lines again
+// while the host enumerates.
+void UsbReclaimLines(Board& board, uint32_t now);
 
 } // namespace hw
 } // namespace agentctl

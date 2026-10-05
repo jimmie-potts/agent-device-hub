@@ -356,6 +356,14 @@ uint32_t UsbHidGeneration() { return state.generation; }
 
 bool UsbHidConfigured() { return state.configured; }
 
+bool UsbHidAddressedUnconfigured()
+{
+    const uint8_t now = usb_device.dev_state;
+    return !state.configured
+           && (now == USBD_STATE_ADDRESSED
+               || (now == USBD_STATE_SUSPENDED && usb_device.dev_old_state == USBD_STATE_ADDRESSED));
+}
+
 bool UsbHidCanSend()
 {
     return state.configured && !state.tx_busy

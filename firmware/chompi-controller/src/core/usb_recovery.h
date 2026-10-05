@@ -8,9 +8,13 @@
 //
 // It decides from the USB state alone. The charger's input-power reading is not
 // usable here: after an unplug it kept reporting no power while the host was
-// already enumerating the device. A configured device, including one suspended
-// under a sleeping host, is never restarted; with no host attached the retries
-// are harmless.
+// already enumerating the device. It restarts only a device that the host has
+// not even addressed (the stuck state the trial showed). A configured device,
+// including one suspended under a sleeping host, is never restarted, and
+// neither is one the host addressed and deliberately left unconfigured (a
+// disabled device node, a failed or slow driver install, SET_CONFIGURATION 0).
+// With no host attached the retries only re-attach the device, with a brief
+// main-loop pause for the stack re-initialization.
 #pragma once
 
 #include <cstdint>
@@ -21,14 +25,16 @@ namespace agentctl
 class UsbRecovery
 {
   public:
-    // From losing (or never having) the host's configuration to the first restart.
+    // From becoming unconfigured and unaddressed to the first restart.
     static constexpr uint32_t kSettleMs = 3000;
-    // Between restarts while the device stays unconfigured.
+    // Between restarts while the device stays that way.
     static constexpr uint32_t kRetryMs = 5000;
 
-    // Call every loop pass. `now` is in milliseconds and may wrap. True when
-    // the caller should restart the USB device now.
-    bool Update(uint32_t now, bool configured);
+    // Call every loop pass. `now` is in milliseconds and may wrap. `addressed`
+    // means the host gave the device an address but no configuration (also
+    // while suspended in that state). True when the caller should restart the
+    // USB device now.
+    bool Update(uint32_t now, bool configured, bool addressed);
 
   private:
     bool     waiting_      = false;

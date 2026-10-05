@@ -3,9 +3,9 @@
 namespace agentctl
 {
 
-bool UsbRecovery::Update(uint32_t now, bool configured)
+bool UsbRecovery::Update(uint32_t now, bool configured, bool addressed)
 {
-    if(configured)
+    if(configured || addressed)
     {
         waiting_   = false;
         restarted_ = false;

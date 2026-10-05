@@ -74,10 +74,10 @@ int main()
 
         // #743: the device stack does not recover from a disconnect by itself.
         // Detach and re-attach; the controller sees a new enumeration below.
-        if(usb_recovery.Update(now, hw::UsbHidConfigured()))
+        if(usb_recovery.Update(now, hw::UsbHidConfigured(), hw::UsbHidAddressedUnconfigured()))
         {
             hw::UsbHidStop();
-            hw::UsbReclaimLines(board);
+            hw::UsbReclaimLines(board, now);
             hw::UsbHidInit(serial);
         }
 
