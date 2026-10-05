@@ -59,11 +59,11 @@ TEST("usb recovery: addressed but unconfigured waits 10 s and backs off to 320 s
 TEST("usb recovery: a configuration resets the back-off and the timers")
 {
     UsbRecovery r;
-    Run(r, 0, 80000, false, true); // restarts at 10 s and 30 s, back-off at 40 s
+    CHECK_EQ(Run(r, 0, 80000, false, true), 3); // restarts at 10, 30 and 70 s; next would be 80 s later
     Run(r, 80010, 90000, true, false);
     uint32_t fired[1] = {};
     CHECK_EQ(Run(r, 90010, 100500, false, true, fired, 1), 1);
-    CHECK_EQ(fired[0], 100010u); // a fresh 10 s, not 40 s
+    CHECK_EQ(fired[0], 100010u); // a fresh 10 s, not 80 s
     uint32_t again[1] = {};
     Run(r, 100510, 110000, true, false);
     CHECK_EQ(Run(r, 110010, 113100, false, false, again, 1), 1);
@@ -93,6 +93,16 @@ TEST("usb recovery: re-enumeration that flips addressed and unaddressed keeps th
     CHECK(fired[1] - fired[0] >= 20000u);
     CHECK(fired[2] - fired[1] >= 40000u);
     CHECK(fired[3] - fired[2] >= 80000u);
+}
+
+TEST("usb recovery: a new unaddressed episode settles 3 s again")
+{
+    UsbRecovery r;
+    CHECK_EQ(Run(r, 0, 3100, false, false), 1);      // restart at 3 s
+    CHECK_EQ(Run(r, 3110, 4000, false, true), 0);    // the host addresses it
+    uint32_t fired[1] = {};
+    CHECK_EQ(Run(r, 4010, 7100, false, false, fired, 1), 1);
+    CHECK_EQ(fired[0], 7010u);                       // 3 s, not the 5 s retry
 }
 
 TEST("usb recovery: a short loss while the host re-enumerates needs no restart")

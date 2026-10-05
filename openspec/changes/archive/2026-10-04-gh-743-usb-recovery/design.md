@@ -13,13 +13,13 @@ The controller registers a custom HID class on libDaisy's ST device stack once a
 
 ## Failure and recovery
 
-A restart that fails to enumerate is retried every 5 s, without limit. A power cycle remains the fallback. The stale charger reading also feeds the low-battery lockout and is tracked separately.
+An unaddressed device whose restart fails to enumerate is retried every 5 s, without limit; an addressed but unconfigured one backs off to every 320 s; a configuration resets both. A power cycle remains the fallback. The stale charger reading also feeds the low-battery lockout and is tracked separately.
 
 ## Acceptance examples
 
 | Example | Evidence |
 | --- | --- |
-| Unconfigured: restart after 3 s, then every 5 s | `test_usb_recovery.cpp` |
+| Unaddressed: restart after 3 s, then every 5 s | `test_usb_recovery.cpp` |
 | Configured or suspended: never restarted | `test_usb_recovery.cpp` |
 | A configuration stops retries; a later loss settles again | `test_usb_recovery.cpp` |
 | Addressed but unconfigured: 10 s, doubling to 320 s; the back-off survives re-enumeration flips and a configuration resets it | `test_usb_recovery.cpp` |

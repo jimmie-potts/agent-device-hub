@@ -14,9 +14,11 @@ bool UsbRecovery::Update(uint32_t now, bool configured, bool addressed)
     }
     if(!waiting_ || addressed != addressed_)
     {
+        // A new episode: an unaddressed one gets the 3 s settle again.
         waiting_   = true;
         addressed_ = addressed;
         since_     = now;
+        retrying_  = false;
         return false;
     }
     uint32_t wait;

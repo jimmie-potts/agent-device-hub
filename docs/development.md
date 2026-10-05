@@ -830,12 +830,12 @@ npm run test:firmware:arm
 AddressSanitizer and UndefinedBehaviorSanitizer: protocol vectors, debounce,
 encoder turn and click separation, the bounded queue, session `hello`, host
 timeout, two-part light frames, LED chain encoding and USB restart timing and
-back-off. `test:firmware:arm` downloads GNU Arm
-Embedded Toolchain 10.3-2021.10 once into the user cache and verifies its
-SHA-256 (or uses `ARM_GCC_BIN`), fetches the pinned upstream sources into the
-ignored `firmware/chompi-controller/.upstream/`, builds `04_AGENT.bin` and runs
-the artifact check: memory regions, `boot_info` at `0x38800000`, the controller
-USB identity and the absence of MIDI, CDC and SD code. The Firmware CI job runs
+back-off. `test:firmware:arm` downloads GNU Arm Embedded Toolchain
+10.3-2021.10 once into the user cache and verifies its SHA-256 (or uses
+`ARM_GCC_BIN`), fetches the pinned upstream sources into the ignored
+`firmware/chompi-controller/.upstream/`, builds `04_AGENT.bin` and runs the
+artifact check: memory regions, `boot_info` at `0x38800000`, the controller USB
+identity and the absence of MIDI, CDC and SD code. The Firmware CI job runs
 both. Neither flashes or opens a device; installation and physical behavior
 belong to #743.
 
