@@ -152,6 +152,11 @@ session records by name and key only, and Codex's own thread names from `session
   than 64 `Button` elements in scope, before that filter, is `unknown`) and report the focused one's index and the
   card's identity (its container's UI Automation runtime ID, not text; that a new card never shares it is assumed). They move keyboard focus to one of them, or
   press the focused one. They return counts, indexes, booleans and that ID only, and never read a Name or Value.
+  - The wheel's stops are the actionable buttons, except that a Claude question card stops only on its answer rows
+    and its "Other" row (the buttons carrying the class token `text-left`). A Claude permission card and Codex cards
+    stop on every actionable button.
+  - After a focus request the helper reads focus back every 25 ms for at most 400 ms, because Claude applies focus
+    asynchronously, and answers the index it observed.
   - Claude's card is the one element carrying `epitaxy-approval-card`.
   - Codex's card is the focused button's parent `Group`, only while no composer exists, exactly one sidebar row is
     selected (the thread view) and the group directly holds a `Text` element and at least two actionable buttons.
@@ -324,8 +329,12 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
     still checking the window (`superseded`), even when Record is released again before the check ends, and during a
     Send's Enter keystroke the chord goes down right after it.
 - Card answers: while a card is open in a qualified Codex or Claude window in front:
-  - A big-wheel turn moves keyboard focus one actionable button per `cards.stepCounts` encoder counts. The count
-    restarts on a reversal, so a small wiggle back never steps back. Steps stop at the first and last button.
+  - A big-wheel turn moves keyboard focus one stop per `cards.stepCounts` encoder counts. The count restarts on a
+    reversal, so a small wiggle back never steps back. Steps stop at the first and last stop. A Claude question
+    card's stops are its answer rows and its "Other" row; other cards stop on every actionable button.
+  - A step counts as chosen only when focus is seen on the requested stop within the helper's 400 ms read-back.
+    Focus that Claude applies later is not chosen, and a click then presses nothing. A still click while a step's
+    read-back is still running is refused (`card-busy`) and presses nothing; click again once the step is done.
   - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
     least one deliberate step is needed: a Codex card opens with its approve button focused, and a click without a
     turn presses nothing (`card-nothing-chosen`). A step clamped at the first or last button chooses the button that

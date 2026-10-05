@@ -418,7 +418,8 @@ that cannot be mistaken for any task state.
 | Approval or question card visible, or card state unknown | Send and Play refused; key press does not approve or acknowledge |
 | Hub `approval` attention or a stale feed without a visible card | Cut assurance (#821): Send types one Enter; the card and composer checks are its only guards |
 | Codex card with its own focused `ProseMirror` field | Accepted residual (#821): counts as the composer and accepts Enter; not observed |
-| Card open: wheel turn | Focus moves one actionable button per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped |
+| Card open: wheel turn | Focus moves one stop per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped. A Claude question card's stops are its answer rows and "Other" only (class token `text-left`), not its header or footer buttons; other cards stop on every actionable button |
+| Card open: Claude applies a wheel step's focus late | Chosen when focus is seen on the requested stop within the helper's 400 ms read-back; otherwise no choice and a click presses nothing. A still click during the read-back is refused (`card-busy`) |
 | Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
 | Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. One clockwise step on such a Codex card chooses approve (clamped at the end) |
 | A card replaced by another with the same buttons | Assumed: the new card has a new runtime ID, so the earlier choice does not apply; the installed check below confirms it for a multi-question Claude card |
@@ -477,6 +478,10 @@ With harmless cards in throwaway tasks, after the bridge with #821 is installed:
    a click presses nothing and the wheel LEDs flash red.
 4. Click into a task with the mouse and send with Play; pick a Claude question option and a permission option
    with the wheel; confirm that a light wheel touch while clicking does not change the option.
+5. On a Claude question card, confirm that the wheel steps through the option rows and "Other" only, never the
+   header or footer buttons, and that a still click right after a step presses the option reached (the 2026-10-05
+   live check found every click refused while Claude applied focus late). On a permission card, confirm that the
+   wheel steps through all its answers.
 
 ## Findings for dependent work
 

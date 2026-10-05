@@ -7,7 +7,7 @@ import { createUnsupportedAdapter } from '../dist/windows/index.js';
 import { SlotStore } from '../dist/routing/slots.js';
 import { DEFAULT_PROFILE_PATH, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
-import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, advance, claudeTask, codexTask, known, lid, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
+import { CLAUDE_PACKAGE, CODEX_PACKAGE, FakeAdapter, FakeLights, HELPER_FOCUS_SETTLE_MS, advance, claudeTask, codexTask, known, lid, settle, tempDir, tid, unknown, view } from './routing-helpers.mjs';
 
 const base = JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8'));
 const PROFILE = validateProfile(base);
@@ -1464,6 +1464,46 @@ test('a repeat bounce or a Send abandoned for Record does not flash the wheel LE
   await ctx.click(PLAY);
   assert.equal(ctx.lastLog('send-refused').reason, 'composer-unfocused');
   assert.deepEqual(wheel(), [PROFILE.colors.error, PROFILE.colors.error], 'other refusals still flash');
+});
+
+test('card: focus that Claude applies within the helper\'s read-back poll is chosen; later focus is not', async t => {
+  // Live check on 2026-10-05: Claude reported no focus right after SetFocus and the requested button 300 ms later.
+  const ctx = await claudeCard(t, 3);
+  ctx.adapter.focusLagMs = 300; // within the helper's read-back: the reply names the requested index
+  ctx.turn(45, STEP);
+  await advance(ctx.clock, 300, 25);
+  assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'claude', index: 0, count: 3 });
+  await advance(ctx.clock, STILL, 50);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]]);
+
+  const late = await claudeCard(t, 3);
+  late.adapter.focusLagMs = HELPER_FOCUS_SETTLE_MS + 200; // past the read-back: the reply says no button has focus
+  late.turn(45, STEP);
+  await advance(late.clock, HELPER_FOCUS_SETTLE_MS, 25);
+  assert.deepEqual(late.lastLog('card-step'), { type: 'card-step', client: 'claude', index: null, count: 3 });
+  await advance(late.clock, 300, 50);
+  assert.equal(late.adapter.cards.claude.focused, 0, 'focus landed after the reply');
+  await late.click(WHEEL);
+  assert.equal(late.lastLog('card-refused').reason, 'card-nothing-chosen', 'a choice is recorded only when the reply names the requested button');
+  assert.deepEqual(late.adapter.cardPressed, []);
+});
+
+test('card: a still click during a lagging focus read-back is refused and presses nothing', async t => {
+  const ctx = await claudeCard(t, 3);
+  ctx.adapter.focusLagMs = STILL + 100; // the read-back is still running when the wheel has been still long enough
+  ctx.turn(45, STEP);
+  await advance(ctx.clock, STILL + 25, 25);
+  assert.equal(ctx.lastLog('card-step'), undefined, 'the step is still in flight');
+  await ctx.click(WHEEL);
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-busy');
+  assert.deepEqual(ctx.adapter.cardPressed, []);
+  assert.equal(ctx.adapter.enters, 0);
+  await advance(ctx.clock, 200, 25);
+  assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'claude', index: 0, count: 3 }, 'the step completes afterwards');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['claude', 0]], 'a later still click presses the chosen option');
 });
 
 test('scroll counts never shorten the first card step', async t => {

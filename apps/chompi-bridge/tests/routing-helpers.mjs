@@ -1,7 +1,12 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeSnapshot } from '../dist/routing/feed.js';
+import { helperScriptPath } from '../dist/windows/index.js';
+
+/** The helper's focus read-back bound (`$FocusSettleMs` in uia-helper.ps1), so the fake models the shipped helper. */
+export const HELPER_FOCUS_SETTLE_MS = Number(/^\$FocusSettleMs = (\d+)$/m.exec(readFileSync(helperScriptPath(), 'utf8'))?.[1]);
+if (!Number.isInteger(HELPER_FOCUS_SETTLE_MS)) throw new Error('uia-helper.ps1 defines no $FocusSettleMs');
 
 export const CODEX_PACKAGE = 'OpenAI.Codex_2p2nqsd0c76g0';
 export const CLAUDE_PACKAGE = 'Claude_pzs8sxrjxfjjc';
@@ -203,6 +208,13 @@ export class FakeAdapter {
   cards = { codex: null, claude: null };
   /** Every opened card gets a new identity, as a new UI Automation element does. */
   cardSerial = 0;
+  /**
+   * How long the client takes to apply a focus request, and how long the helper reads focus back before it replies
+   * (its bounded poll). Claude applies focus asynchronously: in the live check the read-back was -1 at once and the
+   * requested index 300 ms later. Focus that lands after the poll is applied later and the reply says none.
+   */
+  focusLagMs = 0;
+  focusPollMs = HELPER_FOCUS_SETTLE_MS;
   /** Card buttons the adapter focused and pressed: [client, index]. */
   cardFocused = [];
   cardPressed = [];
@@ -244,9 +256,17 @@ export class FakeAdapter {
     if (!card.value) return unknown('card-absent');
     if (card.value.id !== cardId || card.value.buttons !== count) return unknown('card-changed');
     if (index < 0 || index >= count) return unknown('card-index');
-    card.value.focused = index;
     this.cardFocused.push([client, index]);
-    return known(index);
+    const target = card.value;
+    if (this.focusLagMs === 0) {
+      target.focused = index;
+      return known(index);
+    }
+    // Like the helper: the reply comes once focus is seen on the requested button or the read-back bound runs out,
+    // on the manual clock, so the router's step stays in flight meanwhile.
+    this.clock.setTimeout(() => { target.focused = index; }, this.focusLagMs);
+    await new Promise(resolve => this.clock.setTimeout(resolve, Math.min(this.focusLagMs, this.focusPollMs)));
+    return known(target.focused);
   }
 
   async invokeCardButton(client, cardId, index, count) {
