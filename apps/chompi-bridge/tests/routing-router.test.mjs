@@ -1408,18 +1408,41 @@ test('card: a click presses only a button the wheel itself moved to on this card
   assert.deepEqual(reopened.adapter.cardPressed, []);
 });
 
-test('card: one clockwise step chooses a Codex card\'s focused approve button, clamped at the end', async t => {
+test('card: a clamped step chooses nothing; approving a card that opens on its last stop needs a turn away and back', async t => {
+  // Owner decision on #821 (issuecomment-6003766052): approval comes from a click on a stop the wheel visibly moved
+  // to, never from a turn that could not move the focus.
   const ctx = await setup(t);
   front(ctx, 'codex');
-  ctx.adapter.openCard('codex', 2, 1); // approve is the last button and opens focused
+  ctx.adapter.openCard('codex', 2, 1); // approve is the last stop and opens focused
   ctx.turn(45, STEP);
   await settle();
-  assert.deepEqual(ctx.adapter.cardFocused, [], 'focus is already on the last button; nothing moves');
+  assert.deepEqual(ctx.adapter.cardFocused, [], 'focus is already on the last stop; nothing moves and no adapter call is made');
+  assert.equal(ctx.adapter.count('focusCardButton'), 0);
   assert.deepEqual(ctx.lastLog('card-step'), { type: 'card-step', client: 'codex', index: 1, count: 2 });
   await advance(ctx.clock, STILL, 50);
   await ctx.click(WHEEL);
-  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'one deliberate turn and a still click approve');
+  assert.equal(ctx.lastLog('card-refused').reason, 'card-nothing-chosen');
+  assert.deepEqual(ctx.adapter.cardPressed, [], 'the clamped step approved nothing');
+  ctx.turn(45, -STEP);
+  await settle();
+  ctx.turn(45, STEP);
+  await settle();
+  assert.deepEqual(ctx.adapter.cardFocused, [['codex', 0], ['codex', 1]], 'away to Deny and back to approve');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(WHEEL);
+  assert.deepEqual(ctx.adapter.cardPressed, [['codex', 1]], 'a still click after the real move presses approve once');
   assert.equal(ctx.adapter.enters, 0);
+
+  const kept = await claudeCard(t, 2);
+  kept.turn(45, 2 * STEP);
+  await settle();
+  assert.deepEqual(kept.adapter.cardFocused, [['claude', 1]], 'a real move onto the last stop');
+  kept.turn(45, STEP);
+  await settle();
+  assert.deepEqual(kept.adapter.cardFocused, [['claude', 1]], 'a further clamped step calls nothing');
+  await advance(kept.clock, STILL, 50);
+  await kept.click(WHEEL);
+  assert.deepEqual(kept.adapter.cardPressed, [['claude', 1]], 'the clamped step left the earlier choice from the real move');
 });
 
 test('Record pressed and released during a Send check abandons that Send', async t => {
