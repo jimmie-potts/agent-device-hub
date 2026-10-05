@@ -203,6 +203,10 @@ While the adapter reports a card in the foreground Codex or Claude window at a q
 - **WHEN** the wheel has been still for the stillness time and the owner clicks it while the card button the wheel's step chose has focus
 - **THEN** the adapter presses that button once and no Enter is typed
 
+#### Scenario: Codex card without focus
+- **WHEN** a Codex card opens and Codex gives none of its stops keyboard focus
+- **THEN** one clockwise step focuses Deny, the first stop, and a still click presses Deny, while one counter-clockwise step focuses approve, the last stop
+
 #### Scenario: One turn chooses a focused last button
 - **WHEN** a Codex card opens with its approve button, the last button, focused and the owner turns the wheel clockwise by one step's counts and then clicks it while still
 - **THEN** the clamped step leaves focus on approve and chooses it, and the click presses approve once

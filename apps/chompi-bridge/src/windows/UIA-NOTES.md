@@ -108,7 +108,8 @@ Probed live on October 5, 2026, in throwaway tasks, on Codex `26.930.3930.0` and
     field that captures the arrows.
   - Enter on a focused option picks it.
 - **Codex escalation card:**
-  - Focus starts on a card button. Shift+Tab moves to Deny, and Tab leaves the card.
+  - Focus started on a card button in that probe, but not reliably: in installed check 4 nothing had focus (see
+    "Live findings"). Shift+Tab moves to Deny, and Tab leaves the card.
   - Down scrolls the chat.
   - Enter on the focused button activates it (Deny was declined).
 
@@ -177,30 +178,47 @@ keeps focus, so one clockwise turn chooses that approve button.
     and the header and footer (`cds-reset group/btn ...`) do not, so the stops are the option rows and "Other".
   - The composer keeps focus when either card opens, so `focused` starts at -1.
   - No token element is no card. Several are unknown (`card-count`).
-- **Codex** (escalation card): the card has no class token, so it is found by structure. In the probe, the focused
-  card button's control-view parent is a `Group` (class `contents`) that directly holds two `Text` elements (the
-  card's prompt) and three buttons: Deny, the button that starts with focus (both Invoke) and a menu button
-  (ExpandCollapse only).
-  - The container is that parent `Group`, but only while all of these hold:
+- **Codex** (escalation card): the card has no class token, and Codex does not reliably give it keyboard focus, so it
+  is found by structure alone. In the probes, the card is an on-screen `Group` (class `contents`) that directly holds
+  two `Text` elements (the card's prompt) and three buttons: Deny and approve (both Invoke) and a menu button
+  (ExpandCollapse only). Other groups with buttons do not match: off-screen message-action groups (class `contents`)
+  hold one button each and no text, and a side strip group (`absolute top-1/2 left-3 ...`) holds about ten buttons
+  and no text children.
+  - The container is the one `Group`, while all of these hold:
     - the window has no `ProseMirror` composer;
     - exactly one sidebar row is selected: a `Button` whose class starts with `group relative cursor-interaction` and
       carries `bg-primary-ghost-hover`, as in the selected-row rule above. This ties the card to the thread view, so
       settings pages and dialogs without a selected row never count. One `FindAll` of `Edit` and `Button` elements,
       caching class names and control types only, counts composers and selected rows;
-    - the focused element is in the window's process and inside the window (bounded parent walk);
-    - the focused element is an actionable `Button`;
-    - its parent `Group` directly holds at least one `Text` element and at least two actionable buttons.
+    - exactly one `Group` that is not offscreen directly holds at least one `Text` element and at least two
+      actionable buttons. One `FindAll` of the window's `Group` elements caches class names and offscreen state
+      only (more than 512 is unknown, `card-too-many-groups`). Each on-screen group's direct `Text` and `Button`
+      children are read in one cached `FindAll` (a group with more than 64 `Button` children is not a candidate).
+  - Keyboard focus does not decide the card. Codex may leave focus on the sidebar row after a thread opens, or the
+    owner may focus the card's menu button or anything else; the card stays established and `focused` is -1 until a
+    stop has focus. Safety does not rest on focus here: a press needs a wheel step that the read-back confirms on a
+    stop, a fresh focus read at the click and a `Compare` with the focused element before `Invoke`.
+  - The stops are the group's actionable direct-child buttons in tree order (Deny, then approve). `focused` is the
+    focused stop's index, or -1 when nothing in the card has focus. With no focus, the first clockwise step focuses
+    Deny and a counter-clockwise step focuses approve.
   - The adapter decides:
     - one composer is no card;
     - no composer and not exactly one selected row is unknown (`codex-selected-row-count`);
-    - no composer without such a group is unknown (`codex-card-unestablished`), and the wheel then does nothing;
+    - no candidate group is unknown (`codex-card-unestablished`) and several are unknown (`codex-card-ambiguous`);
+      the wheel then does nothing;
     - several composers are unknown (`codex-composer-count`).
-  - Not seen directly: the probe printed truncated class lists, so the selected row while a card is open is inferred
-    from the thread view; the installed card check confirms it.
+  - Seen live: installed check 4 read one selected sidebar row while the card was open.
   - Unverified: that Codex settings pages and dialogs have no selected sidebar row, so they read unknown. The
     installed trial opens Codex settings and checks that `cardButtons` reads unknown.
-  - Residual: another composer-less element of the thread view with the same shape would count as a card. A press
-    there still needs a deliberate wheel step to the button and a still click. Only the escalation card was observed.
+  - Nearest non-card shape: the thread scroll layout (`group/thread-scroll-layout ...`) directly holds many `Text`
+    elements (59 in the probe with the card) and one actionable `Button`, so it is not a candidate. If it gained a
+    second actionable direct `Button` while a card is open, the read would find two candidates and stay unknown
+    (`codex-card-ambiguous`, an inert wheel).
+  - Residual: in a composer-less thread view without a card, another single on-screen group with the same shape,
+    such as that layout with a second actionable button, would count as a card. A press there still needs a
+    deliberate wheel step to the button and a still click. Only the escalation card was observed.
+  - A very long thread can hold more than 512 `Group` elements; the read is then unknown (`card-too-many-groups`)
+    and the wheel is inert on a card there. The installed checks include a long thread.
 
 Re-qualify the containers, the stops (a Claude question card stops on its answers only, a permission card on all its
 buttons), the focus read-back and a still-click press, with a harmless card in a throwaway task, when either client's
@@ -217,6 +235,10 @@ The installed bridge was checked on a Claude question card with three options:
     focus. `focusCardButton` for button 2 replied that nothing was focused, and 300 ms later `cardButtons` reported
     button 2 focused.
   - Claude applies focus asynchronously, so the helper now reads it back in the bounded poll above.
+- **Codex card without focus.** In installed check 4 (Codex escalation card, installed d1ea6a8), the wheel was inert
+  and the bridge logged `codex-card-unestablished`. A read of the card gave no composer, one selected row and no
+  card, and no element in the window had keyboard focus: the earlier rule started from the focused card button. The
+  card is now found by structure, as above.
 - **Shift+Tab stops.** The wheel walked all six actionable buttons, the same stops as Shift+Tab, including the
   header and footer buttons. The owner expects the answers only, as Up and Down inside the option list, which led to
   the `text-left` stop rule above.
