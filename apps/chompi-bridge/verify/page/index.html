@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CHOMPI bridge verification run</title>
+  <link rel="stylesheet" href="/page.css">
+  <script src="/page.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#controller-heading">Skip to the controller</a>
+  <header class="top">
+    <h1>CHOMPI bridge verification run</h1>
+    <p class="notice">Simulated controller, simulated desktop and a synthetic Hub. Nothing here reaches a real device, desktop or Hub. Every title and text is synthetic.</p>
+    <dl class="facts">
+      <div><dt>Scenario</dt><dd id="run-scenario">loading</dd></div>
+      <div><dt>Bridge</dt><dd id="run-bridge">loading</dd></div>
+      <div><dt>Controller</dt><dd id="run-controller">loading</dd></div>
+      <div><dt>Hub feed</dt><dd id="run-feed">loading</dd></div>
+      <div><dt>Profile</dt><dd id="run-profile">loading</dd></div>
+    </dl>
+    <p id="action-status" role="status" class="action-status">Ready.</p>
+  </header>
+  <main>
+    <section class="controller" aria-labelledby="controller-heading">
+      <h2 id="controller-heading" tabindex="-1">Controller</h2>
+      <div class="toolbar">
+        <button type="button" id="latch" aria-pressed="false">Latch keys</button>
+        <button type="button" id="plug">Unplug controller</button>
+        <p class="hint">Keys go down while you hold the mouse button, Space or Enter, and come up when you let go. With <strong>Latch keys</strong> on, each activation toggles a key between held and released.</p>
+      </div>
+      <div class="encoders" id="encoders" role="group" aria-label="Knobs, big wheel and volume"></div>
+      <div class="panel-keys" id="panel-keys" role="group" aria-label="Record, Play and Loop"></div>
+      <div class="keys">
+        <div class="black-keys" id="black-keys" role="group" aria-label="Black keys"></div>
+        <div class="white-keys" id="white-keys" role="group" aria-label="Slot keys"></div>
+      </div>
+    </section>
+
+    <section class="desktop" aria-labelledby="desktop-heading">
+      <h2 id="desktop-heading">Simulated desktop</h2>
+      <p class="desktop-facts"><span id="desktop-front">loading</span> <span id="desktop-held"></span></p>
+      <div class="windows" id="windows"></div>
+    </section>
+
+    <section class="hub" aria-labelledby="hub-heading">
+      <h2 id="hub-heading">Synthetic Hub</h2>
+      <div class="toolbar">
+        <button type="button" data-hub-add="codex">Add Codex task</button>
+        <button type="button" data-hub-add="claude">Add Claude task</button>
+        <button type="button" id="drop-stream">Restart the Hub stream</button>
+        <button type="button" id="profile-alternate">Save profile with another idle color</button>
+        <button type="button" id="profile-default">Save profile with the shipped colors</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption>Hub sessions and their slot keys</caption>
+          <thead><tr><th scope="col">Slot</th><th scope="col">Task</th><th scope="col">Activity</th><th scope="col">Attention</th><th scope="col">Notices</th><th scope="col">Turn</th></tr></thead>
+          <tbody id="sessions"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="scenario" aria-labelledby="scenario-heading">
+      <h2 id="scenario-heading">Scenario</h2>
+      <p id="scenario-text">loading</p>
+      <button type="button" id="scenario-run" hidden>Run scenario</button>
+      <p id="scenario-outcome" class="outcome"></p>
+      <ol id="scenario-steps" class="steps"></ol>
+    </section>
+
+    <section class="logs" aria-labelledby="logs-heading">
+      <h2 id="logs-heading">Logs</h2>
+      <div class="log-columns">
+        <div>
+          <h3 id="desktop-log-heading">Desktop keys and presses</h3>
+          <ol id="desktop-log" class="log" tabindex="0" aria-labelledby="desktop-log-heading"></ol>
+        </div>
+        <div>
+          <h3 id="bridge-log-heading">Bridge log (JSON lines)</h3>
+          <ol id="bridge-log" class="log" tabindex="0" aria-labelledby="bridge-log-heading"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
