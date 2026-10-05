@@ -158,9 +158,11 @@ session records by name and key only, and Codex's own thread names from `session
   - After a focus request the helper reads focus back every 25 ms for at most 400 ms, because Claude applies focus
     asynchronously, and answers the index it observed.
   - Claude's card is the one element carrying `epitaxy-approval-card`.
-  - Codex's card is the focused button's parent `Group`, only while no composer exists, exactly one sidebar row is
-    selected (the thread view) and the group directly holds a `Text` element and at least two actionable buttons.
-    Otherwise it is `unknown` (`codex-selected-row-count`, `codex-card-unestablished`).
+  - Codex's card is found by structure, because Codex does not reliably give it focus: while no composer exists and
+    exactly one sidebar row is selected (the thread view), it is the one on-screen `Group` that directly holds a
+    `Text` element and at least two actionable buttons, whose actionable buttons (Deny, then approve) are its stops.
+    Otherwise it is `unknown`: `codex-selected-row-count`, `codex-card-unestablished` (no such group),
+    `codex-card-ambiguous` (several) or `codex-card-focus-elsewhere` (a focused button outside the group).
   - A focus or press names the card by its identity and is `unknown` (`card-changed`) when that card is gone or
     replaced or its button count changed. A press answers `false` when the button no longer has keyboard focus.
   - These two are the only helper operations that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#card-answers).
@@ -336,9 +338,11 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
     Focus that Claude applies later is not chosen, and a click then presses nothing. A still click while a step's
     read-back is still running is refused (`card-busy`) and presses nothing; click again once the step is done.
   - A big-wheel click presses the focused button only when the wheel's own step moved focus to it on this card, so at
-    least one deliberate step is needed: a Codex card opens with its approve button focused, and a click without a
+    least one deliberate step is needed: when a Codex card opens with its approve button focused, a click without a
     turn presses nothing (`card-nothing-chosen`). A step clamped at the first or last button chooses the button that
-    keeps focus, so one clockwise turn chooses that approve button. The click also needs `cards.clickStillMs` without a turn and no step
+    keeps focus, so one clockwise turn then chooses that approve button. When nothing has focus, as Codex often
+    leaves its card, the first clockwise step focuses Deny (the first stop) and a counter-clockwise step focuses
+    approve (the last stop). The click also needs `cards.clickStillMs` without a turn and no step
     in flight. Turning while the click is held moves nothing, and the press clears partial rotation. Wheel actions
     outside a card clear partial rotation, so scroll counts never shorten the first card step.
   - Play is refused (`approval-visible` for a Claude card, `composer-unfocused` for a Codex card). An unknown card state, including a Codex view without a composer whose
