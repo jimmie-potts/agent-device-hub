@@ -101,6 +101,7 @@ jobs:
       - run: npm run test:wispr:built
       - run: npm run test:wispr:package:built
       - run: npm run test:chompi-bridge:built
+      - run: npm run test:chompi-bridge:scenarios
   firmware:
     name: Firmware host tests and ARM build on ${{ matrix.os }}
     strategy:

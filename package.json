@@ -106,6 +106,7 @@
     "test:chompi-bridge": "npm run build && npm run test:chompi-bridge:built",
     "test:chompi-bridge:built": "node --test apps/chompi-bridge/tests/*.test.mjs",
     "test:chompi-bridge:native:built": "node apps/chompi-bridge/tests/native.mjs",
+    "test:chompi-bridge:scenarios": "node apps/chompi-bridge/verify/scenarios.mjs",
     "test:firmware": "make -C firmware/chompi-controller test",
     "test:firmware:arm": "firmware/chompi-controller/scripts/arm-build.sh"
   },
