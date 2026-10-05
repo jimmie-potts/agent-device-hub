@@ -121,7 +121,7 @@ The Windows adapter uses [koffi](https://koffi.dev/) FFI for `SendInput`, `GetFo
 installed package folder its image runs from directly under the 64-bit Program Files' `WindowsApps` (`ProgramW6432`,
 else `ProgramFiles`, on a drive letter), which only the installer can
 write; a real package identity always wins. A long-lived PowerShell UI Automation helper (`src/windows/uia-helper.ps1`,
-started with `-EncodedCommand`) handles the composer and Codex selected-row checks. It reads Codex archive filenames and Claude Desktop
+started with `-EncodedCommand`) handles the composer, Codex selected-row and approval-card checks. It reads Codex archive filenames and Claude Desktop
 session records by name and key only, and Codex's own thread names from `session_index.jsonl` in the Codex home (only
 `id`, `thread_name` and `updated_at`; a thread's last line is its current name). Its observations follow the clients' current UI, recorded in
 [UIA-NOTES.md](src/windows/UIA-NOTES.md):
@@ -138,8 +138,12 @@ session records by name and key only, and Codex's own thread names from `session
   - a name exists but Codex is not the foreground app (`codex-not-foreground`).
 
   Names stay inside the adapter and are never logged or stored.
-- `approvalVisible` is always `unknown`: no approval-card selector is qualified yet. Under the router's rule an unknown
-  approval refuses Send, so **Send stays blocked until #743 qualifies an approval selector**. Focus and Record work.
+- `approvalVisible` counts elements in the client's foreground window by class token, never by text. Claude is
+  `true` while any element carries `epitaxy-approval-card` (its question and permission cards, offscreen ones
+  included) and `false` otherwise. Codex's approval card replaces its composer, so Codex is `false` only while
+  exactly one `ProseMirror` composer exists; no composer (`codex-composer-absent`) or several
+  (`codex-composer-count`) is `unknown`. A client not in front (`codex-not-foreground`, `claude-not-foreground`)
+  or any helper failure is `unknown` too. The router refuses Send unless the answer is `false`.
 
 The built code reads the helper script from `src/windows/` (`dist/windows` resolves `../../src/windows/`), so an
 installation (#743) must ship `src/windows/uia-helper.ps1` beside `dist/`.
@@ -205,7 +209,11 @@ updated while the bridge ran is caught before any input; Record and Send log `re
 the same reason and version. To qualify it:
 
 1. Check the selectors against [UIA-NOTES.md](src/windows/UIA-NOTES.md) for that version (the selected-row and
-   composer structure), for example with the native check's read-only observations.
+   composer structure), for example with the native check's read-only observations. Re-check the
+   [approval-card selectors](src/windows/UIA-NOTES.md#approval-cards) too, as in the #743 trial: open a harmless
+   approval or permission card in a throwaway task in that client, and confirm that a Claude card still carries
+   `epitaxy-approval-card`, or that a Codex card still replaces the composer, and that the client reads as having
+   no card again once it closes.
 2. Add the logged `observedVersion` to `qualifiedVersions.codex` (or `.claude`) in the profile. Keep earlier versions
    only while they can still be installed.
 3. Save the file. The bridge reloads it within `timing.profilePollMs` and logs `profile-applied`; no restart is needed.
@@ -273,10 +281,10 @@ colors, so focusing a task never looks like acknowledging it. The Record LED sho
   sends.
 - Send re-checks the target and then types one Enter. It is refused while the Hub shows `approval` attention for the
   task, while the feed is stale or unavailable (a pending approval would be unknown), and while the adapter's approval
-  visibility is `true` or `unknown`. The Windows adapter answers `unknown` until #743 qualifies an approval selector,
-  so Send is refused in real use until then. `question` and `input` attention do not block Send, because answering
-  them is the point. A repeat within 1 s, a Send during dictation or an uncertain keystroke never types a second
-  Enter, and an uncertain one clears the target.
+  visibility is `true` or `unknown`. Hub `question` and `input` attention do not block Send, because answering them
+  is the point, but an open Claude question card does: it carries the same class token as a permission card, and
+  the composer keeps focus while either is open. A repeat within 1 s, a Send during dictation or an uncertain
+  keystroke never types a second Enter, and an uncertain one clears the target.
 - A big-wheel turn scrolls the target's client, or without a target the foreground Codex or Claude window, through the
   adapter's `scrollClient` mouse-wheel primitive, which acts only while that client is in front with the pointer inside
   it. Scroll never types, selects a task or changes the target, never runs while Record is held, and is not retried

@@ -297,11 +297,23 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       }, known(false));
     },
 
-    async approvalVisible(client: Client) {
+    /** Selectors and the client versions they were qualified on are in UIA-NOTES.md ("Approval cards"). */
+    async approvalVisible(client: Client): Promise<Observation<boolean>> {
       if (closed) return unknown('adapter-closed');
       if (!isClient(client)) return unknown('invalid-client');
-      // No approval or permission card was open during read-only qualification, so its structure is unknown.
-      return unknown('approval-detection-unqualified');
+      // Claude reports its approval-card count; Codex reports its composer count, because its approval card replaces the
+      // composer. The helper only counts elements in the client's own foreground window.
+      const key = client === 'claude' ? 'approvalCards' : 'composers';
+      const count = await windowQuery(client, 'approvalVisible', { client }, value => {
+        const record = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+        const n = record[key];
+        return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 100000 ? n : null;
+      }, unknown(`${client}-not-foreground`));
+      if (count.status === 'unknown') return count;
+      if (client === 'claude') return known(count.value > 0);
+      // No composer is not proof of a card (another view could hide it), and several composers are unqualified.
+      if (count.value === 0) return unknown('codex-composer-absent');
+      return count.value === 1 ? known(false) : unknown('codex-composer-count');
     },
 
     async codexArchived(threadId: string) {

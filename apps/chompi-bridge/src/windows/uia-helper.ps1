@@ -14,6 +14,7 @@ $Packages = [ordered]@{ codex = 'OpenAI.Codex_2p2nqsd0c76g0'; claude = 'Claude_p
 $CodexRowPrefix = 'group relative cursor-interaction'
 $CodexSelectedToken = 'bg-primary-ghost-hover'
 $ComposerToken = 'ProseMirror'
+$ClaudeApprovalToken = 'epitaxy-approval-card'
 
 # Requests arrive ASCII-only (non-ASCII as \uXXXX escapes, which ConvertFrom-Json decodes). Replies are escaped
 # the same way, so neither direction depends on the console code page.
@@ -84,6 +85,29 @@ function ComposerFocused($request) {
   return @{ focused = (-not $pattern.Current.IsReadOnly) }
 }
 
+# Claude: elements of any control type carrying the approval-card token (its question and permission cards), offscreen
+# ones included. Codex: composers, because its approval card replaces the composer. Searches the control view and
+# counts class tokens only; the adapter decides.
+function ApprovalVisible($request) {
+  $window = TargetWindow $request
+  switch ([string]$request.client) {
+    'claude' { $condition = [System.Windows.Automation.Condition]::TrueCondition; $token = $ClaudeApprovalToken; $key = 'approvalCards' }
+    'codex' { $condition = Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit); $token = $ComposerToken; $key = 'composers' }
+    default { Fail 'invalid-client' }
+  }
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ClassNameProperty)
+  $cache.Push()
+  try {
+    $elements = $window.FindAll($Scope::Descendants, $condition)
+  } finally { $cache.Pop() }
+  $count = 0
+  foreach ($element in $elements) {
+    if (HasToken $element.Cached.ClassName $token) { $count++ }
+  }
+  return @{ $key = $count }
+}
+
 function ClientVersions {
   $result = [ordered]@{}
   foreach ($client in $Packages.Keys) {
@@ -108,6 +132,7 @@ while ($true) {
       'ping' { if ($null -ne $request.probe) { $value = Probe ([string]$request.probe) } else { $value = @{ pong = $true } } }
       'codexSelectedTitle' { $value = CodexSelectedTitle $request }
       'composerFocused' { $value = ComposerFocused $request }
+      'approvalVisible' { $value = ApprovalVisible $request }
       'clientVersions' { $value = ClientVersions }
       default { Fail 'unknown-op' }
     }

@@ -865,8 +865,8 @@ HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
 checks that the named-pipe lock refuses a second holder and is released on
 exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
-Automation helper, the composer and Codex selected-thread observations and the
-installed client versions. Its Win32 surface replaces `SendInput` and
+Automation helper, the composer, Codex selected-thread and approval-card
+observations and the installed client versions. Its Win32 surface replaces `SendInput` and
 `ShellExecute` with throwing guards, so it types nothing and opens no link.
 It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
@@ -884,10 +884,11 @@ each row of the no-misrouting matrix, Record and Send gating, big-wheel scrollin
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or
-Claude data or contact a Hub. The adapter's `approvalVisible` is always
-`unknown` until an approval selector is qualified, so Send stays refused in
-real use until then. Live focus, dictation placement, approval-card behavior
-and lights on the device belong to #743.
+Claude data or contact a Hub. `windows-adapter.test.mjs` checks how the
+Windows adapter reads the helper's approval-card counts for each client, and
+`windows-uia-helper.test.mjs` checks the helper operation's scope statically.
+Live focus, dictation placement, approval-card behavior and lights on the
+device belong to #743.
 
 ## Wispr Hub checks
 

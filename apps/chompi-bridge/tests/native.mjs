@@ -82,10 +82,31 @@ const codexWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive'
   '$p = Get-Process ChatGPT -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($p) { "$([long]$p.MainWindowHandle) $($p.Id)" }'],
 { encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
 let nonAsciiTitle = 'codex-not-running';
+let codexApprovalCount = 'codex-not-running';
 if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   const reply = await helper.request('codexSelectedTitle', { hwnd: codexWindow[0], processId: codexWindow[1], title: `\u00e9\u2014\u4e2d\u{1f600} ${randomUUID()}` });
   assert.deepEqual(reply, { ok: true, value: { matches: false, sameTitleRows: 0 } }, 'a non-ASCII random title verifies as no match without errors');
   nonAsciiTitle = reply.value;
+  // The approval check counts composers in the same window, whether or not Codex is in front; nothing else is read.
+  const approvalStart = Date.now();
+  const counted = await helper.request('approvalVisible', { client: 'codex', hwnd: codexWindow[0], processId: codexWindow[1] });
+  codexApprovalCount = { ...counted, ms: Date.now() - approvalStart };
+  assert.equal(counted.ok, true, `approvalVisible: ${counted.reason ?? ''}`);
+  assert.deepEqual(Object.keys(counted.value), ['composers']);
+  assert.ok(Number.isInteger(counted.value.composers) && counted.value.composers >= 0);
+}
+// The same count against the running Claude Desktop window, found read-only by its package folder.
+const claudeWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+  '$p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -like \'*\\WindowsApps\\Claude_*__pzs8sxrjxfjjc\\*\' } | Select-Object -First 1; if ($p) { "$([long]$p.MainWindowHandle) $($p.Id)" }'],
+{ encoding: 'utf8', timeout: 30000, windowsHide: true }).stdout.trim().split(/\s+/).map(Number);
+let claudeApprovalCount = 'claude-not-running';
+if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
+  const approvalStart = Date.now();
+  const counted = await helper.request('approvalVisible', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
+  claudeApprovalCount = { ...counted, ms: Date.now() - approvalStart };
+  assert.equal(counted.ok, true, `approvalVisible: ${counted.reason ?? ''}`);
+  assert.deepEqual(Object.keys(counted.value), ['approvalCards']);
+  assert.ok(Number.isInteger(counted.value.approvalCards) && counted.value.approvalCards >= 0);
 }
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);
@@ -97,7 +118,7 @@ assert.ok(codexComposer.status === 'known' ? typeof codexComposer.value === 'boo
 const codexSelected = await adapter.codexSelectedThread(randomUUID(), `chompi-native-check-${randomUUID()}`);
 if (codexSelected.status === 'known') assert.deepEqual(codexSelected.value, { matches: false, sameTitleRows: 0 }, 'a random title never matches');
 const approval = await adapter.approvalVisible('codex');
-assert.equal(approval.status, 'unknown');
+assert.ok(approval.status === 'known' ? typeof approval.value === 'boolean' : typeof approval.reason === 'string');
 await adapter.warmUp();
 const versionsStart = Date.now();
 const versions = await adapter.clientVersions();
@@ -153,6 +174,8 @@ console.log(JSON.stringify({
     composerCheckMs: composerMs,
     codexSelectedThreadRandom: codexSelected,
     approvalVisible: approval,
+    codexApprovalCount,
+    claudeApprovalCount,
     clientVersions: { codex: versions.codex.value, claude: versions.claude.value },
     codexArchivedRandom: false,
     claudeSessionsEmpty: [],
