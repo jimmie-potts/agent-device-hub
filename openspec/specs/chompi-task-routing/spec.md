@@ -105,7 +105,7 @@ Send SHALL type exactly one Enter to a verified target after re-checking foregro
 - **THEN** Send is refused
 
 #### Scenario: Approval visibility not qualified
-- **WHEN** the adapter answers approval visibility as unknown, as the Windows adapter does until an approval selector is qualified
+- **WHEN** the adapter answers approval visibility as unknown, as the Windows adapter does when Codex shows no composer or the client is not in front
 - **THEN** Send is refused and no Enter is typed
 
 #### Scenario: Task switch before Send
