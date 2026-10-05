@@ -182,7 +182,7 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | --- | --- |
 | `controls.slots` | Keys 1-15; slot *n* is the *n*th entry |
 | `controls.record` | 26, the CHOMPI key, held for dictation |
-| `controls.send` | `[33]`, the big-wheel click; add 27 to let Play send too |
+| `controls.send` | `[33, 27]`, the big-wheel click and Play; each runs the same guarded Send |
 | `controls.back` | 28, Loop: alone it clears the target; with a held Claude slot key it is the release gesture |
 | `controls.scroll` | 45, the big-wheel turn: scrolls the client conversation |
 | `scroll` | `notchesPerStep` 1 (1-10 wheel notches per detent) and `invert` `false` (clockwise scrolls down) |

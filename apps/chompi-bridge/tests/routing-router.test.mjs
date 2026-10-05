@@ -670,17 +670,22 @@ test('a Claude Send is refused once another session became visible after verific
 test('small-knob clicks, the volume click and encoder turns never send', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
-  for (const control of [29, 30, 31, 32, 34, PLAY]) await ctx.click(control);
+  for (const control of [29, 30, 31, 32, 34]) await ctx.click(control);
   for (const control of [41, 42, 43, 44, 45, 46]) { ctx.turn(control, 3); ctx.turn(control, -2); await settle(); }
   assert.equal(ctx.adapter.enters, 0);
   assert.deepEqual(target(ctx), { slot: 1, client: 'codex' }, 'knobs and scrolling leave the target alone');
 });
 
-test('Play sends only when the profile maps it to Send', async t => {
-  const ctx = await setup(t, { sessions: [codexTask(1)], profile: withProfile({ controls: { ...base.controls, send: [33, 27] } }) });
+test('Play sends with the default profile, and only when the profile maps it to Send', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   await ctx.click(PLAY);
   assert.equal(ctx.adapter.enters, 1);
+
+  const unmapped = await setup(t, { sessions: [codexTask(1)], profile: withProfile({ controls: { ...base.controls, send: [33] } }) });
+  await unmapped.focus(1);
+  await unmapped.click(PLAY);
+  assert.equal(unmapped.adapter.enters, 0);
 });
 
 test('Send while Record is held is refused', async t => {

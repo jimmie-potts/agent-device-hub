@@ -76,7 +76,7 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Front row, 15 white keys | `KEY_1`-`KEY_15`, left to right | The 15 task slots. Also the launcher's firmware picker keys |
 | Second row, 10 black keys | `KEY_16`-`KEY_25` | Reserved for #744 utility actions |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
-| Play, Loop | `KEY_27`, `KEY_28` | Proposed optional Send and Back |
+| Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click) and Back |
 | Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-4 for #744. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume. Holding its click at boot enters test mode |
@@ -325,7 +325,8 @@ invalid and sends nothing. A task switch invalidates pending input.
   dictates through the computer microphone, only after the composer check
   passes, and releases on key release. Release inserts a
   draft and never sends. Disconnect, reload or a task switch releases held keys.
-- **Big-wheel click** sends one Enter to the verified composer. It is blocked
+- **Big-wheel click or Play** (the default profile maps both; owner choice in
+  the #743 trial) sends one Enter to the verified composer. It is blocked
   while the Hub shows `attention.approval` for that session, or the approval
   check finds a card or is unknown, because Enter approves an open request in
   Codex. An
@@ -379,7 +380,7 @@ that cannot be mistaken for any task state.
 | Target app not foreground after open | No input |
 | Task switch between Record and Send | Pending target cleared; Send refused |
 | Approval pending on the target | Send refused; key press does not approve or acknowledge |
-| Duplicate or repeated wheel click; Send outcome uncertain | One Enter at most; no retry |
+| Duplicate or repeated Send click (wheel or Play); Send outcome uncertain | One Enter at most; no retry |
 | Disconnect during Record hold | Modifiers released; no draft sent |
 | Reconnect or bridge restart | No replay; slots retained; fresh press required |
 | Unqualified client version | That client's routing disabled; the other unaffected |
