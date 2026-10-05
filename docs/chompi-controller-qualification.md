@@ -76,7 +76,7 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Front row, 15 white keys | `KEY_1`-`KEY_15`, left to right | The 15 task slots. Also the launcher's firmware picker keys |
 | Second row, 10 black keys | `KEY_16`-`KEY_25` | Reserved for #744 utility actions |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
-| Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click) and Back |
+| Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
 | Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-4 for #744. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume. Holding its click at boot enters test mode |

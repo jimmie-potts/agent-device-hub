@@ -575,6 +575,22 @@ test('matrix: duplicate or repeated wheel clicks produce one Enter at most', asy
   assert.equal(ctx.adapter.enters, 2, 'a deliberate later Send to the same verified task works');
 });
 
+test('matrix: a wheel click and Play share one repeat window', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  await ctx.focus(1);
+  await ctx.click(WHEEL);
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(PLAY);
+  assert.equal(ctx.adapter.enters, 1);
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs, 100);
+  await ctx.click(PLAY);
+  await advance(ctx.clock, 200, 50);
+  await ctx.click(WHEEL);
+  assert.equal(ctx.adapter.enters, 2, 'Play then the wheel also types one Enter');
+  assert.equal(ctx.lastLog('send-refused').reason, 'repeat');
+});
+
 test('matrix: an uncertain Send is never retried and clears the target', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
