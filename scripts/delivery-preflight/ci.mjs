@@ -1,30 +1,44 @@
-// Depot CI evidence (docs/sdlc.md#depot-ci-evidence) and the guide-only CI
-// exception (docs/sdlc.md#guide-only-ci-exception) for one revision.
+// CI evidence (docs/sdlc.md#ci-evidence) and the guide-only CI exception
+// (docs/sdlc.md#guide-only-ci-exception) for one revision.
 import { createHash } from 'node:crypto';
 
-import { DEPOT_APP, GUIDE_ROOT, SDLC, short } from './context.mjs';
+import { CI_PROVIDERS, GUIDE_ROOT, SDLC, short } from './context.mjs';
+import { ReadFailure } from './github.mjs';
 import { GUIDE_HTML_PATH, readGuideReceipt } from './receipts.mjs';
 import { guideRecordResults, readRecord } from './records.mjs';
 import { expectedJobs, parseWorkflow } from './workflows.mjs';
 
+/** The revision's CI provider and parsed workflows: the first provider whose directory holds a workflow. */
 async function readWorkflows(ctx, gate, sha) {
   const { github, repo } = ctx;
   return ctx.read(gate, async () => {
-    const listing = await github.get(`/repos/${repo}/contents/.depot/workflows?ref=${sha}`);
-    const files = (Array.isArray(listing) ? listing : []).filter(item => item.type === 'file' && /\.ya?ml$/.test(item.name));
-    const parsed = [];
-    for (const item of files) {
-      const content = await github.get(`/repos/${repo}/contents/${item.path}?ref=${sha}`);
-      const text = Buffer.from(content.content || '', 'base64').toString('utf8');
+    for (const provider of CI_PROVIDERS) {
+      let listing;
       try {
-        parsed.push(parseWorkflow(item.name, text));
-      } catch {
-        gate.unresolved(`cannot parse workflow ${item.name} at ${short(sha)}`);
+        listing = await github.get(`/repos/${repo}/contents/${provider.directory}?ref=${sha}`);
+      } catch (error) {
+        if (error instanceof ReadFailure && /^HTTP 404\b/.test(error.detail)) continue;
+        throw error;
       }
+      const files = (Array.isArray(listing) ? listing : []).filter(item => item.type === 'file' && /\.ya?ml$/.test(item.name));
+      if (!files.length) continue;
+      const workflows = [];
+      for (const item of files) {
+        const content = await github.get(`/repos/${repo}/contents/${item.path}?ref=${sha}`);
+        const text = Buffer.from(content.content || '', 'base64').toString('utf8');
+        try {
+          workflows.push(parseWorkflow(item.name, text));
+        } catch {
+          gate.unresolved(`cannot parse workflow ${item.path} at ${short(sha)}`);
+        }
+      }
+      return { provider, workflows };
     }
-    return parsed;
+    return { provider: null, workflows: [] };
   });
 }
+
+const workflowPath = file => CI_PROVIDERS.some(provider => file.startsWith(`${provider.directory}/`));
 
 /**
  * Evaluate one revision's CI. `checkBranch` is the check suite branch that
@@ -33,34 +47,45 @@ async function readWorkflows(ctx, gate, sha) {
 export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, paths, filesComplete, requiredContexts, baseline }) {
   gate.evidence.revision = sha;
   gate.evidence.event = event;
-  const workflows = await readWorkflows(ctx, gate, sha);
-  if (!workflows.ok) return;
+  const read = await readWorkflows(ctx, gate, sha);
+  if (!read.ok) return;
+  const { provider, workflows } = read.value;
+  if (!provider) {
+    gate.unresolved(`${short(sha)} has no workflow in ${CI_PROVIDERS.map(item => item.directory).join(' or ')}`);
+    return;
+  }
+  gate.evidence.provider = provider.id;
   const scope = { event, branch, files: paths, filesComplete };
-  const expected = expectedJobs(workflows.value, scope);
+  const expected = expectedJobs(workflows, scope, provider);
   for (const reason of expected.uncertain) gate.unresolved(`cannot enumerate expected jobs: ${reason}`);
   for (const reason of expected.notes) gate.note(reason);
   const names = [...new Set([...expected.jobs.map(job => job.name), ...requiredContexts])];
   gate.evidence.expected = names;
   gate.evidence.filtered = expected.filtered;
 
-  // A candidate that edits its own workflows cannot lower its gate silently.
-  if (baseline && paths.some(file => file.startsWith('.depot/workflows/'))) {
+  // A candidate that edits its own workflows, or moves them to another provider,
+  // cannot lower its gate silently. Jobs are compared by "<workflow> / <job>".
+  if (baseline && paths.some(workflowPath)) {
     const before = await readWorkflows(ctx, gate, baseline);
-    if (before.ok) {
-      const dropped = expectedJobs(before.value, scope).jobs.map(job => job.name).filter(name => !names.includes(name));
-      for (const name of dropped) gate.unresolved(`${name}: expected at ${short(baseline)} but dropped by the candidate's workflow change; confirm the intended coverage`);
-      if (!dropped.length) gate.note(`the candidate changes .depot/workflows/; no job expected at ${short(baseline)} is dropped`);
+    if (before.ok && before.value.provider) {
+      const keys = new Set(expected.jobs.map(job => job.key));
+      const dropped = expectedJobs(before.value.workflows, scope, before.value.provider).jobs.map(job => job.key).filter(key => !keys.has(key));
+      for (const key of dropped) gate.unresolved(`${key}: expected at ${short(baseline)} but dropped by the candidate's workflow change; confirm the intended coverage`);
+      const moved = before.value.provider.id === provider.id ? '' : ` and moves CI from ${before.value.provider.title} to ${provider.title}`;
+      if (!dropped.length) gate.note(`the candidate changes its workflows${moved}; no job expected at ${short(baseline)} is dropped`);
+    } else if (before.ok) {
+      gate.note(`${short(baseline)} has no workflows, so there is no earlier coverage to compare`);
     }
   }
 
   const outside = paths.filter(file => !file.startsWith(GUIDE_ROOT));
   const guideOnly = filesComplete && paths.length > 0 && outside.length === 0;
   if (!names.length && !expected.uncertain.length) {
-    if (guideOnly && expected.filtered.length) await evaluateGuideException(ctx, gate, { sha });
+    if (guideOnly && expected.filtered.length) await evaluateGuideException(ctx, gate, { sha, provider });
     else gate.unresolved('no configured job applies and no exception covers this change');
     return;
   }
-  gate.evidence.mode = 'depot';
+  gate.evidence.mode = provider.id;
   // Hub #861: Checks also ignores Markdown, so guide files that change together with other Markdown skip its suites.
   // The revision then needs the guide evidence, as a guide-only change does.
   const guidePaths = paths.filter(file => file.startsWith(GUIDE_ROOT));
@@ -76,11 +101,11 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     else why = `branch rules require ${requiredContexts.join(', ')}`;
     gate.note(`the guide-only exception does not apply: ${why}`);
   }
-  await evaluateChecks(ctx, gate, { sha, names, checkBranch });
+  await evaluateChecks(ctx, gate, { sha, names, checkBranch, provider });
   if (guideRidesAlong) await evaluateGuideEvidence(ctx, gate, { sha });
 }
 
-async function evaluateChecks(ctx, gate, { sha, names, checkBranch }) {
+async function evaluateChecks(ctx, gate, { sha, names, checkBranch, provider }) {
   const { github, repo } = ctx;
   const evidence = await ctx.read(gate, async () => ({
     runs: await github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'),
@@ -90,7 +115,7 @@ async function evaluateChecks(ctx, gate, { sha, names, checkBranch }) {
   const suites = new Map(evidence.value.suites.map(item => [item.id, item]));
   const disqualified = run => {
     const suite = suites.get(run.check_suite && run.check_suite.id);
-    if (!run.app || run.app.slug !== DEPOT_APP) return 'another app';
+    if (!run.app || run.app.slug !== provider.app) return 'another app';
     if (run.head_sha !== sha) return 'another revision';
     if (!suite) return 'unknown check suite';
     if (!suite.repository || suite.repository.full_name !== repo) return 'another repository';
@@ -136,20 +161,25 @@ async function evaluateChecks(ctx, gate, { sha, names, checkBranch }) {
   if (unexpected.length) gate.evidence.unexpected = unexpected.map(run => ({ name: run.name, checkRunId: run.id, result: resultOf(run) }));
   const ignored = evidence.value.runs.map(run => [run, disqualified(run)]).filter(([, why]) => why);
   if (ignored.length) gate.evidence.ignoredRuns = ignored.map(([run, why]) => ({ checkRunId: run.id, name: run.name, why }));
+  // Runs from a provider this revision no longer uses do not gate it, but they still cost minutes.
+  for (const other of CI_PROVIDERS.filter(item => item.id !== provider.id)) {
+    const count = evidence.value.runs.filter(run => run.app && run.app.slug === other.app).length;
+    if (count) gate.note(`${count} ${other.title} check runs also exist for ${short(sha)}; they do not gate this revision`);
+  }
 }
 
 /**
- * The guide-only exception for one revision: no Depot run, a guide receipt that
+ * The guide-only exception for one revision: no CI run, a guide receipt that
  * matches the committed guide HTML, and the delivery account's record naming
  * the revision, the HTML hash and passing local checks.
  */
-async function evaluateGuideException(ctx, gate, { sha }) {
+async function evaluateGuideException(ctx, gate, { sha, provider }) {
   const { github, repo } = ctx;
   gate.evidence.mode = 'guide-only-exception';
   gate.note(`every changed path is under ${GUIDE_ROOT} and every workflow filters it; ${SDLC}#guide-only-ci-exception applies only with its evidence`);
   const runs = await ctx.read(gate, () => github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'));
-  if (runs.ok && runs.value.some(run => run.app && run.app.slug === DEPOT_APP)) {
-    gate.unresolved(`Depot runs exist for ${short(sha)} although the filters exclude this change; resolve that before using the exception`);
+  if (runs.ok && runs.value.some(run => run.app && run.app.slug === provider.app)) {
+    gate.unresolved(`${provider.title} runs exist for ${short(sha)} although the filters exclude this change; resolve that before using the exception`);
   }
   await evaluateGuideEvidence(ctx, gate, { sha });
 }

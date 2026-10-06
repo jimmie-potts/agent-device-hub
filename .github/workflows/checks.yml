@@ -1,9 +1,5 @@
-# Depot CI Migration
-# Source: .github/workflows/ci.yml
-#
-# No changes were necessary.
-#
 # Markdown-only changes skip this workflow; the Workflow and Work guide workflows still run (#861).
+# GitHub-hosted runners replaced Depot CI in #870.
 
 name: Checks
 on:
@@ -98,7 +94,8 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # The first GitHub-hosted run took 523 s of the earlier 600 s budget (#870).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -119,6 +116,11 @@ jobs:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
+    # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
+    env:
+      XDG_RUNTIME_DIR: ''
+      DBUS_SESSION_BUS_ADDRESS: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -128,7 +130,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      # Depot's runner is not booted with systemd (PR #552): lifecycle tests skip with a printed reason; unsupervised capture tests, including the Hub's steps, run.
+      # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests, including the Hub's steps, always run.
       - run: npm run test:app-verify:built
       - run: npm run test:app-verify:package:built
       - run: npm run test:hub:verify:built

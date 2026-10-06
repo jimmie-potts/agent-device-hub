@@ -93,7 +93,7 @@ SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 ## Workflow commands
 
 Guide record contract fixtures run with Node 24 after `npm ci`:
-`node --test docs/work-guide/contracts/records.test.mjs`. The Depot workflow
+`node --test docs/work-guide/contracts/records.test.mjs`. The Workflow CI
 job runs this check separately from OpenSpec validation. It exercises schema
 versions, identity, incomplete/stale evidence, operation gates and the public
 planning allowlist using synthetic records; it does not qualify the later
@@ -104,7 +104,7 @@ build, maintenance and browser checks. See the
 
 Epic Guide contract fixtures run the same way:
 `node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs`, as a
-separate step in the same Depot job. They exercise `guide-records/2.0` placement,
+separate step in the same Workflow job. They exercise `guide-records/2.0` placement,
 Project values, the seven-day Recently done window, prerequisite acceptance, the
 publication gate, order-aware identity, readiness and projection, the
 `guide-release/1.0` binding, and
@@ -147,31 +147,36 @@ can be a small RAM-backed filesystem shared by every session. If a sandbox makes
 either cache read-only, report that instead of redirecting it. Keep dependency
 caches, browser binaries and all runtime state outside source.
 
-Depot CI owns the active workflows under `.depot/workflows/`. It runs on pull
-requests and pushes to main, and reports each job as a GitHub check. Superseded
-PR revisions are cancelled per workflow and PR; main revisions keep independent
-runs. Each job has a ten-minute timeout, except the core job's fifteen. Branch
-pushes do not duplicate PR checks.
-The two original workflows under `.github/workflows/` are disabled in GitHub
-Actions; their earlier billing-blocked runs do not validate a candidate.
+GitHub Actions runs the active workflows under `.github/workflows/` on
+GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
+[#870](https://github.com/jimmie-potts/agent-device-hub/issues/870). They run on
+pull requests and pushes to main, and report each job as a GitHub check named
+after the job. Superseded PR revisions are cancelled per workflow and PR; main
+revisions keep independent runs. Each job has a ten-minute timeout, except the
+core and dashboard jobs' fifteen. Branch pushes do not duplicate PR checks.
+The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
+because GitHub keeps the manually disabled state of the retired `ci.yml` and
+`work-guide.yml` copies, whose earlier billing-blocked runs do not validate a
+candidate. A branch that still has `.depot/workflows/` runs on Depot, so rebase
+it onto current main before pushing.
 The old nightly guide refresh was retired on 2026-09-30 at the owner's request.
 Its GitHub Actions workflow is disabled and removed from source; the rolling PR
 is closed without merge. Manual guide tooling and its regression tests remain
 until the replacement Guide's consumer audit retires them. This does not change
-Depot's validation or merge gates. See the [guide procedure](work-guide/README.md#nightly-refresh).
+the validation or merge gates. See the [guide procedure](work-guide/README.md#nightly-refresh).
 The guide maintenance suite includes the history/report, retired-term, staged
 input, validation and local-Git publisher tests. The publisher tests use a local
 bare repository and recorded API responses; actual dispatch evidence is separate.
 
 
-All three Depot workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and
+All three workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and
 main pushes. Guide-only edits, including generators and tests, retain local guide
 validation under [the SDLC exception](sdlc.md#guide-only-ci-exception). The
 Checks workflow also ignores `**/*.md`. A change whose files are all Markdown
 runs only the Workflow and Work guide jobs, under the
 [Markdown-only rule](sdlc.md#markdown-only-ci-routing). Mixed changes require
-every configured Depot job. Do not infer filtering from a missing
-run alone. Inspect the complete changed-file scope and hosted Depot event and
+every configured job. Do not infer filtering from a missing
+run alone. Inspect the complete changed-file scope and hosted event and
 check records; keep the normal gate when scope or filter behavior is uncertain.
 Tag pushes are outside the main-only push trigger. Static tests verify workflow
 configuration; only hosted event evidence verifies actual scheduling.
@@ -183,7 +188,7 @@ stop if compilation fails. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal Depot CI has six Linux jobs, and each suite runs in exactly one of them:
+Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one of them:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -192,7 +197,7 @@ Normal Depot CI has six Linux jobs, and each suite runs in exactly one of them:
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip because the runner has no systemd |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 
 The Checks workflow performs three full builds across its jobs. The Python
 contract, state and Tidbyt suites run on Python 3.14 only, the version of the
@@ -209,9 +214,9 @@ Existing provider qualification records and device ownership are unchanged.
 
 ### CI cost and suite timings
 
-Depot bills job minutes, so a duplicate suite or an extra full run costs as
-much as a new one. These step times come from #860's last PR run on
-2026-10-06, before #861 combined the jobs.
+Each job takes runner time, so a duplicate suite or an extra full run costs as
+much as a new one. These step times come from #860's last PR run on Depot on
+2026-10-06, before #861 combined the jobs. GitHub-hosted runners may differ.
 
 | Job and step | Seconds |
 | --- | ---: |
@@ -311,10 +316,12 @@ Guide-only revisions skip the core job under the
 `npx eslint docs/work-guide` for them. It needs no build, because the guide has
 no linted TypeScript.
 
-## Depot diagnostic access
+<a id="depot-diagnostic-access"></a>
+
+## CI diagnostic access
 
 Routine merge and main-CI evidence uses the GitHub check records described in
-[the SDLC](sdlc.md#depot-ci-evidence). Query the exact SHA with pagination:
+[the SDLC](sdlc.md#ci-evidence). Query the exact SHA with pagination:
 
 ```bash
 gh api --paginate 'repos/jimmie-potts/agent-device-hub/commits/<sha>/check-runs?per_page=100&filter=latest'
@@ -325,45 +332,30 @@ For reruns or contradictory results, repeat the check-run query with
 `filter=all`. Compare the complete expected job set, provider, revision and event
 association; the commands alone do not establish eligibility.
 
-When deeper evidence is required, use the supported Depot CLI or
-[Depot CI API](https://depot.dev/docs/api/ci/reference), without relying on browser
-sign-in. With an installed CLI, discover runs for the repository and SHA, inspect
-the matching run, then read the relevant attempt's logs:
+When deeper evidence is required, read the workflow run with the GitHub CLI's
+existing login. Find the runs for the SHA, list a run's jobs, then read the
+failed steps' log:
 
 ```bash
-depot ci run list --repo jimmie-potts/agent-device-hub --sha <sha>
-depot ci status <run-id> --output json
-depot ci logs <attempt-id> --timestamps
+gh run list --repo jimmie-potts/agent-device-hub --commit <full-sha> --json databaseId,workflowName,event,status,conclusion
+gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
+gh run view <run-id> --repo jimmie-potts/agent-device-hub --log-failed
 ```
 
-See the [CLI reference](https://depot.dev/docs/cli/reference/depot-ci) for optional
-organization selection and log export. These are read operations; access does
-not itself authorize dispatch, retry, cancellation, secret changes or SSH.
-`depot ci logs <attempt-id> --timestamps` returns a failed attempt's full log
-even when the status output shows `download_available` as false. A delivery
-authorized to rerun one failed job on the reviewed head finds the run with
-`depot ci run list --repo <repo> --sha <sha> --status failed` and reruns it
-with `depot ci retry <run-id> --job <job-id>`; the job ID comes from
-`depot ci status <run-id> --output json`, and the `job_key` such as
-`ci.yml:dashboard:matrix-0` is not accepted. An installed CLI that is already
-logged in needs no `DEPOT_TOKEN`. See the [SDLC](sdlc.md#depot-ci-evidence) for
-the evidence to record.
+`--commit` needs the full 40-character SHA; an abbreviated one silently lists
+nothing. The retired `ci.yml` and `work-guide.yml` still appear, disabled, with
+the same workflow names as `checks.yml` and `guide.yml`, so select workflows by
+file name. These are read operations; access does not itself authorize
+dispatch, rerun, cancellation or secret changes. A delivery authorized to rerun
+one failed job on the reviewed head runs `gh run rerun --job <job-id>`, with the
+job's `databaseId` from `gh run view <run-id> --json jobs`; `gh` refuses a run
+ID given together with `--job`. Downloaded artifacts and raw logs stay outside
+Git; summarize only the evidence needed for the task. See
+the [SDLC](sdlc.md#ci-evidence) for the evidence to record.
 
-An owner provisions authentication outside Git and supplies `DEPOT_TOKEN` through
-the agent's secure environment, or uses `depot login` for local development.
-Verify access by reading a known run and one job's logs before claiming diagnostic
-access is configured. Never paste credentials into chat, command arguments,
-committed files or delivery evidence. Keep raw logs outside Git and summarize
-only the evidence needed for the task.
-
-Depot's [authentication documentation](https://depot.dev/docs/cli/authentication)
-currently permits user and organization tokens for CI, not project or registry
-pull tokens. Organization tokens cover one organization; user tokens cover the
-user's organizations. Neither is documented as read-only CI access. Prefer an
-organization token for this integration and treat its write capabilities as
-outside read-only diagnosis. Credential provisioning and successful access
-verification are separate from adopting the merge policy; absent diagnostic
-credentials do not block otherwise complete routine check evidence.
+Runs before #870 were on Depot. Their GitHub check records stay readable as
+above, and their logs through the Depot CLI or dashboard while that account
+lasts.
 
 ## Delivery preflight
 
@@ -393,8 +385,8 @@ prints tokens, local paths or reviewer return text.
 | Gate | What it reads | Rule |
 | --- | --- | --- |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
-| Depot CI | Expected jobs from `.depot/workflows/` at the PR head and, once merged, at the main merge commit, with matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected) and branch-rule checks; every page of `filter=all` check runs. A workflow edit cannot drop a job expected at the merge-base without an unresolved entry | [Depot CI evidence](sdlc.md#depot-ci-evidence) |
-| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
+| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
+| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no run from the revision's CI provider; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
@@ -1596,7 +1588,7 @@ legacy projections and synthetic restart. Hook tests cover explicit version
 selection, bounded Codex/Claude title reads, missing sources and content
 exclusion. HTTP tests exercise the configured Desktop index and Unicode labels;
 MCP and browser checks cover metadata exposure. The existing glob-based suites
-and Depot matrix include these tests; `test:dashboard:browser` also runs
+and CI matrix include these tests; `test:dashboard:browser` also runs
 `apps/dashboard/tests/session-metadata.mjs` for desktop/mobile candidates.
 
 Run build/type, controller, lifecycle, state, agent-status, Tidbyt, LIFX,
@@ -1708,10 +1700,14 @@ personal state or devices, and neither contacts Windows: the tests set
 `APP_VERIFY_WINDOWS_CHECK=off`.
 
 The App verification CI job runs both after a fresh build and Chromium
-install. Depot's Ubuntu runner is not booted with systemd: on PR #552,
-`systemctl --user is-system-running` answered `offline` and
+install. Depot's Ubuntu runner, which ran CI until #870, was not booted with
+systemd: on PR #552, `systemctl --user is-system-running` answered `offline` and
 `loginctl enable-linger` failed with "System has not been booted with systemd
-as init system (PID 1)". CI therefore proves the first part only.
+as init system (PID 1)". GitHub-hosted runners do have a user manager, but under
+their systemd 255 the lease timer does not read back
+([run](https://github.com/jimmie-potts/agent-device-hub/actions/runs/37464802851), [#873](https://github.com/jimmie-potts/agent-device-hub/issues/873)).
+The App verification job therefore hides the user bus, the lifecycle tests skip,
+and CI proves the first part only.
 `npm run package:app-verify` writes
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
@@ -1754,7 +1750,7 @@ Hub #495 composes one preview from the three adapters with
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
 adapters in disposable pinned Git checkouts and skip without a user manager,
-as on Depot's runner. The safety-thaw cases also change a run's own lease
+as in the App verification CI job. The safety-thaw cases also change a run's own lease
 without updating the composition, expire it during a freeze, and verify stop
 removes the timer and service after an interrupted injection.
 `apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command
@@ -1905,7 +1901,7 @@ The source contract in `packages/observability` uses Node 24 and Python 3.14. Fr
 `npm run test:observability:python`, `npm run test:observability:query` and
 `npm run test:observability:package` and `npm run test:observability:browser`
 (with Chromium in the shared Playwright cache). The browser check runs in the
-existing Depot dashboard job, where Chromium is already installed. The Depot core job
+existing dashboard CI job, where Chromium is already installed. The core CI job
 runs the built conformance, Python, query and archive-consumer checks. Keep
 the shared controller/lifecycle/workflow and affected consumer checks required
 by the final change.
@@ -1929,8 +1925,8 @@ installed coverage or physical-device behavior.
 
 Use Node 24 and Python 3.14. Run `npm ci`, the shared build/type/contract
 and workflow checks, the owning Hub/Hub MCP/package checks, and
-`npm run test:observability:pilot`. Depot runs the pilot tests in the core
-CI job. The source tests use synthetic inputs and no Docker.
+`npm run test:observability:pilot`. CI runs the pilot tests in the core
+job. The source tests use synthetic inputs and no Docker.
 
 Hub synthetic state must be outside every Git checkout. On this host use:
 
@@ -2072,8 +2068,8 @@ For `apps/maintenance`, use Node 24 from the repository root. Run `npm ci`,
 `npm run test:maintenance:package:built`,
 `npm run test:observability:built`, `npm run test:contracts:built`,
 `npm run test:contracts:python`, `npm run check:workflow` and
-`npm run test:workflow`. All must exit zero. Depot runs the intake tests in its
-contracts jobs. This suite covers the owning tracker-closeout adapter, full
+`npm run test:workflow`. All must exit zero. CI runs the intake tests in its
+core job. This suite covers the owning tracker-closeout adapter, full
 installation receipts, canonical Python recommendation tooling and all five
 fixed repository closeout policies in the extracted package. Policy cases cover
 wrong runtime/repository/revision/owner, tool plan digests and file/link readback,

@@ -1,10 +1,13 @@
-// Expected Depot jobs from `.depot/workflows/` at a candidate revision.
-// Depot reports each job as a GitHub check run named "<workflow> / <job>",
-// with matrix values substituted. Anything this module cannot evaluate exactly
-// is returned as uncertain so the caller keeps the normal gate.
+// Expected CI jobs from a revision's workflow directory (context.mjs CI_PROVIDERS).
+// GitHub Actions reports each job as a check run named after the job; Depot
+// named it "<workflow> / <job>". Matrix values are substituted either way.
+// Each job also gets the provider-independent key "<workflow> / <job>", which
+// compares coverage across a provider change. Anything this module cannot
+// evaluate exactly is returned as uncertain so the caller keeps the normal gate.
 import YAML from 'yaml';
 
 const MATRIX_REF = /\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/g;
+const HAS_MATRIX_REF = /\$\{\{\s*matrix\./;
 
 function normalizeTriggers(on) {
   if (typeof on === 'string') return { [on]: {} };
@@ -99,9 +102,13 @@ function expandMatrix(job) {
   return { combos, keys };
 }
 
-function jobNames(workflow, job) {
+function jobNames(workflow, job, provider) {
   const { combos, keys, error } = expandMatrix(job);
   if (error) return { error: `${workflow.file} job ${job.id}: cannot expand (${error})` };
+  // GitHub Actions adds matrix values to a job name that names none; that form is not evaluated.
+  if (!provider.qualifiedNames && keys && keys.length && job.name !== undefined && !HAS_MATRIX_REF.test(String(job.name))) {
+    return { error: `${workflow.file} job ${job.id}: a matrix job whose name has no matrix value is not evaluated` };
+  }
   const names = [];
   for (const combo of combos) {
     let name;
@@ -111,17 +118,20 @@ function jobNames(workflow, job) {
       name = keys && keys.length ? `${job.id} (${keys.map(key => combo[key]).join(', ')})` : job.id;
     }
     if (name.includes('${{')) return { error: `${workflow.file} job ${job.id}: cannot expand name ${JSON.stringify(job.name)}` };
-    names.push(`${workflow.name} / ${name}`);
+    const key = `${workflow.name} / ${name}`;
+    names.push({ name: provider.qualifiedNames ? key : name, key });
   }
   return { names };
 }
 
 /**
- * Enumerate the check names Depot should report for one event.
- * Returns {jobs, filtered, uncertain, notes}. Uncertain entries mean the
- * expected set may be missing jobs; notes record conservative choices.
+ * Enumerate the check names `provider` should report for one event.
+ * Returns {jobs, filtered, uncertain, notes}; each job has its check `name`
+ * and its `key`. Uncertain entries mean the expected set may be missing jobs;
+ * notes record conservative choices.
  */
-export function expectedJobs(workflows, { event, branch, files, filesComplete }) {
+export function expectedJobs(workflows, { event, branch, files, filesComplete }, provider) {
+  if (!provider) throw new Error('expectedJobs needs the CI provider');
   const jobs = [];
   const filtered = [];
   const uncertain = [];
@@ -145,13 +155,17 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete })
         continue;
       }
       if (job.if !== undefined) notes.push(`${workflow.file} job ${job.id}: its condition is not evaluated; it stays expected`);
-      const result = jobNames(workflow, job);
+      const result = jobNames(workflow, job, provider);
       if (result.error) {
         uncertain.push(result.error);
         continue;
       }
-      for (const name of result.names) jobs.push({ name, workflow: workflow.file, job: job.id });
+      for (const { name, key } of result.names) jobs.push({ name, key, workflow: workflow.file, job: job.id });
     }
   }
+  // Two jobs with one check name cannot be told apart in the check runs.
+  const counts = new Map();
+  for (const job of jobs) counts.set(job.name, (counts.get(job.name) ?? 0) + 1);
+  for (const [name, count] of counts) if (count > 1) uncertain.push(`check name ${JSON.stringify(name)} belongs to ${count} jobs`);
   return { jobs, filtered, uncertain, notes };
 }

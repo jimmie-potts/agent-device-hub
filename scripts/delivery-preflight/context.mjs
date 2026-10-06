@@ -15,7 +15,15 @@ export class LocalReadFailure extends Error {
 }
 
 export const SDLC = 'docs/sdlc.md';
-export const DEPOT_APP = 'depot-code-access';
+// CI providers in detection order. A revision uses the first provider whose
+// workflow directory holds a workflow. Depot ran Hub CI until #870 moved it to
+// GitHub Actions, and Depot-era revisions also keep disabled copies under
+// .github/workflows, so Depot comes first. GitHub Actions names each check run
+// after its job; Depot named it "<workflow> / <job>".
+export const CI_PROVIDERS = Object.freeze([
+  Object.freeze({ id: 'depot', title: 'Depot CI', directory: '.depot/workflows', app: 'depot-code-access', qualifiedNames: true }),
+  Object.freeze({ id: 'github-actions', title: 'GitHub Actions', directory: '.github/workflows', app: 'github-actions', qualifiedNames: false }),
+]);
 export const GUIDE_ROOT = 'docs/work-guide/';
 export const COMPARE_FILE_LIMIT = 300;
 
