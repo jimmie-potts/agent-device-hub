@@ -1,10 +1,10 @@
 // What only the remote transport has (Hub #883): authentication, validation at the edge, reconnects, a slow remote
 // consumer and the 256 KiB cap on a sync answer. The shared behavior is in conformance.test.ts.
 import assert from 'node:assert/strict';
-import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
-import {REMOTE_PATH, REMOTE_SCHEMA, SdkError, type Overflow, type Reply, type SyncChange} from '../src/index.js';
-import {SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, type Session} from './support.js';
+import {InProcessBus, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, type Command, type Overflow, type Reply, type RequestResult, type Scheduler, type SyncChange} from '../src/index.js';
+import {MODE_SCHEMA, SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, validator, type Mode, type Session} from './support.js';
 import {startEdge, type Edge} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -182,24 +182,223 @@ it('a sync answer over 256 KiB is refused at the edge as too-large, and the copy
   assert.equal(first.status === 'rejected' ? first.error.error.code : first.status, 'too-large', 'a first sync is refused the same way');
 }));
 
-it('a remote requester\'s deadlines run on its injected scheduler', () => withEdge({}, async edge => {
+
+const codeOf = (result: {status: string; error?: {error: {code: string}}}): string => result.error?.error.code ?? result.status;
+const detailOf = (result: RequestResult): string | undefined => result.status === 'accepted' ? undefined : result.error.error.detail;
+const reconnects = (edge: Edge, source: string): number => edge.logs.filter(record => record.event === 'edge.connected' && record.source === source).length;
+
+/** A scheduler that holds every callback until the test runs it. */
+function manual(): Scheduler & {pending: {delayMs: number; run: () => void}[]} {
   const pending: {delayMs: number; run: () => void}[] = [];
-  const scheduler = {after: (delayMs: number, run: () => void) => {
+  return {pending, after: (delayMs, run) => {
     const entry = {delayMs, run};
     pending.push(entry);
-    return () => { pending.splice(pending.indexOf(entry), 1); };
+    return () => {
+      const index = pending.indexOf(entry);
+      if (index >= 0) pending.splice(index, 1);
+    };
   }};
-  const requester = await edge.connect('bunny/core', {scheduler});
-  const responder = await edge.connect('bunny/wall');
-  const answer = deferred<Reply>();
-  await responder.respond('bunny.cmd.mode.*', () => answer.promise);
+}
+
+/** A raw stream for `source`, and its connection id, as a remote part that does not use the client would open it. */
+async function rawStream(edge: Edge, source: 'bunny/core' | 'bunny/wall'): Promise<{connection: string; cancel: () => Promise<void>}> {
+  const stream = await fetch(`${edge.url}${REMOTE_PATH}/stream`, {headers: {authorization: `Bearer ${tokenOf(edge, source)}`}});
+  assert.ok(stream.body);
+  const reader = stream.body.getReader();
+  const {value} = await reader.read();
+  const ready = JSON.parse(/data: (.*)/.exec(new TextDecoder().decode(value))?.[1] ?? '{}') as {connection?: string};
+  const {connection} = ready;
+  if (connection === undefined) return assert.fail('the stream opens with its connection');
+  return {connection, cancel: () => reader.cancel()};
+}
+
+it('a dropped stream never answers a command its remote handler holds: the deadline makes it uncertain-result', () => withEdge({}, async edge => {
+  const requester = checked(edge.bus.connect('bunny/core'));
+  const responder = checked(await edge.connect('bunny/wall'));
+  const holding = deferred<Reply>();
+  const got: string[] = [];
+  await responder.respond<Mode>('bunny.cmd.mode.*', command => { got.push(command.data.mode); return holding.promise; });
+  const pending = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 600});
   try {
-    const result = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});
-    await until(() => pending.some(entry => entry.delayMs === 60_000), 'the deadline on the scheduler');
-    // The deadline fires when the scheduler says so, not after a minute.
-    for (const entry of [...pending]) if (entry.delayMs === 60_000) entry.run();
-    assert.equal((await result).status, 'uncertain');
+    await until(() => got.length === 1, 'the command at the remote handler');
+    edge.edge.disconnect('bunny/wall');
+    const result = await pending;
+    assert.equal(codeOf(result), 'uncertain-result', 'the handler may have run it, so retrying is not safe');
+  } finally {
+    holding.resolve({status: 'accepted'});
+  }
+}));
+
+it('a reply sent on the new connection after a dropped stream reaches the requester', () => withEdge({}, async edge => {
+  const requester = checked(edge.bus.connect('bunny/core'));
+  const responder = checked(await edge.connect('bunny/wall'));
+  const holding = deferred<Reply>();
+  const got: string[] = [];
+  await responder.respond<Mode>('bunny.cmd.mode.*', command => { got.push(command.data.mode); return holding.promise; });
+  const pending = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 10_000});
+  try {
+    await until(() => got.length === 1, 'the command at the remote handler');
+    edge.edge.disconnect('bunny/wall');
+    await until(() => reconnects(edge, 'bunny/wall') === 2, 'the reconnect');
+  } finally {
+    holding.resolve({status: 'accepted'});
+  }
+  assert.equal((await pending).status, 'accepted');
+}));
+
+it('a remote requester takes the edge\'s answer at its deadline, and settles on its own only if the edge stays silent', () => withEdge({}, async edge => {
+  const requester = await edge.connect('bunny/core');
+  const answer = deferred<Reply>();
+  await checked(edge.bus.connect('bunny/wall')).respond('bunny.cmd.mode.*', () => answer.promise);
+  try {
+    // The edge answers at the deadline, well inside the requester's grace.
+    const startedAt = Date.now();
+    const held = await requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 300});
+    assert.equal(codeOf(held), 'uncertain-result');
+    assert.equal(detailOf(held), 'no reply within 300 ms', 'the bus\'s own answer, from the edge');
+    assert.ok(Date.now() - startedAt < 1000, 'before the requester\'s grace ran out');
+
+    // An edge that stays silent: the requester's scheduler runs its deadline plus grace before the edge's deadline.
+    const scheduler = manual();
+    const patient = await edge.connect('bunny/second', {scheduler});
+    const silent = patient.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 60_000});
+    await until(() => scheduler.pending.some(entry => entry.delayMs === 61_000), 'the deadline plus grace on the scheduler');
+    for (const entry of [...scheduler.pending]) if (entry.delayMs === 61_000) entry.run();
+    const result = await silent;
+    assert.equal(codeOf(result), 'uncertain-result');
+    assert.equal(detailOf(result), 'the edge did not answer within 61000 ms');
   } finally {
     answer.resolve({status: 'accepted'});
   }
+}));
+
+it('the edge rebuilds a remote refusal in the shared error body, cutting its detail and dropping extra fields', () => withEdge({}, async edge => {
+  const local = checked(edge.bus.connect('bunny/core'));
+  const remote = await edge.connect('bunny/wall');
+  const wild = {error: {code: 'invalid-state', retryable: false, detail: 'x'.repeat(5000), note: 'not in the error block'}} as unknown as ErrorBody;
+  await remote.respond('bunny.cmd.mode.*', () => wild);
+  const refusal = await local.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'req-wild'});
+  assert.equal(refusal.status, 'rejected');
+  if (refusal.status !== 'rejected' || refusal.reply === undefined) return assert.fail('a refusal in a reply');
+  const traceId = refusal.error.error.traceId ?? '';
+  assert.deepEqual(refusal.error, errorBody('invalid-state', {detail: 'x'.repeat(MAX_DETAIL), requestId: 'req-wild', traceId}));
+  await remote.serveSync([FAMILY], () => wild);
+  const synced = await local.sync([FAMILY], () => {}, {timeoutMs: 5000});
+  assert.equal(synced.status, 'rejected');
+  if (synced.status !== 'rejected') return;
+  assert.deepEqual(synced.error, errorBody('invalid-state', {detail: 'x'.repeat(MAX_DETAIL), requestId: synced.requestId, traceId: synced.error.error.traceId ?? ''}));
+}));
+
+it('a token acts only on its own source\'s connection: close, reply and answer on another\'s are forbidden', () => withEdge({}, async edge => {
+  const core = await rawStream(edge, 'bunny/core');
+  try {
+    const calls: [string, object][] = [
+      ['close', {id: 'any'}],
+      ['reply', {responder: 'any', requestId: 'req-1', reply: {status: 'accepted'}}],
+      ['answer', {server: 'any', requestId: 'req-1', answer: {revision: 0, states: []}}],
+    ];
+    for (const [call, body] of calls) {
+      const answer = await (async () => {
+        const response = await fetch(`${edge.url}${REMOTE_PATH}/${call}`, {method: 'POST', headers: {authorization: `Bearer ${tokenOf(edge, 'bunny/wall')}`},
+          body: JSON.stringify({schema: REMOTE_SCHEMA, connection: core.connection, ...body})});
+        return {status: response.status, body: await response.json() as ErrorBody};
+      })();
+      assert.equal(answer.status, 403, call);
+      assert.equal(answer.body.error.code, 'forbidden', call);
+    }
+  } finally {
+    await core.cancel();
+  }
+}));
+
+it('after reconnects, a remote responder and a remote sync owner still serve', () => withEdge({}, async edge => {
+  const local = checked(edge.bus.connect('bunny/core'));
+  const remote = checked(await edge.connect('bunny/wall'));
+  await remote.respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+  await remote.serveSync([FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+  for (const count of [2, 3]) {
+    edge.edge.disconnect('bunny/wall');
+    await until(() => reconnects(edge, 'bunny/wall') === count, `reconnect ${count - 1}`);
+  }
+  // The re-registration races the last reconnect's log line, so wait until the responder is back.
+  let accepted = false;
+  for (let attempt = 0; attempt < 50 && !accepted; attempt += 1) {
+    accepted = (await local.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 2000})).status === 'accepted';
+    if (!accepted) await flush();
+  }
+  assert.ok(accepted, 'the responder serves again');
+  assert.equal((await local.sync([FAMILY], () => {}, {timeoutMs: 2000})).status, 'synced');
+}));
+
+it('a remote responder ignores a command that reaches it past its expiry', () => withEdge({}, async edge => {
+  // The responder's clock is ten minutes ahead, so every command it receives looks expired.
+  const remote = await edge.connect('bunny/wall', {now: () => Date.now() + 600_000});
+  const handled: string[] = [];
+  await remote.respond<Mode>('bunny.cmd.mode.*', command => { handled.push(command.data.mode); return {status: 'accepted'}; });
+  const result = await checked(edge.bus.connect('bunny/core')).request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 300});
+  assert.equal(codeOf(result), 'uncertain-result');
+  assert.deepEqual(handled, [], 'the handler never saw it');
+}));
+
+it('the edge refuses a command or a sync request that arrives past its expiry with expired', () => withEdge({}, async edge => {
+  const sentAtMs = Date.now() - 2000;
+  const command = buildMessage<Mode & {requestId: string}>('bunny/core', 'command', {
+    type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: MODE_SCHEMA, data: {mode: 'work', requestId: 'req-late'},
+  }, TRACE, sentAtMs, sentAtMs + 1000) as Command<Mode>;
+  const late = await call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command}, tokenOf(edge, 'bunny/core'));
+  assert.equal(late.status, 400);
+  assert.equal((late.body as ErrorBody).error.code, 'expired');
+}));
+
+it('an edge refuses a sync request whose subject does not name its families', () => withEdge({}, async edge => {
+  const sentAtMs = Date.now();
+  const request = buildMessage('bunny/core', 'sync-request', {
+    type: 'org.bunny.sync.requested', subject: 'core', dataschema: 'https://bunny.invalid/events/sync-request/2.0',
+    data: {requestId: 'sync-core', families: [FAMILY]},
+  }, TRACE, sentAtMs, sentAtMs + 5000);
+  const answer = await call(edge, 'sync', {schema: REMOTE_SCHEMA, request}, tokenOf(edge, 'bunny/core'));
+  assert.equal(answer.status, 400);
+  assert.equal((answer.body as ErrorBody).error.code, 'invalid-message');
+}));
+
+it('a call that meets a lost stream is refused as retryable unavailable and leaves nothing behind', () => withEdge({}, async edge => {
+  const remote = await edge.connect('bunny/wall');
+  // The edge drops the stream; in the same turn, before the client can notice, the client registers a responder.
+  edge.edge.disconnect('bunny/wall');
+  const lost = await remote.respond('bunny.cmd.mode.*', () => ({status: 'accepted'})).then(() => undefined, (error: unknown) => error);
+  assert.ok(lost instanceof SdkError, 'the call on the lost connection is refused');
+  assert.equal(lost.body.error.code, 'unavailable');
+  assert.equal(lost.body.error.retryable, true);
+  await until(() => reconnects(edge, 'bunny/wall') === 2, 'the reconnect');
+  // Nothing of the refused call holds the key: registering again works.
+  await remote.respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+  assert.equal((await checked(edge.bus.connect('bunny/core')).request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 2000})).status, 'accepted');
+}));
+
+it('an edge expired refusal of a remote part\'s own sync request is unavailable to it, since a sync only reads', () => withEdge({}, async edge => {
+  await checked(edge.bus.connect('bunny/core')).serveSync([FAMILY], () => ({revision: 0, states: []}));
+  // The remote part's clock is ten minutes behind, so the edge finds its sync request expired.
+  const remote = await edge.connect('bunny/wall', {now: () => Date.now() - 600_000});
+  const result = await remote.sync([FAMILY], () => {}, {timeoutMs: 5000});
+  assert.equal(result.status, 'rejected');
+  if (result.status !== 'rejected') return;
+  assert.equal(result.error.error.code, 'unavailable');
+  assert.equal(result.error.error.retryable, true);
+}));
+
+it('an edge refuses grants with a repeated token or a malformed source, without naming the token', () => {
+  const secret = 'a-token-that-must-not-leak';
+  for (const grants of [[{source: 'bunny/core', token: secret}, {source: 'bunny/wall', token: secret}], [{source: 'core', token: secret}]]) {
+    assert.throws(() => new RemoteEdge({bus: new InProcessBus(), validator, grants}), (error: unknown) => error instanceof SdkError
+      && error.body.error.code === 'invalid-request' && !JSON.stringify(error.body).includes(secret) && !String(error).includes(secret));
+  }
+});
+
+it('closing a remote participant cancels its reconnect backoff', () => withEdge({}, async edge => {
+  const scheduler = manual();
+  const remote = await edge.connect('bunny/wall', {scheduler});
+  edge.edge.disconnect('bunny/wall');
+  await until(() => scheduler.pending.length > 0, 'the backoff on the scheduler');
+  await remote.close();
+  assert.deepEqual(scheduler.pending, [], 'nothing is left on the scheduler');
 }));

@@ -1,10 +1,9 @@
 // One conformance suite for every transport (Hub #883, ADR 0012 "Portability"): the same SDK calls behave the same
 // in process and over SSE and HTTP. Where a transport must answer differently, the transport names its expectation.
 import assert from 'node:assert/strict';
-import {setTimeout as delay} from 'node:timers/promises';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Command, type Overflow, type Reply, type Snapshot, type SyncChange} from '../src/index.js';
-import {SESSION_FAMILY, deferred, flush, it, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
+import {MAX_TIMEOUT_MS, SdkError, type Command, type Overflow, type Reply, type Snapshot, type SyncChange, type SyncRequest} from '../src/index.js';
+import {SESSION_FAMILY, blob, deferred, flush, it, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
 import {inProcess, remote, using, type Transport} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -119,7 +118,7 @@ function suite(transport: Transport): void {
     assert.equal(result.error?.error.requestId, 'req-held');
   }));
 
-  it(name(`a command still waiting at its deadline is ${transport.queuedCommandAtDeadline}, and never reaches the handler`), () => using(transport, {}, async world => {
+  it(name('a command still waiting at its deadline is expired, and never reaches the handler'), () => using(transport, {}, async world => {
     const requester = await world.connect('bunny/core');
     const responder = await world.connect('bunny/wall');
     const busy = deferred<Reply>();
@@ -137,7 +136,8 @@ function suite(transport: Transport): void {
       // Released before any check, so a failed check cannot leave the handler waiting at close.
       busy.resolve({status: 'accepted'});
     }
-    assert.equal(codeOf(late), transport.queuedCommandAtDeadline);
+    // The command never reached the handler, so it is expired on every transport, as ADR 0012 says.
+    assert.equal(codeOf(late), 'expired');
     assert.equal((await first).status, 'accepted');
     assert.equal((await requester.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 5000})).status, 'accepted');
     assert.deepEqual(handled, ['work', 'free'], 'the expired command was ignored');
@@ -239,7 +239,7 @@ function suite(transport: Transport): void {
       await until(() => served.length === 1, 'the first request');
       // The consumer's request waits behind it in the owner's queue.
       waiting = consumer.sync([FAMILY], () => {}, {timeoutMs: 10_000});
-      await delay(100);
+      await world.arrived('sync', 2);
       await consumer.close();
       const cancelled = await waiting;
       assert.equal(cancelled.status === 'rejected' ? cancelled.error.error.code : cancelled.status, 'cancelled');
@@ -261,6 +261,52 @@ function suite(transport: Transport): void {
     await assert.rejects(participant.request('bunny.state.mode.wall', setMode('work'), {timeoutMs: 5000}), refused('invalid-request'), 'a state key');
     await assert.rejects(participant.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 0}), refused('invalid-request'), 'no time');
     await assert.rejects(participant.sync([], () => {}, {timeoutMs: 5000}), refused('invalid-request'), 'no family');
+    // One maximum on every transport, so no deadline timer outgrows setTimeout.
+    await assert.rejects(participant.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: MAX_TIMEOUT_MS + 1}), refused('invalid-request'), 'a request over the maximum');
+    await assert.rejects(participant.sync([FAMILY], () => {}, {timeoutMs: MAX_TIMEOUT_MS + 1}), refused('invalid-request'), 'a sync over the maximum');
+  }));
+
+  it(name(`closing a participant settles its waiting request as ${transport.closedWhileQueued}, and the command never runs`), () => using(transport, {}, async world => {
+    const requester = await world.connect('bunny/core');
+    const blocker = world.local('bunny/second');
+    const busy = deferred<Reply>();
+    const handled: string[] = [];
+    await world.local('bunny/wall').respond<Mode>('bunny.cmd.mode.*', command => {
+      handled.push(command.data.mode);
+      return command.data.mode === 'work' ? busy.promise : {status: 'accepted'};
+    });
+    const first = blocker.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 10_000});
+    try {
+      await until(() => handled.length === 1, 'the first command');
+      const waiting = requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 10_000});
+      // The requester's command now waits in the responder's queue.
+      await world.arrived('request', 1);
+      const closing = requester.close();
+      assert.equal(requester.close(), closing, 'closing again returns the same promise');
+      await closing;
+      const result = await waiting;
+      assert.equal(codeOf(result), transport.closedWhileQueued);
+    } finally {
+      busy.resolve({status: 'accepted'});
+    }
+    assert.equal((await first).status, 'accepted');
+    assert.equal((await blocker.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 5000})).status, 'accepted');
+    assert.deepEqual(handled, ['work', 'free'], 'the withdrawn command never ran');
+  }));
+
+  it(name('a sync request and its sync.completed name the requested families, joined by commas'), () => using(transport, {}, async world => {
+    const owner = await world.connect('bunny/core');
+    const consumer = await world.connect('bunny/wall');
+    const requests: Message<SyncRequest>[] = [];
+    await owner.serveSync([FAMILY, 'test-blob'], request => {
+      requests.push(request);
+      return {revision: 1, states: [session('s1', 1), blob('b1', 1, 10)]};
+    });
+    const result = await consumer.sync([FAMILY, 'test-blob'], () => {}, {timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    if (result.status !== 'synced') return;
+    assert.equal(requests[0]?.subject, `${FAMILY},test-blob`);
+    assert.equal(result.message.subject, `${FAMILY},test-blob`);
   }));
 }
 

@@ -3,6 +3,12 @@
 import type {ErrorBody, ErrorDetail, Message} from '@jimmie-potts/event-contracts/v2';
 import type {SyncHandler, SyncOptions, SyncProvider, SyncResult} from './sync.js';
 
+/**
+ * The longest deadline a request or sync may have, one day, on every transport. A remote requester waits a little past
+ * it, and no timer may outgrow setTimeout's limit of about 24.8 days.
+ */
+export const MAX_TIMEOUT_MS = 86_400_000;
+
 /** W3C trace context. A received message is a valid parent, because it carries both fields. */
 export type TraceContext = {traceparent: string; tracestate?: string};
 
