@@ -20,13 +20,13 @@ export type ConformanceSpec = {
   /** The payload schemas of the module's own families, by `dataschema`. The core families are registered already. */
   schemas?: Readonly<Record<string, object>>;
   /** The families the module serves with `serveSync`. */
-  serves: readonly string[];
+  serves?: readonly string[];
   /** The families the module copies with `sync` at start, and the snapshot the kit's stand-in owner, `bunny/core`, serves. */
   copies?: {families: readonly string[]; snapshot: Snapshot};
   /** A command the module accepts. It must report the command's outcome through its outbox. */
-  accepted: {key: string; draft: CommandDraft<object>};
+  accepted?: {key: string; draft: CommandDraft<object>};
   /** A command the module refuses, and the error code it refuses it with. */
-  refused: {key: string; draft: CommandDraft<object>; code: string};
+  refused?: {key: string; draft: CommandDraft<object>; code: string};
   /** How long a start, stop, request, sync or awaited message may take, in milliseconds. Defaults to 5000. */
   timeoutMs?: number;
 };
@@ -44,6 +44,8 @@ export const CHECKS = {
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/** Stub for the review round's tests (#882): optional fields are not handled yet. */
+const given = <T>(value: T | undefined): T => { if (value === undefined) throw new Error('not built yet'); return value; };
 const flush = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
 
 /** Rejects when `work` has not settled within `timeoutMs`. */
@@ -177,9 +179,9 @@ const checks = (spec: ConformanceSpec): Record<keyof typeof CHECKS, () => Promis
   lifecycle: () => inWorld(spec, async world => {
     await world.start();
     await within(world.harness.stop(), world.timeoutMs, 'the module\'s stop');
-    const request = await world.request(spec.accepted);
+    const request = await world.request(given(spec.accepted));
     assert.equal(request.status === 'rejected' && request.error.error.code, 'unavailable', 'no responder is left');
-    const sync = await world.probe.sync(spec.serves, () => {}, {timeoutMs: world.timeoutMs});
+    const sync = await world.probe.sync(given(spec.serves), () => {}, {timeoutMs: world.timeoutMs});
     assert.equal(sync.status === 'rejected' && sync.error.error.code, 'unavailable', 'no sync owner is left');
     assert.equal(world.harness.pendingTimers(), 0, 'no timer is left');
     assert.equal(world.harness.runningWorkers(), 0, 'no worker is left');
@@ -187,14 +189,14 @@ const checks = (spec: ConformanceSpec): Record<keyof typeof CHECKS, () => Promis
   }),
   serves: () => inWorld(spec, async world => {
     await world.start();
-    const result = await world.probe.sync(spec.serves, () => {}, {timeoutMs: world.timeoutMs});
+    const result = await world.probe.sync(given(spec.serves), () => {}, {timeoutMs: world.timeoutMs});
     assert.equal(result.status, 'synced', 'the module serves a sync of its families');
     if (result.status !== 'synced') return;
     world.check(result.message, 'sync.completed');
     for (const state of result.copy.states()) {
       world.check(state, 'a synced state');
       assert.equal(state.source, world.harness.source);
-      assert.ok(spec.serves.includes(schemaFamily(state.dataschema) ?? ''), `${state.dataschema} is a served family`);
+      assert.ok(given(spec.serves).includes(schemaFamily(state.dataschema) ?? ''), `${state.dataschema} is a served family`);
     }
     await result.copy.close();
   }),
@@ -210,22 +212,22 @@ const checks = (spec: ConformanceSpec): Record<keyof typeof CHECKS, () => Promis
   }),
   accepts: () => inWorld(spec, async world => {
     await world.start();
-    const result = await world.request(spec.accepted);
+    const result = await world.request(given(spec.accepted));
     assert.equal(result.status, 'accepted');
     if (result.status === 'accepted') world.check(result.reply, 'the reply');
   }),
   refuses: () => inWorld(spec, async world => {
     await world.start();
-    const result = await world.request(spec.refused);
+    const result = await world.request(given(spec.refused));
     assert.equal(result.status, 'rejected');
     if (result.status !== 'rejected') return;
     assert.ok(result.reply, 'the module itself refused it, in a reply');
     world.check(result.reply, 'the reply');
-    assert.equal(result.error.error.code, spec.refused.code);
+    assert.equal(result.error.error.code, given(spec.refused).code);
   }),
   outbox: () => inWorld(spec, async world => {
     await world.start();
-    const result = await world.request(spec.accepted);
+    const result = await world.request(given(spec.accepted));
     assert.equal(result.status, 'accepted');
     const source = world.harness.source;
     const isOutcome = (message: Message): boolean =>

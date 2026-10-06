@@ -1,5 +1,5 @@
 // Shared helpers for the runtime suites: small in-test fixture modules, private state directories and runtimes that stop
-// after their test. The reusable module test kit is #882; these helpers serve only this package's tests.
+// after their test. These helpers serve only this package's tests.
 import assert from 'node:assert/strict';
 import {mkdtemp, realpath, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';

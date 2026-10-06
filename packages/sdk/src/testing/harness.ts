@@ -19,6 +19,8 @@ export type HarnessOptions = {
   clock?: Clock;
   /** Defaults to the global `setTimeout`. */
   scheduler?: Scheduler;
+  /** How long the participant's close and the module's stop may each take. Defaults to 5000, as in the runtime. */
+  stopTimeoutMs?: number;
 };
 export type HarnessRecord = {level: 'debug' | 'info' | 'warn' | 'error'; event: string; fields: LogFields; trace?: TraceContext};
 

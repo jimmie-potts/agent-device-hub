@@ -18,7 +18,7 @@ export type OutboxOptions = {
   /** The clock for each message's `time`: the module's. */
   clock: Clock;
   /** Runs the outbox's forgetting: the module's scheduler, which the runtime cancels when the module stops. */
-  scheduler: Scheduler;
+  scheduler?: Scheduler;
   /**
    * How long the module must keep running after it publishes a message before the outbox forgets it. A restart before
    * then publishes it again. Defaults to 60000.
@@ -72,7 +72,10 @@ export class Outbox {
    */
   readonly #run = randomInt(1, 2 ** 47);
 
-  constructor({sdk, database, clock, scheduler, retainMs = DEFAULT_RETAIN_MS}: OutboxOptions) {
+  constructor({sdk, database, clock, scheduler = {after: (delayMs, callback) => {
+    const timer = setTimeout(callback, delayMs);
+    return () => { clearTimeout(timer); };
+  }}, retainMs = DEFAULT_RETAIN_MS}: OutboxOptions) {
     if (!Number.isSafeInteger(retainMs) || retainMs < 0 || retainMs > MAX_DELAY_MS) {
       throw new RangeError(`retainMs must be an integer from 0 to ${MAX_DELAY_MS}`);
     }
@@ -117,8 +120,13 @@ export class Outbox {
    * `retainMs` before the module last stopped, which the consumer may not have taken. Call it once in the module's
    * start, after the consumer it reports to is listening. The consumer drops the duplicates by `(source, id)`.
    */
-  republish(): Promise<void> {
+  republish(): Promise<number> {
     return this.#send(this.#stored);
+  }
+
+  /** Stub for the review round's tests (#882): acknowledgments are not built yet. */
+  acknowledge(_id: string): boolean {
+    return false;
   }
 
   #commit<R>(work: (add: AddMessage) => R): R {
@@ -151,20 +159,23 @@ export class Outbox {
   }
 
   /** Publishes the rows `query` selects, one after another. A refusal stops the send; the rest stay stored. */
-  #send(query: StatementSync): Promise<void> {
+  #send(query: StatementSync): Promise<number> {
     const sending = this.#sending.then(async () => {
       let last: number | undefined;
+      let sent = 0;
       try {
         for (const row of query.all() as Row[]) {
           await this.#sdk.publishMessage(row.routing_key, JSON.parse(row.message) as Message);
           this.#published.run(this.#run, row.seq);
           last = row.seq;
+          sent += 1;
         }
       } finally {
         if (last !== undefined) this.#forgetLater(last);
       }
+      return sent;
     });
-    this.#sending = sending.catch(() => {});
+    this.#sending = sending.then(() => {}, () => {});
     return sending;
   }
 

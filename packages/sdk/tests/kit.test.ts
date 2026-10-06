@@ -1,9 +1,13 @@
 // The module test kit (Hub #882): one conformance suite that every module runs in a few lines. A small bulb module
 // passes it; each broken variant fails exactly the check that names its fault.
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdtemp, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {Outbox, type BunnyModule, type Command} from '../src/index.js';
-import {CHECKS, conformanceChecks, moduleConformance, type ConformanceSpec} from '../src/testing/index.js';
+import {InProcessBus, Outbox, type BunnyModule, type Command, type ModuleContext, type StateDraft} from '../src/index.js';
+import {CHECKS, ModuleHarness, conformanceChecks, moduleConformance, type ConformanceSpec} from '../src/testing/index.js';
 import {it} from './support.js';
 
 const BASE = 'https://bunny.invalid/events/';
@@ -24,11 +28,11 @@ type Switch = {power: 'on' | 'off'};
 function bulb(fault: Fault = {}): BunnyModule {
   return {
     manifest: {name: 'bulb', apiVersion: fault.apiVersion ?? '1.0'},
-    async start({sdk, database, clock, scheduler}) {
+    async start({sdk, database, clock}) {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS bulbs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL)');
       db.exec('INSERT OR IGNORE INTO bulbs VALUES (\'b1\', 0, \'off\')');
-      const outbox = new Outbox({sdk, database: db, clock, scheduler});
+      const outbox = new Outbox({sdk, database: db, clock});
       await outbox.republish();
       const state = (row: {id: string; revision: number; power: string}) => ({
         type: 'org.bunny.kit-bulb.updated', subject: row.id, dataschema: BULB_SCHEMA,
@@ -108,4 +112,64 @@ it('the kit catches a stop that never finishes', async () => {
 it('the kit catches a message that breaks its payload schema', async () => {
   // Every state the bulb sends says `dim`, which its schema does not allow: in a sync and in what the command publishes.
   assert.deepEqual(await failing(spec({dimState: true})), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox]);
+});
+
+it('a module that only consumes runs the checks that apply to it', async () => {
+  const MODE = `${BASE}mode/2.0`;
+  const listener: BunnyModule = {
+    manifest: {name: 'listener', apiVersion: '1.0'},
+    async start({sdk}) {
+      const synced = await sdk.sync(['mode'], () => {}, {timeoutMs: 500});
+      if (synced.status === 'rejected') throw new Error('the mode did not sync');
+    },
+    stop: () => {},
+  };
+  const mode: StateDraft<{id: string; revision: number; mode: string; selectedAtMs: number}> = {
+    type: 'org.bunny.mode.updated', subject: 'hub', dataschema: MODE, data: {id: 'hub', revision: 1, mode: 'work', selectedAtMs: 1_791_288_000_000},
+  };
+  const consumer: ConformanceSpec = {
+    create: () => listener,
+    copies: {families: ['mode'], snapshot: {revision: 1, states: [mode]}},
+    timeoutMs: 500,
+  };
+  assert.deepEqual(conformanceChecks(consumer).map(check => check.name), [CHECKS.manifest, CHECKS.lifecycle, CHECKS.copies]);
+  assert.deepEqual(await failing(consumer), []);
+});
+
+it('the harness stops a module as the runtime does: a participant without close, deadlines, and cleanup after errors', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'bunny-harness-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  let seen: ModuleContext | undefined;
+  const failure = new Error('the stop failed');
+  const host = (stop: () => void | Promise<void>): ModuleHarness => new ModuleHarness({
+    manifest: {name: 'probe', apiVersion: '1.0'},
+    start: given => {
+      seen = given;
+      given.database().exec('CREATE TABLE IF NOT EXISTS t (x INTEGER)');
+    },
+    stop,
+  }, {bus: new InProcessBus(), stateDir: dir, stopTimeoutMs: 100});
+
+  const throwing = host(() => { throw failure; });
+  await throwing.start();
+  assert.equal(seen !== undefined && 'close' in seen.sdk, false, 'the module cannot close its own participant');
+  await throwing.stop();
+  assert.equal(throwing.databaseOpen(), false, 'the database closes even when stop throws');
+  assert.deepEqual(throwing.failures, [failure]);
+
+  const hanging = host(() => new Promise(() => {}));
+  await hanging.start();
+  const started = performance.now();
+  await hanging.stop();
+  assert.ok(performance.now() - started < 2000, 'the stop deadline ends the wait');
+  assert.equal(hanging.databaseOpen(), false);
+  assert.equal(hanging.failures.length, 1, 'a stop past its deadline is a failure');
+});
+
+it('loading the kit neither loads nor starts node:test, so another runner can use its checks', () => {
+  const kit = new URL('../src/testing/index.js', import.meta.url).href;
+  const probe = `await import(${JSON.stringify(kit)}); console.log(process.moduleLoadList.some(name => name.includes('test_runner')));`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], {encoding: 'utf8'});
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'false');
 });

@@ -3,7 +3,7 @@
 // the change, an occurrence and the outcome through its outbox. Quiet mode keeps the lamps off.
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';
-import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
+import {followStandInAcks, type ConformanceSpec} from '@jimmie-potts/sdk/testing';
 
 const BASE = 'https://bunny.invalid/events/';
 export const LAMP_SCHEMA = `${BASE}lamp/2.0`;
@@ -43,7 +43,7 @@ const lampState = ({id, revision, power: on}: Lamp): StateDraft<Lamp> =>
 export function lamp(options: LampOptions = {}): BunnyModule {
   return {
     manifest: {name: 'lamp', apiVersion: '1.0'},
-    async start({sdk, database, clock, scheduler, log}) {
+    async start({sdk, database, clock, log}) {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL) STRICT');
       const seed = db.prepare('INSERT OR IGNORE INTO lamps (id, revision, power) VALUES (?, 0, \'off\')');
@@ -57,10 +57,13 @@ export function lamp(options: LampOptions = {}): BunnyModule {
           beforePublish?.();
           return sdk.publishMessage(key, message);
         }},
-        database: db, clock, scheduler,
+        database: db, clock,
       });
-      // What the last run may not have finished reporting goes out again; the core drops what it already has.
-      await outbox.republish();
+      // Until Hub #782 defines the core's acknowledgment, the stand-in core's lets the outbox forget a recorded outcome.
+      await followStandInAcks(sdk, outbox, id => { log.info('lamp.outcome.acknowledged', {id}); });
+      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.
+      const count = await outbox.republish();
+      log.info('lamp.outbox.republished', {count});
 
       const modes = await sdk.sync<{mode: string}>(['mode'], () => {}, {timeoutMs: 5000});
       if (modes.status === 'rejected') throw new Error(`the lamp could not sync the mode: ${modes.error.error.code}`);
