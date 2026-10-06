@@ -77,7 +77,7 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Second row, 10 black keys | `KEY_16`-`KEY_25` | #744 utility actions through the profile's `keys` map, which maps none by default; they do nothing until a later #744 slice maps them |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
 | Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
-| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
+| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knob 1 (`ENC_4`, turn 44, click 32, LED 26) sets the model and knob 2 (`ENC_1`, turn 41, click 29, LED 27) the effort of the task in front (#906); knob 3 (`ENC_2`) is for a later #744 slice. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume (#865): turn 46 sends the system volume keys, click 34 toggles mute, LED 34 flashes on an ignored or failed volume key. Holding its click at boot enters test mode |
 | Far-left two-position switch | `SW_TOG` | Stays unmapped |
@@ -222,9 +222,9 @@ observation before anything depends on it in installed use.
 | Composer focus | Supported | `Alt+L` moves focus to the main composer | `S`: bundle command table |
 | Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run. Since #821 Send no longer reads the Hub marker, which could outlive the request | `D`, `S`, `L` |
 | Send | Supported | Keystroke only: Enter sends (`composerEnterBehavior = "enter"` in the owner's Codex config); mid-turn Enter queues. No non-keystroke send route exists | `S` |
-| Model change | Supported | `Ctrl+Shift+M` opens the model picker and `Alt+M` the recent model and effort combinations | `D`, `S` |
-| Effort change | Unverified | Increase, decrease and cycle commands exist without default keys. Binding one is a personal settings change outside the epic's current authority | `S` |
-| Model and effort readback | Unsupported | Per-task values are not observable locally; config values are defaults only | `S` |
+| Model change | Supported | `Ctrl+Shift+M` opens the `Select effort` picker with "Select model" focused; Enter there opens the model list on the current model; Up and Down move and Enter picks; the picker stays open afterwards. `Alt+M` opens the recent model and effort combinations. Knob 1 uses the picker (#906) | `D`, `S`, `L` (2026-10-06, [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6023440454)) |
+| Effort change | Supported | In the picker, three Downs focus "Power" and Right or Left steps the level. The owner bound "Increase reasoning effort" and "Decrease reasoning effort" to `Ctrl+Alt+=` and `Ctrl+Alt+-` on 2026-10-06; both are app-scoped and unused elsewhere, except that `Ctrl+Alt+-` splits a Claude Desktop pane. Knob 2 uses Power, and the chords only as a fallback with Codex in front | `S`, `O` ([chords](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6023061003)), `L` (2026-10-06, #906) |
+| Model and effort readback | Supported, while the picker is open | The picker's live `StatusBar` announces `<model> <level>, <n> of <count>.`; the level count differs by model. No per-task value is stored locally, and the composer's model button carries no value, so the readback exists only while the picker is open; a chord change cannot be read back | `S`, `L` (2026-10-06, #906) |
 | Plugins, custom UI, app-server control of another task | Unsupported | None can select, focus or send into another task. The Desktop app-server is a private stdio child; a second app-server would compete as a writer | `D`, `S` |
 
 ### Claude Desktop Code tab
@@ -243,8 +243,8 @@ observation before anything depends on it in installed use.
 | Composer focus | Unverified | Composer state is not stored locally; a UIA keyboard-focus check is the planned route | `S` |
 | Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts, but since #821 Send relies on the bridge's own card check instead. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run | `S`, `L` |
 | Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
-| Model and effort change | Unverified | Menu shortcuts are documented for macOS (Cmd+Shift+I, Cmd+Shift+E); the Windows mapping is unverified | `D` |
-| Model and effort readback | Supported, undocumented | Stored per-session values are readable | `S` |
+| Model and effort change | Supported | With the composer focused, `Ctrl+Shift+I` opens the `Model: <current>` menu (the first Down focuses its first entry; Enter applies) and `Ctrl+Shift+E` the `Effort` slider (Right and Left apply at once). A model without an effort setting (Haiku 4.5) shows no Effort button. Knobs 1 and 2 use them (#906) | `D`, `L` (2026-10-06, #906) |
+| Model and effort readback | Supported, undocumented | The composer's `Model: <name>` and `Effort: <level>` buttons, and the session record's `model` and `effort`, which updated within about 1 s of a change | `S`, `L` (2026-10-06, #906) |
 | Mods controlling a session from outside | Unsupported | A mod can fill and submit its own session's prompt and fetch outbound, but cannot select a session, raise the window or listen. Enabling one is a personal plugin change outside the epic's current authority | `D`: [Claude mods](https://claude.com/blog/claude-code-mods); `S` |
 
 ## Routing design
@@ -530,6 +530,35 @@ with more than 15 open throwaway tasks:
 6. Confirm that the attention stays on both tasks after they open (the click acknowledged nothing), and that knob 4's
    LED shows the page color steadily once both are answered.
 
+## Installed checks for #906
+
+These belong to #745's batched installation. After the bridge with the model and effort knobs is installed, in
+throwaway tasks, with Claude Desktop and Codex Desktop at the qualified versions:
+
+1. With a Claude task in front and its composer focused, turn knob 1 one slow detent at a time. Confirm that the first
+   detent opens the model menu with no entry highlighted, that each further detent moves one entry, and that a light
+   touch moves nothing. If a detent moves more or less than one entry, set `model.stepCounts` (and `model.invert` if
+   the direction is wrong) in the profile and record the value; do the same for knob 2 with `effort.stepCounts`.
+2. Stop on another model and click knob 1. Confirm that the model changes, the menu closes, the composer keeps any
+   draft unsent, and the bridge logs `model` with `applied` and `button-and-record`. Turn knob 1 and leave it: confirm
+   that the menu closes after about 5 s and the model is unchanged.
+3. Turn knob 2 one detent each way in Claude. Confirm that the level changes at once, the bridge logs `effort`
+   `applied`, and knob 2's LED flashes the applied color. Select Haiku 4.5 and confirm that knob 2 reports
+   `unsupported` with a red flash.
+4. With a Codex task in front, turn knob 1 and confirm that the picker and then the model list open on the current
+   model, that a still click applies the focused model, that the bridge logs `model` `applied` with `announcement`, and
+   that the picker closes. Pick "Default" once and record what the bridge logs (`unverified` is expected).
+5. Turn knob 2 in Codex up to the top level. Confirm that each detent raises one level as announced, that at the top
+   the bridge logs `at-limit` and sends nothing, and that knob 2's click closes the picker.
+6. Open the model menu, then press Play with a draft in the composer. Confirm that the menu closes first and Send
+   submits the draft unchanged with the model unchanged. Repeat with Record and with a slot key.
+7. With a harmless card open, and then with another app in front, turn both knobs and confirm a red flash and no
+   keystroke in any window. Confirm that `Ctrl+Alt+-` never reaches Claude: with the Codex chords in the profile and
+   Claude in front, turn knob 2 and confirm that no pane splits.
+8. Run the native check (`test:chompi-bridge:native:built`) with each picker open in turn and record its
+   `codexPicker` and `claudePicker` shapes, which confirm the `pickerState` selectors in
+   [UIA-NOTES.md](../apps/chompi-bridge/src/windows/UIA-NOTES.md#model-and-effort-controls).
+
 ## Findings for dependent work
 
 GitHub issues own status and blocked-by relationships. These are the findings
@@ -557,8 +586,9 @@ each dependent issue must use.
   identification.
 - [#744](https://github.com/jimmie-potts/agent-device-hub/issues/744) and
   [#745](https://github.com/jimmie-potts/agent-device-hub/issues/745), knobs and
-  their installed check: Codex model change has default shortcuts, but Codex
-  effort change needs a personal key binding, and Claude's Windows model and
-  effort shortcuts are unverified. A personal binding needs owner authority
-  beyond the current epic grant. Until #743 records what is available, knob 1
-  and knob 2 "for each client" may need an explicit owner scope decision.
+  their installed check: the 2026-10-06 qualification on #906 recorded Claude's
+  Windows model menu and Effort slider and Codex's picker with its announcement,
+  so knob 1 and knob 2 have readback for both clients. The owner bound Codex's
+  effort chords; the bridge uses them only as a fallback with Codex in front.
+  [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906) delivers
+  the knobs from source; #745 runs the installed checks for #906 above.
