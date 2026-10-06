@@ -1,0 +1,379 @@
+// Translated from codex-nanoleaf tests/test_devices.py, the schema cases of tests/test_bridge.py and the geometry and
+// reservation cases of tests/test_panels.py (PORTING.md lists every case and where the rest went).
+import assert from 'node:assert/strict';
+import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync} from 'node:fs';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {withState} from '../src/database.js';
+import type {JsonObject} from '../src/compat.js';
+import {columns, DEFAULT, layoutDevices, legacyRow, projection, saveLayout, validateElements, type DeviceConfig} from '../src/devices.js';
+import {writeJson} from '../src/jsonfile.js';
+import {dashboard} from '../src/line-projection.js';
+import {readLayout} from '../src/panels.js';
+import {allocate, owners, settings, type TaskRow} from '../src/project-map.js';
+import {BACKUP, dumpTables, restoreTables, type Backup} from '../src/shared-input.js';
+import {execute, rows, type Row} from '../src/sqlite.js';
+import {controlState} from '../src/store.js';
+import {FIXTURES, fixtureJson, legacyPrompt, query, suite, temporary, test, write} from './support.js';
+
+const LINUX_STATE = join(FIXTURES, 'linux-state-v4');
+
+function writeTwoDevices(directory: string): void {
+  writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fakeLines', panelsToken: 'fakePanels',
+    devices: {wall: {kind: 'lines', ip: '192.0.2.1', token_ref: 'token'}, panels: {kind: 'panels', ip: '192.0.2.2', token_ref: 'panelsToken'}}});
+  writeJson(join(directory, 'layout.json'), {version: 2, devices: {
+    wall: {kind: 'lines', elements: [{id: '5:6', number: 1, zones: [5, 6], position: [0, 0]}, {id: '7:8', number: 2, zones: [7, 8], position: [10, 0]}]},
+    panels: {kind: 'panels', elements: [{id: '5', number: 1, zones: [5], position: [0, 0]}, {id: '6', number: 2, zones: [6], position: [10, 0]},
+      {id: '7', number: 3, zones: [7], position: [20, 0]}]}}});
+}
+
+/** A device's configuration from its saved layout entry, as configuration.load_config builds it without a device read. */
+function savedConfig(directory: string, device: string): DeviceConfig & {line_groups: number[][]} {
+  const entry = layoutDevices(JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8'))).get(device);
+  assert.ok(entry !== undefined);
+  return {...projection(entry), device};
+}
+
+const MIGRATED_COLUMNS: Record<string, string> = {
+  sessions: 'id, turn, status, updated', activity: 'session, turn, status, started', receipts: 'session, turn, completed, observed',
+  waits: 'session, turn, key, kind, tool', task_info: 'session, title, cwd, project, manual_project, turn, started', projects: 'id, name, color, roots',
+  slots: 'session, slot', comets: 'session, turn, queued, source, started', line_prefs: 'line_id, project, signature',
+  map_settings: 'style, coverage, rotation, flip_x, flip_y', map_pending: 'payload', locate: 'line_id, started', display_v3: 'snapshot, looping, rendered',
+  meta: 'key, value', controller_meta: 'id, payload', controller_credentials: 'principal, digest, scopes, active',
+  controller_requests: 'sequence, request, receipt, principal, phase, created, mode_revision', controller_events: 'sequence, payload',
+  integration_meta: 'id, sequence', integration_requests: 'sequence, principal, request, receipt, phase, created, revision',
+  shared_input: 'id, source, generation, config, envelope, received, connection, error, backup'};
+
+const byText = (values: readonly Row[]): Row[] => [...values].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+
+function migratedRows(db: DatabaseSync): Record<string, Row[]> {
+  return Object.fromEntries(Object.entries(MIGRATED_COLUMNS).map(([table, names]) => [table, byText(rows(db, `SELECT ${names} FROM ${table}`))]));
+}
+
+/** sqlite3's iterdump: the schema and every row, in a stable order. */
+function dumpAll(db: DatabaseSync): unknown[] {
+  const schema = rows(db, "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name");
+  const tables = rows(db, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").map(row => String(row[0]));
+  return [schema, ...tables.map(table => rows(db, `SELECT * FROM "${table}" ORDER BY rowid`))];
+}
+
+function loadLinuxState(directory: string): void {
+  copyFileSync(join(LINUX_STATE, 'layout-fixture.json'), join(directory, 'layout.json'));
+  const db = new DatabaseSync(join(directory, 'status.sqlite'));
+  db.exec(readFileSync(join(LINUX_STATE, 'status.sql'), 'utf8'));
+  db.close();
+}
+
+suite('DeviceTest', () => {
+  test('test_malformed_layout_is_rejected_and_last_valid_file_kept', context => {
+    // The final configuration load moves with configuration.load_config (slice 2).
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const path = join(directory, 'layout.json');
+    const valid = JSON.parse(readFileSync(path, 'utf8')) as {devices: Record<string, {kind: string; elements: Record<string, unknown>[]}>};
+    const mutations: ((d: typeof valid.devices) => void)[] = [
+      d => Object.assign(d.wall?.elements[0] ?? {}, {zones: [5]}),
+      d => Object.assign(d.panels?.elements[0] ?? {}, {zones: [5, 6]}),
+      d => Object.assign(d.wall?.elements[1] ?? {}, {zones: [5, 6]}),
+      d => Object.assign(d.wall?.elements[0] ?? {}, {zones: ['5', 6]}),
+      d => Object.assign(d.wall?.elements[0] ?? {}, {number: 2}),
+      d => Object.assign(d.wall ?? {}, {kind: 'unknown'}),
+      d => Object.assign(d.wall ?? {}, {elements: []}),
+    ];
+    for (const mutate of mutations) {
+      const broken = structuredClone(valid);
+      mutate(broken.devices);
+      assert.throws(() => layoutDevices(broken), {name: 'ValueError'});
+      assert.throws(() => saveLayout(path, broken.devices as unknown as JsonObject), {name: 'ValueError'});
+      assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), valid);
+    }
+  });
+
+  test('test_one_task_one_placement_per_device_and_unique_slot_per_device', context => {
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const lines = savedConfig(directory, 'wall');
+    const panels = savedConfig(directory, 'panels');
+    // Two legacy prompts, saved as the legacy hook path saves them.
+    write(directory, db => legacyPrompt(db, 'a', '1', 1000));
+    write(directory, db => legacyPrompt(db, 'b', '1', 1001));
+    write(directory, db => {
+      const first = dashboard(db, lines, 1002);
+      const second = dashboard(db, panels, 1002);
+      assert.deepEqual(first.map(item => item?.[0] ?? null), ['working', 'working']);
+      assert.deepEqual(second.map(item => item?.[0] ?? null), ['working', 'working', null]);
+      assert.deepEqual(rows(db, "SELECT device, slot FROM slots WHERE session='a' ORDER BY device"), [['panels', 0], ['wall', 0]]);
+      assert.deepEqual(rows(db, 'SELECT COUNT(*) FROM activity'), [[2]]);
+      assert.throws(() => execute(db, "INSERT INTO slots (session, slot, device) VALUES ('c', 0, 'wall')"), /UNIQUE constraint failed/);
+      assert.throws(() => execute(db, "INSERT INTO slots (session, slot, device) VALUES ('a', 1, 'wall')"), /UNIQUE constraint failed/);
+      execute(db, "INSERT INTO slots (session, slot, device) VALUES ('c', 2, 'panels')");
+    });
+    assert.deepEqual(query(directory, "SELECT slot FROM slots WHERE session='c'"), [[2]]);
+  });
+
+  test('test_pre_change_linux_database_migrates_and_repeats_without_change', context => {
+    // The controller credential, comet, pending edit, Locate and scene checks move with their slices (PORTING.md).
+    const directory = temporary(context);
+    loadLinuxState(directory);
+    const raw = new DatabaseSync(join(directory, 'status.sqlite'));
+    const before = migratedRows(raw);
+    assert.ok(!columns(raw, 'slots').includes('device'));
+    raw.close();
+    const first = withState(directory, db => {
+      for (const table of ['slots', 'comets', 'line_prefs', 'map_settings', 'map_pending', 'locate', 'display_v3']) {
+        assert.deepEqual(rows(db, `SELECT DISTINCT device FROM ${table}`), [['wall']], table);
+      }
+      return {rows: migratedRows(db), dump: dumpAll(db)};
+    });
+    const second = withState(directory, db => ({rows: migratedRows(db), dump: dumpAll(db)}));
+    assert.deepEqual(first.rows, before);
+    assert.deepEqual(second.rows, before);
+    assert.deepEqual(first.dump, second.dump);
+    assert.deepEqual(before.activity, [['task-blocked', 't1', 'blocked', 1002], ['task-question', 't1', 'question', 1002.7],
+      ['task-unread', 't1', 'unread', 1004], ['task-unread-2', 't1', 'unread', 1006], ['task-working', 't1', 'working', 1000]]);
+    assert.deepEqual(before.line_prefs, [['100:101', 'project-a', 1], ['102:103', 'project-a', 0], ['104:105', 'project-b', 1]]);
+    assert.deepEqual(before.map_settings, [['project', 'status', 90, 1, 0]]);
+    assert.deepEqual(before.task_info?.[4]?.slice(3, 5), ['project-a', 'project-a']);
+    const config = savedConfig(directory, DEFAULT);
+    assert.equal(config.line_groups.length, 15);
+    withState(directory, db => {
+      assert.deepEqual(controlState(db), {mode: 'work', revision: 2, applied: 2, wave_cutoff: 995, error: null});
+      assert.deepEqual(owners(db, config).slice(0, 3), [['project-a', 1], ['project-a', 0], ['project-b', 1]]);
+      assert.deepEqual(rows(db, 'SELECT session, slot FROM slots ORDER BY slot'),
+        [['task-working', 0], ['task-blocked', 2], ['task-question', 3], ['task-unread', 4], ['task-unread-2', 5]]);
+      assert.deepEqual(rows(db, "SELECT COUNT(*) FROM controller_requests WHERE phase='done'"), [[1]]);
+      assert.deepEqual(rows(db, "SELECT COUNT(*) FROM integration_requests WHERE phase='done'"), [[1]]);
+    });
+  });
+
+  test('test_pre_change_shared_input_backup_restores_after_migration', context => {
+    const directory = temporary(context);
+    loadLinuxState(directory);
+    const backup = {sessions: [['legacy', 'turn', 'working', 900.0]], slots: [['legacy', 7]], waits: [],
+      activity: [['legacy', 'turn', 'working', 900.0]], receipts: [], comets: [['legacy', 'turn', 901.0, 7, 902.0]],
+      task_info: [['legacy', 'Old title', '', null, null, 'turn', 900.0]]};
+    const raw = new DatabaseSync(join(directory, 'status.sqlite'));
+    raw.prepare("UPDATE shared_input SET source='shared', backup=? WHERE id=1").run(JSON.stringify(backup));
+    raw.close();
+    write(directory, db => {
+      restoreTables(db, backup);
+      assert.deepEqual(rows(db, 'SELECT session, slot, device FROM slots'), [['legacy', 7, 'wall']]);
+      assert.deepEqual(rows(db, 'SELECT session, source, started, device FROM comets'), [['legacy', 7, 902, 'wall']]);
+      const restored = dumpTables(db);
+      restoreTables(db, restored);
+      assert.deepEqual(dumpTables(db), restored);
+    });
+  });
+
+  test('test_backup_names_every_column_in_table_order', context => {
+    // Older sources restore a backup positionally, so its named columns keep each table's order.
+    const fresh = temporary(context);
+    const migrated = temporary(context);
+    loadLinuxState(migrated);
+    for (const directory of [fresh, migrated]) {
+      withState(directory, db => {
+        for (const [table, names] of Object.entries(BACKUP)) assert.deepEqual(columns(db, table), [...names], table);
+      });
+    }
+  });
+
+  test('test_rows_saved_before_the_device_key_belong_to_the_original_device', () => {
+    assert.deepEqual(legacyRow('slots', ['a', 7]), {session: 'a', slot: 7, device: 'wall'});
+    assert.deepEqual(legacyRow('comets', ['a', 't', 1.0, 2, null]), {session: 'a', turn: 't', queued: 1.0, source: 2, started: null, device: 'wall'});
+    assert.equal(legacyRow('slots', ['a', 7, 'panels']), null);
+    assert.equal(legacyRow('sessions', ['a', 't', 'working', 1.0]), null);
+  });
+
+  test('test_device_aware_backup_restores_each_devices_rows', context => {
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const backup: Backup = {sessions: [['a', 't', 'working', 900.0], ['b', 't', 'unread', 901.0]],
+      slots: [['a', 0, 'wall'], ['a', 2, 'panels'], ['b', 1, 'panels']], waits: [['a', 't', 'permission:shell', 'permission', 'shell']],
+      activity: [['a', 't', 'working', 900.0], ['b', 't', 'unread', 901.0]], receipts: [['b', 't', 901.0, 0]],
+      comets: [['b', 't', 902.0, 1, 903.0, 'panels'], ['b', 't', 902.0, null, null, 'wall']],
+      task_info: [['a', 'Title', '/synthetic', 'p', 'q', 't', 900.0]]};
+    for (let repeat = 0; repeat < 2; repeat += 1) {
+      // Repeated initialization keeps the restored rows.
+      write(directory, db => {
+        restoreTables(db, backup);
+        assert.deepEqual(dumpTables(db), backup);
+      });
+    }
+    assert.deepEqual(query(directory, 'SELECT device, session, source, started FROM comets ORDER BY device'), [['panels', 'b', 1, 903], ['wall', 'b', null, null]]);
+    assert.deepEqual(query(directory, 'SELECT device, session, slot FROM slots ORDER BY device, slot'),
+      [['panels', 'b', 1], ['panels', 'a', 2], ['wall', 'a', 0]]);
+  });
+});
+
+/** Open handles to a file in this process (Linux /proc), or null where /proc is unavailable. */
+function openHandles(path: string): number | null {
+  if (!existsSync('/proc/self/fd')) return null;
+  return readdirSync('/proc/self/fd').filter(fd => {
+    try {
+      return readlinkSync(join('/proc/self/fd', fd)) === path;
+    } catch {
+      return false;
+    }
+  }).length;
+}
+
+suite('BridgeTest', () => {
+  test('test_failed_initialization_closes_connection', context => {
+    // Python counted the connections it opened; here the process's open handles to the database file are counted.
+    const directory = temporary(context);
+    const path = join(directory, 'status.sqlite');
+    const raw = new DatabaseSync(path);
+    raw.exec('CREATE TABLE map_settings (id INTEGER PRIMARY KEY)');
+    raw.close();
+    if (openHandles(path) === null) {
+      context.skip('No /proc on this platform.');
+      return;
+    }
+    assert.equal(openHandles(path), 0);
+    assert.throws(() => withState(directory, () => undefined), /map_settings/);
+    assert.equal(openHandles(path), 0);
+  });
+
+  test('test_failed_initialization_rolls_back_partial_schema', context => {
+    const directory = temporary(context);
+    const raw = new DatabaseSync(join(directory, 'status.sqlite'));
+    raw.exec('CREATE TABLE map_settings (id INTEGER PRIMARY KEY)');
+    raw.close();
+    assert.throws(() => withState(directory, () => undefined), /map_settings/);
+    const check = new DatabaseSync(join(directory, 'status.sqlite'));
+    assert.deepEqual(rows(check, "SELECT name FROM sqlite_master WHERE type='table'"), [['map_settings']]);
+    check.close();
+  });
+
+  test('test_migration_keeps_task_assignments_and_removes_old_notifications', context => {
+    const directory = temporary(context);
+    const raw = new DatabaseSync(join(directory, 'status.sqlite'));
+    raw.exec('CREATE TABLE sessions(id TEXT PRIMARY KEY, turn TEXT, status TEXT, updated REAL)');
+    raw.exec("INSERT INTO sessions VALUES ('existing','t','approval',1)");
+    raw.exec('CREATE TABLE slots(session TEXT PRIMARY KEY, slot INTEGER UNIQUE)');
+    raw.exec("INSERT INTO slots VALUES ('existing',4)");
+    raw.exec('CREATE TABLE signals(id INTEGER PRIMARY KEY, session TEXT,turn TEXT,kind TEXT)');
+    raw.exec("INSERT INTO signals VALUES (1,'old','turn','ended')");
+    raw.close();
+    assert.deepEqual(query(directory, 'SELECT id,status FROM sessions'), [['existing', 'blocked']]);
+    assert.deepEqual(query(directory, 'SELECT session,slot FROM slots'), [['existing', 4]]);
+    assert.deepEqual(query(directory, 'SELECT * FROM signals'), []);
+    assert.equal(query(directory, 'SELECT * FROM activity').length, 1);
+  });
+});
+
+const PANELS = fixtureJson('nl22-panels-fixture.json') as {panelLayout: {layout: {positionData: Record<string, unknown>[]}}};
+type Points = Record<string, unknown>[];
+function panelLayout(mutate?: (points: Points) => void): typeof PANELS.panelLayout {
+  const value = structuredClone(PANELS.panelLayout);
+  mutate?.(value.layout.positionData);
+  return value;
+}
+
+suite('GeometryTest', () => {
+  // AC8 and AC13: stable one-zone triangles from reported geometry.
+  test('test_fixture_reads_eighteen_connected_triangles', () => {
+    const entry = readLayout(panelLayout());
+    const items = entry.elements;
+    assert.equal(entry.kind, 'panels');
+    assert.equal(items.length, 18);
+    assert.deepEqual(items.map(e => e.number), Array.from({length: 18}, (_, i) => i + 1));
+    const reported = new Map(PANELS.panelLayout.layout.positionData.map(point => [point.panelId, point]));
+    for (const element of items) {
+      const [zone] = element.zones;
+      assert.equal(element.id, String(zone));
+      const point = reported.get(zone);
+      assert.deepEqual(element.position, [point?.x, point?.y]);
+    }
+    const geometry = entry.panel_geometry as {triangles: {id: string; o: number}[]; neighbors: [string, string][]};
+    assert.deepEqual(geometry.triangles.map(t => t.id), items.map(e => e.id));
+    assert.deepEqual(new Set(geometry.triangles.map(t => t.o)), new Set([0, 60]));
+    const degree = new Map(items.map(e => [e.id, 0]));
+    for (const [first, second] of geometry.neighbors) {
+      degree.set(first, (degree.get(first) ?? 0) + 1);
+      degree.set(second, (degree.get(second) ?? 0) + 1);
+    }
+    // Three hexagons of six triangles; two shared edges join them.
+    assert.equal(geometry.neighbors.length, 3 * 6 + 2);
+    assert.ok(Math.max(...degree.values()) <= 3);
+    assert.deepEqual(validateElements('panels', items), items);
+  });
+
+  test('test_order_is_stable_and_independent_of_report_order', () => {
+    assert.deepEqual(readLayout(panelLayout()), readLayout(panelLayout(points => points.reverse())));
+  });
+
+  test('test_other_valid_counts_are_supported', () => {
+    const oneHexagon = (points: Points): void => {
+      const keep = [...points].sort((a, b) => Number(a.x) - Number(b.x)).slice(0, 6);
+      points.splice(0, points.length, ...keep);
+    };
+    assert.equal(readLayout(panelLayout(oneHexagon)).elements.length, 6);
+    assert.equal(readLayout(panelLayout(points => points.splice(1))).elements.length, 1);
+  });
+
+  test('test_non_light_modules_are_excluded', () => {
+    const entry = readLayout(panelLayout(points => {
+      points.push({panelId: 999, x: 0, y: 0, o: 0, shapeType: 1});
+      points.push({panelId: 998, x: 5, y: 400, o: 0, shapeType: 12});
+    }));
+    assert.equal(entry.elements.length, 18);
+    assert.ok(!entry.elements.map(e => e.id).includes('999'));
+  });
+
+  test('test_malformed_or_unsupported_geometry_is_rejected', () => {
+    const first = (points: Points): Record<string, unknown> => points[0] ?? {};
+    const cases: Record<string, (points: Points) => void> = {
+      'lines zone': p => { first(p).shapeType = 18; },
+      'shapes triangle': p => { first(p).shapeType = 8; },
+      'canvas control square': p => { first(p).shapeType = 3; },
+      'duplicate id': p => { first(p).panelId = p[1]?.panelId; },
+      'text id': p => { first(p).panelId = '55'; },
+      'boolean id': p => { first(p).panelId = true; },
+      'out of range id': p => { first(p).panelId = 70000; },
+      'missing x': p => { delete first(p).x; },
+      'infinite y': p => { first(p).y = Infinity; },
+      'text orientation': p => { first(p).o = '0'; },
+      overlap: p => { p.push({...first(p), panelId: 500, x: Number(first(p).x) + 10}); },
+      disconnected: p => { p.push({panelId: 501, x: 5000, y: 5000, o: 0, shapeType: 0}); },
+      'no triangles': p => { p.splice(0, p.length, {panelId: 1, x: 0, y: 0, o: 0, shapeType: 1}); },
+      'entry type': p => { p.push('panel' as unknown as Record<string, unknown>); },
+    };
+    for (const [name, mutate] of Object.entries(cases)) assert.throws(() => readLayout(panelLayout(mutate)), {name: 'ValueError'}, name);
+    for (const broken of [null, [], {layout: {}}, {layout: {positionData: {}}}, {...panelLayout(), globalOrientation: {value: 'north'}}]) {
+      assert.throws(() => readLayout(broken), {name: 'ValueError'}, JSON.stringify(broken));
+    }
+  });
+});
+
+suite('ReservationTest', () => {
+  test('test_six_triangle_reservation_and_shared_overflow', context => {
+    // The map edit that reserves the region is saved as its rows; whether an edit is deferred is the edits slice's.
+    const directory = temporary(context);
+    const config = {...projection(readLayout(panelLayout())), device: 'panels'};
+    const ids = config.elements.map(e => e.id);
+    const assigned = write(directory, db => {
+      execute(db, "INSERT INTO projects VALUES ('p','P','#00ff00','[]'), ('q','Q','#ff00ff','[]')");
+      execute(db, "INSERT OR IGNORE INTO map_settings (style,coverage,rotation,flip_x,flip_y,device) VALUES ('classic','whole',0,0,0,'panels')");
+      execute(db, "UPDATE map_settings SET style='project' WHERE device='panels'");
+      for (const id of ids.slice(0, 6)) execute(db, "INSERT INTO line_prefs (line_id,project,signature,device) VALUES (?,'p',0,'panels')", id);
+      const tasks: TaskRow[] = [];
+      for (let n = 0; n < 20; n += 1) {
+        const session = `s${String(n).padStart(2, '0')}`;
+        execute(db, 'INSERT INTO sessions VALUES (?,?,?,?)', session, '1', 'working', n);
+        execute(db, 'INSERT INTO task_info VALUES (?,?,?,?,?,?,?)', session, '', '', n < 8 ? 'p' : 'q', null, '1', null);
+        tasks.push([session, '1', 'working']);
+      }
+      return allocate(db, config, tasks, new Set());
+    });
+    const region = new Set([0, 1, 2, 3, 4, 5]);
+    for (const [session, slot] of assigned) if (session >= 's08') assert.ok(!region.has(slot), session);
+    assert.equal(assigned.size, 18);
+    // Shared triangles hold the overflow of p; q never borrows p's region.
+    assert.deepEqual(new Set(Array.from({length: 6}, (_, n) => assigned.get(`s0${n}`))), region);
+    withState(directory, db => {
+      assert.equal(settings(db).style, 'classic');
+      assert.equal(settings(db, 'panels').style, 'project');
+    });
+  });
+});

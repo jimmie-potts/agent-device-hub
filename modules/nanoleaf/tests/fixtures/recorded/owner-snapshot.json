@@ -1,0 +1,59 @@
+{
+ "snapshot": {
+  "apiVersion": "1.0",
+  "asOfMs": 1000,
+  "collector": "running",
+  "lossCount": 0,
+  "revision": 3,
+  "sessions": [
+   {
+    "activity": "active",
+    "attention": [],
+    "children": {
+     "active": 0,
+     "uncertain": 0
+    },
+    "freshness": "current",
+    "identity": {
+     "client": "desktop",
+     "hostId": "host",
+     "provider": "codex",
+     "sessionId": "session",
+     "sourceId": "source"
+    },
+    "lastEvidenceAtMs": 1000,
+    "notices": [
+     {
+      "acknowledgedBy": [
+       "nanoleaf"
+      ],
+      "id": "d57a6bb65d858c1d59fad0b3902f5ce32fdec3cbe719629b9108034b54ec0bd0",
+      "kind": "turn-ended",
+      "turn": {
+       "id": "one",
+       "status": "known"
+      }
+     }
+    ],
+    "observationAgeMs": 0,
+    "observedAtMs": 1000,
+    "ordering": {
+     "epoch": "epoch",
+     "sequence": 3,
+     "status": "known"
+    },
+    "parent": {
+     "status": "unknown"
+    },
+    "read": "unknown",
+    "restartUncertain": false,
+    "turn": {
+     "id": "two",
+     "status": "known"
+    },
+    "unavailable": []
+   }
+  ]
+ },
+ "status": "working"
+}

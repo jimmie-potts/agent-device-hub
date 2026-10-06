@@ -12,8 +12,8 @@
     "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs",
-    "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard && tsc -p packages/event-contracts/tsconfig.json && npm run build:wispr && tsc -p apps/maintenance/tsconfig.json && tsc -p apps/chompi-bridge/tsconfig.json && tsc -b modules/pixoo/tsconfig.json",
-    "typecheck": "tsc -p packages/observability/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit && tsc -p packages/event-contracts/tsconfig.json --noEmit && tsc -p packages/wispr-contracts/tsconfig.json --noEmit && tsc -p apps/wispr-collector/tsconfig.json --noEmit && tsc -p apps/maintenance/tsconfig.json --noEmit && tsc -p apps/chompi-bridge/tsconfig.json --noEmit && tsc -p apps/chompi-bridge/verify/tsconfig.json && tsc -p modules/pixoo/tests/tsconfig.json",
+    "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard && tsc -p packages/event-contracts/tsconfig.json && npm run build:wispr && tsc -p apps/maintenance/tsconfig.json && tsc -p apps/chompi-bridge/tsconfig.json && tsc -b modules/pixoo/tsconfig.json && tsc -p modules/nanoleaf/tsconfig.json",
+    "typecheck": "tsc -p packages/observability/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/verify/tsconfig.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit && tsc -p packages/event-contracts/tsconfig.json --noEmit && tsc -p packages/wispr-contracts/tsconfig.json --noEmit && tsc -p apps/wispr-collector/tsconfig.json --noEmit && tsc -p apps/maintenance/tsconfig.json --noEmit && tsc -p apps/chompi-bridge/tsconfig.json --noEmit && tsc -p apps/chompi-bridge/verify/tsconfig.json && tsc -p modules/pixoo/tests/tsconfig.json && tsc -p modules/nanoleaf/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -114,7 +114,9 @@
     "test:pixoo:built": "cd modules/pixoo && vitest run --config tests/vitest.config.ts",
     "verify:chompi": "node scripts/verify-chompi.mjs",
     "test:firmware": "make -C firmware/chompi-controller test",
-    "test:firmware:arm": "firmware/chompi-controller/scripts/arm-build.sh"
+    "test:firmware:arm": "firmware/chompi-controller/scripts/arm-build.sh",
+    "test:nanoleaf": "npm run build && npm run test:nanoleaf:built",
+    "test:nanoleaf:built": "node --test modules/nanoleaf/dist/tests/*.test.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -164,7 +166,8 @@
     "modules/pixoo/packages/media",
     "modules/pixoo/packages/library",
     "modules/pixoo/packages/playback",
-    "modules/pixoo/packages/presentation"
+    "modules/pixoo/packages/presentation",
+    "modules/nanoleaf"
   ],
   "dependencies": {
     "react": "19.3.0",

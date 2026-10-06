@@ -1,0 +1,1317 @@
+{
+ "enrollment": {
+  "activity": {
+   "columns": [
+    "session",
+    "turn",
+    "status",
+    "started"
+   ],
+   "rows": [
+    [
+     "a",
+     "1",
+     "working",
+     1000.0
+    ],
+    [
+     "b",
+     "1",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "animation_favorites": {
+   "columns": [
+    "name",
+    "recipe"
+   ],
+   "rows": []
+  },
+  "comets": {
+   "columns": [
+    "session",
+    "turn",
+    "queued",
+    "source",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "display_v3": {
+   "columns": [
+    "id",
+    "snapshot",
+    "looping",
+    "rendered",
+    "device"
+   ],
+   "rows": []
+  },
+  "integration_meta": {
+   "columns": [
+    "id",
+    "sequence"
+   ],
+   "rows": [
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  "integration_requests": {
+   "columns": [
+    "sequence",
+    "principal",
+    "request",
+    "receipt",
+    "phase",
+    "created",
+    "revision"
+   ],
+   "rows": []
+  },
+  "line_prefs": {
+   "columns": [
+    "line_id",
+    "project",
+    "signature",
+    "device"
+   ],
+   "rows": [
+    [
+     "100:101",
+     "alpha",
+     1,
+     "wall"
+    ]
+   ]
+  },
+  "locate": {
+   "columns": [
+    "id",
+    "line_id",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_pending": {
+   "columns": [
+    "id",
+    "payload",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_settings": {
+   "columns": [
+    "id",
+    "style",
+    "coverage",
+    "rotation",
+    "flip_x",
+    "flip_y",
+    "device"
+   ],
+   "rows": [
+    [
+     1,
+     "classic",
+     "whole",
+     0,
+     0,
+     0,
+     "wall"
+    ]
+   ]
+  },
+  "meta": {
+   "columns": [
+    "key",
+    "value"
+   ],
+   "rows": [
+    [
+     "model_version",
+     "4"
+    ],
+    [
+     "event_revision",
+     "3"
+    ],
+    [
+     "mode",
+     "quiet"
+    ],
+    [
+     "mode_revision",
+     "1"
+    ],
+    [
+     "dirty",
+     "1"
+    ]
+   ]
+  },
+  "palette": {
+   "columns": [
+    "role",
+    "color"
+   ],
+   "rows": []
+  },
+  "projects": {
+   "columns": [
+    "id",
+    "name",
+    "color",
+    "roots"
+   ],
+   "rows": []
+  },
+  "receipts": {
+   "columns": [
+    "session",
+    "turn",
+    "completed",
+    "observed"
+   ],
+   "rows": []
+  },
+  "sessions": {
+   "columns": [
+    "id",
+    "turn",
+    "status",
+    "updated"
+   ],
+   "rows": [
+    [
+     "a",
+     "1",
+     "working",
+     1000.0
+    ],
+    [
+     "b",
+     "1",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "shared_ack": {
+   "columns": [
+    "id",
+    "payload",
+    "result"
+   ],
+   "rows": []
+  },
+  "shared_evictions": {
+   "columns": [
+    "session",
+    "device",
+    "token"
+   ],
+   "rows": []
+  },
+  "shared_input": {
+   "columns": [
+    "id",
+    "source",
+    "generation",
+    "config",
+    "envelope",
+    "received",
+    "connection",
+    "error",
+    "backup"
+   ],
+   "rows": [
+    [
+     1,
+     "legacy",
+     0,
+     null,
+     null,
+     null,
+     "unavailable",
+     null,
+     null
+    ]
+   ]
+  },
+  "shared_stale": {
+   "columns": [
+    "session"
+   ],
+   "rows": []
+  },
+  "shared_suppressed_waves": {
+   "columns": [
+    "session",
+    "epoch"
+   ],
+   "rows": []
+  },
+  "slots": {
+   "columns": [
+    "session",
+    "slot",
+    "device"
+   ],
+   "rows": []
+  },
+  "task_info": {
+   "columns": [
+    "session",
+    "title",
+    "cwd",
+    "project",
+    "manual_project",
+    "turn",
+    "started"
+   ],
+   "rows": [
+    [
+     "a",
+     "",
+     "",
+     null,
+     null,
+     "1",
+     1000.0
+    ],
+    [
+     "b",
+     "",
+     "",
+     null,
+     null,
+     "1",
+     1000.0
+    ]
+   ]
+  },
+  "waits": {
+   "columns": [
+    "session",
+    "turn",
+    "key",
+    "kind",
+    "tool"
+   ],
+   "rows": []
+  }
+ },
+ "enrollmentModes": {
+  "meta": {
+   "columns": [
+    "key",
+    "value"
+   ],
+   "rows": [
+    [
+     "model_version",
+     "4"
+    ],
+    [
+     "event_revision",
+     "6"
+    ],
+    [
+     "mode",
+     "quiet"
+    ],
+    [
+     "mode_revision",
+     "1"
+    ],
+    [
+     "wave_cutoff@panels",
+     "1001.0"
+    ],
+    [
+     "mode@panels",
+     "free"
+    ],
+    [
+     "mode_revision@panels",
+     "3"
+    ],
+    [
+     "dirty",
+     "1"
+    ]
+   ]
+  }
+ },
+ "legacyPrompt": {
+  "activity": {
+   "columns": [
+    "session",
+    "turn",
+    "status",
+    "started"
+   ],
+   "rows": [
+    [
+     "a",
+     "1",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "animation_favorites": {
+   "columns": [
+    "name",
+    "recipe"
+   ],
+   "rows": []
+  },
+  "comets": {
+   "columns": [
+    "session",
+    "turn",
+    "queued",
+    "source",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "display_v3": {
+   "columns": [
+    "id",
+    "snapshot",
+    "looping",
+    "rendered",
+    "device"
+   ],
+   "rows": []
+  },
+  "integration_meta": {
+   "columns": [
+    "id",
+    "sequence"
+   ],
+   "rows": [
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  "integration_requests": {
+   "columns": [
+    "sequence",
+    "principal",
+    "request",
+    "receipt",
+    "phase",
+    "created",
+    "revision"
+   ],
+   "rows": []
+  },
+  "line_prefs": {
+   "columns": [
+    "line_id",
+    "project",
+    "signature",
+    "device"
+   ],
+   "rows": []
+  },
+  "locate": {
+   "columns": [
+    "id",
+    "line_id",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_pending": {
+   "columns": [
+    "id",
+    "payload",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_settings": {
+   "columns": [
+    "id",
+    "style",
+    "coverage",
+    "rotation",
+    "flip_x",
+    "flip_y",
+    "device"
+   ],
+   "rows": [
+    [
+     1,
+     "classic",
+     "whole",
+     0,
+     0,
+     0,
+     "wall"
+    ]
+   ]
+  },
+  "meta": {
+   "columns": [
+    "key",
+    "value"
+   ],
+   "rows": [
+    [
+     "model_version",
+     "4"
+    ],
+    [
+     "event_revision",
+     "1"
+    ],
+    [
+     "dirty",
+     "1"
+    ]
+   ]
+  },
+  "palette": {
+   "columns": [
+    "role",
+    "color"
+   ],
+   "rows": []
+  },
+  "projects": {
+   "columns": [
+    "id",
+    "name",
+    "color",
+    "roots"
+   ],
+   "rows": []
+  },
+  "receipts": {
+   "columns": [
+    "session",
+    "turn",
+    "completed",
+    "observed"
+   ],
+   "rows": []
+  },
+  "sessions": {
+   "columns": [
+    "id",
+    "turn",
+    "status",
+    "updated"
+   ],
+   "rows": [
+    [
+     "a",
+     "1",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "shared_ack": {
+   "columns": [
+    "id",
+    "payload",
+    "result"
+   ],
+   "rows": []
+  },
+  "shared_evictions": {
+   "columns": [
+    "session",
+    "device",
+    "token"
+   ],
+   "rows": []
+  },
+  "shared_input": {
+   "columns": [
+    "id",
+    "source",
+    "generation",
+    "config",
+    "envelope",
+    "received",
+    "connection",
+    "error",
+    "backup"
+   ],
+   "rows": [
+    [
+     1,
+     "legacy",
+     0,
+     null,
+     null,
+     null,
+     "unavailable",
+     null,
+     null
+    ]
+   ]
+  },
+  "shared_stale": {
+   "columns": [
+    "session"
+   ],
+   "rows": []
+  },
+  "shared_suppressed_waves": {
+   "columns": [
+    "session",
+    "epoch"
+   ],
+   "rows": []
+  },
+  "slots": {
+   "columns": [
+    "session",
+    "slot",
+    "device"
+   ],
+   "rows": []
+  },
+  "task_info": {
+   "columns": [
+    "session",
+    "title",
+    "cwd",
+    "project",
+    "manual_project",
+    "turn",
+    "started"
+   ],
+   "rows": [
+    [
+     "a",
+     "",
+     "",
+     null,
+     null,
+     "1",
+     1000.0
+    ]
+   ]
+  },
+  "waits": {
+   "columns": [
+    "session",
+    "turn",
+    "key",
+    "kind",
+    "tool"
+   ],
+   "rows": []
+  }
+ },
+ "selection": {
+  "activity": {
+   "columns": [
+    "session",
+    "turn",
+    "status",
+    "started"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "turn",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "animation_favorites": {
+   "columns": [
+    "name",
+    "recipe"
+   ],
+   "rows": []
+  },
+  "comets": {
+   "columns": [
+    "session",
+    "turn",
+    "queued",
+    "source",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "display_v3": {
+   "columns": [
+    "id",
+    "snapshot",
+    "looping",
+    "rendered",
+    "device"
+   ],
+   "rows": []
+  },
+  "integration_meta": {
+   "columns": [
+    "id",
+    "sequence"
+   ],
+   "rows": [
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  "integration_requests": {
+   "columns": [
+    "sequence",
+    "principal",
+    "request",
+    "receipt",
+    "phase",
+    "created",
+    "revision"
+   ],
+   "rows": []
+  },
+  "line_prefs": {
+   "columns": [
+    "line_id",
+    "project",
+    "signature",
+    "device"
+   ],
+   "rows": []
+  },
+  "locate": {
+   "columns": [
+    "id",
+    "line_id",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_pending": {
+   "columns": [
+    "id",
+    "payload",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_settings": {
+   "columns": [
+    "id",
+    "style",
+    "coverage",
+    "rotation",
+    "flip_x",
+    "flip_y",
+    "device"
+   ],
+   "rows": [
+    [
+     1,
+     "classic",
+     "whole",
+     0,
+     0,
+     0,
+     "wall"
+    ]
+   ]
+  },
+  "meta": {
+   "columns": [
+    "key",
+    "value"
+   ],
+   "rows": [
+    [
+     "model_version",
+     "4"
+    ],
+    [
+     "event_revision",
+     "1"
+    ],
+    [
+     "dirty",
+     "1"
+    ]
+   ]
+  },
+  "palette": {
+   "columns": [
+    "role",
+    "color"
+   ],
+   "rows": []
+  },
+  "projects": {
+   "columns": [
+    "id",
+    "name",
+    "color",
+    "roots"
+   ],
+   "rows": [
+    [
+     "project",
+     "LOCAL TITLE",
+     "#112233",
+     "[]"
+    ]
+   ]
+  },
+  "receipts": {
+   "columns": [
+    "session",
+    "turn",
+    "completed",
+    "observed"
+   ],
+   "rows": []
+  },
+  "sessions": {
+   "columns": [
+    "id",
+    "turn",
+    "status",
+    "updated"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "turn",
+     "working",
+     1000.0
+    ]
+   ]
+  },
+  "shared_ack": {
+   "columns": [
+    "id",
+    "payload",
+    "result"
+   ],
+   "rows": []
+  },
+  "shared_evictions": {
+   "columns": [
+    "session",
+    "device",
+    "token"
+   ],
+   "rows": []
+  },
+  "shared_input": {
+   "columns": [
+    "id",
+    "source",
+    "generation",
+    "config",
+    "envelope",
+    "received",
+    "connection",
+    "error",
+    "backup"
+   ],
+   "rows": [
+    [
+     1,
+     "legacy",
+     0,
+     null,
+     null,
+     null,
+     "unavailable",
+     null,
+     null
+    ]
+   ]
+  },
+  "shared_stale": {
+   "columns": [
+    "session"
+   ],
+   "rows": []
+  },
+  "shared_suppressed_waves": {
+   "columns": [
+    "session",
+    "epoch"
+   ],
+   "rows": []
+  },
+  "slots": {
+   "columns": [
+    "session",
+    "slot",
+    "device"
+   ],
+   "rows": [
+    [
+     "legacy",
+     0,
+     "wall"
+    ]
+   ]
+  },
+  "task_info": {
+   "columns": [
+    "session",
+    "title",
+    "cwd",
+    "project",
+    "manual_project",
+    "turn",
+    "started"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "",
+     "",
+     "project",
+     "project",
+     "turn",
+     1000.0
+    ]
+   ]
+  },
+  "waits": {
+   "columns": [
+    "session",
+    "turn",
+    "key",
+    "kind",
+    "tool"
+   ],
+   "rows": []
+  }
+ },
+ "taskBackup": {
+  "activity": {
+   "columns": [
+    "session",
+    "turn",
+    "status",
+    "started"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "turn",
+     "working",
+     1000.0
+    ],
+    [
+     "other",
+     "t1",
+     "blocked",
+     1005.0
+    ],
+    [
+     "done",
+     "t1",
+     "unread",
+     1004.0
+    ]
+   ]
+  },
+  "animation_favorites": {
+   "columns": [
+    "name",
+    "recipe"
+   ],
+   "rows": []
+  },
+  "comets": {
+   "columns": [
+    "session",
+    "turn",
+    "queued",
+    "source",
+    "started",
+    "device"
+   ],
+   "rows": [
+    [
+     "done",
+     "t1",
+     1004.0,
+     null,
+     null,
+     "wall"
+    ],
+    [
+     "done",
+     "t1",
+     1010.0,
+     null,
+     null,
+     "panels"
+    ]
+   ]
+  },
+  "display_v3": {
+   "columns": [
+    "id",
+    "snapshot",
+    "looping",
+    "rendered",
+    "device"
+   ],
+   "rows": []
+  },
+  "integration_meta": {
+   "columns": [
+    "id",
+    "sequence"
+   ],
+   "rows": [
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  "integration_requests": {
+   "columns": [
+    "sequence",
+    "principal",
+    "request",
+    "receipt",
+    "phase",
+    "created",
+    "revision"
+   ],
+   "rows": []
+  },
+  "line_prefs": {
+   "columns": [
+    "line_id",
+    "project",
+    "signature",
+    "device"
+   ],
+   "rows": [
+    [
+     "100:101",
+     "project",
+     1,
+     "wall"
+    ]
+   ]
+  },
+  "locate": {
+   "columns": [
+    "id",
+    "line_id",
+    "started",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_pending": {
+   "columns": [
+    "id",
+    "payload",
+    "device"
+   ],
+   "rows": []
+  },
+  "map_settings": {
+   "columns": [
+    "id",
+    "style",
+    "coverage",
+    "rotation",
+    "flip_x",
+    "flip_y",
+    "device"
+   ],
+   "rows": [
+    [
+     1,
+     "classic",
+     "whole",
+     0,
+     0,
+     0,
+     "wall"
+    ]
+   ]
+  },
+  "meta": {
+   "columns": [
+    "key",
+    "value"
+   ],
+   "rows": [
+    [
+     "model_version",
+     "4"
+    ],
+    [
+     "event_revision",
+     "6"
+    ],
+    [
+     "mode@panels",
+     "quiet"
+    ],
+    [
+     "mode_revision@panels",
+     "1"
+    ],
+    [
+     "dirty",
+     "1"
+    ]
+   ]
+  },
+  "palette": {
+   "columns": [
+    "role",
+    "color"
+   ],
+   "rows": []
+  },
+  "projects": {
+   "columns": [
+    "id",
+    "name",
+    "color",
+    "roots"
+   ],
+   "rows": [
+    [
+     "project",
+     "LOCAL TITLE",
+     "#112233",
+     "[]"
+    ],
+    [
+     "chosen",
+     "Chosen",
+     "#445566",
+     "[]"
+    ]
+   ]
+  },
+  "receipts": {
+   "columns": [
+    "session",
+    "turn",
+    "completed",
+    "observed"
+   ],
+   "rows": [
+    [
+     "done",
+     "t1",
+     1004.0,
+     0
+    ]
+   ]
+  },
+  "sessions": {
+   "columns": [
+    "id",
+    "turn",
+    "status",
+    "updated"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "turn",
+     "working",
+     1000.0
+    ],
+    [
+     "other",
+     "t1",
+     "blocked",
+     1005.0
+    ],
+    [
+     "done",
+     "t1",
+     "unread",
+     1004.0
+    ]
+   ]
+  },
+  "shared_ack": {
+   "columns": [
+    "id",
+    "payload",
+    "result"
+   ],
+   "rows": []
+  },
+  "shared_evictions": {
+   "columns": [
+    "session",
+    "device",
+    "token"
+   ],
+   "rows": []
+  },
+  "shared_input": {
+   "columns": [
+    "id",
+    "source",
+    "generation",
+    "config",
+    "envelope",
+    "received",
+    "connection",
+    "error",
+    "backup"
+   ],
+   "rows": [
+    [
+     1,
+     "legacy",
+     0,
+     null,
+     null,
+     null,
+     "unavailable",
+     null,
+     null
+    ]
+   ]
+  },
+  "shared_stale": {
+   "columns": [
+    "session"
+   ],
+   "rows": []
+  },
+  "shared_suppressed_waves": {
+   "columns": [
+    "session",
+    "epoch"
+   ],
+   "rows": []
+  },
+  "slots": {
+   "columns": [
+    "session",
+    "slot",
+    "device"
+   ],
+   "rows": [
+    [
+     "legacy",
+     0,
+     "wall"
+    ],
+    [
+     "legacy",
+     4,
+     "panels"
+    ],
+    [
+     "other",
+     1,
+     "wall"
+    ],
+    [
+     "other",
+     0,
+     "panels"
+    ],
+    [
+     "done",
+     2,
+     "wall"
+    ]
+   ]
+  },
+  "task_info": {
+   "columns": [
+    "session",
+    "title",
+    "cwd",
+    "project",
+    "manual_project",
+    "turn",
+    "started"
+   ],
+   "rows": [
+    [
+     "legacy",
+     "",
+     "",
+     "project",
+     "project",
+     "turn",
+     1000.0
+    ],
+    [
+     "other",
+     "",
+     "",
+     null,
+     null,
+     "t1",
+     1005.0
+    ],
+    [
+     "done",
+     "",
+     "",
+     null,
+     null,
+     "t1",
+     1004.0
+    ]
+   ]
+  },
+  "waits": {
+   "columns": [
+    "session",
+    "turn",
+    "key",
+    "kind",
+    "tool"
+   ],
+   "rows": [
+    [
+     "other",
+     "t1",
+     "permission:shell",
+     "permission",
+     "shell"
+    ]
+   ]
+  }
+ }
+}
