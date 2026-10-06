@@ -1034,8 +1034,13 @@ def edit_cases():
         ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('b','1',999,NULL,NULL,'wall')", []),
         ('sql', "INSERT INTO sessions VALUES ('c','2','working',1000)", []),
         ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('c','1',998,NULL,NULL,'wall')", []),
+        ('sql', "INSERT INTO sessions VALUES ('d','1','unread',1000)", []),
+        ('sql', "INSERT INTO slots (session,slot,device) VALUES ('d',5,'wall')", []),
+        ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('d','1',999.5,NULL,NULL,'wall')", []),
+        ('sql', "INSERT INTO sessions VALUES ('e','1','unread',1000)", []),
+        ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('e','1',990,NULL,NULL,'wall')", []),
         ('currentComet', 1000.0), ('pruneComets', 1000.0, 'work'), ('currentComet', 1000.0), ('pruneComets', 1003.0, 'work'),
-        ('currentComet', 1003.0)]))
+        ('currentComet', 1003.0), ('pruneComets', 1005.0, 'work'), ('currentComet', 1005.0)]))
     cases.append(case('comets end outside work', [('pruneComets', 1000.5, 'quiet'), ('currentComet', 1000.5)], comet=True))
     # Mode commands on a device without a controller ledger.
     cases.append(case('mode commands', [('changeMode', 'quiet', 1000.0), ('changeMode', 'quiet', 1001.0),
