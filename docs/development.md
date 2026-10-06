@@ -127,12 +127,9 @@ npm run check:workflow
 npm run test:workflow
 ```
 
-Both checks must exit zero. The product specification inventory is
-controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
-shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
-standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
-unified-dashboard, standalone-monitor-qualification, tidbyt-cloud-controller,
-tidbyt-agent-status, tidbyt-status-installation, lifx-controller and hub-playback.
+Both checks must exit zero. The specification inventory is the folder list
+under `openspec/specs/`, and `check:workflow` validates every spec in it; report
+that list, not a copy kept here.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
