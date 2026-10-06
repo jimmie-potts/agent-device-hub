@@ -24,13 +24,33 @@ export const START_ONLY = Object.freeze(Object.keys(RUN_SCENARIOS).filter(name =
  * Refuses, before the core acts, an operation that would reseed a running run into a boundary negative control:
  * `scenario <run-id> <control>` and `handoff <run-id> --reset <control>`. The reseed would fail its boundary check and
  * stop the whole run. Start one with `start --scenario <control>` instead.
+ *
+ * The arguments are read as the core's parser reads them (packages/app-verify/src/cli.ts, which does not export it):
+ * a `--flag` anywhere takes the next argument as its value, and the rest are positionals in order. So
+ * `handoff --reset <control> <run-id>` and `scenario --input <i>=<v> <run-id> <control>` are refused too. It errs
+ * toward refusing: every `--reset` value and every positional after the run ID count, although the core keeps only
+ * the last `--reset` and rejects extra positionals as a usage error.
  * @param {readonly string[]} argv
  * @returns {{operation: string, error: string, detail: string} | undefined}
  */
 export function startOnlyRefusal(argv) {
-  const [operation, , ...rest] = argv;
-  const target = operation === 'scenario' ? rest[0] : operation === 'handoff' && rest[0] === '--reset' ? rest[1] : undefined;
-  if (!target || !START_ONLY.includes(target)) return undefined;
+  const [operation = 'help', ...rest] = argv;
+  if (operation !== 'scenario' && operation !== 'handoff') return undefined;
+  /** @type {string[]} */
+  const positional = [];
+  /** @type {string[]} */
+  const resets = [];
+  for (let index = 0; index < rest.length; index++) {
+    const argument = rest[index] ?? '';
+    if (!argument.startsWith('--')) { positional.push(argument); continue; }
+    const value = rest[index + 1];
+    if (value === undefined || value.startsWith('--')) continue;
+    index++;
+    if (argument === '--reset') resets.push(value);
+  }
+  const candidates = operation === 'scenario' ? positional.slice(1) : resets;
+  const target = candidates.find(name => START_ONLY.includes(name));
+  if (!target) return undefined;
   return {
     operation, error: 'start-only-scenario',
     detail: `${target} is a boundary negative control: its start fails a boundary check by design, so reseeding a running run into it would stop the run. Start it on its own with npm run -s verify:chompi -- start --scenario ${target}.`,
