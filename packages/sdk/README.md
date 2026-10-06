@@ -124,7 +124,7 @@ straight back to the requester, never to subscribers.
 - The command's `type` must end in `.requested`; `request` refuses any other
   with `invalid-request`. The reply's type ends in `.replied` instead.
 - The command's `expiresat` is `timeoutMs` after its `time`. `timeoutMs` is an
-  integer from 1 to 2147483647.
+  integer from 1 to `MAX_TIMEOUT_MS`, 86400000 (one day), on every transport.
 - One responder owns each command key. A `respond` whose pattern overlaps
   another responder's is refused with `invalid-state`.
 - A responder handles one command at a time. A command whose expiry passes
@@ -372,15 +372,22 @@ connection, and one `POST /api/sdk/v1/<call>` per call. Every frame carries
 HTTP status that fits its code.
 
 - **Credentials.** Each source has a bearer token. The edge compares tokens in
-  constant time. A call without a granted token is refused with
+  constant time, and refuses at start a grant with a malformed source or a token
+  that two grants share. A call without a granted token is refused with
   `unauthenticated`, and a message or connection of another source with
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, log record or error body.
 - **Validation.** The client builds every message, so it keeps its own `id` and
   `time`. The edge checks each one against profile 2.0, its registered payload
   schema and the 256 KiB cap before it reaches the bus. A refused message gets
-  `invalid-message`, `too-large`, `unknown-schema` or `unsupported-version`, and
-  a command or sync request already past its expiry gets `expired`.
+  `invalid-message`, `too-large`, `unknown-schema` or `unsupported-version`. A
+  command or sync request already past its expiry gets `expired`, and a sync
+  request whose subject is not its families joined by commas gets
+  `invalid-message`. A call body over its limit is refused with `too-large`
+  without reading the rest.
+- **Remote refusals.** A remote responder's or owner's refusal is rebuilt at the
+  edge as the shared error body: its registered code, and at most 1024
+  characters of detail. Anything else it carried is dropped.
 - **Subscriptions.** `subscribe` resolves once the edge has registered the
   subscription, so nothing published after it is missed. Messages come down the
   stream in order.
@@ -388,34 +395,51 @@ HTTP status that fits its code.
   the next message of a subscription. A remote part that stops reading fills
   only its own subscriptions' bounded bus queues. Their drops go to `onError` as
   `capacity`, and the remote part receives `onOverflow` with the count.
-- **Reconnects.** When the stream is lost, the client reconnects, registers its
-  subscriptions, responders and sync owners again, and tells every subscription
-  `onOverflow({})`, with no count. A sync copy then syncs again. Nothing missed
-  in the gap is replayed.
+- **Reconnects.** When the stream is lost, the client reconnects. It queues
+  `onOverflow({})`, with no count, for every subscription before any message of
+  the new stream. It registers its subscriptions, responders and sync owners
+  again, and only then delivers those notices, so a sync copy that syncs again
+  never asks before its subscriptions exist. Nothing missed in the gap is
+  replayed. A call that needs the stream and meets a lost one is refused with
+  the retryable `unavailable`.
+- **A dropped stream and forwarded calls.** A command already written to a
+  remote responder's stream is never answered because the stream dropped: its
+  handler may be running it. Its reply still counts when it comes on the
+  reconnected stream; otherwise its deadline makes it `uncertain-result`. A
+  command whose frame never reached the socket is `unavailable`, and so is a
+  forwarded sync request, since a sync only reads.
 - **Sync answers.** A sync answer whose `sync.completed` or a state is over
   256 KiB is refused at the edge with `too-large` and logged. A first sync
   resolves `rejected` with that code, and a later one ends the copy with
-  `failed`. Paging is not built yet.
+  `failed`. Paging is #782.
 
-The deadline answers per transport:
+The deadline answers are the same on both transports, as ADR 0012 states:
 
-| Case | In process | Remote |
-| --- | --- | --- |
-| A command its handler holds at the deadline | `uncertain-result` | `uncertain-result` |
-| A command still queued at the deadline | `expired`: the bus takes it out of the queue | `uncertain-result`: the requester cannot know whether the handler started |
-| A sync request with no answer by the deadline | `unavailable` | `unavailable` |
-| A command or sync request that reaches the edge past its expiry | not applicable | `expired`, which a requester that already gave up ignores |
+| Case | Answer |
+| --- | --- |
+| A command its handler holds at the deadline | `uncertain-result` |
+| A command still queued at the deadline | `expired`: it never reached the handler |
+| A sync request with no answer by the deadline | `unavailable`, since a sync only reads |
+| A command or sync request that reaches the edge past its expiry | `expired` |
 
-The remote requester's own deadline decides. The edge waits 1 s past the
-expiry before it gives up, so its late answer never reaches the requester first.
-Both sides run these waits on a `scheduler` option, which defaults to
-`setTimeout`.
+Remotely, the edge answers as soon as its bus settles, at the deadline. The
+requester waits `REQUESTER_GRACE_MS` (1 s) longer on its own scheduler. If the
+edge cannot be heard by then, the requester settles a command as
+`uncertain-result`, because its fate is unknown, and a sync as `unavailable`. An
+edge `expired` refusal of a remote part's own sync request, as when its clock is
+behind the edge's, reaches it as the retryable `unavailable`. Every `timeoutMs`
+is at most `MAX_TIMEOUT_MS`, one day, on both transports, so no timer outgrows
+`setTimeout`. Both sides run their waits on a `scheduler` option, which defaults
+to `setTimeout`.
 
-A remote participant is a `Participant`. Its `close` closes its sync copies
-first: a first sync still under way resolves `cancelled`, and its request is
-withdrawn. The client drops the HTTP call, and the edge takes the request out of
-the owner's queue, so the owner never serves it. Then it ends the stream, and
-every later call is refused with `invalid-state`.
+A remote participant is a `Participant`, and closing it again returns the same
+promise. Its `close` first settles each request still waiting for the edge as
+`uncertain-result`, because the requester cannot know whether a handler already
+has it. It drops their calls, so the edge takes a still-queued command out, and
+cancels their deadlines and the reconnect backoff. It then closes its sync
+copies: a first sync still under way resolves `cancelled`, and its request is
+withdrawn from the owner's queue. Last it ends the stream, and every later call
+is refused with `invalid-state`.
 
 ## Checks
 

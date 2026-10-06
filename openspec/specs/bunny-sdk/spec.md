@@ -36,7 +36,7 @@ The SDK SHALL build each envelope with the participant's `source`, a new `id`, t
 
 ### Requirement: Request and respond with expiry
 
-One responder SHALL own each command key. A `respond` whose pattern overlaps another responder's SHALL be refused with `invalid-state`. `request` SHALL refuse with `invalid-request` a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is not an integer from 1 to 2147483647 and a `requestId` that is not an identifier. It SHALL send one command with a `requestId` in its payload and `expiresat` set `timeoutMs` after its `time`, and SHALL resolve with exactly one result, the reply or a result in its place; the command's outcome is a separate published message:
+One responder SHALL own each command key. A `respond` whose pattern overlaps another responder's SHALL be refused with `invalid-state`. `request` SHALL refuse with `invalid-request` a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is not an integer from 1 to `MAX_TIMEOUT_MS`, 86400000 (one day), and a `requestId` that is not an identifier. It SHALL send one command with a `requestId` in its payload and `expiresat` set `timeoutMs` after its `time`, and SHALL resolve with exactly one result, the reply or a result in its place; the command's outcome is a separate published message:
 - `accepted`, with the reply message;
 - `rejected`, with the shared error body: the responder's refusal, `internal` when the responder throws, `unavailable` when no responder owns the key or it closed before the command reached it, `capacity` when its queue is full, `expired` when the command never reached the responder's handler before its expiry, or `cancelled` when the requester closed before the handler started the command;
 - `uncertain`, with `uncertain-result`, when the responder's handler had the command when the deadline passed or the requester closed.
@@ -64,7 +64,7 @@ At the deadline, the SDK SHALL take a command that is still waiting in the respo
 - **THEN** the waiting request resolves as `rejected` with `unavailable`, carrying its `requestId` and trace ID, and the command being handled still gets its reply
 
 #### Scenario: A malformed request
-- **WHEN** a request uses a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is zero, negative, fractional, not finite or above 2147483647, or a `requestId` that is not an identifier
+- **WHEN** a request uses a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is zero, negative, fractional, not finite or above `MAX_TIMEOUT_MS`, or a `requestId` that is not an identifier
 - **THEN** it is refused with `invalid-request`
 
 #### Scenario: A deadline recorded as uncertain
@@ -161,7 +161,7 @@ After a sync, the copy SHALL apply live messages in order, with the same buffer 
 
 A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and a served answer to a request sent before the latest overflow SHALL NOT be applied; a refusal still ends the first sync or the copy. Each such overflow SHALL be reported to the bus's `onSyncRestart` with the copy's source and `sync <families>` as its pattern. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
 
-`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A copy closed while it is still subscribing to its families SHALL make no further subscription and SHALL close the one it was making. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
+`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A copy closed while it is still subscribing to its families SHALL make no further subscription and SHALL close the one it was making. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to `MAX_TIMEOUT_MS` and a `maxBuffered` that is not a positive integer.
 
 #### Scenario: Current state, then live messages
 - **WHEN** an owner holds two sessions and a consumer syncs, and the owner later updates one
@@ -363,13 +363,14 @@ The SDK SHALL give each participant `publishMessage(key, message)`, which publis
 
 The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRemote`, that gives a remote part the same calls as a module. Messages SHALL flow down one `text/event-stream` per connection at `GET /api/sdk/v1/stream`, and calls SHALL go up as `POST /api/sdk/v1/<call>`. Every frame SHALL carry `schema` `sdk-remote/1.0`, and every refusal SHALL be the shared error body.
 
-- **Credentials:** each remote source SHALL have a bearer token, compared in constant time. A call without a granted token SHALL be refused with `unauthenticated`. A message or connection of another source SHALL be refused with `forbidden`. A token SHALL NOT appear in any message, log record or error body.
-- **Validation:** the client SHALL build every message, which keeps its own `id` and `time`. The edge SHALL validate each inbound message against profile 2.0, its registered payload schema and the 256 KiB cap, with its clock, and SHALL refuse a failing one with the validator's code (`invalid-message`, `too-large`, `unknown-schema`, `unsupported-version` or `expired`) before it reaches the bus.
+- **Credentials:** each remote source SHALL have a bearer token, compared in constant time. The edge SHALL refuse at start a grant with a malformed source or a token that two grants share. A call without a granted token SHALL be refused with `unauthenticated`. A message or connection of another source SHALL be refused with `forbidden`, including a close, reply or sync answer on another source's connection. A token SHALL NOT appear in any message, log record or error body.
+- **Validation:** the client SHALL build every message, which keeps its own `id` and `time`. The edge SHALL validate each inbound message against profile 2.0, its registered payload schema and the 256 KiB cap, with its clock, and SHALL refuse a failing one with the validator's code (`invalid-message`, `too-large`, `unknown-schema`, `unsupported-version` or `expired`) before it reaches the bus. It SHALL refuse a sync request whose subject is not its families joined by commas with `invalid-message`, and a call body over its limit with `too-large` without reading the rest. It SHALL rebuild a remote responder's or owner's refusal as the shared error body, with its registered code and at most 1024 characters of detail, and SHALL drop anything else it carried.
 - **Subscriptions:** `subscribe` SHALL resolve only once the edge has registered the subscription.
 - **A slow consumer:** the edge SHALL wait for a connection's socket to drain before it writes the next message of a subscription, so a remote part that stops reading fills only its own subscriptions' bounded queues. Their drops SHALL be reported to `onError` as `capacity` and sent to the remote part as an overflow notice with the count.
-- **Reconnects:** a client whose stream is lost SHALL reconnect, register its subscriptions, responders and sync owners again, and then tell each subscription of the gap with no count. Nothing missed SHALL be replayed.
-- **Deadlines:** a remote requester's own deadline SHALL decide. A command still unanswered at its deadline SHALL be `uncertain-result`, and a sync request `unavailable`. The edge SHALL wait past the expiry before it gives up, so its late answer never reaches the requester first. A remote responder or owner SHALL ignore a command or sync request that reaches it past its expiry.
-- **Close:** a remote participant SHALL be a participant whose `close` closes its sync copies first, so a first sync still under way resolves `cancelled`. A copy's withdrawn request SHALL drop its HTTP call, and the edge SHALL then take the request out of the owner's queue, so the owner never serves it. Every later call SHALL be refused with `invalid-state`.
+- **Reconnects:** a client whose stream is lost SHALL reconnect, queue a gap notice with no count for each subscription before any message of the new stream, register its subscriptions, responders and sync owners again, and only then deliver the notices. Nothing missed SHALL be replayed. A call that needs the stream and meets a lost one SHALL be refused with the retryable `unavailable`, and a registration that failed SHALL leave nothing at the edge.
+- **A dropped stream:** the edge SHALL NOT answer a forwarded command whose frame reached the socket because its stream dropped. A reply that comes on the reconnected stream SHALL still reach the requester; otherwise the deadline decides. A forwarded command whose frame never reached the socket, and a forwarded sync request, SHALL be refused with `unavailable`.
+- **Deadlines:** the deadline answers SHALL be those in process. The edge SHALL answer when its bus settles: `expired` for a command still queued at its deadline, `uncertain-result` for one a handler had, otherwise the reply, and `unavailable` for a sync request. A remote requester SHALL wait `REQUESTER_GRACE_MS` (1 s) past its deadline, on its scheduler, for that answer, and only then settle a command as `uncertain-result` and a sync as `unavailable`. An edge `expired` refusal of a remote part's own sync request SHALL reach it as the retryable `unavailable`. A remote responder or owner SHALL ignore a command or sync request that reaches it past its expiry.
+- **Close:** a remote participant SHALL be a participant whose `close` returns the same promise every time. It SHALL first settle each request still waiting for the edge as `uncertain-result`, drop its call and cancel its deadline and the reconnect backoff; the edge SHALL then take a still-queued command out. It SHALL then close its sync copies, so a first sync still under way resolves `cancelled`; a copy's withdrawn request SHALL drop its HTTP call, and the edge SHALL take the request out of the owner's queue, so the owner never serves it. Every later call SHALL be refused with `invalid-state`.
 - **Schedulers:** the client's deadlines and reconnect delays and the edge's waits SHALL run on an injectable scheduler, which defaults to `setTimeout`.
 - **Sync answers:** the edge SHALL refuse a sync answer that has a state or `sync.completed` over 256 KiB with `too-large` and log it, so a first sync resolves `rejected` with that code and a later one ends the copy with `failed`.
 
@@ -393,9 +394,33 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **WHEN** a remote part stops reading its stream while 150 messages of 100 KB are published
 - **THEN** another subscriber receives all 150, drops for the slow subscription go to `onError`, and once it reads again it receives an overflow notice with the count
 
-#### Scenario: Deadlines on an injected scheduler
-- **WHEN** a remote requester whose scheduler holds its callbacks sends a command with a one-minute deadline that nobody answers, and the test runs the scheduled deadline
-- **THEN** the request resolves as `uncertain` at once
+#### Scenario: The edge's deadline answer, and a silent edge
+- **WHEN** a remote requester's command is held by a handler past a 300 ms deadline, and another requester, whose scheduler holds its callbacks, sends a command with a one-minute deadline and the test runs its deadline plus grace
+- **THEN** the first resolves as `uncertain-result` with the bus's own refusal, before the grace ends, and the second as `uncertain-result` because the edge did not answer
+
+#### Scenario: A dropped stream while a remote handler holds a command
+- **WHEN** a remote responder's stream drops while its handler holds a command
+- **THEN** the requester gets `uncertain-result` at the deadline, never `unavailable`, and when the handler replies on the reconnected stream before the deadline, the requester gets that reply
+
+#### Scenario: Remote refusals rebuilt
+- **WHEN** a remote responder or owner refuses with a registered code, a 5000-character detail and an extra field
+- **THEN** the requester gets the shared error body with that code, the detail cut to 1024 characters and no extra field
+
+#### Scenario: Security and cleanup checks
+- **WHEN** a token acts on another source's connection, a remote responder and owner reconnect twice, a remote responder's clock is ahead, or a command reaches the edge past its expiry
+- **THEN** the call is `forbidden`, the responder and owner still serve, the responder never sees the expired command, and the edge refuses it with `expired`
+
+#### Scenario: A call on a lost stream
+- **WHEN** a remote part registers a responder on a stream the edge has just dropped
+- **THEN** the call is refused with the retryable `unavailable`, and after the reconnect the same key can be registered again
+
+#### Scenario: A sync request's clock skew
+- **WHEN** a remote part whose clock is ten minutes behind syncs
+- **THEN** the sync resolves as `rejected` with the retryable `unavailable`
+
+#### Scenario: Grants and close
+- **WHEN** the edge is given grants with a shared token or a malformed source, or a remote participant closes during its reconnect backoff
+- **THEN** the edge refuses the grants with `invalid-request` without naming the token, and nothing is left on the participant's scheduler
 
 #### Scenario: A sync answer over the cap
 - **WHEN** an owner's snapshot makes `sync.completed` larger than 256 KiB
@@ -403,9 +428,7 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 
 ### Requirement: One conformance suite for every transport
 
-One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. Where a transport must answer differently, it SHALL state its own expectation:
-- a command still queued at its deadline is `expired` in process, where the bus takes it out of the queue;
-- it is `uncertain-result` on the remote transport, because the requester cannot know whether the handler started.
+One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. A command still queued at its deadline SHALL be `expired` on both. Where a transport must answer differently, it SHALL state its own expectation: a closing participant's request whose command still waits in the responder's queue is `cancelled` in process, where the bus knows, and `uncertain-result` remotely, where the requester cannot; on both, the command never runs.
 
 #### Scenario: Both transports
 - **WHEN** the suite runs against each transport
@@ -419,4 +442,7 @@ One conformance suite SHALL run the same SDK calls against the in-process bus an
   - an overflow count;
   - malformed calls;
   - a closed participant refusing every call with `invalid-state`;
-  - a closing participant's first sync resolving `cancelled`, with its waiting request never reaching the owner.
+  - a closing participant's first sync resolving `cancelled`, with its waiting request never reaching the owner;
+  - a closing participant's waiting request settled, the command never running and a second close returning the same promise;
+  - a sync request and its `sync.completed` naming the families, joined by commas;
+  - a `timeoutMs` above `MAX_TIMEOUT_MS` refused with `invalid-request`.

@@ -50,3 +50,38 @@
 
   The remote close case and the scheduler test fail.
 - [x] 5.4 Make the remote participant a `Participant` whose close closes its copies. Honor `OutgoingSync.signal` by dropping the HTTP call, and withdraw it at the edge. Run the client's and the edge's waits on an injectable scheduler. All 120 SDK tests pass.
+
+## 6. Review of PR #909
+
+- [x] 6.1 Write the review tests first. 13 fail, and the tests that pin existing checks pass:
+  - a dropped stream and a held command;
+  - a reply on the reconnected stream;
+  - the edge's deadline answer and a silent edge;
+  - the queued command `expired` on both transports;
+  - close with a waiting request, on both transports;
+  - rebuilt refusals;
+  - `MAX_TIMEOUT_MS`;
+  - a call on a lost stream;
+  - sync clock skew;
+  - the sync subject at the edge;
+  - grant validation;
+  - close cancelling the backoff.
+
+  The pinning tests are: another source's connection, responders and owners after reconnects, a responder ignoring an expired command, the edge refusing an expired command, and the sync subject in the conformance suite.
+- [x] 6.2 Implement the fixes in `src/remote-edge.ts`, `src/remote-client.ts`, `src/in-process.ts`, `src/in-process-sync.ts`, `src/sync.ts` and `src/sdk.ts`. All 136 SDK tests pass.
+  - Items 1 to 4: an edge-level map for forwarded calls; the edge answering when its bus settles; the requester's 1 s grace; close settling requests; the dispatch signal; rebuilt refusals.
+  - Items 6 to 12: the gap order; `unavailable` on a lost stream; the backoff cancel; `MAX_TIMEOUT_MS`; edge hygiene; the subject check; the sync clock-skew mapping.
+- [x] 6.3 Run a negative control for each item, each restored afterwards; every one fails its tests:
+  - answering written commands on a drop (2 tests);
+  - restoring the edge grace (4);
+  - dropping the requester grace (1);
+  - close leaving requests (1, hangs);
+  - close returning a new promise (1);
+  - no rebuild (1);
+  - no connection-owner check (1);
+  - drop keeping what the connection opened (1);
+  - the client handling expired commands (1);
+  - the edge ignoring expiry (2);
+  - keeping `not-found` (1);
+  - keeping `expired` for a sync (1).
+- [x] 6.4 Update the README, the `bunny-sdk` spec (now also modifying the request and sync requirements for `MAX_TIMEOUT_MS`), this delta and design.md. The synced spec and the delta stay identical.
