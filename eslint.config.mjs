@@ -21,6 +21,7 @@ const pageDrivers = [
   'apps/hub/verify/**',
   'docs/skins/check_*.cjs',
   'docs/system-design/check.cjs',
+  'docs/system-design/reference/check_reference.cjs',
   'docs/work-guide/browser/tests/**',
   'docs/work-guide/work/check_guide.cjs',
   '**/*.browser.mjs',
@@ -37,8 +38,8 @@ export default defineConfig(
       'firmware/chompi-controller/build/**', 'firmware/chompi-controller/.upstream/**',
       // Committed generated output: the Work guide's published releases.
       'docs/work-guide/outputs/**',
-      // Vendored third-party reference assets (Scalar and SchemaSpy themes).
-      'docs/system-design/reference/**',
+      // Vendored third-party reference assets: the Scalar bundle and SchemaSpy's generated pages and theme.
+      'docs/system-design/reference/assets/**', 'docs/system-design/reference/database/**',
       // Saved source copies from other repositories, kept as architecture evidence.
       'docs/work-guide/work/architecture/sources/**',
     ],

@@ -236,7 +236,8 @@ The excluded categories are:
   `apps/hub/public/`, `artifacts/`, `.local/`, test reports and firmware build
   trees);
 - the Work guide's published releases (`docs/work-guide/outputs/`);
-- vendored reference assets (`docs/system-design/reference/`);
+- vendored reference assets (`docs/system-design/reference/assets/` and
+  `docs/system-design/reference/database/`);
 - saved source copies from other repositories
   (`docs/work-guide/work/architecture/sources/`).
 
