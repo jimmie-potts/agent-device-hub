@@ -28,7 +28,7 @@ import { defaultLockPath } from '../dist/lock.js';
 import { createNodeHidTransport } from '../dist/node-hid-transport.js';
 import { isPressControl, isTurnControl } from '../dist/protocol.js';
 import { loadOsAdapter } from '../dist/routing/index.js';
-import { DEFAULT_PROFILE_PATH } from '../dist/routing/profile.js';
+import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PAGE_SETTINGS, DEFAULT_PROFILE_PATH } from '../dist/routing/profile.js';
 import { SyntheticHub } from '../dist/sim/hub.js';
 import { CONTROL, PANEL_ENCODERS, PANEL_KEYS, describeLights } from '../dist/sim/panel.js';
 import { READY_STEP, SCENARIOS, ready, readiness, runScenario, seedDesktop, seedHub, taskIds } from '../dist/sim/scenarios.js';
@@ -433,7 +433,11 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (request.method === 'GET' && url.pathname === '/api/harness/health') return send(response, exit === null ? 200 : 503, { ok: exit === null, bridge: exit === null ? 'running' : `exited ${exit}` });
       if (request.method === 'GET' && url.pathname === '/api/harness/state') return send(response, 200, await state());
       if (request.method === 'GET' && url.pathname === '/api/harness/boundaries') return send(response, 200, boundaries());
-      if (request.method === 'GET' && url.pathname === '/api/harness/panel') return send(response, 200, { keys: PANEL_KEYS, encoders: PANEL_ENCODERS, controls: CONTROL, cards: Object.keys(CARD_STOPS) });
+      if (request.method === 'GET' && url.pathname === '/api/harness/panel') {
+        // Default counts per turn: one card step for the big wheel and one page step for knob 4 (#822), from the profile.
+        const counts = { wheel: profile.cards?.stepCounts ?? DEFAULT_CARD_STEP_COUNTS, 'knob-4': profile.pages?.stepCounts ?? DEFAULT_PAGE_SETTINGS.stepCounts };
+        return send(response, 200, { keys: PANEL_KEYS, encoders: PANEL_ENCODERS, controls: CONTROL, counts, cards: Object.keys(CARD_STOPS) });
+      }
       const area = /^\/api\/harness\/(controller|desktop|hub|profile|scenario)$/.exec(url.pathname)?.[1];
       if (area) {
         if (request.method !== 'POST') return send(response, 405, { error: 'method-not-allowed' });

@@ -89,6 +89,19 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Activity of Synthetic Codex task 1');
   });
 
+  await check('knob 4 pages the slot keys by one page step, and its light names the page', async () => {
+    const light = page.locator('[data-encoder="knob-4"] > .light');
+    assert.equal(await page.getByLabel('Counts per turn').nth(3).inputValue(), '6', 'knob 4 starts at one page step');
+    await light.filter({ hasText: /^page 1$/ }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Knob 4 turn right' }).focus();
+    await page.keyboard.press('Enter');
+    await until(async () => (await state()).log.some(entry => entry.line.type === 'page' && entry.line.page === 2), 'the bridge shows page 2');
+    await light.filter({ hasText: /^page 2$/ }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Knob 4 turn left' }).click();
+    await light.filter({ hasText: /^page 1$/ }).waitFor({ timeout: 5000 });
+    assert.equal((await state()).desktop.foreground, 'other', 'paging brought no window to the front');
+  });
+
   await check('the Hub controls change a slot light: attention on the Codex task', async () => {
     await page.getByLabel('Attention of Synthetic Codex task 1').selectOption('approval');
     const slot = (await state()).slots.find(s => s.client === 'codex').slot;

@@ -50,13 +50,24 @@ The bridge's slot store (`state/slots.json`) keeps up to 15 slots in a private f
 - Keys show the visible page's slots, and empty slots stay off.
 - Knob 4's LED (index 29) shows `colors.pages[page - 1]`.
 - While any task outside the visible page has attention (the slot's state is `attention`, which needs a current feed), the LED alternates between the attention color and the page color on the existing attention pulse. That includes slots beyond the profile's pages.
-- Only attention shows there, a pickup default pending the owner's confirmation; other states show on the keys when their page is visible. The installed checks include an unread task on a hidden page to settle it.
+- Only attention shows there; other states show on the keys when their page is visible. This began as a pickup default; on 2026-10-05 the owner kept it ("We can keep it with the current setting of attention only."). The installed check with an unread task on a hidden page remains an observation of that behavior and settles no decision.
 - **Default page colors:** cyan, magenta, green, grey-white, blue, pink, lime and teal. They are distinct from each other and from the attention orange, so the alternation reads as attention.
+
+### Verification harness
+
+The CHOMPI bridge verification harness (#853, merged in PR #855 after this change was first archived) handed task pages over to this story:
+
+- **Catalog scenario `task-pages`:** a seed of 18 tasks across two pages runs in both tiers. It covers deliberate-turn paging, a page-2 task opened with its key, a hidden page's attention on knob 4's LED, the release gesture during paging and paging that sends no input.
+- **Readiness:** it checks lit keys only for the visible page's slots, because slots on other pages have no key.
+- **Control page:**
+  - knob 4's LED gets its own `page` light role, named `page N` from the profile's page colors, or `attention` while it alternates;
+  - knob 4's turn starts at one page step, as the big wheel starts at one card step;
+  - its click reaches the bridge and stays unassigned.
 
 ## Risks
 
 - A slot file written by this bridge is unreadable by older bridges until the documented pruning step. The bridge's own error names the file, and the README gives the step.
-- Hidden-page tasks show only attention on the indicator. Activity, completion and stale states of hidden tasks are seen only by paging. This is the pickup default, pending the owner's confirmation at the installed check.
+- Hidden-page tasks show only attention on the indicator. Activity, completion and stale states of hidden tasks are seen only by paging. The owner accepted this on 2026-10-05.
 - A slot beyond the profile's pages has no key, so its attention pulses the indicator until `pages.count` is raised or the task is released; the README says how.
 - Knob 4's click (31) is reserved: profile validation rejects mapping it to Record or Back, and Send already refuses every small-knob click.
 
@@ -88,3 +99,4 @@ The bridge's slot store (`state/slots.json`) keeps up to 15 slots in a private f
 | Knob 4 detents: light touches, reversal, clamping; paging is never input; keys act on the visible page | `routing-router.test.mjs` |
 | Visible-page key lights and the page LED with the hidden-page attention pulse | `routing-router.test.mjs`, `routing-lights.test.mjs` |
 | Profile page settings, page colors and knob 4 reserved from scrolling | `routing-profile.test.mjs` |
+| The `task-pages` catalog scenario in Tier 1 and Tier 2; knob 4's light role and paging from the control page | `scenarios.test.mjs`, `test:chompi-bridge:scenarios`, `verify/tests/steps.test.mjs`, `panel.test.mjs`, `verify/tests/page.browser.mjs` |

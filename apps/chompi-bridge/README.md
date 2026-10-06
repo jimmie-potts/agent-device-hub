@@ -319,8 +319,8 @@ file stops start-up.
 
 Slot keys show the visible page's slots, and keys for its empty slots stay off. Small knob 4's LED shows the visible
 page in its `colors.pages` color; while a task on any other page has attention, it alternates between the page color
-and the attention color on the attention pulse. Only attention shows there, a pickup default pending the owner's
-confirmation; other states, such as an unread completion, show on the keys when their page is visible.
+and the attention color on the attention pulse. Only attention shows there (owner decision on #822, 2026-10-05); other
+states, such as an unread completion, show on the keys when their page is visible.
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
@@ -395,7 +395,7 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
 - Outside a card, a big-wheel turn scrolls the foreground Codex or Claude window through the adapter's `scrollClient`
   mouse-wheel primitive, which acts only while that client is in front with the pointer inside it. The wheel never
   types or selects a task, never runs while Record is held, and is not retried when the adapter answers `false` or
-  unknown. Other encoder turns are inert.
+  unknown. Small knob 4's turn pages the slot keys (see Task pages); other encoder turns are inert.
 - A controller `stale`, `session-restart` or `disconnected`, Back, a profile swap and an overflowed subscription
   release every held key and cancel pending wheel steps and a focus in progress. Nothing pressed before them is
   replayed: after a reconnect, each control acts on a fresh press, evaluated at that press.

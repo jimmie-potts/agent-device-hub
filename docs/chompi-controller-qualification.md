@@ -502,7 +502,7 @@ After the bridge with task pages is installed, with more than 15 open throwaway 
 3. On page 2, press a task's key and confirm that the bridge opens that task (slot 16 or later).
 4. While page 2 is visible, let a task on page 1 raise attention, and confirm that knob 4's LED alternates with the
    attention color without switching pages. Then let a task on page 1 finish unread (no attention) and confirm that
-   the LED stays steady: only attention shows on the indicator, a pickup default the owner confirms or changes here.
+   the LED stays steady: only attention shows on the indicator (owner decision on #822, 2026-10-05).
 5. Hold a Claude task's key on page 1, turn knob 4 to page 2 during the hold, press Loop, and confirm that the page-1
    task is the one released.
 6. Restart the bridge and confirm that every task keeps its key and page, and that the keys show page 1.

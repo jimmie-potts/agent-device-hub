@@ -1,10 +1,12 @@
 import type { Client } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { Activity, AttentionKind } from '../routing/feed.js';
+import { DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS } from '../routing/profile.js';
+import { SLOT_COUNT } from '../routing/slots.js';
 import type { ChompiSimulator } from '../simulator.js';
 import type { CardSeed, SimulatedDesktop, WindowId } from './desktop.js';
 import type { SyntheticHub } from './hub.js';
-import { CONTROL, WHEEL_LEDS } from './panel.js';
+import { CONTROL, PAGE_LED, WHEEL_LEDS } from './panel.js';
 
 /**
  * The CHOMPI bridge scenario catalog (#853): data plus small step functions, shared by the in-memory runner in CI
@@ -83,6 +85,15 @@ export function seedDesktop(desktop: SimulatedDesktop, seed: RunSeed): void {
 /** One Codex and one Claude task, idle, with another app in front. */
 export const DESK_BASIC: RunSeed = Object.freeze({ tasks: [{ client: 'codex', n: 1 }, { client: 'claude', n: 2 }] } satisfies RunSeed);
 
+/**
+ * 18 idle tasks, more than one page of 15 slot keys, with another app in front. Slots are assigned in task order
+ * (provider, then task ID), so Claude task 1 takes slot 1 (page 1, key 1) and Codex tasks 2-18 take slots 2-18:
+ * page 2 shows Codex tasks 16, 17 and 18 on keys 1, 2 and 3.
+ */
+export const TWO_PAGES: RunSeed = Object.freeze({
+  tasks: [{ client: 'claude', n: 1 }, ...Array.from({ length: 17 }, (_, i) => ({ client: 'codex' as const, n: i + 2 }))],
+} satisfies RunSeed);
+
 // Steps
 
 export type Check = (h: Harness) => true | string;
@@ -133,6 +144,29 @@ const focusedOn = (h: Harness, client: Client, n: number): true | string => {
     || `foreground ${s.foreground}, selected ${s.windows[client].selected === id ? 'the task' : 'another task'}, composer ${s.windows[client].composer.focused ? 'focused' : 'unfocused'}`;
 };
 const submitted = (h: Harness, client: Client) => h.desktop.snapshot().windows[client].composer.submitted;
+
+/** The visible task page (#822), from the bridge's own `page` log lines; the bridge starts on page 1. */
+export function visiblePage(h: Harness): number {
+  const line = logged(h, 'page').at(-1);
+  return typeof line?.page === 'number' ? line.page : 1;
+}
+const pageColor = (h: Harness, page: number): readonly number[] => (h.profile().colors?.pages ?? DEFAULT_PAGE_COLORS)[page - 1]!;
+const pageStep = (h: Harness): number => h.profile().pages?.stepCounts ?? DEFAULT_PAGE_SETTINGS.stepCounts;
+/** Knob 4's LED shows page `page`'s color and the bridge logged that page as visible. */
+const pageShown = (h: Harness, page: number): true | string =>
+  (visiblePage(h) === page && same(h.simulator.leds[PAGE_LED], pageColor(h, page))) || `page ${visiblePage(h)}, knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`;
+const keyLed = (h: Harness, key: number) => h.simulator.leds[key - 1];
+/** What the desktop received as input (keys, links, card presses, scrolls, dictation), not the harness's own setup. */
+const inputs = (h: Harness) => h.desktop.log.filter(e => e.kind !== 'operator');
+const marks = new WeakMap<Harness, { inputs: number; foreground: string | null }>();
+const markDesktop = (h: Harness) => { marks.set(h, { inputs: inputs(h).length, foreground: h.desktop.snapshot().foreground }); };
+/** Since the last mark, no input reached any client and the window in front is the same. */
+const desktopUntouched = (h: Harness): true | string => {
+  const mark = marks.get(h);
+  if (!mark) return 'the desktop was never marked';
+  const now = inputs(h), front = h.desktop.snapshot().foreground;
+  return (now.length === mark.inputs && front === mark.foreground) || `foreground ${front} (was ${mark.foreground}), new input ${show(now.slice(mark.inputs).map(e => e.kind))}`;
+};
 
 export const SCENARIOS: readonly Scenario[] = Object.freeze([
   {
@@ -256,6 +290,48 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
       holds('the release starts nothing and nothing is sent', h => (nothingHeld(h) === true && enters(h) === 0) || `held ${show(h.desktop.held)}`, 1000),
     ],
   },
+  {
+    id: 'task-pages',
+    title: 'Knob 4 pages the slot keys through task pages on a deliberate turn, without input; a hidden page\'s attention shows on knob 4\'s LED; a held key releases the slot it showed',
+    seed: TWO_PAGES,
+    steps: [
+      expect('page 1 is visible: knob 4\'s LED shows page 1\'s color', h => pageShown(h, 1)),
+      expect('all 18 tasks hold slots; keys 1-15 show slots 1-15', h => (logged(h, 'slot-assigned').length === 18
+        && Array.from({ length: SLOT_COUNT }, (_, i) => keyLed(h, i + 1)).every(c => same(c, h.profile().colors.idle))) || `${logged(h, 'slot-assigned').length} slots assigned`),
+      act('note the desktop: another app in front, no input yet', markDesktop),
+      act('touch knob 4 lightly: half a page step clockwise', h => h.simulator.turn(CONTROL.pageTurn, Math.floor(pageStep(h) / 2))),
+      holds('a light touch does not page', h => (pageShown(h, 1) === true && logged(h, 'page').length === 0) || `page ${visiblePage(h)}`, 1000),
+      act('turn knob 4 one deliberate page step clockwise', h => h.simulator.turn(CONTROL.pageTurn, pageStep(h))),
+      expect('page 2 is visible: the bridge logs it and knob 4\'s LED shows page 2\'s color', h => pageShown(h, 2)),
+      expect('keys 1-3 show slots 16-18; keys 4-15 are dark', h => ([1, 2, 3].every(k => same(keyLed(h, k), h.profile().colors.idle))
+        && Array.from({ length: 12 }, (_, i) => keyLed(h, i + 4)).every(c => same(c, [0, 0, 0]))) || `keys ${show([1, 2, 3, 4].map(k => keyLed(h, k)))}`),
+      holds('paging sent no input to any client and left another app in front', desktopUntouched, 500),
+      act('press slot key 2 on page 2', h => h.simulator.click(2)),
+      expect('Codex comes to the front on task 17 (slot 17) with its composer focused', h => focusedOn(h, 'codex', 17)),
+      expect('the bridge logs the focus for slot 17', h => logged(h, 'focused', { client: 'codex', slot: 17 }).length === 1 || `focused ${show(logged(h, 'focused'))}`),
+      act('note the desktop: Codex in front', markDesktop),
+      act('turn knob 4 one page step counter-clockwise', h => h.simulator.turn(CONTROL.pageTurn, -pageStep(h))),
+      expect('page 1 is visible again', h => pageShown(h, 1)),
+      holds('paging back sent no input and left Codex in front', desktopUntouched, 500),
+      act('a task on hidden page 2 (Codex task 18, slot 18) needs approval', h => h.hub.update(taskIds('codex', 18).sessionId, { attention: ['approval'] })),
+      expect('knob 4\'s LED shows the attention color', h => same(h.simulator.leds[PAGE_LED], h.profile().colors.attention) || `knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`, 3000),
+      expect('knob 4\'s LED alternates back to page 1\'s color', h => pageShown(h, 1), 3000),
+      holds('the page does not switch and no visible slot key shows attention', h => (visiblePage(h) === 1 && logged(h, 'page').at(-1)?.page === 1
+        && Array.from({ length: SLOT_COUNT }, (_, i) => keyLed(h, i + 1)).every(c => same(c, h.profile().colors.idle))) || `page ${visiblePage(h)}, keys ${show(Array.from({ length: SLOT_COUNT }, (_, i) => keyLed(h, i + 1)))}`, 1500),
+      act('hold slot key 1 on page 1 (Claude task 1, slot 1)', h => h.simulator.press(1)),
+      expect('Claude comes to the front on task 1', h => focusedOn(h, 'claude', 1)),
+      act('turn knob 4 one page step clockwise with the key still held', h => h.simulator.turn(CONTROL.pageTurn, pageStep(h))),
+      expect('page 2 is visible; key 1 now shows slot 16', h => pageShown(h, 2)),
+      act('wait out the release hold, then press Loop (the release gesture)', async h => {
+        await h.wait((h.profile().timing?.releaseHoldMs ?? 800) + 200);
+        h.simulator.press(CONTROL.loop);
+      }),
+      expect('the gesture releases slot 1, the slot the key showed when it went down', h => logged(h, 'slot-released', { slot: 1, client: 'claude', reason: 'release-gesture' }).length === 1 || `released ${show(logged(h, 'slot-released'))}`),
+      act('let go of Loop and slot key 1', h => { h.simulator.release(CONTROL.loop); h.simulator.release(1); }),
+      holds('slot 16 keeps its Codex task: nothing refused, key 1 still lit', h => (logged(h, 'release-refused').length === 0 && logged(h, 'slot-released').length === 1
+        && same(keyLed(h, 1), h.profile().colors.idle)) || `refused ${show(logged(h, 'release-refused'))}, key 1 ${show(keyLed(h, 1))}`, 1000),
+    ],
+  },
 ] satisfies Scenario[]);
 
 export function scenario(id: string): Scenario | undefined { return SCENARIOS.find(s => s.id === id); }
@@ -268,17 +344,25 @@ export interface ScenarioResult { id: string; title: string; tier: Harness['tier
 const POLL_MS = 50;
 
 /** The name of the step a run records when it never became ready, so the failure is not a lost press. */
-export const READY_STEP = 'the run is ready: controller connected, feed current, every seeded task on a lit slot key';
+export const READY_STEP = 'the run is ready: controller connected, feed current, every seeded task on a slot, the visible page\'s slot keys lit';
 
-/** Whether the controller is connected, the feed is current and every seeded task holds a lit slot key, or why not. */
+/**
+ * Whether the controller is connected, the feed is current, every seeded task holds a slot and every one on the
+ * visible page has a lit key, or why not.
+ */
 export function readiness(h: Harness, seed: RunSeed): true | string {
   if (!h.simulator) return 'no simulated controller';
   if (h.simulator.display !== 'host') return 'controller not connected';
   if (logged(h, 'feed').at(-1)?.status !== 'current') return 'feed not current';
   const assigned = logged(h, 'slot-assigned');
   if (assigned.length < seed.tasks.length) return `${assigned.length} of ${seed.tasks.length} tasks have a slot`;
-  // Every assigned slot key is lit: the controller applied a frame that shows the task states.
-  const dark = assigned.filter(line => same(h.simulator.leds[(line.slot as number) - 1], [0, 0, 0]));
+  // Every assigned slot on the visible page has a lit key: the controller applied a frame that shows the task states.
+  // Slots on other pages (#822) have no key until their page is visible.
+  const first = (visiblePage(h) - 1) * SLOT_COUNT;
+  const dark = assigned.filter(line => {
+    const key = (line.slot as number) - first;
+    return key >= 1 && key <= SLOT_COUNT && same(h.simulator.leds[key - 1], [0, 0, 0]);
+  });
   return dark.length === 0 || `slot ${dark.map(line => line.slot).join(', ')} not lit yet`;
 }
 

@@ -261,7 +261,7 @@ export class TaskRouter {
     }
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
-      // The big wheel scrolls or answers a card; every other turn is inert here (the knobs belong to #744).
+      // Knob 4 pages tasks (#822); the big wheel scrolls or answers a card; other turns are inert (knobs 1-3: #744).
       if (event.control === PAGE_TURN) this.#pageTurn(event.delta);
       else if (event.control === controls.scroll) this.#wheelTurn(event.delta);
       return;

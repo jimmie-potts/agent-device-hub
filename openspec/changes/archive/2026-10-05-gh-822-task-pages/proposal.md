@@ -16,12 +16,14 @@ PROMPTI (the owner's name for the CHOMPI agent controller) has 15 task slots on 
 - **Keys:** slot keys, the release gesture and lights act on the visible page. The bridge starts on page 1, and a profile reload clamps the visible page.
 - **Lights:** knob 4's LED shows the visible page in a per-page color (`colors.pages`). It alternates with the attention color while a task on a hidden page has attention.
 - **Docs:** the bridge README (profile, controls, lights, rollback) and the qualification report (control map, installed checks).
+- **Verification harness (#853):** a `task-pages` catalog scenario for both tiers, readiness by the visible page, and knob 4's light role and paging on the control page.
 
 ## Capabilities
 
 ### Modified Capabilities
 
 - `chompi-task-routing`: stable slots across pages, release on any page, the page indicator light, the page profile fields and a new requirement for task pages with small knob 4.
+- `chompi-bridge-verification`: knob 4's light and default counts on the control page, readiness by the visible page, and the task pages catalog scenario.
 
 ## Impact
 
