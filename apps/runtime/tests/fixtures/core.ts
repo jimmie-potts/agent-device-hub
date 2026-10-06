@@ -7,6 +7,12 @@ import type {BunnyModule} from '@jimmie-potts/sdk';
 import {standInAck} from '@jimmie-potts/sdk/testing';
 import {modeState} from './lamp.js';
 
+/** One outcome the stand-in core recorded, as its `stand-in-history` family carries it until #782's history. */
+export type HistoryEntry = {
+  id: string; revision: number; source: string; requestId: string; command: string; target: string;
+  result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'; takenAtMs: number;
+};
+
 export function core(mode: 'work' | 'free' | 'quiet' = 'work'): BunnyModule {
   return {
     manifest: {name: 'core', apiVersion: '1.0'},

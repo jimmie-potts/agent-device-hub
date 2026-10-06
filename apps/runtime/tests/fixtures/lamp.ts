@@ -24,6 +24,10 @@ export const lampSchemas: Readonly<Record<string, object>> = {
 
 export type Power = 'on' | 'off';
 export type Lamp = {id: string; revision: number; power: Power};
+/** What the lamp's indicator shows: whether an agent session waits for a person. */
+export type Indicator = 'idle' | 'attention';
+/** What the simulated lamps show, as plain data: each lamp's power, the indicator, and every switch the device got. */
+export type LampDeviceState = {power: Record<string, Power>; indicator: Indicator; held: boolean; calls: {lamp: string; power: Power}[]};
 export type LampOptions = {
   /** The lamps it simulates, all off at first. Defaults to `lamp-1`. */
   lamps?: readonly string[];
