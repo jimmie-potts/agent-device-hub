@@ -39,8 +39,11 @@ export interface Unavailable {
   reason: 'unsupported' | 'inaccessible' | 'missing' | 'ambiguous' | 'lost';
 }
 
-/** One session of an agent-state snapshot (1.1 or 1.2), as the owner published it and the runtime validated it. */
-export interface SharedSession {
+/**
+ * One session of a saved envelope. Envelopes saved by earlier bridges may lack `generation`; the projection reads
+ * a missing one as 0, as Python's `.get('generation', 0)` did.
+ */
+export interface StoredSession {
   identity: Identity;
   turn: KnownId;
   parent: Parent;
@@ -64,21 +67,29 @@ export interface SharedSession {
   generation?: number;
 }
 
-export interface Snapshot {
+/**
+ * One session of an agent-state snapshot (1.1 or 1.2), as the owner published it. The consumer requires its generation
+ * (shared_input.validate_snapshot); checkEnvelope refuses a snapshot whose session lacks one.
+ */
+export interface SharedSession extends StoredSession {
+  generation: number;
+}
+
+export interface Snapshot<S extends StoredSession = SharedSession> {
   apiVersion: string;
   revision: number;
   asOfMs: number;
   collector: 'running' | 'quiesced' | 'faulted' | 'closed';
   lossCount: number;
-  sessions: SharedSession[];
+  sessions: S[];
 }
 
 /** The owner's envelope around a checked snapshot. */
-export interface Envelope {
+export interface Envelope<S extends StoredSession = SharedSession> {
   apiVersion: string;
   ownerId: string;
   connection: string;
-  snapshot: Snapshot;
+  snapshot: Snapshot<S>;
   admissionRejected: number;
   nextRequestId: string;
 }
@@ -89,7 +100,7 @@ export interface Skipped {
 }
 
 /** The saved envelope holds only declared sessions, plus a count of the skipped ones. */
-export interface StoredEnvelope extends Envelope {
+export interface StoredEnvelope extends Envelope<StoredSession> {
   skipped?: Skipped;
 }
 
@@ -190,6 +201,20 @@ export function validateConfig(value: unknown): SharedConfig {
 }
 
 /**
+ * The part of shared_input.check_envelope this consumer keeps: every session carries an integer generation, the rule
+ * Python's validate_snapshot added for 1.1 and 1.2 snapshots, and the revision never goes back. A failure is
+ * invalid-feed and changes nothing. The schema, owner and connection checks belong to the 1.x feed (PORTING.md).
+ */
+export function checkEnvelope(value: Envelope, minimumRevision = 0): Envelope {
+  const sessions: readonly {readonly generation?: unknown}[] = value.snapshot.sessions;
+  if (sessions.some(session => typeof session.generation !== 'number' || !Number.isInteger(session.generation))
+      || value.snapshot.revision < minimumRevision) {
+    throw new FeedError('invalid-feed');
+  }
+  return value;
+}
+
+/**
  * Keep sessions from declared sources. Others are counted, never presented or
  * acknowledged, and take no part in parent grouping.
  */
@@ -258,7 +283,7 @@ export function visibleTasks(db: Db, device: string): TaskRow[] {
 }
 
 /** A stale-view guard, not an authentication credential or lifecycle event. */
-export function evictionToken(current: SharedState, session: SharedSession): string {
+export function evictionToken(current: SharedState, session: StoredSession): string {
   return sha256Hex(dumps([current.config?.ownerId ?? null, current.generation, session.identity, session.generation ?? 0, session.turn]));
 }
 
@@ -269,7 +294,7 @@ export function evict(db: Db, device: string, payload: unknown): void {
     throw new ValueError('Invalid eviction.');
   }
   const current = state(db);
-  const tasks = current.envelope === null ? new Map<string, PresentedTask>() : presented(current.envelope.snapshot);
+  const tasks = current.envelope === null ? new Map<string, PresentedTask<StoredSession>>() : presented(current.envelope.snapshot);
   const key = payload.id;
   const task = tasks.get(key);
   if (task === undefined || payload.evictionToken !== evictionToken(current, task[0])
@@ -382,7 +407,7 @@ export type TaskStatus = 'blocked' | 'question' | 'working' | 'unread' | 'idle';
  * A task's status from its own and its subagents' evidence. Subagent attention and owner-counted fresh
  * activity belong to the parent task; a subagent's own turn-ended notices are not task completions.
  */
-export function semanticStatus(session: SharedSession, consumer: string, children: readonly SharedSession[] = []): TaskStatus {
+export function semanticStatus(session: StoredSession, consumer: string, children: readonly StoredSession[] = []): TaskStatus {
   const members = [session, ...children];
   const kinds = new Set(members.flatMap(item => item.attention.map(attention => attention.kind)));
   if ([...ALERTS.blocked].some(kind => kinds.has(kind as Attention['kind']))) return 'blocked';
@@ -392,14 +417,14 @@ export function semanticStatus(session: SharedSession, consumer: string, childre
   return 'idle';
 }
 
-function parentKey(session: SharedSession): string | null {
+function parentKey(session: StoredSession): string | null {
   const parent = session.parent;
   if (parent.status !== 'known' || session.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous')) return null;
   return identityKey(parent.identity);
 }
 
 /** A presented task: its top session, the subagent sessions folded into it, and whether its parent is missing. */
-export type PresentedTask = [SharedSession, SharedSession[], boolean];
+export type PresentedTask<S extends StoredSession = SharedSession> = [S, S[], boolean];
 
 /**
  * Task key: [session, included subagent sessions, orphan]. A child joins its topmost
@@ -407,10 +432,10 @@ export type PresentedTask = [SharedSession, SharedSession[], boolean];
  * session. A group whose top has a missing parent, or a parent cycle keyed by its
  * smallest member, is an orphan presented only for its attention.
  */
-export function presented(snapshot: Pick<Snapshot, 'sessions'>): Map<string, PresentedTask> {
-  const sessions = new Map<string, SharedSession>();
+export function presented<S extends StoredSession>(snapshot: {readonly sessions: readonly S[]}): Map<string, PresentedTask<S>> {
+  const sessions = new Map<string, S>();
   for (const session of snapshot.sessions) sessions.set(identityKey(session.identity), session);
-  const sessionOf = (key: string): SharedSession => {
+  const sessionOf = (key: string): S => {
     const session = sessions.get(key);
     if (session === undefined) throw new RangeError('Unknown session.');
     return session;
@@ -424,7 +449,7 @@ export function presented(snapshot: Pick<Snapshot, 'sessions'>): Map<string, Pre
     }
     return path[path.length - 1] ?? key;
   };
-  const tasks = new Map<string, PresentedTask>();
+  const tasks = new Map<string, PresentedTask<S>>();
   for (const key of sessions.keys()) {
     const root = top(key);
     let entry = tasks.get(root);
@@ -442,7 +467,7 @@ export function presented(snapshot: Pick<Snapshot, 'sessions'>): Map<string, Pre
  * Task members whose evidence supplies a status. For a retained status, a silent child
  * that still reports activity counts too, so its later current evidence can clear it.
  */
-function supporters(session: SharedSession, children: readonly SharedSession[], status: SqlValue, retained = false): SharedSession[] {
+function supporters<S extends StoredSession>(session: S, children: readonly S[], status: SqlValue, retained = false): S[] {
   if (isAlert(status)) return [session, ...children].filter(item => item.attention.some(attention => ALERTS[status].has(attention.kind)));
   if (status === 'working') {
     return [...(session.activity === 'active' ? [session] : []),
@@ -475,7 +500,7 @@ export function projectEnvelope(db: Db, input: Envelope, config: SharedConfig, i
   // The stored envelope holds only declared sessions, plus a local count of the skipped ones.
   const [snapshot, skipped] = declared(input.snapshot, config);
   const envelope: StoredEnvelope = {...input, snapshot, skipped};
-  const prior = new Map<string, SharedSession>();
+  const prior = new Map<string, StoredSession>();
   for (const session of previous?.snapshot.sessions ?? []) prior.set(identityKey(session.identity), session);
   const resync = options.resync === true || previous === null || current.connection !== 'current'
     || snapshot.revision > previous.snapshot.revision + 1
@@ -484,7 +509,7 @@ export function projectEnvelope(db: Db, input: Envelope, config: SharedConfig, i
   if (resync) execute(db, "INSERT OR REPLACE INTO meta VALUES ('shared_wave_cutoff',?)", floatText(instant));
   let presentationChanged = metadata === null ? false : metadata.syncCatalog(db);
   const live = new Set<string>();
-  const priorTasks = previous === null ? new Map<string, PresentedTask>() : presented(previous.snapshot);
+  const priorTasks = previous === null ? new Map<string, PresentedTask<StoredSession>>() : presented(previous.snapshot);
   for (const [key, [session, children, orphan]] of presented(snapshot)) {
     let status: SqlValue = semanticStatus(session, config.consumerId, children);
     if (orphan && !isAlert(status)) continue;

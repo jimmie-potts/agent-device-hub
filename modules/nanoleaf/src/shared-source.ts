@@ -2,10 +2,9 @@
 // Each function runs inside the caller's immediate transaction. Fetching, polling, acknowledging notices
 // to the owner and the command line are not ported; the runtime replaces them (PORTING.md).
 import {dumps} from './compat.js';
-import {DEFAULT} from './devices.js';
 import {FeedError} from './errors.js';
 import type {Metadata} from './project-map.js';
-import {projectEnvelope, restoreLegacyTasks, saveLegacyTasks, selected, state, validateConfig,
+import {checkEnvelope, projectEnvelope, restoreLegacyTasks, saveLegacyTasks, selected, state, validateConfig,
   type Envelope, type SharedConfig, type SharedState} from './shared-input.js';
 import {execute, first, type Db} from './sqlite.js';
 import {markDirty} from './store.js';
@@ -39,8 +38,8 @@ export type Selection = Observed & ({source: 'legacy'} | {
   /** A validated snapshot envelope from the owner. */
   envelope: Envelope;
   instant: number;
-  /** Registered devices; the original Lines device by default. */
-  targets?: readonly string[];
+  /** The registered devices, the original Lines device first; a completion queues a comet on each one in Work. */
+  targets: readonly string[];
   metadata?: Metadata | null;
 });
 
@@ -49,7 +48,7 @@ export function selectSource(db: Db, selection: Selection): void {
   const before = sourceConfig(db);
   if (before.source === selection.source) return;
   if (selection.source === 'shared') {
-    checkRevision(selection.envelope, before);
+    checkEnvelope(selection.envelope, before.envelope?.snapshot.revision ?? 0);
     if (selection.envelope.snapshot.collector !== 'running') throw new FeedError('collector-unavailable');
     selection.metadata?.refresh();
   }
@@ -62,7 +61,7 @@ export function selectSource(db: Db, selection: Selection): void {
     execute(db, "UPDATE shared_input SET source='shared',generation=generation+1,envelope=NULL,connection='unavailable' WHERE id=1");
     execute(db, 'DELETE FROM shared_stale');
     projectEnvelope(db, selection.envelope, config, selection.instant,
-      {resync: true, targets: selection.targets ?? [DEFAULT], metadata: selection.metadata ?? null});
+      {resync: true, targets: selection.targets, metadata: selection.metadata ?? null});
   } else {
     restoreLegacyTasks(db, config.bindings);
     execute(db, 'DELETE FROM comets');
@@ -82,7 +81,8 @@ export interface Acceptance extends Observed {
   instant: number;
   /** Treat the envelope as a fresh start: retained epochs survive, no wave or comet replays. */
   resync?: boolean;
-  targets?: readonly string[];
+  /** The registered devices, the original Lines device first. */
+  targets: readonly string[];
   metadata?: Metadata | null;
 }
 
@@ -92,9 +92,9 @@ export function acceptEnvelope(db: Db, envelope: Envelope, acceptance: Acceptanc
   const current = state(db);
   if (current.source !== 'shared' || (acceptance.generation !== undefined && current.generation !== acceptance.generation)) return false;
   if (current.config === null) throw new FeedError('not-configured');
-  checkRevision(envelope, current);
+  checkEnvelope(envelope, current.envelope?.snapshot.revision ?? 0);
   projectEnvelope(db, envelope, current.config, acceptance.instant,
-    {resync: acceptance.resync ?? false, targets: acceptance.targets ?? [DEFAULT], metadata: acceptance.metadata ?? null});
+    {resync: acceptance.resync ?? false, targets: acceptance.targets, metadata: acceptance.metadata ?? null});
   return true;
 }
 
@@ -106,10 +106,4 @@ export function markFailed(db: Db, generation: number, code = 'feed-unavailable'
   execute(db, 'INSERT OR IGNORE INTO shared_stale SELECT id FROM sessions');
   execute(db, 'DELETE FROM comets');
   markDirty(db);
-}
-
-/** The feed check's revision floor, kept from shared_input.check_envelope: an older snapshot never replaces a newer one. */
-function checkRevision(envelope: Envelope, current: SharedState): void {
-  const minimum = current.envelope?.snapshot.revision ?? 0;
-  if (envelope.snapshot.revision < minimum) throw new FeedError('invalid-feed');
 }

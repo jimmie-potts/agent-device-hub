@@ -8,6 +8,7 @@ import {sha256Hex, type JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import {FeedError} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
+import {registeredDevices} from '../src/configuration.js';
 import {dashboard} from '../src/line-projection.js';
 import {Metadata} from '../src/project-map.js';
 import {BACKUP_TABLES, declared, dumpTables, identityKey, presented, restoreLegacyTasks, restoreTables, saveLegacyTasks, semanticStatus,
@@ -24,6 +25,80 @@ const byText = (values: readonly Row[]): Row[] => [...values].sort((a, b) => (JS
 const throwsFeed = (body: () => unknown, code?: string): void => {
   assert.throws(body, (error: unknown) => error instanceof FeedError && (code === undefined || error.message === code));
 };
+
+suite('SharedContractTest', () => {
+  test('test_generation_validation_preserves_closed_contract', context => {
+    // Partly: the consumer's generation rule. The range, private-field and future-version cases belong to the released
+    // schema validator, which the runtime's contracts replace (PORTING.md).
+    const {path} = selectionSetup(context);
+    selectShared(path);
+    const before = savedRows(path);
+    const value = envelope();
+    value.snapshot.revision = 3;
+    for (const invalid of [null, true, 1.5, 'missing'] as const) {
+      const candidate = clone(value);
+      const session: {generation?: unknown} = firstSession(candidate);
+      if (invalid === 'missing') delete session.generation;
+      else session.generation = invalid;
+      throwsFeed(() => accept(path, candidate, 1001), 'invalid-feed');
+      assert.deepEqual(savedRows(path), before, String(invalid));
+    }
+    assert.deepEqual(value, (() => { const expected = envelope(); expected.snapshot.revision = 3; return expected; })(), 'validation does not mutate its input');
+  });
+});
+
+suite('consumer envelope check', () => {
+  test('a session without a generation is refused and evictions survive', context => {
+    const {path} = selectionSetup(context);
+    const layout = {line_groups: [[100, 101]], line_positions: [[0, 0]]};
+    selectShared(path);
+    const task = wallView(path, layout, 1000).tasks[0];
+    assert.ok(task?.evictionToken !== undefined);
+    evictTask(path, 'wall', {id: task.id, evictionToken: task.evictionToken});
+    const before = savedRows(path);
+    const missing = envelope();
+    missing.snapshot.revision = 3;
+    delete (firstSession(missing) as {generation?: number}).generation;
+    // Python refused the snapshot; reading the missing generation as a recreated task would forget the eviction.
+    throwsFeed(() => accept(path, missing, 1001), 'invalid-feed');
+    assert.deepEqual(savedRows(path), before);
+    assert.deepEqual(wallView(path, layout, 1001).tasks, []);
+    const current = envelope();
+    current.snapshot.revision = 3;
+    assert.equal(firstSession(current).generation, 0);
+    accept(path, current, 1002);
+    assert.deepEqual(wallView(path, layout, 1002).tasks, [], 'generation 0 keeps the eviction');
+    assert.deepEqual(query(path, 'SELECT session,device FROM shared_evictions'), [[KEY, 'wall']]);
+  });
+
+  test('selecting shared input refuses a session without a generation', context => {
+    const {path} = selectionSetup(context);
+    const before = savedRows(path);
+    const missing = envelope();
+    delete (firstSession(missing) as {generation?: number}).generation;
+    throwsFeed(() => selectShared(path, missing), 'invalid-feed');
+    assert.deepEqual(savedRows(path), before);
+    assert.equal(sharedState(path).source, 'legacy');
+  });
+
+  test('an older revision never replaces a newer one', context => {
+    const {path} = selectionSetup(context);
+    const value = envelope();
+    value.snapshot.revision = 5;
+    selectShared(path, value);
+    const before = savedRows(path);
+    const older = envelope();
+    older.snapshot.revision = 4;
+    throwsFeed(() => accept(path, older, 1001), 'invalid-feed');
+    assert.deepEqual(savedRows(path), before);
+  });
+});
+
+/** The task tables and shared-input row a refused envelope must leave unchanged. */
+function savedRows(path: string): Record<string, Row[]> {
+  return Object.fromEntries(['sessions', 'activity', 'task_info', 'slots', 'comets', 'shared_stale', 'shared_evictions', 'shared_input', 'meta']
+    .map(table => [table, query(path, `SELECT * FROM ${table} ORDER BY rowid`)]));
+}
 
 suite('TransportTest', () => {
   test('test_configuration_rejects_remote_targets_and_unqualified_sources', () => {
@@ -1278,7 +1353,7 @@ suite('TaskBackupTest', () => {
       }
     }
     assert.throws(() => write(path, db => selectSource(db, {source: 'shared', envelope: envelope(), instant: 1000,
-      metadata: new Failing({})})), /projection failed/);
+      targets: registeredDevices(path), metadata: new Failing({})})), /projection failed/);
     assert.deepEqual(snapshot(path), before);
     assert.deepEqual(query(path, 'SELECT source,generation,backup FROM shared_input'), [['legacy', 1, null]]);
   });
