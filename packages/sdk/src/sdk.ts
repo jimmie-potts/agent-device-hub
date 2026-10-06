@@ -1,11 +1,12 @@
 // The transport-neutral SDK calls (ADR 0012, "Portability"). Modules and remote parts use only these; the in-process
-// bus implements them now, and the remote SSE/HTTP transport (#883) and sync (#881) fit the same shapes.
+// bus implements them now, and the remote SSE/HTTP transport (#883) fits the same shapes.
 import type {ErrorBody, ErrorDetail, Message} from '@jimmie-potts/event-contracts/v2';
+import type {SyncHandler, SyncOptions, SyncProvider, SyncResult} from './sync.js';
 
 /** W3C trace context. A received message is a valid parent, because it carries both fields. */
 export type TraceContext = {traceparent: string; tracestate?: string};
 
-/** Message kinds sent with `publish`. Commands go through `request`, replies come from `respond`, and sync is #881. */
+/** Message kinds sent with `publish`. Commands go through `request`, replies come from `respond`, and sync messages from `sync`. */
 export type PublishedKind = 'state' | 'removal' | 'occurrence' | 'outcome';
 
 /** What a sender supplies; the SDK adds `id`, `source`, `time`, `traceparent` and the fixed profile attributes. */
@@ -42,6 +43,14 @@ export type RequestResult =
   | {status: 'uncertain'; requestId: string; error: ErrorBody};
 
 export type Handler<T> = (message: Message<T>) => void | Promise<void>;
+export type SubscribeOptions = {
+  /**
+   * Told that the subscription's full queue dropped messages, with how many since it was last told. It runs in the
+   * subscription's order, before the next message is delivered. A subscriber that keeps a copy syncs again rather than
+   * continue with a gap.
+   */
+  onOverflow?: (overflow: {dropped: number}) => void | Promise<void>;
+};
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 
 export interface Subscription {
@@ -55,11 +64,18 @@ export interface Sdk {
   /** Sends a state, removal, occurrence or outcome message to every matching subscriber, without waiting for them. */
   publish<T extends object>(key: string, draft: Draft<T>, options?: SendOptions): Promise<Message<T>>;
   /** Receives messages whose routing keys match `pattern`, one at a time and in order, from this subscription's queue. */
-  subscribe<T extends object = Record<string, unknown>>(pattern: string, handler: Handler<T>): Promise<Subscription>;
+  subscribe<T extends object = Record<string, unknown>>(pattern: string, handler: Handler<T>, options?: SubscribeOptions): Promise<Subscription>;
   /** Sends one command to the responder that owns `key` and waits for its reply until the deadline. Never retries. */
   request<T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult>;
   /** Answers commands whose keys match `pattern`. One responder owns each key; a command past its expiry is ignored. */
   respond<T extends object = Record<string, unknown>>(pattern: string, responder: Responder<T>): Promise<Subscription>;
+  /**
+   * Keeps a copy of one owner's families: the owner's current state at a revision, then live messages. Resolves once
+   * the copy has synced, or with the refusal in the shared error body.
+   */
+  sync<T extends object = Record<string, unknown>>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions): Promise<SyncResult<T>>;
+  /** Answers sync requests for `families` from the owner's current state. One owner serves each family. */
+  serveSync(families: readonly string[], provider: SyncProvider): Promise<Subscription>;
 }
 
 /** A refused SDK call, such as a malformed routing key, carrying the shared error body. */

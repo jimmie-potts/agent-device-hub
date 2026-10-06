@@ -5,7 +5,7 @@ import {test, type TestContext} from 'node:test';
 import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {
   InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type RequestOptions, type Responder,
-  type Sdk, type SendOptions,
+  type Sdk, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '../src/index.js';
 
 const invalid: string[] = [];
@@ -26,7 +26,8 @@ const BASE = 'https://bunny.invalid/events/';
 const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name}`});
 const closed = (properties: Record<string, object>): object =>
   ({type: 'object', additionalProperties: false, required: Object.keys(properties), properties});
-export const SESSION_SCHEMA = `${BASE}test-session/2.0`;
+// Sync names an entity by its schema family, so the session state and its removal share the family `session`.
+export const SESSION_SCHEMA = `${BASE}session/2.0`;
 export const TURN_SCHEMA = `${BASE}test-turn/2.0`;
 export const MODE_SCHEMA = `${BASE}test-mode/2.0`;
 const validator = new MessageValidator();
@@ -54,10 +55,10 @@ export function checked(sdk: Sdk): Sdk {
       check(message, `published on ${key}`);
       return message;
     },
-    subscribe: <T extends object>(pattern: string, handler: Handler<T>) => sdk.subscribe<T>(pattern, message => {
+    subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, message => {
       check(message, `delivered on ${pattern}`);
       return handler(message);
-    }),
+    }, options),
     request: async <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => {
       const result = await sdk.request(key, draft, options);
       if (result.status !== 'uncertain' && result.reply !== undefined) check(result.reply, `reply on ${key}`);
@@ -66,6 +67,18 @@ export function checked(sdk: Sdk): Sdk {
     respond: <T extends object>(pattern: string, responder: Responder<T>) => sdk.respond<T>(pattern, command => {
       check(command, `command on ${pattern}`);
       return responder(command);
+    }),
+    sync: async <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
+      const result = await sdk.sync<T>(families, change => {
+        if (change.type !== 'failed' && change.message !== undefined) check(change.message, `sync change on ${families.join(',')}`);
+        return handler(change);
+      }, options);
+      if (result.status === 'synced') check(result.message, `sync result on ${families.join(',')}`);
+      return result;
+    },
+    serveSync: (families: readonly string[], provider: SyncProvider) => sdk.serveSync(families, request => {
+      check(request, `sync request on ${families.join(',')}`);
+      return provider(request);
     }),
   };
 }
