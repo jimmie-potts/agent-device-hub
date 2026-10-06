@@ -205,13 +205,17 @@ An owner SHALL remove an entity with a removal event whose reason is `expired` f
 - **WHEN** a consumer holding session A at revision 5 starts a sync, receives session Y at revision 15 live, and the sync completes at revision 14 with members A
 - **THEN** the consumer keeps both A and Y
 
+#### Scenario: A removal during a sync
+- **WHEN** a consumer starts a sync, receives the removal of session Y at revision 16 live, the sync completes at revision 14 with Y among its members, and a late state of Y at revision 15 arrives afterwards
+- **THEN** the consumer does not hold Y
+
 #### Scenario: A real owner's expiry and retirement
 - **WHEN** an agent-state owner expires a session after 24 hours without evidence, or retires a parent and its known descendants on a runtime end, and its changes are published as 2.0 messages
 - **THEN** each message is valid, the removals carry `expired` or `retired` at one revision, and a live consumer and a consumer that synced afterwards both hold exactly the owner's records
 
 ### Requirement: 1.x field mapping
 
-The package SHALL publish a mapping from every 1.x field to its 2.0 home. It covers the agent-state session record and snapshot, the lifecycle observation, the controller receipt and the moment command. A 2.0 home is a family field, an envelope attribute, a profile-owned payload, a derived value or the owner's own store. A field with no 2.0 home SHALL have a recorded disposition. A 1.x receipt with `possible` prior effects SHALL map to an `uncertain` outcome with `none` evidence and the `uncertain-result` error, whatever its 1.x outcome, with the 1.x code in the error's detail.
+The package SHALL publish a mapping from every 1.x field to its 2.0 home. It covers the agent-state session record and snapshot, the lifecycle observation, the controller receipt and the moment command. A 2.0 home is a family field, an envelope attribute, a profile-owned payload, a derived value or the owner's own store. A field with no 2.0 home SHALL have a recorded disposition. A 1.x receipt with `possible` prior effects SHALL map to an `uncertain` outcome with `none` evidence and the `uncertain-result` error, whatever its 1.x outcome, with the 1.x code in the error's detail. A `failed` receipt with confirmed transmission and the `uncertain-result` or `transport-failure` code was sent and then lost its answer; it SHALL map to an `uncertain` outcome with `transmitted` evidence and the `uncertain-result` error, with the 1.x code in the detail.
 
 #### Scenario: Every field is named
 - **WHEN** the field paths of the 1.x snapshot session, durable stored session, snapshot, lifecycle 1.2 envelope, controller receipts and moment command schemas are compared with the mapping
@@ -219,4 +223,4 @@ The package SHALL publish a mapping from every 1.x field to its 2.0 home. It cov
 
 #### Scenario: Every receipt converts
 - **WHEN** every receipt in the controller corpus, and every receipt shape the 1.1 schema accepts, is converted by the mapping rules
-- **THEN** each becomes a valid reply or outcome with a registered error code, and every shape with `possible` prior effects, `failed` and `cancelled` included, becomes `uncertain` with `none` evidence and `uncertain-result`
+- **THEN** each becomes a valid reply or outcome with a registered error code, every shape with `possible` prior effects, `failed` and `cancelled` included, becomes `uncertain` with `none` evidence and `uncertain-result`, and every lost-answer shape becomes `uncertain` with `transmitted` evidence and `uncertain-result`

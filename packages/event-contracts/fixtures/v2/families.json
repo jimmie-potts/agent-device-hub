@@ -275,10 +275,10 @@
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 42
     },
-    "observedAtMs": 1791287998000,
-    "lastEvidenceAtMs": 1791287998000,
+    "observedAtMs": 1791287999500,
+    "lastEvidenceAtMs": 1791287999500,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
@@ -497,15 +497,15 @@
       "id": "approval-1"
      }
     },
-    "observedAtMs": 1791287999900,
+    "observedAtMs": 1791287997000,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 40
     },
     "nativeEventId": "native-77",
-    "occurredAtMs": 1791287999850,
+    "occurredAtMs": 1791287996900,
     "projectId": "hub",
     "label": {
      "value": "Port Nanoleaf",
@@ -735,15 +735,15 @@
      "status": "known",
      "id": "turn-7"
     },
-    "observedAtMs": 1791287999500,
+    "observedAtMs": 1791287997000,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 40
     },
-    "revision": 12,
-    "occurredAtMs": 1791287999400,
+    "revision": 9,
+    "occurredAtMs": 1791287996900,
     "attention": {
      "id": {
       "status": "known",
@@ -787,7 +787,7 @@
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 42
     },
     "revision": 15,
     "attention": {
@@ -834,7 +834,7 @@
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 43
     },
     "revision": 16,
     "attention": {
@@ -875,7 +875,7 @@
      "status": "known",
      "id": "turn-7"
     },
-    "observedAtMs": 1791287999500,
+    "observedAtMs": 1791287998000,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
@@ -909,16 +909,16 @@
     },
     "turn": {
      "status": "known",
-     "id": "turn-7"
+     "id": "turn-8"
     },
-    "observedAtMs": 1791287999500,
+    "observedAtMs": 1791287999700,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 44
     },
-    "revision": 14
+    "revision": 17
    }
   },
   "moment-ended": {
@@ -1127,7 +1127,7 @@
      "family": "session",
      "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
     },
-    "revision": 14,
+    "revision": 17,
     "reason": "retired"
    }
   },
@@ -1148,7 +1148,7 @@
      "family": "session",
      "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d"
     },
-    "revision": 14,
+    "revision": 17,
     "reason": "retired"
    }
   },
@@ -1284,10 +1284,10 @@
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 41
+     "sequence": 39
     },
-    "observedAtMs": 1791287998000,
-    "lastEvidenceAtMs": 1791287998000,
+    "observedAtMs": 1791287996000,
+    "lastEvidenceAtMs": 1791287996000,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
@@ -1415,6 +1415,70 @@
      {
       "family": "session",
       "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
+     }
+    ]
+   }
+  },
+  "sync-request-3": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-request-3",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.requested",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-request",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-request/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-3",
+    "families": [
+     "session"
+    ]
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "session-claude-expired-at-16": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-claude-expired-16",
+   "source": "bunny/core",
+   "type": "org.bunny.session.removed",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "session",
+     "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+    },
+    "revision": 16,
+    "reason": "expired"
+   }
+  },
+  "sync-completed-at-14-with-claude": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-completed-14-claude",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.completed",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-completed",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-completed/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-3",
+    "revision": 14,
+    "members": [
+     {
+      "family": "session",
+      "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
      }
     ]
    }
@@ -2082,6 +2146,18 @@
     "session-at-5",
     "session-claude-at-15"
    ]
+  },
+  {
+   "name": "a removal that arrives during a sync stays removed after it",
+   "steps": [
+    "session-claude",
+    "sync-request-3",
+    "session-claude-expired-at-16",
+    "session-claude",
+    "sync-completed-at-14-with-claude",
+    "session-claude-at-15"
+   ],
+   "expect": []
   }
  ]
 }

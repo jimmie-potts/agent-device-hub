@@ -47,7 +47,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
-| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). |
+| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). For #831: an owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. |
 | `restartUncertain` | `session /restartUncertain` | Unchanged. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
 | `generation` | `session /generation` | Required, and never after the record's `revision` (validator). Snapshot 1.0 records read as 0. |
@@ -115,23 +115,47 @@ Turn selection: selecting a newer known turn retires the current one. The owner
 then removes every approval without a request ID raised on a retired turn, and
 publishes `attention-cleared` with cause `turn-retired` for each. In that
 occurrence, `turn` is the observation's turn and `attention.turn` is the retired
-turn the item was raised on. A newer turn is selected in two ways:
-- Any kind selects it when the observation's ordering is known and comparable
-  with the record's: the same epoch and a higher sequence.
-- With unknown ordering and no qualified activity ordering on the record, a
-  `turn-started` for a known turn selects it by receipt order. This is best
-  effort.
+turn the item was raised on. The rules below follow agent-state `reducer.ts`.
 
-The best-effort conflict path is the remaining case: an unordered start, activity,
-end, interruption, runtime end or acknowledgment for a different known turn. The
-owner retires the current turn without selecting a new one. It sets the turn
-unknown and marks turn and ordering ambiguous. The retired turn's approvals are
-still removed with cause `turn-retired`.
+Three kinds never select or retire a turn:
+- `read-observed` is read evidence, not a lifecycle observation.
+- `notice-acknowledged` is applied before any turn handling.
+- `runtime-ended` on a known session makes the owner retire the record before the
+  reducer runs. On an unknown session it is stale.
+
+In the rules below, an activity observation is a `session-started`,
+`turn-started`, `activity-observed`, `turn-ended` or `turn-interrupted`.
+
+An observation whose known turn is already retired never selects a turn, and an
+activity observation on a retired turn is stale. An observation whose known
+sequence is at or below the record's watermark for its dimension is stale too.
+Otherwise the observation's known turn becomes current in one of these ways:
+- Ordering is unknown and no qualified activity ordering governs the record: a
+  `turn-started` selects its turn by receipt order. This is best effort.
+- The record's turn is unknown: an activity observation, or any observation with
+  known ordering, adopts its turn without retiring anything, unless the record's
+  turn is marked ambiguous.
+- Both turns are known and differ, and the observation's ordering is known and
+  comparable with the record's, meaning the same epoch and a higher sequence: it
+  selects its turn. Any of these kinds can: the five activity observations,
+  `question-continuing`, `attention-input`, `attention-approval`,
+  `attention-resolved` and `evidence-unavailable`.
+
+The conflict path covers the remaining case: both turns are known and differ,
+the observation is an activity observation or has known ordering, and the
+orderings are not comparable. The owner selects no turn. It sets the turn
+unknown and marks turn and ordering ambiguous. It retires the current turn only
+on the best-effort path, which only an unordered `session-started`,
+`activity-observed`, `turn-ended` or `turn-interrupted` for a different known
+turn reaches. The retired turn's approvals are then removed with cause
+`turn-retired`.
 
 The owner also changes records without an observation:
 - Expiry after 24 hours without evidence publishes a removal with reason `expired`.
 - Displacing a finished child subtree publishes removals with reason `retired`.
 - Explicit approval recovery publishes `attention-cleared` with cause `recovered`.
+  #831 decides what an owner-started clearing carries as its observation's `turn`,
+  `observedAtMs` and `ordering`, because no observation started it.
 - Startup settlement of approvals on already retired turns publishes
   `attention-cleared` with cause `turn-retired`.
 - Freshness turning `uncertain` publishes the record at a new revision.
@@ -176,6 +200,11 @@ The receipt rule, applied in this order:
      `request-expired`, `request-order` or `capacity`) becomes a reply carrying
      the error. 1.x kept these as the request's receipt; 2.0 refuses the request
      in the reply.
+   - `failed` with `confirmed-transmission` and the code `uncertain-result` or
+     `transport-failure` was sent and then lost its answer. It becomes
+     `uncertain` with `transmitted` and error `uncertain-result`, as the
+     profile's lost-answer scenario reports it. Decided by the coordinator,
+     2026-10-06.
    - `failed` with any other code becomes `failed` with the error. Without a
      code, the error is `internal`.
    - `partially-applied` and `uncertain` become `uncertain` with error

@@ -184,6 +184,10 @@ function receiptMessage(receipt) {
   if (receipt.priorEffects === 'possible') return outcome('uncertain', 'none', 'uncertain-result');
   const evidence = receipt.priorEffects === 'confirmed-transmission' ? 'transmitted' : 'none';
   const mapped = failure === 'transport-failure' ? (evidence === 'none' ? 'unavailable' : 'uncertain-result') : CODES[failure] ?? failure;
+  // Sent, then its answer was lost: uncertain, as the profile's lost-answer scenario reports it.
+  if (receipt.outcome === 'failed' && evidence === 'transmitted' && ['uncertain-result', 'transport-failure'].includes(failure ?? '')) {
+    return outcome('uncertain', 'transmitted', 'uncertain-result');
+  }
   switch (receipt.outcome) {
     case 'sent': return outcome('succeeded', 'transmitted');
     case 'failed': return ADMISSION.includes(failure) ? reply({error: error(mapped, failure)}) : outcome('failed', evidence, mapped ?? 'internal');
@@ -214,7 +218,7 @@ test('every controller receipt in the 1.x corpus and every receipt shape 1.x acc
   // Every receipt shape the 1.x schema accepts: each outcome, prior effect, operation list and failure code. LIFX, for
   // one, reports a write cut short by a generation change as `cancelled` with `possible` prior effects.
   const codes = controller.$defs.failureCodeV1_1.enum;
-  let shapes = 0, possible = 0;
+  let shapes = 0, possible = 0, lost = 0;
   for (const outcome of controller.$defs.receiptV1_1.properties.outcome.enum) {
     for (const priorEffects of controller.$defs.priorEffects.enum) {
       for (const [completedOperations, uncertainOperations] of [[[], []], [['power'], []], [[], ['zone-two']], [['power'], ['zone-two']]]) {
@@ -233,6 +237,11 @@ test('every controller receipt in the 1.x corpus and every receipt shape 1.x acc
             const detail = failure !== undefined ? failure.code : outcome === 'uncertain' ? undefined : outcome;
             assert.deepEqual([converted.kind, data.result, data.evidence, data.error.code, data.error.detail],
               ['outcome', 'uncertain', 'none', 'uncertain-result', detail === 'uncertain-result' ? undefined : detail], shape);
+          } else if (outcome === 'failed' && priorEffects === 'confirmed-transmission' && ['uncertain-result', 'transport-failure'].includes(failure?.code)) {
+            // Sent, then its answer was lost: the profile reports that as uncertain.
+            lost++;
+            assert.deepEqual([converted.kind, data.result, data.evidence, data.error.code, data.error.detail],
+              ['outcome', 'uncertain', 'transmitted', 'uncertain-result', failure.code === 'uncertain-result' ? undefined : failure.code], shape);
           } else if (converted.kind === 'outcome') {
             assert.deepEqual([data.result, data.evidence], [RESULTS[outcome], priorEffects === 'none' ? 'none' : 'transmitted'], shape);
           } else {
@@ -242,7 +251,7 @@ test('every controller receipt in the 1.x corpus and every receipt shape 1.x acc
       }
     }
   }
-  assert.ok(shapes > 400 && possible > 50, `${shapes} receipt shapes, ${possible} with possible prior effects`);
+  assert.ok(shapes > 400 && possible > 50 && lost >= 2, `${shapes} receipt shapes, ${possible} with possible prior effects, ${lost} lost answers`);
 });
 
 // Publishes a real agent-state owner's changes as 2.0 messages (MAPPING.md "Agent-state session record") at the owner's
