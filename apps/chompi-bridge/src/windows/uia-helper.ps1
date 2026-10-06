@@ -2,7 +2,9 @@
 # It never sends input or clicks. Only FocusCardButton and InvokeCardButton change UI state, each on one button
 # of the open card (#821); every other operation is read-only.
 # One JSON request per stdin line; one JSON reply per stdout line. Replies carry only booleans, counts, indexes,
-# package versions and fixed reason codes, never names, values or other text read from a window.
+# package versions and fixed reason codes, never names, values or other text read from a window. The one exception is
+# PickerState (#906): it returns the names of the focused menu's entries, the focused slider, Claude's "Model: " and
+# "Effort: " composer buttons and Codex's picker announcement, which are model and effort labels, never conversation text.
 # The selectors below were established read-only; see UIA-NOTES.md.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -35,7 +37,7 @@ $FocusSettleMs = 400
 $NonAscii = [regex]'[^\x00-\x7F]'
 $EscapeChar = [System.Text.RegularExpressions.MatchEvaluator]{ param($match) '\u{0:x4}' -f [int][char]$match.Value }
 function Reply($value) {
-  [Console]::Out.WriteLine($NonAscii.Replace((ConvertTo-Json -InputObject $value -Compress -Depth 4), $EscapeChar))
+  [Console]::Out.WriteLine($NonAscii.Replace((ConvertTo-Json -InputObject $value -Compress -Depth 6), $EscapeChar))
   [Console]::Out.Flush()
 }
 # Length and UTF-16 code-unit sum of a probe string, so a check can confirm decoding without echoing text.
@@ -294,6 +296,133 @@ function InvokeCardButton($request) {
   return @{ invoked = $true }
 }
 
+# Model and effort controls (#906). Read-only: names, control types, selection and focus; nothing is focused or invoked.
+$MenuId = [System.Windows.Automation.ControlType]::Menu.Id
+$RadioButtonId = [System.Windows.Automation.ControlType]::RadioButton.Id
+$MenuItemId = [System.Windows.Automation.ControlType]::MenuItem.Id
+$CheckBoxId = [System.Windows.Automation.ControlType]::CheckBox.Id
+$SliderId = [System.Windows.Automation.ControlType]::Slider.Id
+$PickerEntryTypes = [System.Windows.Automation.OrCondition]::new([System.Windows.Automation.Condition[]]@(
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::RadioButton)),
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::MenuItem)),
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::CheckBox))))
+$MaxPickerEntries = 64
+$MaxPickerLabel = 128
+$ClaudeModelButton = 'Model: '
+$ClaudeEffortButton = 'Effort: '
+
+# A label as the adapter takes it: trimmed, at most 128 characters, $null when empty.
+function PickerLabel([string]$text) {
+  if (-not $text) { return $null }
+  $trimmed = $text.Trim()
+  if ($trimmed.Length -eq 0) { return $null }
+  if ($trimmed.Length -gt $MaxPickerLabel) { return $trimmed.Substring(0, $MaxPickerLabel) }
+  return $trimmed
+}
+
+# The nearest Menu at or above an element, inside the target window; $null when there is none below the window.
+function MenuAbove($element, $window) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $node = $element
+  for ($depth = 0; $null -ne $node; $depth++) {
+    if ($depth -ge 256) { Fail 'focus-ancestry-too-deep' }
+    if ([System.Windows.Automation.Automation]::Compare($node, $window)) { return $null }
+    if ($node.Current.ControlType.Id -eq $MenuId) { return $node }
+    $node = $walker.GetParent($node)
+  }
+  return $null
+}
+
+# The menu's own entries (RadioButton, MenuItem, CheckBox) in tree order, not those of a menu nested in it, with the
+# focused one's index or -1. More than 64 entry elements under the menu is an error.
+function PickerMenuValue($menu, $window, $focused) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Add($AE::ControlTypeProperty)
+  $cache.Add([System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty)
+  $cache.Add([System.Windows.Automation.TogglePattern]::ToggleStateProperty)
+  $cache.Push()
+  try { $found = $menu.FindAll($Scope::Descendants, $PickerEntryTypes) } finally { $cache.Pop() }
+  if ($found.Count -gt $MaxPickerEntries) { Fail 'picker-too-many-entries' }
+  $items = New-Object System.Collections.ArrayList
+  $focusedIndex = -1
+  foreach ($entry in $found) {
+    $owner = MenuAbove $entry $window
+    if ($null -eq $owner -or -not [System.Windows.Automation.Automation]::Compare($owner, $menu)) { continue }
+    $label = PickerLabel $entry.Cached.Name
+    if ($null -eq $label) { Fail 'picker-entry-unnamed' }
+    $type = $entry.Cached.ControlType.Id
+    if ($type -eq $RadioButtonId) {
+      $kind = 'option'
+      $value = $entry.GetCachedPropertyValue([System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty)
+      $selected = ($value -is [bool]) -and $value
+    } elseif ($type -eq $CheckBoxId) {
+      $kind = 'toggle'
+      $value = $entry.GetCachedPropertyValue([System.Windows.Automation.TogglePattern]::ToggleStateProperty)
+      $selected = ($value -is [System.Windows.Automation.ToggleState]) -and $value -eq [System.Windows.Automation.ToggleState]::On
+    } else { $kind = 'action'; $selected = $false }
+    if ($null -ne $focused -and [System.Windows.Automation.Automation]::Compare($entry, $focused)) { $focusedIndex = $items.Count }
+    [void]$items.Add([ordered]@{ kind = $kind; label = $label; selected = $selected })
+  }
+  return [ordered]@{ label = (PickerLabel $menu.Current.Name); items = $items; focused = $focusedIndex }
+}
+
+# Claude's composer buttons "Model: <name>" and "Effort: <level>": the text after the prefix of the one button with
+# it, $null when none. Other button names are compared here and never returned; two with one prefix is an error.
+function ComposerSetting($buttons, [string]$prefix) {
+  $found = $null; $count = 0
+  foreach ($button in $buttons) {
+    $name = $button.Cached.Name
+    if ($name -and $name.StartsWith($prefix, $Ordinal)) { $count++; $found = PickerLabel $name.Substring($prefix.Length) }
+  }
+  if ($count -gt 1) { Fail 'composer-setting-count' }
+  return $found
+}
+
+# Codex's picker announcement: the Name (or, when empty, the first Text child's Name) of the one StatusBar inside a
+# Menu of the window; $null when there is not exactly one.
+function PickerAnnouncement($window) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Push()
+  try { $bars = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::StatusBar))) } finally { $cache.Pop() }
+  if ($bars.Count -gt $MaxPickerEntries) { Fail 'picker-too-many-status-bars' }
+  $inMenus = New-Object System.Collections.ArrayList
+  foreach ($bar in $bars) { if ($null -ne (MenuAbove $bar $window)) { [void]$inMenus.Add($bar) } }
+  if ($inMenus.Count -ne 1) { return $null }
+  $text = PickerLabel $inMenus[0].Cached.Name
+  if ($null -eq $text) {
+    $child = $inMenus[0].FindFirst($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)))
+    if ($null -ne $child) { $text = PickerLabel $child.Current.Name }
+  }
+  return $text
+}
+
+function PickerState($request) {
+  $window = TargetWindow $request
+  $client = [string]$request.client
+  if ($client -ne 'claude' -and $client -ne 'codex') { Fail 'invalid-client' }
+  $focused = $AE::FocusedElement
+  if ($null -ne $focused -and $focused.Current.ProcessId -ne [int]$request.processId) { $focused = $null }
+  $menu = $null; $slider = $null
+  if ($null -ne $focused) {
+    $owner = MenuAbove $focused $window
+    if ($null -ne $owner) { $menu = PickerMenuValue $owner $window $focused }
+    elseif ($focused.Current.ControlType.Id -eq $SliderId) { $slider = PickerLabel $focused.Current.Name }
+  }
+  if ($null -ne $menu -and $null -eq $menu.label) { Fail 'picker-menu-unnamed' }
+  $model = $null; $effort = $null; $announcement = $null
+  if ($client -eq 'claude') {
+    $cache = New-Object System.Windows.Automation.CacheRequest
+    $cache.Add($AE::NameProperty)
+    $cache.Push()
+    try { $buttons = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button))) } finally { $cache.Pop() }
+    $model = ComposerSetting $buttons $ClaudeModelButton
+    $effort = ComposerSetting $buttons $ClaudeEffortButton
+  } elseif ($null -ne $menu) { $announcement = PickerAnnouncement $window }
+  return [ordered]@{ menu = $menu; slider = $slider; model = $model; effort = $effort; announcement = $announcement }
+}
+
 function ClientVersions {
   $result = [ordered]@{}
   foreach ($client in $Packages.Keys) {
@@ -322,6 +451,7 @@ while ($true) {
       'cardButtons' { $value = CardButtons $request }
       'focusCardButton' { $value = FocusCardButton $request }
       'invokeCardButton' { $value = InvokeCardButton $request }
+      'pickerState' { $value = PickerState $request }
       'clientVersions' { $value = ClientVersions }
       default { Fail 'unknown-op' }
     }

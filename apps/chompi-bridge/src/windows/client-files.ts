@@ -1,6 +1,6 @@
 import { lstat, open, opendir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ClaudeDesktopSession, Observation } from '../os-adapter.js';
+import type { ClaudeDesktopSession, ClaudeSettings, Observation } from '../os-adapter.js';
 import { LOCAL_ID, THREAD_ID } from './uri.js';
 
 const unknown = (reason: string): { status: 'unknown'; reason: string } => ({ status: 'unknown', reason });
@@ -242,6 +242,47 @@ function pickSession(localId: string, text: string): ClaudeDesktopSession | { re
   return { localId, isArchived, lastFocusedAt: typeof lastFocusedAt === 'number' ? lastFocusedAt : null };
 }
 
+type ClaudeStoreOptions = { maxRecordBytes?: number; maxDirectories?: number };
+
+/** The organization directories of the Claude Desktop store (`<root>/<account>/<org>`), bounded per level. */
+async function claudeOrganizations(root: string, maxDirectories: number): Promise<string[] | { reason: string }> {
+  try {
+    const accounts = await boundedDirectories(root, maxDirectories);
+    if (accounts === 'too-large') return { reason: 'claude-store-too-large' };
+    const organizations: string[] = [];
+    for (const account of accounts) {
+      const found = await boundedDirectories(account, maxDirectories);
+      if (found === 'too-large') return { reason: 'claude-store-too-large' };
+      organizations.push(...found);
+    }
+    return organizations;
+  } catch (error) {
+    return errorCode(error) === 'ENOENT' ? [] : { reason: 'claude-store-unreadable' };
+  }
+}
+
+/** One session record's text, null when it has none, or why it cannot be read. Opens only that session's file. */
+async function claudeRecordText(organizations: readonly string[], localId: string, maxRecordBytes: number): Promise<string | null | { reason: string }> {
+  const paths: string[] = [];
+  for (const organization of organizations) {
+    const path = join(organization, `${localId}.json`);
+    try {
+      const info = await lstat(path);
+      if (!info.isFile()) return { reason: 'claude-record-not-file' };
+      paths.push(path);
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') return { reason: 'claude-record-unreadable' };
+    }
+  }
+  if (paths.length === 0) return null;
+  if (paths.length > 1) return { reason: 'claude-record-duplicate' };
+  try {
+    return await readRecord(paths[0]!, maxRecordBytes);
+  } catch (error) {
+    return errorCode(error) === 'ENOENT' ? null : { reason: 'claude-record-unreadable' };
+  }
+}
+
 /**
  * Claude Desktop session records from `<root>/<account>/<org>/local_<uuid>.json`. Only the requested files are
  * opened, and only `sessionId`, `isArchived` and `lastFocusedAt` are read from them. A missing record is omitted;
@@ -250,57 +291,55 @@ function pickSession(localId: string, text: string): ClaudeDesktopSession | { re
 export async function claudeSessions(
   root: string,
   localIds: readonly string[],
-  options: { maxRecordBytes?: number; maxDirectories?: number; maxIds?: number } = {},
+  options: ClaudeStoreOptions & { maxIds?: number } = {},
 ): Promise<Observation<ClaudeDesktopSession[]>> {
   const maxIds = options.maxIds ?? 64;
   if (!Array.isArray(localIds)) return unknown('invalid-local-id');
   if (localIds.length > maxIds) return unknown('too-many-local-ids');
   if (!localIds.every(id => typeof id === 'string' && LOCAL_ID.test(id))) return unknown('invalid-local-id');
-  const ids = [...new Set(localIds)];
+  const ids = [...new Set<string>(localIds)];
   if (ids.length === 0) return known([]);
-  const maxDirectories = options.maxDirectories ?? 32;
-  const maxRecordBytes = options.maxRecordBytes ?? 1024 * 1024;
-
-  let organizations: string[];
-  try {
-    const accounts = await boundedDirectories(root, maxDirectories);
-    if (accounts === 'too-large') return unknown('claude-store-too-large');
-    organizations = [];
-    for (const account of accounts) {
-      const found = await boundedDirectories(account, maxDirectories);
-      if (found === 'too-large') return unknown('claude-store-too-large');
-      organizations.push(...found);
-    }
-  } catch (error) {
-    return errorCode(error) === 'ENOENT' ? known([]) : unknown('claude-store-unreadable');
-  }
+  const organizations = await claudeOrganizations(root, options.maxDirectories ?? 32);
+  if ('reason' in organizations) return unknown(organizations.reason);
 
   const sessions: ClaudeDesktopSession[] = [];
   for (const localId of ids) {
-    const paths: string[] = [];
-    for (const organization of organizations) {
-      const path = join(organization, `${localId}.json`);
-      try {
-        const info = await lstat(path);
-        if (!info.isFile()) return unknown('claude-record-not-file');
-        paths.push(path);
-      } catch (error) {
-        if (errorCode(error) !== 'ENOENT') return unknown('claude-record-unreadable');
-      }
-    }
-    if (paths.length === 0) continue;
-    if (paths.length > 1) return unknown('claude-record-duplicate');
-    let text: string | { reason: string };
-    try {
-      text = await readRecord(paths[0]!, maxRecordBytes);
-    } catch (error) {
-      if (errorCode(error) === 'ENOENT') continue;
-      return unknown('claude-record-unreadable');
-    }
+    const text = await claudeRecordText(organizations, localId, options.maxRecordBytes ?? 1024 * 1024);
+    if (text === null) continue;
     if (typeof text !== 'string') return unknown(text.reason);
     const session = pickSession(localId, text);
     if ('reason' in session) return unknown(session.reason);
     sessions.push(session);
   }
   return known(sessions);
+}
+
+/** Longest model or effort value kept from a session record. */
+const MAX_SETTING = 128;
+
+/**
+ * A Claude Desktop session record's `model` and `effort` (#906), for the knobs' readback: known null without a record.
+ * Only those two keys and `sessionId` are read. Each must be absent, null, a string of 1-128 printable characters or a
+ * finite number (kept as text); anything else, an unreadable record or a mismatched `sessionId` is unknown.
+ */
+export async function claudeSettings(root: string, localId: string, options: ClaudeStoreOptions = {}): Promise<Observation<ClaudeSettings | null>> {
+  if (typeof localId !== 'string' || !LOCAL_ID.test(localId)) return unknown('invalid-local-id');
+  const organizations = await claudeOrganizations(root, options.maxDirectories ?? 32);
+  if ('reason' in organizations) return unknown(organizations.reason);
+  const text = await claudeRecordText(organizations, localId, options.maxRecordBytes ?? 1024 * 1024);
+  if (text === null) return known(null);
+  if (typeof text !== 'string') return unknown(text.reason);
+  let record: unknown;
+  try { record = JSON.parse(text); } catch { return unknown('claude-record-unreadable'); }
+  if (typeof record !== 'object' || record === null || Array.isArray(record)) return unknown('claude-record-invalid');
+  const { sessionId, model, effort } = record as Record<string, unknown>;
+  if (sessionId !== localId) return unknown('claude-record-mismatch');
+  const setting = (value: unknown): string | null | undefined => {
+    if (value === undefined || value === null) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_SETTING && /^[\x20-\x7e]+$/.test(value) ? value : undefined;
+  };
+  const values = { model: setting(model), effort: setting(effort) };
+  if (values.model === undefined || values.effort === undefined) return unknown('claude-record-invalid');
+  return known(values as ClaudeSettings);
 }

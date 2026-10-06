@@ -1,12 +1,14 @@
 import { systemClock, type Clock } from '../clock.js';
 import {
-  MAX_VOLUME_PRESSES, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
-  type Observation, type OsAdapter, type VolumeKey,
+  MAX_CLIENT_PRESSES, MAX_VOLUME_PRESSES, NAVIGATION_KEYS, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions,
+  type ForegroundWindow, type KeyRequest, type Observation, type OsAdapter, type VolumeKey,
 } from '../os-adapter.js';
+import { KEY_NAMES } from '../routing/profile.js';
 import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constants.js';
+import { SimPickers, type PickerSeed } from './pickers.js';
 
 /**
- * A simulated Codex and Claude desktop behind OS adapter interface version 4, for disposable verification runs and the
+ * A simulated Codex and Claude desktop behind OS adapter interface version 5, for disposable verification runs and the
  * shared scenario catalog (#853). `chompi-bridge run --desktop sim` selects it; nothing loads it otherwise. It models
  * what the router observes and causes, as the qualified clients behave (README "Safety rules", UIA-NOTES.md):
  *
@@ -18,7 +20,9 @@ import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constant
  * - pressing a stop answers and closes the card; Codex's composer then comes back focused;
  * - releasing the dictation chord inserts a fixed synthetic phrase into the focused composer, as Wispr would;
  * - a volume key changes a synthetic system volume (2 points per press, 0-100) or toggles mute, reaches no window and,
- *   like the Windows keyboard, is refused while any key is held; a volume step unmutes, as Windows does.
+ *   like the Windows keyboard, is refused while any key is held; a volume step unmutes, as Windows does;
+ * - each client has the model and effort controls of `SimPickers` (#906): an open menu or slider takes the keys, so an
+ *   Enter there picks a model instead of sending, and Claude's `LeftControl`+`LeftAlt`+`Minus` splits the pane.
  *
  * Everything is synthetic: titles and text come from the run's seed or its operator, never from a real desktop. This
  * proves routing behavior, not Windows client fidelity (UI Automation trees, real focus timing, Wispr).
@@ -64,6 +68,7 @@ export type DesktopLogEntry =
   | { at: number; seq: number; kind: 'scroll'; client: Client; notches: number }
   | { at: number; seq: number; kind: 'dictation'; client: Client | null; text: string }
   | { at: number; seq: number; kind: 'volume'; key: VolumeKey; presses: number; volume: number; muted: boolean }
+  | { at: number; seq: number; kind: 'picker'; client: Client; action: string; label?: string; position?: number; count?: number }
   | { at: number; seq: number; kind: 'operator'; action: string };
 
 type LogInput = DesktopLogEntry extends infer T ? T extends unknown ? Omit<T, 'at' | 'seq'> : never : never;
@@ -80,17 +85,23 @@ export interface DesktopSnapshot {
   held: string[];
   versions: Record<Client, string | null>;
   windows: {
-    codex: { selected: string | null; threads: CodexThread[]; composer: SimComposer; card: SimCard | null };
-    claude: { selected: string | null; sessions: ClaudeSession[]; composer: SimComposer; card: SimCard | null };
+    codex: { selected: string | null; threads: CodexThread[]; composer: SimComposer; card: SimCard | null; picker: PickerView };
+    claude: { selected: string | null; sessions: ClaudeSession[]; composer: SimComposer; card: SimCard | null; picker: PickerView };
     other: { title: string };
   };
 }
+
+/** A client's model, effort level (null where the model has none), the open menu or slider, if any, and its focused entry. */
+export interface PickerView { model: string; effort: string | null; open: string | null; focus: string | null }
 
 export interface SimulatedDesktopOptions { clock?: Clock }
 
 const known = <T>(value: T): Observation<T> => ({ status: 'known', value });
 const unknown = (reason: string): Observation<never> => ({ status: 'unknown', reason });
 const isClient = (value: unknown): value is Client => value === 'codex' || value === 'claude';
+const CLIENT_KEYS = new Set<string>([...KEY_NAMES, ...NAVIGATION_KEYS]);
+/** An array check that keeps the element type (`Array.isArray` widens a readonly array's elements to `any`). */
+const isList = (value: unknown): value is readonly unknown[] => Array.isArray(value);
 
 /** The in-memory desktop. Operator methods script it; `createSimulatedOsAdapter` is the router's view of it. */
 export class SimulatedDesktop {
@@ -111,6 +122,8 @@ export class SimulatedDesktop {
   #cardSerial = 0;
   #logSeq = 0;
   #listeners = new Set<() => void>();
+  /** Both clients' model and effort controls; Claude's values follow the session it shows. */
+  readonly pickers = new SimPickers(() => this.#selected.claude ?? '');
 
   constructor(options: SimulatedDesktopOptions = {}) { this.clock = options.clock ?? systemClock; }
 
@@ -160,7 +173,15 @@ export class SimulatedDesktop {
     this.#record({ kind: 'operator', action: `version:${client}` });
   }
 
+  /** Sets the clients' starting models and effort levels (#906). */
+  seedPickers(seed: PickerSeed): void {
+    this.pickers.seed(seed);
+    this.#record({ kind: 'operator', action: 'seed-pickers' });
+  }
+
   focusComposer(client: Client, focused: boolean): void {
+    // A click into the composer closes an open model menu, effort slider or picker, as the mouse would.
+    if (focused) this.pickers.dismiss(client);
     this.#composer[client].focused = focused && !(client === 'codex' && this.#cards.codex);
     this.#record({ kind: 'operator', action: `composer-${focused ? 'focus' : 'blur'}:${client}` });
   }
@@ -169,6 +190,7 @@ export class SimulatedDesktop {
   typeText(client: Client, text: string): void {
     const composer = this.#composer[client];
     composer.text = (composer.text + text).slice(0, MAX_TEXT);
+    this.pickers.dismiss(client);
     composer.focused = !(client === 'codex' && this.#cards.codex);
     this.#record({ kind: 'operator', action: `type:${client}` });
   }
@@ -205,8 +227,11 @@ export class SimulatedDesktop {
       held: this.held,
       versions: { ...this.#versions },
       windows: {
-        codex: { selected: this.#selected.codex, threads: [...this.#threads.values()].map(t => ({ ...t })), composer: composer('codex'), card: card('codex') },
-        claude: { selected: this.#selected.claude, sessions: [...this.#sessions.values()].map(s => ({ ...s })), composer: composer('claude'), card: card('claude') },
+        codex: { selected: this.#selected.codex, threads: [...this.#threads.values()].map(t => ({ ...t })), composer: composer('codex'), card: card('codex'), picker: this.pickers.describe('codex') },
+        claude: {
+          selected: this.#selected.claude, sessions: [...this.#sessions.values()].map(s => ({ ...s })), composer: composer('claude'), card: card('claude'),
+          picker: this.pickers.describe('claude'),
+        },
         other: { title: SIM_WINDOWS.other.title },
       },
     };
@@ -276,6 +301,19 @@ export class SimulatedDesktop {
       this.#endDictation();
     } else this.#tap(keys.join('+'));
     this.#changed();
+  }
+
+  /**
+   * @internal A chord typed only into `client` while it is in front (#906); false, with nothing typed, otherwise. Like the
+   * Windows keyboard it is refused while any key is held.
+   */
+  clientTap(client: Client, keys: readonly string[], presses: number): boolean {
+    if (!isClient(client) || !isList(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key)) || new Set(keys).size !== keys.length
+      || !Number.isInteger(presses) || presses < 1 || presses > MAX_CLIENT_PRESSES) throw new Error('invalid-key-request');
+    if (this.#held.size > 0) throw new Error('keys-held');
+    if (!this.clientInFront(client)) return false;
+    for (let i = 0; i < presses; i++) this.keys({ action: 'tap', keys: [...keys] });
+    return true;
   }
 
   /** @internal A volume key acts on the system, never a window; like the Windows keyboard it never joins held keys. */
@@ -352,6 +390,13 @@ export class SimulatedDesktop {
 
   #tap(chord: string): void {
     const front = this.#foreground;
+    // An open menu or slider has keyboard focus and takes every key; the picker shortcuts open one (#906).
+    if (isClient(front)) {
+      const tap = this.pickers.tap(front, chord, { composerFocused: this.#composer[front].focused, card: this.#cards[front] !== null });
+      if (tap.composerFocused !== undefined) this.#composer[front].focused = tap.composerFocused && !(front === 'codex' && this.#cards.codex);
+      for (const event of tap.events) this.#record({ kind: 'picker', client: front, ...event });
+      if (tap.consumed) return;
+    }
     if (chord === CODEX_COMPOSER_SHORTCUT && front === 'codex' && !this.#cards.codex) this.#composer.codex.focused = true;
     if (chord !== 'Enter' || !isClient(front)) return;
     const composer = this.#composer[front];
@@ -396,7 +441,7 @@ export class SimulatedDesktop {
   }
 }
 
-/** The router's view of a simulated desktop: OS adapter interface version 4, branded `simulated`. */
+/** The router's view of a simulated desktop: OS adapter interface version 5, branded `simulated`. */
 export interface SimulatedOsAdapter extends OsAdapter {
   readonly simulated: true;
   readonly desktop: SimulatedDesktop;
@@ -469,6 +514,16 @@ export function createSimulatedOsAdapter(desktop: SimulatedDesktop): SimulatedOs
       if (card.value.focused !== index) return known(false);
       desktop.pressStop(client, card.value, index);
       return known(true);
+    },
+    tapInClient: (client, keys, presses) => new Promise(resolve => { enter('tapInClient'); resolve(known(desktop.clientTap(client, keys, presses))); }),
+    pickerState: client => {
+      enter('pickerState');
+      if (!isClient(client) || !desktop.clientInFront(client)) return Promise.resolve(unknown(`${String(client)}-not-foreground`));
+      return Promise.resolve(known(desktop.pickers.state(client)));
+    },
+    claudeSettings: localId => {
+      enter('claudeSettings');
+      return Promise.resolve(known(desktop.claudeRecords([localId]).length ? desktop.pickers.claudeSettings(localId) : null));
     },
     async codexArchived(threadId) { enter('codexArchived'); return known(desktop.codexThread(threadId)?.archived ?? false); },
     async claudeSessions(localIds) { enter('claudeSessions'); return known(desktop.claudeRecords(localIds)); },

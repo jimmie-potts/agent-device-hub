@@ -1,12 +1,13 @@
 import { win32 as winPath } from 'node:path';
 import {
-  OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow,
-  type KeyRequest, type Observation, type OsAdapter, type VolumeKey,
+  MAX_PICKER_ITEMS, MAX_PICKER_LABEL, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type ClaudeSettings, type Client, type ClientVersions,
+  type ForegroundWindow, type KeyName, type KeyRequest, type Observation, type OsAdapter, type PickerAnnouncement, type PickerItem, type PickerState,
+  type VolumeKey,
 } from '../os-adapter.js';
-import { claudeSessions, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
+import { claudeSessions, claudeSettings, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
 import { KeyboardError, OpenUriError } from './errors.js';
-import { Keyboard } from './keyboard.js';
+import { chordCodes, Keyboard } from './keyboard.js';
 import { MAX_SCROLL_NOTCHES, pointInRect, WHEEL_DELTA } from './mouse.js';
 import { packageFamilyFromImagePath } from './package-path.js';
 import { UiaHelper, type UiaHelperLike, type UiaHelperOptions } from './uia-helper.js';
@@ -73,13 +74,55 @@ const validCardIndex = (index: unknown, count: unknown): boolean =>
   isCount(count, MAX_CARD_BUTTONS) && count >= 1 && isCount(index, MAX_CARD_BUTTONS) && index < count;
 /** A card identity: a UI Automation runtime ID joined with dots. */
 const CARD_ID = /^-?\d{1,10}(\.-?\d{1,10}){0,15}$/;
+/** A model or effort label: 1-128 characters without control characters. */
+const isLabel = (value: unknown): value is string => typeof value === 'string' && value.length >= 1 && value.length <= MAX_PICKER_LABEL && !/\p{Cc}/u.test(value);
+const PICKER_KINDS = new Set(['option', 'action', 'toggle']);
+/** Codex's picker announcement: `<model> <level>, <n> of <count>.` */
+const ANNOUNCEMENT = /^(\S.*\S|\S), (\d{1,2}) of (\d{1,2})\.?$/;
+
+/** Parses the helper's `pickerState` reply; null when anything is out of shape. */
+function parsePickerState(client: Client, value: unknown): PickerState | null {
+  const { menu, slider, model, effort, announcement } = record(value);
+  const label = (entry: unknown): string | null | undefined => entry === null ? null : isLabel(entry) ? entry : undefined;
+  let parsedMenu: PickerState['menu'] = null;
+  if (menu !== null) {
+    const { label: menuLabel, items, focused } = record(menu);
+    if (!isLabel(menuLabel) || !Array.isArray(items) || items.length > MAX_PICKER_ITEMS) return null;
+    const parsedItems: PickerItem[] = [];
+    for (const item of items) {
+      const { kind, label: itemLabel, selected } = record(item);
+      if (typeof kind !== 'string' || !PICKER_KINDS.has(kind) || !isLabel(itemLabel) || typeof selected !== 'boolean') return null;
+      parsedItems.push({ kind: kind as PickerItem['kind'], label: itemLabel, selected });
+    }
+    const index = focused === -1 ? null : isCount(focused, MAX_PICKER_ITEMS) && focused < parsedItems.length ? focused : undefined;
+    if (index === undefined) return null;
+    parsedMenu = { label: menuLabel, items: parsedItems, focused: index };
+  }
+  const parsed = { slider: label(slider), model: label(model), effort: label(effort), announcement: label(announcement) };
+  if (Object.values(parsed).some(entry => entry === undefined)) return null;
+  let heard: PickerAnnouncement | null = null;
+  const match = client === 'codex' && parsed.announcement ? ANNOUNCEMENT.exec(parsed.announcement) : null;
+  if (match) {
+    const position = Number(match[2]), count = Number(match[3]);
+    // An announcement out of shape is not guessed at: the readback is then unverified.
+    if (position >= 1 && position <= count) heard = { label: match[1], position, count };
+  }
+  // Claude's composer buttons carry the model and effort; Codex's carry nothing, and only Codex announces.
+  return {
+    menu: parsedMenu, slider: parsed.slider!,
+    model: client === 'claude' ? parsed.model! : null, effort: client === 'claude' ? parsed.effort! : null,
+    announcement: heard,
+  };
+}
 
 /**
- * The Windows OS adapter (interface version 4). Keystrokes, the system volume keys (#865), foreground identity and
+ * The Windows OS adapter (interface version 5). Keystrokes, the system volume keys (#865), foreground identity and
  * deep links use Win32 through koffi; UI checks go to a UI Automation helper scoped to the client's foreground
  * top-level window, which changes UI state only to focus or press one button of an open card (#821); the Codex archive
  * and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
- * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. Nothing here logs.
+ * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. The model and effort
+ * operations (#906) type keys only into the named client in front and read model and effort labels only. Nothing here
+ * logs.
  */
 export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
   const env = options.env ?? process.env;
@@ -250,6 +293,42 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       // Volume keys target no window: SendInput puts them in the foreground thread's input stream and Windows handles them
       // as a system app command, so no window is observed or required.
       keyboard.tapVolume(key, presses);
+    },
+
+    /**
+     * Checks the request, then the window in front, then types. The foreground is read again right before `SendInput`,
+     * so the keys go only into the client named; the remaining gap is the one `SendInput` call.
+     */
+    async tapInClient(client: Client, keys: readonly KeyName[], presses: number): Promise<Observation<boolean>> {
+      if (closed) throw new KeyboardError('adapter-closed');
+      if (!isClient(client)) throw new KeyboardError('invalid-key-request');
+      chordCodes(keys, presses);
+      const loaded = await win32();
+      if (!loaded || !keyboard) throw new KeyboardError('win32-unavailable');
+      const current = await foreground();
+      if (current.status === 'unknown') return current;
+      if (!current.value || current.value.packageIdentity !== PACKAGE_FAMILIES[client]) return known(false);
+      try {
+        if (loaded.foregroundWindow() !== current.value.hwnd) return unknown('foreground-changed');
+      } catch {
+        return unknown('win32-call-failed');
+      }
+      keyboard.tapChord(keys, presses);
+      return known(true);
+    },
+
+    /** Selectors, bounds and the qualification they come from are in UIA-NOTES.md ("Model and effort controls"). */
+    async pickerState(client: Client): Promise<Observation<PickerState>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      return windowQuery(client, 'pickerState', { client }, value => parsePickerState(client, value), unknown(`${client}-not-foreground`));
+    },
+
+    async claudeSettings(localId: string): Promise<Observation<ClaudeSettings | null>> {
+      if (closed) return unknown('adapter-closed');
+      const root = claudeRoot();
+      if (!root) return unknown('claude-store-unset');
+      return claudeSettings(root, localId);
     },
 
     async releaseAll(): Promise<void> {
