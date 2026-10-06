@@ -6,11 +6,17 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import {fileURLToPath} from 'node:url';
 import tseslint from 'typescript-eslint';
+import bunny from './scripts/eslint/bunny-rules.mjs';
 
 const unused = {
   argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_',
   ignoreRestSiblings: true,
 };
+// New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it.
+const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'];
+const staged = ['modules/pixoo/**'];
+// Workspace packages a module may import (owner decision, 2026-10-05).
+const modulePackages = ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'];
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',
@@ -108,6 +114,27 @@ export default defineConfig(
       // Entry points declare a handle before signal handlers that read it, then assign it once.
       'prefer-const': ['error', {ignoreReadBeforeAssign: true}],
     },
+  },
+  {
+    name: 'bunny/strict',
+    files: strict,
+    ignores: staged,
+    plugins: {bunny},
+    rules: {
+      // A catch-all default does not hide a newly added union variant.
+      '@typescript-eslint/switch-exhaustiveness-check': ['error', {considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: false}],
+      // Missing data is checked explicitly, never confused with zero, false or an empty string.
+      '@typescript-eslint/strict-boolean-expressions': ['error', {allowString: false, allowNumber: false, allowNullableObject: true}],
+      '@typescript-eslint/no-non-null-assertion': 'error',
+      'bunny/disable-reason': 'error',
+    },
+  },
+  {
+    name: 'bunny/module-boundary',
+    files: ['modules/**/*.{ts,tsx,js,mjs}'],
+    ignores: staged,
+    plugins: {bunny},
+    rules: {'bunny/module-boundary': ['error', {allowedPackages: modulePackages}]},
   },
   {
     name: 'bunny/react-hooks',

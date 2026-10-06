@@ -306,10 +306,36 @@ code instead.
 | `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
 | Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
 
-To give a package stricter rules, add a config block after `bunny/typescript`
-with the package's `files` glob and the extra rules.
-[#830](https://github.com/jimmie-potts/agent-device-hub/issues/830) defines the
-strict profile for new runtime code.
+### Strict profile for new code
+
+New code for the runtime follows a stricter profile from its first commit
+([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
+`apps/runtime/`, `packages/sdk/` and `modules/`, and starts with no baseline
+entries. Staged imported code, currently `modules/pixoo/`, keeps the shared
+rules until its module story converts it. To cover another path, such as the
+2.0 contract sources, add it to `strict` in `eslint.config.mjs`.
+
+- **Lint (`bunny/strict`):**
+  - switches over a union must handle every member, and a catch-all `default`
+    does not count;
+  - conditions check missing values explicitly, so `undefined` is never
+    confused with zero, `false` or an empty string;
+  - no non-null assertions;
+  - every `eslint-disable` comment gives a reason after ` -- `.
+- **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
+  imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
+  Node built-ins and third-party packages.
+- **Compiler:** new packages extend `tsconfig.strict.json`, which adds
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+  `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
+  to the shared settings.
+
+The local rules live in `scripts/eslint/bunny-rules.mjs`.
+`tests/strict_profile.test.mjs`, run by `npm run test:workflow`, checks:
+- which paths the profile covers;
+- both local rules;
+- that the compiler base rejects an unchecked index and an explicit `undefined`
+  optional property.
 
 Guide-only revisions skip the core job under the
 [SDLC exception](sdlc.md#guide-only-ci-exception). Run
