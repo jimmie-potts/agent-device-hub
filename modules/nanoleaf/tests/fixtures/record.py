@@ -149,6 +149,9 @@ def setups():
         b.handle_event(prompt, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
                        now=lambda: 1000.0)
         recorded['taskRow'] = dump(prompt)
+        b.handle_event(prompt, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'Stop'}, launch=lambda _: None,
+                       now=lambda: 1000.5)
+        recorded['completion'] = dump(prompt)
         selection = root / 'selection'; selection.mkdir()
         selection_setup(selection)
         recorded['selection'] = dump(selection)
@@ -882,6 +885,200 @@ def rendering():
                                     'colors': color_values(), 'effects': effect_values(), 'frames': frame_values()}, 4)
 
 
+# Slice 3b: map edits, the pending wall edit, Locate, comets, mode commands and the rendering receipt.
+
+EDIT_LAYOUTS = {}
+
+
+def edit_layouts():
+    """The configurations the edit cases run on: the 15 straight Lines of SceneTest and the NL22 triangles."""
+    import panels
+    if not EDIT_LAYOUTS:
+        EDIT_LAYOUTS['lines'] = {'line_groups': [[100 + i * 2, 101 + i * 2] for i in range(15)],
+                                 'line_positions': [[i * 10, 0] for i in range(15)]}
+        EDIT_LAYOUTS['triangles'] = dict(devices.projection(panels.read_layout(fixture_json('nl22-panels-fixture.json')['panelLayout'])),
+                                         device='panels')
+    return EDIT_LAYOUTS
+
+
+EDIT_ROWS = {
+    'map_settings': 'style,coverage,rotation,flip_x,flip_y,device', 'line_prefs': 'line_id,project,signature,device',
+    'palette': 'role,color', 'projects': 'id,color', 'task_info': 'session,manual_project', 'map_pending': 'payload,device',
+    'locate': 'line_id,started,device', 'comets': 'session,turn,queued,source,started,device', 'slots': 'session,slot,device',
+    'meta': 'key,value'}
+
+
+def edit_rows(path):
+    """The rows an edit can change, in rowid order; the pending payload is compared parsed."""
+    with contextlib.closing(database.connect_state(path)) as db:
+        result = {table: [list(row) for row in db.execute(f'SELECT {columns} FROM {table} ORDER BY rowid')]
+                  for table, columns in EDIT_ROWS.items()}
+    result['map_pending'] = [[json.loads(payload), device] for payload, device in result['map_pending']]
+    return result
+
+
+def edit_setup(path, setup):
+    """Projects a and b and task a prompted at 1000 in project a; with `comet`, the task completed and its comet started on
+    the Lines; with `mode`, that mode commanded on the Lines."""
+    with contextlib.closing(database.connect_state(path)) as db, db:
+        db.execute("INSERT INTO projects VALUES ('a','Project A','#aa55ff','[]'),('b','Project B','#33ccee','[]')")
+    b.handle_event(path, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
+                   now=lambda: 1000.0)
+    with contextlib.closing(database.connect_state(path)) as db, db:
+        db.execute("UPDATE task_info SET project='a' WHERE session='a'")
+    if setup.get('comet'):
+        b.handle_event(path, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'Stop'}, launch=lambda _: None,
+                       now=lambda: 1000.0)
+        with contextlib.closing(database.connect_state(path)) as db, db:
+            b.prune_comets(db, 1000.0, 'work')
+            b.dashboard(db, edit_layouts()['lines'], 1000.0)
+            b.current_comet(db, 1000.0)
+    if setup.get('mode'):
+        modes.set_mode(path, setup['mode'], launch=lambda _: None, now=lambda: 1000.0)
+
+
+def edit_step(path, config, step):
+    import edits
+    op, args = step['op'], step.get('args', [])
+    with contextlib.closing(database.connect_state(path)) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        if op == 'settings': return edits.settings(db, config, *args)
+        if op == 'assign': return edits.assign(db, config, *args)
+        if op == 'projectColor': return edits.project_color(db, *args)
+        if op == 'taskProject': return edits.task_project(db, config, *args)
+        if op == 'locate': return edits.locate(db, config, *args)
+        if op == 'requestPatch': return wall.request_patch(db, args[0], config)
+        if op == 'applyPending': return wall.apply_pending(db, devices.device_of(config))
+        if op == 'pending': return wall.pending(db, devices.device_of(config))
+        if op == 'locateState':
+            return wall.locate_state(db, config, *args)
+        if op == 'pruneComets': return b.prune_comets(db, args[0], args[1], devices.device_of(config))
+        if op == 'currentComet': return b.current_comet(db, args[0], devices.device_of(config))
+        if op == 'changeMode': return modes.change_mode(db, args[0], args[1], device=devices.device_of(config))
+        if op == 'rendering':
+            control = store.control_state(db, devices.device_of(config))
+            return wall.rendering_snapshot(db, config, control['mode'], control['revision'] != control['applied'],
+                                           control['error'], args[0])
+        if op == 'sql':
+            db.execute(args[0], args[1])
+            return None
+    raise AssertionError(op)
+
+
+def edit_cases():
+    layouts = edit_layouts()
+    first = layouts['triangles']['elements'][0]['id']
+    def case(name, steps, layout='lines', **setup):
+        return {'name': name, 'layout': layout, 'setup': setup, 'steps': [{'op': op, 'args': args} for op, *args in steps]}
+    settings = [{'style': 'project'}, {'style': 'bad'}, {'style': True}, {'style': None}, {'coverage': 'status'}, {'rotation': 90},
+                {'rotation': 90.0}, {'rotation': 45}, {'rotation': False}, {'flip_x': True}, {'flip_x': 2},
+                {'flip_y': 1, 'rotation': 270, 'style': 'project', 'coverage': 'whole'}, {}, {'unknown': 1},
+                {'palette': {'unread': '#FF00C0', 'base': '#000000'}}, {'palette': 'default'}, {'palette': {}}, {'palette': 'reset'},
+                {'palette': ['#ff00c0']}, {'palette': {'unread': None}}, {'palette': {'comet': '#ffffff'}}, {'palette': {'unread': '#12345'}},
+                {'palette': {'unread': '#ff00c0'}, 'style': 'bad'}, {'rotation': 90, 'palette': {'unread': '#12345'}},
+                {'rotation': 180, 'palette': {'working': '#00E5FF'}}]
+    cases = [case('settings ' + json.dumps(value, sort_keys=True), [('settings', value)]) for value in settings]
+    cases += [case('panels settings ' + json.dumps(value, sort_keys=True), [('settings', value)], 'triangles')
+              for value in ({'coverage': 'status'}, {'style': 'project'}, {'rotation': 90, 'flip_x': 1}, {'coverage': 'whole'})]
+    cases.append(case('palette reset keeps project colors', [('settings', {'palette': {'unread': '#ff00c0'}}),
+                                                             ('projectColor', 'a', '#113355'), ('settings', {'palette': 'default'})]))
+    assignments = [{'100:101': {'project': 'a'}}, {'100:101': {'project': None}}, {'100:101': {'project': 'zzz'}},
+                   {'100:101': {'signature': 1}}, {'100:101': {'signature': 2}}, {'100:101': {'signature': True}},
+                   {'100:101': {'signature': '1'}}, {'100:101': {}}, {'100:101': {'project': 'a', 'extra': 1}}, {'100:101': 'a'},
+                   {'999:1000': {'project': 'a'}}, {}, None, [], {'100:101': {'project': 'a', 'signature': 1}, '102:103': {'project': 'b'}},
+                   {'100:101': {'project': 5}}]
+    cases += [case('assign ' + json.dumps(value, sort_keys=True), [('assign', value)]) for value in assignments]
+    cases.append(case('assign keeps the field it leaves out', [('assign', {'100:101': {'project': 'a', 'signature': 1}}),
+                                                               ('assign', {'100:101': {'project': 'b'}}), ('assign', {'100:101': {'signature': 0}})]))
+    cases += [case('panels assign ' + json.dumps(value, sort_keys=True), [('assign', value)], 'triangles')
+              for value in ({first: {'project': 'a'}}, {first: {'signature': 1}}, {first: {'project': 'a', 'signature': 0}},
+                            {'100:101': {'project': 'a'}})]
+    colors = [('a', '#AABBCC'), ('a', '#abc'), ('a', 'red; script'), ('zzz', '#112233'), ('a', None), (None, '#112233'), ('a', '#1122334')]
+    cases += [case('project color ' + json.dumps(value), [('projectColor', *value)]) for value in colors]
+    tasks = [('a', 'b'), ('a', None), ('zzz', 'a'), ('a', 'zzz')]
+    cases += [case('task project ' + json.dumps(value), [('taskProject', *value)]) for value in tasks]
+    cases.append(case('task project override and clear', [('taskProject', 'a', 'b'), ('taskProject', 'a', None)]))
+    cases += [case('locate ' + json.dumps(line), [('locate', line), ('locateState', 1000.5, 'work'), ('locateState', 1001.0, 'work'),
+                                                  ('locateState', 1001.5, 'work')]) for line in ('104:105', '999')]
+    cases.append(case('locate in free', [('locate', '104:105')], mode='free'))
+    cases.append(case('locate in quiet', [('locate', '104:105'), ('locateState', 1000.0, 'quiet'), ('locateState', 1000.2, 'free'),
+                                          ('locateState', 1000.4, 'quiet')], mode='quiet'))
+    cases.append(case('panels locate', [('locate', first), ('locateState', 1000.0, 'work'), ('locate', '100:101')], 'triangles'))
+    cases.append(case('locate of a removed element', [('sql', "INSERT INTO locate (line_id,started,device) VALUES ('7:8',NULL,'wall')", []),
+                                                      ('locateState', 1000.0, 'work')]))
+    # A started comet on the task's Line defers an edit that would move it, and the deferred edits merge.
+    cases.append(case('comet defers style', [('settings', {'style': 'project'}), ('pending',), ('settings', {'rotation': 90}),
+                                             ('pending',), ('applyPending',), ('pruneComets', 1002.0, 'work'), ('applyPending',),
+                                             ('pending',)], comet=True))
+    cases.append(case('comet leaves other settings', [('settings', {'rotation': 90, 'coverage': 'status'}), ('pending',)], comet=True))
+    cases.append(case('comet defers its source Line', [('assign', {'100:101': {'project': 'b'}}), ('assign', {'102:103': {'project': 'b'}}),
+                                                       ('assign', {'100:101': {'signature': 1}}), ('pending',), ('locate', '106:107'),
+                                                       ('locateState', 1001.0, 'work'), ('pruneComets', 1002.0, 'work'),
+                                                       ('locateState', 1002.0, 'work'), ('applyPending',)], comet=True))
+    cases.append(case('comet defers its task', [('taskProject', 'a', 'b'), ('pending',), ('projectColor', 'b', '#010203'),
+                                                ('sql', "DELETE FROM comets", []), ('applyPending',)], comet=True))
+    cases.append(case('comet on another device', [('requestPatch', {'settings': {'style': 'project'}}),
+                                                  ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('a','1',1,0,2,'panels')", []),
+                                                  ('requestPatch', {'settings': {'style': 'classic'}})]))
+    cases.append(case('panels comet defers its source', [('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('t','1',1,0,1,'panels')", []),
+                                                         ('requestPatch', {'lines': {first: {'project': 'b'}}}),
+                                                         ('requestPatch', {'settings': {'rotation': 90}}), ('pending',)], 'triangles'))
+    # Comets: queued, started, ended and pruned by mode.
+    cases.append(case('comet lifecycle', [('currentComet', 1000.5), ('pruneComets', 1001.9, 'work'), ('currentComet', 1001.9),
+                                          ('pruneComets', 1002.0, 'work'), ('currentComet', 1002.0)], comet=True))
+    cases.append(case('queued comets start in order', [
+        ('sql', "INSERT INTO sessions VALUES ('b','1','unread',1000)", []),
+        ('sql', "INSERT INTO slots (session,slot,device) VALUES ('b',3,'wall')", []),
+        ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('b','1',999,NULL,NULL,'wall')", []),
+        ('sql', "INSERT INTO sessions VALUES ('c','2','working',1000)", []),
+        ('sql', "INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('c','1',998,NULL,NULL,'wall')", []),
+        ('currentComet', 1000.0), ('pruneComets', 1000.0, 'work'), ('currentComet', 1000.0), ('pruneComets', 1003.0, 'work'),
+        ('currentComet', 1003.0)]))
+    cases.append(case('comets end outside work', [('pruneComets', 1000.5, 'quiet'), ('currentComet', 1000.5)], comet=True))
+    # Mode commands on a device without a controller ledger.
+    cases.append(case('mode commands', [('changeMode', 'quiet', 1000.0), ('changeMode', 'quiet', 1001.0),
+                                        ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode_applied','1')", []), ('changeMode', 'quiet', 1002.0),
+                                        ('changeMode', 'work', 1003.5), ('sql', "INSERT INTO meta VALUES ('control_error','Light update failed; retrying.')", []),
+                                        ('changeMode', 'work', 1004.0)]))
+    cases.append(case('mode command clears comets, Locate and preview', [
+        ('locate', '104:105'), ('sql', "INSERT INTO meta VALUES ('preview','comet')", []), ('changeMode', 'free', 1001.0)], comet=True))
+    cases.append(case('panels mode commands', [('changeMode', 'quiet', 1000.0), ('changeMode', 'work', 1001.25)], 'triangles'))
+    # The rendering receipt: last sent, pending, failed, externally controlled and unknown.
+    receipt = json.dumps({'apiVersion': '1.0', 'deviceId': 'wall', 'effect': {'write': {'animData': 'frames'}}})
+    cases.append(case('rendering receipt', [
+        ('sql', "DELETE FROM meta WHERE key='dirty'", []), ('rendering', 1000.0004), ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", [receipt]), ('rendering', 1000.0006),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('dirty','1')", []), ('rendering', 1000.5),
+        ('sql', "DELETE FROM meta WHERE key='dirty'", []),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('control_error','Light update failed; retrying.')", []), ('rendering', 1001.0),
+        ('sql', "DELETE FROM meta WHERE key='control_error'", []), ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode','free')", []),
+        ('rendering', 1001.0), ('sql', "DELETE FROM meta WHERE key='mode'", []),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['{"outcome":"unknown"}']), ('rendering', 1002.0),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['[1,2]']), ('rendering', 1002.0),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['{broken']), ('rendering', 1002.0),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode_revision','3')", []), ('rendering', 1002.0)]))
+    cases.append(case('panels rendering receipt', [
+        ('sql', "DELETE FROM meta WHERE key='dirty'", []), ('rendering', 1000.0005),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt@panels',?)", [receipt]), ('rendering', 1000.0015),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode@panels','free')", []), ('rendering', 1000.0025)], 'triangles'))
+    return cases
+
+
+def edit_values():
+    """Each edit case's outcomes and the rows it leaves (edits.test.ts)."""
+    layouts = edit_layouts()
+    cases = edit_cases()
+    for record in cases:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            (path / 'config.json').write_text(json.dumps({'ip': '192.0.2.1', 'token': 'fake'}))
+            edit_setup(path, record['setup'])
+            config = copy.deepcopy(layouts[record['layout']])
+            for step in record['steps']:
+                step['outcome'] = outcome_of(lambda: edit_step(path, config, step))
+            record['rows'] = edit_rows(path)
+    write_nested('edits.json', {'layouts': layouts, 'cases': cases}, 3)
+
+
 if __name__ == '__main__':
     values()
     setups()
@@ -889,3 +1086,4 @@ if __name__ == '__main__':
     write_trace([trace(seed, 110) for seed in (1, 2, 3)] + [scripted(), scripted_placement()])
     numbers()
     rendering()
+    edit_values()

@@ -6,11 +6,13 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {followRegistry, loadConfig, pairLines} from '../src/configuration.js';
+import {withState} from '../src/database.js';
 import {layoutDevices, linesEntry, saveDeviceLayout, saveLayout} from '../src/devices.js';
 import {readJson, writeJson} from '../src/jsonfile.js';
+import {modeStatus} from '../src/modes.js';
 import {readLayout} from '../src/panels.js';
 import type {LightAddress, LightRequest} from '../src/transport.js';
-import {fixtureJson, refuse, suite, temporary, test} from './support.js';
+import {fixtureJson, refuse, setMode, suite, temporary, test} from './support.js';
 
 interface Reported {
   layout: {positionData: {panelId: number; shapeType: number}[]};
@@ -96,9 +98,11 @@ function deviceWorker(context: TestContext, order: readonly ('wall' | 'panels')[
 
 suite('UntargetedOrderTest', () => {
   test('test_untargeted_calls_address_lines_whatever_the_registry_order', async context => {
-    // Partly: the untargeted mode command through the command line moves with the worker slice.
+    // Partly: the command line that carried the mode command is not ported; the untargeted command is setMode's.
     const directory = deviceWorker(context, ['panels', 'wall']);
     assert.equal((await loadConfig(directory, undefined, refuse)).device, 'wall');
+    setMode(directory, 'quiet');
+    assert.deepEqual(withState(directory, db => [modeStatus(db).mode, modeStatus(db, 'panels').mode]), ['quiet', 'work']);
   });
 });
 

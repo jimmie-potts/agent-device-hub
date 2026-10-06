@@ -5,7 +5,7 @@ import {dumps, floatText, isObject, parseFloatText, pyDist, pyHypot, pyJson, pyM
 import {privateAddress} from '../src/transport.js';
 import {defaultColor, fallbackTitle, normalize} from '../src/project-map.js';
 import {evictionToken, identityKey, type Identity, type SharedSession, type SharedState} from '../src/shared-input.js';
-import {fixtureJson, loadDump, query, recordedSetup, setMode, suite, taskRow, temporary, test, write} from './support.js';
+import {completion, fixtureJson, loadDump, query, recordedSetup, setMode, suite, taskRow, temporary, test, write} from './support.js';
 
 const recorded = fixtureJson('recorded/values.json');
 if (!isObject(recorded)) throw new Error('values.json is not an object.');
@@ -90,7 +90,17 @@ suite('test fixtures recorded from Python', () => {
     }
   });
 
-  test('changeMode saves what modes.change_mode saved for a device without a controller ledger', context => {
+  test('completion saves what a Stop hook event saved in Python', context => {
+    const directory = temporary(context);
+    write(directory, db => taskRow(db, 'a', '1', 1000));
+    write(directory, db => completion(db, 'a', '1', 1000.5));
+    const recordedRows = recordedSetup('completion');
+    for (const table of ['sessions', 'activity', 'task_info', 'meta', 'slots', 'comets', 'waits', 'receipts']) {
+      assert.deepEqual(query(directory, `SELECT * FROM ${table} ORDER BY rowid`), recordedRows[table]?.rows, table);
+    }
+  });
+
+  test('setMode saves what modes.set_mode saved for a device without a controller ledger', context => {
     const directory = temporary(context);
     loadDump(directory, recordedSetup('enrollment'));
     setMode(directory, 'quiet', 1000, 'panels');

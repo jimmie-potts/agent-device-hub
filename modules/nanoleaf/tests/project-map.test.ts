@@ -1,22 +1,28 @@
-// Translated from codex-nanoleaf tests/test_project_map.py: the placement and metadata cases (PORTING.md lists the rest).
-// Map edits are ported with the edits slice, so a reservation or layout choice is saved here as the edit would save it
-// when no comet defers it: one line_prefs row per element and the device's map_settings row.
+// Translated from codex-nanoleaf tests/test_project_map.py: the placement, metadata, edit and rendering receipt cases
+// (PORTING.md lists the rest). Each wall action runs as edits did in the wall's update; the wall view is read through
+// the test's wall view.
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
+import {currentComet, pruneComets} from '../src/comets.js';
 import {withState} from '../src/database.js';
-import {dashboard} from '../src/line-projection.js';
-import {lineId, Metadata, normalize, owners} from '../src/project-map.js';
-import {execute, type Db} from '../src/sqlite.js';
-import {query, suite, taskRow, temporary, test, wallView, write} from './support.js';
+import * as edits from '../src/edits.js';
+import {dashboard, type Indication} from '../src/line-projection.js';
+import {applyPending, lineId, locateState, Metadata, normalize, owners, renderConfig, renderingSnapshot, type Rendering} from '../src/project-map.js';
+import type {RenderConfig} from '../src/renderer.js';
+import {execute} from '../src/sqlite.js';
+import {controlState} from '../src/store.js';
+import {Clock, completion, query, setMode, suite, taskRow, temporary, test, wallView, write, type WallView} from './support.js';
 
-const CONFIG = {line_groups: Array.from({length: 15}, (_, i) => [100 + i * 2, 101 + i * 2]),
-  line_positions: Array.from({length: 15}, (_, i) => [i * 10, 0])};
+/** SceneTest.setUp's configuration. */
+const CONFIG: RenderConfig = {ip: '192.168.1.207', token: 'PRIVATE_TEST_TOKEN',
+  line_groups: Array.from({length: 15}, (_, i) => [100 + i * 2, 101 + i * 2]), line_positions: Array.from({length: 15}, (_, i) => [i * 10, 0])};
 
-/** ProjectTest: two saved projects, tasks prompted at 1000 and the wall's map preferences. */
+/** ProjectTest: two saved projects, tasks prompted on a test clock, and the wall's actions and view. */
 class Projects {
   readonly directory: string;
+  readonly clock = new Clock();
 
   constructor(context: TestContext) {
     this.directory = temporary(context);
@@ -28,29 +34,53 @@ class Projects {
 
   task(session: string, project: string | null): void {
     write(this.directory, db => {
-      taskRow(db, session, '1', 1000);
+      taskRow(db, session, '1', this.clock.now());
       execute(db, 'UPDATE task_info SET project=? WHERE session=?', project, session);
     });
   }
 
-  /** The saved result of the wall's assign edit for these Lines. */
+  /** The task's completion, which queues a comet on the Lines in Work. */
+  stop(session: string): void {
+    write(this.directory, db => completion(db, session, '1', this.clock.now()));
+  }
+
+  /** ProjectTest.assign: the wall's assign action for these Lines. */
   assign(slots: Iterable<number>, project: string): void {
-    write(this.directory, db => {
-      for (const slot of slots) {
-        const id = lineId(CONFIG.line_groups[slot] ?? []);
-        execute(db, 'INSERT OR REPLACE INTO line_prefs (line_id,project,signature,device) VALUES (?,?,COALESCE((SELECT signature FROM line_prefs WHERE line_id=? AND device=?),0),?)',
-          id, project, id, 'wall', 'wall');
-      }
+    const lines = Object.fromEntries([...slots].map(slot => [lineId(CONFIG.line_groups[slot] ?? []), {project}]));
+    write(this.directory, db => edits.assign(db, CONFIG, lines));
+  }
+
+  settings(changes: unknown): void {
+    write(this.directory, db => edits.settings(db, CONFIG, changes));
+  }
+
+  /** ProjectTest.prepare: prune comets, apply a pending edit, place the tasks and add the map's render settings. */
+  prepare(): [RenderConfig, Indication[]] {
+    return write(this.directory, db => {
+      pruneComets(db, this.clock.now(), controlState(db).mode);
+      applyPending(db);
+      const snapshot = dashboard(db, CONFIG, this.clock.now());
+      const config = structuredClone(CONFIG);
+      renderConfig(db, config, snapshot);
+      return [config, snapshot];
     });
   }
 
-  style(style: string): void {
-    write(this.directory, db => execute(db, "UPDATE map_settings SET style=? WHERE device='wall'", style));
+  /** The worker starting the first queued comet. */
+  startComet(instant = this.clock.now()): void {
+    write(this.directory, db => currentComet(db, instant));
   }
 
-  /** The worker's placement pass, which here prunes no comet and applies no pending edit. */
-  prepare(): void {
-    write(this.directory, (db: Db) => dashboard(db, CONFIG, 1000));
+  view(): WallView {
+    return wallView(this.directory, CONFIG, this.clock.now());
+  }
+
+  /** wall_server.App.rendering: the Lines' rendering receipt as the worker last saved it. */
+  rendering(): Rendering {
+    return withState(this.directory, db => {
+      const control = controlState(db);
+      return renderingSnapshot(db, CONFIG, control.mode, control.revision !== control.applied, control.error, this.clock.now());
+    });
   }
 
   slots(): unknown[] {
@@ -63,7 +93,7 @@ suite('ProjectTest', () => {
     const p = new Projects(context);
     p.assign([0, 1, 2], 'a');
     p.assign(Array.from({length: 10}, (_, i) => i + 5), 'b');
-    p.style('project');
+    p.settings({style: 'project'});
     for (let i = 0; i < 5; i += 1) p.task(String(i), 'a');
     p.prepare();
     assert.deepEqual(new Set(p.slots()), new Set([0, 1, 2, 3, 4]));
@@ -79,10 +109,10 @@ suite('ProjectTest', () => {
     p.task('a', 'a');
     p.prepare();
     assert.deepEqual(p.slots(), [0]);
-    p.style('project');
+    p.settings({style: 'project'});
     p.prepare();
     assert.deepEqual(p.slots(), []);
-    p.style('classic');
+    p.settings({style: 'classic'});
     p.prepare();
     assert.deepEqual(p.slots(), [0]);
     assert.equal(query(p.directory, "SELECT * FROM line_prefs WHERE project='b'").length, 15);
@@ -93,7 +123,7 @@ suite('ProjectTest', () => {
     p.task('a', 'a');
     p.prepare();
     const old = query(p.directory, 'SELECT started FROM activity');
-    p.style('project');
+    p.settings({style: 'project'});
     p.assign([0], 'b');
     p.prepare();
     assert.deepEqual(p.slots(), [1]);
@@ -119,9 +149,9 @@ suite('ProjectTest', () => {
       return {project: first?.project, title: first?.title};
     };
     assert.deepEqual(task(), {project: 'b', title: 'Actual task title'});
-    write(p.directory, db => execute(db, "UPDATE task_info SET manual_project='a' WHERE session='a'"));
+    write(p.directory, db => edits.taskProject(db, CONFIG, 'a', 'a'));
     assert.equal(task().project, 'a');
-    write(p.directory, db => execute(db, "UPDATE task_info SET manual_project=NULL WHERE session='a'"));
+    write(p.directory, db => edits.taskProject(db, CONFIG, 'a', null));
     assert.equal(task().project, 'b');
     assert.equal(normalize('\\\\wsl.localhost\\Ubuntu\\home\\tester\\projects\\a'), '/home/tester/projects/a');
   });
@@ -163,5 +193,108 @@ suite('ProjectTest', () => {
     write(p.directory, db => metadata.sync(db));
     assert.deepEqual(query(p.directory, 'SELECT title FROM task_info'), [['Valid']]);
     assert.equal(normalize('\\\\wsl$\\Ubuntu\\mnt\\c\\REPO\\b\\..\\b'), 'c:/repo/b');
+  });
+
+  test('test_active_comet_defers_mapping_and_style', context => {
+    const p = new Projects(context);
+    p.task('a', 'a');
+    p.stop('a');
+    p.prepare();
+    p.startComet();
+    p.assign([0], 'b');
+    p.settings({style: 'project'});
+    assert.notEqual(p.view().pending, null);
+    assert.equal(p.view().settings.style, 'classic');
+    p.clock.sleep(2);
+    p.prepare();
+    assert.equal(p.view().pending, null);
+    assert.equal(p.view().settings.style, 'project');
+    assert.deepEqual(p.slots(), [1]);
+  });
+
+  test('test_color_changes_do_not_restart_task', context => {
+    const p = new Projects(context);
+    p.task('a', 'a');
+    p.settings({style: 'project'});
+    const [cfg, snap] = p.prepare();
+    const before = query(p.directory, 'SELECT * FROM activity');
+    write(p.directory, db => edits.projectColor(db, 'a', '#123456'));
+    const [cfg2, snap2] = p.prepare();
+    assert.deepEqual(query(p.directory, 'SELECT * FROM activity'), before);
+    assert.deepEqual(snap2, snap);
+    assert.notDeepEqual(cfg2._signatures, cfg._signatures);
+  });
+
+  test('test_locate_waits_for_comet_and_free_rejects', context => {
+    const p = new Projects(context);
+    p.task('a', 'a');
+    p.stop('a');
+    p.prepare();
+    p.startComet(1000);
+    const line = lineId(CONFIG.line_groups[3] ?? []);
+    write(p.directory, db => edits.locate(db, CONFIG, line));
+    write(p.directory, db => {
+      assert.equal(locateState(db, CONFIG, 1001, 'work'), null);
+      pruneComets(db, 1002, 'work');
+      assert.equal(locateState(db, CONFIG, 1002, 'work')?.source, 3);
+      assert.equal(locateState(db, CONFIG, 1003, 'work'), null);
+    });
+    setMode(p.directory, 'free');
+    assert.throws(() => write(p.directory, db => edits.locate(db, CONFIG, line)), {name: 'ValueError'});
+  });
+
+  test('test_api_validation_and_no_credentials', context => {
+    // Partly: the wall view, which moves with #844, keeps its own check that it shows no credential or private content.
+    const p = new Projects(context);
+    p.task('a', 'a');
+    assert.throws(() => p.settings({style: 'bad'}), {name: 'ValueError'});
+    assert.throws(() => write(p.directory, db => edits.projectColor(db, 'a', 'red; script')), {name: 'ValueError'});
+    assert.throws(() => write(p.directory, db => edits.assign(db, CONFIG, {unknown: {project: 'a'}})), {name: 'ValueError'});
+  });
+
+  test('test_pending_half_edit_preserves_pending_owner', context => {
+    const p = new Projects(context);
+    p.task('a', 'a');
+    p.stop('a');
+    p.prepare();
+    p.startComet(1000);
+    const key = lineId(CONFIG.line_groups[0] ?? []);
+    p.assign([0], 'b');
+    write(p.directory, db => edits.assign(db, CONFIG, {[key]: {signature: 1}}));
+    assert.deepEqual(p.view().pending?.lines?.[key], {project: 'b', signature: 1});
+    p.clock.sleep(2);
+    p.prepare();
+    assert.deepEqual(query(p.directory, 'SELECT project,signature FROM line_prefs'), [['b', 1]]);
+  });
+
+  test('test_preferences_persist_after_reopen', context => {
+    const p = new Projects(context);
+    p.assign([4], 'a');
+    write(p.directory, db => edits.projectColor(db, 'a', '#113355'));
+    p.settings({style: 'project', coverage: 'status', rotation: 270, flip_y: 1});
+    const reopened = p.view();
+    assert.deepEqual(reopened.settings, {style: 'project', coverage: 'status', rotation: 270, flip_x: 0, flip_y: 1});
+    assert.equal(reopened.projects.find(project => project.id === 'a')?.color, '#113355');
+    assert.deepEqual(query(p.directory, 'SELECT project FROM line_prefs'), [['a']]);
+  });
+
+  test('test_rendering_endpoint_reports_pending_failed_free_and_unknown', context => {
+    const p = new Projects(context);
+    const receipt = {apiVersion: '1.0', deviceId: 'wall', effect: {write: {animData: 'frames'}}};
+    const meta = (sql: string, ...params: string[]): void => write(p.directory, db => execute(db, sql, ...params));
+    meta('INSERT OR REPLACE INTO meta VALUES (?,?)', 'rendering_receipt', JSON.stringify(receipt));
+    assert.equal(p.rendering().outcome, 'last-sent');
+    meta("INSERT OR REPLACE INTO meta VALUES ('dirty','1')");
+    assert.equal(p.rendering().outcome, 'pending');
+    meta("DELETE FROM meta WHERE key='dirty'");
+    meta("INSERT OR REPLACE INTO meta VALUES ('control_error','Light update failed; retrying.')");
+    assert.equal(p.rendering().outcome, 'failed');
+    meta("DELETE FROM meta WHERE key='control_error'");
+    meta("INSERT OR REPLACE INTO meta VALUES ('mode','free')");
+    assert.equal(p.rendering().outcome, 'externally-controlled');
+    meta("DELETE FROM meta WHERE key='rendering_receipt'");
+    assert.equal(p.rendering().outcome, 'externally-controlled');
+    meta("DELETE FROM meta WHERE key='mode'");
+    assert.equal(p.rendering().outcome, 'unknown');
   });
 });

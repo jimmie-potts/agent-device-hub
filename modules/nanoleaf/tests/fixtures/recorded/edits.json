@@ -1,0 +1,599 @@
+{
+ "cases":[
+  {
+   "layout":"lines",
+   "name":"settings {\"style\": \"project\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["project","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"style":"project"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"style\": \"bad\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"style":"bad"}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"style\": true}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"style":true}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"style\": null}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"style":null}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"coverage\": \"status\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","status",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"coverage":"status"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"rotation\": 90}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",90,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"rotation":90}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"rotation\": 90.0}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",90,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"rotation":90.0}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"rotation\": 45}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"rotation":45}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"rotation\": false}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"rotation":false}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"flip_x\": true}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,1,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"flip_x":true}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"flip_x\": 2}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"flip_x":2}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"coverage\": \"whole\", \"flip_y\": 1, \"rotation\": 270, \"style\": \"project\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["project","whole",270,0,1,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"coverage":"whole","flip_y":1,"rotation":270,"style":"project"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"unknown\": 1}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"unknown":1}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"base\": \"#000000\", \"unread\": \"#FF00C0\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[["unread","#ff00c0"],["base","#000000"]],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"base":"#000000","unread":"#FF00C0"}}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": \"default\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":"default"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{}}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": \"reset\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":"reset"}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": [\"#ff00c0\"]}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":["#ff00c0"]}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"unread\": null}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"unread":null}}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"comet\": \"#ffffff\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"comet":"#ffffff"}}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"unread\": \"#12345\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"unread":"#12345"}}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"unread\": \"#ff00c0\"}, \"style\": \"bad\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"unread":"#ff00c0"},"style":"bad"}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid setting."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"unread\": \"#12345\"}, \"rotation\": 90}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"unread":"#12345"},"rotation":90}],"op":"settings","outcome":{"error":"ValueError","message":"Invalid palette."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"settings {\"palette\": {\"working\": \"#00E5FF\"}, \"rotation\": 180}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",180,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[["working","#00e5ff"]],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"working":"#00E5FF"},"rotation":180}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels settings {\"coverage\": \"status\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"coverage":"status"}],"op":"settings","outcome":{"error":"ValueError","message":"Animation coverage applies to Lines only."}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels settings {\"style\": \"project\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"],["project","whole",0,0,0,"panels"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"style":"project"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels settings {\"flip_x\": 1, \"rotation\": 90}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"],["classic","whole",90,1,0,"panels"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"flip_x":1,"rotation":90}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels settings {\"coverage\": \"whole\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"coverage":"whole"}],"op":"settings","outcome":{"error":"ValueError","message":"Animation coverage applies to Lines only."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"palette reset keeps project colors",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","4"],["dirty","1"]],"palette":[],"projects":[["a","#113355"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"palette":{"unread":"#ff00c0"}}],"op":"settings","outcome":{"result":null}},{"args":["a","#113355"],"op":"projectColor","outcome":{"result":null}},{"args":[{"palette":"default"}],"op":"settings","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"project\": \"a\"}}",
+   "rows":{"comets":[],"line_prefs":[["100:101","a",0,"wall"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":"a"}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"project\": null}}",
+   "rows":{"comets":[],"line_prefs":[["100:101",null,0,"wall"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":null}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"project\": \"zzz\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":"zzz"}}],"op":"assign","outcome":{"error":"ValueError","message":"Unknown project."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"signature\": 1}}",
+   "rows":{"comets":[],"line_prefs":[["100:101",null,1,"wall"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"signature":1}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"signature\": 2}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"signature":2}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid half."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"signature\": true}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"signature":true}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid half."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"signature\": \"1\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"signature":"1"}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid half."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid Line assignment."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"extra\": 1, \"project\": \"a\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"extra":1,"project":"a"}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid Line assignment."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": \"a\"}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":"a"}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid Line assignment."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"999:1000\": {\"project\": \"a\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"999:1000":{"project":"a"}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid Line assignment."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{}],"op":"assign","outcome":{"error":"ValueError","message":"Select at least one Line."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign null",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[null],"op":"assign","outcome":{"error":"ValueError","message":"Select at least one Line."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign []",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[[]],"op":"assign","outcome":{"error":"ValueError","message":"Select at least one Line."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"project\": \"a\", \"signature\": 1}, \"102:103\": {\"project\": \"b\"}}",
+   "rows":{"comets":[],"line_prefs":[["100:101","a",1,"wall"],["102:103","b",0,"wall"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":"a","signature":1},"102:103":{"project":"b"}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign {\"100:101\": {\"project\": 5}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":5}}],"op":"assign","outcome":{"error":"ValueError","message":"Unknown project."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"assign keeps the field it leaves out",
+   "rows":{"comets":[],"line_prefs":[["100:101","b",0,"wall"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","4"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":"a","signature":1}}],"op":"assign","outcome":{"result":null}},{"args":[{"100:101":{"project":"b"}}],"op":"assign","outcome":{"result":null}},{"args":[{"100:101":{"signature":0}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels assign {\"41\": {\"project\": \"a\"}}",
+   "rows":{"comets":[],"line_prefs":[["41","a",0,"panels"]],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"41":{"project":"a"}}],"op":"assign","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels assign {\"41\": {\"signature\": 1}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"41":{"signature":1}}],"op":"assign","outcome":{"error":"ValueError","message":"Half swaps apply to Lines only."}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels assign {\"41\": {\"project\": \"a\", \"signature\": 0}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"41":{"project":"a","signature":0}}],"op":"assign","outcome":{"error":"ValueError","message":"Half swaps apply to Lines only."}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels assign {\"100:101\": {\"project\": \"a\"}}",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"100:101":{"project":"a"}}],"op":"assign","outcome":{"error":"ValueError","message":"Invalid Line assignment."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"a\", \"#AABBCC\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aabbcc"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","#AABBCC"],"op":"projectColor","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"a\", \"#abc\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","#abc"],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"a\", \"red; script\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","red; script"],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"zzz\", \"#112233\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["zzz","#112233"],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"a\", null]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a",null],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [null, \"#112233\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[null,"#112233"],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"project color [\"a\", \"#1122334\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","#1122334"],"op":"projectColor","outcome":{"error":"ValueError","message":"Invalid project color."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"task project [\"a\", \"b\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a","b"]]},
+   "setup":{},
+   "steps":[{"args":["a","b"],"op":"taskProject","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"task project [\"a\", null]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a",null],"op":"taskProject","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"task project [\"zzz\", \"a\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["zzz","a"],"op":"taskProject","outcome":{"error":"ValueError","message":"Unknown task."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"task project [\"a\", \"zzz\"]",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","zzz"],"op":"taskProject","outcome":{"error":"ValueError","message":"Unknown project."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"task project override and clear",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","3"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["a","b"],"op":"taskProject","outcome":{"result":null}},{"args":["a",null],"op":"taskProject","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"locate \"104:105\"",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["104:105"],"op":"locate","outcome":{"result":null}},{"args":[1000.5,"work"],"op":"locateState","outcome":{"result":{"source":2,"started":1000.5}}},{"args":[1001.0,"work"],"op":"locateState","outcome":{"result":{"source":2,"started":1000.5}}},{"args":[1001.5,"work"],"op":"locateState","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"locate \"999\"",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["999"],"op":"locate","outcome":{"error":"ValueError","message":"Unknown Line."}},{"args":[1000.5,"work"],"op":"locateState","outcome":{"result":null}},{"args":[1001.0,"work"],"op":"locateState","outcome":{"result":null}},{"args":[1001.5,"work"],"op":"locateState","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"locate in free",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["mode","free"],["mode_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{"mode":"free"},
+   "steps":[{"args":["104:105"],"op":"locate","outcome":{"error":"ValueError","message":"Choose Work or Quiet to locate a Line."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"locate in quiet",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","3"],["mode","quiet"],["mode_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{"mode":"quiet"},
+   "steps":[{"args":["104:105"],"op":"locate","outcome":{"result":null}},{"args":[1000.0,"quiet"],"op":"locateState","outcome":{"result":{"source":2,"started":1000.0}}},{"args":[1000.2,"free"],"op":"locateState","outcome":{"result":null}},{"args":[1000.4,"quiet"],"op":"locateState","outcome":{"result":null}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels locate",
+   "rows":{"comets":[],"line_prefs":[],"locate":[["41",1000.0,"panels"]],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["41"],"op":"locate","outcome":{"result":null}},{"args":[1000.0,"work"],"op":"locateState","outcome":{"result":{"source":0,"started":1000.0}}},{"args":["100:101"],"op":"locate","outcome":{"error":"ValueError","message":"Unknown Line."}}]
+  },
+  {
+   "layout":"lines",
+   "name":"locate of a removed element",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["INSERT INTO locate (line_id,started,device) VALUES ('7:8',NULL,'wall')",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.0,"work"],"op":"locateState","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet defers style",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["project","whole",90,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","4"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":[{"style":"project"}],"op":"settings","outcome":{"result":null}},{"args":[],"op":"pending","outcome":{"result":{"lines":{},"settings":{"style":"project"},"tasks":{}}}},{"args":[{"rotation":90}],"op":"settings","outcome":{"result":null}},{"args":[],"op":"pending","outcome":{"result":{"lines":{},"settings":{"rotation":90,"style":"project"},"tasks":{}}}},{"args":[],"op":"applyPending","outcome":{"result":false}},{"args":[1002.0,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[],"op":"applyPending","outcome":{"result":true}},{"args":[],"op":"pending","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet leaves other settings",
+   "rows":{"comets":[["a","1",1000.0,0,1000.0,"wall"]],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","status",90,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","3"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":[{"coverage":"status","rotation":90}],"op":"settings","outcome":{"result":null}},{"args":[],"op":"pending","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet defers its source Line",
+   "rows":{"comets":[],"line_prefs":[["100:101","b",1,"wall"],["102:103","b",0,"wall"]],"locate":[["106:107",1002.0,"wall"]],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","6"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":[{"100:101":{"project":"b"}}],"op":"assign","outcome":{"result":null}},{"args":[{"102:103":{"project":"b"}}],"op":"assign","outcome":{"result":null}},{"args":[{"100:101":{"signature":1}}],"op":"assign","outcome":{"result":null}},{"args":[],"op":"pending","outcome":{"result":{"lines":{"100:101":{"project":"b","signature":1},"102:103":{"project":"b"}},"settings":{},"tasks":{}}}},{"args":["106:107"],"op":"locate","outcome":{"result":null}},{"args":[1001.0,"work"],"op":"locateState","outcome":{"result":null}},{"args":[1002.0,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[1002.0,"work"],"op":"locateState","outcome":{"result":{"source":3,"started":1002.0}}},{"args":[],"op":"applyPending","outcome":{"result":true}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet defers its task",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","4"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#010203"]],"slots":[["a",0,"wall"]],"task_info":[["a","b"]]},
+   "setup":{"comet":true},
+   "steps":[{"args":["a","b"],"op":"taskProject","outcome":{"result":null}},{"args":[],"op":"pending","outcome":{"result":{"lines":{},"settings":{},"tasks":{"a":"b"}}}},{"args":["b","#010203"],"op":"projectColor","outcome":{"result":null}},{"args":["DELETE FROM comets",[]],"op":"sql","outcome":{"result":null}},{"args":[],"op":"applyPending","outcome":{"result":true}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet on another device",
+   "rows":{"comets":[["a","1",1.0,0,2.0,"panels"]],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":[{"settings":{"style":"project"}}],"op":"requestPatch","outcome":{"result":false}},{"args":["INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('a','1',1,0,2,'panels')",[]],"op":"sql","outcome":{"result":null}},{"args":[{"settings":{"style":"classic"}}],"op":"requestPatch","outcome":{"result":false}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels comet defers its source",
+   "rows":{"comets":[["t","1",1.0,0,1.0,"panels"]],"line_prefs":[],"locate":[],"map_pending":[[{"lines":{"41":{"project":"b"}},"settings":{"rotation":90},"tasks":{}},"panels"]],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('t','1',1,0,1,'panels')",[]],"op":"sql","outcome":{"result":null}},{"args":[{"lines":{"41":{"project":"b"}}}],"op":"requestPatch","outcome":{"result":true}},{"args":[{"settings":{"rotation":90}}],"op":"requestPatch","outcome":{"result":true}},{"args":[],"op":"pending","outcome":{"result":{"lines":{"41":{"project":"b"}},"settings":{"rotation":90},"tasks":{}}}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comet lifecycle",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":[1000.5],"op":"currentComet","outcome":{"result":{"source":0,"started":1000.0}}},{"args":[1001.9,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[1001.9],"op":"currentComet","outcome":{"result":{"source":0,"started":1000.0}}},{"args":[1002.0,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[1002.0],"op":"currentComet","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"queued comets start in order",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["b",3,"wall"]],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["INSERT INTO sessions VALUES ('b','1','unread',1000)",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT INTO slots (session,slot,device) VALUES ('b',3,'wall')",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('b','1',999,NULL,NULL,'wall')",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT INTO sessions VALUES ('c','2','working',1000)",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('c','1',998,NULL,NULL,'wall')",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.0],"op":"currentComet","outcome":{"result":{"source":3,"started":1000.0}}},{"args":[1000.0,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[1000.0],"op":"currentComet","outcome":{"result":{"source":3,"started":1000.0}}},{"args":[1003.0,"work"],"op":"pruneComets","outcome":{"result":null}},{"args":[1003.0],"op":"currentComet","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"comets end outside work",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":[1000.5,"quiet"],"op":"pruneComets","outcome":{"result":null}},{"args":[1000.5],"op":"currentComet","outcome":{"result":null}}]
+  },
+  {
+   "layout":"lines",
+   "name":"mode commands",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","3"],["mode_applied","1"],["mode","work"],["mode_revision","2"],["wave_cutoff","1003.5"],["dirty","1"],["control_error","Light update failed; retrying."]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["quiet",1000.0],"op":"changeMode","outcome":{"result":true}},{"args":["quiet",1001.0],"op":"changeMode","outcome":{"result":true}},{"args":["INSERT OR REPLACE INTO meta VALUES ('mode_applied','1')",[]],"op":"sql","outcome":{"result":null}},{"args":["quiet",1002.0],"op":"changeMode","outcome":{"result":false}},{"args":["work",1003.5],"op":"changeMode","outcome":{"result":true}},{"args":["INSERT INTO meta VALUES ('control_error','Light update failed; retrying.')",[]],"op":"sql","outcome":{"result":null}},{"args":["work",1004.0],"op":"changeMode","outcome":{"result":true}}]
+  },
+  {
+   "layout":"lines",
+   "name":"mode command clears comets, Locate and preview",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","4"],["mode","free"],["mode_revision","1"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[["a",0,"wall"]],"task_info":[["a",null]]},
+   "setup":{"comet":true},
+   "steps":[{"args":["104:105"],"op":"locate","outcome":{"result":null}},{"args":["INSERT INTO meta VALUES ('preview','comet')",[]],"op":"sql","outcome":{"result":null}},{"args":["free",1001.0],"op":"changeMode","outcome":{"result":true}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels mode commands",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","3"],["mode@panels","work"],["mode_revision@panels","2"],["wave_cutoff@panels","1001.25"],["dirty","1"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["quiet",1000.0],"op":"changeMode","outcome":{"result":true}},{"args":["work",1001.25],"op":"changeMode","outcome":{"result":true}}]
+  },
+  {
+   "layout":"lines",
+   "name":"rendering receipt",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["rendering_receipt","{broken"],["mode_revision","3"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["DELETE FROM meta WHERE key='dirty'",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.0004],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"unknown","pending":false,"sampledAtMs":1000000}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)",["{\"apiVersion\": \"1.0\", \"deviceId\": \"wall\", \"effect\": {\"write\": {\"animData\": \"frames\"}}}"]],"op":"sql","outcome":{"result":null}},{"args":[1000.0006],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"work","outcome":"last-sent","pending":false,"sampledAtMs":1000001}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('dirty','1')",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.5],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"work","outcome":"pending","pending":true,"sampledAtMs":1000500}}},{"args":["DELETE FROM meta WHERE key='dirty'",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT OR REPLACE INTO meta VALUES ('control_error','Light update failed; retrying.')",[]],"op":"sql","outcome":{"result":null}},{"args":[1001.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":true,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"work","outcome":"failed","pending":false,"sampledAtMs":1001000}}},{"args":["DELETE FROM meta WHERE key='control_error'",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT OR REPLACE INTO meta VALUES ('mode','free')",[]],"op":"sql","outcome":{"result":null}},{"args":[1001.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"free","outcome":"externally-controlled","pending":false,"sampledAtMs":1001000}}},{"args":["DELETE FROM meta WHERE key='mode'",[]],"op":"sql","outcome":{"result":null}},{"args":["INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)",["{\"outcome\":\"unknown\"}"]],"op":"sql","outcome":{"result":null}},{"args":[1002.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"unknown","pending":false,"sampledAtMs":1002000}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)",["[1,2]"]],"op":"sql","outcome":{"result":null}},{"args":[1002.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"unknown","pending":false,"sampledAtMs":1002000}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)",["{broken"]],"op":"sql","outcome":{"result":null}},{"args":[1002.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"unknown","pending":false,"sampledAtMs":1002000}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('mode_revision','3')",[]],"op":"sql","outcome":{"result":null}},{"args":[1002.0],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"wall","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"pending","pending":true,"sampledAtMs":1002000}}}]
+  },
+  {
+   "layout":"triangles",
+   "name":"panels rendering receipt",
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","1"],["rendering_receipt@panels","{\"apiVersion\": \"1.0\", \"deviceId\": \"wall\", \"effect\": {\"write\": {\"animData\": \"frames\"}}}"],["mode@panels","free"]],"palette":[],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "setup":{},
+   "steps":[{"args":["DELETE FROM meta WHERE key='dirty'",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.0005],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"panels","failedAttempt":false,"lastSuccessful":null,"mode":"work","outcome":"unknown","pending":false,"sampledAtMs":1000000}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('rendering_receipt@panels',?)",["{\"apiVersion\": \"1.0\", \"deviceId\": \"wall\", \"effect\": {\"write\": {\"animData\": \"frames\"}}}"]],"op":"sql","outcome":{"result":null}},{"args":[1000.0015],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"panels","failedAttempt":false,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"work","outcome":"last-sent","pending":false,"sampledAtMs":1000002}}},{"args":["INSERT OR REPLACE INTO meta VALUES ('mode@panels','free')",[]],"op":"sql","outcome":{"result":null}},{"args":[1000.0025],"op":"rendering","outcome":{"result":{"apiVersion":"1.0","deviceId":"panels","failedAttempt":false,"lastSuccessful":{"apiVersion":"1.0","deviceId":"wall","effect":{"write":{"animData":"frames"}}},"mode":"free","outcome":"externally-controlled","pending":false,"sampledAtMs":1000002}}}]
+  }
+ ],
+ "layouts":{
+  "lines":{
+   "line_groups":[[100,101],[102,103],[104,105],[106,107],[108,109],[110,111],[112,113],[114,115],[116,117],[118,119],[120,121],[122,123],[124,125],[126,127],[128,129]],
+   "line_positions":[[0,0],[10,0],[20,0],[30,0],[40,0],[50,0],[60,0],[70,0],[80,0],[90,0],[100,0],[110,0],[120,0],[130,0],[140,0]]
+  },
+  "triangles":{
+   "device":"panels",
+   "elements":[{"id":"41","number":1,"position":[-75,-43],"zones":[41]},{"id":"34","number":2,"position":[-75,43],"zones":[34]},{"id":"48","number":3,"position":[0,-87],"zones":[48]},{"id":"27","number":4,"position":[0,87],"zones":[27]},{"id":"55","number":5,"position":[75,-43],"zones":[55]},{"id":"20","number":6,"position":[75,43],"zones":[20]},{"id":"83","number":7,"position":[150,87],"zones":[83]},{"id":"76","number":8,"position":[150,173],"zones":[76]},{"id":"90","number":9,"position":[225,43],"zones":[90]},{"id":"69","number":10,"position":[225,217],"zones":[69]},{"id":"97","number":11,"position":[300,87],"zones":[97]},{"id":"62","number":12,"position":[300,173],"zones":[62]},{"id":"125","number":13,"position":[375,-43],"zones":[125]},{"id":"118","number":14,"position":[375,43],"zones":[118]},{"id":"132","number":15,"position":[450,-87],"zones":[132]},{"id":"111","number":16,"position":[450,87],"zones":[111]},{"id":"139","number":17,"position":[525,-43],"zones":[139]},{"id":"104","number":18,"position":[525,43],"zones":[104]}],
+   "kind":"panels",
+   "line_groups":[[41],[34],[48],[27],[55],[20],[83],[76],[90],[69],[97],[62],[125],[118],[132],[111],[139],[104]],
+   "line_positions":[[-75,-43],[-75,43],[0,-87],[0,87],[75,-43],[75,43],[150,87],[150,173],[225,43],[225,217],[300,87],[300,173],[375,-43],[375,43],[450,-87],[450,87],[525,-43],[525,43]],
+   "panel_geometry":{"neighbors":[["41","34"],["41","48"],["34","27"],["48","55"],["27","20"],["55","20"],["20","83"],["83","76"],["83","90"],["76","69"],["90","97"],["69","62"],["97","62"],["97","118"],["125","118"],["125","132"],["118","111"],["132","139"],["111","104"],["139","104"]],"orientation":0,"triangles":[{"id":"41","o":60,"panelId":41,"x":-75,"y":-43},{"id":"34","o":0,"panelId":34,"x":-75,"y":43},{"id":"48","o":0,"panelId":48,"x":0,"y":-87},{"id":"27","o":60,"panelId":27,"x":0,"y":87},{"id":"55","o":60,"panelId":55,"x":75,"y":-43},{"id":"20","o":0,"panelId":20,"x":75,"y":43},{"id":"83","o":60,"panelId":83,"x":150,"y":87},{"id":"76","o":0,"panelId":76,"x":150,"y":173},{"id":"90","o":0,"panelId":90,"x":225,"y":43},{"id":"69","o":60,"panelId":69,"x":225,"y":217},{"id":"97","o":60,"panelId":97,"x":300,"y":87},{"id":"62","o":0,"panelId":62,"x":300,"y":173},{"id":"125","o":60,"panelId":125,"x":375,"y":-43},{"id":"118","o":0,"panelId":118,"x":375,"y":43},{"id":"132","o":0,"panelId":132,"x":450,"y":-87},{"id":"111","o":60,"panelId":111,"x":450,"y":87},{"id":"139","o":60,"panelId":139,"x":525,"y":-43},{"id":"104","o":0,"panelId":104,"x":525,"y":43}],"version":1}
+  }
+ }
+}
