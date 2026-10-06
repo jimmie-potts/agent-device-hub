@@ -1,5 +1,6 @@
 // SDK routing keys (ADR 0012): `bunny.<state|event|cmd>.<family>.<id>`, lowercase and shallow, with hyphens inside
 // tokens. A pattern is a key in which `*` stands for any one of the last three tokens.
+import type {MessageKind} from '@jimmie-potts/event-contracts/v2';
 export type Category = 'state' | 'event' | 'cmd';
 export type RoutingKey = {readonly category: Category; readonly family: string; readonly id: string};
 export type Pattern = {readonly category: Category | '*'; readonly family: string; readonly id: string};
@@ -22,6 +23,26 @@ export function parseKey(key: string): RoutingKey | undefined {
 }
 
 export const parsePattern = (pattern: string): Pattern | undefined => split(pattern, true);
+
+/**
+ * The key class a published kind travels on: state and removal messages on `bunny.state` keys, occurrences and
+ * outcomes on `bunny.event` keys. Commands, replies and sync messages are never published, so they have none.
+ */
+export function keyClassOf(kind: MessageKind): 'state' | 'event' | undefined {
+  switch (kind) {
+    case 'state':
+    case 'removal':
+      return 'state';
+    case 'occurrence':
+    case 'outcome':
+      return 'event';
+    case 'command':
+    case 'reply':
+    case 'sync-request':
+    case 'sync-completed':
+      return undefined;
+  }
+}
 
 const same = (a: string, b: string): boolean => a === '*' || b === '*' || a === b;
 

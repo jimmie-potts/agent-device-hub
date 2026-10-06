@@ -7,7 +7,7 @@ import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {InProcessBus} from '../in-process.js';
 import type {BunnyModule, LogFields, Logger, ModuleContext} from '../module.js';
-import {SdkError, type Cancel, type Clock, type Participant, type Scheduler, type TraceContext} from '../sdk.js';
+import {SdkError, type Cancel, type Clock, type Participant, type Scheduler, type Sdk, type TraceContext} from '../sdk.js';
 import {childOf} from '../trace.js';
 
 export type HarnessOptions = {
@@ -31,11 +31,28 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 const stopped = (): SdkError => new SdkError(errorBody('invalid-state', {detail: 'the module has stopped'}));
+/** The runtime's stop deadline for a module's participant close and for its `stop`. */
+export const DEFAULT_STOP_TIMEOUT_MS = 5000;
+
+/** The module's SDK calls, without `close`: as in the runtime, only the host closes a module's participant. */
+const calls = (participant: Participant): Sdk => ({
+  source: participant.source,
+  publish: (key, draft, options) => participant.publish(key, draft, options),
+  publishMessage: (key, message) => participant.publishMessage(key, message),
+  subscribe: (pattern, handler, options) => participant.subscribe(pattern, handler, options),
+  request: (key, draft, options) => participant.request(key, draft, options),
+  respond: (pattern, responder) => participant.respond(pattern, responder),
+  sync: (families, handler, options) => participant.sync(families, handler, options),
+  serveSync: (families, provider) => participant.serveSync(families, provider),
+});
 
 export class ModuleHarness {
   /** The module's log records. */
   readonly logs: HarnessRecord[] = [];
-  /** Errors from the module's timer callbacks and workers, which the runtime would fail the module for. */
+  /**
+   * Errors from the module's timer callbacks and workers, which the runtime would fail the module for, and a `stop`
+   * that threw or a close or `stop` that outlasted its deadline, which the runtime logs as a warning.
+   */
   readonly failures: unknown[] = [];
   readonly source: string;
   readonly #module: BunnyModule;
@@ -62,8 +79,9 @@ export class ModuleHarness {
 
   /**
    * Stops the module as the runtime does: its signal aborts, its timers are cancelled and its participant closes, then
-   * its `stop` runs, its workers end and its database closes. As in the runtime, `stop` runs only once `start` was
-   * called. Calling it again returns the same promise.
+   * its `stop` runs, its workers end and its database closes. The close and `stop` each have the stop deadline, and a
+   * failure or a passed deadline in one step never keeps the next from running. As in the runtime, `stop` runs only
+   * once `start` was called. Calling it again returns the same promise.
    */
   stop(): Promise<void> {
     this.#stopping ??= this.#stop();
@@ -86,11 +104,27 @@ export class ModuleHarness {
   async #stop(): Promise<void> {
     this.#controller.abort();
     for (const cancel of [...this.#timers]) cancel();
-    if (this.#participant === undefined) return;
-    await this.#participant.close();
-    await this.#module.stop();
+    const participant = this.#participant;
+    if (participant === undefined) return;
+    await this.#within(() => participant.close(), 'the participant\'s close');
+    await this.#within(() => this.#module.stop(), 'the module\'s stop');
     await Promise.allSettled([...this.#workers].map(worker => worker.terminate()));
     if (this.#database?.isOpen === true) this.#database.close();
+  }
+
+  /** Runs one stop step within the stop deadline, recording a throw, a rejection or a passed deadline as a failure. */
+  async #within(step: () => unknown, what: string): Promise<void> {
+    const timeoutMs = this.#options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<'late'>(resolve => { timer = setTimeout(() => { resolve('late'); }, timeoutMs); });
+    try {
+      const ended = await Promise.race([(async () => { await step(); })(), late]);
+      if (ended === 'late') this.failures.push(new Error(`${what} did not finish within ${timeoutMs} ms`));
+    } catch (error) {
+      this.failures.push(error);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   #context(participant: Participant): ModuleContext {
@@ -101,7 +135,7 @@ export class ModuleHarness {
     };
     const log: Logger = {debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error')};
     return {
-      sdk: participant,
+      sdk: calls(participant),
       log,
       trace: {span: parent => childOf(parent)},
       clock: {now: () => clock.now()},
