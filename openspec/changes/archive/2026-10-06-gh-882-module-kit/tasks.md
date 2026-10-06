@@ -20,3 +20,12 @@
 
 - [x] 4.1 Document the outbox and the kit in the SDK README, the fixture in the runtime README and both in `docs/development.md`.
 - [x] 4.2 Validate this change with `--strict`, then sync and archive it; `npm run check:workflow`, `npm run test:workflow` and `openspec validate --specs --strict` exit zero.
+
+## 5. Review fixes (PR #912)
+
+- [x] 5.1 Write the failing tests first: the reviewers' failed-core case, a clean restart that replays no state or occurrence, acknowledged outcomes, async work, a consume-only module, the harness stop and loading the kit without node:test; 9 SDK tests and the kill test fail.
+- [x] 5.2 Keep outcomes until `acknowledge(id)`, delete every other message once it has gone out, and remove `retainMs` and the time-based forgetting; every outbox test passes.
+- [x] 5.3 Negative controls, each restored: keeping a time-based forgetting fails the failed-core test; keeping states and occurrences for a resend fails 4 tests, the replay test among them; an acknowledgment that deletes nothing fails both acknowledgment tests.
+- [x] 5.4 Add the kit's stand-in acknowledgment; the stand-in core sends it and the lamp follows it, and the kill test shows the second restart sending nothing.
+- [x] 5.5 Apply the P3 findings: one `keyClassOf` in `routing.ts`, synchronous work typing, the harness's close-free participant and stop deadlines, optional kit fields, `node:test` loaded only by `moduleConformance` (the checks ran under Vitest), the Purpose lines and the stale runtime comment.
+

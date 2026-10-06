@@ -338,14 +338,15 @@ Once the module's stop begins, its `sdk`, `scheduler`, `workers` and
 ## Outbox
 
 ADR 0012 has each module report outcomes through its own outbox, so a crash
-never loses one. `Outbox` keeps a module's messages in its own SQLite file, in
-the table `bunny_outbox`:
+never loses one and no command is ever sent again. `Outbox` keeps a module's
+messages in its own SQLite file, in the table `bunny_outbox`:
 
 ```ts
 import {Outbox} from '@jimmie-potts/sdk';
 
-async start({sdk, database, clock, scheduler}) {
-  const outbox = new Outbox({sdk, database: database(), clock, scheduler});
+async start({sdk, database, clock}) {
+  const outbox = new Outbox({sdk, database: database(), clock});
+  // Follow the core's acknowledgments first (Hub #782), then send what is still stored.
   await outbox.republish();
   await sdk.respond('bunny.cmd.lamp.*', async command => {
     await outbox.transaction(add => {
@@ -361,28 +362,37 @@ async start({sdk, database, clock, scheduler}) {
   `add(key, draft, {parent?})` stores commits with the work's own changes, and
   goes out only after the commit, in order, through `publishMessage`, with the
   `id` and `time` it was stored with. A throw rolls back the work and its
-  messages, and nothing goes out. `work` must be synchronous, and the outbox
-  opens the transaction itself. The promise resolves with `work`'s result once
-  the messages are published. If publishing is refused, for example because the
-  module is stopping, it rejects although the work committed; the messages stay
-  stored, and the next transaction or restart sends them.
+  messages, and nothing goes out. `work` must be synchronous: its type refuses a
+  promise, and one returned anyway rolls the work back with a `TypeError`. The
+  outbox opens the transaction itself. The promise resolves with `work`'s result
+  once the messages are published. If publishing is refused, for example because
+  the module is stopping, it rejects although the work committed; the messages
+  stay stored, and the next transaction or start sends them.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
-- `republish()` sends again, in order, every message still stored. Call it once
-  in the module's start, after the consumer it reports to is listening.
-- The outbox forgets a message once the module has kept running for `retainMs`
-  (60 s by default) after publishing it, using the module's scheduler. A
-  restart before then sends it again, unchanged, and the consumer drops the
-  duplicate by `(source, id)`. A run forgets only messages it published itself.
+- A state, removal or occurrence message is deleted once it has gone out. One
+  that a crash kept from going out goes out at the next start. That is not
+  replay: nothing received it before.
+- An outcome is kept until `acknowledge(id)` deletes it, and goes out again at
+  every start until then. The consumer, the core, drops the duplicates by
+  `(source, id)`. `acknowledge` returns false when the outbox no longer holds
+  that outcome.
+- `republish()` sends again, in order, everything still stored, and resolves
+  with how many messages went out. Call it once in the module's start, after the
+  module follows the core's acknowledgments, so that it hears an acknowledgment
+  of a resent outcome.
 
-In one process, a published message is in the consumer's queue at once. A
-crash before the consumer commits it is the usual way to lose it, and every
-crash ends in a restart that sends again what the module published within
-`retainMs` before it. A consumer whose full queue drops a message, or whose
-backlog outlasts `retainMs` before a crash, can still miss one. There is no
-acknowledgment: the
-[outbox decisions](../../openspec/changes/archive/2026-10-06-gh-882-module-kit/design.md)
-record why, what the consumer must do, and these risks.
+The core's acknowledgment belongs to Hub #782. Until it exists, the kit's
+[stand-in acknowledgment](#module-test-kit) lets tests exercise `acknowledge`,
+and a module's outcome rows grow until the core acknowledges them.
+
+Known limits:
+- A consumer whose full queue drops a state or occurrence never gets it again;
+  it should sync. A dropped outcome goes out again at the module's next start.
+- An outcome waits for the module's next start to go out again. A core that
+  fails and recovers while the module keeps running gets it at that start.
+- The [outbox decisions](../../openspec/changes/archive/2026-10-06-gh-882-module-kit/design.md)
+  record the reasons and what the core must do.
 
 ## Module test kit
 
@@ -402,28 +412,49 @@ moduleConformance({
 });
 ```
 
-`moduleConformance(spec)` registers a node:test suite named for the module;
-`conformanceChecks(spec)` returns the same checks as `{name, run}` for another
-runner. Each check hosts a fresh instance of the module on its own bus and state
+`moduleConformance(spec)` registers a node:test suite named for the module, and
+is the only part of the kit that loads `node:test`. `conformanceChecks(spec)`
+returns the same checks as `{name, run}` for another runner, such as Vitest.
+Each check hosts a fresh instance of the module on its own bus and state
 directory, with a stand-in owner, `bunny/core`, serving the families it copies.
-Every message the check sees must follow profile 2.0, with the core families and
-`spec.schemas` registered, and no handler, timer or worker of the module may
-fail. The checks:
+Every message the check sees must follow profile 2.0, with the core families,
+the stand-in acknowledgment and `spec.schemas` registered. No handler, timer or
+worker of the module may fail, and its stop may not throw or outlast its
+deadline.
 
-| Check | What passes |
-| --- | --- |
-| `declares a manifest the runtime accepts` | `checkManifest` finds nothing to refuse. |
-| `starts, and stops leaving nothing behind` | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command is refused as `unavailable`, a sync of its families is refused as `unavailable`, and no timer, worker or open database is left. |
-| `serves its families through sync` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
-| `copies the families it follows` | Only when `copies` is given: the module's start syncs them, asking for nothing else. |
-| `accepts a command and replies` | The accepted command comes back `accepted`. |
-| `refuses a command with the shared error body` | The refused command comes back `rejected` in the module's own reply, with `refused.code`. |
-| `reports the outcome through its outbox, once after a restart` | The accepted command's outcome is published, and after a restart on the same database it is published again, unchanged. |
+`serves`, `copies`, `accepted` and `refused` are optional, so a module that
+only consumes runs the checks that apply to it. The checks:
 
-`ModuleHarness` is what the checks host a module with: its own participant on a
-given bus, a context whose SQLite file lives in a given directory, and a `stop`
-that aborts, cancels timers, closes the participant, runs `stop()`, ends workers
-and closes the database, in the runtime's order.
+| Check | Runs | What passes |
+| --- | --- | --- |
+| `declares a manifest the runtime accepts` | always | `checkManifest` finds nothing to refuse. |
+| `starts, and stops leaving nothing behind` | always | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command, if any, is refused as `unavailable`, a sync of the served families, if any, is refused as `unavailable`, and no timer, worker or open database is left. |
+| `serves its families through sync` | with `serves` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
+| `copies the families it follows` | with `copies` | The module's start syncs them, asking for nothing else. |
+| `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. |
+| `refuses a command with the shared error body` | with `refused` | The refused command comes back `rejected` in the module's own reply, with `refused.code`. |
+| `keeps the outcome in its outbox and sends it again after a restart` | with `accepted` | The accepted command's outcome is published, and after a restart on the same database, with no acknowledgment, it is published again, unchanged. |
+
+The lifecycle check sees only what the harness tracks: the module's responders
+and sync owners on the bus, the timers and workers it started through its
+context, and its database. A timer, socket or handle the module opened another
+way is beyond it.
+
+`ModuleHarness` is what the checks host a module with, as the runtime would:
+- its own participant on a given bus, which the module gets without `close`;
+- a context whose SQLite file lives in a given directory;
+- a `stop` that aborts the signal, cancels timers, closes the participant,
+  runs `stop()`, ends workers and closes the database, in the runtime's order.
+
+The participant close and `stop()` each have a deadline, `stopTimeoutMs`, 5 s
+by default as in the runtime. A step that throws or outlasts it is recorded in
+`failures`, and the stop goes on.
+
+Until Hub #782 defines the core's acknowledgment of an outcome, the kit offers a
+stand-in. `standInAck(outcome)` builds the stand-in core's occurrence, published
+on `bunny.event.stand-in-ack.<module>`, and `followStandInAcks(sdk, outbox)`
+makes a module's outbox forget each outcome it names. Modules use them only in
+tests.
 
 ## Trace context
 

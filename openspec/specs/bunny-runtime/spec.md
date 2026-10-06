@@ -1,7 +1,7 @@
 # bunny-runtime Specification
 
 ## Purpose
-Define the B.U.N.N.Y. runtime process under ADR 0012: health with zero modules, the fixed module list with manifests and the API version check, the module context, failure isolation, private state and the event-loop lag check. It is source that later stories add modules to; it claims no installation, device or remote-transport behavior.
+Define the B.U.N.N.Y. runtime process under ADR 0012: health with zero modules, the fixed module list with manifests and the API version check, the module context, failure isolation, private state and the event-loop lag check. Its tests hold the fixture lamp module, which passes the module test kit, and a stand-in core. It is source that later stories add modules to; it claims no installation, device or remote-transport behavior.
 
 ## Requirements
 
@@ -210,7 +210,7 @@ The runtime process SHALL detect an event loop that stays stuck for the lag limi
 
 ### Requirement: Fixture module
 
-The runtime's tests SHALL hold a fixture module, a simulated lamp that later stories use as their stand-in module, and a stand-in core. The lamp SHALL serve its lamps through sync, copy the core's mode, switch a lamp on command, refuse an unknown lamp with `not-found` and switching on in quiet mode with `invalid-state`, and report each switch through its outbox: the lamp's state, an occurrence and the outcome. It SHALL pass the module test kit. The stand-in core SHALL serve the mode and take every occurrence and outcome once by `(source, id)`, keeping what it took in its own SQLite file across restarts.
+The runtime's tests SHALL hold a fixture module, a simulated lamp that later stories use as their stand-in module, and a stand-in core. The lamp SHALL serve its lamps through sync, copy the core's mode, switch a lamp on command, refuse an unknown lamp with `not-found` and switching on in quiet mode with `invalid-state`, and report each switch through its outbox: the lamp's state, an occurrence and the outcome. It SHALL pass the module test kit. The stand-in core SHALL serve the mode, take every occurrence and outcome once by `(source, id)`, keeping what it took in its own SQLite file across restarts, and acknowledge each outcome with the kit's stand-in acknowledgment, which the lamp SHALL follow before it republishes.
 
 #### Scenario: The lamp passes the kit
 - **WHEN** the runtime's tests run the module test kit on the lamp
@@ -222,4 +222,4 @@ The runtime's tests SHALL hold a fixture module, a simulated lamp that later sto
 
 #### Scenario: A kill between commit and publish
 - **WHEN** the runtime process is killed after the lamp commits a switch and before it publishes anything, then started twice on the same state directory without the requester
-- **THEN** the core takes the outcome exactly once, in the first restart, and drops the second restart's resend as a duplicate, and the lamp never receives the command again
+- **THEN** at the first restart the lamp sends its state, occurrence and outcome, the core takes the outcome exactly once and acknowledges it, and the lamp forgets it; the second restart sends nothing; and the lamp never receives the command again

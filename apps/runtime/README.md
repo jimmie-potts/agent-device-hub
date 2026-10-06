@@ -173,9 +173,15 @@ stories build on (#846). It passes the
 `lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
 `tests/fixtures/core.ts` stands in for the core. It serves the mode, and it takes
 every occurrence and outcome once by `(source, id)`, keeping what it took in its
-own SQLite file across restarts. A process test kills the runtime between the
-lamp's commit and its publish, then restarts it twice. The core takes the
-outcome exactly once, and nothing sends the command again.
+own SQLite file across restarts. It acknowledges each outcome with the kit's
+stand-in acknowledgment, which the lamp follows, until Hub #782 defines the
+real one.
+
+A process test kills the runtime between the lamp's commit and its publish,
+then restarts it twice. At the first restart the lamp sends its state,
+occurrence and outcome, the core takes the outcome once and acknowledges it,
+and the lamp forgets it. The second restart sends nothing, and nothing ever
+sends the command again.
 
 ## Checks
 
