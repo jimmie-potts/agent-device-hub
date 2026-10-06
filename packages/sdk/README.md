@@ -403,10 +403,12 @@ HTTP status that fits its code.
   replayed. A call that needs the stream and meets a lost one is refused with
   the retryable `unavailable`.
 - **A dropped stream and forwarded calls.** A command already written to a
-  remote responder's stream is never answered because the stream dropped: its
-  handler may be running it. Its reply still counts when it comes on the
-  reconnected stream; otherwise its deadline makes it `uncertain-result`. A
-  command whose frame never reached the socket is `unavailable`, and so is a
+  remote responder's stream is never answered as a refusal: its handler may be
+  running it. Its reply still counts when it comes on the reconnected stream,
+  matched by the command's own message id, so a retry that reuses a `requestId`
+  keeps its own reply. Otherwise its deadline, or the edge closing, makes it
+  `uncertain` with `uncertain-result`, and no reply message. A command whose
+  frame never reached the socket is refused as `unavailable`, and so is a
   forwarded sync request, since a sync only reads.
 - **Sync answers.** A sync answer whose `sync.completed` or a state is over
   256 KiB is refused at the edge with `too-large` and logged. A first sync
@@ -420,7 +422,7 @@ The deadline answers are the same on both transports, as ADR 0012 states:
 | A command its handler holds at the deadline | `uncertain-result` |
 | A command still queued at the deadline | `expired`: it never reached the handler |
 | A sync request with no answer by the deadline | `unavailable`, since a sync only reads |
-| A command or sync request that reaches the edge past its expiry | `expired` |
+| A command or sync request that reaches the edge past its expiry | `expired`; through the client, a remote part's own sync request gets the retryable `unavailable` instead |
 
 Remotely, the edge answers as soon as its bus settles, at the deadline. The
 requester waits `REQUESTER_GRACE_MS` (1 s) longer on its own scheduler. If the

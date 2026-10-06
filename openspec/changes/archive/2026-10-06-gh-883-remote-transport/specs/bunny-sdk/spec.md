@@ -232,7 +232,7 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **Subscriptions:** `subscribe` SHALL resolve only once the edge has registered the subscription.
 - **A slow consumer:** the edge SHALL wait for a connection's socket to drain before it writes the next message of a subscription, so a remote part that stops reading fills only its own subscriptions' bounded queues. Their drops SHALL be reported to `onError` as `capacity` and sent to the remote part as an overflow notice with the count.
 - **Reconnects:** a client whose stream is lost SHALL reconnect, queue a gap notice with no count for each subscription before any message of the new stream, register its subscriptions, responders and sync owners again, and only then deliver the notices. Nothing missed SHALL be replayed. A call that needs the stream and meets a lost one SHALL be refused with the retryable `unavailable`, and a registration that failed SHALL leave nothing at the edge.
-- **A dropped stream:** the edge SHALL NOT answer a forwarded command whose frame reached the socket because its stream dropped. A reply that comes on the reconnected stream SHALL still reach the requester; otherwise the deadline decides. A forwarded command whose frame never reached the socket, and a forwarded sync request, SHALL be refused with `unavailable`.
+- **A dropped stream:** the edge SHALL NOT answer a forwarded command whose frame reached the socket as a refusal, whether its stream dropped, the edge closed or its own wait ran out. A reply that comes on the reconnected stream SHALL still reach the requester, matched by the forwarded command's message id, so a retry that reuses a `requestId` gets its own reply. Otherwise the request SHALL settle `uncertain` with `uncertain-result` and no reply message. A forwarded command whose frame never reached the socket, and a forwarded sync request, SHALL be refused with `unavailable`. A prepared command whose requester has already stopped waiting SHALL be refused with `cancelled` and never run.
 - **Deadlines:** the deadline answers SHALL be those in process. The edge SHALL answer when its bus settles: `expired` for a command still queued at its deadline, `uncertain-result` for one a handler had, otherwise the reply, and `unavailable` for a sync request. A remote requester SHALL wait `REQUESTER_GRACE_MS` (1 s) past its deadline, on its scheduler, for that answer, and only then settle a command as `uncertain-result` and a sync as `unavailable`. An edge `expired` refusal of a remote part's own sync request SHALL reach it as the retryable `unavailable`. A remote responder or owner SHALL ignore a command or sync request that reaches it past its expiry.
 - **Close:** a remote participant SHALL be a participant whose `close` returns the same promise every time. It SHALL first settle each request still waiting for the edge as `uncertain-result`, drop its call and cancel its deadline and the reconnect backoff; the edge SHALL then take a still-queued command out. It SHALL then close its sync copies, so a first sync still under way resolves `cancelled`; a copy's withdrawn request SHALL drop its HTTP call, and the edge SHALL take the request out of the owner's queue, so the owner never serves it. Every later call SHALL be refused with `invalid-state`.
 - **Schedulers:** the client's deadlines and reconnect delays and the edge's waits SHALL run on an injectable scheduler, which defaults to `setTimeout`.
@@ -266,6 +266,18 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **WHEN** a remote responder's stream drops while its handler holds a command
 - **THEN** the requester gets `uncertain-result` at the deadline, never `unavailable`, and when the handler replies on the reconnected stream before the deadline, the requester gets that reply
 
+#### Scenario: A held command at the edge's close or its own wait
+- **WHEN** the edge closes while a remote handler holds a command, or the edge's own scheduler runs out the forward's wait before the bus's deadline
+- **THEN** the request settles `uncertain` with `uncertain-result`, with no reply message
+
+#### Scenario: A retry with a reused requestId
+- **WHEN** a held command's stream drops, its request ends `uncertain-result`, the requester retries at once with the same `requestId`, and the held command then refuses late
+- **THEN** the retry gets its own `accepted` reply
+
+#### Scenario: A gap before the new stream's messages
+- **WHEN** after a reconnect one subscription is registered again while another's registration is held, and a message for the first is published
+- **THEN** the first subscription hears of the gap before that message
+
 #### Scenario: Remote refusals rebuilt
 - **WHEN** a remote responder or owner refuses with a registered code, a 5000-character detail and an extra field
 - **THEN** the requester gets the shared error body with that code, the detail cut to 1024 characters and no extra field
@@ -292,7 +304,7 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 
 ### Requirement: One conformance suite for every transport
 
-One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. A command still queued at its deadline SHALL be `expired` on both. Where a transport must answer differently, it SHALL state its own expectation: a closing participant's request whose command still waits in the responder's queue is `cancelled` in process, where the bus knows, and `uncertain-result` remotely, where the requester cannot; on both, the command never runs.
+One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. A command still queued at its deadline SHALL be `expired` on both. Where a transport must answer differently, it SHALL state its own expectation: a closing participant's request whose command still waits in the responder's queue is `cancelled` in process, where the bus knows, and the command never runs; remotely it is `uncertain-result`, where the requester cannot know, and a command still queued when the edge sees the dropped call never runs.
 
 #### Scenario: Both transports
 - **WHEN** the suite runs against each transport

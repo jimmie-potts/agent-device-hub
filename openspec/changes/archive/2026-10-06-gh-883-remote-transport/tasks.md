@@ -85,3 +85,29 @@
   - keeping `not-found` (1);
   - keeping `expired` for a sync (1).
 - [x] 6.4 Update the README, the `bunny-sdk` spec (now also modifying the request and sync requirements for `MAX_TIMEOUT_MS`), this delta and design.md. The synced spec and the delta stay identical.
+
+## 7. Final review of PR #909
+
+- [x] 7.1 Write the tests first. Four fail:
+  - the edge's close while a remote handler holds a command;
+  - the forward's wait running out on the edge's own scheduler;
+  - an already-aborted prepared command;
+  - a retry that reuses a held command's `requestId`.
+
+  A deterministic gap-order test holds the second re-registration through a harness hook; it passes, and reverting the order fails it.
+- [x] 7.2 Fix the remote handling of held and forwarded commands:
+  - the bus reads the internal `unanswered` and `undelivered` markers from a forwarding responder;
+  - the edge settles held commands through `unanswered` at close and at its own timeout;
+  - an aborted signal settles `cancelled` before the command is queued;
+  - forwards are keyed by message id and delete only their own entry, and the client sends that id with each reply and answer.
+
+  All 141 SDK tests pass.
+- [x] 7.3 Run the controls:
+  - an error body at close fails the close test;
+  - an error body from the late timer fails the scheduler test;
+  - the old aborted-signal order fails its test;
+  - keying by `requestId` fails the retry test;
+  - the old gap order fails the gap test.
+
+  Deleting any entry instead of only its own fails nothing: with message-id keys, two live entries cannot share a key, so that guard is defense in depth.
+- [x] 7.4 Note in the README deadline table that a remote part's own expired sync gets `unavailable`. Narrow the conformance requirement's never-runs clause to a command still queued when the edge sees the dropped call. The synced spec and the delta stay identical.
