@@ -59,6 +59,8 @@ it('a module\'s own fields never replace the module name, and a lower level show
 it('a module\'s clock, timers and request deadlines all follow the runtime\'s clock and scheduler', async context => {
   const clock = manualClock();
   const stuck = deferred<Reply>();
+  // Registered before the runtime's stop, so a failed assertion cannot leave the stop waiting on this handler.
+  context.after(() => { stuck.resolve({status: 'accepted'}); });
   const commands: Command<object>[] = [];
   const owner = fixture('owner', async ({sdk}) => {
     await sdk.respond('bunny.cmd.mode.owner', command => { commands.push(command); return stuck.promise; });
@@ -90,7 +92,6 @@ it('a module\'s clock, timers and request deadlines all follow the runtime\'s cl
   clock.advance(10);
   await flush();
   assert.equal(fired, 1, 'a cancelled timer never runs');
-  stuck.resolve({status: 'accepted'});
 });
 
 it('a module timer needs a whole delay that a timer can wait', async context => {

@@ -135,6 +135,8 @@ it('an error that escapes a module\'s own async flow stops only that module', as
 
 it('a module\'s stop never waits on another module\'s handler', async context => {
   const stuck = deferred<Reply>();
+  // Registered before the runtime's stop, so a failed assertion cannot leave the stop waiting on this handler.
+  context.after(() => { stuck.resolve({status: 'accepted'}); });
   const slow = fixture('slow', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.slow', () => stuck.promise); });
   const results: string[] = [];
   const caller = fixture('caller', async ({sdk}) => {
@@ -153,7 +155,6 @@ it('a module\'s stop never waits on another module\'s handler', async context =>
   await waitFor(() => caller.stops === 1, 2000, 'the caller\'s stop while the slow handler still runs');
   assert.deepEqual(results, ['uncertain'], 'closing the caller settled its own request, so its handler finished');
   assert.equal(stateOf(runtime, 'slow'), 'running');
-  stuck.resolve({status: 'accepted'});
 });
 
 it('stopping the runtime is bounded when a module\'s own handler never finishes', async context => {
