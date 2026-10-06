@@ -293,8 +293,9 @@ permission to replace an owner.
    Refs #<issue>. Start step 3's reviews on that head while hosted CI runs:
    hosted runners find problems local checks cannot, such as #873, #875 and
    #877. Push one head per fix round, not intermediate commits. A push that
-   only gathers hosted evidence, such as a failing probe, goes to its own branch,
-   never to the head under review. Record base, head,
+   only gathers hosted evidence, such as a failing probe, goes on its own draft
+   PR with no closing keyword, closed unmerged afterwards, never on the head
+   under review. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
    keyword (or variant) before `#<n>` anywhere in the body, including inside an
@@ -309,27 +310,28 @@ permission to replace an owner.
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-   A later delta goes back to both reviewers, with two exceptions that one
+   A later delta goes back to both reviewers, with three exceptions that one
    reviewer confirms:
    - **Pure rebase:** the range-diff shows every commit identical. Either
-     reviewer confirms it.
-   - **Non-normative text only:** the delta changes only documentation that is
-     not normative, or code comments that direct no tool. The Specification
-     reviewer confirms documentation; the Standards reviewer confirms code
-     comments.
+     reviewer confirms it, unless the new base changed an axis's review sources
+     (`AGENTS.md`, `CLAUDE.md`, `docs/sdlc.md`, `docs/development.md`, the issue
+     or the affected OpenSpec specs); then that axis confirms too.
+   - **Documentation only:** the delta changes only Markdown documentation. The
+     Specification reviewer confirms it, because its axis covers the
+     requirements, contracts and commands that documentation states.
+   - **Code comments only:** the delta changes only comments that direct no
+     tool. The Standards reviewer confirms it.
 
-   Normative text goes back to both: OpenSpec specs, contract documents, policy
-   files such as `AGENTS.md` and this file, acceptance text, and directive
-   comments such as `@ts-expect-error`. So does any change to code, schemas,
-   tests, configuration or behavior. The confirming reviewer's return names the
-   new head. The other axis's earlier verdict carries over to that head, and the
-   PR body records the carry-over with the range-diff or the diff. An Acceptance
-   review runs again after any delta that changes code or behavior (see
-   [Acceptance review](#acceptance-review)), not after a pure rebase or a
-   non-normative text change.
+   These still go back to both: policy files (`AGENTS.md`, `CLAUDE.md` and this
+   file), directive comments such as `@ts-expect-error`, a delta that mixes
+   documentation and code comments, and any change to code, schemas, tests or
+   configuration. The confirming reviewer's return names the new head. The
+   other axis's earlier verdict carries over to that head, and the PR body
+   records the carry-over with the range-diff or the diff. The
+   [Acceptance review](#acceptance-review) rules are unchanged.
    Reviewer briefs say that reviewers make no GitHub writes, including reruns,
-   merges and comments. A reviewer that needs a TMPDIR uses a short one outside
-   every checkout; an Acceptance reviewer keeps its own write limits.
+   merges and comments, and that a reviewer that needs a TMPDIR uses a short one
+   outside every checkout; an Acceptance reviewer keeps its own write limits.
    Merge each story as soon as its gates pass, and start new work from merged
    main rather than from an unmerged branch.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)

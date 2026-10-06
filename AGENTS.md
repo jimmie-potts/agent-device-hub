@@ -77,9 +77,9 @@ handoff; prose alone does not exclude another writer.
 Use one coordinating writer and an isolated branch/worktree per deliverable.
 Preserve other worktrees, branches, installations and their owners. Deliver
 changes through PRs. Independent read-only Standards and Specification reviewers
-must inspect the same committed base/head. A pure rebase or a non-normative text
-delta may be confirmed by one of them, as docs/sdlc.md step 3 defines, with the
-other axis's verdict carried over and recorded in the PR. A change with observable behavior
+must inspect the same committed base/head, except that one of them may confirm
+the later deltas docs/sdlc.md step 3 lists, with the other axis's verdict carried
+over and recorded in the PR. A change with observable behavior
 also needs an independent Acceptance reviewer. That reviewer runs the same head
 in a disposable verification run, uses it as a person would and has only the
 limited authority in [Acceptance review](docs/sdlc.md#acceptance-review), which
