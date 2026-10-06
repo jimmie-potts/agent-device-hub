@@ -1616,7 +1616,7 @@ The port is split into slices by area:
 - **Slice 2a:** device configuration loading, Line pairing, map geometry and
   the renderer, with the display encoder it shares with effects.
 - **Slice 2b:** effects, saved animation favorites and the Nanoleaf HTTP
-  client, including pairing.
+  client, including device pairing (`pair`).
 - **Slice 3:** the worker, legacy hook input, modes, scenes, comets, edits and
   the control execution half of `controller_state.py`.
 
@@ -1629,12 +1629,13 @@ row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
 `shared_ack` and `shared_input.config` are not compared.
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
-discovery, and zone colors and effect payloads on random renderer states. The
-colors, payloads and pairing match exactly; map geometry matches within a
-relative 1e-9, because `Math.sin`, `Math.cos` and `Math.atan2` can differ from
-the C library's in the last bit. `modules/nanoleaf/tests/fixtures/record.py`
-re-records them from a codex-nanoleaf checkout, as PORTING.md describes; CI does
-not run it.
+discovery and malformed Lines replies, color parsing, and zone colors and effect
+payloads on random renderer states. The colors, payloads and pairing match
+exactly. A map geometry number may differ by 1e-12 times its magnitude, or by
+1e-12 below magnitude 1, because `Math.sin`, `Math.cos` and `Math.atan2` can
+differ from the C library's in the last bit.
+`modules/nanoleaf/tests/fixtures/record.py` re-records them from a codex-nanoleaf
+checkout, as PORTING.md describes; CI does not run it.
 
 ## Local controller host checks
 
