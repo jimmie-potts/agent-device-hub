@@ -4,12 +4,17 @@
 // commands go through the port's admission, Python's receipts compare through MAPPING.md's controller receipt rule,
 // and every device request, row and scene file must match. Then the test's own assertions follow.
 import assert from 'node:assert/strict';
-import {sceneList} from '../src/controls.js';
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import type {TestContext} from 'node:test';
+import {admitCommand, MAX_QUEUED, Refused, sceneList} from '../src/controls.js';
 import {render, type ExplicitAnimation} from '../src/effects.js';
-import type {Outcome as ControlOutcome} from '../src/journal.js';
+import {transactWith, type Outcome as ControlOutcome} from '../src/journal.js';
+import {setMode} from '../src/modes.js';
+import {execute, transaction} from '../src/sqlite.js';
 import {ControlCase, puts, replayControls, type ControlReplay} from './control-support.js';
-import {suite, test} from './support.js';
-import {SCENE, type Call} from './worker-support.js';
+import {suite, temporary, test} from './support.js';
+import {ManualClock, moduleDatabase, runUntil, SCENE, SceneDevice, type Call, type Step} from './worker-support.js';
 
 const WAVE: ExplicitAnimation = {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'};
 const EXPECTED_WAVE = render(WAVE, SCENE.line_groups, SCENE.line_positions);
@@ -327,5 +332,257 @@ suite('WorkerTest', () => {
     assert.deepEqual(hold, revision);
     assert.deepEqual(outcomeOf(replay, 'w'), outcome('w', 'failed', 'none', 'expired'));
     assert.deepEqual(animationWrites(replay.run.device.calls), []);
+  });
+});
+
+/** A control case of the port's own: steps run in order on a fresh case. */
+async function steps(context: TestContext, list: readonly Step[]): Promise<{run: ControlCase; results: unknown[]}> {
+  const run = new ControlCase(context);
+  const values: unknown[] = [];
+  for (const step of list) values.push(await run.apply(step));
+  return {run, results: values};
+}
+
+suite('control checks the port adds', () => {
+  test('a mode command that needs no device write succeeds with observed evidence', async context => {
+    // From Work with nothing shown, the Free handoff has nothing to restore: the pass observes the device and writes
+    // nothing, where Python cancelled the command.
+    const {run} = await steps(context, [['run', 1002], ['device', 'clearCalls'], ['command', 'f', {kind: 'mode.set', mode: 'Free'}],
+      ['run', 1004]]);
+    assert.deepEqual(puts(run.device.calls), []);
+    assert.ok(run.device.calls.some(([, method]) => method === 'GET'));
+    assert.deepEqual(run.outcomes().get('f'), outcome('f', 'succeeded', 'observed'));
+  });
+
+  test('a command retired during its write ends uncertain and is not written again', async context => {
+    // The mode command commits while the brightness write is out, which Python's lock prevented. That write may have
+    // reached the device, so it ends uncertain; the pass then starts again and applies Quiet.
+    const {run} = await steps(context, [['command', 'b', {kind: 'brightness.set', percent: 60}],
+      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}]}],
+      ['run', 1004]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}]]);
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'uncertain', 'none', 'uncertain-result'));
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'succeeded', 'transmitted'));
+    const levels = puts(run.device.calls).flatMap(([, payload]) => {
+      const level = (payload as {brightness?: {value: number}}).brightness?.value;
+      return level === undefined ? [] : [level];
+    });
+    assert.deepEqual(levels.filter(level => level === 60), [60]);
+    assert.equal(run.device.brightness, 10);
+  });
+
+  test('a command queued behind a hold still expires', async context => {
+    // The restarted worker holds the device for the uncertain mode command; the brightness behind it fails at its own
+    // expiry while the worker waits, instead of waiting for the next explicit choice.
+    const {run, results: values} = await steps(context, [['command', 'q', {kind: 'mode.set', mode: 'Quiet'}],
+      ['command', 'b', {kind: 'brightness.set', percent: 60}], ['attempting', 'q'],
+      ['run', 1035, [[1031, ['query', 'SELECT id FROM control_journal']]]]]);
+    // It expires at its expiry, 30 seconds after admission: gone by the worker's next wait.
+    assert.deepEqual((values[3] as {scheduled: unknown[]}).scheduled, [{result: []}]);
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'uncertain', 'none', 'uncertain-result'));
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'failed', 'none', 'expired'));
+    assert.deepEqual(run.device.calls, []);
+    assert.deepEqual(run.query('SELECT id FROM control_journal'), []);
+  });
+
+  test('an animation mid-write finishes when a mode command retires the queue', async context => {
+    // The mode command commits while the animation's write is out. It retires only queued work, as Python's retirement
+    // left an attempt alone, so the animation ends sent.
+    const {run} = await steps(context, [['mode', 'free'], ['run', 1002],
+      ['play', 'w', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}],
+      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'write', step: ['mode', 'free']}], ['run', 1004]]);
+    assert.deepEqual(run.hookResults, [[{result: null}]]);
+    assert.deepEqual(run.outcomes().get('w'), outcome('w', 'succeeded', 'transmitted'));
+  });
+
+  test('a mode command repeated during the first one\'s write ends it before its next write', async context => {
+    // The repeated Quiet commits while the first Quiet's indicator write is out. That write may have reached the
+    // device, so the first ends uncertain; its next write is not sent, and the repeat's pass writes Quiet again.
+    const {run} = await steps(context, [['feed', 'prompt', 'a'], ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}],
+      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'write', step: ['command', 'q2', {kind: 'mode.set', mode: 'Quiet'}]}],
+      ['run', 1002]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}]]);
+    assert.deepEqual(puts(run.device.calls).map(([endpoint]) => endpoint), ['/effects', '/effects', '/state']);
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'uncertain', 'none', 'uncertain-result'));
+    assert.deepEqual(run.outcomes().get('q2'), outcome('q2', 'succeeded', 'transmitted'));
+  });
+
+  test('a mode command repeated after the first one\'s completed write runs in its own pass', async context => {
+    // The repeat commits during the first Quiet's last write, after its first completed. The first ends cancelled with
+    // that transmission, and the pass starts again for the repeat instead of marking the revision applied.
+    const {run} = await steps(context, [['feed', 'prompt', 'a'], ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}],
+      ['hook', {method: 'PUT', endpoint: '/state', step: ['command', 'q2', {kind: 'mode.set', mode: 'Quiet'}]}], ['run', 1002]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}]]);
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'failed', 'transmitted', 'cancelled'));
+    assert.deepEqual(run.outcomes().get('q2'), outcome('q2', 'succeeded', 'transmitted'));
+    assert.deepEqual(run.query('SELECT id FROM control_journal'), []);
+  });
+
+  test('a mode command after a failed pass is applied, not taken as unchanged', async context => {
+    // The device's last pass failed, so the same mode is applied again rather than succeeding at once.
+    const {run} = await steps(context, [['mode', 'free'], ['run', 1002],
+      ['sql', "INSERT OR REPLACE INTO meta VALUES ('control_error', 'Light update failed; retrying.')"],
+      ['command', 'f', {kind: 'mode.set', mode: 'Free'}]]);
+    assert.equal(run.outcomes().get('f'), undefined);
+    await run.apply(['run', 1004]);
+    assert.deepEqual(run.outcomes().get('f'), outcome('f', 'succeeded', 'observed'));
+    assert.deepEqual(run.query("SELECT value FROM meta WHERE key='control_error'"), []);
+  });
+
+  test('a fresh control releases the hold an uncertain write left', async context => {
+    const {run} = await steps(context, [['command', 'b', {kind: 'brightness.set', percent: 60}], ['device', 'fail', {method: 'PUT'}],
+      ['run', 1002], ['command', 'b2', {kind: 'brightness.set', percent: 40}], ['run', 1004]]);
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'uncertain', 'none', 'uncertain-result'));
+    assert.deepEqual(run.outcomes().get('b2'), outcome('b2', 'succeeded', 'transmitted'));
+    assert.deepEqual(run.query("SELECT value FROM meta WHERE key='controller_hold_revision'"), []);
+    assert.equal(run.device.brightness, 40);
+  });
+
+  test('an animation retired during the pass that would play it is not written', async context => {
+    // A mode command commits during the scene's write and retires the animation queued behind it in the same pass.
+    const {run} = await steps(context, [['run', 1002], ['mode', 'free'], ['run', 1004], ['command', 's', {kind: 'scene.activate', sceneIndex: 1}],
+      ['play', 'a', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}],
+      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'select', step: ['mode', 'free']}], ['run', 1006]]);
+    assert.deepEqual(run.hookResults, [[{result: null}]]);
+    assert.deepEqual(animationWrites(run.device.calls), []);
+    assert.deepEqual(run.outcomes().get('a'), outcome('a', 'failed', 'none', 'cancelled'));
+    assert.deepEqual(run.outcomes().get('s'), outcome('s', 'uncertain', 'none', 'uncertain-result'));
+  });
+
+  test('a hold during a preview ends the preview', async context => {
+    // The brightness expires during the preview's first write, as the listener's expiry did in Python, and holds the
+    // device. The preview's next send stops there, as Python's preview send checked the hold.
+    const {run} = await steps(context, [['command', 'b', {kind: 'brightness.set', percent: 60}],
+      ['sql', "INSERT OR REPLACE INTO meta VALUES ('preview', 'working')"],
+      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'write', step: ['expireAll']}], ['run', 1006]]);
+    assert.deepEqual(run.hookResults, [[{result: null}]]);
+    assert.equal(puts(run.device.calls).filter(([endpoint, payload]) => endpoint === '/effects' && 'write' in (payload as object)).length, 1);
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'failed', 'none', 'expired'));
+  });
+
+  test('a hold the pass sets stops it before its writes', async context => {
+    // The animation expires in the pass that would hand the Lines over to Free; that pass ends at the hold, as
+    // Python's did, without the handoff's writes.
+    const {run, results: values} = await steps(context, [['feed', 'prompt', 'a'], ['run', 1002], ['mode', 'free'],
+      ['play', 'w', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}], ['sleep', 31],
+      ['device', 'clearCalls'], ['run', 1036]]);
+    assert.deepEqual((values[6] as {outcome: unknown}).outcome, {result: null});
+    assert.deepEqual(puts(run.device.calls), []);
+    assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
+  });
+
+  test('a held worker ends once shared input is no longer selected', async context => {
+    // A new configuration pauses shared input; a worker waiting on a hold then ends, as Python's did.
+    const {results: values} = await steps(context, [['command', 'q', {kind: 'mode.set', mode: 'Quiet'}], ['attempting', 'q'],
+      ['run', 1005, [[1002, ['sql', "UPDATE shared_input SET source='legacy' WHERE id=1"]]]]]);
+    assert.deepEqual((values[2] as {outcome: unknown}).outcome, {result: null});
+  });
+
+  test('a held device without shared input ends its worker before reading its configuration', async context => {
+    // The worker returns before it loads the device's layout, as Python's did, so a device without a saved layout is
+    // not asked for one.
+    const directory = temporary(context);
+    writeFileSync(join(directory, 'config.json'), JSON.stringify(SCENE));
+    const clock = new ManualClock();
+    const device = new SceneDevice(clock);
+    const database = moduleDatabase(context, directory);
+    const reported: unknown[] = [];
+    const db = database();
+    transaction(db, () => {
+      admitCommand(db, directory, {id: 'q', command: {kind: 'mode.set', mode: 'quiet'}, instant: 1000, expires: 1030}, message => reported.push(message));
+      execute(db, "UPDATE control_journal SET phase='attempting', uncertain=1");
+    });
+    assert.equal(await runUntil(context, {directory, database, request: device.request,
+      transact: work => transactWith(db, message => reported.push(message))(work)}, clock, 1010), true);
+    assert.deepEqual(device.calls, []);
+    assert.deepEqual(reported, [outcome('q', 'uncertain', 'none', 'uncertain-result')]);
+  });
+
+  test('a replaced sender\'s send is one journaled write', async context => {
+    // As Python's tests did, a replaced sender is one write of the pass's mode command.
+    const {run} = await steps(context, [['command', 'q', {kind: 'mode.set', mode: 'Quiet'}], ['run', 1002, [], {send: 'capture', scenes: false}]]);
+    assert.ok(run.sends.length > 0);
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'succeeded', 'transmitted'));
+  });
+
+  test('a favorite forgotten before its play fails without a write', async context => {
+    // The animation was playable when admitted; its favorite is gone by the pass, which ends it with the reason the
+    // Lines cannot play it.
+    const {run} = await steps(context, [['mode', 'free'], ['run', 1002],
+      ['sql', 'INSERT INTO animation_favorites (name, recipe) VALUES (?, ?)', ['calm', '{"pattern":"wave","colors":["#0044aa"]}']],
+      ['play', 'f', {kind: 'animation.play', favorite: 'calm'}], ['sql', "DELETE FROM animation_favorites WHERE name='calm'"],
+      ['device', 'clearCalls'], ['run', 1004]]);
+    assert.deepEqual(animationWrites(run.device.calls), []);
+    assert.deepEqual(run.outcomes().get('f'), outcome('f', 'failed', 'none', 'unsupported-capability'));
+  });
+
+  test('a scene admitted as an execution completes plays in the same pass', async context => {
+    // The scene is admitted after the pass's last write: the pass starts again at once instead of waiting.
+    const {run} = await steps(context, [['run', 1002], ['mode', 'free'], ['run', 1004], ['device', 'clearCalls'],
+      ['hook', {complete: true, step: ['command', 's', {kind: 'scene.activate', sceneIndex: 1}]}], ['run', 1006]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}]]);
+    assert.deepEqual(puts(run.device.calls), [['/effects', {select: 'Cotton Candy'}]]);
+    assert.equal(run.device.calls[0]?.[0], 1004);
+  });
+
+  test('a hold that comes during a pass\'s writes ends the worker', async context => {
+    // The animation expires during the brightness write, as the listener's expiry did in Python, and holds the device:
+    // it is not played, and the pass ends at the hold.
+    const {run, results: values} = await steps(context, [['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
+      ['play', 'w', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}],
+      ['hook', {method: 'PUT', endpoint: '/state', step: ['expireAll']}], ['run', 1006]]);
+    assert.deepEqual((values[5] as {outcome: unknown}).outcome, {result: null});
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'succeeded', 'transmitted'));
+    assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
+    assert.deepEqual(animationWrites(run.device.calls), []);
+  });
+
+  test('a mode command committed during a control\'s write stops that pass\'s display writes', async context => {
+    // The Quiet command commits while the brightness write is out. The Work indicators that pass would have drawn
+    // next are not sent; the pass starts again and draws Quiet.
+    const {run} = await steps(context, [['feed', 'prompt', 'a'], ['command', 'b', {kind: 'brightness.set', percent: 60}],
+      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}]}],
+      ['run', 1002]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}]]);
+    const levels = puts(run.device.calls).flatMap(([endpoint, payload]) => {
+      const level = (payload as {brightness?: {value: number}}).brightness?.value;
+      return endpoint === '/state' && level !== undefined ? [level] : [];
+    });
+    assert.equal(levels[0], 60);
+    assert.ok(levels.length > 1 && levels.slice(1).every(level => level === 10), String(levels));
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'succeeded', 'transmitted'));
+  });
+
+  test('admission refuses what the device cannot take', context => {
+    const run = new ControlCase(context);
+    let next = 0;
+    const refusal = (command: unknown, device?: string): unknown => {
+      const db = run.database();
+      next += 1;
+      try {
+        transaction(db, () => admitCommand(db, run.directory, {id: `r${String(next)}`, command, instant: 1000, expires: 1030,
+          ...(device === undefined ? {} : {device})}, run.report));
+        return 'accepted';
+      } catch (error) {
+        if (error instanceof Refused) return error.code;
+        throw error;
+      }
+    };
+    assert.equal(refusal({kind: 'brightness.set', percent: 101}), 'invalid-request');
+    assert.equal(refusal({kind: 'power.set', on: 'off'}), 'invalid-request');
+    assert.equal(refusal({kind: 'mode.set', mode: 'Party'}), 'invalid-request');
+    assert.equal(refusal({kind: 'power.set', on: false, extra: 1}), 'invalid-request');
+    assert.equal(refusal({kind: 'lamp.set'}), 'invalid-request');
+    assert.equal(refusal({kind: 'power.set', on: false}, 'panels'), 'not-found');
+    assert.equal(refusal(WAVE), 'unsupported-capability');
+    for (let index = 0; index < MAX_QUEUED; index += 1) assert.equal(refusal({kind: 'brightness.set', percent: index}), 'accepted');
+    assert.equal(refusal({kind: 'power.set', on: false}), 'capacity');
+    // In Free, an animation the Lines cannot play is refused before it waits.
+    const db = run.database();
+    transaction(db, () => setMode(db, 'free', 1000, run.report));
+    assert.equal(refusal({kind: 'animation.play', favorite: 'missing'}), 'unsupported-capability');
+    assert.equal(refusal(WAVE), 'accepted');
+    assert.deepEqual(run.reported.filter(message => message.type === 'outcome').map(message => message.error?.code),
+      Array.from({length: MAX_QUEUED}, () => 'cancelled'));
   });
 });
