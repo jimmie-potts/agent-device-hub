@@ -91,7 +91,7 @@ it('a harness listens on loopback only, and never on an installed service\'s por
   } finally {
     server.close();
   }
-  assert.deepEqual([...INSTALLED_PORTS].sort(), [8765, 8787, 8788, 8791, 41231]);
+  assert.deepEqual(INSTALLED_PORTS, [8765, 8787, 8788, 8791, 41231]);
 });
 
 it('a harness keeps its state private and outside every checkout, and refuses a directory inside one', async context => {

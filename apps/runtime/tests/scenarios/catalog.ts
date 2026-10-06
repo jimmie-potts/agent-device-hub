@@ -82,7 +82,7 @@ export interface Harness {
    */
   disconnect(role: Role): Promise<void>;
   /** Closes the role's participant for good, as a requester that gives up. */
-  close(role: Role): Promise<void>;
+  closePart(role: Role): Promise<void>;
   /**
    * Makes the runtime crash right after the lamp's next commit, before it publishes anything. The runtime then starts
    * again on the same state directory, as the service manager restarts it.
@@ -381,7 +381,7 @@ const endToEnd: Scenario = {
     expect('the device has req-held and holds it', h => (h.devices().lamp.held && switches(h) === 2) || `held ${String(h.devices().lamp.held)}, ${switches(h)} switches`),
     act('the operator sends req-queued behind it, with a 500 ms deadline', h => { void h.send('operator', 'queued', switchLamp('lamp-1', 'on'), {timeoutMs: 500, requestId: 'req-queued'}); }),
     act('the panel sends req-closed behind both, with a 5 s deadline', h => { void h.send('panel', 'closed', switchLamp('lamp-1', 'on'), {timeoutMs: 5000, requestId: 'req-closed'}); }),
-    act('the panel gives up and closes', h => h.close('panel')),
+    act('the panel gives up and closes', h => h.closePart('panel')),
     expect('req-closed ends as the transport says: cancelled in process, uncertain-result remotely',
       h => answered(h, 'closed', byTransport(h, {'in-process': 'cancelled', remote: 'uncertain-result'}))),
     expect('req-queued is expired at its deadline, on both transports: it never reached the lamp', h => answered(h, 'queued', 'expired'), 1500),
