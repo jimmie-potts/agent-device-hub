@@ -1,6 +1,7 @@
-// A consume-only fixture module (Hub #846): a chime that rings once for each approval prompt. Like the lamp, it is
-// created by its factory with its device transport, `createChimeModule({transport})`. It answers no command and serves
-// nothing; it follows the core's sessions.
+// A consume-only fixture module (Hub #846): a chime that rings once for each approval prompt, and remembers in its own
+// SQLite file what it rang, so a restart with the prompt still waiting does not ring again. Like the lamp, it is created
+// by its factory with its device transport, `createChimeModule({transport})`. It answers no command and serves nothing;
+// it follows the core's sessions.
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
@@ -39,15 +40,18 @@ export class SimulatedChime implements ChimeTransport {
 export function createChimeModule({transport}: {transport: ChimeTransport}): BunnyModule {
   return {
     manifest: {name: 'chime', apiVersion: '1.0'},
-    async start({sdk}) {
-      const rung = new Set<string>();
+    async start({sdk, database}) {
+      const db = database();
+      db.exec('CREATE TABLE IF NOT EXISTS rung (session TEXT NOT NULL, attention TEXT NOT NULL, PRIMARY KEY (session, attention)) STRICT');
+      const rang = db.prepare('SELECT 1 FROM rung WHERE session = ? AND attention = ?');
+      const ring = db.prepare('INSERT INTO rung (session, attention) VALUES (?, ?)');
       const follow = await sdk.sync<SessionRecord>(['session'], change => {
         if (change.type !== 'updated') return;
         for (const {id, kind} of change.message.data.attention) {
-          if (kind !== 'approval' || id.status !== 'known' || rung.has(`${change.entity.id} ${id.id}`)) continue;
+          if (kind !== 'approval' || id.status !== 'known' || rang.get(change.entity.id, id.id) !== undefined) continue;
           // A fault here escapes the handler, so the runtime stops the chime alone.
           transport.ring({session: change.entity.id, attention: id.id});
-          rung.add(`${change.entity.id} ${id.id}`);
+          ring.run(change.entity.id, id.id);
         }
       }, {timeoutMs: 5000});
       if (follow.status === 'rejected') throw new Error(`the chime could not sync the sessions: ${follow.error.error.code}`);
