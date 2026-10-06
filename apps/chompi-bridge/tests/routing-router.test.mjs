@@ -1972,7 +1972,7 @@ test('volume: Record pressed during a volume keystroke presses its chord right a
   const ctx = await setup(t);
   let finish;
   const order = [];
-  ctx.adapter.sendVolumeKey = async (key, presses) => { order.push(`volume ${key} start`); await new Promise(resolve => { finish = resolve; }); order.push(`volume ${key} end`); };
+  ctx.adapter.sendVolumeKey = async key => { order.push(`volume ${key} start`); await new Promise(resolve => { finish = resolve; }); order.push(`volume ${key} end`); };
   const sendKeys = ctx.adapter.sendKeys.bind(ctx.adapter);
   ctx.adapter.sendKeys = async request => { order.push(`keys ${request.action}`); return sendKeys(request); };
   ctx.turn(VOLUME_TURN, 1);
