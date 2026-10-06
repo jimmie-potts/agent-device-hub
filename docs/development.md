@@ -570,8 +570,8 @@ The development direction is Node 24, TypeScript and npm workspaces for shared
 packages, applications and new Tidbyt/LIFX controllers. Existing packages and
 applications have executable commands documented below. Each new controller
 implementation must add its build, type, test and consumer checks here and in
-CI. The Nanoleaf worker remains Python; sharing a repository does not require
-a common runtime or combined process.
+CI. The installed Nanoleaf worker is still Python; #26 is porting the Nanoleaf
+domain logic to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
 
 Reserve shared contracts, root package/lockfile changes and CI for the coordinating
 writer. Work on separate deliverables uses separate worktrees, even for different
@@ -1582,15 +1582,23 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:nanoleaf:built` after its fresh build. The suite needs no device,
 Hub or Python.
 
-- **Slice 1 (ported):** session-to-Line projection, shared and legacy source
-  switching, Codex metadata, Line placement, NL22 enrollment, and the device
-  registry, layout and database migration they need. The translated Python tests
-  keep their class and method names. A replay of recorded Python sequences checks
-  every saved row.
-- **Slice 2 (planned):** device configuration loading, geometry, the renderer,
-  effects and the Nanoleaf HTTP client.
-- **Slice 3 (planned):** the worker, legacy hook input, modes, scenes, comets and
-  edits.
+The port is split into three slices by area:
+
+- **Slice 1:** session-to-Line projection, shared and legacy source switching,
+  Codex metadata, Line placement, NL22 enrollment, and the device registry,
+  layout and database migration they need.
+- **Slice 2:** device configuration loading, geometry, the renderer, effects,
+  saved animation favorites and the Nanoleaf HTTP client.
+- **Slice 3:** the worker, legacy hook input, modes, scenes, comets, edits and
+  the control execution half of `controller_state.py`.
+
+The translated Python tests keep their class and method names. A replay of
+recorded Python sequences compares, after every step, the results and the rows of
+`sessions`, `activity`, `task_info`, `slots`, `comets`, `waits`, `receipts`,
+`shared_stale`, `shared_suppressed_waves`, `shared_evictions`, `projects`,
+`line_prefs`, `map_settings`, `meta` and `display_v3`, plus the `shared_input`
+row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
+`shared_ack` and `shared_input.config` are not compared.
 
 ## Local controller host checks
 
