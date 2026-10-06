@@ -164,11 +164,16 @@ State events and telemetry are not tracked.
 
 - One shared inbox in the core holds failed and uncertain operations: the
   results a person must decide on. Items survive restarts until handled, with
-  no expiry and no time-based clearing. Handling an item once clears it
+  no expiry and no automatic clearing. Handling an item once clears it
   everywhere; dismissing it on a display is a separate fact.
 - A finished turn is not an inbox item. Its unread state stays on the session
-  record, which consumers sync, and evidence clears it: a new turn in that
-  session, read evidence, or the session's end. Nothing clears it on a timer.
+  record, which consumers sync and derive what they show from. Evidence clears
+  it: read evidence, the session's end, or a new turn in that session for a
+  consumer set to clear on one. A consumer's own acknowledgment clears it on
+  that consumer only.
+- Nothing clears a finished turn's unread state on a timer. The 24-hour expiry
+  of a session without evidence skips a session whose last turn finished
+  unread, so the session stays until evidence clears the turn or ends it.
 - Long-term history is private SQLite in the core store, with no time limit, a
   dashboard timeline and a read API. Viewing history never triggers devices or
   automation.
@@ -373,11 +378,15 @@ Uncertain now means only an unknown fate, so fewer items need a person to
 decide.
 
 **2026-10-06, inbox scope.** The owner chose to keep finished turns off the
-shared inbox. A finished turn's unread state stays on the session record, and
-evidence clears it (a new turn, read evidence or the session's end), as the
-devices behave today. The inbox keeps only failed and uncertain operations,
-the results a person must decide on. One inbox item per finished turn would
-repeat the session list, grow without bound and need paged syncs; devices
-already learn of a finished turn from session state when they sync.
+shared inbox. A finished turn's unread state stays on the session record.
+Evidence clears it (read evidence, the session's end or a new turn), never
+time: session expiry skips a session whose last turn finished unread, which
+[#831](https://github.com/jimmie-potts/agent-device-hub/issues/831)
+implements. The inbox keeps only failed and uncertain operations, the results
+a person must decide on. One inbox item per finished turn would repeat the
+session list, grow without bound and need paged syncs; devices already learn
+of a finished turn from session state when they sync.
 [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) removes
-the turn-ended variant of the 2.0 `inbox-item` family and updates MAPPING.md.
+the turn-ended variant of the 2.0 `inbox-item` family: its MAPPING.md row, the
+synced `bunny-message-profile` requirement on a turn-ended item's `session`,
+and the README, schema, types, checks and fixtures that carry it.
