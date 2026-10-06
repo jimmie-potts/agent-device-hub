@@ -7,8 +7,8 @@ import { readBoundedFile } from './files.js';
 /**
  * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app
  * shortcuts they use, colors, timings, big-wheel card navigation, task pages, black-key actions and the volume knob.
- * Fields added after the first release are optional. It is data only: no URIs, paths, commands or package identities, and key names come from an
- * allowlist, so loading it can never run anything.
+ * Fields added after the first release are optional. It is data only: no URIs, paths, commands or package
+ * identities, and key names come from an allowlist, so loading it can never run anything.
  */
 export const PROFILE_SCHEMA_VERSION = 1;
 export const MAX_PROFILE_BYTES = 64 * 1024;

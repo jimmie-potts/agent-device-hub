@@ -515,8 +515,10 @@ with more than 15 open throwaway tasks:
 1. Turn the volume knob slowly both ways and confirm that the Windows volume moves one step (2 points) per count and
    that the step size feels right. If not, set `volume.stepCounts` (and `volume.invert` if the direction is wrong) in
    the profile and record the value.
-2. Click the volume knob twice and confirm that Windows mutes and then unmutes. Confirm that neither the turns nor the
-   clicks type anything into the Codex or Claude window in front.
+2. Click the volume knob twice and confirm that Windows mutes and then unmutes. With Codex and then Claude in front,
+   each with a draft in its composer, confirm that neither the turns nor the clicks change the draft, send, move focus
+   or trigger anything in the client. A volume key enters the foreground thread's input stream, so only this check
+   shows that the clients ignore it.
 3. Hold Record, turn and click the volume knob, and confirm that the volume does not change, the volume knob's LED
    flashes red and dictation keeps going; release Record and confirm that Wispr still inserts the dictation.
 4. With no task waiting, press black key 1 and confirm that it flashes red and nothing opens.

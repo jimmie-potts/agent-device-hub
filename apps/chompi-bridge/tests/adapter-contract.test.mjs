@@ -158,6 +158,9 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     await d.adapter.openUri(`codex://threads/${tid(1)}`);
     await d.adapter.sendKeys({ action: 'tap', keys: ['LeftAlt', 'L'] });
     const keysBefore = d.adapter.keys?.length ?? d.desktop.log.filter(e => e.kind === 'key').length;
+    for (const [key, presses] of [['Enter', 1], ['VolumeUp', 0], ['VolumeUp', 11], ['VolumeDown', 1.5], ['VolumeMute', '1']]) {
+      await assert.rejects(d.adapter.sendVolumeKey(key, presses), /invalid-volume-request/, `${key} x${presses} is refused`);
+    }
     await d.adapter.sendVolumeKey('VolumeUp', 2);
     await d.adapter.sendVolumeKey('VolumeMute', 1);
     assert.equal(d.adapter.keys?.length ?? d.desktop.log.filter(e => e.kind === 'key').length, keysBefore, 'no keystroke reaches the client');

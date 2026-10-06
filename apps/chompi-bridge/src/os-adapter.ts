@@ -9,7 +9,7 @@
  *
  * Version 3 (#821) adds the card operations: the open approval or question card's actionable buttons,
  * moving keyboard focus between them and pressing the focused one. Version 4 (#865) adds `sendVolumeKey`, the
- * system volume and mute keys, which act on the system rather than any window.
+ * system volume and mute keys, which target no window and need no window check.
  */
 export const OS_ADAPTER_VERSION = 4;
 

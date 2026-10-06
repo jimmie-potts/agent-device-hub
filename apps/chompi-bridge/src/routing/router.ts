@@ -72,9 +72,8 @@ const MAX_PENDING_STEPS = 64;
 const CARD_REUSE_MS = 500;
 /** Protocol turn IDs 41-46 pair with click IDs 29-34: the big wheel's click is its turn ID minus 12. */
 const TURN_TO_CLICK = 12;
-/** Bounds on volume work waiting while a volume key is being sent: presses, and mute toggles. */
+/** Bound on volume presses waiting while a volume key is being sent. */
 const MAX_PENDING_VOLUME = 50;
-const MAX_PENDING_MUTES = 4;
 
 /** The reason code of an adapter call that failed, timed out or answered unknown. */
 function reasonOf<T>(call: Call<Observation<T>>): string {
@@ -152,10 +151,13 @@ export class TaskRouter {
   #lastAttention: { at: number; sequence: number } | null = null;
   /** Black-key controls flashing the error color for a refused press, and until when. */
   readonly #keyErrors = new Map<number, number>();
-  /** The volume knob (#865): partial rotation, presses and mute toggles waiting for the single volume worker. */
+  /**
+   * The volume knob (#865): partial rotation and presses waiting for the single volume worker, and whether a mute toggle
+   * waits. Clicks that arrive while a volume key is being sent collapse to their parity, so an even number cancels out.
+   */
   readonly #volumeDetent = new Detent();
   #volumePending = 0;
-  #mutePending = 0;
+  #mutePending = false;
   #volumeBusy = false;
   #volumeErrorUntil = Number.NEGATIVE_INFINITY;
   readonly #errors = new Map<number, number>();
@@ -901,7 +903,7 @@ export class TaskRouter {
 
   /**
    * A volume knob turn sends one volume key per `volume.stepCounts` encoder counts (clockwise raises the volume unless
-   * inverted), with the reversal rule of the other detents. Volume keys act on the system, so no window is checked.
+   * inverted), with the reversal rule of the other detents. Volume keys target no window, so no window is checked.
    * While Record holds the dictation chord the knob is ignored, so a volume key never joins the chord.
    */
   #volumeTurn(delta: number): void {
@@ -917,7 +919,7 @@ export class TaskRouter {
   /** A volume knob click toggles mute, unless Record holds the dictation chord. */
   #volumeMute(): void {
     if (this.#recordHeld || this.#chordDown) return this.#volumeIgnored();
-    this.#mutePending = Math.min(MAX_PENDING_MUTES, this.#mutePending + 1);
+    this.#mutePending = !this.#mutePending;
     if (!this.#volumeBusy) this.#track(this.#drainVolume());
   }
 
@@ -929,19 +931,19 @@ export class TaskRouter {
   #clearVolume(): void {
     this.#volumeDetent.reset();
     this.#volumePending = 0;
-    this.#mutePending = 0;
+    this.#mutePending = false;
   }
 
   /** The single volume worker: turns that arrive while it waits coalesce. A failed volume key is never retried. */
   async #drainVolume(): Promise<void> {
     this.#volumeBusy = true;
     try {
-      while ((this.#volumePending !== 0 || this.#mutePending > 0) && !this.#closed) {
+      while ((this.#volumePending !== 0 || this.#mutePending) && !this.#closed) {
         if (this.#recordHeld || this.#chordDown) return this.#clearVolume();
         let key: VolumeKey;
         let presses = 1;
-        if (this.#mutePending > 0) {
-          this.#mutePending--;
+        if (this.#mutePending) {
+          this.#mutePending = false;
           key = 'VolumeMute';
         } else {
           presses = Math.min(MAX_VOLUME_PRESSES, Math.abs(this.#volumePending));

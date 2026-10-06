@@ -247,7 +247,8 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       if (closed) throw new KeyboardError('adapter-closed');
       const loaded = await win32();
       if (!loaded || !keyboard) throw new KeyboardError('win32-unavailable');
-      // The system handles volume keys, so no window is observed or required.
+      // Volume keys target no window: SendInput puts them in the foreground thread's input stream and Windows handles them
+      // as a system app command, so no window is observed or required.
       keyboard.tapVolume(key, presses);
     },
 

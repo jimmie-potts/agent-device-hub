@@ -116,7 +116,8 @@ The OS adapter (`OsAdapter`, interface version 4, `src/os-adapter.ts`) is the se
 and the desktop. Every observation is `known` or `unknown`, and titles are compared inside the adapter, so no title or
 conversation text crosses it. Version 3 (#821) adds the card operations. Version 4 (#865) adds `sendVolumeKey`, which
 taps the Windows volume keys (`VK_VOLUME_UP` 0xAF, `VK_VOLUME_DOWN` 0xAE, `VK_VOLUME_MUTE` 0xAD) 1-10 times. They act
-on the system, so no window is checked. Like any tap, they are refused while the adapter holds a key or the user holds
+on the system volume: the adapter targets and checks no window, though Windows delivers them through the foreground
+thread's input stream and handles them as a system app command. Like any tap, they are refused while the adapter holds a key or the user holds
 a modifier, so a volume key never joins the dictation chord. They are not shortcut keys, so no profile can name them.
 `createOsAdapter()` returns the Windows adapter (`src/windows/`) on Windows and an
 unsupported adapter elsewhere, whose observations are all `unknown`, so every focus fails closed and nothing is typed.
@@ -330,8 +331,10 @@ file stops start-up.
   focus in progress, and with a held Claude slot key it is the release gesture.
 - **Volume knob** (`ENC_6`). A turn (control 46) sends one volume-up or volume-down key per `volume.stepCounts`
   counts, with the reversal rule of the other knobs; fast turns coalesce into calls of at most 10 presses. A click
-  (control 34) toggles mute. The keys go to the system, never to a Codex or Claude window, so nothing checks the
-  foreground, composer or card, and they work with any app in front.
+  (control 34) toggles mute. The bridge targets no window and checks no foreground, composer or card, so the keys work
+  with any app in front and type nothing into a Codex or Claude window. Windows delivers a volume key through the
+  foreground thread's input stream and handles it as a system app command; installed check 2 for #865 confirms that
+  Codex and Claude do not react to it.
 - **Volume during Record.** While Record holds the dictation chord, the volume knob is ignored (`volume-ignored`
   with `dictating`) and its LED flashes the error color. A volume key combined with the held `LeftControl` and
   `LeftWindows` would be a different shortcut, so the router drops it rather than releasing the chord, which would end

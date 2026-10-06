@@ -1950,6 +1950,23 @@ test('volume: the knob\'s click toggles mute once per click', async t => {
   assert.equal(ctx.adapter.enters, 0);
 });
 
+test('volume: clicks during a slow volume key collapse to their parity, so the mute state matches the clicks', async t => {
+  for (const [extra, expected] of [[5, 2], [6, 1], [9, 2]]) {
+    const ctx = await setup(t);
+    const sent = [];
+    let finish;
+    ctx.adapter.sendVolumeKey = async key => { sent.push(key); await new Promise(resolve => { finish = resolve; }); };
+    ctx.press(VOLUME_CLICK);
+    ctx.release(VOLUME_CLICK);
+    await settle();
+    assert.deepEqual(sent, ['VolumeMute'], 'the first click is being sent');
+    for (let i = 0; i < extra; i++) { ctx.press(VOLUME_CLICK); ctx.release(VOLUME_CLICK); }
+    for (let i = 0; i < 4; i++) { finish(); await settle(); }
+    assert.equal(sent.length, expected, `1 + ${extra} clicks send ${expected} mute keys`);
+    assert.ok(sent.every(key => key === 'VolumeMute'));
+  }
+});
+
 test('volume: while Record holds the dictation chord, the knob is ignored and never joins the chord', async t => {
   const ctx = await setup(t);
   ctx.press(RECORD);
