@@ -61,16 +61,28 @@ export function number(row: Row, index: number): number {
   return value;
 }
 
+/** A result that is not a promise: the work runs inside a synchronous SQLite transaction, as the SDK's outbox requires. */
+export type Synchronous<R> = R extends PromiseLike<unknown> ? never : R;
+
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') && value !== null && 'then' in value && typeof value.then === 'function';
+
 /**
  * Python's `with db:` around an explicit BEGIN: commit on success, roll back on any error. The body is synchronous: no
- * transaction stays open across a wait or a device request.
+ * transaction stays open across a wait or a device request. Its type refuses a promise, and one returned anyway rolls
+ * the work back with a `TypeError`.
  */
-export function transaction<T>(db: Db, body: () => T, begin = 'BEGIN IMMEDIATE'): T {
+export function transaction<T>(db: Db, body: () => Synchronous<T>, begin = 'BEGIN IMMEDIATE'): T {
   db.exec(begin);
   try {
-    const result = body();
+    const result: unknown = body();
+    if (isThenable(result)) {
+      // Leave the returned promise handled: its outcome no longer matters once the work is refused.
+      result.then(undefined, () => {});
+      throw new TypeError('the transaction\'s work must be synchronous');
+    }
     db.exec('COMMIT');
-    return result;
+    return result as T;
   } catch (error) {
     if (db.isTransaction) db.exec('ROLLBACK');
     throw error;

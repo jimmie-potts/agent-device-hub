@@ -17,7 +17,7 @@ import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProject
 import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
   type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
-import {execute, rows, transaction, type Db, type Row, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, transaction, type Db, type Row, type SqlValue, type Synchronous} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
 
 /** node:test's test(), whose returned promise the runner awaits itself. */
@@ -46,7 +46,7 @@ export const query = (directory: string, sql: string, ...params: readonly SqlVal
   withState(directory, db => rows(db, sql, ...params));
 
 /** Run `body` in one immediate transaction on the saved state. */
-export const write = <T>(directory: string, body: (db: Db) => T): T => withState(directory, db => transaction(db, () => body(db)));
+export const write = <T>(directory: string, body: (db: Db) => Synchronous<T>): T => withState(directory, db => transaction<T>(db, () => body(db)));
 
 export interface TableDump {
   columns: string[];

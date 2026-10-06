@@ -4,7 +4,7 @@
 // synchronous transaction; none waits or contacts a device. A row is deleted when its command ends: its outcome then
 // lives in the runtime's outbox until the core acknowledges it.
 import {DEFAULT, metaKey} from './devices.js';
-import {execute, first, number, rows, text, transaction, type Db, type Row} from './sqlite.js';
+import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 
 /** The meta key, per device, that holds the mode revision an uncertain or unsent command held (controller_state.HOLD). */
 export const HOLD = 'controller_hold_revision';
@@ -40,9 +40,9 @@ export type Report = (message: Outcome | ScenesChanged) => void;
 /**
  * Runs `work` in one synchronous transaction on the module's database, with a `report` that stores each message in that
  * transaction; resolves once the transaction has committed and its messages are handed on. The runtime backs it with its
- * outbox (`Outbox.transaction`).
+ * outbox (`Outbox.transaction`). The work's type refuses a promise, which would commit before the awaited work ran.
  */
-export type Transact = <R>(work: (report: Report) => R) => Promise<R>;
+export type Transact = <R>(work: (report: Report) => Synchronous<R>) => Promise<R>;
 
 export interface JournalRow {
   seq: number;
@@ -129,9 +129,9 @@ export function outcomeOf(row: Pick<JournalRow, 'device' | 'id' | 'completed' | 
 
 /** A Transact for one connection: a plain transaction whose messages go to `report`. */
 export function transactWith(db: Db, report: Report): Transact {
-  return <R>(work: (report: Report) => R): Promise<R> => {
+  return <R>(work: (report: Report) => Synchronous<R>): Promise<R> => {
     try {
-      return Promise.resolve(transaction(db, () => work(report)));
+      return Promise.resolve(transaction<R>(db, () => work(report)));
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
