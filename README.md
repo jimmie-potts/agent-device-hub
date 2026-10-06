@@ -108,6 +108,9 @@ Read-only or explicitly source-only work does not authorize runtime effects.
   [`modules/pixoo`](modules/pixoo/README.md).
 - [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
+  During the port ([#26](https://github.com/jimmie-potts/agent-device-hub/issues/26))
+  it takes only bug fixes, apart from what CHOMPI work needs, and each fix is
+  translated in [`modules/nanoleaf`](modules/nanoleaf/PORTING.md).
 
 The shared core can run in Pixoo's existing backend or the standalone Linux hub.
 Its supervised handoff preserves one active state owner. Installed Nanoleaf

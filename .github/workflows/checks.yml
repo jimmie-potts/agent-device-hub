@@ -72,6 +72,7 @@ jobs:
       - run: npm run test:mcp:protocol:built
       - run: npm run test:mcp:package:built
       - run: npm run test:pixoo:built
+      - run: npm run test:nanoleaf:built
   firmware:
     name: Firmware host tests and ARM build on ${{ matrix.os }}
     strategy:

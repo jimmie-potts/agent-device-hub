@@ -1,0 +1,505 @@
+{
+ "defaultColors": [
+  [
+   "a",
+   "#96f25c"
+  ],
+  [
+   "b",
+   "#93f25c"
+  ],
+  [
+   "local",
+   "#69f25c"
+  ],
+  [
+   "nested",
+   "#e3f25c"
+  ],
+  [
+   "project",
+   "#5cf270"
+  ],
+  [
+   "chosen",
+   "#82f25c"
+  ],
+  [
+   "shared-project-hub",
+   "#f25c87"
+  ],
+  [
+   "shared-project-chosen",
+   "#f25cd7"
+  ],
+  [
+   "shared-project-name:4ae27ff701bbc79104fd77ea880656edf8d8cca9d0e61cbd6ba0dbca9ad11131",
+   "#5cf2be"
+  ],
+  [
+   "p",
+   "#70f25c"
+  ],
+  [
+   "q",
+   "#6ef25c"
+  ],
+  [
+   "\u00dcn\u00efcode",
+   "#5cf2e6"
+  ],
+  [
+   "\ud83d\ude00x",
+   "#5c70f2"
+  ],
+  [
+   "",
+   "#f25c5c"
+  ]
+ ],
+ "dumps": [
+  [
+   [],
+   "[]"
+  ],
+  [
+   [
+    "/repo"
+   ],
+   "[\"/repo\"]"
+  ],
+  [
+   [
+    "/repo",
+    "/other"
+   ],
+   "[\"/repo\",\"/other\"]"
+  ],
+  [
+   [
+    "\u00dcn\u00efcode/\ud83d\ude00",
+    "tab\tquote\""
+   ],
+   "[\"\u00dcn\u00efcode/\ud83d\ude00\",\"tab\\tquote\\\"\"]"
+  ],
+  [
+   {
+    "a": [
+     true,
+     null,
+     "\u00e9"
+    ],
+    "b": 1
+   },
+   "{\"a\":[true,null,\"\u00e9\"],\"b\":1}"
+  ]
+ ],
+ "evictionToken": {
+  "current": {
+   "config": {
+    "ownerId": "owner"
+   },
+   "generation": 3
+  },
+  "session": {
+   "activity": "idle",
+   "attention": [],
+   "children": {
+    "active": 0,
+    "uncertain": 0
+   },
+   "freshness": "current",
+   "generation": 0,
+   "identity": {
+    "client": "desktop",
+    "hostId": "host",
+    "provider": "codex",
+    "sessionId": "session",
+    "sourceId": "source"
+   },
+   "label": "Chosen label",
+   "lastEvidenceAtMs": 1000,
+   "notices": [
+    {
+     "acknowledgedBy": [
+      "pixoo"
+     ],
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "kind": "turn-ended",
+     "turn": {
+      "id": "turn",
+      "status": "known"
+     }
+    }
+   ],
+   "observationAgeMs": 0,
+   "observedAtMs": 1000,
+   "ordering": {
+    "status": "unknown"
+   },
+   "parent": {
+    "status": "unknown"
+   },
+   "read": "unknown",
+   "restartUncertain": false,
+   "turn": {
+    "id": "turn",
+    "status": "known"
+   },
+   "unavailable": []
+  },
+  "token": "2920c024c062578e6681551208e497282d42d9fb3b8543e350404fb786783136"
+ },
+ "fallbackTitles": [
+  [
+   "codex",
+   "019a1234-0000-7000-8000-00005b1e07c2",
+   "Codex 5b1e07c2"
+  ],
+  [
+   "codex",
+   "019a1234-0000-7000-8000-00004227761b",
+   "Codex 4227761b"
+  ],
+  [
+   "claude",
+   "claude-1",
+   "Claude cade1"
+  ],
+  [
+   "claude",
+   "zzzz",
+   "Claude zzzz"
+  ],
+  [
+   "codex",
+   "legacy",
+   "Codex eac"
+  ],
+  [
+   "other",
+   "xyz",
+   "Other xyz"
+  ],
+  [
+   "multi word",
+   "ABCDEF0123",
+   "Multi Word cdef0123"
+  ],
+  [
+   "codex",
+   "",
+   "Codex "
+  ]
+ ],
+ "floatText": [
+  [
+   1000.0,
+   "1000.0"
+  ],
+  [
+   1000.5,
+   "1000.5"
+  ],
+  [
+   990.0,
+   "990.0"
+  ],
+  [
+   0.1,
+   "0.1"
+  ],
+  [
+   1e-05,
+   "1e-05"
+  ],
+  [
+   0.0001,
+   "0.0001"
+  ],
+  [
+   1e+16,
+   "1e+16"
+  ],
+  [
+   123456789.125,
+   "123456789.125"
+  ],
+  [
+   1759700000.123456,
+   "1759700000.123456"
+  ],
+  [
+   -2.5,
+   "-2.5"
+  ],
+  [
+   1e+22,
+   "1e+22"
+  ]
+ ],
+ "identityKeys": [
+  [
+   {
+    "client": "desktop",
+    "hostId": "host",
+    "provider": "codex",
+    "sessionId": "session",
+    "sourceId": "source"
+   },
+   "shared-ac440921a375d71d235fdd1aeebc574d43a1e720831eaf2c978a2348b7488e93"
+  ],
+  [
+   {
+    "client": "code",
+    "hostId": "host",
+    "provider": "claude",
+    "sessionId": "claude-1",
+    "sourceId": "claude-source"
+   },
+   "shared-59666a54e487cd8ff53eba18de9cc24561764a139eb52dab71bdc5b96e734e0e"
+  ],
+  [
+   {
+    "client": "cli",
+    "hostId": "h.1",
+    "provider": "codex",
+    "sessionId": "019a1234-0000-7000-8000-00005b1e07c2",
+    "sourceId": "s_2"
+   },
+   "shared-8d62418d99ac2b8c85d8799d8a9225446f4bf4bc93b3262aea4577bed3644bac"
+  ]
+ ],
+ "normalized": [
+  [
+   "/repo/nested/src",
+   "/repo/nested/src"
+  ],
+  [
+   "/mnt/c/repo/b/subdir",
+   "c:/repo/b/subdir"
+  ],
+  [
+   "C:\\Repo\\B",
+   "c:/repo/b"
+  ],
+  [
+   "\\\\wsl.localhost\\Ubuntu\\home\\tester\\projects\\a",
+   "/home/tester/projects/a"
+  ],
+  [
+   "\\\\wsl$\\Ubuntu\\mnt\\c\\REPO\\b\\..\\b",
+   "c:/repo/b"
+  ],
+  [
+   "//wsl$/x",
+   "//wsl$/x"
+  ],
+  [
+   "/a/./b/../c/",
+   "/a/c"
+  ],
+  [
+   "//two/slashes",
+   "//two/slashes"
+  ],
+  [
+   "///three",
+   "/three"
+  ],
+  [
+   "relative/../..",
+   ".."
+  ],
+  [
+   "",
+   ""
+  ],
+  [
+   "a/b/",
+   "a/b"
+  ],
+  [
+   "/mnt/c",
+   "/mnt/c"
+  ],
+  [
+   "/mnt/C/Users/X",
+   "c:/users/x"
+  ],
+  [
+   "D:/x/y/",
+   "d:/x/y"
+  ],
+  [
+   "..",
+   ".."
+  ],
+  [
+   ".",
+   "."
+  ],
+  [
+   null,
+   ""
+  ],
+  [
+   5,
+   ""
+  ]
+ ],
+ "privateAddress": [
+  [
+   "192.0.2.1",
+   "192.0.2.1"
+  ],
+  [
+   "10.1.2.3",
+   "10.1.2.3"
+  ],
+  [
+   "172.31.255.255",
+   "172.31.255.255"
+  ],
+  [
+   "172.32.0.1",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "192.168.1.207",
+   "192.168.1.207"
+  ],
+  [
+   "8.8.8.8",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "127.0.0.1",
+   "127.0.0.1"
+  ],
+  [
+   "169.254.1.1",
+   "169.254.1.1"
+  ],
+  [
+   "100.64.0.1",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "192.0.0.9",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "192.0.0.8",
+   "192.0.0.8"
+  ],
+  [
+   "198.18.0.1",
+   "198.18.0.1"
+  ],
+  [
+   "203.0.113.9",
+   "203.0.113.9"
+  ],
+  [
+   "240.0.0.1",
+   "240.0.0.1"
+  ],
+  [
+   "255.255.255.255",
+   "255.255.255.255"
+  ],
+  [
+   "0.0.0.0",
+   "0.0.0.0"
+  ],
+  [
+   "01.2.3.4",
+   "error: '01.2.3.4' does not appear to be an IPv4 or IPv6 address"
+  ],
+  [
+   "1.2.3",
+   "error: '1.2.3' does not appear to be an IPv4 or IPv6 address"
+  ],
+  [
+   "256.1.1.1",
+   "error: '256.1.1.1' does not appear to be an IPv4 or IPv6 address"
+  ],
+  [
+   "fd00::1",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "::1",
+   "error: Use a private IPv4 address for the lights."
+  ],
+  [
+   "not-an-ip",
+   "error: 'not-an-ip' does not appear to be an IPv4 or IPv6 address"
+  ],
+  [
+   " 10.0.0.1",
+   "error: ' 10.0.0.1' does not appear to be an IPv4 or IPv6 address"
+  ]
+ ],
+ "pyJson": [
+  [
+   [],
+   "[]"
+  ],
+  [
+   [
+    "/repo"
+   ],
+   "[\"/repo\"]"
+  ],
+  [
+   [
+    "/repo",
+    "/other"
+   ],
+   "[\"/repo\", \"/other\"]"
+  ],
+  [
+   [
+    "\u00dcn\u00efcode/\ud83d\ude00",
+    "tab\tquote\""
+   ],
+   "[\"\\u00dcn\\u00efcode/\\ud83d\\ude00\", \"tab\\tquote\\\"\"]"
+  ]
+ ],
+ "rounded": [
+  [
+   0.5,
+   0
+  ],
+  [
+   1.5,
+   2
+  ],
+  [
+   2.5,
+   2
+  ],
+  [
+   3.5,
+   4
+  ],
+  [
+   241.5,
+   242
+  ],
+  [
+   242.5,
+   242
+  ],
+  [
+   2.4999999999999996,
+   2
+  ],
+  [
+   7.5,
+   8
+  ]
+ ]
+}
