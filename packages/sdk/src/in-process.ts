@@ -90,6 +90,7 @@ export class InProcessBus {
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
   readonly #scheduler: Scheduler;
   readonly #sync: SyncOwners;
+  readonly #onSyncRestart: (scope: ErrorScope) => void;
 
   constructor(options: BusOptions = {}) {
     const maxQueued = options.maxQueued ?? 1024;
@@ -104,8 +105,9 @@ export class InProcessBus {
       warning.name = 'BunnySdkWarning';
       process.emitWarning(warning);
     });
+    this.#onSyncRestart = options.onSyncRestart ?? (() => {});
     this.#sync = new SyncOwners({
-      now: this.#now, maxQueued, report: (error, scope) => { this.#report(error, scope); },
+      now: this.#now, scheduler: this.#scheduler, maxQueued, report: (error, scope) => { this.#report(error, scope); },
       envelope: (source, kind, draft, trace, deadline) => this.#envelope(source, kind, draft, trace, deadline),
     });
   }
@@ -130,15 +132,41 @@ export class InProcessBus {
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) =>
         open(() => this.#request(member, key, draft, options)),
       respond: <T extends object>(pattern: string, responder: Responder<T>) => open(() => this.#respond(member, pattern, responder)),
-      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => open(() => startSync({
-        now: this.#now,
-        subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(member, pattern, deliver, subscribeOptions)),
-        request: outgoing => this.#sync.request(source, outgoing),
-        report: error => { this.#report(error, {source, pattern: `sync ${families.join(',')}`}); },
-      }, families, handler, options)),
-      serveSync: (families: readonly string[], provider: SyncProvider) => open(() => this.#sync.serve(source, families, provider)),
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => open(() => {
+        const scope = {source, pattern: `sync ${families.join(',')}`};
+        return startSync({
+          now: this.#now,
+          subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(member, pattern, deliver, subscribeOptions)),
+          request: outgoing => this.#sync.request(source, outgoing),
+          report: error => { this.#report(error, scope); },
+          restarted: () => {
+            try {
+              this.#onSyncRestart(scope);
+            } catch {
+              // A failing listener must not stop the copy from syncing again.
+            }
+          },
+          track: copy => this.#track(member, copy),
+        }, families, handler, options);
+      }),
+      serveSync: (families: readonly string[], provider: SyncProvider) => open(() => {
+        const served = this.#sync.serve(source, families, provider);
+        let untrack = (): void => {};
+        const subscription: Subscription = {close: () => {
+          untrack();
+          return served.close();
+        }};
+        untrack = this.#track(member, subscription);
+        return subscription;
+      }),
       close: () => member.closing ??= this.#close(member),
     };
+  }
+
+  /** Keeps what a participant opened, so that its close closes it; returns what forgets it again. */
+  #track(member: Member, opened: Subscription): () => void {
+    member.opened.add(opened);
+    return () => { member.opened.delete(opened); };
   }
 
   async #close(member: Member): Promise<void> {

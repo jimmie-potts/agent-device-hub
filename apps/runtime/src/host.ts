@@ -39,17 +39,23 @@ type Slot = {
   readonly workers: Set<Worker>;
   state: ModuleState;
   reason: Reason | undefined;
+  /** How often an overflow restarted one of the module's sync copies. */
+  syncRestarts: number;
   participant: Participant | undefined;
   database: DatabaseSync | undefined;
   /** Set when the module's stop begins; from then on its context refuses use. */
   stopping: Promise<void> | undefined;
 };
 type Outcome = {status: 'done'} | {status: 'failed'; error: unknown} | {status: 'timed-out'};
+/** Drops on one subscription since its window opened, and the window's cancel. */
+type Drops = {scope: ErrorScope; count: number; cancel: Cancel};
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // setTimeout's longest delay; a longer one would fire at once.
 const MAX_DELAY_MS = 2_147_483_647;
+/** One subscription's dropped deliveries are logged at once, then at most once more per window, with a count. */
+export const DROP_WINDOW_MS = 60_000;
 // The module whose code runs in the current async flow, so that an error escaping to the process names its module.
 const running = new AsyncLocalStorage<Flow>();
 
@@ -101,11 +107,19 @@ export class ModuleHost {
   readonly #bus: InProcessBus;
   readonly #options: HostOptions;
   readonly #log: RuntimeLogger;
+  readonly #drops = new Map<string, Drops>();
 
   constructor(modules: readonly BunnyModule[], options: HostOptions) {
     this.#options = options;
     this.#log = options.logs.logger('bunny.runtime');
-    this.#bus = new InProcessBus({now: () => options.clock.now(), scheduler: options.scheduler, onError: (error, scope) => { this.#reported(error, scope); }});
+    this.#bus = new InProcessBus({
+      now: () => options.clock.now(), scheduler: options.scheduler,
+      onError: (error, scope) => { this.#reported(error, scope); },
+      onSyncRestart: ({source}) => {
+        const slot = this.#bySource.get(source);
+        if (slot !== undefined) slot.syncRestarts += 1;
+      },
+    });
     const names = new Set<string>();
     for (const module of modules) {
       const {name, apiVersion} = module.manifest;
@@ -113,7 +127,7 @@ export class ModuleHost {
         module, name, apiVersion, log: options.logs.logger(`bunny.modules.${name}`, {'bunny.module': name}),
         flow: {fail: (reason, error) => { this.#fail(slot, reason, error); }},
         controller: new AbortController(), timers: new Set(), workers: new Set(),
-        state: 'starting', reason: undefined, participant: undefined, database: undefined, stopping: undefined,
+        state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
       };
       const reason = refusal(module.manifest, names);
       if (NAME.test(name)) names.add(name);
@@ -131,17 +145,18 @@ export class ModuleHost {
     await Promise.all(this.#slots.filter(slot => slot.state === 'starting').map(slot => this.#start(slot)));
   }
 
-  /** Stops every module that started, each within the stop deadline. */
+  /** Stops every module that started, each within the stop deadline, then logs the drops not yet logged. */
   async stop(): Promise<void> {
     await Promise.all(this.#slots.filter(slot => slot.participant !== undefined).map(slot => {
       if (slot.state === 'starting' || slot.state === 'running') slot.state = 'stopping';
       return this.#teardown(slot);
     }));
+    for (const [key, drops] of [...this.#drops]) this.#closeWindow(key, drops);
   }
 
   health(): ModuleHealth[] {
-    return this.#slots.map(({name, apiVersion, state, reason}) =>
-      ({name, apiVersion, state, healthy: state === 'running', syncRestarts: 0, ...(reason === undefined ? {} : {reason})}));
+    return this.#slots.map(({name, apiVersion, state, reason, syncRestarts}) =>
+      ({name, apiVersion, state, healthy: state === 'running', syncRestarts, ...(reason === undefined ? {} : {reason})}));
   }
 
   async #start(slot: Slot): Promise<void> {
@@ -232,8 +247,9 @@ export class ModuleHost {
   #reported(error: unknown, scope: ErrorScope): void {
     const slot = this.#bySource.get(scope.source);
     if (error instanceof SdkError && error.body.error.code === 'capacity') {
-      // A full queue lags only its subscriber. Sync (#881) restarts a consumer that missed messages.
-      this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern});
+      // A full queue lags only its subscriber, and a copy that missed messages syncs again. A burst of drops must not
+      // flood the log, so each subscription's are counted per window.
+      this.#dropped(scope);
       return;
     }
     if (slot === undefined) {
@@ -241,6 +257,26 @@ export class ModuleHost {
       return;
     }
     this.#fail(slot, {code: 'internal', detail: 'a handler threw'}, error);
+  }
+
+  #dropped(scope: ErrorScope): void {
+    const key = `${scope.source}\n${scope.pattern}`;
+    const open = this.#drops.get(key);
+    if (open !== undefined) {
+      open.count += 1;
+      return;
+    }
+    this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': 1});
+    const drops: Drops = {scope, count: 0, cancel: () => {}};
+    drops.cancel = this.#options.scheduler.after(DROP_WINDOW_MS, () => { this.#closeWindow(key, drops); });
+    this.#drops.set(key, drops);
+  }
+
+  /** Ends one subscription's window, logging the drops it counted after the first. */
+  #closeWindow(key: string, {scope, count, cancel}: Drops): void {
+    cancel();
+    this.#drops.delete(key);
+    if (count > 0) this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': count});
   }
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */
@@ -256,8 +292,13 @@ export class ModuleHost {
     void this.#teardown(slot);
   }
 
+  /**
+   * Stops the module once, in its own async flow: the bus may report a handler's error from another module's flow, and
+   * a failed start or the runtime's stop comes from the runtime's. An error the module's abort listeners or cleanup
+   * then raise belongs to the module, never to whichever flow noticed the failure.
+   */
   #teardown(slot: Slot): Promise<void> {
-    slot.stopping ??= this.#close(slot);
+    slot.stopping ??= running.run(slot.flow, () => this.#close(slot));
     return slot.stopping;
   }
 

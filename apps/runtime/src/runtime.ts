@@ -5,8 +5,9 @@ import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MODULE_API_VERSION, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {LogWriter, stderrSink, type LogLevel, type LogSink} from './log.js';
+import {LogWriter, errorFields, stderrSink, type LogLevel, type LogSink} from './log.js';
 import {prepareStateDirectory} from './state.js';
+import {startWatchdog, type Watchdog} from './watchdog.js';
 
 export type {ModuleHealth, ModuleState} from './host.js';
 
@@ -15,7 +16,7 @@ const HOST = '127.0.0.1';
 
 export type RuntimeHealth = {
   schema: 'runtime-health/1.0';
-  /** `ok` when every module runs; `degraded` when one is refused, failed or not yet running. */
+  /** `ok` when every module runs and the lag check, if any, is active; `degraded` otherwise. */
   status: 'ok' | 'degraded';
   /** The module API version this runtime supports. */
   moduleApiVersion: string;
@@ -64,16 +65,26 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 
+/**
+ * Serves health on loopback. A request must name this listener as its host and carry no browser origin or cross-site
+ * fetch metadata, as the Hub and local controllers require, so that a page on a rebinding name cannot read it.
+ */
 function serve(port: number, health: () => RuntimeHealth): Promise<Server> {
+  let hosts: readonly string[] = [];
   const server = createServer((request, response) => {
+    const site = request.headers['sec-fetch-site'];
+    const local = hosts.includes(request.headers.host ?? '') && request.headers.origin === undefined && (site === undefined || site === 'none');
     const found = request.method === 'GET' && request.url === HEALTH_PATH;
-    const body = found ? health() : errorBody('not-found', {detail: 'no such route'});
-    response.writeHead(found ? 200 : 404, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
+    const [status, body] = !local ? [403, errorBody('forbidden', {detail: 'health answers only local requests that name this listener'})]
+      : found ? [200, health()] : [404, errorBody('not-found', {detail: 'no such route'})];
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen({host: HOST, port}, () => {
       server.off('error', reject);
+      const bound = (server.address() as AddressInfo).port;
+      hosts = [`${HOST}:${bound}`, `localhost:${bound}`];
       resolve(server);
     });
   });
@@ -97,19 +108,34 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const stateDir = await prepareStateDirectory(options.stateDir);
   const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs});
   const startedAtMs = clock.now();
+  let lagCheck: RuntimeHealth['lagCheck'] = {status: 'off'};
   const health = (): RuntimeHealth => {
     const modulesHealth = host.health();
     const {rss, heapTotal, heapUsed, external} = process.memoryUsage();
+    const ok = modulesHealth.every(module => module.healthy) && lagCheck.status !== 'stopped';
     return {
-      schema: 'runtime-health/1.0', status: modulesHealth.every(module => module.healthy) ? 'ok' : 'degraded',
+      schema: 'runtime-health/1.0', status: ok ? 'ok' : 'degraded',
       moduleApiVersion: MODULE_API_VERSION, startedAtMs, uptimeMs: Math.max(0, clock.now() - startedAtMs),
       memory: {rssBytes: rss, heapTotalBytes: heapTotal, heapUsedBytes: heapUsed, externalBytes: external},
-      lagCheck: {status: 'off'},
+      lagCheck,
       modules: modulesHealth,
     };
   };
   const server = await serve(port, health);
   const url = `http://${HOST}:${(server.address() as AddressInfo).port}`;
+  let watchdog: Watchdog | undefined;
+  if (options.lagCheck !== undefined) {
+    const {limitMs, worker} = options.lagCheck;
+    lagCheck = {status: 'active', limitMs};
+    // Started before the modules, so that a start that blocks the event loop is caught too.
+    watchdog = startWatchdog(limitMs, {
+      failed: error => { log.error('runtime.watchdog.failed', errorFields(error)); },
+      stopped: exitCode => {
+        lagCheck = {status: 'stopped', limitMs};
+        log.error('runtime.watchdog.stopped', {'bunny.exit_code': exitCode});
+      },
+    }, worker);
+  }
   log.info('runtime.started', {'bunny.url': url, 'bunny.modules': modules.length});
   await host.start();
   let stopping: Promise<void> | undefined;
@@ -118,7 +144,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     health,
     stop: () => stopping ??= (async () => {
       await host.stop();
-      await close(server);
+      await Promise.all([close(server), watchdog?.stop()]);
       log.info('runtime.stopped');
     })(),
   };

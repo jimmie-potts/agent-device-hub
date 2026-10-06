@@ -3,16 +3,17 @@
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
-import {SdkError, type Subscription, type TraceContext} from './sdk.js';
+import {SdkError, type Cancel, type Scheduler, type Subscription, type TraceContext} from './sdk.js';
 import {
   checkFamilies, entryOf, schemaFamily, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest,
 } from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
-/** What the bus lends its sync owners: its clock, queue limit, error report and envelope builder. */
+/** What the bus lends its sync owners: its clock and scheduler, queue limit, error report and envelope builder. */
 export type SyncDependencies = {
   now: () => number;
+  scheduler: Scheduler;
   maxQueued: number;
   report: (error: unknown, scope: ErrorScope) => void;
   envelope: <T>(source: string, kind: MessageKind, draft: Envelope<T>, trace: TraceContext, deadline?: {sentAtMs: number; expiresAtMs: number}) => Message<T>;
@@ -79,8 +80,12 @@ export class SyncOwners {
     }};
   }
 
-  /** Sends one sync request to the owner of `families`. Resolves with its answer or a refusal; never rejects. */
-  request(source: string, {families, requestId, timeoutMs, trace}: OutgoingSync): Promise<SyncAnswer> {
+  /**
+   * Sends one sync request to the owner of `families`. Resolves with its answer or a refusal; never rejects. When
+   * `signal` aborts, the request is withdrawn: taken out of the owner's queue if it still waits there, and refused as
+   * `cancelled`.
+   */
+  request(source: string, {families, requestId, timeoutMs, trace, signal}: OutgoingSync): Promise<SyncAnswer> {
     const {now, envelope} = this.#dependencies;
     const sentAtMs = now(), expiresAtMs = sentAtMs + timeoutMs;
     const subject = families.join(',');
@@ -93,17 +98,31 @@ export class SyncOwners {
     if (owner === undefined || owners.some(other => other !== owner)) {
       return Promise.resolve(refusal(request, 'invalid-request', 'one sync covers one owner\'s families'));
     }
+    if (signal.aborted) return Promise.resolve(refusal(request, 'cancelled', 'the requester closed'));
     return new Promise(resolve => {
       let settled = false;
-      // At the deadline the requester stops waiting; a sync changes nothing, so asking again is safe.
-      const timer = setTimeout(() => { settle(refusal(request, 'unavailable', `no sync answer within ${timeoutMs} ms`)); }, timeoutMs);
+      let cancel: Cancel = () => {};
       const settle = (answer: SyncAnswer): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cancel();
+        signal.removeEventListener('abort', withdraw);
         resolve(answer);
       };
-      if (!owner.queue.push({request, expiresAtMs, settle})) settle(refusal(request, 'capacity', 'the owner\'s queue is full'));
+      const delivery: Delivery = {request, expiresAtMs, settle};
+      // A request still waiting leaves the owner's queue, so the owner never serves it and its room is free again.
+      const withdraw = (): void => {
+        owner.queue.remove(delivery);
+        settle(refusal(request, 'cancelled', 'the requester closed'));
+      };
+      signal.addEventListener('abort', withdraw);
+      // At the deadline the requester stops waiting. A sync changes nothing, so it is unavailable, never expired, and
+      // asking again is safe.
+      cancel = this.#dependencies.scheduler.after(timeoutMs, () => {
+        owner.queue.remove(delivery);
+        settle(refusal(request, 'unavailable', `no sync answer within ${timeoutMs} ms`));
+      });
+      if (!owner.queue.push(delivery)) settle(refusal(request, 'capacity', 'the owner\'s queue is full'));
     });
   }
 

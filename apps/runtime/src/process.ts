@@ -8,7 +8,6 @@ import {contain} from './host.js';
 import {LogWriter, errorFields, stderrSink} from './log.js';
 import {LEVELS, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
-import {startWatchdog} from './watchdog.js';
 
 export type ProcessOptions = {port: number; stateDir: string; lagLimitMs: number; logLevel: LogLevel};
 
@@ -51,8 +50,9 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
 }
 
 /**
- * Runs the runtime until SIGTERM or SIGINT, which stop it and exit 0. An error that escapes a module stops only that
- * module. Any other escaped error, or a failed start, exits 1. Resolves once the ready line is on stdout.
+ * Runs the runtime until SIGTERM or SIGINT, which stop it and exit 0, also when one arrives while the modules start. An
+ * error that escapes a module stops only that module. Any other escaped error, or a failed start, exits 1. Resolves
+ * once the ready line is on stdout, or once a signal during startup has begun the stop.
  */
 export async function runProcess(options: ProcessOptions & {modules: readonly BunnyModule[]}): Promise<void> {
   const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}).logger('bunny.runtime');
@@ -63,21 +63,34 @@ export async function runProcess(options: ProcessOptions & {modules: readonly Bu
   const escaped = (error: unknown): void => { if (!contain(error)) fail(error); };
   process.on('uncaughtException', escaped);
   process.on('unhandledRejection', escaped);
-  const watchdog = startWatchdog(options.lagLimitMs, error => { log.error('runtime.watchdog.failed', errorFields(error)); });
-  let runtime: Runtime;
-  try {
-    runtime = await startRuntime({modules: options.modules, port: options.port, stateDir: options.stateDir, logLevel: options.logLevel});
-  } catch (error) {
-    return fail(error);
-  }
+  // Signals are handled before anything starts: a signal during startup is remembered, and the runtime stops once its
+  // modules' starts have settled, so every module that started also stops.
+  let runtime: Runtime | undefined;
+  let signalled = false;
   let stopping = false;
   const stop = (): void => {
+    if (runtime === undefined) {
+      signalled = true;
+      return;
+    }
     if (stopping) return;
     stopping = true;
-    void Promise.all([runtime.stop(), watchdog.stop()]).then(() => process.exit(0), fail);
+    void runtime.stop().then(() => process.exit(0), fail);
   };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
+  try {
+    runtime = await startRuntime({
+      modules: options.modules, port: options.port, stateDir: options.stateDir, logLevel: options.logLevel,
+      lagCheck: {limitMs: options.lagLimitMs},
+    });
+  } catch (error) {
+    return fail(error);
+  }
+  if (signalled) {
+    stop();
+    return;
+  }
   process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtime.url})}\n`);
 }
 

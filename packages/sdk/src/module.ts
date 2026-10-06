@@ -31,7 +31,8 @@ export interface BunnyModule {
   start(context: ModuleContext): void | Promise<void>;
   /**
    * Releases what the module holds. The runtime calls it once for every module whose start it called, even when start
-   * failed or has not finished, after closing the module's participant, so no handler of the module runs any more.
+   * failed or has not finished. It runs after the module's participant has closed, which waits for the module's running
+   * handlers up to the stop deadline; a handler that outlasts that deadline may still be running.
    */
   stop(): void | Promise<void>;
 }
@@ -72,7 +73,10 @@ export interface Workers {
   start(file: URL, options?: WorkerOptions): Worker;
 }
 
-/** What the runtime gives a module's `start`. Every part refuses use after the module has stopped. */
+/**
+ * What the runtime gives a module's `start`. Once the module's stop begins, its participant, scheduler, workers and
+ * database refuse use with `invalid-state`; its logger, tracing, clock and signal keep working, so `stop` can still log.
+ */
 export type ModuleContext = {
   /** The module's own participant on the runtime's bus, with source `bunny/modules/<name>`. */
   readonly sdk: Sdk;

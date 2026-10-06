@@ -1,6 +1,6 @@
 // The runtime's private state directory and each module's own SQLite file in it. Runtime state stays outside every Git
 // checkout and off Windows mounts, private to its owner, as the Hub's stores are (AGENTS.md, ADR 0011).
-import {closeSync, constants, fstatSync, mkdirSync, openSync} from 'node:fs';
+import {closeSync, constants, fstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
 import {lstat, mkdir, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -21,9 +21,23 @@ async function outsideCheckouts(path: string): Promise<void> {
   }
 }
 
+/** The nearest part of `path` that exists, with its `lstat`, which does not follow a link at its end. */
+async function nearestExisting(path: string): Promise<{path: string; info: Stats}> {
+  for (let current = path; ; current = dirname(current)) {
+    try {
+      return {path: current, info: await lstat(current)};
+    } catch (error) {
+      if (!missing(error) || current === dirname(current)) throw error;
+    }
+  }
+}
+
+const LINKED = 'the state directory must not be reached through a link';
+
 /**
  * Creates the state directory, owner-only, when it is missing, and returns its absolute path. Refuses a relative path, a
- * path under /mnt, inside a Git checkout or reached through a link, and a directory that others can open.
+ * path under /mnt, inside a Git checkout or reached through a link anywhere along it, a file, and a directory that
+ * others can open. Every check on the path runs before anything is created, so a refused path creates nothing.
  */
 export async function prepareStateDirectory(dir: string): Promise<string> {
   if (!isAbsolute(dir)) throw new Error('the state directory must be an absolute path');
@@ -31,9 +45,14 @@ export async function prepareStateDirectory(dir: string): Promise<string> {
   if (path === '/mnt' || path.startsWith('/mnt/')) throw new Error('the state directory must not be on a Windows mount');
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error('the runtime needs a POSIX host');
+  const existing = await nearestExisting(path);
+  if (existing.info.isSymbolicLink()) throw new Error(LINKED);
+  if (!existing.info.isDirectory()) throw new Error(`the state directory path is not a directory at ${existing.path}`);
+  // The part that exists must be its own real path: a link anywhere above it would put what is created elsewhere.
+  if (await realpath(existing.path) !== existing.path) throw new Error(LINKED);
   await outsideCheckouts(path);
   await mkdir(path, {recursive: true, mode: 0o700});
-  if (await realpath(path) !== path) throw new Error('the state directory must not be reached through a link');
+  if (await realpath(path) !== path) throw new Error(LINKED);
   const info = await lstat(path);
   if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o077) !== 0) {
     throw new Error('the state directory must be a directory private to its owner (mode 700)');

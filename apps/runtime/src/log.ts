@@ -1,6 +1,6 @@
 // The runtime's log records: one JSON object per line, with OpenTelemetry field names, carrying the trace and span IDs of
 // the work being handled (ADR 0012, Observability). A failing sink never changes what the runtime does.
-import {traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
+import {SdkError, traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
 import {LEVELS, record, type LogLevel, type LogRecord} from './record.js';
 
 export type {LogLevel, LogRecord} from './record.js';
@@ -9,12 +9,20 @@ export type LogSink = (record: LogRecord) => void;
 /** A logger that can also report the runtime's own fatal failures. */
 export type RuntimeLogger = Logger & {fatal(event: string, fields?: LogFields, trace?: TraceContext): void};
 
-const MAX_MESSAGE = 512;
+// A type or code that is a plain identifier; anything else is not stringified into a record.
+const IDENTIFIER = /^[A-Za-z0-9_.$-]{1,64}$/;
 
-/** The error's type and message, cut short, for a record's attributes. Never a stack, and never a non-Error's value. */
+/**
+ * The error's type and, when it has one, its code, for a record's attributes. The diagnostic contract keeps raw
+ * exception messages and stacks out of records, because a library's message may quote a URL with a token in it.
+ */
 export function errorFields(error: unknown): Record<string, string> {
-  if (error instanceof Error) return {'error.type': error.name, 'error.message': error.message.slice(0, MAX_MESSAGE)};
-  return {'error.type': typeof error};
+  if (!(error instanceof Error)) return {'error.type': typeof error};
+  const code: unknown = error instanceof SdkError ? error.body.error.code : 'code' in error ? error.code : undefined;
+  return {
+    'error.type': IDENTIFIER.test(error.name) ? error.name : 'Error',
+    ...(typeof code === 'string' && IDENTIFIER.test(code) ? {'error.code': code} : {}),
+  };
 }
 
 /** Writes each record as one JSON line on stderr, where the service manager's journal keeps it. */

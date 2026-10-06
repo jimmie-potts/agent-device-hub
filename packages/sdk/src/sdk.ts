@@ -103,10 +103,10 @@ export interface Participant extends Sdk {
   /**
    * Closes everything the participant opened, so nothing of it is left behind. Its requests still waiting for a result
    * settle first: one whose command is still queued is taken out and refused as `cancelled`, and one whose command the
-   * responder's handler has becomes `uncertain`. Their deadlines are cleared. Then its subscriptions and responders
-   * close as their own `close` does, and it resolves when its running handlers have finished; it never waits for
-   * another participant's handler. Later calls are refused with `invalid-state`, and closing again returns the same
-   * promise.
+   * responder's handler has becomes `uncertain`. Their deadlines are cleared. Then its subscriptions, responders, sync
+   * copies and sync owners close as their own `close` does: a copy withdraws its outstanding sync request. It resolves
+   * when its running handlers have finished, and never waits for another participant's handler. Later calls are
+   * refused with `invalid-state`, and closing again returns the same promise.
    */
   close(): Promise<void>;
 }
