@@ -283,15 +283,18 @@ permission to replace an owner.
    missing acceptance or failed lookups prevent archive.
    Validate locally before every push: build once, then run the affected
    `:built` checks. Prove that a check fails with a local negative control.
-   Before review, check every acceptance item against its evidence. Search
-   `README.md`, `docs/architecture.md`, `AGENTS.md`, the ADRs under
-   `docs/decisions/` and the affected package or module READMEs for each fact
-   the change alters. State limits and remaining uncertainty in the review brief
-   and the PR body.
+   Before review, check every acceptance item against its evidence. Search the
+   docs for each fact the change alters. Search at least `README.md`,
+   `AGENTS.md`, `docs/architecture.md`, `docs/development.md`, `docs/sdlc.md`,
+   the ADRs under `docs/decisions/`, the contract documents, the OpenSpec specs
+   and the affected app, package, controller and module READMEs and guides.
+   State limits and remaining uncertainty in the review brief and the PR body.
 2. Commit the candidate, push it once its local checks pass, and open a PR with
    Refs #<issue>. Start step 3's reviews on that head while hosted CI runs:
    hosted runners find problems local checks cannot, such as #873, #875 and
-   #877. Push one head per fix round, not intermediate commits. Record base, head,
+   #877. Push one head per fix round, not intermediate commits. A push that
+   only gathers hosted evidence, such as a failing probe, goes to its own branch,
+   never to the head under review. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
    keyword (or variant) before `#<n>` anywhere in the body, including inside an
@@ -306,15 +309,29 @@ permission to replace an owner.
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-   A later delta goes back to both reviewers, unless it is a pure rebase (the
-   range-diff shows every commit identical) or changes only prose or comments;
-   then one of them confirms it. Any change to code, schemas, tests,
-   configuration or behavior goes back to both. Reviewer briefs say that
-   reviewers make no GitHub writes, including reruns, merges and comments, and
-   that they use a short TMPDIR outside every checkout.
+   A later delta goes back to both reviewers, with two exceptions that one
+   reviewer confirms:
+   - **Pure rebase:** the range-diff shows every commit identical. Either
+     reviewer confirms it.
+   - **Non-normative text only:** the delta changes only documentation that is
+     not normative, or code comments that direct no tool. The Specification
+     reviewer confirms documentation; the Standards reviewer confirms code
+     comments.
+
+   Normative text goes back to both: OpenSpec specs, contract documents, policy
+   files such as `AGENTS.md` and this file, acceptance text, and directive
+   comments such as `@ts-expect-error`. So does any change to code, schemas,
+   tests, configuration or behavior. The confirming reviewer's return names the
+   new head. The other axis's earlier verdict carries over to that head, and the
+   PR body records the carry-over with the range-diff or the diff. An Acceptance
+   review runs again after any delta that changes code or behavior (see
+   [Acceptance review](#acceptance-review)), not after a pure rebase or a
+   non-normative text change.
+   Reviewer briefs say that reviewers make no GitHub writes, including reruns,
+   merges and comments. A reviewer that needs a TMPDIR uses a short one outside
+   every checkout; an Acceptance reviewer keeps its own write limits.
    Merge each story as soon as its gates pass, and start new work from merged
-   main rather than from an unmerged branch. Stories that change root manifests,
-   the lockfile or CI workflows land one at a time.
+   main rather than from an unmerged branch.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
