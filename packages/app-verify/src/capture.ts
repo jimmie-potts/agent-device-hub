@@ -10,7 +10,7 @@ import {resolveInputs} from './inputs.js';
 import {EXIT, Failure, has, load, reseed, reseedInputs, UsageError, type Io} from './lifecycle.js';
 import {artifactDigest} from './roots.js';
 import * as systemd from './systemd.js';
-import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
+import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult} from './types.js';
 import {errorText, iso, loopback, redact} from './util.js';
 
 interface Assertion {

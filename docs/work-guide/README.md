@@ -559,6 +559,8 @@ python3 docs/work-guide/work/build_guide.py
 python3 docs/work-guide/work/test_maintenance.py
 node docs/work-guide/work/check_guide.cjs
 node docs/skins/check_places.cjs
+# Guide-only changes skip CI's Static analysis job, so lint the guide's scripts here:
+npx eslint docs/work-guide
 # After committing intended generated output, rebuild and require no drift:
 python3 docs/work-guide/work/build_guide.py
 git diff --exit-code -- docs/work-guide/outputs

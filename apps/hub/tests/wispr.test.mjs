@@ -98,7 +98,7 @@ test('missing source never invents zero; malformed and oversized files expose no
  await writeFile(wispr.diagnosticsPath,JSON.stringify({secret:'SECRET_CANARY'}));const response=await get('summary');assert.equal(response.status,503);assert.equal((await response.text()).includes('SECRET'),false);
 });
 
-test('unsafe source paths and unknown or colliding configuration reject',async t=>{
+test('unsafe source paths and unknown or colliding configuration reject',async ()=>{
  const base={sourceId:'dictation',aggregatePath:'/synthetic/aggregate.json',diagnosticsPath:'/synthetic/status.json'};
  for(const opts of [{sourceId:'hub-service'},{sourceId:'speaker'},{aggregatePath:'relative.json'},{aggregatePath:'/tmp/OneDrive/aggregate.json'},{shareTextAggregates:'yes'},{extra:true}])assert.throws(()=>wisprConfiguration({...base,...opts},['speaker']),/invalid-wispr/);
 });

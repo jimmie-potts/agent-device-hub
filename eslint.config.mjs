@@ -1,11 +1,16 @@
 // Static bug detection for maintained JavaScript and TypeScript (Hub #765).
 // docs/development.md "Static analysis" records the coverage, exclusions and how a package adds stricter rules.
 import js from '@eslint/js';
-import {defineConfig} from 'eslint/config';
+import {defineConfig, includeIgnoreFile} from 'eslint/config';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import {fileURLToPath} from 'node:url';
 import tseslint from 'typescript-eslint';
 
+const unused = {
+  argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_',
+  ignoreRestSiblings: true,
+};
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',
@@ -30,11 +35,12 @@ const pageDrivers = [
 ];
 
 export default defineConfig(
+  // Everything Git ignores: build output, dependencies, local data and agent worktrees.
+  includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url)), 'bunny/git-ignored'),
   {
     name: 'bunny/excluded',
     ignores: [
-      // Generated output and local data (also ignored by Git).
-      '**/dist/**', 'apps/hub/public/**', 'artifacts/**', '.local/**', 'coverage/**', 'test-results/**', 'playwright-report/**',
+      // Firmware build trees, ignored by the firmware folder's own .gitignore.
       'firmware/chompi-controller/build/**', 'firmware/chompi-controller/.upstream/**',
       // Committed generated output: the Work guide's published releases.
       'docs/work-guide/outputs/**',
@@ -50,17 +56,22 @@ export default defineConfig(
     extends: [js.configs.recommended],
     linterOptions: {reportUnusedDisableDirectives: 'error'},
     languageOptions: {ecmaVersion: 'latest', sourceType: 'module'},
+    rules: {
+      // Best-effort cleanup uses empty catch blocks; a leading underscore marks a deliberately unused name.
+      'no-empty': ['error', {allowEmptyCatch: true}],
+      'no-unused-vars': ['error', unused],
+    },
   },
   {
     name: 'bunny/node',
     files: ['**/*.{js,mjs,cjs,ts,tsx}'],
     ignores: browser,
-    languageOptions: {globals: {...globals.node}},
+    languageOptions: {globals: {...globals.nodeBuiltin}},
   },
   {
     name: 'bunny/commonjs',
     files: ['**/*.cjs'],
-    languageOptions: {sourceType: 'commonjs'},
+    languageOptions: {sourceType: 'commonjs', globals: {...globals.node}},
   },
   {
     name: 'bunny/browser',
@@ -90,10 +101,10 @@ export default defineConfig(
       },
     },
     rules: {
-      // Existing idioms, not defects: side-effect ternaries, and passing on a caught error whose type is unknown.
+      // Existing idioms, not defects: side-effect ternaries, and rejecting with a caught error whose type is unknown.
       '@typescript-eslint/no-unused-expressions': ['error', {allowTernary: true}],
-      '@typescript-eslint/only-throw-error': ['error', {allowThrowingUnknown: true}],
       '@typescript-eslint/prefer-promise-reject-errors': ['error', {allowThrowingUnknown: true}],
+      '@typescript-eslint/no-unused-vars': ['error', unused],
       // Entry points declare a handle before signal handlers that read it, then assign it once.
       'prefer-const': ['error', {ignoreReadBeforeAssign: true}],
     },

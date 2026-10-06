@@ -4,7 +4,7 @@ import { mkdirSync,mkdtempSync,rmSync,readFileSync,writeFileSync } from 'node:fs
 import { join,resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { supervise,requestStop } from '../dist/supervisor.js';
+import { supervise } from '../dist/supervisor.js';
 const namespace='11111111-1111-4111-8111-111111111111';
 function setup(t){const root=process.env.WISPR_TEST_TMPDIR??resolve('.local/scratch/wispr-tests');mkdirSync(root,{recursive:true});const dir=mkdtempSync(join(root,'run-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));const stateDirectory=join(dir,'state');mkdirSync(stateDirectory);const sourcePath=join(dir,'source.sqlite'),db=new DatabaseSync(sourcePath);db.exec("CREATE TABLE History(id TEXT,timestamp TEXT,status TEXT,numWords INTEGER);INSERT INTO History VALUES('a','2026-10-01T12:00:00Z','formatted',10)");db.close();const config={schemaVersion:'1.0',namespace,ownerDirectory:dir,stateDirectory,sourcePath,timezone:'UTC',collectionEnabled:true,language:{enabled:false}};const run=operation=>supervise({directory:stateDirectory,entry:new URL('../dist/run-worker.js',import.meta.url),payload:{config,operation}});return{dir,config,run};}
 test('the direct worker collects and clear replaces the published generation',async t=>{

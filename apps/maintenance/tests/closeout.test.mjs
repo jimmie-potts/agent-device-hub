@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {pythonJSON,saveProof,toolProof,pinAcceptance} from './closeout-fixture.mjs';
 import {runCloseout as executeCloseout} from '../closeout/closeout.mjs';
-import {validateAssessment,canonical,recommendationEntry} from '../closeout/assessment.mjs';
+import {canonical,recommendationEntry} from '../closeout/assessment.mjs';
 const advice={action:'unchanged',session:'One-shot',surface:'Backend',codex:'gpt-6.1-sol',claude:'opus',effort:'high',codexReviewer:'gpt-6-astra',claudeReviewer:'opus',cheaperClaude:'none',missing:'none'};
 const assessment=async(_config,_input,issue,related)=>({status:'complete',selected:{url:issue.url,bodySha256:hash(issue.body),allAcceptanceReviewed:true,requiredAcceptance:['source','installed'],acceptedSourceOnly:null,satisfied:true},affected:related.map(item=>({url:item.url,bodySha256:hash(item.body),changedMeaning:false,hold:'unchanged',recommendation:advice,criteria:[{line:1,kind:'physical',status:'pending',owner:item.url,nextAction:'complete-physical-acceptance',evidenceUrl:null,observationDate:null}]}))});
 const runCloseout=(input,config,api,validator,planner=assessment,render=canonical)=>executeCloseout(input,config,api,validator,planner,render);

@@ -6,7 +6,7 @@ import { evaluateCi } from './ci.mjs';
 import { COMPARE_FILE_LIMIT, Gate, GUIDE_ROOT, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
-import { isBot, readRecord } from './records.mjs';
+import { isBot } from './records.mjs';
 import { POLICY_PATHS, REVIEW_FORMAT, collectReports, judgeRound, policyComponents, requirementReference } from './reviews.mjs';
 
 export const FINISH_LINES = ['source', 'installed', 'real-client', 'physical'];
@@ -162,7 +162,7 @@ async function loadCandidate(ctx) {
   const [ownerName, repoName] = repo.split('/');
   ctx.prState = await ctx.read(gates.feedback, async () => {
     const threads = [];
-    let closing = [];
+    let closing;
     let after = null;
     for (let page = 0; page < 20; page += 1) {
       const data = await github.graphql(QUERIES.PullRequestState, { owner: ownerName, name: repoName, number: pr.number, after });
@@ -379,7 +379,7 @@ async function evaluateFeedback(ctx, comments) {
   for (const item of comments) {
     const marker = String(item.body || '').match(/<!-- codex-security-review:v1 (\{.*?\}) -->/);
     if (marker) {
-      let data = {};
+      let data;
       try {
         data = JSON.parse(marker[1]);
       } catch {

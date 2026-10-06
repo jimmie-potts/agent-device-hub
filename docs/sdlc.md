@@ -512,9 +512,9 @@ may accept intentionally absent runs only after recording all of the following:
   comparison and the push's comparison separately; include deletions and both
   paths of renames. Every path must remain under `docs/work-guide/`.
 - Successful local guide generation, generated-output consistency, maintenance
-  tests and browser checks from the exact candidate using the guide procedure.
-  Retain the HTML hash, screenshots, print check and verification receipt outside
-  Git. Validate the merged tree and repeat checks if its guide content differs.
+  tests and browser checks from the exact candidate using the guide procedure,
+  plus a zero exit from `npx eslint docs/work-guide`. Retain the HTML hash,
+  screenshots, print check and verification receipt outside Git. Validate the merged tree and repeat checks if its guide content differs.
 - Depot event/head associations and GitHub check readbacks consistent with those
   filters, plus the current protection and merge-state inspection. Missing runs
   alone, failed API reads or a cancelled run do not establish intentional filtering.

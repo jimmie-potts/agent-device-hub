@@ -11,7 +11,7 @@
 //                  and a third operation grabs the name if it is moved aside.
 //
 // Prints {applied, errors, displaced?} as one JSON line.
-import {mkdir, mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {createRequire, syncBuiltinESMExports} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';

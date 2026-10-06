@@ -208,7 +208,7 @@ Existing provider qualification records and device ownership are unchanged.
 ## Static analysis
 
 `npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).
-Run `npm run build` first: typed rules read the workspace packages' built
+Run `npm run build` first. Typed rules read the workspace packages' built
 declaration files, so missing or stale `dist/` output changes the results. The
 Depot Static analysis job runs `npm ci`, `npm run build` and `npm run lint:js`,
 and never fixes files.
@@ -228,13 +228,13 @@ exclusions below.
 - **Globals:**
   - Page code gets browser globals.
   - Node scripts that pass callbacks to Playwright get browser and Node globals.
-  - All other files get Node globals.
+  - ES modules get Node's built-in globals.
+  - `.cjs` files also get the CommonJS globals.
 
 The excluded categories are:
 
-- generated output and local data that Git also ignores (`dist/`,
-  `apps/hub/public/`, `artifacts/`, `.local/`, test reports and firmware build
-  trees);
+- everything the root `.gitignore` lists, including dependencies, build output,
+  local data and agent worktrees, plus the firmware build trees;
 - the Work guide's published releases (`docs/work-guide/outputs/`);
 - vendored reference assets (`docs/system-design/reference/assets/` and
   `docs/system-design/reference/database/`);
@@ -244,32 +244,47 @@ The excluded categories are:
 Add a category only with its reason. Do not exclude maintained source to hide
 findings.
 
-[`eslint-suppressions.json`](../eslint-suppressions.json) records the findings
-that existed when the gate was adopted, counted per file and rule. ESLint fails
-in two cases:
-- a new finding;
-- a recorded finding that no longer occurs.
-
-After fixing recorded findings, run `npx eslint . --prune-suppressions` and
-commit the smaller file. Never use `--suppress-all` or `--suppress-rule` to pass
-new findings. Fix the code instead. For a deliberate exception, use
-`// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
-
 The config adjusts some rule options to match existing idioms rather than
 defects:
+- empty `catch` blocks are allowed for best-effort cleanup;
+- a leading underscore marks a deliberately unused name;
 - side-effect ternaries are allowed;
-- a caught error of unknown type may be thrown or rejected again;
+- a promise may be rejected with a caught error of unknown type;
 - `prefer-const` ignores a handle that signal handlers read before its single
   assignment.
+
+For a deliberate exception elsewhere, use
+`// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
+
+### Adoption baseline
+
+[`eslint-suppressions.json`](../eslint-suppressions.json) records how many
+findings each file had for each rule when the gate was adopted.
+
+ESLint fails when a file exceeds its recorded count for a rule. It also fails
+when a linted file has fewer findings than recorded, until you run
+`npx eslint . --prune-suppressions` and commit the smaller file. After deleting
+or renaming a file, run the same prune, because entries for files ESLint no
+longer lints are not reported.
+
+Never use `--suppress-all` or `--suppress-rule` to pass new findings. Fix the
+code instead.
+
+| Baselined rules | Why they remain | Triage owner |
+| --- | --- | --- |
+| `no-unsafe-*`, `no-explicit-any`, `restrict-*`, `no-base-to-string`, `unbound-method`, `no-redundant-type-constituents` | Untyped parsed or external data passes through code that predates the rules. Typing it means a refactor in each module, not a mechanical fix. | [#770](https://github.com/jimmie-potts/agent-device-hub/issues/770). Code that the B.U.N.N.Y. runtime replaces drops its entries when retired. |
+| `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
+| Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
 
 To give a package stricter rules, add a config block after `bunny/typescript`
 with the package's `files` glob and the extra rules.
 [#830](https://github.com/jimmie-potts/agent-device-hub/issues/830) defines the
 strict profile for new runtime code.
 
-Guide-only revisions skip this job under the
-[SDLC exception](sdlc.md#guide-only-ci-exception). When one changes Work guide
-scripts, run `npm run lint:js` locally.
+Guide-only revisions skip the Static analysis job under the
+[SDLC exception](sdlc.md#guide-only-ci-exception). Run
+`npx eslint docs/work-guide` for them. It needs no build, because the guide has
+no linted TypeScript.
 
 ## Depot diagnostic access
 

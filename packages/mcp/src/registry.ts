@@ -1,5 +1,5 @@
 import { validate } from '@jimmie-potts/device-contracts';
-import type { DeviceRegistration, ServiceExtension } from './types.js';
+import type { DeviceRegistration } from './types.js';
 
 function freezeSchema<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freezeSchema); Object.freeze(value); }

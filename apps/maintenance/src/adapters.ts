@@ -1,4 +1,4 @@
-import {Config,REPOSITORY,sha} from './config.js';
+import {Config,REPOSITORY} from './config.js';
 import {runProcess} from './process.js';
 import {collectJournal,Extract} from './journal.js';
 import {requireValue} from './storage.js';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {mkdtemp,readFile,stat,writeFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,readFile,stat,rm,symlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {PrivateStore} from '../dist/storage.js';

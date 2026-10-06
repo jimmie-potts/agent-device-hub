@@ -120,7 +120,7 @@ export function analyzeStages(input:LanguageInput,excludedTerms:readonly string[
   const tokens:Partial<Record<typeof stages[number],(string|null)[]>>={};
   const result={} as LanguageFeatures;
   for(const stage of stages){
-    const value=input[stage];let reason:StageReason|null=null;
+    const value=input[stage];let reason:StageReason|null;
     if(input.oversized?.includes(stage))reason='oversized';
     else if(value===null)reason='missing';
     else if(!/^en(?:-[a-z0-9]{2,8})*$/i.test(input.language??''))reason='unsupportedLanguage';

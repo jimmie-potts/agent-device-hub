@@ -59,9 +59,6 @@
   "apps/chompi-bridge/src/routing/slots.ts": {
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
     }
   },
   "apps/chompi-bridge/src/sim/desktop.ts": {
@@ -154,26 +151,6 @@
       "count": 1
     }
   },
-  "apps/chompi-bridge/tests/bridge.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "apps/chompi-bridge/tests/routing-helpers.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/chompi-bridge/tests/routing-profile.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/chompi-bridge/tests/simulator.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "apps/chompi-bridge/tests/windows-adapter.test.mjs": {
     "no-unused-vars": {
       "count": 1
@@ -192,9 +169,6 @@
   "apps/dashboard/src/art/prism.ts": {
     "@typescript-eslint/restrict-template-expressions": {
       "count": 2
-    },
-    "no-useless-assignment": {
-      "count": 2
     }
   },
   "apps/dashboard/src/client.ts": {
@@ -206,19 +180,10 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "no-empty": {
-      "count": 2
     }
   },
   "apps/dashboard/src/controls.tsx": {
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -235,40 +200,14 @@
       "count": 1
     }
   },
-  "apps/dashboard/tests/art.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/dashboard/tests/client.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/dashboard/tests/fixture.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
   "apps/hub/src/automation.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "no-empty": {
       "count": 2
     }
   },
   "apps/hub/src/install/build-target.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "preserve-caught-error": {
       "count": 1
-    }
-  },
-  "apps/hub/src/install/compatibility.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
     }
   },
   "apps/hub/src/install/operation.ts": {
@@ -307,9 +246,6 @@
   "apps/hub/src/migration-routes.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 4
     }
   },
   "apps/hub/src/migration.ts": {
@@ -324,9 +260,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 4
-    },
-    "no-empty": {
-      "count": 1
     },
     "preserve-caught-error": {
       "count": 1
@@ -343,12 +276,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "no-empty": {
-      "count": 3
     }
   },
   "apps/hub/src/setup-authority.ts": {
@@ -385,17 +312,11 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 5
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "apps/hub/src/storage.ts": {
     "@typescript-eslint/require-await": {
       "count": 3
-    },
-    "no-empty": {
-      "count": 2
     }
   },
   "apps/hub/src/vendor/nanoleaf-integration.ts": {
@@ -422,96 +343,6 @@
       "count": 7
     }
   },
-  "apps/hub/tests/automation-metadata.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "apps/hub/tests/automation.test.mjs": {
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
-  "apps/hub/tests/browser-sessions.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/codex-desktop.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/controllers.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/fake-controller.mjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/install-plan.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/integration.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/tests/moment-sender.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "apps/hub/tests/trusted-loopback.test.mjs": {
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
-  "apps/hub/tests/wispr.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/hub/verify/compose.mjs": {
-    "no-useless-assignment": {
-      "count": 2
-    }
-  },
-  "apps/hub/verify/tests/compose.test.mjs": {
-    "no-empty": {
-      "count": 2
-    }
-  },
-  "apps/local-controllers/src/config.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/local-controllers/src/host.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/local-controllers/tests/config.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "apps/local-controllers/tests/hub.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "apps/maintenance/install/hub.mjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
   "apps/maintenance/src/adapters.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -529,9 +360,6 @@
       "count": 15
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     },
     "@typescript-eslint/require-await": {
@@ -561,9 +389,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 4
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
     }
   },
   "apps/maintenance/src/journal.ts": {
@@ -592,9 +417,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "apps/maintenance/src/storage.ts": {
@@ -605,35 +427,12 @@
       "count": 2
     }
   },
-  "apps/maintenance/tests/closeout.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/maintenance/tests/fixture.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/maintenance/tests/protocol.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/maintenance/tests/storage.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "apps/wispr-collector/src/config.ts": {
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
     }
   },
   "apps/wispr-collector/src/language.ts": {
-    "no-useless-assignment": {
-      "count": 1
-    },
     "preserve-caught-error": {
       "count": 1
     }
@@ -642,16 +441,8 @@
     "@typescript-eslint/require-await": {
       "count": 1
     },
-    "no-empty": {
-      "count": 1
-    },
     "preserve-caught-error": {
       "count": 4
-    }
-  },
-  "apps/wispr-collector/src/reader-engine.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "apps/wispr-collector/src/store.ts": {
@@ -663,12 +454,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
-    },
-    "no-empty": {
-      "count": 1
-    },
-    "no-useless-assignment": {
-      "count": 1
     },
     "preserve-caught-error": {
       "count": 1
@@ -686,29 +471,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    },
-    "no-empty": {
-      "count": 1
-    }
-  },
-  "apps/wispr-collector/tests/native-cli.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/wispr-collector/tests/native.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/wispr-collector/tests/package-smoke.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/wispr-collector/tests/run.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
     }
   },
   "controllers/lifx/src/controller.ts": {
@@ -717,29 +479,11 @@
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 4
-    }
-  },
-  "controllers/lifx/src/protocol.ts": {
-    "no-empty": {
-      "count": 1
     }
   },
   "controllers/lifx/src/status-publisher.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    }
-  },
-  "controllers/lifx/tests/controller.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "controllers/lifx/tests/status.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
     }
   },
   "controllers/tidbyt/src/cli.ts": {
@@ -771,67 +515,9 @@
       "count": 1
     }
   },
-  "controllers/tidbyt/tests/nowplaying.test.mjs": {
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
-  "docs/skins/check_places.cjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
-  "docs/system-design/check.cjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
   "docs/work-guide/browser/collector.mjs": {
     "preserve-caught-error": {
       "count": 1
-    }
-  },
-  "docs/work-guide/browser/pages.mjs": {
-    "no-useless-assignment": {
-      "count": 1
-    }
-  },
-  "docs/work-guide/browser/renderer.mjs": {
-    "no-empty": {
-      "count": 2
-    }
-  },
-  "docs/work-guide/browser/tests/browser.mjs": {
-    "no-useless-assignment": {
-      "count": 1
-    }
-  },
-  "docs/work-guide/browser/tests/collector.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "docs/work-guide/contracts/epic-guide/contracts.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "docs/work-guide/work/check_guide.cjs": {
-    "no-empty": {
-      "count": 2
-    },
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/host-session-snapshot.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/index.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 4
     }
   },
   "packages/agent-state/src/memory-storage.ts": {
@@ -850,51 +536,6 @@
       "count": 7
     }
   },
-  "packages/agent-state/src/providers.ts": {
-    "no-empty": {
-      "count": 2
-    }
-  },
-  "packages/agent-state/src/reducer.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/subscriptions.ts": {
-    "no-empty": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/tests/approvals.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/tests/provider-metadata.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/tests/providers.test.mjs": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
-  "packages/agent-state/tests/retention.test.mjs": {
-    "no-unused-vars": {
-      "count": 4
-    }
-  },
-  "packages/agent-status/src/subscription.ts": {
-    "no-empty": {
-      "count": 3
-    }
-  },
-  "packages/agent-status/tests/helpers/streams.mjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
   "packages/app-verify/src/capture.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -911,15 +552,7 @@
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 13
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "@typescript-eslint/restrict-template-expressions": {
-      "count": 1
-    }
-  },
-  "packages/app-verify/src/handoff.ts": {
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -930,16 +563,10 @@
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
     "@typescript-eslint/require-await": {
       "count": 1
     },
     "@typescript-eslint/unbound-method": {
-      "count": 1
-    },
-    "no-useless-assignment": {
       "count": 1
     }
   },
@@ -956,11 +583,6 @@
       "count": 2
     }
   },
-  "packages/app-verify/tests/fixture-app/lock-race.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "packages/contracts/src/index.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 2
@@ -970,9 +592,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 3
     }
   },
   "packages/contracts/src/install-receipt.ts": {
@@ -996,11 +615,6 @@
       "count": 1
     }
   },
-  "packages/lifecycle-contracts/tests/metadata.test.mjs": {
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
   "packages/mcp/src/http.ts": {
     "@typescript-eslint/no-base-to-string": {
       "count": 1
@@ -1012,20 +626,12 @@
       "count": 1
     }
   },
-  "packages/mcp/src/registry.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "packages/mcp/src/tools.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "packages/mcp/src/verify.ts": {
@@ -1039,83 +645,9 @@
       "count": 15
     }
   },
-  "packages/mcp/tests/tools.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
   "packages/observability/src/index.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "@typescript-eslint/require-await": {
       "count": 1
-    }
-  },
-  "scripts/check-hub-shared-consumers.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/delivery-preflight/github.mjs": {
-    "no-useless-assignment": {
-      "count": 1
-    }
-  },
-  "scripts/delivery-preflight/preflight.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    },
-    "no-useless-assignment": {
-      "count": 2
-    }
-  },
-  "scripts/observability/collection-faults.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/observability/ingestion-process.mjs": {
-    "no-empty": {
-      "count": 1
-    }
-  },
-  "scripts/observability/recorded-commands.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/observability/tests/workload-process.test.mjs": {
-    "no-empty": {
-      "count": 3
-    },
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
-  "scripts/observability/workload-process.mjs": {
-    "no-empty": {
-      "count": 2
-    }
-  },
-  "scripts/package-agent-state.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/package-hub.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/package-lifecycle.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/performance/standalone-worker.mjs": {
-    "no-empty": {
-      "count": 2
     }
   }
 }

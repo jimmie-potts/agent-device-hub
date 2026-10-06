@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync,existsSync } from 'node:fs';
+import { mkdtempSync,readFileSync,rmSync,writeFileSync,existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';

@@ -232,7 +232,7 @@ test("cancellation aborts an active write and prevents queued side effects and r
 test("read timeout before a color write has no effects; refresh failure retains observation", async () => {
   let okay = true,
     calls = 0;
-  const c = setup((type) => {
+  const c = setup(() => {
     calls++;
     return okay ? Promise.resolve(state()) : new Promise(() => {});
   });

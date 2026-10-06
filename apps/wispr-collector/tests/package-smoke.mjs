@@ -3,7 +3,7 @@ import { mkdtempSync,mkdirSync,readFileSync,rmSync } from 'node:fs';
 import { join,resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { supervise } from '../dist/supervisor.js';
-import { validateSnapshot,numericReport } from '@jimmie-potts/wispr-contracts';
+import { validateSnapshot } from '@jimmie-potts/wispr-contracts';
 const root=process.env.WISPR_TEST_TMPDIR??resolve('.local/scratch');mkdirSync(root,{recursive:true});const directory=mkdtempSync(join(root,'offline-'));
 try{
  const stateDirectory=join(directory,'state'),sourcePath=join(directory,'source.sqlite');mkdirSync(stateDirectory);

@@ -9,7 +9,7 @@ import { validateDataset, datasetIdentity, placementOf, projectOf, eligibility, 
   dependents, primaryPage, recentlyDone, publicationGate, prerequisiteState, ORDERED } from './records.mjs';
 import { CATALOG, catalogIdentity, validateView, resolveView, rebindView, allowedLink, literalText, epicCounts, PREDICATES } from './views.mjs';
 import { definitionDigest } from './digest.mjs';
-import { releaseIdentity, validateRelease, checkBinding, compatibility, mayInvokeModel, acceptReply, fileHash } from './release.mjs';
+import { releaseIdentity, validateRelease, checkBinding, compatibility, mayInvokeModel, acceptReply } from './release.mjs';
 
 const json = name => JSON.parse(readFileSync(new URL(name, import.meta.url)));
 const policy = { asOf: '2026-09-30T12:01:00Z', maxAgeMs: 300_000 };

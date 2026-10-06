@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process';
 import {openSync,closeSync} from 'node:fs';
-import {mkdtemp,readFile,open,rm,mkdir} from 'node:fs/promises';
+import {mkdtemp,readFile,open,rm} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';

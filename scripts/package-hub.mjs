@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {cp,mkdir,mkdtemp,readFile,readdir,rm,writeFile,copyFile,lstat} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 import {join,resolve,dirname,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sourceRevision} from './hub-build-identity.mjs';

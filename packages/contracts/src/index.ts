@@ -4,7 +4,7 @@ import type { ValidateFunction } from 'ajv';
 import type {
   Admission, AdmissionResult, AdmissionResultV1_1, AdmissionState, AdmissionStateV1_1, AdmissionV1_1,
   ApiVersion, Authorization, CapabilitiesV1_1, CommandV1_1,
-  FailureCode, FeedEvent, MomentDevice, MomentEvent, MomentStep, Receipt, ReceiptV1_1, ReferenceInput,
+  FailureCode, FeedEvent, MomentDevice, MomentStep, Receipt, ReceiptV1_1, ReferenceInput,
   Request, RequestV1_1, Snapshot, SnapshotV1_1, Ticket,
 } from './types.js';
 export type * from './types.js';

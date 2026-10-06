@@ -51,7 +51,7 @@ export function NanoleafArt({title, read, snapshot, stale, status, activity, sel
    if (lines) { if (art.current instanceof Renderer) art.current.setLayout(lines); else { art.current?.destroy(); art.current = null; art.current = new Renderer(host.current, lines, {animate: assemble, onSelect: pick}); } }
    else if (panels) { if (art.current instanceof PanelsRenderer) art.current.setLayout(panels); else { art.current?.destroy(); art.current = null; art.current = new PanelsRenderer(host.current, panels, {onSelect: pick}); } }
   } catch (error) { setFailure({key: layoutKey, message: error instanceof Error ? error.message : String(error), kept: art.current !== null}); }
- // eslint-disable-next-line react-hooks/exhaustive-deps -- layoutKey is the content key of lines and panels, so an identical refetched layout does not redraw
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- layoutKey is the content key of lines and panels, so an identical refetched layout does not redraw; assemble applies only to the first draw
  }, [layoutKey]);
  useEffect(() => () => { art.current?.destroy(); art.current = null; }, []);
  const view = useMemo(() => drawable ? presentation({kind, elements, snapshot, status, activity, tokens}) : undefined, [kind, elements, snapshot, status, activity, tokens, drawable]);

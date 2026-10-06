@@ -258,7 +258,7 @@ export class NumericStore {
       if(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\.sqlite\.[0-9a-f-]{36}\.pending$/.test(filename)){unlinkSync(join(directory,filename));removed++;continue;}
       if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\.sqlite$/.test(filename))continue;
       const name=filename.slice(0,-7),db=this.openBackup(name);
-      let text=false;
+      let text:boolean;
       try{text=this.readMetadata(db).snapshot.language.availability==='available'||Number(db.prepare('SELECT count(*) AS n FROM language').get()!.n)>0;}finally{db.close();}
       if(text){unlinkSync(this.backupPath(name));removed++;}
     }

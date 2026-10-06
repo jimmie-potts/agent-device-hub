@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as api from '../dist/index.js';
-import { args, fixture, owner, principal, snapshot } from './helpers.mjs';
+import { args, fixture, owner, principal } from './helpers.mjs';
 
 test('default-bound status delegates to the configured owner without target arguments', async () => {
   const api = await import('../dist/index.js');

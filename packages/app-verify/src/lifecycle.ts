@@ -279,7 +279,7 @@ async function identity(run: Run): Promise<{mainPid: number; mainStartMonotonic:
 async function appCause(run: Run): Promise<string | undefined> {
   const name = run.plugin.readiness.failureCause;
   if (!name) return undefined;
-  let tail = '';
+  let tail: string;
   try {
     const handle = await open(run.stderrLog, 'r');
     try {

@@ -120,6 +120,9 @@ validation sections in docs/development.md (for the hub: Standalone hub,
 Standalone hub MCP and Shared monitoring setup checks; for the dashboard:
 Dashboard checks). Run the listed commands and the shared
 build/type/contract/workflow checks from the worktree root. All must exit zero.
+For JavaScript or TypeScript changes, run npm run build and then npm run lint:js
+from the worktree root. Both must exit zero. Read docs/development.md "Static
+analysis" before changing the ESLint configuration or its baseline.
 Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.

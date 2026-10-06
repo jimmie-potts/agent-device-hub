@@ -455,7 +455,7 @@ async function doctorChecks(env, composition, progress, states = {}) {
 export async function awaitReady(env, composition, progress, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   /** @type {Check[]} */
-  let checks = [];
+  let checks;
   for (;;) {
     checks = await pairingChecks(env, composition);
     if (checks.every(c => c.outcome === 'passed')) {
@@ -1244,7 +1244,7 @@ async function injectUnlocked(id, kind, serviceId, step, io, thawAfter = 120) {
   if (!injection[expected]) problems.push(`the step never asked for the ${kind === 'consumer-loss' ? 'freeze' : 'second owner'}`);
   // After the step the composition must be ready again: feeds current and both devices read.
   /** @type {Check[]} */
-  let checks = [];
+  let checks;
   try {
     checks = await awaitReady(io.env, composition, io.progress, 60000);
   } catch (error) {
