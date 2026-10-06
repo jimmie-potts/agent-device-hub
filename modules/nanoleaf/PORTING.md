@@ -161,7 +161,7 @@ Slice 3 (worker, legacy input, edits and scenes):
   `test_registry_address_change_keeps_identity_and_preferences`: the map edits' and palette
   settings' own validation, deferral and application. The tests save each edit's rows directly.
 - `test_untargeted_calls_address_lines_whatever_the_registry_order`: an untargeted mode command
-  through the command line sets the Lines to Quiet and leaves the Panels in Work.
+  sets the Lines to Quiet and leaves the Panels in Work.
 
 Not ported (the layer that held them is replaced):
 
@@ -189,6 +189,8 @@ Not ported (the layer that held them is replaced):
   wall view never show the credential. The wall view moves with #844, which keeps this rule.
 - `test_machine_credentials_are_unchanged`, `test_pre_change_linux_database_migrates_and_repeats_without_change`:
   the controller credential table.
+- `test_untargeted_calls_address_lines_whatever_the_registry_order`: the command-line route
+  (`bridge.main`) that carried its mode command.
 - `test_upgrade_keeps_preferences_and_adopts_defaults`: the wall view, which moves with #844. Its
   palette and mode are read from the saved state instead, and its check that opening the view
   leaves the scene file unchanged is not translated.
@@ -333,12 +335,16 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
   rotated map geometry can differ by an ulp. The recorded zone colors, payloads, effects and
   pairing still match exactly.
 - As in Python, pairing reads the reported entries in order, duplicates and connectors included,
-  and Line positions take the last entry with each panel ID and read only `x` and `y`. A device
+  and counts the zones before reading their other fields. Line positions take the last entry with
+  each panel ID and read only `x` and `y`. A device
   reply without `panelLayout`, a reported entry that is not an object or lacks a field Python read
   (`shapeType`; `panelId`, `x`, `y` and `o` of a zone being paired; `panelId`, `x` and `y` for
   positions), and a non-numeric coordinate are `ValueError`s; Python raised `KeyError` or
   `TypeError`. A registered device without an address or credential reaches the request as an
   empty string, where Python passed `None`.
+- `pairLines` refuses a panel ID that is not a number. Python's `pair_lines` paired string IDs, and
+  `load_config` then refused them as `Invalid physical Line mapping.`; through `loadConfig` both
+  refuse, with a different message.
 - A color must be `#` and six hexadecimal digits, or it is a `ValueError`. Python's
   `int(text, 16)` on each pair of characters also refused `#1g2233` and `#abc`, but accepted a
   short last channel (`#12345`), a sign or space (`#+1aabb`), extra characters (`#aabbccdd`) and a

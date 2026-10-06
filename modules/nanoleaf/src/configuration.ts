@@ -56,10 +56,11 @@ const reported = (point: unknown): Reported =>
 export function pairLines(panelLayout: unknown): number[][] {
   // Every entry is read in order, as Python's list filter did; the maps below only look zones up.
   const points = positionData(panelLayout).filter(point => field(point, 'shapeType') === LINE_ZONE);
+  // As in Python, the zones are counted before any of their other fields is read.
+  if (points.length === 0 || points.length % 2 !== 0) throw new ValueError('Expected two light zones per Line.');
   const zones = points.map(reported);
   const global = isObject(panelLayout) ? panelLayout.globalOrientation : undefined;
   const orientation = isObject(global) ? global.value : undefined;
-  if (zones.length === 0 || zones.length % 2 !== 0) throw new ValueError('Expected two light zones per Line.');
   const nearest = new Map<number, number>();
   const byId = new Map(zones.map(zone => [zone.panelId, zone]));
   zones.forEach((a, i) => {
