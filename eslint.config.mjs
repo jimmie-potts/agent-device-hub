@@ -6,11 +6,21 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import {fileURLToPath} from 'node:url';
 import tseslint from 'typescript-eslint';
+import bunny from './scripts/eslint/bunny-rules.mjs';
 
 const unused = {
   argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_',
   ignoreRestSiblings: true,
 };
+// New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it.
+// tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
+export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'];
+export const staged = ['modules/pixoo/**'];
+// Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
+// warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
+const noInlineConfig = {noInlineConfig: true};
+// Workspace packages a module may import (owner decision, 2026-10-05).
+const modulePackages = ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'];
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',
@@ -108,6 +118,27 @@ export default defineConfig(
       // Entry points declare a handle before signal handlers that read it, then assign it once.
       'prefer-const': ['error', {ignoreReadBeforeAssign: true}],
     },
+  },
+  {
+    name: 'bunny/strict',
+    files: strict,
+    ignores: staged,
+    linterOptions: noInlineConfig,
+    rules: {
+      // A catch-all default does not hide a newly added union variant.
+      '@typescript-eslint/switch-exhaustiveness-check': ['error', {considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: false}],
+      // Missing data is checked explicitly, never confused with zero, false or an empty string.
+      '@typescript-eslint/strict-boolean-expressions': ['error', {allowString: false, allowNumber: false, allowNullableObject: true}],
+      '@typescript-eslint/no-non-null-assertion': 'error',
+    },
+  },
+  {
+    name: 'bunny/module-boundary',
+    files: ['modules/**/*.{ts,tsx,js,mjs}'],
+    ignores: staged,
+    linterOptions: noInlineConfig,
+    plugins: {bunny},
+    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages}]},
   },
   {
     name: 'bunny/react-hooks',

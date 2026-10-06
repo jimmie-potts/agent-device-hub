@@ -283,7 +283,7 @@ defects:
 - `prefer-const` ignores a handle that signal handlers read before its single
   assignment.
 
-For a deliberate exception elsewhere, use
+For a deliberate exception elsewhere, outside the strict profile, use
 `// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
 
 ### Adoption baseline
@@ -306,10 +306,51 @@ code instead.
 | `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
 | Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
 
-To give a package stricter rules, add a config block after `bunny/typescript`
-with the package's `files` glob and the extra rules.
-[#830](https://github.com/jimmie-potts/agent-device-hub/issues/830) defines the
-strict profile for new runtime code.
+### Strict profile for new code
+
+New code for the runtime follows a stricter profile from its first commit
+([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
+`apps/runtime/`, `packages/sdk/` and `modules/`, and starts with no baseline
+entries. Staged imported code, currently `modules/pixoo/`, keeps the shared
+rules until its module story converts it. To cover another path, such as the
+2.0 contract sources, add its glob to `strict` in `eslint.config.mjs`; the
+guard tests read that list.
+
+- **Lint (`bunny/strict`):**
+  - switches over a union must handle every member, and a catch-all `default`
+    does not count;
+  - conditions must be explicit: strings, numbers and nullable primitives are
+    compared, never tested for truthiness, so `undefined` is never confused
+    with zero, `false` or an empty string. A nullable object may still be
+    tested directly;
+  - no non-null assertions.
+- **No inline ESLint comments:** covered files, including JavaScript under
+  `modules/`, set `noInlineConfig`. ESLint ignores every `eslint-disable`,
+  `eslint` or `global` comment there and reports it as a warning, which
+  `lint:js` fails. An exception is a config entry after the profile blocks in
+  `eslint.config.mjs`, scoped to its files, with a comment giving the reason.
+- **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
+  imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
+  Node built-ins and third-party packages. It checks static, re-export, type and
+  literal dynamic imports, including `file:` URLs, and rejects non-literal
+  dynamic imports. Paths resolve from the repository root, so the rule works
+  from any directory. `createRequire` and `.cjs` files are not checked.
+- **Compiler:** new packages extend `tsconfig.strict.json`, which adds
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+  `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
+  to the shared settings.
+
+The local rule lives in `scripts/eslint/bunny-rules.mjs`.
+`tests/strict_profile.test.mjs`, run by `npm run test:workflow`, checks:
+- which paths the profile covers, the exact rule options and that inline
+  comments fail lint there;
+- the module boundary rule, including type imports;
+- that every TypeScript project compiling covered code keeps the five compiler
+  settings, as `tsc --showConfig` reports them;
+- that covered paths have no lint baseline entries;
+- that every workspace package uses the `@jimmie-potts/` scope;
+- that the compiler base rejects an unchecked index and an explicit `undefined`
+  optional property.
 
 Guide-only revisions skip the core job under the
 [SDLC exception](sdlc.md#guide-only-ci-exception). Run
