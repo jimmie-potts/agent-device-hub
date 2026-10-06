@@ -110,7 +110,7 @@ export class InProcessBus {
       respond: <T extends object>(pattern: string, responder: Responder<T>) => attempt(() => this.#respond(source, pattern, responder)),
       sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => attempt(() => startSync({
         subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(source, pattern, deliver, subscribeOptions)),
-        request: (requested, requestOptions) => this.#sync.request(source, requested, requestOptions),
+        request: (requested, timeoutMs, parent) => this.#sync.request(source, requested, timeoutMs, parent),
         report: error => { this.#report(error, {source, pattern: `sync ${families.join(',')}`}); },
       }, families, handler, options)),
       serveSync: (families: readonly string[], provider: SyncProvider) => attempt(() => this.#sync.serve(source, families, provider)),
