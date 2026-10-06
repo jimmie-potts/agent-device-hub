@@ -9,12 +9,15 @@ import {launchOwner,quiesceAndStop,stopOwner} from '../dist/migration.js';
 const token='m'.repeat(43),credentials=[{id:'migration',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control','admin','ingest'],devices:[]}];
 const options=directory=>({directory,ownerId:'owner',consumers:[],controllers:[],credentials,port:0});
 const headers={authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'};
+// Fixture launches only prepare a released source. A CI host stall held one past the 5 s default for about 8.7 s (#584);
+// the default bound itself stays covered by the SIGTERM-resistant startup test.
+const fixtureStartup={startupTimeoutMs:30000};
 test('verified process handoff imports once, remains fenced across restart and rejects forged release',async()=>{
  const root=await mkdtemp(join(tmpdir(),'hub-migration-'));let source,destination;
  try{
   for(const name of ['source','destination','other'])await mkdir(join(root,name),{mode:0o700});
   const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   const receipt=await quiesceAndStop(source,join(root,'export.json'));
   await assert.rejects(startHub(options(join(root,'destination')),{released:receipt}),/invalid-migration/);
   await assert.rejects(startHub(options(join(root,'destination')),{staged:false,released:receipt}),/invalid-migration/);
@@ -36,7 +39,7 @@ test('staged routes activate only with valid authority and preserve producer ide
  try{
   for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
   const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   const receipt=await quiesceAndStop(source,join(root,'export.json'));destination=await startHub(options(join(root,'destination')),{staged:true,released:receipt});
   const path=join(root,'producer.json'),identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'};
   await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:identity,endpoint:source.url+'/api/monitor/v1/events',token}),{mode:0o600});
@@ -54,7 +57,7 @@ test('concurrent release, changed route and wrong producer credentials fail clos
  try{
   for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
   const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   const first=quiesceAndStop(source,join(root,'export.json'));await assert.rejects(quiesceAndStop(source,join(root,'export.json')),/source-not-running/);
   destination=await startHub(options(join(root,'destination')),{staged:true,released:await first});
   const path=join(root,'producer.json');const producer={enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:source.url+'/api/monitor/v1/events',token};
@@ -77,7 +80,7 @@ test('dead coordinator recovery retains original enabled intent and rejects a li
  try{
   for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
   const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   destination=await startHub(options(join(root,'destination')),{staged:true,released:await quiesceAndStop(source,join(root,'export.json'))});
   const path=join(root,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:source.url+'/api/monitor/v1/events',token}),{mode:0o600});
   const script=`import {stageProducer,routeDigest} from ${JSON.stringify(new URL('../dist/migration-routes.js',import.meta.url).href)};await stageProducer(process.argv[1],await routeDigest(process.argv[1]),process.argv[2],process.argv[3]);`;
@@ -93,7 +96,9 @@ test('failed supervised startup terminates its own SIGTERM-resistant child',asyn
  const {readFile}=await import('node:fs/promises');const root=await mkdtemp(join(tmpdir(),'hub-launch-failure-'));
  try{
   const entrypoint=join(root,'fixture.mjs'),pidPath=join(root,'pid');await writeFile(entrypoint,"import {writeFileSync} from 'node:fs';writeFileSync(process.argv[2],String(process.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000);",{mode:0o600});
-  await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token}),/owner-start-timeout/);
+  for(const startupTimeoutMs of [0,60001,1.5,Number.NaN,'5000'])await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token,startupTimeoutMs}),/invalid-launch/);
+  const started=performance.now();await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token}),/owner-start-timeout/);
+  assert.ok(performance.now()-started>=4900,'the default startup bound stays 5 s');
   const pid=Number(await readFile(pidPath,'utf8'));assert.throws(()=>process.kill(pid,0),e=>e.code==='ESRCH');
  }finally{await rm(root,{recursive:true,force:true});}
 });
@@ -137,7 +142,7 @@ test('activation rejects the host masquerading as a missing Pixoo consumer',asyn
  try{
   const directory=join(root,'host');await mkdir(directory,{mode:0o700});
   const sourceDir=join(root,'source');await mkdir(sourceDir,{mode:0o700});const configPath=join(root,'source.json');const configOptions={...options(sourceDir),consumers:[{id:'pixoo',clearOnNewTurn:true}]};await writeFile(configPath,JSON.stringify(configOptions),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configPath],environment:{},token});const released=await quiesceAndStop(source,join(root,'export.json'));
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configPath],environment:{},token,...fixtureStartup});const released=await quiesceAndStop(source,join(root,'export.json'));
   hub=await startHub({...configOptions,directory},{staged:true,released});
   const producer=join(root,'producer.json'),config=join(root,'config.json');
   await writeFile(producer,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token}),{mode:0o600});
@@ -156,7 +161,7 @@ test('consumer proof rejects copied handles, wrong startup config and stopped pr
   const monitor=join(root,'agent-monitor');await mkdir(monitor,{mode:0o700});const path=join(monitor,'config.json'),bytes=JSON.stringify({version:1,mode:'remote',ownerId:'owner'});
   await writeFile(path,bytes,{mode:0o600});const digest=createHash('sha256').update(bytes).digest('hex');
   const entrypoint=join(root,'child.mjs');await writeFile(entrypoint,"process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000);console.log('Pixoo simulator listening on http://127.0.0.1:49123');");
-  owner=await launchOwner({kind:'pixoo',entrypoint,args:[],environment:{PIXOO_DATA_DIR:root},token});
+  owner=await launchOwner({kind:'pixoo',entrypoint,args:[],environment:{PIXOO_DATA_DIR:root},token,...fixtureStartup});
   assert.equal(managedPixooConsumer(owner,path,digest).endpoint,owner.url+'/api/monitor/v1');
   assert.throws(()=>managedPixooConsumer({...owner},path,digest),/consumer-not-ready/);
   assert.throws(()=>managedPixooConsumer(owner,path+'.other',digest),/consumer-not-ready/);
@@ -169,7 +174,7 @@ test('explicit consumer preparation exposes the running reducer while every muta
  const root=await mkdtemp(join(tmpdir(),'hub-consumer-stage-'));let source,destination;
  try{
   for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   destination=await startHub(options(join(root,'destination')),{staged:true,released:await quiesceAndStop(source,join(root,'export.json'))});
   destination.prepareConsumers();const view=await (await fetch(destination.url+'/api/monitor/v1/sessions',{headers})).json();
   assert.equal(view.snapshot.collector,'running');assert.deepEqual(Object.keys(view).sort(),['apiVersion','ownerId','connection','snapshot','admissionRejected','nextRequestId'].sort());
@@ -184,7 +189,7 @@ for(const consumerId of ['pixoo','nanoleaf'])test('activation refuses missing '+
  try{
   for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
   const configuration=join(root,'host.json'),config={...options(join(root,'source')),consumers:[{id:consumerId,clearOnNewTurn:true}]};await writeFile(configuration,JSON.stringify(config),{mode:0o600});
-  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token,...fixtureStartup});
   hub=await startHub({...config,directory:join(root,'destination')},{staged:true,released:await quiesceAndStop(source,join(root,'export.json'))});
   const path=join(root,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:hub.url+'/api/monitor/v1/events',token}),{mode:0o600});
   route=await stageProducer(path,await routeDigest(path),hub.url+'/api/monitor/v1/events',token);

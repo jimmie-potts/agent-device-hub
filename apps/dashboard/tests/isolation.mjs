@@ -56,3 +56,24 @@ export async function independentWallRead(f,pixel,read=()=>fetch(f.hub.url+'/api
  assert.equal(pixel.finished,false,'wall responds while the slow Pixoo read is still pending');
  return elapsed;
 }
+
+// The hub gives each controller one slot and refuses a command that finds it busy with capacity (429), so a test that
+// acts as another client must not meet the page's own read of that device. Routes the page's reads of `device`;
+// `exclusive(run)` waits for every read already admitted to answer, holds later reads until `run` settles and then
+// releases them. `serve` answers one read, by default from the hub. A read that fails, as one still in flight when the
+// context closes does, is abandoned. None retries a read.
+export async function deviceReads(page,device,serve=async route=>{const response=await route.fetch({maxRetries:0});await route.fulfill({response});}){
+ const active=new Set();let held=null;
+ await page.route(`**/api/controllers/v1/${device}/**`,async route=>{
+  if(route.request().method()!=='GET'){await route.fallback();return;}
+  while(held)await held;
+  const read=serve(route).catch(()=>route.abort().catch(()=>{}));
+  active.add(read);try{await read;}finally{active.delete(read);}
+ });
+ return {
+  async exclusive(run){
+   let release;held=new Promise(resolve=>{release=resolve;});
+   try{await Promise.all(active);return await run();}finally{held=null;release();}
+  },
+ };
+}

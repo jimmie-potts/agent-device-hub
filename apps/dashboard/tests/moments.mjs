@@ -117,7 +117,8 @@ try {
   // The controller answers the hub's own read as a 1.0-only controller would, after the page's fresh read.
   await page.route('**/api/controllers/v1/wall/moment',route=>{f.wallMoments.refuseNextVersionedRead();return route.continue();});
   await mood(page,'Celebrate').click();await status(page).filter({hasText:'Not sent: this controller serves API 1.0.'}).waitFor();
-  await page.unroute('**/api/controllers/v1/wall/moment');
+  // The route stays until the context closes. Removing a page's last route can strand a read the page starts in that
+  // instant, here the refresh that frees the card, until the client's 5 s timeout (Hub #303).
   assert.equal(await settledMoments(f),3,'the not-sent press made no moment POST and nothing was resent');
   assert.equal(await mood(page,'Celebrate').isDisabled(),false,'a definite result leaves the card usable');
  });
