@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {create, migrate} from './devices.js';
 import {initFavorites} from './favorites.js';
+import {initJournal} from './journal.js';
 import {initProjectMap, seedProjectMap} from './project-map.js';
 import {initSharedInput} from './shared-input.js';
 import {execute, first, transaction, type Db} from './sqlite.js';
@@ -24,6 +25,8 @@ export function initialize(db: Db, now: () => number = epochSeconds): void {
     // Of the integration API's tables only saved animation favorites are kept; integration_meta and
     // integration_requests belonged to the API itself, which is not ported (PORTING.md).
     initFavorites(db);
+    // The control journal and discovered scenes replace the controller ledger's request rows and scene list.
+    initJournal(db);
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, turn TEXT, status TEXT, updated REAL)');
     create(db, 'slots');
     db.exec('CREATE TABLE IF NOT EXISTS waits (session TEXT, turn TEXT, key TEXT, kind TEXT, tool TEXT, PRIMARY KEY(session, turn, key))');

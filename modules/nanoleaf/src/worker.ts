@@ -1,7 +1,8 @@
 // The display worker: one loop per device that places the tasks, starts comets and Locate, applies mode commands and
 // pending wall edits, and keeps the lights showing them (bridge.py run_worker, update_display, play_preview). Shared input
-// is the only task source, so the worker keeps running until its stop signal. Controls, holds and animation play are
-// slice 3d's, and the runtime launches and restarts the worker (PORTING.md).
+// is the only task source, so the worker keeps running until its stop signal. It also makes the device writes of
+// accepted controls and requested animations, journaled with their outcomes (controls.ts); the runtime launches and
+// restarts the worker (PORTING.md).
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
@@ -12,11 +13,14 @@ import {DEFAULT, deviceOf, lockFile, metaKey} from './devices.js';
 import {dashboard, type Indication} from './line-projection.js';
 import {applyPending, locateState, palette, paletteRgb, renderConfig} from './project-map.js';
 import {COLORS, COMET_SECONDS, PULSE_SECONDS, RADIATING_PULSES, render, TRAVEL_SECONDS, type RenderConfig} from './renderer.js';
+import {animationPayload, Cancelled, controlPayload, discovered, Execution, playAnimation, queuedContent, queuedMode, Refused} from './controls.js';
+import type {AnimationCommand, Display} from './effects.js';
+import {ANIMATION, expireQueued, finish, held, journalRow, recoverAttempts, type ErrorCode, type Transact} from './journal.js';
 import {SceneRestorer, type Sender} from './scenes.js';
 import {selected, sharedRenderConfig} from './shared-input.js';
 import {execute, first, transaction, type Db, type Row} from './sqlite.js';
 import {controlState, markApplied, markDirty, overrides as overridesOf, type Overrides} from './store.js';
-import {lightRequest, type LightRequest} from './transport.js';
+import {lightRequest, type LightAddress, type LightRequest} from './transport.js';
 
 export type {Sender} from './scenes.js';
 
@@ -46,6 +50,8 @@ export interface WorkerOptions {
   send?: Sender;
   /** Restore the device's saved scene around the indicators (the default); false draws every state itself. */
   scenes?: boolean;
+  /** Runs each transaction that ends commands, so their outcomes commit with it (the runtime's outbox). */
+  transact: Transact;
 }
 
 /** The worker's stop signal ended a wait. */
@@ -145,14 +151,17 @@ export async function playPreview(config: RenderConfig, choice: string, send: Se
 
 /**
  * Run the device's worker until `signal` stops it. False when another instance holds the device's lock; true when it
- * stopped, or its device was removed. A failed pass rejects; the runtime records it and restarts the worker.
+ * stopped, its device was removed, or a hold stops its writes and shared input is not selected or the hold came during
+ * a pass; the runtime starts it again when a command is accepted. A failed pass rejects; the runtime records it and
+ * restarts the worker.
  *
  * No transaction is open across a wait or a device request: each step decides in one short transaction, sends after
  * it commits, and checks again in a new one. Python held its write lock while it sent; here a change that commits
- * during a send is seen by the checks after it.
+ * during a send is seen by the checks after it. Transactions that end commands go through `transact`, so each outcome
+ * commits with the change it reports.
  */
 export async function runWorker(options: WorkerOptions): Promise<boolean> {
-  const {directory, clock, scheduler, signal} = options;
+  const {directory, clock, scheduler, signal, transact} = options;
   const device = options.device ?? DEFAULT;
   const primary = device === DEFAULT;
   const key = (name: string): string => metaKey(name, device);
@@ -184,11 +193,26 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
   }
   try {
     const db = options.database();
+    // Only the device's locked worker ends its unfinished attempts: one without a result may have reached the device.
+    // A native control unsent past its expiry fails here; an animation's expiry waits for the pass, as in Python.
+    const heldAtStart = await transact(report => {
+      recoverAttempts(db, device, report);
+      expireQueued(db, device, now(), report, true);
+      return held(db, controlState(db, device).revision, device) && !selected(db);
+    });
+    if (heldAtStart) return true;
     const request = options.request ?? lightRequest;
     const config: RenderConfig = await loadConfig(directory, device, request);
     config._now = now;
-    config._controller_request = request;
-    const scenes = options.scenes === false ? null : new SceneRestorer(directory, config, request);
+    let active: Execution | null = null;
+    // Each write of a journaled command goes through its execution; reads never do.
+    const controllerRequest: LightRequest = (target, method, endpoint, payload) => {
+      const execution = active;
+      return execution !== null && method !== 'GET' ? execution.call(() => request(target, method, endpoint, payload))
+        : request(target, method, endpoint, payload);
+    };
+    config._controller_request = controllerRequest;
+    const scenes = options.scenes === false ? null : new SceneRestorer(directory, config, controllerRequest);
     const sender: Sender = options.send ?? (scenes !== null
       ? (value, snapshot, instant, loop) => scenes.send(value, snapshot, instant, loop)
       : (value, snapshot, instant, loop) => render(value, snapshot, instant, loop));
@@ -200,6 +224,14 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
       const shared = selected(db);
       const control = controlState(db, device);
       const overrides = overridesOf(db, device);
+      if (held(db, control.revision, device)) {
+        // An uncertain or unsent command holds the device's writes until an explicit choice: a mode command, or a fresh
+        // control or animation. Commands queued behind the hold still expire.
+        if (!shared) return true;
+        await transact(report => expireQueued(db, device, now(), report));
+        await sleep(1);
+        continue;
+      }
       const mode = control.mode;
       const pendingMode = control.revision !== control.applied;
       config._mode = mode;
@@ -212,10 +244,14 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
       const observing = scenes !== null && (mode !== 'free' || pendingMode);
       const externalScene = observing ? await scenes.observe() : false;
       const changed = (): boolean => controlState(db, device).revision !== control.revision;
+      const overtaken = (): boolean => held(db, control.revision, device) || changed();
       // A control admitted during the device round trip restarts the pass.
       const restart = (): boolean => changed() || !sameOverrides(overridesOf(db, device), overrides);
-      const preview = transaction(db, () => {
-        if (restart()) return undefined;
+      const preview = await transact(report => {
+        if (held(db, control.revision, device)) return HELD;
+        if (changed()) return undefined;
+        if (observing) discovered(db, scenes.names, device, report);
+        if (!sameOverrides(overridesOf(db, device), overrides)) return undefined;
         const value = first(db, 'SELECT value FROM meta WHERE key=?', key('preview'));
         if (value !== undefined) {
           execute(db, 'DELETE FROM meta WHERE key=?', key('preview'));
@@ -224,10 +260,11 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
         }
         return value ?? null;
       });
+      if (preview === HELD) return true;
       if (preview === undefined) continue;
       if (preview !== null && mode !== 'free' && !dark) {
         const previewSend: Sender = async (value, snapshot, instant, loop) => {
-          if (changed()) throw new PreviewCancelled();
+          if (overtaken()) throw new PreviewCancelled();
           await sender(value, snapshot, instant, loop);
         };
         const previewSleep = async (seconds: number): Promise<void> => {
@@ -246,15 +283,19 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
         continue;
       }
       const started = now();
-      const pass = transaction(db, () => {
+      const pass = await transact(report => {
+        if (held(db, control.revision, device)) return HELD;
         if (changed()) return undefined;
         pruneComets(db, started, mode, device);
+        // Queued commands past their expiry fail and hold the device (integration_api.process).
+        expireQueued(db, device, started, report);
         if (applyPending(db, device)) markDirty(db);
         config._locate = locateState(db, config, started, mode);
         const snapshot = dashboard(db, config, started);
         config._comet = mode === 'work' && config._locate === null ? currentComet(db, started, device) : null;
         renderConfig(db, config, snapshot);
         sharedRenderConfig(db, config);
+        if (held(db, control.revision, device)) return HELD;
         // Overrides and queued controls must come from one locked read.
         if (!sameOverrides(overridesOf(db, device), overrides)) return undefined;
         const waves = snapshot.map(item => (item !== null && Number(item[1]) > control.wave_cutoff ? item : null));
@@ -263,18 +304,82 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
         if (pendingMode || (scenes !== null && mode !== 'free' && (externalScene || (shown || mode === 'quiet') !== scenes.state.owned))) {
           execute(db, 'DELETE FROM display_v3 WHERE device=?', device);
         }
-        return {snapshot, loop, shown, generation: eventRevision(db)};
+        return {snapshot, loop, shown, generation: eventRevision(db), command: queuedMode(db, device, control.revision)};
       });
+      if (pass === HELD) return true;
       if (pass === undefined) continue;
-      if (mode === 'free') {
-        if (pendingMode) await sender(config, pass.snapshot.map(() => null), started, true);
-        execute(db, 'DELETE FROM display_v3 WHERE device=?', device);
-      } else if (!dark) {
-        await updateDisplay(db, config, pass.snapshot, started, pass.loop, sender);
+      // The pass's own mode command, if one was admitted, journals each write this pass makes for it.
+      const execution = new Execution(db, control.revision, pass.command, device, transact);
+      // A replaced sender is one write; the device's own sender makes each of its requests through the execution.
+      const guarded: Sender = options.send === undefined ? sender
+        : (value, snapshot, instant, loop) => execution.call(() => sender(value, snapshot, instant, loop));
+      const applyMode = async (): Promise<void> => {
+        active = execution;
+        if (mode === 'free') {
+          if (pendingMode) await guarded(config, pass.snapshot.map(() => null), started, true);
+          execute(db, 'DELETE FROM display_v3 WHERE device=?', device);
+        } else if (!dark) {
+          await updateDisplay(db, config, pass.snapshot, started, pass.loop, guarded);
+        }
+        await execution.complete();
+      };
+      const end = (id: string, code: ErrorCode): Promise<void> => transact(report => {
+        const row = journalRow(db, id);
+        if (row !== undefined) finish(db, row, {kind: 'refused', code}, report);
+      });
+      const applyControls = async (): Promise<void> => {
+        // Native one-shot writes and requested animations, in admission order.
+        for (const row of queuedContent(db, device, control.revision)) {
+          if (row.kind === ANIMATION) {
+            // An animation journals its own one write, not as a native control's.
+            active = null;
+            let payload: Display;
+            try {
+              payload = animationPayload(db, row.command as AnimationCommand, config.line_groups, config.line_positions ?? null);
+            } catch (error) {
+              if (!(error instanceof Refused)) throw error;
+              await end(row.id, error.code);
+              continue;
+            }
+            await playAnimation(db, row.id, () => request(address(config), 'PUT', '/effects', payload), transact);
+            continue;
+          }
+          const target = controlPayload(db, device, row.command);
+          if (target === null) {
+            // The scene is no longer listed: the command fails without a write.
+            await end(row.id, 'unsupported-capability');
+            continue;
+          }
+          const one = new Execution(db, control.revision, row.id, device, transact);
+          active = one;
+          await controllerRequest(address(config), 'PUT', target[0], target[1]);
+          await one.complete();
+          const command = row.command as {kind: string; percent: number};
+          if (scenes !== null && command.kind === 'brightness.set' && mode !== 'free') scenes.wrote(scenes.selected, command.percent);
+        }
+      };
+      try {
+        // A pending mode applies first, so a control admitted behind it lands last.
+        if (pendingMode) {
+          await applyMode();
+          await applyControls();
+        } else {
+          await applyControls();
+          await applyMode();
+        }
+      } catch (error) {
+        if (error instanceof Cancelled) continue;
+        throw error;
+      } finally {
+        active = null;
       }
       const outcome = transaction(db, () => {
-        // A decision committed during the sends restarts the pass.
-        if (restart()) return 'restart';
+        if (held(db, control.revision, device)) return 'held';
+        // A decision committed during the sends restarts the pass; a command admitted mid-apply, a repeated mode command
+        // included, runs in the next one.
+        if (restart() || queuedContent(db, device, control.revision).length > 0 || queuedMode(db, device, control.revision) !== null) {
+          return 'restart';
+        }
         markApplied(db, control.revision, device);
         execute(db, 'DELETE FROM meta WHERE key IN (?, ?)', 'dirty', key('control_error'));
         const watching = selected(db) || first(db, 'SELECT 1 FROM receipts LIMIT 1') !== undefined
@@ -286,6 +391,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
         execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', key('rendering'), '1');
         return 'wait';
       });
+      if (outcome === 'held') return true;
       if (outcome === 'restart') continue;
       if (outcome === 'idle') return true;
       let deadline = started + (pass.loop ? 1.0 : PULSE_SECONDS);
@@ -307,6 +413,11 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
     guard.close();
   }
 }
+
+/** A pass found its device held: Python's worker returned there. */
+const HELD = 'held';
+
+const address = (config: RenderConfig): LightAddress => ({ip: config.ip ?? '', token: config.token ?? ''});
 
 const sameOverrides = (left: Overrides, right: Overrides): boolean => left.power === right.power && left.brightness === right.brightness;
 

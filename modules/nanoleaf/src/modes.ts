@@ -1,9 +1,10 @@
 // Lighting modes: the explicit mode command for one device and its status (modes.py). Each runs inside the caller's
-// transaction. Python also advanced the device's controller ledger and retired requested animations; the ledger and the
-// integration API are not ported (PORTING.md), and the runtime launches the worker.
+// transaction. A mode command also ends the device's queued work and its hold, as Python's ledger notice and animation
+// retirement did; the ledger itself is not ported (PORTING.md), and the runtime launches the worker.
 import {floatText} from './compat.js';
 import {DEFAULT, metaKey} from './devices.js';
 import {ValueError} from './errors.js';
+import {release, retireQueued, type Report} from './journal.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides} from './store.js';
 
@@ -13,11 +14,14 @@ export const isMode = (value: unknown): value is Mode => MODES.some(mode => mode
 
 /**
  * Apply an explicit mode command; true when a worker pass is needed. Any mode command, the current mode included, ends
- * the device's power and brightness overrides and counts as a new revision. A new mode also clears the device's preview,
- * comets and Locate, and a return to Work starts a new wave cutoff.
+ * the device's queued commands (reported through `report`), its hold, and its power and brightness overrides; ending an
+ * override counts as a new revision. A new mode also clears the device's preview, comets and Locate, and a return to Work
+ * starts a new wave cutoff.
  */
-export function changeMode(db: Db, mode: string, instant: number, device: string = DEFAULT): boolean {
+export function changeMode(db: Db, mode: string, instant: number, report: Report, device: string = DEFAULT): boolean {
   const key = (name: string): string => metaKey(name, device);
+  release(db, device);
+  retireQueued(db, device, report);
   const state = controlState(db, device);
   const current = overrides(db, device);
   const overridden = current.power !== null || current.brightness !== null;
@@ -41,9 +45,9 @@ export function changeMode(db: Db, mode: string, instant: number, device: string
 }
 
 /** modes.set_mode without the worker launch: refuse an unknown mode, then apply the command. */
-export function setMode(db: Db, mode: unknown, instant: number, device: string = DEFAULT): boolean {
+export function setMode(db: Db, mode: unknown, instant: number, report: Report, device: string = DEFAULT): boolean {
   if (!isMode(mode)) throw new ValueError('Unknown lighting mode.');
-  return changeMode(db, mode, instant, device);
+  return changeMode(db, mode, instant, report, device);
 }
 
 export interface ModeStatus {
