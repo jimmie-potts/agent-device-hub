@@ -1,6 +1,7 @@
 // One conformance suite for every transport (Hub #883, ADR 0012 "Portability"): the same SDK calls behave the same
 // in process and over SSE and HTTP. Where a transport must answer differently, the transport names its expectation.
 import assert from 'node:assert/strict';
+import {setTimeout as delay} from 'node:timers/promises';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Command, type Overflow, type Reply, type Snapshot, type SyncChange} from '../src/index.js';
 import {SESSION_FAMILY, deferred, flush, it, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
@@ -132,6 +133,9 @@ function suite(transport: Transport): void {
     try {
       await until(() => handled.length === 1, 'the first command');
       late = await requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 300});
+      // Main's bus runs its deadline on setTimeout and checks expiry with Date.now(), which can trail it by a
+      // millisecond; past that, the waiting command is expired for certain. #880 removes it at the deadline instead.
+      await delay(5);
     } finally {
       // Released before any check, so a failed check cannot leave the handler waiting at close.
       busy.resolve({status: 'accepted'});

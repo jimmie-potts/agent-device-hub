@@ -205,7 +205,10 @@ class RemoteClient {
       if (this.#closed) throw new SdkError(body('invalid-state', `${this.#source} is closed`));
       try {
         const connection = await this.#open();
-        for (const [id, local] of this.#subscriptions) await this.#post('subscribe', {connection, id, pattern: local.pattern});
+        // One registration that fails is reported, so it cannot keep the others from reconnecting.
+        for (const [id, local] of this.#subscriptions) {
+          await this.#post('subscribe', {connection, id, pattern: local.pattern}).catch((error: unknown) => { this.#report(error, local.pattern); });
+        }
         for (const [id, answering] of this.#answering) await answering.register(connection).catch((error: unknown) => { this.#report(error, id); });
         this.#delayMs = this.#firstDelayMs;
         for (const id of this.#subscriptions.keys()) this.#gap(id, {});
