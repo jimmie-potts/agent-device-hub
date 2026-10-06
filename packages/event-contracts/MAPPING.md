@@ -47,7 +47,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Proposed: not published. |
-| `freshness` | `session /freshness` | Proposed: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). |
+| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). |
 | `restartUncertain` | `session /restartUncertain` | Unchanged. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
 | `generation` | `session /generation` | Required. Snapshot 1.0 records read as 0. |
@@ -134,7 +134,7 @@ are `org.bunny.mode.set.completed` and `org.bunny.moment.play.completed`.
 | `configurationRevision` | module state `/revision` | **No core home.** The module's own device state family carries it. |
 | `generation` | module state | **No core home.** The module's own device state family carries it. |
 | `outcome` | reply, or outcome `/result` | See the outcome table. |
-| `priorEffects` | outcome `/evidence` | `none` becomes `none`, and `confirmed-transmission` becomes `transmitted`. `possible` becomes `none` with result `uncertain`. This is an open question: ADR 0012 says `none` means nothing reached the device. |
+| `priorEffects` | outcome `/evidence` | `none` becomes `none`, and `confirmed-transmission` becomes `transmitted`. `possible` becomes `none` with result `uncertain`. Decided by the coordinator, 2026-10-06: evidence `none` means there is no evidence that anything reached the device, as after a failure before sending or a lost answer, and ADR 0012 says so. |
 | `completedOperations`, `uncertainOperations` | **no 2.0 home** | The profile's outcome payload is closed. Proposed: the module keeps them in its own state or history, or profile 2.1 adds an optional operations list to the outcome. |
 | `failure`, `failure.code` | reply or outcome `/error` | See the error table. When codes merged, the 1.x code goes in `detail`. |
 
@@ -148,6 +148,8 @@ are `org.bunny.mode.set.completed` and `org.bunny.moment.play.completed`.
 | `uncertain` | Outcome `uncertain` with the mapped evidence and error `uncertain-result`. |
 | `cancelled` | Outcome `failed` with the mapped evidence and error `cancelled`. The detail is the 1.x code when there was one, such as `stale-generation`. |
 
+The coordinator accepted these code mappings on 2026-10-06.
+
 | 1.x failure code | 2.0 error code |
 | --- | --- |
 | `unauthenticated`, `forbidden`, `unsupported-capability`, `invalid-request`, `revision-conflict`, `capacity`, `uncertain-result` | The same code. |
@@ -155,9 +157,9 @@ are `org.bunny.mode.set.completed` and `org.bunny.moment.play.completed`.
 | `stale-generation` | `revision-conflict` when refused at admission; `cancelled` when the queue retired it |
 | `request-conflict` | `duplicate-conflict` |
 | `request-expired`, `moment-missed` | `expired` |
-| `request-order` | `revision-conflict`. Proposed: read again before deciding, as for a stale ticket. |
+| `request-order` | `revision-conflict`: read again before deciding, as for a stale ticket. Decided by the coordinator, 2026-10-06. |
 | `external-control`, `moment-blocked` | `invalid-state` |
-| `moment-duplicate` | `invalid-state`. Proposed: a repeated moment ID is a state the device refuses, not a conflicting retry. |
+| `moment-duplicate` | `invalid-state`: a repeated moment ID is a state the device refuses, not a conflicting retry. Decided by the coordinator, 2026-10-06. |
 | `transport-failure` | `unavailable` before sending; `uncertain-result` after |
 
 ## Moment request and moment state
@@ -170,8 +172,8 @@ The source is the controller 1.1 `moment` command and the snapshot's
 | --- | --- | --- |
 | `kind` | envelope `type` | `org.bunny.moment.play.requested`. |
 | `momentId`, `palette`, `durationMs`, `priorityClass`, `coversStatus` | `moment-play /momentId`, `/palette`, `/durationMs`, `/priorityClass`, `/coversStatus` | Unchanged. A flourish never covers status (schema). |
-| `mood` | `moment-play /mood` | Narrowed to kebab-case. Every mood declared today is kebab-case. |
-| `start`, `start.domain`, `start.epoch`, `start.atMs`, `start.toleranceMs` | `moment-play /startAtMs`, `/toleranceMs` | **Meaning change, proposed.** Modules run in the runtime's one process and share its clock, so one wall-clock start serves every target. The per-device translation into a controller-monotonic epoch goes away. The start is at most 60,000 ms after the envelope `time` (validator). |
+| `mood` | `moment-play /mood` | Narrowed to kebab-case. Every mood declared today is kebab-case. Decided by the coordinator, 2026-10-06. |
+| `start`, `start.domain`, `start.epoch`, `start.atMs`, `start.toleranceMs` | `moment-play /startAtMs`, `/toleranceMs` | **Meaning change.** Decided by the coordinator, 2026-10-06. Modules run in the runtime's one process and share its clock, so one wall-clock start serves every target. The per-device translation into a controller-monotonic epoch goes away. The start is at most 60,000 ms after the envelope `time` (validator). |
 | `state.moment.last` (`momentId`, `requestId`, `ending`, `endedAt`) | `moment-ended` occurrence | `endedAt` becomes `endedAtMs` on the runtime's clock. |
 | `state.moment.current` | module state | Device state. The module's own family carries it. |
 
@@ -188,7 +190,7 @@ The source is the Hub's `/api/playback/v1/snapshot`. The 2.0 home is
 | --- | --- | --- |
 | `apiVersion` | envelope `dataschema` | |
 | `sourceId` | `playback /id` | The envelope subject. |
-| `availability` | `playback /availability` | The owner publishes a new revision when it changes. |
+| `availability` | `playback /availability` | The owner publishes a new revision when it changes. Decided by the coordinator, 2026-10-06. |
 | `observedAtMs` | `playback /observedAtMs` | Absent rather than null. |
 | `ageMs` | derived | Read context, like `observationAgeMs`. |
 | `playback` | `playback /playback` | Null becomes `{"status": "unknown"}`. |

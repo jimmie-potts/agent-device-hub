@@ -12,3 +12,4 @@
 
 - [x] 3.1 Document the families in the package README, export `./v2/families` and update `docs/architecture.md`.
 - [x] 3.2 Run build, typecheck, `lint:js`, `test:events:built`, `test:events:python`, `test:workflow`, `check:workflow` and strict spec validation, with negative controls; then sync and archive this change.
+- [x] 3.3 Reword evidence `none` as "no evidence that anything reached the device" in ADR 0012, the package README, `kinds.schema.json`, MAPPING.md, design.md and the "Completed outcomes and replies" requirement, as the coordinator decided on 2026-10-06. Evidence: the `mode-set-lost-answer` fixture (uncertain, `none`) passes and a succeeded outcome with `none` evidence is refused.

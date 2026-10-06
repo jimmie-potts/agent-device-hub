@@ -17,7 +17,7 @@
       "properties": {
         "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
         "result": {"enum": ["succeeded", "failed", "uncertain"]},
-        "evidence": {"enum": ["transmitted", "observed", "none"]},
+        "evidence": {"description": "none: no evidence that anything reached the device, as after a failure before sending or a lost answer. A succeeded outcome has transmitted or observed evidence.", "enum": ["transmitted", "observed", "none"]},
         "error": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"}
       },
       "allOf": [

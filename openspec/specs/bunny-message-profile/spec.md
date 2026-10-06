@@ -67,11 +67,15 @@ The profile SHALL publish building blocks that payload schemas reference by URI:
 
 ### Requirement: Completed outcomes and replies
 
-A reply SHALL either accept a request or carry an error body. A completed outcome SHALL report `succeeded`, `failed` or `uncertain` with `transmitted`, `observed` or `none` evidence. A failed outcome SHALL carry an error, a succeeded outcome SHALL carry no error, and a succeeded outcome SHALL report `transmitted` or `observed` evidence.
+A reply SHALL either accept a request or carry an error body. A completed outcome SHALL report `succeeded`, `failed` or `uncertain` with `transmitted`, `observed` or `none` evidence. Evidence `none` SHALL mean that there is no evidence that anything reached the device, as after a failure before sending or a lost answer. A failed outcome SHALL carry an error, a succeeded outcome SHALL carry no error, and a succeeded outcome SHALL report `transmitted` or `observed` evidence.
 
 #### Scenario: Inconsistent outcome or reply
 - **WHEN** a reply has both an accepted status and an error, a failed outcome has no error or a succeeded outcome reports no evidence
 - **THEN** the message is refused with `invalid-message`
+
+#### Scenario: An answer lost after sending
+- **WHEN** a module sent a request but never got its answer, and reports an `uncertain` outcome with `none` evidence and the `uncertain-result` error
+- **THEN** the outcome is accepted
 
 ### Requirement: One error body and code registry
 

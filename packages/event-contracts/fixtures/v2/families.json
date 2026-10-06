@@ -939,6 +939,28 @@
     "evidence": "observed"
    }
   },
+  "mode-set-lost-answer": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-mode-set-lost",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.completed",
+   "subject": "pixoo",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-mode-2",
+    "result": "uncertain",
+    "evidence": "none",
+    "error": {
+     "code": "uncertain-result",
+     "retryable": false
+    }
+   }
+  },
   "moment-play": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -1415,6 +1437,15 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /type session uses org.bunny.session.updated"
+  },
+  {
+   "name": "a succeeded outcome without evidence",
+   "base": "mode-set-completed",
+   "set": {
+    "/data/evidence": "none"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /evidence enum"
   },
   {
    "name": "a mode in device spelling",

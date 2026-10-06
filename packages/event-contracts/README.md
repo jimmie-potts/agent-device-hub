@@ -72,7 +72,12 @@ follows the strict profile for new code.
   ticket, ordering, tagged unknown values, kebab-case enum values, entity
   references and the error body.
 - `schemas/v2/kinds.schema.json`: payloads the profile owns for replies,
-  completed outcomes, removals, sync requests and `sync.completed`.
+  completed outcomes, removals, sync requests and `sync.completed`. An outcome
+  is `succeeded`, `failed` or `uncertain`, with evidence `transmitted`,
+  `observed` or `none`. `none` means there is no evidence that anything reached
+  the device, as after a failure before sending or a lost answer. A succeeded
+  outcome always has `transmitted` or `observed` evidence, and a failed one
+  carries an error.
 - `schemas/v2/errors.json`: the error code registry. Each code says whether a
   retry can help. The error block in `blocks.schema.json` lists the same codes
   and flags, so a received error body with another code or flag is refused; a

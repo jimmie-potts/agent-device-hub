@@ -24,7 +24,7 @@
 None.
 
 ### Modified Capabilities
-- `bunny-message-profile`: adds the core payload families, payload checks, removal and sync membership rules and the 1.x field mapping. Module payload schema registration gains the optional check.
+- `bunny-message-profile`: adds the core payload families, payload checks, removal and sync membership rules and the 1.x field mapping. Module payload schema registration gains the optional check. Completed outcomes state that evidence `none` means no evidence that anything reached the device (coordinator decision, 2026-10-06).
 
 ## Impact
 
@@ -34,6 +34,6 @@ None.
   - `fixtures/v2/families.json`;
   - `tests/families.test.mjs`, `tests/mapping.test.mjs` and `tests/consumer.mjs`;
   - the `./v2/families` export.
-- **Docs:** the package README, `MAPPING.md` and one sentence in `docs/architecture.md`.
+- **Docs:** the package README, `MAPPING.md`, one sentence in `docs/architecture.md`, and ADR 0012's wording for outcome evidence `none`.
 - **Nothing else:** no runtime, Hub, controller, device or 1.x contract change. Delivery target: source-only.
-- `design.md` records the decisions that change a 1.x meaning or choose a new shape. Each is marked for coordinator confirmation.
+- `design.md` records the decisions that change a 1.x meaning or choose a new shape, and the coordinator's decisions on them (2026-10-06).
