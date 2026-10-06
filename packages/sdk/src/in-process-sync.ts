@@ -1,11 +1,12 @@
 // The owner side of sync on the in-process bus. One owner serves each family. A sync request goes straight to that
 // owner, and its answer goes straight back to the requester, never to subscribers.
-import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Subscription, type TraceContext} from './sdk.js';
-import {checkFamilies, entryOf, schemaFamily, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest} from './sync.js';
+import {
+  checkFamilies, entryOf, schemaFamily, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest,
+} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
@@ -79,13 +80,12 @@ export class SyncOwners {
   }
 
   /** Sends one sync request to the owner of `families`. Resolves with its answer or a refusal; never rejects. */
-  request(source: string, families: readonly string[], timeoutMs: number, parent: TraceContext | undefined): Promise<SyncAnswer> {
+  request(source: string, {families, requestId, timeoutMs, trace}: OutgoingSync): Promise<SyncAnswer> {
     const {now, envelope} = this.#dependencies;
-    const requestId = randomUUID();
     const sentAtMs = now(), expiresAtMs = sentAtMs + timeoutMs;
     const subject = families.join(',');
     const data = {requestId, families: [...families]};
-    const request = envelope(source, 'sync-request', {type: 'org.bunny.sync.requested', subject, dataschema: SYNC_REQUEST, data}, childOf(parent), {sentAtMs, expiresAtMs});
+    const request = envelope(source, 'sync-request', {type: 'org.bunny.sync.requested', subject, dataschema: SYNC_REQUEST, data}, trace, {sentAtMs, expiresAtMs});
     const owners = families.map(family => [...this.#owners].find(owner => owner.families.has(family)));
     const missing = families.find((_, index) => owners[index] === undefined);
     if (missing !== undefined) return Promise.resolve(refusal(request, 'unavailable', `no owner serves ${missing}`));

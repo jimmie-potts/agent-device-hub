@@ -1,9 +1,11 @@
 // Sync (ADR 0012, "Consumers and recovery"): a consumer's copy of one owner's families. The copy takes the owner's
 // current state at a revision, then follows live messages. This file is transport-neutral; a transport supplies the
 // live subscriptions and the sync request through `SyncTransport`.
+import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Draft, type Handler, type SubscribeOptions, type Subscription, type TraceContext} from './sdk.js';
+import {childOf} from './trace.js';
 
 export type SyncRequest = {requestId: string; families: string[]};
 export type SyncCompleted = {requestId: string; revision: number; members: EntityRef[]};
@@ -56,11 +58,16 @@ export type SyncAnswer =
   | {status: 'served'; requestId: string; states: Message[]; completed: Message<SyncCompleted>}
   | {status: 'rejected'; requestId: string; error: ErrorBody};
 
+/** One sync request as the copy sends it. The request message carries `trace` as its own trace context. */
+export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext};
+
 /** What sync needs from a transport. */
 export type SyncTransport = {
+  /** The clock, in epoch milliseconds. */
+  now: () => number;
   subscribe: (pattern: string, handler: Handler<Record<string, unknown>>, options: SubscribeOptions) => Promise<Subscription>;
-  /** Sends one sync request with this deadline and resolves with its answer. It never rejects. */
-  request: (families: readonly string[], timeoutMs: number, parent: TraceContext | undefined) => Promise<SyncAnswer>;
+  /** Sends one sync request and resolves with its answer, or a refusal at its deadline. */
+  request: (request: OutgoingSync) => Promise<SyncAnswer>;
   /** Reports an error that no caller hears about, such as a handler that threw. */
   report: (error: unknown) => void;
 };
@@ -221,7 +228,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#phase = 'syncing';
     this.#pending = [];
     this.#answer = undefined;
-    void this.#transport.request([...this.#families], this.#timeoutMs, parent).then(answer => {
+    const outgoing = {families: [...this.#families], requestId: randomUUID(), timeoutMs: this.#timeoutMs, trace: childOf(parent)};
+    void this.#transport.request(outgoing).then(answer => {
       if (attempt !== this.#attempt || this.#phase === 'closed') return;
       this.#answer = answer;
       this.#wake();

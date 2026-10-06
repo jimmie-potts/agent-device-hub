@@ -26,8 +26,9 @@ const BASE = 'https://bunny.invalid/events/';
 const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name}`});
 const closed = (properties: Record<string, object>): object =>
   ({type: 'object', additionalProperties: false, required: Object.keys(properties), properties});
-// Sync names an entity by its schema family, so the session state and its removal share the family `session`.
-export const SESSION_SCHEMA = `${BASE}session/2.0`;
+// Sync names an entity by its schema family, so the test session state and its removal share `test-session`.
+export const SESSION_FAMILY = 'test-session';
+export const SESSION_SCHEMA = `${BASE}test-session/2.0`;
 export const TURN_SCHEMA = `${BASE}test-turn/2.0`;
 export const MODE_SCHEMA = `${BASE}test-mode/2.0`;
 const validator = new MessageValidator();
@@ -91,7 +92,7 @@ export const session = (id: string, revision: number): Draft<Session> =>
   ({kind: 'state', type: 'org.bunny.session.updated', subject: id, dataschema: SESSION_SCHEMA, data: {id, revision}});
 export const removed = (id: string, revision: number): Draft<Removal> => ({
   kind: 'removal', type: 'org.bunny.session.removed', subject: id, dataschema: `${BASE}removal/2.0`,
-  data: {entity: {family: 'session', id}, revision, reason: 'expired'},
+  data: {entity: {family: SESSION_FAMILY, id}, revision, reason: 'expired'},
 });
 export const turnEnded = (sessionId: string): Draft<{sessionId: string}> =>
   ({kind: 'occurrence', type: 'org.bunny.turn.ended', subject: sessionId, dataschema: TURN_SCHEMA, data: {sessionId}});

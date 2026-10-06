@@ -4,8 +4,12 @@
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Draft, type Removal, type Sdk, type Snapshot, type SyncChange, type SyncedCopy, type SyncRequest} from '../src/index.js';
-import {MODE_SCHEMA, START, assertValid, bus, deferred, flush, it, peek, removed, session, trace, turnEnded, type Session} from './support.js';
+import {startSync, type SyncTransport} from '../src/sync.js';
+import {
+  MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, peek, removed, session, trace, turnEnded, type Session,
+} from './support.js';
 
+const FAMILY = SESSION_FAMILY;
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
@@ -18,12 +22,12 @@ function sessionOwner(sdk: Sdk) {
     update(id: string, at: number): Promise<Message<Session>> {
       revision = at;
       sessions.set(id, at);
-      return sdk.publish(`bunny.state.session.${id}`, session(id, at));
+      return sdk.publish(`bunny.state.${FAMILY}.${id}`, session(id, at));
     },
     remove(id: string, at: number): Promise<Message<Removal>> {
       revision = at;
       sessions.delete(id);
-      return sdk.publish(`bunny.state.session.${id}`, removed(id, at));
+      return sdk.publish(`bunny.state.${FAMILY}.${id}`, removed(id, at));
     },
     snapshot(): Snapshot {
       return {revision, states: [...sessions].map(([id, at]) => session(id, at))};
@@ -48,7 +52,7 @@ const held = (copy: SyncedCopy<Session>): string[] => copy.states().map(message 
 
 /** Syncs `session` for `sdk`, recording each change, and returns the copy. */
 async function synced(sdk: Sdk, changes: string[]): Promise<SyncedCopy<Session>> {
-  const result = await sdk.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 5000});
+  const result = await sdk.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000});
   if (result.status !== 'synced') assert.fail(`sync ${result.error.error.code}`);
   return result.copy;
 }
@@ -59,9 +63,9 @@ it('a consumer gets the owner\'s current state at a revision, then follows live 
   await owner.update('s1', 3);
   await owner.update('s2', 4);
   const requests: Message<SyncRequest>[] = [];
-  await core.serveSync(['session'], request => { requests.push(request); return owner.snapshot(); });
+  await core.serveSync([FAMILY], request => { requests.push(request); return owner.snapshot(); });
   const changes: string[] = [];
-  const result = await wall.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 5000, parent: PARENT});
+  const result = await wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, parent: PARENT});
   assert.equal(result.status, 'synced');
   if (result.status !== 'synced') return;
   assert.deepEqual(changes, ['updated s1@3', 'updated s2@4', 'synced @4']);
@@ -73,7 +77,7 @@ it('a consumer gets the owner\'s current state at a revision, then follows live 
   assert.equal(request.kind, 'sync-request');
   assert.equal(request.type, 'org.bunny.sync.requested');
   assert.equal(request.source, 'bunny/wall');
-  assert.deepEqual(request.data.families, ['session']);
+  assert.deepEqual(request.data.families, [FAMILY]);
   assert.equal(Date.parse(request.expiresat ?? '') - Date.parse(request.time), 5000);
   assert.equal(trace(request.traceparent).traceId, PARENT_TRACE);
   assertValid(result.message);
@@ -81,14 +85,14 @@ it('a consumer gets the owner\'s current state at a revision, then follows live 
   assert.equal(result.message.type, 'org.bunny.sync.completed');
   assert.equal(result.message.source, 'bunny/core');
   assert.equal(trace(result.message.traceparent).traceId, PARENT_TRACE);
-  assert.deepEqual(result.message.data, {requestId: request.data.requestId, revision: 4, members: [{family: 'session', id: 's1'}, {family: 'session', id: 's2'}]});
-  const s1 = result.copy.get({family: 'session', id: 's1'});
+  assert.deepEqual(result.message.data, {requestId: request.data.requestId, revision: 4, members: [{family: FAMILY, id: 's1'}, {family: FAMILY, id: 's2'}]});
+  const s1 = result.copy.get({family: FAMILY, id: 's1'});
   assert.ok(s1);
   assertValid(s1);
   assert.equal(s1.kind, 'state');
   assert.equal(s1.source, 'bunny/core');
   assert.equal(trace(s1.traceparent).traceId, PARENT_TRACE, 'the answer continues the request\'s trace');
-  assert.equal(result.copy.get({family: 'session', id: 's9'}), undefined);
+  assert.equal(result.copy.get({family: FAMILY, id: 's9'}), undefined);
 
   await owner.update('s1', 5);
   await flush();
@@ -105,7 +109,7 @@ it('live messages that arrive during a sync wait in the buffer, and those above 
   const owner = sessionOwner(core);
   await owner.update('s1', 10);
   const gate = deferred<undefined>();
-  await core.serveSync(['session'], async () => {
+  await core.serveSync([FAMILY], async () => {
     // Published after the consumer subscribed but before the snapshot: at or below its revision.
     await owner.update('s1', 12);
     await owner.update('s2', 14);
@@ -119,7 +123,7 @@ it('live messages that arrive during a sync wait in the buffer, and those above 
     return snapshot;
   });
   const changes: string[] = [];
-  const pending = wall.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 5000});
+  const pending = wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000});
   await flush();
   assert.deepEqual(changes, [], 'live messages wait for the snapshot');
   gate.resolve(undefined);
@@ -134,7 +138,7 @@ it('an entity that arrives live above the sync revision survives the sync (#842:
   const owner = sessionOwner(core);
   await owner.update('a', 5);
   let served = 0;
-  await core.serveSync(['session'], async () => {
+  await core.serveSync([FAMILY], async () => {
     served += 1;
     const snapshot = owner.snapshot();
     if (served === 2) await owner.update('y', 15);
@@ -158,7 +162,7 @@ it('a removal that arrives during a sync stays removed after it (#842: removal a
   const owner = sessionOwner(core);
   await owner.update('y', 10);
   let served = 0;
-  await core.serveSync(['session'], async () => {
+  await core.serveSync([FAMILY], async () => {
     served += 1;
     const snapshot = owner.snapshot();
     if (served === 2) await owner.remove('y', 16);
@@ -172,7 +176,7 @@ it('a removal that arrives during a sync stays removed after it (#842: removal a
   await flush();
   assert.equal(served, 2);
   // A late state at 15, below y's removal at 16, arrives after the sync.
-  await core.publish('bunny.state.session.y', session('y', 15));
+  await core.publish(`bunny.state.${FAMILY}.y`, session('y', 15));
   await flush();
   assert.deepEqual(changes, ['updated y@10', 'synced @10', 'synced @14', 'removed y@16']);
   assert.deepEqual(held(copy), []);
@@ -185,7 +189,7 @@ it('a buffer overflow restarts the sync instead of combining partial state', asy
   await owner.update('z', 4);
   const requests: string[] = [];
   const first = deferred<undefined>();
-  await core.serveSync(['session'], async request => {
+  await core.serveSync([FAMILY], async request => {
     requests.push(request.data.requestId);
     if (requests.length > 1) return owner.snapshot();
     const snapshot = owner.snapshot();
@@ -198,7 +202,7 @@ it('a buffer overflow restarts the sync instead of combining partial state', asy
     return snapshot;
   });
   const changes: string[] = [];
-  const pending = wall.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 5000, maxBuffered: 2});
+  const pending = wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, maxBuffered: 2});
   await flush();
   first.resolve(undefined);
   const result = await pending;
@@ -216,7 +220,7 @@ it('a sync replaces the consumer\'s full membership, so an entity the owner remo
   const owner = sessionOwner(core);
   await owner.update('a', 1);
   await owner.update('b', 2);
-  await core.serveSync(['session'], () => owner.snapshot());
+  await core.serveSync([FAMILY], () => owner.snapshot());
   const changes: string[] = [];
   const copy = await synced(wall, changes);
   // In one burst: the queue holds a's update and drops b's removal, so the copy never sees the removal.
@@ -233,7 +237,7 @@ it('a copy whose delivery queue overflowed is told and syncs again instead of ke
   const owner = sessionOwner(core);
   await owner.update('s1', 1);
   let served = 0;
-  await core.serveSync(['session'], () => { served += 1; return owner.snapshot(); });
+  await core.serveSync([FAMILY], () => { served += 1; return owner.snapshot(); });
   const changes: string[] = [];
   const copy = await synced(wall, changes);
   // The queue holds s1@2 and drops s1@3; without the overflow signal the copy would stop at s1@2.
@@ -248,12 +252,12 @@ it('a copy whose delivery queue overflowed is told and syncs again instead of ke
 it('an owner that cannot serve a sync refuses it with the shared error body, and no sync.completed follows', async () => {
   const {core, wall} = bus();
   const requests: Message<SyncRequest>[] = [];
-  await core.serveSync(['session'], request => {
+  await core.serveSync([FAMILY], request => {
     requests.push(request);
     return errorBody('invalid-state', {detail: 'the store is still loading'});
   });
   const changes: string[] = [];
-  const result = await wall.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 5000, parent: PARENT});
+  const result = await wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, parent: PARENT});
   const [request] = requests;
   assert.ok(request);
   const {requestId} = request.data;
@@ -262,14 +266,14 @@ it('an owner that cannot serve a sync refuses it with the shared error body, and
     error: errorBody('invalid-state', {detail: 'the store is still loading', requestId, traceId: PARENT_TRACE}),
   });
   assert.deepEqual(changes, [], 'neither a state nor sync.completed reaches the consumer');
-  await core.publish('bunny.state.session.s1', session('s1', 1));
+  await core.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1));
   await flush();
   assert.deepEqual(changes, [], 'a refused sync follows nothing');
 });
 
 it('a sync nobody can serve is refused: no owner, a provider that throws or a snapshot that does not fit the request', async () => {
   const {core, wall, errors} = bus();
-  const sync = (): ReturnType<Sdk['sync']> => wall.sync(['session'], () => {}, {timeoutMs: 5000});
+  const sync = (): ReturnType<Sdk['sync']> => wall.sync([FAMILY], () => {}, {timeoutMs: 5000});
   const none = await sync();
   assert.equal(none.status, 'rejected');
   if (none.status !== 'rejected') return;
@@ -278,35 +282,37 @@ it('a sync nobody can serve is refused: no owner, a provider that throws or a sn
   assert.equal(none.error.error.requestId, none.requestId);
 
   const failure = new Error('the store is unreadable');
-  const throwing = await core.serveSync(['session'], () => { throw failure; });
+  const throwing = await core.serveSync([FAMILY], () => { throw failure; });
   const thrown = await sync();
   assert.equal(thrown.status === 'rejected' ? thrown.error.error.code : thrown.status, 'internal');
-  assert.deepEqual(errors, [{error: failure, scope: {source: 'bunny/core', pattern: 'sync session'}}]);
+  assert.deepEqual(errors, [{error: failure, scope: {source: 'bunny/core', pattern: `sync ${FAMILY}`}}]);
   await throwing.close();
 
   const misfits: Snapshot[] = [
     {revision: 3, states: [session('s1', 4)]},
     {revision: 3, states: [{...session('s1', 1), dataschema: MODE_SCHEMA}]},
     {revision: -1, states: []},
+    {revision: 3, states: [session('not an id', 1)]},
+    {revision: 4097, states: Array.from({length: 4097}, (_, index) => session(`s${index}`, index + 1))},
   ];
   for (const snapshot of misfits) {
-    const owner = await core.serveSync(['session'], () => snapshot);
+    const owner = await core.serveSync([FAMILY], () => snapshot);
     const result = await sync();
     assert.equal(result.status === 'rejected' ? result.error.error.code : result.status, 'internal', JSON.stringify(snapshot));
     await owner.close();
   }
-  assert.equal(errors.length, 4, 'each misfit snapshot is reported');
+  assert.equal(errors.length, 6, 'each misfit snapshot is reported');
 });
 
 it('an owner that closes refuses the sync requests still waiting, and a full owner queue refuses with capacity', async () => {
   const {core, wall} = bus({maxQueued: 1});
   const gate = deferred<Snapshot>();
-  const owner = await core.serveSync(['session'], () => gate.promise);
-  const busy = wall.sync(['session'], () => {}, {timeoutMs: 5000});
+  const owner = await core.serveSync([FAMILY], () => gate.promise);
+  const busy = wall.sync([FAMILY], () => {}, {timeoutMs: 5000});
   await flush();
-  const waiting = wall.sync(['session'], () => {}, {timeoutMs: 5000});
+  const waiting = wall.sync([FAMILY], () => {}, {timeoutMs: 5000});
   await flush();
-  const full = await peek(wall.sync(['session'], () => {}, {timeoutMs: 5000}));
+  const full = await peek(wall.sync([FAMILY], () => {}, {timeoutMs: 5000}));
   assert.equal(full?.status === 'rejected' ? full.error.error.code : full?.status, 'capacity');
   const closed = owner.close();
   const refusedOnClose = await peek(waiting);
@@ -321,14 +327,14 @@ it('a sync request past its deadline is unavailable, and an owner ignores one th
   const {core, wall} = bus();
   const gate = deferred<Snapshot>();
   const served: number[] = [];
-  await core.serveSync(['session'], request => {
+  await core.serveSync([FAMILY], request => {
     served.push(Date.parse(request.expiresat ?? '') - Date.parse(request.time));
     return gate.promise;
   });
   const changes: string[] = [];
-  const slow = wall.sync<Session>(['session'], change => { changes.push(show(change)); }, {timeoutMs: 1000, parent: PARENT});
+  const slow = wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 1000, parent: PARENT});
   await flush();
-  const late = wall.sync(['session'], () => {}, {timeoutMs: 100});
+  const late = wall.sync([FAMILY], () => {}, {timeoutMs: 100});
   await flush();
   context.mock.timers.tick(100);
   const expired = await peek(late);
@@ -350,18 +356,23 @@ it('a later sync that cannot be served ends the copy with a failed change', asyn
   const {core, wall} = bus({maxQueued: 1});
   const owner = sessionOwner(core);
   await owner.update('s1', 1);
-  const serving = await core.serveSync(['session'], () => owner.snapshot());
+  const serving = await core.serveSync([FAMILY], () => owner.snapshot());
   const changes: string[] = [];
-  const copy = await synced(wall, changes);
+  const result = await wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, maxBuffered: 2});
+  if (result.status !== 'synced') assert.fail('the first sync is served');
   await serving.close();
   void owner.update('s1', 2);
   void owner.update('s1', 3);
   await flush();
   assert.deepEqual(changes, ['updated s1@1', 'synced @1', 'failed unavailable']);
-  await owner.update('s1', 4);
-  await flush();
+  // An owner serves again, and more messages arrive than the buffer holds.
+  await core.serveSync([FAMILY], () => owner.snapshot());
+  for (const revision of [4, 5, 6, 7]) {
+    await owner.update('s1', revision);
+    await flush();
+  }
   assert.equal(changes.length, 3, 'the copy no longer follows the owner');
-  assert.deepEqual(held(copy), ['s1@1'], 'it keeps its last records');
+  assert.deepEqual(held(result.copy), ['s1@1'], 'it keeps its last records');
 });
 
 it('sync sends current state, never past occurrences or removals', async () => {
@@ -371,13 +382,13 @@ it('sync sends current state, never past occurrences or removals', async () => {
   await owner.update('s2', 2);
   await core.publish('bunny.event.session.s1', turnEnded('s1'));
   await owner.remove('s2', 3);
-  await core.serveSync(['session'], async () => {
+  await core.serveSync([FAMILY], async () => {
     await core.publish('bunny.event.session.s1', turnEnded('s1'));
     return owner.snapshot();
   });
   const changes: string[] = [];
   const kinds: string[] = [];
-  const result = await wall.sync<Session>(['session'], change => {
+  const result = await wall.sync<Session>([FAMILY], change => {
     changes.push(show(change));
     if (change.type !== 'failed' && change.message !== undefined) kinds.push(change.message.kind);
   }, {timeoutMs: 5000});
@@ -390,7 +401,7 @@ it('duplicates and stale revisions are dropped, and a late state does not bring 
   const {core, wall} = bus();
   const owner = sessionOwner(core);
   await owner.update('s1', 5);
-  await core.serveSync(['session'], () => owner.snapshot());
+  await core.serveSync([FAMILY], () => owner.snapshot());
   const changes: string[] = [];
   const copy = await synced(wall, changes);
   // Repeated and out-of-order deliveries, as a reconnecting remote transport may produce them.
@@ -403,8 +414,10 @@ it('duplicates and stale revisions are dropped, and a late state does not bring 
     removed('s1', 8),
     session('s1', 7), // older than the removal
     removed('s1', 8), // a duplicate removal
+    removed('s1', 6), // a late removal below the one applied: the tombstone stays at 8
+    session('s1', 7), // still older than the removal
   ];
-  for (const draft of deliveries) await core.publish(`bunny.state.session.${draft.subject}`, draft);
+  for (const draft of deliveries) await core.publish(`bunny.state.${FAMILY}.${draft.subject}`, draft);
   await flush();
   assert.deepEqual(changes, ['updated s1@5', 'synced @5', 'updated s1@7', 'removed s1@8']);
   assert.deepEqual(held(copy), []);
@@ -416,11 +429,18 @@ it('one owner serves each family, and malformed sync calls are refused with inva
   await core.serveSync(['session', 'inbox-item'], empty);
   await assert.rejects(wall.serveSync(['session'], empty), refused('invalid-state'));
   await assert.rejects(wall.serveSync(['mode', 'inbox-item'], empty), refused('invalid-state'));
-  const malformed = [[], ['Session'], ['session', 'session'], ['bunny.session'], ['a'.repeat(65)], Array.from({length: 33}, (_, index) => `f${index}`)];
+  const malformed = [[], ['Session'], ['session', 'session'], ['bunny.session'], ['a'.repeat(65)]];
   for (const families of malformed) {
     await assert.rejects(wall.sync(families, () => {}, {timeoutMs: 5000}), refused('invalid-request'), JSON.stringify(families));
     await assert.rejects(wall.serveSync(families, empty), refused('invalid-request'), JSON.stringify(families));
   }
+  // A request names at most 32 families, in a subject of at most 256 characters; an owner may serve more.
+  const many = Array.from({length: 33}, (_, index) => `f${index}`);
+  const long = Array.from({length: 5}, (_, index) => `${'f'.repeat(59)}${index}`);
+  for (const families of [many, long]) {
+    await assert.rejects(wall.sync(families, () => {}, {timeoutMs: 5000}), refused('invalid-request'), `${families.length} families`);
+  }
+  await wall.serveSync([...many, ...long], empty);
   for (const timeoutMs of [0, -1, 1.5, Number.NaN, 2 ** 31]) {
     await assert.rejects(wall.sync(['session'], () => {}, {timeoutMs}), refused('invalid-request'), String(timeoutMs));
   }
@@ -431,4 +451,209 @@ it('one owner serves each family, and malformed sync calls are refused with inva
   const split = await core.sync(['session', 'mode'], () => {}, {timeoutMs: 5000});
   assert.equal(split.status === 'rejected' ? split.error.error.code : split.status, 'invalid-request', 'one sync covers one owner\'s families');
   assert.equal((await core.sync(['session', 'inbox-item'], () => {}, {timeoutMs: 5000})).status, 'synced');
+});
+
+// Review round (PR #894): one outstanding request per copy, a bounded first sync and a bounded live buffer.
+
+it('a stalled handler keeps a bounded buffer and asks for one sync when it catches up, however many messages overflow', async () => {
+  const {core, wall} = bus();
+  const owner = sessionOwner(core);
+  await owner.update('s1', 1);
+  let served = 0;
+  await core.serveSync([FAMILY], () => { served += 1; return owner.snapshot(); });
+  const gate = deferred<undefined>();
+  const changes: string[] = [];
+  const result = await wall.sync<Session>([FAMILY], async change => {
+    changes.push(show(change));
+    if (change.type === 'updated' && change.message.data.revision === 2) await gate.promise;
+  }, {timeoutMs: 5000, maxBuffered: 3});
+  assert.equal(result.status, 'synced');
+  // The handler stalls on s1@2 while 49 more messages arrive: the buffer of 3 overflows again and again.
+  for (let revision = 2; revision <= 51; revision += 1) {
+    await owner.update('s1', revision);
+    await flush();
+  }
+  gate.resolve(undefined);
+  await flush();
+  assert.ok(served <= 2, `${served} provider calls`);
+  assert.deepEqual(changes, ['updated s1@1', 'synced @1', 'updated s1@2', 'updated s1@51', 'synced @51'], 'the handler hears the resync, not each buffered message');
+});
+
+it('a second consumer is served promptly while another copy keeps overflowing', async () => {
+  const {bus: created, core, wall} = bus();
+  const second = checked(created.connect('bunny/second'));
+  const owner = sessionOwner(core);
+  await owner.update('s1', 1);
+  const gate = deferred<undefined>();
+  const callers: string[] = [];
+  await core.serveSync([FAMILY], async request => {
+    callers.push(request.source);
+    await gate.promise;
+    return owner.snapshot();
+  });
+  const first = wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 60_000, maxBuffered: 2});
+  await flush();
+  // While the owner serves the first copy's request, its buffer of 2 overflows again and again.
+  for (let revision = 2; revision <= 30; revision += 1) {
+    await owner.update('s1', revision);
+    await flush();
+  }
+  const other = second.sync<Session>([FAMILY], () => {}, {timeoutMs: 60_000});
+  await flush();
+  gate.resolve(undefined);
+  assert.equal((await other).status, 'synced');
+  assert.equal((await first).status, 'synced');
+  assert.deepEqual(callers.slice(0, 2), ['bunny/wall', 'bunny/second'], 'the second consumer waits behind one request at most');
+  assert.equal(callers.length, 3, 'the first copy replaces its request once');
+});
+
+it('a copy\'s own replaced requests never fill the owner\'s queue', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  const owner = sessionOwner(core);
+  await owner.update('s1', 1);
+  const gate = deferred<undefined>();
+  let served = 0;
+  await core.serveSync([FAMILY], async () => {
+    served += 1;
+    await gate.promise;
+    return owner.snapshot();
+  });
+  const pending = wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 60_000, maxBuffered: 1});
+  await flush();
+  for (const revision of [2, 3, 4, 5, 6]) {
+    await owner.update('s1', revision);
+    await flush();
+  }
+  gate.resolve(undefined);
+  const result = await pending;
+  assert.equal(result.status === 'rejected' ? result.error.error.code : result.status, 'synced', 'the copy never refuses itself with capacity');
+  assert.equal(served, 2);
+  if (result.status === 'synced') assert.deepEqual(held(result.copy), ['s1@6']);
+});
+
+it('a first sync that keeps overflowing is refused as unavailable within its deadline', async context => {
+  context.mock.timers.enable({apis: ['setTimeout', 'Date'], now: START});
+  const {core, wall} = bus();
+  const owner = sessionOwner(core);
+  let served = 0;
+  let revision = 0;
+  await core.serveSync([FAMILY], async () => {
+    served += 1;
+    const snapshot = owner.snapshot();
+    // Each answer takes 400 ms, and the first five calls see more live messages than the buffer holds.
+    if (served <= 5) for (let count = 0; count < 3; count += 1) await owner.update('s1', ++revision);
+    await flush();
+    context.mock.timers.tick(400);
+    return snapshot;
+  });
+  const result = await wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 1000, maxBuffered: 2});
+  assert.equal(result.status, 'rejected');
+  if (result.status !== 'rejected') return;
+  assert.equal(result.error.error.code, 'unavailable');
+  assert.equal(result.error.error.retryable, true);
+  assert.ok(Date.now() - START <= 1200, 'it ends at its deadline, not after the overflows stop');
+  assert.ok(served <= 3, `${served} provider calls`);
+});
+
+it('a refused first sync stays stopped however many messages follow', async () => {
+  const {core, wall} = bus();
+  const owner = sessionOwner(core);
+  let served = 0;
+  await core.serveSync([FAMILY], () => {
+    served += 1;
+    return served === 1 ? errorBody('invalid-state', {detail: 'the store is still loading'}) : owner.snapshot();
+  });
+  const changes: string[] = [];
+  const result = await wall.sync<Session>([FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, maxBuffered: 2});
+  assert.equal(result.status, 'rejected');
+  for (const revision of [1, 2, 3, 4, 5]) {
+    await owner.update('s1', revision);
+    await flush();
+  }
+  assert.equal(served, 1, 'no sync request follows the refusal');
+  assert.deepEqual(changes, []);
+});
+
+it('a snapshot older than a state the copy already holds keeps that state', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  const owner = sessionOwner(core);
+  await owner.update('b', 2);
+  let served = 0;
+  await core.serveSync([FAMILY], () => {
+    served += 1;
+    // The second answer comes from a cache taken at revision 3, before a@5.
+    return served === 1 ? owner.snapshot() : {revision: 3, states: [session('b', 2)]};
+  });
+  const changes: string[] = [];
+  const copy = await synced(wall, changes);
+  await owner.update('a', 5);
+  await flush();
+  // A burst: the queue holds c@6 and drops c@7, so the copy syncs again.
+  void owner.update('c', 6);
+  void owner.update('c', 7);
+  await flush();
+  assert.equal(served, 2);
+  assert.equal(copy.get({family: FAMILY, id: 'a'})?.data.revision, 5, 'a changed above the snapshot\'s revision, so it stays');
+  assert.ok(!changes.includes('dropped a'));
+});
+
+it('a copy closed while its handler runs hears no more changes', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  let served = 0;
+  await core.serveSync([FAMILY], () => {
+    served += 1;
+    return served === 1 ? {revision: 1, states: [session('a', 1)]} : {revision: 9, states: [session('a', 7), session('b', 8), session('c', 9)]};
+  });
+  const gate = deferred<undefined>();
+  const changes: string[] = [];
+  const result = await wall.sync<Session>([FAMILY], async change => {
+    changes.push(show(change));
+    if (change.type === 'updated' && change.message.data.revision === 7) await gate.promise;
+  }, {timeoutMs: 5000});
+  if (result.status !== 'synced') assert.fail('the first sync is served');
+  // A burst makes the copy sync again, and that answer brings four changes.
+  void core.publish(`bunny.state.${FAMILY}.z`, session('z', 2));
+  void core.publish(`bunny.state.${FAMILY}.z`, session('z', 3));
+  await flush();
+  assert.deepEqual(changes, ['updated a@1', 'synced @1', 'updated a@7']);
+  const closed = result.copy.close();
+  gate.resolve(undefined);
+  await closed;
+  await flush();
+  assert.deepEqual(changes, ['updated a@1', 'synced @1', 'updated a@7'], 'nothing after the close is told');
+});
+
+it('a message without an entity is reported and ignored, and the copy goes on', async () => {
+  const {bus: created, core, wall, errors} = bus();
+  // Not checked: this participant sends a message the profile refuses.
+  const rogue = created.connect('bunny/rogue');
+  const owner = sessionOwner(core);
+  await core.serveSync([FAMILY], () => owner.snapshot());
+  const changes: string[] = [];
+  await synced(wall, changes);
+  const broken = {...session('s1', 1), dataschema: undefined} as unknown as Draft<Session>;
+  await rogue.publish(`bunny.state.${FAMILY}.s1`, broken);
+  await owner.update('s1', 2);
+  await flush();
+  assert.deepEqual(changes, ['synced @0', 'updated s1@2']);
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0]?.error instanceof TypeError);
+  assert.deepEqual(errors[0].scope, {source: 'bunny/wall', pattern: `sync ${FAMILY}`});
+});
+
+it('a sync request whose transport fails is reported and refused as unavailable', async () => {
+  const reported: unknown[] = [];
+  const failure = new Error('the connection dropped');
+  const transport: SyncTransport = {
+    now: () => Date.now(),
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    request: () => Promise.reject(failure),
+    report: error => { reported.push(error); },
+  };
+  const result = await startSync(transport, [FAMILY], () => {}, {timeoutMs: 5000});
+  assert.equal(result.status, 'rejected');
+  if (result.status !== 'rejected') return;
+  assert.equal(result.error.error.code, 'unavailable');
+  assert.equal(result.error.error.requestId, result.requestId);
+  assert.deepEqual(reported, [failure]);
 });
