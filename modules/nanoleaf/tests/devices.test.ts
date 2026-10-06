@@ -3,7 +3,7 @@
 // loading is translated here and in configuration.test.ts.
 import assert from 'node:assert/strict';
 import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {currentComet} from '../src/comets.js';
 import type {JsonObject} from '../src/compat.js';
@@ -14,6 +14,7 @@ import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {modeStatus} from '../src/modes.js';
 import {readLayout} from '../src/panels.js';
+import {SceneRestorer} from '../src/scenes.js';
 import {allocate, applyPatch, locateState, owners, pending, requestPatch, settings, type TaskRow} from '../src/project-map.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
@@ -57,6 +58,7 @@ function loadLinuxState(directory: string): void {
   // The fixture copies carry a suffix so the private-state ignore rules do not hide them.
   copyFileSync(join(LINUX_STATE, 'config-fixture.json'), join(directory, 'config.json'));
   copyFileSync(join(LINUX_STATE, 'layout-fixture.json'), join(directory, 'layout.json'));
+  copyFileSync(join(LINUX_STATE, 'scene-state-fixture.json'), join(directory, 'scene-state.json'));
   const db = new DatabaseSync(join(directory, 'status.sqlite'));
   db.exec(readFileSync(join(LINUX_STATE, 'status.sql'), 'utf8'));
   db.close();
@@ -157,7 +159,7 @@ suite('DeviceTest', () => {
   });
 
   test('test_pre_change_linux_database_migrates_and_repeats_without_change', async context => {
-    // Partly: the controller credential table is not ported, and the saved scene's check moves with the scenes slice.
+    // Partly: the controller credential table is not ported.
     const directory = temporary(context);
     loadLinuxState(directory);
     const raw = new DatabaseSync(join(directory, 'status.sqlite'));
@@ -179,8 +181,11 @@ suite('DeviceTest', () => {
     assert.deepEqual(before.line_prefs, [['100:101', 'project-a', 1], ['102:103', 'project-a', 0], ['104:105', 'project-b', 1]]);
     assert.deepEqual(before.map_settings, [['project', 'status', 90, 1, 0]]);
     assert.deepEqual(before.task_info?.[4]?.slice(3, 5), ['project-a', 'project-a']);
+    const sceneBefore = readFileSync(join(directory, 'scene-state.json'));
     const config = await loadConfig(directory, DEFAULT, refuse);
     assert.deepEqual([config.device, config.line_groups.length], ['wall', 15]);
+    assert.deepEqual(new SceneRestorer(directory, config).state.scene, {name: 'Fixture Scene', brightness: 43});
+    assert.deepEqual(readFileSync(join(directory, 'scene-state.json')), sceneBefore);
     withState(directory, db => {
       assert.deepEqual(controlState(db), {mode: 'work', revision: 2, applied: 2, wave_cutoff: 995, error: null});
       // linux-state-v4/fixture.json: the migrated comet and its source Line.
@@ -244,10 +249,11 @@ suite('DeviceTest', () => {
   });
 
   // AC3: device-scoped placements, modes and scenes.
-  test('test_modes_and_scene_files_are_independent_per_device', context => {
-    // Partly: the scene files move with the scenes slice.
+  test('test_modes_and_scene_files_are_independent_per_device', async context => {
     const directory = temporary(context);
     writeTwoDevices(directory);
+    const lines = await loadConfig(directory, DEFAULT, refuse);
+    const panels = await loadConfig(directory, 'panels', refuse);
     setMode(directory, 'quiet', 1000, 'panels');
     withState(directory, db => {
       assert.equal(modeStatus(db).mode, 'work');
@@ -256,6 +262,15 @@ suite('DeviceTest', () => {
       assert.equal(controlState(db, 'panels').mode, 'quiet');
       assert.equal(controlState(db).revision, 0);
     });
+    writeJson(join(directory, 'scene-state.json'), {version: 1, scene: {name: 'Lines Scene', brightness: 40}, owned: false, quiet_scene: null});
+    assert.equal(new SceneRestorer(directory, lines).state.scene?.name, 'Lines Scene');
+    const other = new SceneRestorer(directory, panels);
+    assert.equal(basename(other.path), 'scene-state.panels.json');
+    assert.equal(other.state.scene, null);
+    other.save({scene: {name: 'Panels Scene', brightness: 20}});
+    const sceneOf = (name: string): unknown => (JSON.parse(readFileSync(join(directory, name), 'utf8')) as {scene: {name: string}}).scene.name;
+    assert.equal(sceneOf('scene-state.json'), 'Lines Scene');
+    assert.equal(sceneOf('scene-state.panels.json'), 'Panels Scene');
   });
 
   test('test_untargeted_callers_address_default_device', async context => {

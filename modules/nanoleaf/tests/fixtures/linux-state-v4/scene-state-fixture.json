@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "scene": {
+    "name": "Fixture Scene",
+    "brightness": 43
+  },
+  "owned": true,
+  "quiet_scene": null
+}

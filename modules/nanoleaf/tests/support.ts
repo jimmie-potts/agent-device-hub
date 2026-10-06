@@ -7,7 +7,7 @@ import {describe, test as nodeTest, type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {copyJson, isObject, sha256Hex, type Json, type JsonObject} from '../src/compat.js';
 import {registeredDevices} from '../src/configuration.js';
-import {withState} from '../src/database.js';
+import {connectState, withState} from '../src/database.js';
 import {columns, DEFAULT, deviceOf, elements, type DeviceConfig} from '../src/devices.js';
 import * as edits from '../src/edits.js';
 import {readJson} from '../src/jsonfile.js';
@@ -16,7 +16,7 @@ import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProject
 import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
   type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
-import {execute, rows, transaction, type Db, type Row, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, transaction, transactionAsync, type Db, type Row, type SqlValue} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
 
 /** node:test's test(), whose returned promise the runner awaits itself. */
@@ -46,6 +46,16 @@ export const query = (directory: string, sql: string, ...params: readonly SqlVal
 
 /** Run `body` in one immediate transaction on the saved state. */
 export const write = <T>(directory: string, body: (db: Db) => T): T => withState(directory, db => transaction(db, () => body(db)));
+
+/** Run an asynchronous `body` in one immediate transaction on its own connection to the saved state. */
+export async function writeAsync<T>(directory: string, body: (db: Db) => Promise<T>): Promise<T> {
+  const db = connectState(directory);
+  try {
+    return await transactionAsync(db, () => body(db));
+  } finally {
+    db.close();
+  }
+}
 
 export interface TableDump {
   columns: string[];
@@ -155,8 +165,8 @@ export type FeedChange = 'prompt' | 'stop' | 'read' | 'question' | 'permission' 
 
 /**
  * The owner's shared sessions for scripted tests, all from the qualified Codex source (record.Feed). Each change publishes
- * the next revision and the caller accepts it. A completion adds a fresh notice; `end` removes the session, as the owner
- * does when it retires one.
+ * the next revision and the caller accepts it. A completion adds a fresh notice and marks the session unread; read
+ * evidence then stays until the next completion. `end` removes the session, as the owner does when it retires one.
  */
 export class Feed {
   readonly sessions = new Map<string, SharedSession>();
@@ -186,7 +196,8 @@ export class Feed {
           const turn = session.turn.status === 'known' ? Number(session.turn.id.slice(1)) : 0;
           session.turn = {status: 'known', id: `t${String(turn + 1)}`};
         }
-        Object.assign(session, {activity: 'active', attention: [], read: 'unknown'});
+        // Read evidence stays as it was until the next completion.
+        Object.assign(session, {activity: 'active', attention: []});
         break;
       case 'stop': {
         const current = known();
