@@ -112,9 +112,12 @@ export class ControlCase extends WorkerCase {
       case 'controller': return null;
       case 'command':
       case 'play': return this.admit(textOf(args[0]), args[1], args.length > 2 ? textOf(args[2]) : undefined);
-      case 'layout':
-        writeFileSync(join(this.directory, 'layout.json'), JSON.stringify(args[0]));
+      case 'layout': {
+        // With a size, trailing spaces pad the file to that many bytes (record.ControlCase).
+        const text = JSON.stringify(args[0]);
+        writeFileSync(join(this.directory, 'layout.json'), args.length > 1 ? text.padEnd(Number(args[1])) : text);
         return null;
+      }
       case 'register': {
         // A registered Panels device (record.PANELS_REGISTRY); the port keeps no ledger to configure for it.
         const path = join(this.directory, 'config.json');

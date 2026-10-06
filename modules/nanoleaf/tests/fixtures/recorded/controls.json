@@ -505,6 +505,18 @@
    "steps":[["controller"],["mode","free"],["play","w",{"colors":["#0044aa","#00aa66"],"kind":"animation.play","pattern":"wave","speed":"slow"}],["play","x",{"colors":["#0044aa","#00aa66"],"kind":"animation.play","pattern":"wave","speed":"slow"}]]
   },
   {
+   "calls":[],
+   "clock":1000.0,
+   "device":{"brightness":43,"on":true,"selected":"Beach Waves"},
+   "hooks":[],
+   "name":"a saved layout too large refuses an animation before the Free gate",
+   "outcomes":[{"result":null},{"result":null},{"result":null},{"result":{"code":429,"completed":null,"failure":"capacity","outcome":null,"priorEffects":null,"uncertain":null}}],
+   "receipts":{"w":{"code":null,"completed":null,"failure":null,"outcome":null,"priorEffects":null,"uncertain":null}},
+   "rows":{"activity":[],"comets":[],"display_v3":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["shared_wave_cutoff","1000.0"],["event_revision","2"],["dirty","1"]],"palette":[],"sessions":[],"slots":[],"task_info":[]},
+   "scene":null,
+   "steps":[["controller"],["mode","work"],["layout",{"line_groups":[[100,101],[102,103],[104,105],[106,107],[108,109],[110,111],[112,113],[114,115],[116,117],[118,119],[120,121],[122,123],[124,125],[126,127],[128,129]]},1048577],["play","w",{"colors":["#0044aa","#00aa66"],"kind":"animation.play","pattern":"wave","speed":"slow"}]]
+  },
+  {
    "calls":[[1000.0,"GET","/effects",null],[1000.0,"GET","/state",null]],
    "clock":1002.0,
    "device":{"brightness":43,"on":true,"selected":"Beach Waves"},

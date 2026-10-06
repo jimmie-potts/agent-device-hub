@@ -414,6 +414,13 @@ async function steps(context: TestContext, list: readonly Step[]): Promise<{run:
 }
 
 suite('control checks the port adds', () => {
+  test('a saved layout too large refuses an animation before the Free gate', async context => {
+    // In Work, a layout over its byte bound refuses with capacity, as integration_api.admit read the layout before it
+    // checked the mode.
+    const replay = await replayControls(context, 'a saved layout too large refuses an animation before the Free gate');
+    assert.deepEqual(results(replay, 'play'), [{refused: 'capacity'}]);
+  });
+
   test('an animation in flight refuses another in any mode', async context => {
     // Admission refuses in integration_api.admit's order: the animation still in flight refuses a second one with
     // capacity before the Free gate refuses it in Work.

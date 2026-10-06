@@ -1614,9 +1614,17 @@ class ControlCase(WorkerCase):
             self.requests[args[0]] = ('command', request)
             return receipt_summary(code, receipt)
         if op == 'play':
-            view = self.app.integration_animations(self.token, 'device')
+            try:
+                view = self.app.integration_animations(self.token, 'device')
+                ticket, revision = view['nextRequestId'], view['revision']
+            except integration_api.Failure:
+                # The options view reads the saved layout too. Take the ticket from the ledger; admission refuses an
+                # unreadable layout before it compares the revision.
+                with self.db() as db:
+                    sequence = db.execute('SELECT sequence FROM integration_meta WHERE id=1').fetchone()[0]
+                    ticket, revision = controller_state.ticket(controller_state.read(db), sequence), '0' * 64
             request = dict(apiVersion=integration_api.VERSION, controllerId='controller', deviceId=args[2] if len(args) > 2 else 'device',
-                           requestId=view['nextRequestId'], expectedRevision=view['revision'], command=copy.deepcopy(args[1]))
+                           requestId=ticket, expectedRevision=revision, command=copy.deepcopy(args[1]))
             code, receipt = self.app.integration_admit(self.token, request)
             self.requests[args[0]] = ('play', request)
             return receipt_summary(code, receipt)
@@ -1649,7 +1657,9 @@ class ControlCase(WorkerCase):
             ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
             return [len(ids), all(len(item) <= 128 and item.startswith('scene-') for item in ids)]
         if op == 'layout':
-            (self.path / 'layout.json').write_text(json.dumps(args[0]))
+            # With a size, trailing spaces pad the file to that many bytes; JSON allows them.
+            text = json.dumps(args[0])
+            (self.path / 'layout.json').write_text(text + ' ' * (args[1] - len(text)) if len(args) > 1 else text)
             return None
         if op == 'register':
             # A registered Panels device with its own ledger (test_panels_controller.PanelsControllerTest).
@@ -1841,6 +1851,8 @@ def control_cases():
         case('only a spatial animation needs saved positions', [
             ctrl, ('mode', 'free'), ('layout', {'line_groups': SCENE['line_groups']}), play('w'), play('p', PULSE)]),
         case('an animation waits while the Free handoff is pending', [ctrl, ('mode', 'free'), play('w'), play('x')]),
+        case('a saved layout too large refuses an animation before the Free gate', [
+            ctrl, ('mode', 'work'), ('layout', {'line_groups': SCENE['line_groups']}, 1048577), play('w')]),
         case('an animation in flight refuses another in any mode', [
             ctrl, ('mode', 'free'), ('run', 1002.0), play('w'), ('attempting', 'w'), ('mode', 'work'), play('x')]),
         case('rotating animations play', [ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls')] + [
