@@ -44,6 +44,13 @@ const setup = (exchange, opts = {}) =>
     retries: 1,
     ...opts,
   });
+// A stalled runner: blocks the event loop past the 10 ms attempt timeout that `setup` configures.
+const stall = (ms = 25) => {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    /* busy-wait */
+  }
+};
 test("lost reply retries within a bound and returns a valid sent receipt", async () => {
   let calls = 0;
   const c = setup(async () => {
@@ -105,7 +112,11 @@ test("unsupported models, effects and raw targets never touch transport", async 
   assert.equal(calls, 0);
   c.close();
 });
-test("serial read-modify-write preserves HSBK and reports read age independently of ACK", async () => {
+test("serial read-modify-write preserves HSBK and reports read age independently of ACK", async (t) => {
+  // Each fake exchange waits a real event-loop turn, so overlapping exchanges would show in
+  // `maximum`. The attempt timeout uses setTimeout, which the mocked clock never fires, so a
+  // stalled runner cannot turn that wait into a timeout and a retry.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   let now = 100,
     active = 0,
     maximum = 0;
@@ -115,6 +126,9 @@ test("serial read-modify-write preserves HSBK and reports read age independently
       active++;
       maximum = Math.max(active, maximum);
       calls.push({ type, payload: Buffer.from(payload) });
+      // Every attempt's 10 ms timeout is due before its event-loop wait ends. Stalling only the first call is
+      // not enough: in a whole-file run, only later exchanges queue their wait where the timeout fires first.
+      stall();
       await new Promise((resolve) => setImmediate(resolve));
       active--;
       return type === 101 ? state() : Buffer.alloc(0);
