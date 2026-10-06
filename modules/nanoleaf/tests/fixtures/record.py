@@ -1552,6 +1552,9 @@ def worker_values():
 # Slice 3d: controls, holds, uncertain attempts and animation play, through Python's controller and integration ledgers.
 
 WAVE = {'kind': 'animation.play', 'pattern': 'wave', 'colors': ['#0044aa', '#00aa66'], 'speed': 'slow'}
+PANELS_REGISTRY = {'panels': {'kind': 'panels', 'ip': '192.168.1.208', 'token_ref': 'panels_token'}}
+# A wall too wide for an animation's byte bound: Python's test patched effects.MAX_BYTES, which the port cannot.
+WIDE = {'line_groups': [[1000 + i * 2, 1001 + i * 2] for i in range(300)], 'line_positions': [[i * 10, 0] for i in range(300)]}
 
 
 def receipt_summary(code, receipt):
@@ -1612,7 +1615,7 @@ class ControlCase(WorkerCase):
             return receipt_summary(code, receipt)
         if op == 'play':
             view = self.app.integration_animations(self.token, 'device')
-            request = dict(apiVersion=integration_api.VERSION, controllerId='controller', deviceId='device',
+            request = dict(apiVersion=integration_api.VERSION, controllerId='controller', deviceId=args[2] if len(args) > 2 else 'device',
                            requestId=view['nextRequestId'], expectedRevision=view['revision'], command=copy.deepcopy(args[1]))
             code, receipt = self.app.integration_admit(self.token, request)
             self.requests[args[0]] = ('play', request)
@@ -1645,6 +1648,17 @@ class ControlCase(WorkerCase):
         if op == 'sceneIds':
             ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
             return [len(ids), all(len(item) <= 128 and item.startswith('scene-') for item in ids)]
+        if op == 'layout':
+            (self.path / 'layout.json').write_text(json.dumps(args[0]))
+            return None
+        if op == 'register':
+            # A registered Panels device with its own ledger (test_panels_controller.PanelsControllerTest).
+            import controller_server as server
+            config = json.loads((self.path / 'config.json').read_text())
+            config.update(devices=PANELS_REGISTRY, panels_token='PRIVATE_PANELS_TOKEN')
+            (self.path / 'config.json').write_text(json.dumps(config))
+            server.configure(self.path, 'controller', 'panels', 'source')
+            return None
         if op == 'expireAll':
             # The listener's expiry with every queued command past its time (test_expiry_during_unread_*).
             with self.db() as db, db:
@@ -1695,7 +1709,12 @@ def control_cases():
     feed = lambda op, name: ('feed', op, name)
     ctrl = ('controller',)
     command = lambda name, value: ('command', name, value)
-    play = lambda name, value=WAVE: ('play', name, value)
+    play = lambda name, value=WAVE, *device: ('play', name, value, *device)
+    preset = lambda name: {'kind': 'animation.play', 'preset': name}
+    ROTATING = dict(WAVE, direction='clockwise', speed='faster')
+    PULSE = {'kind': 'animation.play', 'pattern': 'pulse', 'colors': ['#ffffff']}
+    import effects
+    PRESETS = list(effects.PRESETS)
     brightness = lambda percent: {'kind': 'brightness.set', 'percent': percent}
     power_off = {'kind': 'power.set', 'on': False}
     scene = lambda index: {'kind': 'scene.activate', 'sceneIndex': index}
@@ -1809,6 +1828,27 @@ def control_cases():
         case('an expired animation holds the device', [
             ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'), ('sleep', 31.0), ('expire',), hold,
             ('query', "SELECT value FROM meta WHERE key='mode_revision'"), ('run', 1036.0)]),
+        # AnimationTest.AdmissionTest.
+        case('presets play in Free', [ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls')] + [
+            step for index, name in enumerate(PRESETS) for step in (play(name, preset(name)), ('run', 1004.0 + index * 2))]),
+        case('animations are refused outside Free', [
+            ctrl, ('mode', 'work'), play('p1', preset('ocean')), play('w1', ROTATING), ('mode', 'quiet'), play('p2', preset('ocean')),
+            play('w2', ROTATING), ('status',), ('countPuts',)]),
+        case('invalid animations are refused', [
+            ctrl, ('mode', 'free'), play('i1', dict(preset('ocean'), preset='missing')), play('i2', dict(preset('ocean'), loop=False)),
+            play('i3', dict(WAVE, pattern='pulse', direction='left')), play('i4', dict(WAVE, colors=['#12345'])), play('i5', dict(WAVE, extra=1))]),
+        case('an animation too large to play is refused', [ctrl, ('mode', 'free'), ('layout', WIDE), play('w')]),
+        case('only a spatial animation needs saved positions', [
+            ctrl, ('mode', 'free'), ('layout', {'line_groups': SCENE['line_groups']}), play('w'), play('p', PULSE)]),
+        case('an animation waits while the Free handoff is pending', [ctrl, ('mode', 'free'), play('w'), play('x')]),
+        case('an animation in flight refuses another in any mode', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), play('w'), ('attempting', 'w'), ('mode', 'work'), play('x')]),
+        case('rotating animations play', [ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls')] + [
+            step for index, (direction, pattern) in enumerate((d, p) for d in ('clockwise', 'counterclockwise') for p in ('wave', 'gradient'))
+            for step in (play('r%d' % index, dict(WAVE, pattern=pattern, direction=direction, speed='faster')), ('run', 1004.0 + index * 2))]),
+        # The Lines alone play requested animations (test_panels_controller.IntegrationTest).
+        case('animations play only on the Lines', [
+            ctrl, ('register',), ('mode', 'free'), ('mode', 'free', 'panels'), play('panels', PULSE, 'panels'), play('w', PULSE)]),
     ]
     return cases
 

@@ -2,6 +2,8 @@
 // port's admission instead of Python's controller ledger, and each Python receipt compared through MAPPING.md's
 // controller receipt rule (recorded/controls.json).
 import assert from 'node:assert/strict';
+import {readFileSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import type {Json} from '../src/compat.js';
 import {admitCommand, discovered, Execution, Refused, sceneList} from '../src/controls.js';
@@ -82,6 +84,9 @@ export function outcomeFor(id: string, summary: Summary, admission: Summary): Co
   }
 }
 
+/** record.PANELS_REGISTRY: a Panels device registered beside the Lines. */
+const PANELS_REGISTRY = {panels: {kind: 'panels', ip: '192.168.1.208', token_ref: 'panels_token'}};
+
 const known = (value: unknown): Json => (value === null ? {status: 'unknown'} : {status: 'known', value: value as Json});
 
 /** A step argument that names a request, or an op. */
@@ -106,7 +111,17 @@ export class ControlCase extends WorkerCase {
     switch (op) {
       case 'controller': return null;
       case 'command':
-      case 'play': return this.admit(textOf(args[0]), args[1]);
+      case 'play': return this.admit(textOf(args[0]), args[1], args.length > 2 ? textOf(args[2]) : undefined);
+      case 'layout':
+        writeFileSync(join(this.directory, 'layout.json'), JSON.stringify(args[0]));
+        return null;
+      case 'register': {
+        // A registered Panels device (record.PANELS_REGISTRY); the port keeps no ledger to configure for it.
+        const path = join(this.directory, 'config.json');
+        const config = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+        writeFileSync(path, JSON.stringify({...config, devices: PANELS_REGISTRY, panels_token: 'PRIVATE_PANELS_TOKEN'}));
+        return null;
+      }
       case 'attempting':
         // A worker stopped after it recorded the attempt and before its result.
         transaction(db, () => execute(db, "UPDATE control_journal SET phase='attempting', uncertain=1 WHERE id=?", textOf(args[0])));
@@ -147,8 +162,11 @@ export class ControlCase extends WorkerCase {
     }
   }
 
-  /** Admit a command as the runtime's responder does, in one transaction; Python's scene index picks the port's own ID. */
-  admit(id: string, value: unknown): Reply {
+  /**
+   * Admit a command as the runtime's responder does, in one transaction. Python's scene index picks the port's own ID,
+   * and its public device ID names the port's device: `device` was the Lines.
+   */
+  admit(id: string, value: unknown, target?: string): Reply {
     const command = structuredClone(value) as Record<string, unknown>;
     const db = this.database();
     if ('sceneIndex' in command) {
@@ -159,7 +177,8 @@ export class ControlCase extends WorkerCase {
     if (command.kind === 'mode.set') command.mode = String(command.mode).toLowerCase();
     const instant = this.clock.seconds();
     try {
-      transaction(db, () => admitCommand(db, this.directory, {id, command, instant, expires: instant + 30}, this.report));
+      const device = target === undefined || target === 'device' ? {} : {device: target};
+      transaction(db, () => admitCommand(db, this.directory, {id, command, instant, expires: instant + 30, ...device}, this.report));
       return 'accepted';
     } catch (error) {
       if (error instanceof Refused) return {refused: error.code};

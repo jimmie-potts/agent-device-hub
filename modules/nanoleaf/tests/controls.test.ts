@@ -8,7 +8,7 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {admitCommand, MAX_QUEUED, Refused, sceneList} from '../src/controls.js';
-import {render, type ExplicitAnimation} from '../src/effects.js';
+import {PRESETS, render, type ExplicitAnimation, type PresetName} from '../src/effects.js';
 import {transactWith, type Outcome as ControlOutcome} from '../src/journal.js';
 import {setMode} from '../src/modes.js';
 import {execute, transaction} from '../src/sqlite.js';
@@ -335,6 +335,76 @@ suite('WorkerTest', () => {
   });
 });
 
+suite('AdmissionTest', () => {
+  // Animation admission's domain rules through admitCommand. The integration API's tickets, request replay and join,
+  // revision-conflict, options view and HTTP statuses are not ported: the runtime and the core own requests, replies
+  // and their replay (#844), and an animation names no revision.
+  const explicit = (name: PresetName): ExplicitAnimation => ({kind: 'animation.play', ...PRESETS[name]});
+  const journaled = (replay: ControlReplay): unknown[] => replay.run.query('SELECT id FROM control_journal');
+
+  test('test_presets_keep_original_request_replay_and_use_the_single_worker', async context => {
+    // Partly: the receipt's replay, a changed command under the same ticket and the pending list are not ported.
+    const replay = await replayControls(context, 'presets play in Free');
+    const names = Object.keys(PRESETS) as PresetName[];
+    assert.deepEqual(results(replay, 'play'), names.map(() => 'accepted'));
+    assert.deepEqual(puts(replay.run.device.calls), names.map(name => ['/effects', render(explicit(name), SCENE.line_groups, SCENE.line_positions)]));
+    for (const name of names) assert.deepEqual(outcomeOf(replay, name), outcome(name, 'succeeded', 'transmitted'), name);
+  });
+
+  test('test_presets_keep_free_gate_and_reject_invalid_input_without_admission', async context => {
+    // Partly: request tickets are not ported; nothing is journaled instead.
+    const gated = await replayControls(context, 'animations are refused outside Free');
+    const [inWork, , inQuiet] = results(gated, 'play');
+    assert.deepEqual([inWork, inQuiet], [{refused: 'unsupported-capability'}, {refused: 'unsupported-capability'}]);
+    const invalid = await replayControls(context, 'invalid animations are refused');
+    assert.deepEqual(results(invalid, 'play').slice(0, 2), [{refused: 'invalid-request'}, {refused: 'invalid-request'}]);
+    assert.deepEqual([...journaled(gated), ...journaled(invalid)], []);
+    assert.deepEqual(puts(invalid.run.device.calls), []);
+  });
+
+  test('test_rejected_in_work_and_quiet_without_a_ticket_write_or_mode_change', async context => {
+    // Partly: request tickets and the worker launch are not ported.
+    const replay = await replayControls(context, 'animations are refused outside Free');
+    const [, inWork, , inQuiet] = results(replay, 'play');
+    assert.deepEqual([inWork, inQuiet], [{refused: 'unsupported-capability'}, {refused: 'unsupported-capability'}]);
+    assert.equal((results(replay, 'status')[0] as {mode: string}).mode, 'quiet');
+    assert.deepEqual(journaled(replay), []);
+    assert.deepEqual(replay.run.device.calls, []);
+    assert.deepEqual(replay.run.reported, []);
+  });
+
+  test('test_invalid_stale_oversized_and_unplaced_requests_consume_no_ticket', async context => {
+    // Partly: a stale expected revision and request tickets are not ported. Python patched effects.MAX_BYTES to 100;
+    // the port cannot, so both sides refuse a wall too wide for the animation's bytes (record.WIDE).
+    const invalid = await replayControls(context, 'invalid animations are refused');
+    assert.deepEqual(results(invalid, 'play').slice(2), Array.from({length: 3}, () => ({refused: 'invalid-request'})));
+    const wide = await replayControls(context, 'an animation too large to play is refused');
+    assert.deepEqual(results(wide, 'play'), [{refused: 'capacity'}]);
+    // Without saved positions, a spatial animation cannot be placed; a non-spatial one needs none.
+    const unplaced = await replayControls(context, 'only a spatial animation needs saved positions');
+    assert.deepEqual(results(unplaced, 'play'), [{refused: 'unsupported-capability'}, 'accepted']);
+    assert.deepEqual(journaled(unplaced), [['p']]);
+  });
+
+  test('test_accepted_in_free_joins_duplicates_and_blocks_a_second_queue', async context => {
+    // Partly: the receipt's shape, the launch, the join of a repeated request and the conflict of a changed one are not
+    // ported.
+    const replay = await replayControls(context, 'an animation waits while the Free handoff is pending');
+    assert.deepEqual(results(replay, 'play'), ['accepted', {refused: 'capacity'}]);
+    assert.deepEqual(journaled(replay), [['w']]);
+  });
+
+  test('test_rotation_and_faster_use_the_existing_worker_receipt', async context => {
+    const replay = await replayControls(context, 'rotating animations play');
+    const commands = ['clockwise', 'counterclockwise'].flatMap(direction => (['wave', 'gradient'] as const)
+      .map(pattern => ({...WAVE, pattern, direction, speed: 'faster'} as ExplicitAnimation)));
+    assert.deepEqual(puts(replay.run.device.calls), commands.map(command => ['/effects', render(command, SCENE.line_groups, SCENE.line_positions)]));
+    commands.forEach((_, index) => {
+      assert.deepEqual(outcomeOf(replay, `r${String(index)}`), outcome(`r${String(index)}`, 'succeeded', 'transmitted'));
+    });
+  });
+});
+
 /** A control case of the port's own: steps run in order on a fresh case. */
 async function steps(context: TestContext, list: readonly Step[]): Promise<{run: ControlCase; results: unknown[]}> {
   const run = new ControlCase(context);
@@ -344,6 +414,21 @@ async function steps(context: TestContext, list: readonly Step[]): Promise<{run:
 }
 
 suite('control checks the port adds', () => {
+  test('an animation in flight refuses another in any mode', async context => {
+    // Admission refuses in integration_api.admit's order: the animation still in flight refuses a second one with
+    // capacity before the Free gate refuses it in Work.
+    const replay = await replayControls(context, 'an animation in flight refuses another in any mode');
+    assert.deepEqual(results(replay, 'play'), ['accepted', {refused: 'capacity'}]);
+  });
+
+  test('a requested animation plays only on the Lines', async context => {
+    // Recorded from Python with a Panels device registered and in Free, as
+    // test_panels_controller.IntegrationTest.test_panels_extension_commands_fail_before_reservation refused it.
+    const replay = await replayControls(context, 'animations play only on the Lines');
+    assert.deepEqual(results(replay, 'play'), [{refused: 'unsupported-capability'}, 'accepted']);
+    assert.deepEqual(replay.run.query('SELECT id, device FROM control_journal'), [['w', 'wall']]);
+  });
+
   test('a mode command that needs no device write succeeds with observed evidence', async context => {
     // From Work with nothing shown, the Free handoff has nothing to restore: the pass observes the device and writes
     // nothing, where Python cancelled the command.
