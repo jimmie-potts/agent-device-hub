@@ -40,10 +40,11 @@ suite('SharedContractTest', () => {
       const session: {generation?: unknown} = firstSession(candidate);
       if (invalid === 'missing') delete session.generation;
       else session.generation = invalid;
+      const pristine = clone(candidate);
       throwsFeed(() => accept(path, candidate, 1001), 'invalid-feed');
       assert.deepEqual(savedRows(path), before, String(invalid));
+      assert.deepEqual(candidate, pristine, `validation does not mutate its input (${String(invalid)})`);
     }
-    assert.deepEqual(value, (() => { const expected = envelope(); expected.snapshot.revision = 3; return expected; })(), 'validation does not mutate its input');
   });
 });
 

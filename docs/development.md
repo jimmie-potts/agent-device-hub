@@ -570,8 +570,8 @@ The development direction is Node 24, TypeScript and npm workspaces for shared
 packages, applications and new Tidbyt/LIFX controllers. Existing packages and
 applications have executable commands documented below. Each new controller
 implementation must add its build, type, test and consumer checks here and in
-CI. The installed Nanoleaf worker is still Python; #26 is porting the Nanoleaf
-domain logic to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
+CI. The installed Nanoleaf worker is Python until the cutover; its domain logic is
+ported to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
 
 Reserve shared contracts, root package/lockfile changes and CI for the coordinating
 writer. Work on separate deliverables uses separate worktrees, even for different

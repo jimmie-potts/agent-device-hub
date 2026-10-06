@@ -223,7 +223,9 @@ as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
 The existing Pixoo and Nanoleaf repositories keep running their installed
 services until the cutover. Pixoo's domain packages and presentation are staged
 under modules/pixoo. Use TypeScript for new shared services, Tidbyt/LIFX/PC
-lighting controllers and the React dashboard; keep the Nanoleaf worker in Python.
+lighting controllers and the React dashboard. The installed Nanoleaf worker stays
+Python until the cutover; its domain logic is ported to TypeScript under
+`modules/nanoleaf` ([#26](https://github.com/jimmie-potts/agent-device-hub/issues/26)).
 Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
@@ -234,8 +236,8 @@ and [provider matrix](provider-qualification.md) establish metadata and source e
 without claiming installed producer qualification. Provider normalizers and bounded
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
-The adapters/nanoleaf path remains a proposal, and its source migration has a
-separate issue. controllers/tidbyt holds the
+Nanoleaf's port lives under modules/nanoleaf, not the earlier adapters/nanoleaf
+proposal. controllers/tidbyt holds the
 in-process cloud controller package; controllers/lifx holds the in-process LAN controller and controllers/pc-lighting
 currently contains documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
@@ -297,7 +299,9 @@ or ordinary media use.
 staged Pixoo's code under `modules/pixoo/`. That folder's README records the
 provenance, the active work at the move and every file not moved.
 [Nanoleaf source migration #26](https://github.com/jimmie-potts/agent-device-hub/issues/26)
-settles the same for Nanoleaf before moving code. Repository consolidation does
+ports Nanoleaf's domain logic to TypeScript under `modules/nanoleaf/`. That folder's
+PORTING.md maps every Python module and test to its slice or the runtime part that
+replaces it. Repository consolidation does
 not combine runtimes, install services, transfer private databases or switch the
 active state owner.
 

@@ -113,8 +113,9 @@ each such test says so in a comment, and [Dropped assertions](#dropped-assertion
 | `*_checks.cjs`, `wall_options.cjs` | | | Wall page browser checks move with the pages (#844); `workflow_checks.cjs` is the old repository's |
 
 The port adds tests of its own: `consumer envelope check` (the generation rule and revision floor
-in `shared-input.test.ts`), `registry lock` (in-process turns in `enrollment.test.ts`), the
-recorded values in `compat.test.ts` and the replay in `trace.test.ts`.
+in `shared-input.test.ts`), `transaction helpers` (in `shared-input.test.ts`), `registry lock`
+(in-process turns in `enrollment.test.ts`), the recorded values in `compat.test.ts` and the
+replay in `trace.test.ts`.
 
 ### Dropped assertions
 
@@ -161,7 +162,8 @@ Not ported (the layer that held them is replaced):
 - `test_eviction_http_requires_origin_token_and_current_task`: the wall server's origin, token
   and device checks.
 - `test_skipped_sessions_take_no_part_in_grouping_or_acknowledgment`: acknowledging a skipped
-  session's notice is refused without a request.
+  session's notice is refused without a request. Acknowledgment moves with #844, which keeps
+  this refusal.
 - `test_declared_subagent_of_an_undeclared_parent_follows_the_missing_parent_rule`: the schema
   validator's refusal of cross-source parentage.
 - `test_damaged_backup_refuses_rollback_without_partial_restore`,
@@ -172,7 +174,7 @@ Not ported (the layer that held them is replaced):
 - `test_poll_refreshes_same_revision_without_lifecycle_or_effect_changes`: the poller itself; its
   two ticks are direct acceptances.
 - `test_files_are_owner_only_and_output_never_contains_the_credential`: command output and the
-  wall view never show the credential.
+  wall view never show the credential. The wall view moves with #844, which keeps this rule.
 - `test_machine_credentials_are_unchanged`, `test_pre_change_linux_database_migrates_and_repeats_without_change`:
   the controller credential table.
 
