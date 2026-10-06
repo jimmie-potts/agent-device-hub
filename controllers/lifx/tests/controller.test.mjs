@@ -126,7 +126,9 @@ test("serial read-modify-write preserves HSBK and reports read age independently
       active++;
       maximum = Math.max(active, maximum);
       calls.push({ type, payload: Buffer.from(payload) });
-      if (calls.length === 1) stall(); // the first attempt's 10 ms timeout is now due
+      // Every attempt's 10 ms timeout is due before its event-loop wait ends. Stalling only the first call is
+      // not enough: in a whole-file run, only later exchanges queue their wait where the timeout fires first.
+      stall();
       await new Promise((resolve) => setImmediate(resolve));
       active--;
       return type === 101 ? state() : Buffer.alloc(0);
