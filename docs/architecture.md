@@ -87,8 +87,9 @@ their tests, policies and capability specifications.
 
 [ADR 0012](decisions/0012-bunny-event-platform.md), as amended on 2026-10-06,
 selects how every component will communicate, and supersedes ADR 0010's staged
-adoption. Only the message profile 2.0 contract exists so far
-(`@jimmie-potts/event-contracts/v2`).
+adoption. Two parts exist as source: the message profile 2.0 contract
+(`@jimmie-potts/event-contracts/v2`) and the SDK's in-process bus
+(`@jimmie-potts/sdk`).
 
 - **Runtime.** One TypeScript runtime, `apps/runtime`, will host the core and
   every device as a module from a fixed, shipped list. Modules talk through the

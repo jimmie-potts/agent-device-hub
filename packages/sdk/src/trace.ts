@@ -1,0 +1,31 @@
+// W3C trace context (ADR 0012, Observability). Only version-00 traceparent is accepted, as the diagnostic contract
+// says; a malformed or all-zero parent is ignored, never adopted.
+import {randomBytes} from 'node:crypto';
+import type {TraceContext} from './sdk.js';
+
+const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
+const ZERO = /^0+$/;
+
+function nonzeroHex(bytes: number): string {
+  let value: string;
+  do {
+    value = randomBytes(bytes).toString('hex');
+  } while (ZERO.test(value));
+  return value;
+}
+
+/**
+ * The context for a message sent while handling `parent`: the same trace, flags and tracestate, in a new span. Without
+ * a valid parent, a new trace starts with the sampled flag set, because the SDK has no sampler of its own.
+ */
+export function childOf(parent: TraceContext | undefined): TraceContext {
+  const [, traceId, spanId, flags] = TRACEPARENT.exec(parent?.traceparent ?? '') ?? [];
+  if (parent === undefined || traceId === undefined || spanId === undefined || flags === undefined || ZERO.test(traceId) || ZERO.test(spanId)) {
+    return {traceparent: `00-${nonzeroHex(16)}-${nonzeroHex(8)}-01`};
+  }
+  const traceparent = `00-${traceId}-${nonzeroHex(8)}-${flags}`;
+  return parent.tracestate === undefined ? {traceparent} : {traceparent, tracestate: parent.tracestate};
+}
+
+/** The trace id of a traceparent built by `childOf`. */
+export const traceIdOf = (traceparent: string): string => traceparent.slice(3, 35);
