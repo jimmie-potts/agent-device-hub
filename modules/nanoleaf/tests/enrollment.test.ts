@@ -14,7 +14,7 @@ import {Partial as PartialChange} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {fixtureJson, loadDump, recordedSetup, setMode, suite, temporary, test, write} from './support.js';
+import {fixtureJson, loadDump, recordedSetup, refuse, setMode, suite, temporary, test, write} from './support.js';
 
 const FIXTURE = (fixtureJson('nl22-panels-fixture.json') as {panelLayout: JsonObject}).panelLayout;
 const [LINES_IP, PANELS_IP, OTHER_IP, NEW_IP] = ['192.0.2.1', '192.0.2.2', '192.0.2.3', '192.0.2.4'];
@@ -508,7 +508,6 @@ const change = (e: Enrolling, device = 'panels', ip = NEW_IP): ReturnType<typeof
 suite('AddressTest', () => {
   // #114: change a registered device's address without re-enrolling.
   test('test_changes_only_the_registered_address', async context => {
-    // The configuration load that follows moves with configuration.load_config (slice 2); the saved registry is read instead.
     const e = await addressed(context);
     const [files, tables, hooks] = e.snapshot();
     assert.deepEqual(await change(e), {device: 'panels', ip: NEW_IP, triangles: 18});
@@ -527,7 +526,7 @@ suite('AddressTest', () => {
     assert.equal(e.status('panels').mode, 'quiet');
     // AC3: one verification read with the stored credential, and no light write.
     assert.deepEqual(e.fake.seen, [[NEW_IP, PANELS_TOKEN, 'GET', '']]);
-    assert.equal((devicesOf(e.config()).panels as JsonObject).ip, NEW_IP);
+    assert.equal((await loadConfig(e.directory, 'panels', refuse)).ip, NEW_IP);
   });
 
   // AC2: the new address is checked before anything is written.
