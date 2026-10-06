@@ -919,7 +919,8 @@ def edit_rows(path):
 
 class Feed:
     """The owner's shared sessions for scripted cases, all from the qualified Codex source. Each change publishes the next
-    revision. A completion adds a fresh notice; `end` removes the session, as the owner does when it retires one."""
+    revision. A completion adds a fresh notice and marks the session unread; read evidence then stays until the next
+    completion. `end` removes the session, as the owner does when it retires one."""
     def __init__(self):
         self.sessions = {}
         self.revision = 1
@@ -942,7 +943,8 @@ class Feed:
                     'children': {'active': 0, 'uncertain': 0}, 'generation': 0}
             else:
                 session['turn'] = {'status': 'known', 'id': 't%d' % (int(session['turn']['id'][1:]) + 1)}
-            session.update(activity='active', attention=[], read='unknown')
+            # Read evidence stays as it was until the next completion.
+            session.update(activity='active', attention=[])
         elif op == 'stop':
             notice = {'id': hashlib.sha256((name + ':' + session['turn']['id']).encode()).hexdigest(), 'kind': 'turn-ended',
                       'turn': copy.deepcopy(session['turn']), 'acknowledgedBy': []}
@@ -1172,6 +1174,369 @@ def edit_values():
     write_nested('edits.json', {'layouts': layouts, 'cases': cases}, 3)
 
 
+# Slice 3c: the display worker with scene restore, on scripted cases.
+
+SCENE = {'ip': '192.168.1.207', 'token': 'PRIVATE_TEST_TOKEN', 'line_groups': [[100 + i * 2, 101 + i * 2] for i in range(15)],
+         'line_positions': [[i * 10, 0] for i in range(15)]}
+
+
+class Stopped(Exception):
+    """Ends a scripted worker run, as the module's stop signal ends the port's worker."""
+
+
+class MsClock:
+    """A test clock kept in milliseconds, as the runtime's clock is. now() is in seconds; a sleep of s seconds adds s * 1000
+    milliseconds, the arithmetic the port's worker does through its scheduler, so both sides see the same instants."""
+    def __init__(self):
+        self.ms = 1000000.0
+
+    def now(self):
+        return self.ms / 1000
+
+    def sleep(self, seconds):
+        self.ms += seconds * 1000
+
+
+class SceneDevice:
+    """test_scene_restore.Device: saved scenes, the playing selection and brightness, and every request with its time.
+    `fail` is a request to refuse once: {'method': ..., 'endpoint': ...}, either key optional."""
+    def __init__(self, clock):
+        self.clock = clock
+        self.names = ['Beach Waves', 'Cotton Candy']
+        self.selected = 'Beach Waves'
+        self.brightness = 43
+        self.on = True
+        self.calls = []
+        self.fail = None
+        self.lose_selection_reply = False
+
+    def request(self, config, method, endpoint='', payload=None):
+        self.calls.append([self.clock.now(), method, endpoint, copy.deepcopy(payload)])
+        fail = self.fail
+        if fail is not None and fail.get('method', method) == method and fail.get('endpoint', endpoint) == endpoint:
+            self.fail = None
+            raise OSError('Device unavailable')
+        if method == 'GET' and endpoint == '/effects':
+            return {'select': self.selected, 'effectsList': list(self.names)}
+        if method == 'GET' and endpoint == '/state':
+            return {'brightness': {'value': self.brightness}, 'on': {'value': self.on}}
+        if method == 'PUT' and endpoint == '/state':
+            if 'brightness' in payload:
+                self.brightness = payload['brightness']['value']
+            if 'on' in payload:
+                self.on = payload['on']['value']
+        elif method == 'PUT' and endpoint == '/effects':
+            if 'select' in payload:
+                assert payload['select'] in self.names
+                self.selected = payload['select']
+                if self.lose_selection_reply:
+                    self.lose_selection_reply = False
+                    raise OSError('Response lost after selection succeeded')
+            else:
+                self.selected = '*Dynamic*' if payload['write']['animType'] == 'custom' else '*Static*'
+        else:
+            raise AssertionError((method, endpoint))
+
+
+class IdleFeed:
+    """The worker's poller with the feed's requests removed: the port takes envelopes from the runtime instead, so these
+    cases accept them as scheduled steps."""
+    def __init__(self, path):
+        self.path = path
+
+    def tick(self, instant):
+        with contextlib.closing(database.connect_state(self.path)) as db:
+            return shared_input.selected(db)
+
+
+WORKER_ROWS = {'sessions': 'id,turn,status,updated', 'activity': 'session,turn,status,started', 'task_info': 'session,project,manual_project,turn,started',
+               'slots': 'session,slot,device', 'comets': 'session,turn,queued,source,started,device', 'locate': 'line_id,started,device',
+               'map_pending': 'payload,device', 'map_settings': 'style,coverage,rotation,flip_x,flip_y,device', 'palette': 'role,color',
+               'meta': 'key,value', 'display_v3': 'snapshot,looping,rendered,device'}
+
+
+class WorkerCase:
+    """One scripted case: SceneTest's Lines and fake device, shared input selected at 1000 with no session, and steps."""
+    def __init__(self, path, record):
+        self.path = path
+        self.record = record
+        self.clock = MsClock()
+        self.device = SceneDevice(self.clock)
+        self.feed = Feed()
+        self.sends = []
+        config = dict(SCENE, metadata_path=str(path / 'metadata.json'), title_index_path=str(path / 'session_index.jsonl'))
+        (path / 'config.json').write_text(json.dumps(config))
+        (path / 'layout.json').write_text(json.dumps({key: SCENE[key] for key in ('line_groups', 'line_positions')}))
+        select_feed(path, self.feed, self.clock.now())
+
+    def db(self):
+        return contextlib.closing(database.connect_state(self.path))
+
+    def apply(self, step):
+        import edits
+        op, args = step[0], step[1:]
+        if op == 'feed':
+            self.feed.change(args[0], args[1] if len(args) > 1 else None)
+            return shared_source.accept(self.path, self.feed.envelope(), now=self.clock.now)
+        if op == 'mode':
+            modes.set_mode(self.path, args[0], launch=lambda _: None, now=self.clock.now, device=args[1] if len(args) > 1 else devices.DEFAULT)
+            return None
+        if op == 'status':
+            return modes.get_status(self.path)
+        if op == 'sleep':
+            self.clock.sleep(args[0])
+            return None
+        if op in ('sql', 'query'):
+            with self.db() as db, db:
+                rows = db.execute(args[0], args[1] if len(args) > 1 else []).fetchall()
+            return [list(row) for row in rows] if op == 'query' else None
+        if op == 'device':
+            if args[0] == 'clearCalls':
+                self.device.calls.clear()
+            elif args[0] == 'remove':
+                self.device.names.remove(args[1])
+            elif args[0] == 'scene':
+                self.device.selected, self.device.brightness = args[1], args[2]
+            else:
+                setattr(self.device, args[0], copy.deepcopy(args[1]))
+            return None
+        if op == 'selected':
+            return self.device.selected
+        if op == 'countPuts':
+            return len([call for call in self.device.calls if call[1] == 'PUT'])
+        if op == 'scene':
+            path = self.path / 'scene-state.json'
+            return json.loads(path.read_text()) if path.exists() else None
+        if op == 'takeover':
+            manager = b.SceneRestorer(self.path, dict(SCENE), request=self.device.request)
+            manager.observe()
+            manager.send(dict(SCENE), [('working', 1000)] + [None] * 14, 1000, True)
+            return None
+        if op == 'cache':
+            with self.db() as db, db:
+                snapshot = b.dashboard(db, dict(SCENE), self.clock.now())
+                db.execute('INSERT INTO display_v3 (snapshot, looping, rendered) VALUES (?, 1, ?)', (json.dumps(snapshot), self.clock.now()))
+            return None
+        if op == 'prepare':
+            with self.db() as db, db:
+                b.prune_comets(db, self.clock.now(), store.control_state(db)['mode'])
+                b.dashboard(db, dict(SCENE), self.clock.now())
+                return b.current_comet(db, self.clock.now())
+        if op == 'edit':
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                kind = args[0]
+                if kind == 'taskProject':
+                    return edits.task_project(db, dict(SCENE), shared_input.identity_key(dict(FEED_IDENTITY, sessionId=args[1])), args[2])
+                return {'settings': edits.settings, 'assign': edits.assign, 'locate': edits.locate}[kind](db, dict(SCENE), args[1]) \
+                    if kind != 'projectColor' else edits.project_color(db, args[1], args[2])
+        if op == 'second':
+            return b.run_worker(self.path, sleep=lambda _: None, now=self.clock.now, request=self.device.request,
+                                read_unread=lambda: None, feed={'poller': IdleFeed(self.path)})
+        if op == 'run':
+            return self.run(*args)
+        raise AssertionError(op)
+
+    def run(self, until, scheduled=(), options=None):
+        options = options or {}
+        pending = list(scheduled)
+        results = []
+        def advance(seconds):
+            self.clock.sleep(seconds)
+            while pending and self.clock.now() >= pending[0][0]:
+                results.append(outcome_of(lambda: self.apply(pending.pop(0)[1])))
+            if self.clock.now() >= until:
+                raise Stopped()
+        def capture(config, snapshot, instant, loop):
+            if options.get('send') == 'fail' or (options.get('send') == 'failAfterFirst' and self.sends):
+                raise RuntimeError('offline')
+            self.sends.append([[list(item) if item else None for item in snapshot], instant, loop])
+        arguments = dict(sleep=advance, now=self.clock.now, read_unread=lambda: None, request=self.device.request,
+                         feed={'poller': IdleFeed(self.path)})
+        if options.get('send'):
+            arguments['send'] = capture
+        if options.get('scenes') is False:
+            arguments['scene_factory'] = None
+        try:
+            outcome = {'result': b.run_worker(self.path, **arguments)}
+        except Stopped:
+            outcome = {'stopped': self.clock.now()}
+        except Exception as error:  # noqa: BLE001 - the worker's failure is the outcome
+            outcome = {'error': type(error).__name__, 'message': str(error)}
+        return {'outcome': outcome, 'scheduled': results}
+
+    def rows(self):
+        with self.db() as db:
+            result = {table: [list(row) for row in db.execute(f'SELECT {columns} FROM {table} ORDER BY rowid')]
+                      for table, columns in WORKER_ROWS.items()}
+        result['map_pending'] = [[json.loads(payload), device] for payload, device in result['map_pending']]
+        result['display_v3'] = [[finite(json.loads(text)), looping, rendered, device] for text, looping, rendered, device in result['display_v3']]
+        return result
+
+
+def finite(value):
+    """JSON-safe: Python's json.dumps writes infinite floats, such as an unset wave cutoff, as -Infinity."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value).replace('inf', 'Infinity').replace('nan', 'NaN')
+    if isinstance(value, list):
+        return [finite(item) for item in value]
+    if isinstance(value, dict):
+        return {key: finite(item) for key, item in value.items()}
+    return value
+
+
+FEED_IDENTITY = {'provider': 'codex', 'client': 'desktop', 'hostId': 'host', 'sourceId': 'source'}
+
+
+def worker_cases():
+    """The 3c cases: each Python worker test's steps, with tasks from the shared feed."""
+    def case(name, steps):
+        return {'name': name, 'steps': [list(step) for step in steps]}
+    feed = lambda op, name=None: ('feed', op, name) if name is not None else ('feed', op)
+    complete = lambda name: [feed('prompt', name), feed('stop', name)]
+    bridge = {'scenes': False, 'send': 'capture'}
+    projects = ('sql', "INSERT INTO projects VALUES ('a','Project A','#aa55ff','[]'),('b','Project B','#33ccee','[]')")
+    line = lambda i: '%d:%d' % (100 + i * 2, 101 + i * 2)
+    cases = [
+        # BridgeTest: the worker without scenes, its sends captured.
+        case('first working pulse', [feed('prompt', 'a'), ('run', 1006.0, [], bridge)]),
+        case('each color', [feed('prompt', 'a'), ('run', 1012.0, [(1004.0, feed('question', 'a')), (1008.0, feed('permission', 'a'))], bridge)]),
+        case('finished and interrupted', [feed('prompt', 'a'), ('run', 1004.0, [], bridge), feed('stop', 'a'), feed('read', 'a'),
+                                          ('run', 1008.0, [], bridge), feed('prompt', 'a'), ('run', 1012.0, [], bridge),
+                                          feed('interrupt', 'a'), ('run', 1016.0, [], bridge)]),
+        case('state change interrupts', [feed('prompt', 'a'), feed('prompt', 'b'),
+                                         ('run', 1004.0, [(1000.25, feed('permission', 'b'))], bridge)]),
+        case('other task start', [feed('prompt', 'a'), ('run', 1005.0, [], bridge), feed('prompt', 'b'), ('run', 1010.0, [], bridge)]),
+        case('stable slots', [feed('prompt', str(i)) for i in range(15)] + [
+            ('run', 1003.0, [], bridge), ('query', 'SELECT session,slot FROM slots ORDER BY slot'), feed('end', '3'), feed('prompt', 'new'),
+            ('run', 1006.0, [], bridge)]),
+        case('concurrent tasks', [feed('prompt', str(i)) for i in range(17)] + [('run', 1003.0, [], bridge)]),
+        case('failed send', [feed('prompt', 'a'), ('run', 1003.0, [], {'scenes': False, 'send': 'fail'}),
+                             ('query', 'SELECT status FROM sessions'), ('run', 1006.0, [], bridge)]),
+        case('recovery after a failed send', [feed('prompt', 'a'), ('run', 1004.0, [], {'scenes': False, 'send': 'failAfterFirst'}),
+                                              ('query', "SELECT value FROM meta WHERE key='rendering'"), ('run', 1008.0, [], bridge),
+                                              ('query', "SELECT value FROM meta WHERE key='rendering'")]),
+        case('one worker per device', [feed('prompt', 'a'), ('run', 1006.0, [(1000.25, ('second',)), (1001.0, feed('stop', 'a')),
+                                                                             (1002.0, feed('read', 'a'))], bridge)]),
+        case('Free sends nothing', [feed('prompt', 'a'), ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode','free')"),
+                                    ('run', 1003.0, [], {'scenes': False, 'send': 'fail'})]),
+        # CometTest.
+        case('completions queue in order', complete('a') + [('sleep', 0.1)] + complete('b') + [
+            feed('touch'), ('query', 'SELECT session FROM comets ORDER BY rowid'), ('prepare',),
+            ('query', 'SELECT session FROM comets WHERE started IS NOT NULL'), ('sleep', 2.0), ('prepare',),
+            ('query', 'SELECT session FROM comets WHERE started IS NOT NULL')]),
+        case('a read queued task is skipped', complete('a') + complete('b') + [('prepare',), feed('read', 'b'), ('sleep', 2.0), ('prepare',),
+                                                                               ('query', 'SELECT * FROM comets')]),
+        case('a new turn or an interrupt ends the comet', complete('a') + [('prepare',), feed('prompt', 'a'), ('query', 'SELECT * FROM comets'),
+                                                                           feed('end', 'a')] + complete('a') + [
+            ('prepare',), feed('interrupt', 'a'), ('query', 'SELECT * FROM comets')]),
+        case('read during a comet', complete('a') + [('run', 1008.0, [(1000.5, feed('read', 'a')), (1005.0, feed('end', 'a'))])]),
+        case('queued comets play in turn', complete('a') + complete('b') + [
+            ('run', 1008.0, [(t, ('query', 'SELECT session,source,started FROM comets WHERE started IS NOT NULL')) for t in (1000.5, 1001.5, 1002.5, 1003.5)]
+             + [(1005.0, feed('read', 'a')), (1005.0, feed('read', 'b'))])]),
+        case('Free ends the comet and the queue', complete('a') + complete('b') + [
+            ('run', 1006.0, [(1000.5, ('mode', 'free')), (1001.0, feed('read', 'a')), (1001.0, feed('read', 'b'))])]),
+        case('comet start survives a failed send', complete('a') + [
+            ('device', 'fail', {'method': 'PUT', 'endpoint': '/effects'}), ('run', 1003.0), ('query', 'SELECT started FROM comets'),
+            ('sleep', 0.5), ('run', 1006.0, [(1001.0, ('query', 'SELECT started FROM comets')), (1003.0, feed('read', 'a'))])]),
+        # ModeTest.
+        case('mode commands persist', [feed('prompt', 'a'), ('status',), ('mode', 'free'), ('query', "SELECT value FROM meta WHERE key='mode_revision'"),
+                                       ('mode', 'free'), ('query', "SELECT value FROM meta WHERE key='mode_revision'"), ('status',),
+                                       ('run', 1004.0), ('status',)]),
+        case('Free releases once', [('takeover',), feed('prompt', 'a'), ('mode', 'free'), ('run', 1003.0), ('device', 'clearCalls'),
+                                    feed('permission', 'a'), ('run', 1006.0), feed('stop', 'a'), ('run', 1009.0)]),
+        case('reads in Free make no requests', [feed('prompt', 'a'), ('mode', 'free'), ('run', 1003.0), ('device', 'clearCalls'),
+                                                feed('stop', 'a'), ('run', 1006.0, [(1004.0, feed('read', 'a'))])]),
+        case('return to Work skips old waves', [feed('prompt', 'a'), ('mode', 'free'), ('run', 1002.0), ('query', 'SELECT * FROM slots'),
+                                                ('sleep', 0.2), ('mode', 'work'), ('run', 1008.0, [(1004.0, feed('interrupt', 'a'))]),
+                                                ('query', 'SELECT * FROM slots')]),
+        case('rapid mode changes', [feed('prompt', 'a'), ('mode', 'quiet'), ('mode', 'work'), ('mode', 'free'), ('run', 1004.0), ('status',)]),
+        case('failed handoff', [('takeover',), feed('prompt', 'a'), ('mode', 'free'), ('device', 'fail', {'method': 'PUT'}),
+                                ('run', 1004.0), ('status',), ('mode', 'quiet'), ('run', 1006.0, [(1002.0, ('mode', 'free'))]), ('status',)]),
+        case('a mode command ends a preview', [feed('prompt', 'a'), ('sql', "INSERT OR REPLACE INTO meta VALUES ('preview','all')"),
+                                               ('run', 1004.0, [(1000.5, ('mode', 'free'))])]),
+        case('Free leaves an external stream', [('takeover',), ('device', 'selected', '*ExtControl*'), feed('prompt', 'a'),
+                                                ('mode', 'free'), ('device', 'clearCalls'), ('run', 1003.0)]),
+        case('Quiet idle writes once', [feed('prompt', 'a'), feed('interrupt', 'a'), ('mode', 'quiet'),
+                                        ('run', 1008.0, [(1001.0, ('countPuts',)), (1004.0, ('countPuts',)), (1005.0, ('mode', 'free'))])]),
+        # SceneTest.
+        case('the scene returns after the last task', [feed('prompt', 'a'), feed('prompt', 'b'), ('run', 1014.0, [
+            (1003.0, feed('stop', 'a')), (1005.0, feed('stop', 'b')), (1006.0, ('query', 'SELECT session,slot FROM slots')),
+            (1007.0, feed('read', 'a')), (1009.0, feed('read', 'b')),
+            (1011.0, feed('end', 'a')), (1011.0, feed('end', 'b'))])]),
+        case('a scene chosen during Work becomes the target', [feed('prompt', 'a'), ('run', 1010.0, [
+            (1003.0, ('device', 'scene', 'Cotton Candy', 66)), (1004.5, ('scene',)), (1004.5, ('selected',)),
+            (1004.5, ('query', 'SELECT started FROM activity')),
+            (1006.0, feed('interrupt', 'a')), (1007.0, feed('end', 'a'))])]),
+        case('idle passes leave the scene running', [('run', 1002.0), ('device', 'scene', 'Cotton Candy', 57), ('device', 'clearCalls'),
+                                                    ('run', 1004.0), ('scene',)]),
+        case('a failed capture changes nothing', [feed('prompt', 'a'), ('device', 'fail', {'method': 'GET', 'endpoint': '/state'}),
+                                                  ('run', 1003.0)]),
+        case('cached indicators are adopted', [feed('prompt', 'a'), ('device', 'selected', '*Dynamic*'), ('sleep', 4.0), ('cache',),
+                                               ('run', 1012.0, [(1007.0, feed('interrupt', 'a')), (1008.0, feed('end', 'a'))])]),
+        # The port's own: the indicators' ownership invalidates an unchanged idle display.
+        case('an owned scene returns after a restart', [('run', 1002.0), ('takeover',), ('scene',), ('run', 1004.0)]),
+        case('a preview ends with the tasks shown again', [feed('prompt', 'a'), ('run', 1008.0, [
+            (1003.0, ('sql', "INSERT OR REPLACE INTO meta VALUES ('preview','comet')"))])]),
+        case('the worker applies a wall edit the comet deferred', complete('a') + [('run', 1006.0, [
+            (1000.5, ('edit', 'settings', {'style': 'project'})), (1001.0, ('query', 'SELECT payload FROM map_pending')),
+            (1001.0, ('query', 'SELECT style FROM map_settings')), (1004.0, ('query', 'SELECT payload FROM map_pending')),
+            (1004.0, ('query', 'SELECT style FROM map_settings'))])]),
+        # PaletteWorkerTest.
+        case('palette change mid pulse and comet', [projects, feed('prompt', 'w'), feed('prompt', 'u'), ('run', 1012.0, [
+            (1001.0, feed('stop', 'u')),
+            (1002.0, ('query', 'SELECT * FROM activity ORDER BY session')), (1002.0, ('query', 'SELECT session,source,started FROM comets')),
+            (1002.0, ('query', 'SELECT * FROM slots')),
+            (1002.0, ('edit', 'settings', {'palette': {'unread': '#ff00c0', 'working': '#00e5ff'}})),
+            (1002.6, ('query', 'SELECT * FROM activity ORDER BY session')), (1002.6, ('query', 'SELECT session,source,started FROM comets')),
+            (1002.6, ('query', 'SELECT * FROM slots')),
+            (1005.0, ('edit', 'settings', {'palette': 'default'})), (1007.0, feed('read', 'u')), (1007.0, feed('interrupt', 'w')),
+            (1008.0, feed('end', 'u')), (1008.0, feed('end', 'w'))])]),
+        case('an Off base keeps unused Lines dark', [projects, ('edit', 'settings', {'palette': {'base': '#000000'}}), feed('prompt', 'a'),
+                                                     feed('permission', 'a'), ('run', 1008.0, [(1003.0, feed('interrupt', 'a')),
+                                                                                                (1004.0, feed('end', 'a'))])]),
+        case('Free after a palette change restores the scene once', [projects, ('edit', 'settings', {'palette': {'base': '#000000', 'working': '#00e5ff'}}),
+                                                                     feed('prompt', 'a'), ('run', 1006.0, [(1003.0, ('mode', 'free'))])]),
+        # ProjectTest.
+        case('a color edit invalidates the display', [projects, feed('prompt', 'a'), ('edit', 'taskProject', 'a', 'a'),
+                                                      ('edit', 'settings', {'style': 'project', 'coverage': 'status'}),
+                                                      ('run', 1010.0, [(1003.0, ('edit', 'projectColor', 'a', '#113355')),
+                                                                       (1006.0, feed('interrupt', 'a')), (1007.0, feed('end', 'a'))])]),
+        case('an idle Locate returns the scene', [projects, ('edit', 'assign', {line(0): {'project': 'a'}}), ('edit', 'settings', {'style': 'project'}),
+                                                  ('edit', 'locate', line(0)), ('run', 1004.0), ('query', 'SELECT * FROM locate')]),
+        case('an early read keeps the comet to its end', [projects, feed('prompt', 'a'), ('edit', 'taskProject', 'a', 'a'),
+                                                          ('edit', 'settings', {'style': 'project'}),
+                                                          ('run', 1010.0, [(1003.0, feed('stop', 'a')), (1003.5, feed('read', 'a')),
+                                                                           (1007.0, feed('end', 'a'))])]),
+    ]
+    return cases
+
+
+def worker_values():
+    """Each worker case's step outcomes, device requests, captured sends and the rows, scene file and device it leaves
+    (worker.test.ts)."""
+    cases = worker_cases()
+    original = shared_input.check_envelope
+    shared_input.check_envelope = lambda value, config, minimum_revision=0: dict(value)
+    try:
+        for record in cases:
+            with tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary)
+                run = WorkerCase(path, record)
+                record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                record['calls'] = run.device.calls
+                record['sends'] = run.sends
+                record['rows'] = run.rows()
+                scene = path / 'scene-state.json'
+                record['scene'] = json.loads(scene.read_text()) if scene.exists() else None
+                record['device'] = {'selected': run.device.selected, 'brightness': run.device.brightness, 'on': run.device.on,
+                                    'names': run.device.names}
+                record['clock'] = run.clock.now()
+    finally:
+        shared_input.check_envelope = original
+    write_nested('worker.json', {'scene': SCENE, 'cases': cases}, 3)
+
+
 if __name__ == '__main__':
     values()
     setups()
@@ -1180,3 +1545,4 @@ if __name__ == '__main__':
     numbers()
     rendering()
     edit_values()
+    worker_values()

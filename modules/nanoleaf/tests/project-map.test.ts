@@ -13,7 +13,8 @@ import {applyPending, lineId, locateState, Metadata, normalize, owners, renderCo
 import type {RenderConfig} from '../src/renderer.js';
 import {execute} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {Clock, completion, query, setMode, suite, taskRow, temporary, test, wallView, write, type WallView} from './support.js';
+import {updateDisplay} from '../src/worker.js';
+import {Clock, completion, query, setMode, suite, taskRow, temporary, test, wallView, write, writeAsync, type WallView} from './support.js';
 
 /** SceneTest.setUp's configuration. */
 const CONFIG: RenderConfig = {ip: '192.168.1.207', token: 'PRIVATE_TEST_TOKEN',
@@ -298,6 +299,26 @@ suite('ProjectTest', () => {
     assert.equal(p.rendering().outcome, 'externally-controlled');
     meta("DELETE FROM meta WHERE key='mode'");
     assert.equal(p.rendering().outcome, 'unknown');
+  });
+
+  test('test_partial_effect_acceptance_keeps_prior_receipt_and_reports_failure', async context => {
+    const p = new Projects(context);
+    const receipt = {apiVersion: '1.0', deviceId: 'wall', effect: {write: {animData: 'previous'}}};
+    write(p.directory, db => execute(db, 'INSERT OR REPLACE INTO meta VALUES (?,?)', 'rendering_receipt', JSON.stringify(receipt)));
+    const calls: (string | undefined)[] = [];
+    const config: RenderConfig = {...CONFIG, _mode: 'work', _now: () => 2000, _controller_request: (_address, _method, endpoint) => {
+      calls.push(endpoint);
+      return endpoint === '/state' ? Promise.reject(new Error('Brightness update failed after effect acceptance')) : Promise.resolve(null);
+    }};
+    const snapshot: Indication[] = [['working', 1999], ...Array.from({length: 14}, () => null)];
+    await assert.rejects(writeAsync(p.directory, async db => updateDisplay(db, config, snapshot, 2000, false)), /Brightness update failed/);
+    assert.deepEqual(calls, ['/effects', '/state']);
+    assert.deepEqual(JSON.parse(String(query(p.directory, "SELECT value FROM meta WHERE key='rendering_receipt'")[0]?.[0])), receipt);
+    write(p.directory, db => execute(db, "INSERT OR REPLACE INTO meta VALUES ('control_error','Brightness update failed after effect acceptance')"));
+    const rendering = p.rendering();
+    assert.equal(rendering.outcome, 'failed');
+    assert.deepEqual(rendering.lastSuccessful, receipt);
+    assert.equal(rendering.failedAttempt, true);
   });
 
   test('an empty saved receipt reads as no receipt', context => {

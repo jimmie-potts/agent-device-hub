@@ -8,14 +8,15 @@ import type {TestContext} from 'node:test';
 import {isObject, type JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import {linesEntry, lockFile, sceneFile, saveLayout} from '../src/devices.js';
-import {loadConfig} from '../src/configuration.js';
+import {loadConfig, registeredDevices} from '../src/configuration.js';
 import {changeAddress, check, enroll, pair, remove, type Enrollment} from '../src/enrollment.js';
 import {Partial as PartialChange} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import type {HttpRequest, HttpResponse} from '../src/transport.js';
-import {fixtureJson, loadDump, recordedSetup, refuse, setMode, suite, temporary, test, write} from './support.js';
+import {completion, fixtureJson, loadDump, recordedSetup, refuse, setMode, suite, temporary, test, write} from './support.js';
+import {ManualClock, runUntil} from './worker-support.js';
 
 const FIXTURE = (fixtureJson('nl22-panels-fixture.json') as {panelLayout: JsonObject}).panelLayout;
 const [LINES_IP, PANELS_IP, OTHER_IP, NEW_IP] = ['192.0.2.1', '192.0.2.2', '192.0.2.3', '192.0.2.4'];
@@ -295,13 +296,30 @@ suite('PrivacyTest', () => {
 suite('FreeStartTest', () => {
   // AC3: dark until activated; activation replays nothing.
   test('test_enrolled_device_stays_dark_until_activated', async context => {
-    // The worker pass that sends nothing moves with the worker (slice 3); an empty credential is refused before any request.
+    // An empty credential is refused before any request (the command line's own refusal is not ported).
     const e = new Enrolling(context);
     await e.enroll();
     e.fake.seen = [];
+    const clock = new ManualClock();
+    assert.equal(await runUntil({directory: e.directory, device: 'panels', request: e.fake.request}, clock, 1025), true);
+    assert.deepEqual(e.fake.seen, []);
     assert.deepEqual(e.status('panels'), {mode: 'free', pending: false, error: null});
     await assert.rejects(e.enroll({token: ''}), refused('letters and numbers'));
     assert.deepEqual(e.fake.seen, []);
+  });
+
+  test('test_activation_replays_no_comet_or_wave', async context => {
+    // The completion is saved as its rows; the activation is the Panels' mode command.
+    const e = new Enrolling(context);
+    setMode(e.directory, 'work', 1000);
+    write(e.directory, db => completion(db, 'a', '1', 1000, registeredDevices(e.directory)));
+    assert.deepEqual(e.query("SELECT session FROM comets WHERE device='wall'"), [['a']]);
+    await e.enroll();
+    setMode(e.directory, 'work', 1030, 'panels');
+    assert.deepEqual(e.query("SELECT session FROM comets WHERE device='panels'"), []);
+    assert.deepEqual(e.query("SELECT value FROM meta WHERE key='wave_cutoff@panels'"), [['1030.0']]);
+    assert.deepEqual(e.query("SELECT session FROM comets WHERE device='wall'"), [['a']]);
+    assert.equal(e.status().mode, 'work');
   });
 
   test('test_stale_state_for_a_new_id_is_cleared_before_registration', async context => {
