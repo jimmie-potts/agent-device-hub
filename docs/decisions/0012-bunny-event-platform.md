@@ -147,7 +147,7 @@ Existing formats move in one offline cutover:
 
 ### High-impact messages
 
-Device commands, moments, mode changes and inbox notices are tracked:
+Device commands, moments and mode changes are tracked:
 - The core records each one as sent, then accepted when the reply arrives, then
   completed when the outcome arrives.
 - If its deadline passes first, the core records it as uncertain. A command
@@ -162,10 +162,13 @@ State events and telemetry are not tracked.
 
 ### Inbox and history
 
-- One shared inbox in the core holds turn-ended notices and failed or uncertain
-  operations. Items survive restarts until handled, with no expiry and no
-  automatic clearing. Handling an item once clears it everywhere; dismissing it
-  on a display is a separate fact.
+- One shared inbox in the core holds failed and uncertain operations: the
+  results a person must decide on. Items survive restarts until handled, with
+  no expiry and no time-based clearing. Handling an item once clears it
+  everywhere; dismissing it on a display is a separate fact.
+- A finished turn is not an inbox item. Its unread state stays on the session
+  record, which consumers sync, and evidence clears it: a new turn in that
+  session, read evidence, or the session's end. Nothing clears it on a timer.
 - Long-term history is private SQLite in the core store, with no time limit, a
   dashboard timeline and a read API. Viewing history never triggers devices or
   automation.
@@ -309,8 +312,9 @@ The consequences:
   duplicates and lag.
 - Module stores, history and backups add operational work.
 - No replay: a consumer that was down misses occurrences such as `turn.ended`
-  and sees only the current state after its sync. The shared inbox and history
-  are where missed occurrences remain visible.
+  and sees only the current state after its sync. That state includes each
+  session's unread finished turn and the shared inbox; history keeps every
+  occurrence.
 - Live-only commands: a command to an offline module is lost, not queued. The
   owner sees it as failed or uncertain and can resend it.
 - Tracking: each tracked kind needs a deadline. Uncertain items need a person to
@@ -367,3 +371,13 @@ because it was still queued at its deadline, is answered `expired` rather than
 uncertain ([#880](https://github.com/jimmie-potts/agent-device-hub/issues/880)).
 Uncertain now means only an unknown fate, so fewer items need a person to
 decide.
+
+**2026-10-06, inbox scope.** The owner chose to keep finished turns off the
+shared inbox. A finished turn's unread state stays on the session record, and
+evidence clears it (a new turn, read evidence or the session's end), as the
+devices behave today. The inbox keeps only failed and uncertain operations,
+the results a person must decide on. One inbox item per finished turn would
+repeat the session list, grow without bound and need paged syncs; devices
+already learn of a finished turn from session state when they sync.
+[#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) removes
+the turn-ended variant of the 2.0 `inbox-item` family and updates MAPPING.md.
