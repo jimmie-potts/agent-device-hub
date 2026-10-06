@@ -292,7 +292,9 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
 - A non-string device `kind` is a `ValueError` here; Python raised `TypeError`.
 - `pySum` and `pyHypot` reproduce Python's `sum()` (compensated since 3.12) and `math.hypot` to the
   last bit. Without them, a plain loop differs in the last bit for about half of random float lists,
-  and `Math.hypot` for about a third of random inputs.
+  and `Math.hypot` for about a third of random inputs. No recorded output distinguishes them from
+  those plain versions. They stay while exact parity with Python is the acceptance bar, and can be
+  replaced once Python retires (#839).
 - `Math.sin`, `Math.cos` and `Math.atan2` are V8's functions, not the C library's that Python calls.
   On random inputs they differ in the last bit for about 3% (sine, cosine) and 18% (arc tangent), so
   rotated map geometry can differ by an ulp. The recorded zone colors, payloads and pairing still
@@ -306,7 +308,8 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
 - The tests read task rows through `wallView`, a test helper that mirrors
   `wall_server.App.state`. No Python recording checks that helper; #844 ports the real view.
 - Until slice 2b adds the HTTP client, `loadConfig` and `render` have no default device request:
-  a device read or send without the caller's request is a `ValueError`.
+  a device read or send without the caller's request is a `ValueError`. Nothing runs the module
+  before the cutover, and slice 2b removes this limit.
 
 ## Open decision
 
