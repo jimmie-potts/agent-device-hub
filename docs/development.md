@@ -1663,9 +1663,12 @@ envelope by hash. `palette`, `map_pending`, `locate`, `shared_ack` and the
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
 discovery and malformed Lines replies, color parsing, every effect pattern's
-payload, zone colors and effect payloads on random renderer states, and map
+payload, zone colors and effect payloads on random renderer states, map
 edits, mode commands, Locate, comets and rendering receipts with the rows they
-leave. The colors, payloads, effects, pairing and edits match exactly. A map geometry number may
+leave, and scripted runs of the display worker with scene restore on a fake
+device. The colors, payloads, effects, pairing, edits and worker runs match
+exactly; the worker runs on a manual millisecond clock, as the runtime's is, so
+its instants match Python's. A map geometry number may
 differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1, because
 `Math.sin`, `Math.cos` and `Math.atan2` can differ from the C library's in the
 last bit.
