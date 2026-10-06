@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Draft, type Handler, type SubscribeOptions, type Subscription, type TraceContext} from './sdk.js';
-import {childOf} from './trace.js';
+import {childOf, traceIdOf} from './trace.js';
 
 export type SyncRequest = {requestId: string; families: string[]};
 export type SyncCompleted = {requestId: string; revision: number; members: EntityRef[]};
@@ -81,22 +81,29 @@ const MAX_SUBJECT = 256;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const invalid = (detail: string): SdkError => new SdkError(errorBody('invalid-request', {detail: detail.slice(0, MAX_DETAIL)}));
 
-/** The families of one sync request, checked: 1 to 32 distinct family names, named together by the request's subject. */
+/** A non-empty list of distinct family names, as an owner serves them. */
 export function checkFamilies(families: readonly string[]): string[] {
   // A caller outside TypeScript may pass anything; checking a copy keeps `families` typed.
   const given: unknown = families;
-  if (!Array.isArray(given) || families.length === 0 || families.length > MAX_FAMILIES) throw invalid(`a sync names 1 to ${MAX_FAMILIES} families`);
+  if (!Array.isArray(given) || families.length === 0) throw invalid('name at least one family');
   for (const family of families) {
     if (typeof family !== 'string' || !FAMILY.test(family) || family.length > MAX_FAMILY) throw invalid(`family ${String(family)}`);
   }
   if (new Set(families).size !== families.length) throw invalid('a family is named twice');
-  if (families.join(',').length > MAX_SUBJECT) throw invalid(`the families take more than ${MAX_SUBJECT} characters`);
   return [...families];
 }
 
+/** The families of one sync request: also at most 32, which its subject names in at most 256 characters. */
+function checkRequested(families: readonly string[]): string[] {
+  const requested = checkFamilies(families);
+  if (requested.length > MAX_FAMILIES) throw invalid(`a sync names at most ${MAX_FAMILIES} families`);
+  if (requested.join(',').length > MAX_SUBJECT) throw invalid(`the families take more than ${MAX_SUBJECT} characters`);
+  return requested;
+}
+
 /** The family of a `https://bunny.invalid/events/<family>/<major>.<minor>` schema identifier. */
-export function schemaFamily(dataschema: string): string | undefined {
-  if (!dataschema.startsWith(SCHEMA_BASE)) return undefined;
+export function schemaFamily(dataschema: unknown): string | undefined {
+  if (typeof dataschema !== 'string' || !dataschema.startsWith(SCHEMA_BASE)) return undefined;
   const path = dataschema.slice(SCHEMA_BASE.length);
   const slash = path.lastIndexOf('/');
   return slash > 0 ? path.slice(0, slash) : undefined;
@@ -140,7 +147,7 @@ const keyOf = (entity: EntityRef): string => `${entity.family}/${entity.id}`;
 export async function startSync<T extends object>(
   transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, options: SyncOptions,
 ): Promise<SyncResult<T>> {
-  const requested = checkFamilies(families);
+  const requested = checkRequested(families);
   const {timeoutMs, maxBuffered = 1024, parent} = options;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   if (!Number.isSafeInteger(maxBuffered) || maxBuffered < 1) throw invalid('maxBuffered must be a positive integer');
@@ -148,6 +155,8 @@ export async function startSync<T extends object>(
 }
 
 type Held<T> = {entity: EntityRef; revision: number; message: Message<T>};
+/** An answer and the copy's generation when its request was sent. */
+type Answered = {answer: SyncAnswer; generation: number};
 
 class Copy<T extends object> implements SyncedCopy<T> {
   readonly #transport: SyncTransport;
@@ -162,15 +171,23 @@ class Copy<T extends object> implements SyncedCopy<T> {
   #floor = -1;
   /** Live messages waiting: during a sync for its answer, afterwards for the handler. At most `maxBuffered`. */
   #pending: Message[] = [];
-  #answer: SyncAnswer | undefined;
-  /** Counts sync requests, so the answer to one that a restart replaced is ignored. */
-  #attempt = 0;
+  #answered: Answered | undefined;
+  /** Counts overflows. An answer to a request sent before the latest overflow has a gap, so it is not applied. */
+  #generation = 0;
+  /** A sync is needed: the worker sends its request once no other is outstanding. */
+  #wanted = false;
+  /** A request is outstanding. A copy never has two, so a busy copy cannot crowd the owner's shared queue. */
+  #outstanding = false;
   #phase: 'syncing' | 'live' | 'closed' = 'syncing';
   #subscriptions: Subscription[] = [];
+  /** The trace the first request joins; later requests start their own. */
+  #parent: TraceContext | undefined;
+  /** When the first sync must have completed. */
+  #firstDeadlineMs = 0;
   /** Settles the `sync` call when the first sync completes or is refused. */
   #settle: ((result: SyncResult<T>) => void) | undefined;
-  // One worker applies answers and live messages and calls the handler, one change at a time. A queued item only
-  // wakes it, so one waiting item is enough.
+  // One worker sends requests, applies answers and live messages and calls the handler, one change at a time. A
+  // queued item only wakes it, so one waiting item is enough.
   readonly #worker = new DeliveryQueue<object>(1, () => this.#work());
 
   constructor(transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, timeoutMs: number, maxBuffered: number) {
@@ -183,18 +200,21 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   async start(parent: TraceContext | undefined): Promise<SyncResult<T>> {
     const result = new Promise<SyncResult<T>>(resolve => { this.#settle = resolve; });
+    this.#parent = parent;
+    this.#firstDeadlineMs = this.#transport.now() + this.#timeoutMs;
     // Subscribe before asking, so that nothing published after the snapshot is missed.
     try {
       for (const family of this.#families) {
         this.#subscriptions.push(await this.#transport.subscribe(`bunny.state.${family}.*`, message => { this.#arrive(message); }, {
-          onOverflow: () => { this.#restart(undefined); },
+          onOverflow: () => { this.#overflow(); },
         }));
       }
     } catch (error) {
       await this.#stop();
       throw error;
     }
-    this.#restart(parent);
+    this.#wanted = true;
+    this.#wake();
     return result;
   }
 
@@ -212,28 +232,61 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   #arrive(message: Message): void {
     if (this.#phase === 'closed') return;
-    // Overflow: the buffer would lose a message, so sync again rather than combine partial state.
+    // The buffer would lose a message, so sync again rather than combine partial state.
     if (this.#pending.length >= this.#maxBuffered) {
-      this.#restart(undefined);
+      this.#overflow();
       return;
     }
     this.#pending.push(message);
     if (this.#phase === 'live') this.#wake();
   }
 
-  /** Sends a new sync request. What was buffered is dropped: the new answer's state includes it. */
-  #restart(parent: TraceContext | undefined): void {
+  /**
+   * The copy missed a message: it stops applying live messages and wants a new sync. What was buffered is dropped,
+   * because the next answer's state includes it, and an answer to a request already sent is not applied.
+   */
+  #overflow(): void {
     if (this.#phase === 'closed') return;
-    const attempt = ++this.#attempt;
     this.#phase = 'syncing';
     this.#pending = [];
-    this.#answer = undefined;
-    const outgoing = {families: [...this.#families], requestId: randomUUID(), timeoutMs: this.#timeoutMs, trace: childOf(parent)};
-    void this.#transport.request(outgoing).then(answer => {
-      if (attempt !== this.#attempt || this.#phase === 'closed') return;
-      this.#answer = answer;
-      this.#wake();
+    this.#generation += 1;
+    this.#wanted = true;
+    this.#wake();
+  }
+
+  /** Sends the wanted request. A first sync gets only the time left before its deadline, and none past it. */
+  #send(): void {
+    this.#wanted = false;
+    this.#pending = [];
+    const generation = this.#generation;
+    const requestId = randomUUID();
+    const trace = childOf(this.#parent);
+    this.#parent = undefined;
+    const ids = {requestId, traceId: traceIdOf(trace.traceparent)};
+    let timeoutMs = this.#timeoutMs;
+    if (this.#settle !== undefined) {
+      const left = this.#firstDeadlineMs - this.#transport.now();
+      if (left <= 0) {
+        const detail = `the first sync did not complete within ${this.#timeoutMs} ms`;
+        this.#answered = {generation, answer: {status: 'rejected', requestId, error: errorBody('unavailable', {...ids, detail})}};
+        return;
+      }
+      timeoutMs = Math.min(timeoutMs, left);
+    }
+    this.#outstanding = true;
+    void this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace}).then(answer => {
+      this.#arrived({generation, answer});
+    }, (error: unknown) => {
+      this.#transport.report(error);
+      this.#arrived({generation, answer: {status: 'rejected', requestId, error: errorBody('unavailable', {...ids, detail: 'the sync request failed'})}});
     });
+  }
+
+  #arrived(answered: Answered): void {
+    this.#outstanding = false;
+    if (this.#phase === 'closed') return;
+    this.#answered = answered;
+    this.#wake();
   }
 
   #wake(): void {
@@ -242,10 +295,15 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   async #work(): Promise<void> {
     for (;;) {
-      const answer = this.#answer;
-      if (answer !== undefined) {
-        this.#answer = undefined;
-        await this.#complete(answer);
+      if (this.#phase === 'closed') return;
+      const answered = this.#answered;
+      if (answered !== undefined) {
+        this.#answered = undefined;
+        await this.#complete(answered);
+        continue;
+      }
+      if (this.#wanted && !this.#outstanding) {
+        this.#send();
         continue;
       }
       const message = this.#phase === 'live' ? this.#pending.shift() : undefined;
@@ -255,7 +313,9 @@ class Copy<T extends object> implements SyncedCopy<T> {
     }
   }
 
-  async #complete(answer: SyncAnswer): Promise<void> {
+  async #complete({answer, generation}: Answered): Promise<void> {
+    // An overflow since this request was sent left a gap that its state may not cover; the next request replaces it.
+    if (answer.status === 'served' && generation !== this.#generation) return;
     const settle = this.#settle;
     if (answer.status === 'rejected') {
       // No sync.completed follows a refusal. A first sync returns it to the caller; a later one ends the copy.
@@ -335,7 +395,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
   async #stop(): Promise<void> {
     this.#phase = 'closed';
     this.#pending = [];
-    this.#answer = undefined;
+    this.#answered = undefined;
     const subscriptions = this.#subscriptions.splice(0);
     await Promise.all([...subscriptions.map(subscription => subscription.close()), this.#worker.close()]);
   }
