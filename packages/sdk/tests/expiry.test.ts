@@ -51,6 +51,7 @@ it('at the deadline, a command still queued is removed as expired, and one being
     return command.data.mode === 'work' ? busy.promise : {status: 'accepted'};
   });
   const first = core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 100});
+  await flush();
   const queued = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 100, requestId: 'req-queued', parent: PARENT});
   await flush();
   assert.deepEqual(handled, ['work'], 'the second request waits behind the first');

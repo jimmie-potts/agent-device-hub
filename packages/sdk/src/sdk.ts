@@ -33,9 +33,10 @@ export type RejectedReply = {requestId: string; error: ErrorDetail};
 export type Reply = {status: 'accepted'} | ErrorBody;
 
 /**
- * How a request ended. `rejected` carries the owner's refusal, or the bus's own when no responder took the command
- * (`unavailable`, `capacity`). `uncertain` means the deadline passed first (`uncertain-result`): the command may have
- * taken effect, and nothing retries it.
+ * How a request ended. `rejected` carries the owner's refusal, or the bus's own when the command never reached the
+ * responder's handler: `unavailable`, `capacity`, `expired` when its deadline passed while it waited, or `cancelled`
+ * when the requester closed. `uncertain` (`uncertain-result`) means the handler had the command when the deadline
+ * passed or the requester closed: it may have taken effect, and nothing retries it.
  */
 export type RequestResult =
   | {status: 'accepted'; requestId: string; reply: Message<AcceptedReply>}
@@ -54,7 +55,12 @@ export type SubscribeOptions = {
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 
 export interface Subscription {
-  /** Stops delivery and drops queued messages. Resolves when a handler that is still running has finished. */
+  /**
+   * Stops delivery and drops queued messages; a responder's waiting commands are refused as `unavailable`. Resolves
+   * when a handler that is still running has finished. Called from that handler's own async flow, it resolves at once
+   * instead of waiting for itself. A callback that an emitter created elsewhere invokes is not in that flow, so it
+   * should use `void subscription.close()`. Two handlers that await each other's close never finish.
+   */
   close(): Promise<void>;
 }
 
@@ -94,6 +100,14 @@ export interface Sdk {
 
 /** A participant as the code that connected it holds it: the SDK calls, and `close`. */
 export interface Participant extends Sdk {
+  /**
+   * Closes everything the participant opened, so nothing of it is left behind. Its requests still waiting for a result
+   * settle first: one whose command is still queued is taken out and refused as `cancelled`, and one whose command the
+   * responder's handler has becomes `uncertain`. Their deadlines are cleared. Then its subscriptions and responders
+   * close as their own `close` does, and it resolves when its running handlers have finished; it never waits for
+   * another participant's handler. Later calls are refused with `invalid-state`, and closing again returns the same
+   * promise.
+   */
   close(): Promise<void>;
 }
 

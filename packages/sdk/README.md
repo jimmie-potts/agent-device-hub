@@ -2,11 +2,10 @@
 
 Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. parts
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
-This version holds the in-process bus: `publish`, `subscribe`, `request`,
-`respond`, `sync` and its owner side, `serveSync`. Nothing runs it yet. Later
-stories add the module host (#880) and the SSE/HTTP remote transport (#883)
-without changing these calls, so a module never sees which transport carries its
-messages.
+It holds the in-process bus: `publish`, `subscribe`, `request`, `respond`,
+`sync` and its owner side, `serveSync`. Later stories add the module host (#880)
+and the SSE/HTTP remote transport (#883) without changing these calls, so a
+module never sees which transport carries its messages.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -52,8 +51,13 @@ if (synced.status === 'synced') render(synced.copy.states());
   deliveries. By default, each one becomes a `BunnySdkWarning` process warning
   whose message names the source and pattern, with the original error as its
   `cause`.
+- `scheduler`: runs request deadlines through `after(delayMs, callback)`, which
+  returns a function that cancels the callback. Defaults to the global
+  `setTimeout`. The runtime passes the scheduler and clock it gives its modules,
+  so a module's deadlines follow the module's clock.
 
-`bus.connect(source)` returns an `Sdk` for one participant. `source` is its
+`bus.connect(source)` returns a `Participant`: the `Sdk` calls for one
+participant, plus [`close()`](#closing-a-participant). `source` is its
 CloudEvents source, such as `bunny/core`; a malformed source throws `SdkError`
 at once. Each message the participant sends gets that
 source, a new `id`, the current `time`, the fixed profile attributes and a
@@ -78,6 +82,13 @@ The `Sdk` calls:
 handler finishes. Called from inside its own handler, `close()` resolves at once
 instead of waiting for that handler, and a responder that closes itself still
 sends its reply.
+
+Close detection follows the handler's async flow, not the call stack. A callback
+that the handler awaits, but that an emitter created elsewhere invokes, runs
+outside that flow, so its `close()` would wait for the very handler that waits
+for it. Such a callback should call `void subscription.close()` instead of
+awaiting it. Two handlers that await each other's close deadlock in the same
+way.
 
 A malformed call, such as a bad routing key, rejects with `SdkError`. Its
 `body` is the shared error body, here with code `invalid-request`.
@@ -109,8 +120,11 @@ straight back to the requester, never to subscribers.
   integer from 1 to 2147483647.
 - One responder owns each command key. A `respond` whose pattern overlaps
   another responder's is refused with `invalid-state`.
-- A responder handles one command at a time. If a command's expiry passes while
-  it waits, the responder ignores it and nothing answers it.
+- A responder handles one command at a time. A command whose expiry passes
+  before its handler starts never reaches the handler: at the deadline the bus
+  takes it out of the responder's queue, and the requester gets `expired`. A
+  command that reaches the responder at or after its expiry is skipped the same
+  way.
 
 `request` resolves with one of these results:
 
@@ -121,7 +135,9 @@ straight back to the requester, never to subscribers.
 | `rejected` | The responder threw. The error also goes to `onError`. | `internal` |
 | `rejected` | No responder owns the key, or it closed before the command reached it. | `unavailable` |
 | `rejected` | The responder's queue is full. | `capacity` |
-| `uncertain` | The deadline passed first. The command may have taken effect. | `uncertain-result` |
+| `rejected` | The deadline passed before the responder's handler started the command. | `expired` |
+| `rejected` | The requester closed before the responder's handler started the command. | `cancelled` |
+| `uncertain` | The handler had the command when the deadline passed or the requester closed. It may have taken effect. | `uncertain-result` |
 
 The SDK never sends a command twice, and a reply that arrives after the
 deadline is ignored. Error bodies carry the `requestId` and the command's trace
@@ -226,6 +242,23 @@ follows:
 
 An owner ignores a sync request past its expiry. A malformed call, such as an
 empty or repeated family list, rejects with `SdkError` and `invalid-request`.
+
+## Closing a participant
+
+`participant.close()` closes everything the participant opened, so a stopped
+module leaves nothing behind:
+1. Later calls on the participant are refused with `invalid-state`.
+2. Its requests still waiting for a result settle. A command still queued at its
+   responder is taken out and the request is `rejected` with `cancelled`. One
+   that the responder's handler has becomes `uncertain`. Their deadlines are
+   cleared, so no timer keeps the process alive.
+3. Its subscriptions and responders close as their own `close()` does.
+
+It resolves when the participant's running handlers have finished. Because its
+own requests settle first, a handler that awaits another participant's reply can
+finish, and the close never waits for another participant's handler. Calling it
+again returns the same promise. The runtime closes a module's participant when
+it stops the module.
 
 ## Trace context
 
