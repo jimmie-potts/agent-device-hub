@@ -157,31 +157,105 @@ runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
 
-## Fixture module
+## Fixture modules
 
-`tests/fixtures/lamp.ts` is a simulated lamp, the stand-in module that later
-stories build on (#846). It passes the
+A module is created by a factory that takes its device transport,
+`create<Name>Module({transport})`, so a test or a disposable run passes a
+simulated device and no hardware is touched (#846). The fixture modules show
+the convention. There is no manifest slot or registry for transports, because
+ADR 0012 rules out a plug-in framework.
+
+`tests/fixtures/lamp.ts` holds the lamp, the stand-in device module that later
+stories build on. `createLampModule({transport})` takes a `LampTransport`.
+`SimulatedLamps` is the simulated one: it keeps its state across runtime
+restarts, as a real lamp would, and a test can hold its switches or make the
+next one fail. The lamp passes the
 [module test kit](../../packages/sdk/README.md#module-test-kit):
 - it serves its lamps (family `lamp`) through sync;
-- it copies the core's `mode` and keeps the lamps off in quiet mode;
+- it copies the core's `mode` and `session`, keeps the lamps off in quiet mode,
+  and shows on its indicator whether a session waits for a person;
 - it switches a lamp on `bunny.cmd.lamp.<id>`, refusing an unknown lamp with
   `not-found`;
+- it accepts a command whose `requestId` it already handled from the same
+  source, a duplicate, and changes nothing;
 - it reports each switch through its [outbox](../../packages/sdk/README.md#outbox):
   the lamp's new state, the `org.bunny.lamp.switched` occurrence and the
-  outcome.
+  outcome. When the lamp cannot be reached, the outcome is `failed`, with
+  evidence `none` and the `unavailable` error.
 
 `lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
-`tests/fixtures/core.ts` stands in for the core. It serves the mode, and it takes
-every occurrence and outcome once by `(source, id)`, keeping what it took in its
-own SQLite file across restarts. It acknowledges each outcome with the kit's
-stand-in acknowledgment, which the lamp follows, until Hub #782 defines the
-real one.
+`tests/fixtures/chime.ts` holds a consume-only module,
+`createChimeModule({transport})` with `SimulatedChime`. It follows the core's
+sessions and rings once for each approval prompt, and passes the kit as a
+module that only copies.
+
+`tests/fixtures/core.ts` stands in for the core, as `createCoreModule()`,
+until Hub #831 and #782 replace it:
+- as the session owner, it commits each hook's `lifecycle` observation to the
+  session record;
+- as history and the inbox, it records each outcome as a `stand-in-history`
+  entry and each failed or uncertain one as an `inbox-item` operation, then
+  acknowledges the outcome with the kit's stand-in acknowledgment, which the
+  lamp follows;
+- it owns the mode.
+
+It takes every occurrence and outcome once by `(source, id)`, keeping what it
+took in its own SQLite file across restarts. Its changes go out through its
+outbox after they commit, and it serves all four families through sync.
 
 A process test kills the runtime between the lamp's commit and its publish,
 then restarts it twice. At the first restart the lamp sends its state,
 occurrence and outcome, the core takes the outcome once and acknowledges it,
 and the lamp forgets it. The second restart sends nothing, and nothing ever
 sends the command again.
+
+## Scenario catalog
+
+`tests/scenarios/catalog.ts` is the runtime's one scenario catalog (#846). Each
+scenario says what a person or a device should see, as a seed and named steps.
+The seed names the modules to start and the families the reader copies. A step
+acts through the harness, expects an observation within a time bound, or
+expects one to hold. A failed step names what it observed and stops the
+scenario. Each run type has one execution adapter that runs the same
+definitions unchanged: `tests/scenarios/memory.ts`, the in-memory harness
+(tier 1, in CI), and the disposable runs of #920 (tier 2). Every runtime story
+adds its scenarios to the catalog.
+
+The in-memory harness hosts the seed's modules in the runtime's module host,
+each built by its factory with its simulated transport, on a manual clock and
+scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
+and a reader) first join the host's bus, then reach it through a `RemoteEdge`
+on 127.0.0.1 with a run-generated token each. A crash between the lamp's commit
+and its publish abandons the runtime and starts a new one on the same state
+directory behind the same port, as the service manager would restart it.
+Simulated devices keep their state across the crash.
+
+The catalog holds:
+- an approval prompt reaching every module;
+- a command with a tracked outcome, and a failed one in the inbox;
+- a module failing while the others continue;
+- a part reconnecting and syncing, with nothing replayed;
+- the runtime starting with zero modules;
+- the early end-to-end path: a hook observation, the committed session, the
+  simulated device's update, a command, its outcome, history and inbox rows,
+  then sync and read. It adds a duplicate command, the deadline answers, a
+  disconnect and a crash-restart.
+
+The deadline answers follow the SDK's
+[transport conformance](../../packages/sdk/README.md#remote-transport):
+
+| Case | In process | Remote |
+| --- | --- | --- |
+| A command its handler holds at the deadline | `uncertain-result` | `uncertain-result` |
+| A command still queued at the deadline | `expired` | `expired` |
+| A requester that closes while its command is queued | `cancelled` | `uncertain-result` |
+| A requester whose command is in flight when the runtime crashes | dies with the runtime | `uncertain-result` |
+
+The harness never listens on an installed service's port (8765, 8787, 8788,
+8791 or 41231). It keeps its state in a private directory under the system
+temporary directory, which must be outside every Git checkout, and removes it
+afterwards. Its tokens appear in no log record or message. It checks every
+message it sees against profile 2.0.
 
 ## Checks
 

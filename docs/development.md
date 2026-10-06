@@ -739,9 +739,37 @@ CI job runs `npm run test:runtime:built` after its fresh build. The tests use
 in-test fixture modules, port 0 on loopback and private state directories under
 the system temporary directory, which must be outside every Git checkout. Some
 start the runtime in child processes, as the service manager would; one kills it
-between the fixture lamp's commit and publish. The fixture lamp runs the module
-test kit. They need no device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
+between the fixture lamp's commit and publish. The fixture lamp and chime run the
+module test kit. They need no device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123; the README's Memory section says how.
+
+### Runtime test layers
+
+Every runtime story is tested at four layers
+([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
+The core CI job runs the first three after its fresh build, on every PR that
+runs the Checks workflow; Markdown-only changes skip them.
+
+| Layer | Command | What it runs |
+| --- | --- | --- |
+| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built` | The package's and its modules' own tests, moved tests included |
+| Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
+| End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
+| Acceptance | [#920](https://github.com/jimmie-potts/agent-device-hub/issues/920) | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
+
+`npm run test:runtime:scenarios` builds, then runs
+`test:runtime:scenarios:built`: the compiled tests in
+`apps/runtime/dist/tests/scenarios/`. To run some scenarios only, name them
+after a build, for example
+`node --test --test-name-pattern=end-to-end apps/runtime/dist/tests/scenarios/*.test.js`.
+Each catalog scenario runs twice in the runtime's module host, on a manual
+clock: once with its parts on the host's bus, and once through a `RemoteEdge`
+on 127.0.0.1 with run-generated tokens. The harness never listens on an
+installed service's port (8765, 8787, 8788, 8791 or 41231), keeps its state in
+a private directory under the system temporary directory, which must be
+outside every Git checkout, and checks every message against profile 2.0. It
+needs no device. The [runtime README](../apps/runtime/README.md#scenario-catalog)
+describes the catalog and how a story adds to it.
 
 ## Agent lifecycle contract checks
 
