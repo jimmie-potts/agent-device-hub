@@ -11,6 +11,7 @@ import {withState} from '../src/database.js';
 import {columns, DEFAULT, deviceOf, elements, type DeviceConfig} from '../src/devices.js';
 import * as edits from '../src/edits.js';
 import {readJson} from '../src/jsonfile.js';
+import type {Report} from '../src/journal.js';
 import {setMode as commandMode} from '../src/modes.js';
 import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
 import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
@@ -225,8 +226,14 @@ export class Feed {
 }
 
 /** modes.set_mode: an explicit mode command for one device, without the worker launch. */
-export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): boolean =>
-  write(directory, db => commandMode(db, mode, instant, device));
+/** A mode command from a test; by default no queued command may end, since these tests journal none. */
+export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT, report: Report = unreported): boolean =>
+  write(directory, db => commandMode(db, mode, instant, report, device));
+
+/** A report for code that journals no command: any message fails the test. */
+export const unreported: Report = message => {
+  throw new Error(`Unexpected report ${JSON.stringify(message)}.`);
+};
 
 /**
  * A new working task saved as rows, for tests whose subject is not task input. They are the rows Python's prompt hook event

@@ -10,7 +10,7 @@ import type {Indication} from '../src/line-projection.js';
 import {modeStatus, setMode} from '../src/modes.js';
 import {execute, transaction, type Db} from '../src/sqlite.js';
 import {introductionEnds, updateDisplay, type Sender} from '../src/worker.js';
-import {decode, framesOf, query, suite, temporary, test} from './support.js';
+import {decode, framesOf, query, suite, temporary, test, unreported} from './support.js';
 import {keyOf, ManualClock, moduleDatabase, NamedError, replay, runUntil, scheduledOf, SCENE} from './worker-support.js';
 
 /** BridgeTest.setUp's configuration. */
@@ -206,7 +206,7 @@ suite('worker checks the port adds', () => {
     const sends: [number, boolean][] = [];
     const send: Sender = (_config, snapshot, instant, loop) => {
       sends.push([instant, loop]);
-      if (sends.length === 1) transaction(database(), () => setMode(database(), 'free', instant));
+      if (sends.length === 1) transaction(database(), () => setMode(database(), 'free', instant, unreported));
       assert.ok(snapshot.every(item => item === null));
       return undefined;
     };
@@ -224,7 +224,7 @@ suite('worker checks the port adds', () => {
     const send: Sender = (_config, snapshot, _instant, loop) => {
       sends.push([snapshot.find(item => item !== null)?.[0] ?? null, loop]);
       if (sends.length === 1) {
-        transaction(database(), () => setMode(database(), 'quiet', clock.seconds()));
+        transaction(database(), () => setMode(database(), 'quiet', clock.seconds(), unreported));
         clock.ms += PULSE_SECONDS * 1000;
       }
       return undefined;

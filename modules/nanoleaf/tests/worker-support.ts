@@ -7,17 +7,19 @@ import type {TestContext} from 'node:test';
 import {pyJson, type Json, type JsonObject} from '../src/compat.js';
 import {currentComet, pruneComets} from '../src/comets.js';
 import {connectState, withState} from '../src/database.js';
+import {DEFAULT} from '../src/devices.js';
 import * as edits from '../src/edits.js';
 import {dashboard, type Indication} from '../src/line-projection.js';
-import {modeStatus} from '../src/modes.js';
+import {transactWith, type Outcome as ControlOutcome, type Report, type ScenesChanged, type Transact} from '../src/journal.js';
+import {modeStatus, setMode as commandMode} from '../src/modes.js';
 import type {RenderConfig} from '../src/renderer.js';
 import {SceneRestorer} from '../src/scenes.js';
 import {identityKey} from '../src/shared-input.js';
-import {execute, rows, type Db, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, transaction, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import type {LightAddress} from '../src/transport.js';
 import {runWorker, type Sender, type WorkerOptions} from '../src/worker.js';
-import {Feed, fixtureJson, setMode, temporary, write, type FeedChange} from './support.js';
+import {Feed, fixtureJson, temporary, write, type FeedChange} from './support.js';
 
 /** SceneTest.setUp's configuration. */
 export const SCENE: RenderConfig & {line_positions: number[][]} = {ip: '192.168.1.207', token: 'PRIVATE_TEST_TOKEN',
@@ -89,6 +91,17 @@ export const settle = async (): Promise<void> => {
 
 export type Call = [number, string, string, unknown];
 
+/** A request spec: method, endpoint and a key the body must have, each optional (record.SceneDevice.matches). */
+export interface RequestSpec {
+  method?: string;
+  endpoint?: string;
+  payload?: string;
+}
+
+const matches = (spec: RequestSpec, method: string, endpoint: string, payload: unknown): boolean =>
+  (spec.method ?? method) === method && (spec.endpoint ?? endpoint) === endpoint
+  && (spec.payload === undefined || (typeof payload === 'object' && payload !== null && spec.payload in payload));
+
 /** test_scene_restore.Device: saved scenes, the playing selection and brightness, and every request with its time. */
 export class SceneDevice {
   names = ['Beach Waves', 'Cotton Candy'];
@@ -96,16 +109,23 @@ export class SceneDevice {
   brightness = 43;
   on = true;
   calls: Call[] = [];
-  /** A request to refuse once; either key may be left out. */
-  fail: {method?: string; endpoint?: string} | null = null;
+  /** A request to refuse once; any key may be left out. */
+  fail: RequestSpec | null = null;
   loseSelectionReply = false;
+  /** Each runs once, as a matching request reaches the device; Python's tests patched the request to do this. */
+  hooks: {spec: RequestSpec; run: () => void}[] = [];
 
   constructor(readonly clock: {seconds(): number}) {}
 
   readonly request = (_address: LightAddress, method: string, endpoint = '', payload?: unknown): Promise<unknown> => {
+    for (const hook of [...this.hooks]) {
+      if (!matches(hook.spec, method, endpoint, payload)) continue;
+      this.hooks = this.hooks.filter(item => item !== hook);
+      hook.run();
+    }
     this.calls.push([this.clock.seconds(), method, endpoint, payload === undefined ? null : structuredClone(payload)]);
     const fail = this.fail;
-    if (fail !== null && (fail.method ?? method) === method && (fail.endpoint ?? endpoint) === endpoint) {
+    if (fail !== null && matches(fail, method, endpoint, payload)) {
       this.fail = null;
       return Promise.reject(new NamedError('OSError', 'Device unavailable'));
     }
@@ -135,7 +155,7 @@ export class SceneDevice {
 
 export type Outcome = {result: unknown} | {error: string; message: string} | {stopped: number};
 
-async function outcomeOf(call: () => unknown): Promise<Outcome> {
+export async function outcomeOf(call: () => unknown): Promise<Outcome> {
   try {
     return {result: (await call()) ?? null};
   } catch (error) {
@@ -144,7 +164,7 @@ async function outcomeOf(call: () => unknown): Promise<Outcome> {
   }
 }
 
-type Step = Json[];
+export type Step = Json[];
 interface RecordedCase {
   name: string;
   steps: Step[];
@@ -179,6 +199,13 @@ export class WorkerCase {
   readonly device = new SceneDevice(this.clock);
   readonly feed = new Feed();
   readonly sends: [Indication[], number, boolean][] = [];
+  /** Every outcome and scene list change the worker and steps reported, in order. */
+  readonly reported: (ControlOutcome | ScenesChanged)[] = [];
+  readonly report: Report = message => {
+    this.reported.push(message);
+  };
+  /** The runtime's transactions, on the module's connection, with their messages collected. */
+  readonly transact: Transact = work => transactWith(this.database(), this.report)(work);
 
   constructor(context: TestContext) {
     this.directory = temporary(context);
@@ -203,9 +230,11 @@ export class WorkerCase {
     };
     switch (op) {
       case 'feed': return this.feed.publish(this.directory, text(0) as FeedChange, args.length > 1 ? text(1) : '', this.clock.seconds());
-      case 'mode':
-        setMode(this.directory, text(0), this.clock.seconds(), args.length > 1 ? text(1) : undefined);
+      case 'mode': {
+        const db = this.database();
+        transaction(db, () => commandMode(db, text(0), this.clock.seconds(), this.report, args.length > 1 ? text(1) : DEFAULT));
         return null;
+      }
       case 'status': return withState(this.directory, db => modeStatus(db));
       case 'sleep':
         this.clock.sleep(Number(args[0]));
@@ -219,8 +248,9 @@ export class WorkerCase {
         if (args[0] === 'clearCalls') this.device.calls = [];
         else if (args[0] === 'remove') this.device.names = this.device.names.filter(name => name !== args[1]);
         else if (args[0] === 'scene') [this.device.selected, this.device.brightness] = [text(1), Number(args[2])];
-        else if (args[0] === 'fail') this.device.fail = args[1] as {method?: string; endpoint?: string};
+        else if (args[0] === 'fail') this.device.fail = args[1] as RequestSpec;
         else if (args[0] === 'selected') this.device.selected = text(1);
+        else if (args[0] === 'names') this.device.names = [...args[1] as string[]];
         else throw new Error(`Unknown device step ${text(0)}.`);
         return null;
       }
@@ -257,7 +287,7 @@ export class WorkerCase {
           }
         });
       case 'second': return runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
-        signal: new AbortController().signal, request: this.device.request});
+        signal: new AbortController().signal, request: this.device.request, transact: this.transact});
       case 'run': return this.run(Number(args[0]), (args[1] ?? []) as [number, Step][], (args[2] ?? {}) as Options);
       default: throw new Error(`Unknown step ${op}.`);
     }
@@ -278,7 +308,7 @@ export class WorkerCase {
     };
     let settled = false;
     const running = outcomeOf(() => runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
-      signal: controller.signal, request: this.device.request, scenes: options.scenes ?? true,
+      signal: controller.signal, request: this.device.request, scenes: options.scenes ?? true, transact: this.transact,
       ...(options.send === undefined ? {} : {send})})).finally(() => { settled = true; });
     for (;;) {
       await settle();
@@ -317,12 +347,15 @@ export class WorkerCase {
  * when another instance held its device.
  */
 export async function runUntil(context: TestContext,
-  options: Omit<WorkerOptions, 'clock' | 'scheduler' | 'signal' | 'database'> & Partial<Pick<WorkerOptions, 'database'>>, clock: ManualClock,
-  until: number): Promise<boolean> {
+  options: Omit<WorkerOptions, 'clock' | 'scheduler' | 'signal' | 'database' | 'transact'> & Partial<Pick<WorkerOptions, 'database' | 'transact'>>,
+  clock: ManualClock, until: number): Promise<boolean> {
   const controller = new AbortController();
   let settled = false;
-  const running = runWorker({...options, database: options.database ?? moduleDatabase(context, options.directory), clock,
-    scheduler: clock.scheduler, signal: controller.signal}).finally(() => { settled = true; });
+  const database = options.database ?? moduleDatabase(context, options.directory);
+  // Without a transact of its own, the run's messages are dropped: these cases journal no command.
+  const transact: Transact = options.transact ?? (work => transactWith(database(), () => {})(work));
+  const running = runWorker({...options, database, transact, clock, scheduler: clock.scheduler, signal: controller.signal})
+    .finally(() => { settled = true; });
   for (;;) {
     await settle();
     if (settled) return running;

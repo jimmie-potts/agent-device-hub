@@ -1210,10 +1210,22 @@ class SceneDevice:
         self.fail = None
         self.lose_selection_reply = False
 
+    hooks = ()
+
+    @staticmethod
+    def matches(spec, method, endpoint, payload):
+        """A request spec: {'method', 'endpoint', 'payload'}, each optional; 'payload' names a key the body must have."""
+        return (spec.get('method', method) == method and spec.get('endpoint', endpoint) == endpoint
+                and ('payload' not in spec or spec['payload'] in (payload or {})))
+
     def request(self, config, method, endpoint='', payload=None):
+        # A hook runs a step once, as the request reaches the device; Python's tests patched the request to do this.
+        for hook in list(self.hooks):
+            if self.matches(hook, method, endpoint, payload):
+                self.hooks = [item for item in self.hooks if item is not hook]
+                hook['results'].append(outcome_of(lambda: hook['run'](hook['step'])))
         self.calls.append([self.clock.now(), method, endpoint, copy.deepcopy(payload)])
-        fail = self.fail
-        if fail is not None and fail.get('method', method) == method and fail.get('endpoint', endpoint) == endpoint:
+        if self.fail is not None and self.matches(self.fail, method, endpoint, payload):
             self.fail = None
             raise OSError('Device unavailable')
         if method == 'GET' and endpoint == '/effects':
@@ -1537,6 +1549,298 @@ def worker_values():
     write_nested('worker.json', {'scene': SCENE, 'cases': cases}, 3)
 
 
+# Slice 3d: controls, holds, uncertain attempts and animation play, through Python's controller and integration ledgers.
+
+WAVE = {'kind': 'animation.play', 'pattern': 'wave', 'colors': ['#0044aa', '#00aa66'], 'speed': 'slow'}
+
+
+def receipt_summary(code, receipt):
+    """What the port compares of a ledger receipt: the admission's status and the outcome, failure and effects."""
+    receipt = receipt or {}
+    return {'code': code, 'outcome': receipt.get('outcome'), 'failure': (receipt.get('failure') or {}).get('code'),
+            'priorEffects': receipt.get('priorEffects'), 'completed': receipt.get('completedOperations'),
+            'uncertain': receipt.get('uncertainOperations')}
+
+
+class ControlCase(WorkerCase):
+    """A worker case with Python's controller ledger configured: v1 commands through its admission, animations through
+    the integration extension, both on the case's clock."""
+    def __init__(self, path, record):
+        super().__init__(path, record)
+        self.app = None
+        self.token = None
+        self.requests = {}
+        self.hooks = []
+        self.patches = []
+
+    def close(self):
+        for patcher in self.patches:
+            patcher.stop()
+
+    def controller(self):
+        import controller_server as server
+        import integration_api
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import time as clock_module
+        for module in (integration_api, server, server.state):
+            patcher = patch.object(module, 'time', SimpleNamespace(time=self.clock.now, monotonic=clock_module.monotonic))
+            patcher.start()
+            self.patches.append(patcher)
+        server.configure(self.path, 'controller', 'device', 'source')
+        self.token = server.issue(self.path, 'client', ['read', 'control'])
+        self.app = server.App(self.path, launch=lambda _: None)
+
+    def apply(self, step):
+        import controller_state
+        import integration_api
+        op, args = step[0], step[1:]
+        if op == 'controller':
+            self.controller()
+            return None
+        if op == 'command':
+            command = copy.deepcopy(args[1])
+            if 'sceneIndex' in command:
+                index = command.pop('sceneIndex')
+                ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
+                command['sceneId'] = ids[index] if isinstance(index, int) else index
+            snap = self.app.snapshot()
+            request = dict(apiVersion='1.0', controllerId='controller', deviceId='device', requestId=snap['nextRequestId'],
+                           expectedConfigurationRevision=snap['configurationRevision'], expectedGeneration=snap['generation'], command=command)
+            code, receipt = self.app.admit(self.token, request)
+            self.requests[args[0]] = ('command', request)
+            return receipt_summary(code, receipt)
+        if op == 'play':
+            view = self.app.integration_animations(self.token, 'device')
+            request = dict(apiVersion=integration_api.VERSION, controllerId='controller', deviceId='device',
+                           requestId=view['nextRequestId'], expectedRevision=view['revision'], command=copy.deepcopy(args[1]))
+            code, receipt = self.app.integration_admit(self.token, request)
+            self.requests[args[0]] = ('play', request)
+            return receipt_summary(code, receipt)
+        if op == 'attempting':
+            kind, request = self.requests[args[0]]
+            sequence = request['requestId']['sequence']
+            with self.db() as db, db:
+                if kind == 'command':
+                    receipt = json.loads(db.execute('SELECT receipt FROM controller_requests WHERE sequence=?', (sequence,)).fetchone()[0])
+                    receipt['uncertainOperations'] = ['transport-1']
+                    db.execute("UPDATE controller_requests SET phase='attempting',receipt=? WHERE sequence=?", (json.dumps(receipt), sequence))
+                else:
+                    db.execute("UPDATE integration_requests SET phase='attempting' WHERE sequence=?", (sequence,))
+            return None
+        if op == 'discover':
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                return controller_state.discovered(db, args[0])
+        if op == 'expire':
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                integration_api.recover(db)
+            return None
+        if op == 'deviceState':
+            return {'brightness': self.device.brightness, 'on': self.device.on, 'selected': self.device.selected}
+        if op == 'desired':
+            desired = self.app.snapshot()['state']['desired']
+            return {'power': desired['power'], 'brightness': desired['brightness']}
+        if op == 'sceneIds':
+            ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
+            return [len(ids), all(len(item) <= 128 and item.startswith('scene-') for item in ids)]
+        if op == 'expireAll':
+            # The listener's expiry with every queued command past its time (test_expiry_during_unread_*).
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                controller_state.recover(db, now=float('inf'))
+            return None
+        if op == 'calls':
+            return copy.deepcopy(self.device.calls)
+        if op == 'hook':
+            results = []
+            self.hooks.append(results)
+            if args[0].get('complete'):
+                self.complete_hook(args[0]['step'], results)
+            else:
+                self.device.hooks = list(self.device.hooks) + [dict(args[0], results=results, run=self.apply)]
+            return None
+        return super().apply(step)
+
+    def complete_hook(self, step, results):
+        """Run `step` once as a journaled execution completes, in the window its commit opens, as
+        test_control_committed_between_journaled_sends_is_applied_before_idle_exit patched Execution.complete."""
+        import controller_state
+        from unittest.mock import patch
+        original = controller_state.Execution.complete
+        def complete(execution):
+            if not results:
+                execution.db.commit()
+                results.append(outcome_of(lambda: self.apply(step)))
+                execution.db.execute('BEGIN IMMEDIATE')
+            return original(execution)
+        patcher = patch.object(controller_state.Execution, 'complete', complete)
+        patcher.start()
+        self.patches.append(patcher)
+
+    def receipts(self):
+        result = {}
+        with self.db() as db:
+            for name, (kind, request) in self.requests.items():
+                table = 'controller_requests' if kind == 'command' else 'integration_requests'
+                row = db.execute(f'SELECT receipt FROM {table} WHERE sequence=?', (request['requestId']['sequence'],)).fetchone()
+                result[name] = receipt_summary(None, json.loads(row[0]) if row else None)
+        return result
+
+
+def control_cases():
+    def case(name, steps):
+        return {'name': name, 'steps': [list(step) for step in steps]}
+    feed = lambda op, name: ('feed', op, name)
+    ctrl = ('controller',)
+    command = lambda name, value: ('command', name, value)
+    play = lambda name, value=WAVE: ('play', name, value)
+    brightness = lambda percent: {'kind': 'brightness.set', 'percent': percent}
+    power_off = {'kind': 'power.set', 'on': False}
+    scene = lambda index: {'kind': 'scene.activate', 'sceneIndex': index}
+    machine = lambda mode: {'kind': 'mode.set', 'mode': mode}
+    hold = ('query', "SELECT value FROM meta WHERE key='controller_hold_revision'")
+    cases = [
+        # ControlsTest.
+        case('scenes are refused in Work and Quiet', [
+            ctrl, ('run', 1002.0), ('sceneIds',), ('device', 'clearCalls'), ('mode', 'work'), command('w', scene(1)), ('mode', 'quiet'),
+            command('q', scene(1)), ('mode', 'free'), ('run', 1004.0), ('device', 'clearCalls'), command('u', scene('scene-unknown')),
+            ('countPuts',)]),
+        case('power and brightness in Free are one write each', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), command('b', brightness(42)), ('run', 1004.0), ('calls',),
+            command('p', power_off), ('run', 1006.0), ('calls',), ('desired',), ('deviceState',), ('device', 'clearCalls'), ('run', 1008.0)]),
+        case('a vanished scene fails without a write', [
+            ctrl, ('run', 1002.0), ('mode', 'free'), ('run', 1004.0), command('s', scene(1)), ('discover', ['Beach Waves']),
+            ('device', 'clearCalls'), ('run', 1006.0)]),
+        case('brightness runs once and governs the indicators', [
+            ctrl, feed('prompt', 'a'), ('run', 1005.0, [(1003.0, feed('end', 'a'))]), ('deviceState',), feed('prompt', 'b'),
+            command('b', brightness(60)), ('device', 'clearCalls'), ('run', 1010.0, [(1007.0, feed('end', 'b'))]), ('scene',),
+            ('deviceState',)]),
+        case('an uncertain control holds the device', [
+            ctrl, command('b', brightness(60)), ('device', 'fail', {'method': 'PUT'}), ('run', 1002.0), ('countPuts',),
+            ('run', 1004.0), ('countPuts',), ('mode', 'quiet'), ('run', 1008.0, [(1006.0, ('mode', 'free'))]), ('countPuts',)]),
+        case('a mode command cancels a queued control', [
+            ctrl, command('b', brightness(60)), ('mode', 'quiet'), ('desired',),
+            ('run', 1004.0, [(1001.0, ('deviceState',)), (1002.0, ('mode', 'free'))])]),
+        case('a Quiet override lasts until Quiet again', [
+            ctrl, ('mode', 'quiet'), ('run', 1012.0, [
+                (1001.0, ('deviceState',)), (1001.0, ('scene',)), (1002.0, command('b', brightness(50))), (1005.0, ('deviceState',)),
+                (1005.0, ('scene',)), (1006.0, ('mode', 'quiet')), (1009.0, ('deviceState',)), (1009.0, ('scene',)),
+                (1010.0, ('mode', 'free'))]), ('desired',)]),
+        case('Work restores the remembered brightness', [
+            ctrl, ('run', 1002.0), command('b', brightness(70)), ('run', 1004.0), ('deviceState',), ('run', 1006.0), ('scene',),
+            ('device', 'clearCalls'), ('mode', 'work'), ('run', 1008.0), ('deviceState',), ('desired',)]),
+        case('power off keeps tracking', [
+            ctrl, feed('prompt', 'a'), ('run', 1002.0, [(1001.0, feed('end', 'a'))]), feed('prompt', 'b'), command('p', power_off),
+            ('device', 'clearCalls'), ('run', 1006.0, [(1003.0, feed('permission', 'b')), (1004.0, ('query', 'SELECT status FROM sessions')),
+                                                       (1004.0, ('query', 'SELECT started FROM activity')), (1005.0, feed('interrupt', 'b'))]),
+            ('calls',), ('query', 'SELECT status FROM sessions'), ('desired',), feed('prompt', 'c'), ('device', 'clearCalls'), ('mode', 'work'),
+            ('desired',), ('run', 1010.0, [(1008.0, feed('interrupt', 'c'))])]),
+        case('a scene plays in Free with one write', [
+            ctrl, feed('prompt', 'a'), ('run', 1003.0, [(1001.0, feed('end', 'a'))]), ('mode', 'free'), ('run', 1005.0),
+            ('query', 'SELECT session,started FROM activity'), ('device', 'clearCalls'), command('s', scene(1)), ('run', 1007.0), ('calls',),
+            ('query', 'SELECT session,started FROM activity'), ('device', 'clearCalls'), ('run', 1009.0), ('calls',), ('mode', 'work'),
+            ('run', 1011.0), ('scene',)]),
+        case('Free ends the override', [
+            ctrl, feed('prompt', 'a'), command('b', brightness(60)), ('run', 1004.0, [(1002.0, ('mode', 'free'))]), ('desired',),
+            ('device', 'clearCalls'), ('run', 1006.0)]),
+        case('brightness in Free becomes the preference', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), command('b', brightness(42)), ('run', 1004.0), ('scene',), ('mode', 'work'),
+            ('run', 1006.0), ('scene',)]),
+        case('discovery is bounded', [
+            ctrl, ('device', 'names', ['Scene %d' % i for i in range(300)] + ['x' * 81]), ('device', 'selected', 'Scene 0'),
+            ('run', 1002.0), ('sceneIds',), ('run', 1004.0), ('device', 'names', ['Beach Waves', 'x' * 81]),
+            ('device', 'selected', 'Beach Waves'), ('run', 1006.0), ('sceneIds',)]),
+        case('a power control admitted during observation', [
+            ctrl, feed('prompt', 'race'), ('device', 'clearCalls'),
+            ('hook', {'method': 'GET', 'endpoint': '/effects', 'step': command('p', power_off)}),
+            ('run', 1004.0, [(1002.0, feed('interrupt', 'race'))]), ('deviceState',)]),
+        case('a brightness control admitted during observation', [
+            ctrl, feed('prompt', 'race'), ('device', 'clearCalls'),
+            ('hook', {'method': 'GET', 'endpoint': '/effects', 'step': command('b', brightness(70))}),
+            ('run', 1004.0, [(1002.0, feed('interrupt', 'race'))]), ('deviceState',)]),
+        case('a control admitted during the last observation request', [
+            ctrl, feed('prompt', 'late'), ('device', 'clearCalls'),
+            ('hook', {'method': 'GET', 'endpoint': '/state', 'step': command('p', power_off)}),
+            ('run', 1004.0, [(1002.0, feed('interrupt', 'late'))]), ('deviceState',)]),
+        case('a control committed as an execution completes', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'),
+            ('hook', {'complete': True, 'step': command('p', power_off)}), ('run', 1004.0)]),
+        # ControllerWorkerTest.
+        case('a Quiet command records its transmission', [ctrl, command('q', machine('Quiet')), ('run', 1004.0, [(1001.0, ('mode', 'free'))])]),
+        case('the same Free is a no-op', [ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), command('f', machine('Free')),
+                                          ('run', 1004.0)]),
+        case('an uncertain write is not retried', [ctrl, command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT'}),
+                                                   ('run', 1002.0), ('countPuts',), ('run', 1004.0), ('countPuts',)]),
+        case('a restart makes an attempt uncertain', [ctrl, command('q', machine('Quiet')), ('attempting', 'q'), ('run', 1002.0)]),
+        case('a same-mode command retries after a hold', [
+            ctrl, command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT'}), ('run', 1002.0), ('run', 1004.0), ('countPuts',),
+            ('mode', 'quiet'), ('run', 1008.0, [(1006.0, ('mode', 'free'))]), ('countPuts',)]),
+        case('a partial failure keeps its completed write', [
+            ctrl, feed('prompt', 'a'), command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT', 'endpoint': '/state'}),
+            ('run', 1002.0)]),
+        case('an expired command never sends', [ctrl, command('q', machine('Quiet')), ('sleep', 31.0), ('run', 1033.0), hold]),
+        case('a command that expires during observation never sends', [
+            ctrl, command('q', machine('Quiet')), ('hook', {'method': 'GET', 'endpoint': '/effects', 'step': ('expireAll',)}),
+            ('run', 1004.0), hold]),
+        # AnimationTest.WorkerTest.
+        case('an animation plays once after the Free handoff', [
+            ctrl, feed('prompt', 'a'), ('run', 1006.0, [(1002.0, ('mode', 'free')), (1002.0, play('w'))]), ('calls',),
+            ('device', 'clearCalls'), ('run', 1008.0)]),
+        *[case('a mode command retires a queued animation (%s)' % label, [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'), retire, ('mode', 'free'), ('run', 1004.0)])
+          for label, retire in (('Work', ('mode', 'work')), ('Quiet', ('mode', 'quiet')), ('Free', ('mode', 'free')),
+                                ('a machine Free', command('f', machine('Free'))))],
+        case('a failed animation ends uncertain', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'),
+            ('device', 'fail', {'endpoint': '/effects', 'payload': 'write'}), ('run', 1004.0), ('device', 'clearCalls'), ('run', 1006.0)]),
+        case('an interrupted animation ends uncertain', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'), ('attempting', 'w'), play('x'), ('run', 1004.0)]),
+        case('scenes and animations play in admission order', [
+            ctrl, ('run', 1002.0), ('mode', 'free'), ('run', 1004.0), ('device', 'clearCalls'), command('s1', scene(1)), ('sleep', 0.1),
+            play('a1'), ('run', 1006.0), ('calls',), ('device', 'clearCalls'), play('a2'), ('sleep', 0.1), command('s2', scene(1)),
+            ('run', 1008.0)]),
+        case('an expired animation never plays', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'), ('sleep', 31.0), ('run', 1035.0), hold]),
+        case('an animation releases a transport hold', [
+            ctrl, ('run', 1002.0), ('mode', 'free'), ('run', 1004.0), ('device', 'clearCalls'), ('device', 'fail', {'payload': 'select'}),
+            command('s', scene(1)), ('run', 1006.0), hold, play('w'), hold, ('device', 'clearCalls'), ('run', 1008.0)]),
+        case('an expired animation holds the device', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), ('device', 'clearCalls'), play('w'), ('sleep', 31.0), ('expire',), hold,
+            ('query', "SELECT value FROM meta WHERE key='mode_revision'"), ('run', 1036.0)]),
+    ]
+    return cases
+
+
+def control_values():
+    """Each control case's step outcomes, device requests, rows, scene file, device state and final receipts
+    (controls.test.ts)."""
+    cases = control_cases()
+    original = shared_input.check_envelope
+    shared_input.check_envelope = lambda value, config, minimum_revision=0: dict(value)
+    try:
+        for record in cases:
+            with tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary)
+                run = ControlCase(path, record)
+                try:
+                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                    record['hooks'] = run.hooks
+                    record['calls'] = run.device.calls
+                    record['rows'] = run.rows()
+                    scene = path / 'scene-state.json'
+                    record['scene'] = json.loads(scene.read_text()) if scene.exists() else None
+                    record['device'] = {'selected': run.device.selected, 'brightness': run.device.brightness, 'on': run.device.on}
+                    record['receipts'] = run.receipts()
+                    record['clock'] = run.clock.now()
+                finally:
+                    run.close()
+    finally:
+        shared_input.check_envelope = original
+    write_nested('controls.json', {'cases': cases}, 3)
+
+
 if __name__ == '__main__':
     values()
     setups()
@@ -1546,3 +1850,4 @@ if __name__ == '__main__':
     rendering()
     edit_values()
     worker_values()
+    control_values()
