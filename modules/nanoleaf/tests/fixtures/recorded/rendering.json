@@ -964,6 +964,344 @@
     "segments":[{"id":"1040:1041","number":1,"points":[[397.45480095119467,105.43211655300406],[432.4120694311398,36.824614190499744],[467.3693379110849,-31.78288817200456]]},{"id":"1037:1038","number":2,"points":[[475.9951574061363,-48.71201213158355],[510.9524258860814,-117.31951449408788],[545.9096943660265,-185.9270168565922]]},{"id":"1031:1032","number":3,"points":[[713.7542435147188,-203.65996136877615],[636.3511769042559,-199.32807040797942],[558.948110293793,-194.99617944718273]]},{"id":"1026:1027","number":4,"points":[[544.6920059067791,-202.26002744301547],[502.7001982760007,-267.42664536891147],[460.7083906452224,-332.5932632948075]]},{"id":"1001:1002","number":5,"points":[[446.00678299611434,-340.08410654051],[369.49472290983977,-335.29822507997375],[292.9826628235652,-330.5123436194375]]},{"id":"1029:1030","number":6,"points":[[624.4500508209682,-340.0711455411798],[589.492782341023,-271.4636431786755],[554.5355138610779,-202.85614081617118]]},{"id":"1015:1016","number":7,"points":[[618.919452614195,-347.9395941478136],[541.9703765034716,-344.4987097112053],[465.0213003927481,-341.057825274597]]},{"id":"1034:1035","number":8,"points":[[727.6836659666736,-212.27513345962717],[762.6409344466188,-280.8826358221314],[797.5982029265639,-349.49013818463584]]},{"id":"1004:1005","number":9,"points":[[530.2962456700536,-485.6872881064999],[495.33897719010844,-417.0797857439955],[460.38170871016337,-348.47228338149125]]},{"id":"1020:1021","number":10,"points":[[792.2945999696606,-357.8040900533638],[714.8915333591976,-353.47219909256705],[637.4884667487345,-349.1403081317704]]},{"id":"1018:1019","number":11,"points":[[633.0758703160195,-357.0002695007588],[668.0331387959646,-425.6077718632631],[702.9904072759098,-494.21527422576753]]},{"id":"1023:1024","number":12,"points":[[964.7617663256469,-365.8865729105372],[887.8126902149236,-362.4456884739289],[810.8636141042001,-359.0048040373206]]},{"id":"1013:1014","number":13,"points":[[796.6075097171863,-366.26865203315333],[754.1617115866684,-430.5442634348609],[711.7159134561505,-494.81987483656854]]},{"id":"1007:1008","number":14,"points":[[697.4598090691366,-502.0837228324013],[620.5107329584132,-498.642838395793],[543.5616568476897,-495.20195395918466]]},{"id":"1010:1011","number":15,"points":[[711.6162267709612,-511.1443981853465],[746.5734952509063,-579.7519005478508],[781.5307637308514,-648.3594029103551]]}]
    }
   ],
+  "nearMiss":[
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":2.9,"y":60.0}]}},
+    "offset":2.9,
+    "orientation":0,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":2.999,"y":60.0}]}},
+    "offset":2.999,
+    "orientation":0,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":3.0,"y":60.0}]}},
+    "offset":3.0,
+    "orientation":0,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":3.001,"y":60.0}]}},
+    "offset":3.001,
+    "orientation":0,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":3.1,"y":60.0}]}},
+    "offset":3.1,
+    "orientation":0,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":-2.999,"y":60.0}]}},
+    "offset":-2.999,
+    "orientation":0,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":-3.001,"y":60.0}]}},
+    "offset":-3.001,
+    "orientation":0,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-27.488526329025124,"y":53.41152422706632}]}},
+    "offset":2.9,
+    "orientation":30,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-27.402789814050465,"y":53.46102422706632}]}},
+    "offset":2.999,
+    "orientation":30,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-27.40192378864668,"y":53.46152422706632}]}},
+    "offset":3.0,
+    "orientation":30,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-27.401057763242896,"y":53.46202422706632}]}},
+    "offset":3.001,
+    "orientation":30,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-27.315321248268237,"y":53.51152422706632}]}},
+    "offset":3.1,
+    "orientation":30,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-32.59721018594953,"y":50.46202422706632}]}},
+    "offset":-2.999,
+    "orientation":30,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":30,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":30,"panelId":2,"shapeType":18,"x":-32.5989422367571,"y":50.46102422706632}]}},
+    "offset":-3.001,
+    "orientation":30,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-50.51152422706631,"y":32.51147367097488}]}},
+    "offset":2.9,
+    "orientation":60,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-50.462024227066316,"y":32.597210185949535}]}},
+    "offset":2.999,
+    "orientation":60,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-50.46152422706631,"y":32.59807621135332}]}},
+    "offset":3.0,
+    "orientation":60,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-50.46102422706631,"y":32.59894223675711}]}},
+    "offset":3.001,
+    "orientation":60,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-50.411524227066316,"y":32.68467875173177}]}},
+    "offset":3.1,
+    "orientation":60,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-53.46102422706631,"y":27.402789814050475}]}},
+    "offset":-2.999,
+    "orientation":60,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":60,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":60,"panelId":2,"shapeType":18,"x":-53.462024227066316,"y":27.401057763242907}]}},
+    "offset":-3.001,
+    "orientation":60,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":2.9000000000000035}]}},
+    "offset":2.9,
+    "orientation":90,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":2.9990000000000037}]}},
+    "offset":2.999,
+    "orientation":90,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":3.0000000000000036}]}},
+    "offset":3.0,
+    "orientation":90,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":3.0010000000000034}]}},
+    "offset":3.001,
+    "orientation":90,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":3.1000000000000036}]}},
+    "offset":3.1,
+    "orientation":90,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":-2.9989999999999966}]}},
+    "offset":-2.999,
+    "orientation":90,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":90,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":90,"panelId":2,"shapeType":18,"x":-60.0,"y":-3.0009999999999963}]}},
+    "offset":-3.001,
+    "orientation":90,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-53.41152422706632,"y":-27.488526329025113}]}},
+    "offset":2.9,
+    "orientation":120,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-53.46102422706632,"y":-27.402789814050454}]}},
+    "offset":2.999,
+    "orientation":120,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-53.46152422706632,"y":-27.40192378864667}]}},
+    "offset":3.0,
+    "orientation":120,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-53.46202422706632,"y":-27.401057763242886}]}},
+    "offset":3.001,
+    "orientation":120,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-53.51152422706632,"y":-27.315321248268226}]}},
+    "offset":3.1,
+    "orientation":120,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-50.46202422706632,"y":-32.59721018594952}]}},
+    "offset":-2.999,
+    "orientation":120,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":120,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":120,"panelId":2,"shapeType":18,"x":-50.46102422706632,"y":-32.59894223675709}]}},
+    "offset":-3.001,
+    "orientation":120,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-32.511473670974866,"y":-50.51152422706632}]}},
+    "offset":2.9,
+    "orientation":150,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-32.59721018594953,"y":-50.46202422706632}]}},
+    "offset":2.999,
+    "orientation":150,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-32.598076211353316,"y":-50.46152422706632}]}},
+    "offset":3.0,
+    "orientation":150,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-32.5989422367571,"y":-50.46102422706632}]}},
+    "offset":3.001,
+    "orientation":150,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-32.68467875173176,"y":-50.41152422706632}]}},
+    "offset":3.1,
+    "orientation":150,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-27.402789814050465,"y":-53.46102422706632}]}},
+    "offset":-2.999,
+    "orientation":150,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":150,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":150,"panelId":2,"shapeType":18,"x":-27.401057763242896,"y":-53.46202422706632}]}},
+    "offset":-3.001,
+    "orientation":150,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":-2.9000000000000075,"y":-60.0}]}},
+    "offset":2.9,
+    "orientation":180,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":-2.9990000000000077,"y":-60.0}]}},
+    "offset":2.999,
+    "orientation":180,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":-3.0000000000000075,"y":-60.0}]}},
+    "offset":3.0,
+    "orientation":180,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":-3.0010000000000074,"y":-60.0}]}},
+    "offset":3.001,
+    "orientation":180,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":-3.1000000000000076,"y":-60.0}]}},
+    "offset":3.1,
+    "orientation":180,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":2.9989999999999926,"y":-60.0}]}},
+    "offset":-2.999,
+    "orientation":180,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":180,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":180,"panelId":2,"shapeType":18,"x":3.0009999999999923,"y":-60.0}]}},
+    "offset":-3.001,
+    "orientation":180,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":-2.900000000000011}]}},
+    "offset":2.9,
+    "orientation":270,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":-2.999000000000011}]}},
+    "offset":2.999,
+    "orientation":270,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":-3.000000000000011}]}},
+    "offset":3.0,
+    "orientation":270,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":-3.001000000000011}]}},
+    "offset":3.001,
+    "orientation":270,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":-3.100000000000011}]}},
+    "offset":3.1,
+    "orientation":270,
+    "outcome":"error: Could not pair a Line zone."
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":2.998999999999989}]}},
+    "offset":-2.999,
+    "orientation":270,
+    "outcome":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":270,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":270,"panelId":2,"shapeType":18,"x":60.0,"y":3.000999999999989}]}},
+    "offset":-3.001,
+    "orientation":270,
+    "outcome":"error: Could not pair a Line zone."
+   }
+  ],
   "pairLines":[
    {
     "groups":[[1001,1002],[1004,1005],[1026,1027],[1015,1016],[1007,1008],[1040,1041],[1037,1038],[1029,1030],[1018,1019],[1010,1011],[1031,1032],[1020,1021],[1013,1014],[1034,1035],[1023,1024]],

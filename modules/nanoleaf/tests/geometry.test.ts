@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type {Json} from '../src/compat.js';
 import {pairLines} from '../src/configuration.js';
 import {projection} from '../src/devices.js';
+import {ValueError} from '../src/errors.js';
 import {connectorLayout, geometry, triangleGeometry, validatedConnectorGeometry, type GeometryConfig} from '../src/geometry.js';
 import {readLayout} from '../src/panels.js';
 import {lineId} from '../src/project-map.js';
@@ -124,6 +125,7 @@ suite('ConnectorGeometryTest', () => {
 
 interface RecordedGeometry {
   pairLines: {orientation: number; groups: number[][]; positions: number[][]}[];
+  nearMiss: {orientation: number; offset: number; layout: unknown; outcome: number[][] | string}[];
   lines: {orientation: number; segments: unknown}[];
   triangles: {orientation: number; polygons: unknown}[];
   connectors: {orientation: number; cache: unknown; graph: unknown; layout: unknown}[];
@@ -160,6 +162,24 @@ suite('geometry recorded from Python', () => {
       assert.deepEqual(pairs.map(pair => ['x', 'y'].map(axis => pair.reduce((sum, id) => sum + Number(zones.get(id)?.[axis]), 0) / 2)), positions);
     }
     assert.equal(groups.length, 15);
+  });
+
+  test('a zone just inside the pairing threshold pairs and one at or beyond it does not', () => {
+    // Two zones of one orientation, 60 apart along the Line and moved across it by `offset`; pair_lines
+    // pairs zones less than 3 units across.
+    for (const {orientation, offset, layout, outcome} of RECORDED.nearMiss) {
+      const label = `offset ${offset} at ${orientation} degrees`;
+      let actual: number[][] | string;
+      try {
+        actual = pairLines(layout);
+      } catch (error) {
+        if (!(error instanceof ValueError)) throw error;
+        actual = 'error: ' + error.message;
+      }
+      assert.deepEqual(actual, outcome, label);
+      assert.deepEqual(actual, Math.abs(offset) < 3 ? [[1, 2]] : 'error: Could not pair a Line zone.', label);
+    }
+    assert.ok(RECORDED.nearMiss.some(entry => entry.offset === 2.999) && RECORDED.nearMiss.some(entry => entry.offset === 3.001));
   });
 
   test('Line segments, triangles and connector graphs match', () => {

@@ -679,13 +679,38 @@ def render_layouts():
     }
 
 
+def near_miss_layout(orientation, offset):
+    """Two Line zones 60 apart along a Line at this orientation, the second moved `offset` across it."""
+    turn = math.radians(orientation)
+    x = -math.sin(turn) * 60 + math.cos(turn) * offset
+    y = math.cos(turn) * 60 + math.sin(turn) * offset
+    return {'globalOrientation': {'value': 0}, 'layout': {'positionData': [
+        {'panelId': 1, 'x': 0, 'y': 0, 'o': orientation, 'shapeType': 18},
+        {'panelId': 2, 'x': x, 'y': y, 'o': orientation, 'shapeType': 18}]}}
+
+
+def near_misses():
+    """pair_lines just inside, at and just beyond its 3-unit collinearity threshold."""
+    import configuration
+    cases = []
+    for orientation in (0, 30, 60, 90, 120, 150, 180, 270):
+        for offset in (2.9, 2.999, 3.0, 3.001, 3.1, -2.999, -3.001):
+            layout = near_miss_layout(orientation, offset)
+            try:
+                outcome = configuration.pair_lines(copy.deepcopy(layout))
+            except ValueError as error:
+                outcome = 'error: ' + str(error)
+            cases.append({'orientation': orientation, 'offset': offset, 'layout': layout, 'outcome': outcome})
+    return cases
+
+
 def geometry_values():
     import configuration
     import panels
     lines = fixture_json('lines-layout.json')
     nl22 = fixture_json('nl22-panels-fixture.json')['panelLayout']
     groups = configuration.pair_lines(lines)
-    result = {'pairLines': [], 'lines': [], 'triangles': [], 'connectors': []}
+    result = {'pairLines': [], 'nearMiss': near_misses(), 'lines': [], 'triangles': [], 'connectors': []}
     for orientation in (0, 45, 90, 180, 270, 333):
         value = oriented(lines, orientation)
         pairs = configuration.pair_lines(value)

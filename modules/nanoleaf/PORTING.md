@@ -237,7 +237,8 @@ retires with codex-nanoleaf (#839). It writes:
   placement) through source switches, owner revisions, feed loss, placement, evictions, comets,
   modes, reservations and Codex metadata.
 - `rendering.json`, one member per line to a fixed depth:
-  - Line pairing of the real Lines layout in six orientations (`geometry.test.ts`);
+  - Line pairing of the real Lines layout in six orientations, and of two zones moved just inside,
+    onto and just beyond the 3-unit collinearity threshold in eight orientations (`geometry.test.ts`);
   - Line segments, connector caches and graphs, and NL22 triangle polygons in several
     orientations (`geometry.test.ts`);
   - `load_config`'s discovery of an unsaved Lines layout (`configuration.test.ts`);
