@@ -5,13 +5,16 @@
  *
  * Every observation returns `unknown` rather than guessing, and the core fails closed on it.
  * Observations never return conversation text: titles are compared inside the adapter and
- * only a boolean, count or index crosses this boundary.
+ * only a boolean, count or index crosses this boundary, plus, since version 5, the clients' own model and effort labels.
  *
  * Version 3 (#821) adds the card operations: the open approval or question card's actionable buttons,
  * moving keyboard focus between them and pressing the focused one. Version 4 (#865) adds `sendVolumeKey`, the
- * system volume and mute keys, which target no window and need no window check.
+ * system volume and mute keys, which target no window and need no window check. Version 5 (#906) adds the model and
+ * effort operations: `tapInClient`, which types a key only while the named client is in front, `pickerState`, a
+ * read-only view of the client's open model menu, effort slider and picker, and `claudeSettings`, a Claude session
+ * record's `model` and `effort`. They return model and effort labels, never conversation text.
  */
-export const OS_ADAPTER_VERSION = 4;
+export const OS_ADAPTER_VERSION = 5;
 
 export type Client = 'codex' | 'claude';
 
@@ -22,6 +25,15 @@ export type KeyName = string;
 export type VolumeKey = 'VolumeUp' | 'VolumeDown' | 'VolumeMute';
 /** Presses per `sendVolumeKey` call. */
 export const MAX_VOLUME_PRESSES = 10;
+
+/**
+ * Menu and slider navigation keys (#906). Only `tapInClient` types them, into the named client's window while it is in
+ * front; no profile can name them.
+ */
+export const NAVIGATION_KEYS = Object.freeze(['Up', 'Down', 'Left', 'Right', 'Escape'] as const);
+export type NavigationKey = typeof NAVIGATION_KEYS[number];
+/** Presses per `tapInClient` call. */
+export const MAX_CLIENT_PRESSES = 10;
 
 export interface KeyRequest {
   /** `down` and `up` hold and release a chord (dictation); `tap` presses and releases once. */
@@ -66,6 +78,41 @@ export interface CardButtons {
   focused: number | null;
 }
 
+/** What a menu entry is: a model `RadioButton` (`option`), a `MenuItem` (`action`) or a `CheckBox` (`toggle`). */
+export type PickerItemKind = 'option' | 'action' | 'toggle';
+export interface PickerItem {
+  kind: PickerItemKind;
+  /** The entry's UI label, such as a model name; at most `MAX_PICKER_LABEL` characters. */
+  label: string;
+  /** The option the client marks as current. */
+  selected: boolean;
+}
+/** The menu that holds keyboard focus: its label (`Model: <name>`, `Select effort`), its entries in order and the focused one. */
+export interface PickerMenu { label: string; items: PickerItem[]; focused: number | null }
+/** Codex's picker announcement, `<model> <level>, <position> of <count>.`, parsed. */
+export interface PickerAnnouncement { label: string; position: number; count: number }
+/**
+ * The model and effort controls of the client's foreground window (#906), read without changing anything. Labels are
+ * the client's own model and effort names; nothing else crosses this boundary.
+ */
+export interface PickerState {
+  /** The open menu holding keyboard focus, or null when focus is in no menu. */
+  menu: PickerMenu | null;
+  /** The name of the slider holding keyboard focus (Claude's `Effort`), or null. */
+  slider: string | null;
+  /** Claude: the composer's `Model: <name>` and `Effort: <level>` buttons after their prefix; null when absent (Codex: always null). */
+  model: string | null;
+  effort: string | null;
+  /** Codex: the open picker's announcement; null when there is none. */
+  announcement: PickerAnnouncement | null;
+}
+/** Bounds on a menu's entries and on one label. */
+export const MAX_PICKER_ITEMS = 64;
+export const MAX_PICKER_LABEL = 128;
+
+/** A Claude Desktop session record's model and effort values, read by allowlisted key; null when absent. */
+export interface ClaudeSettings { model: string | null; effort: string | null }
+
 export interface OsAdapter {
   readonly version: typeof OS_ADAPTER_VERSION;
   readonly platform: NodeJS.Platform;
@@ -88,6 +135,23 @@ export interface OsAdapter {
    * the dictation chord), so a volume key never combines with held keys, and while the user holds a modifier.
    */
   sendVolumeKey(key: VolumeKey, presses: number): Promise<void>;
+
+  /**
+   * Taps one chord `presses` times (1-`MAX_CLIENT_PRESSES`), but only while `client`'s window is in front, checked right
+   * before the input goes in (#906). The keys are profile key names or `NAVIGATION_KEYS`. Known `true` when sent, known
+   * `false` when the client is not in front (nothing sent). Rejects, sending nothing, on a malformed request, while this
+   * adapter holds any key, or while the user holds a modifier.
+   */
+  tapInClient(client: Client, keys: readonly KeyName[], presses: number): Promise<Observation<boolean>>;
+
+  /**
+   * The model and effort controls of `client`'s foreground window, read-only (#906): unknown when the client is not in
+   * front or the controls cannot be read.
+   */
+  pickerState(client: Client): Promise<Observation<PickerState>>;
+
+  /** Claude Desktop: the named session record's `model` and `effort`, or known null when there is no record. Reads those keys only. */
+  claudeSettings(localId: string): Promise<Observation<ClaudeSettings | null>>;
 
   /** Releases every key this adapter currently holds. Never throws. */
   releaseAll(): Promise<void>;

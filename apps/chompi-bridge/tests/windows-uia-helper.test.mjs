@@ -152,6 +152,7 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
+const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'PickerMenuValue', 'ComposerSetting', 'PickerAnnouncement', 'PickerState'];
 const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
 test('the shipped helper script changes UI state only inside the two card operations', () => {
@@ -165,8 +166,11 @@ test('the shipped helper script changes UI state only inside the two card operat
   for (const forbidden of [
     /SetFocus/i, /\.Invoke\(/, /InvokePattern\]::Pattern/, /SetValue/, /\.Select\(\)/, /AddToSelection/, /\.Toggle\(/, /\.Expand\(/,
     /SendKeys/i, /SendInput/i, /keybd_event/i, /mouse_event/i, /Start-Process/i, /Invoke-Item/i, /ShellExecute/i,
-    /Out-File/i, /Set-Content/i, /Add-Content/i, /Write-Host/i, /Write-Output/i, /Current\.Name\s*\}/,
+    /Out-File/i, /Set-Content/i, /Add-Content/i, /Write-Host/i, /Write-Output/i,
   ]) assert.equal(forbidden.test(rest), false, `outside the card actions the helper must not use ${forbidden}`);
+  // Names reach a reply only through the picker read (#906), which returns model and effort labels.
+  const outsidePicker = PICKER_FUNCTIONS.reduce((text, name) => text.replace(functionBody(script, name), ''), rest);
+  assert.equal(/Current\.Name\s*\}|Cached\.Name\s*\}/.test(outsidePicker), false, 'no other operation returns a Name');
   for (const forbidden of [/SetValue/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /SendKeys/i, /SendInput/i]) {
     assert.equal(forbidden.test(focusBody) || forbidden.test(invokeBody), false, `the card actions must not use ${forbidden}`);
   }
@@ -367,4 +371,38 @@ test('the helper script escapes non-ASCII replies and answers a decode probe wit
   assert.match(script, /Reply\(\$value\) \{\n\s+\[Console\]::Out\.WriteLine\(\$NonAscii\.Replace\(/);
   assert.match(script, /probeLength = \$text\.Length; probeSum = \$sum/);
   assert.equal(/\[Console\]::(Out\.Write|WriteLine)\((?!\$NonAscii)/.test(script), false, 'every reply goes through the escaper');
+});
+
+test('the picker read is read-only, scoped to the target window and bounded, and returns only model and effort labels (#906)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  assert.match(script, /'pickerState' \{ \$value = PickerState \$request \}/);
+  const body = functionBody(script, 'PickerState');
+  assert.match(body, /^\s+\$window = TargetWindow \$request$/m, 'it refuses a window that is not the requested process');
+  assert.match(body, /Fail 'invalid-client'/);
+  for (const name of PICKER_FUNCTIONS) {
+    const fn = functionBody(script, name);
+    assert.ok(fn, `${name} is a top-level function`);
+    for (const forbidden of [/SetFocus/, /\.Invoke\(/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /SetValue/, /ValuePattern/, /TextPattern/, /\.Value\b/, /DocumentRange/]) {
+      assert.equal(forbidden.test(fn), false, `${name} must not use ${forbidden}`);
+    }
+  }
+  // Names are read only from the focused menu's entries, the focused slider, the two composer buttons and the
+  // announcement inside a menu; every name returned passes through PickerLabel (trimmed, at most 128 characters).
+  assert.match(script, /^\$MaxPickerEntries = 64$/m);
+  assert.match(script, /^\$MaxPickerLabel = 128$/m);
+  assert.match(functionBody(script, 'PickerMenuValue'), /-gt \$MaxPickerEntries\) \{ Fail 'picker-too-many-entries' \}/);
+  assert.match(functionBody(script, 'PickerMenuValue'), /\$owner = MenuAbove \$entry \$window/, 'entries of a nested menu are not this menu\'s');
+  assert.match(body, /\$owner = MenuAbove \$focused \$window/, 'the menu read is the one holding keyboard focus');
+  assert.match(body, /ControlType\.Id -eq \$SliderId\) \{ \$slider = PickerLabel \$focused\.Current\.Name \}/, 'a slider name only when the slider has focus');
+  assert.match(script, /^\$ClaudeModelButton = 'Model: '$/m);
+  assert.match(script, /^\$ClaudeEffortButton = 'Effort: '$/m);
+  const setting = functionBody(script, 'ComposerSetting');
+  assert.match(setting, /\$name\.StartsWith\(\$prefix, \$Ordinal\)\) \{ \$count\+\+; \$found = PickerLabel \$name\.Substring\(\$prefix\.Length\) \}/,
+    'a composer button name is returned only after its Model or Effort prefix');
+  assert.match(setting, /Fail 'composer-setting-count'/);
+  const announcement = functionBody(script, 'PickerAnnouncement');
+  assert.match(announcement, /if \(\$null -ne \(MenuAbove \$bar \$window\)\)/, 'only a status bar inside a menu');
+  assert.match(announcement, /if \(\$inMenus\.Count -ne 1\) \{ return \$null \}/);
+  assert.match(body, /\} elseif \(\$null -ne \$menu\) \{ \$announcement = PickerAnnouncement \$window \}/, 'Codex reads the announcement only with its picker open');
+  assert.match(script, /ConvertTo-Json -InputObject \$value -Compress -Depth 6/, 'the reply keeps the menu entries');
 });

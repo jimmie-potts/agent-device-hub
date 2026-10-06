@@ -41,10 +41,10 @@ function adapter(win32, helper = fakeHelper(() => ({ ok: false, reason: 'unused'
   return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', env: {}, ...extra });
 }
 
-test('the Windows adapter implements interface version 4', async () => {
+test('the Windows adapter implements interface version 5', async () => {
   const instance = adapter(fakeWin32());
   assert.equal(instance.version, OS_ADAPTER_VERSION);
-  assert.equal(instance.version, 4);
+  assert.equal(instance.version, 5);
   assert.equal(instance.platform, 'win32');
   await instance.close();
 });
@@ -599,4 +599,102 @@ test('a process change seen while versions are being fetched is not lost', async
   release();
   await next;
   assert.equal(helper.calls.length, before + 1, 'the answer fetched before the restart is not trusted for the new process');
+});
+
+// Model and effort controls (#906)
+
+test('tapInClient types only into the named client in front, checked right before the input, and refuses malformed requests first (#906)', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  const helper = fakeHelper(() => { throw new Error('no UI Automation for keys'); });
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.tapInClient('claude', ['Down'], 2), { status: 'known', value: true });
+  assert.deepEqual(win32.state.sent, [[{ vk: 0x28, up: false }, { vk: 0x28, up: true }, { vk: 0x28, up: false }, { vk: 0x28, up: true }]]);
+  assert.deepEqual(await instance.tapInClient('codex', ['LeftControl', 'LeftAlt', 'Minus'], 1), { status: 'known', value: false }, 'Codex is not in front');
+  assert.equal(win32.state.sent.length, 1, 'nothing reached Claude');
+  for (const [client, keys, presses] of [['claude', ['PageDown'], 1], ['claude', ['Down'], 0], ['claude', [], 1], ['other', ['Down'], 1]]) {
+    await assert.rejects(instance.tapInClient(client, keys, presses), error => ['invalid-key-request', 'unknown-key'].includes(error.code), `${client} ${keys} x${presses}`);
+  }
+  // The window in front changes between the observation and the input.
+  const foregroundWindow = win32.foregroundWindow;
+  let reads = 0;
+  win32.foregroundWindow = () => (++reads >= 3 ? 0x9999 : foregroundWindow());
+  assert.deepEqual(await instance.tapInClient('claude', ['Escape'], 1), { status: 'unknown', reason: 'foreground-changed' });
+  win32.foregroundWindow = foregroundWindow;
+  await instance.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
+  await assert.rejects(instance.tapInClient('claude', ['Escape'], 1), error => error.code === 'keys-held');
+  assert.equal(win32.state.sent.length, 2, 'only the dictation chord after the first tap');
+  assert.equal(helper.calls.length, 0);
+  await instance.close();
+  await assert.rejects(instance.tapInClient('claude', ['Down'], 1), error => error.code === 'adapter-closed');
+});
+
+const claudeMenu = {
+  menu: {
+    label: 'Model: Sonnet 5.5', focused: 1,
+    items: [
+      { kind: 'option', label: 'Opus 5.5', selected: false }, { kind: 'option', label: 'Fable 5.1', selected: false },
+      { kind: 'option', label: 'Sonnet 5.5', selected: true }, { kind: 'action', label: 'More models', selected: false },
+    ],
+  },
+  slider: null, model: 'Sonnet 5.5', effort: 'Low', announcement: null,
+};
+
+test('pickerState reads the client\'s model and effort controls in its own foreground window (#906)', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  win32.state.root = 0x1200;
+  let reply = claudeMenu;
+  const helper = fakeHelper(() => ({ ok: true, value: reply }));
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.pickerState('codex'), { status: 'unknown', reason: 'codex-not-foreground' });
+  assert.equal(helper.calls.length, 0, 'no UI query for a client that is not in front');
+  assert.deepEqual(await instance.pickerState('claude'), { status: 'known', value: claudeMenu });
+  assert.deepEqual(helper.calls, [{ op: 'pickerState', client: 'claude', hwnd: 0x1200, processId: 4242 }]);
+  reply = { menu: null, slider: 'Effort', model: 'Sonnet 5.5', effort: 'Medium', announcement: 'ignored for Claude, 1 of 2.' };
+  assert.deepEqual(await instance.pickerState('claude'), { status: 'known', value: { menu: null, slider: 'Effort', model: 'Sonnet 5.5', effort: 'Medium', announcement: null } });
+  win32.state.family = CODEX_PACKAGE_FAMILY;
+  reply = {
+    menu: { label: 'Select effort', focused: 0, items: [{ kind: 'action', label: 'Select model', selected: false }, { kind: 'toggle', label: 'Enable fast mode', selected: true }] },
+    slider: null, model: 'ignored for Codex', effort: null, announcement: 'GPT-6 Luna Light, 1 of 5.',
+  };
+  assert.deepEqual((await instance.pickerState('codex')).value, { ...reply, model: null, announcement: { label: 'GPT-6 Luna Light', position: 1, count: 5 } });
+  for (const announcement of ['GPT-6 Luna Light', 'GPT-6 Luna Light, 6 of 5.', 'GPT-6 Luna Light, 0 of 5.']) {
+    reply = { ...reply, announcement };
+    assert.equal((await instance.pickerState('codex')).value.announcement, null, `an announcement out of shape is not guessed at: ${announcement}`);
+  }
+});
+
+test('pickerState refuses replies out of shape, with long or control-character labels, as unknown (#906)', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  let reply;
+  const instance = adapter(win32, fakeHelper(() => ({ ok: true, value: reply })));
+  const item = { kind: 'option', label: 'Opus 5.5', selected: false };
+  const broken = [
+    { ...claudeMenu, menu: { ...claudeMenu.menu, focused: 4 } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, focused: null } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, items: [{ ...item, kind: 'button' }] } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, items: [{ ...item, label: 'x'.repeat(129) }] } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, items: [{ ...item, label: 'line\nbreak' }] } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, items: [{ ...item, selected: 'yes' }] } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, focused: -1, items: Array.from({ length: 65 }, () => item) } },
+    { ...claudeMenu, menu: { ...claudeMenu.menu, label: '' } },
+    { ...claudeMenu, model: 42 },
+    { ...claudeMenu, slider: '' },
+  ];
+  for (const value of broken) {
+    reply = value;
+    assert.deepEqual(await instance.pickerState('claude'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value).slice(0, 80));
+  }
+  reply = { ...claudeMenu, menu: { ...claudeMenu.menu, focused: -1 } };
+  assert.equal((await instance.pickerState('claude')).value.menu.focused, null, '-1 is no focused entry');
+  assert.deepEqual(await instance.pickerState('other'), { status: 'unknown', reason: 'invalid-client' });
+});
+
+test('claudeSettings reads the session store and fails closed without one (#906)', async () => {
+  const instance = createWindowsAdapter({ win32: async () => fakeWin32(), helper: fakeHelper(() => ({ ok: false, reason: 'unused' })), env: {} });
+  assert.deepEqual(await instance.claudeSettings('local_4f1e2d3c-1b2a-4c5d-8e9f-a0b1c2d3e4f5'), { status: 'unknown', reason: 'claude-store-unset' });
+  const withStore = adapter(fakeWin32());
+  assert.deepEqual(await withStore.claudeSettings('local_4f1e2d3c-1b2a-4c5d-8e9f-a0b1c2d3e4f5'), { status: 'known', value: null }, 'no store, no record');
+  assert.deepEqual(await withStore.claudeSettings('not-a-local-id'), { status: 'unknown', reason: 'invalid-local-id' });
+  await withStore.close();
+  assert.deepEqual(await withStore.claudeSettings('local_4f1e2d3c-1b2a-4c5d-8e9f-a0b1c2d3e4f5'), { status: 'unknown', reason: 'adapter-closed' });
 });
