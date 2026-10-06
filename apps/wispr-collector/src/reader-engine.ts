@@ -1,7 +1,7 @@
 import type { Snapshot } from '@jimmie-potts/wispr-contracts';
 import { readDictionary } from './dictionary.js';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
-import { OPTIONAL_COLUMNS, SourceError, sourceLimits, type SourceRow, type SourceLimits, type OptionalColumn } from './reader-types.js';
+import { OPTIONAL_COLUMNS, SourceError, type SourceRow, type SourceLimits, type OptionalColumn } from './reader-types.js';
 
 import { MAX_STAGE_BYTES, type LanguageInput } from './language.js';
 import { sourceTimestamp } from './numeric.js';

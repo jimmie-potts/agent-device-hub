@@ -22,6 +22,7 @@ function canonicalWindowsPath(path:string,allowCloud=false):string {
   const canonical=win32.join(realpathSync.native(ancestor),...tail);windowsPath(canonical,allowCloud);return canonical;
 }
 function windowsPath(path: unknown,allowCloud=false): asserts path is string {
+  // eslint-disable-next-line no-control-regex -- rejects control characters
   if(typeof path!=='string'||path.length>240||!/^[A-Za-z]:\\/.test(path)||/[<>"|?*\x00-\x1f]/.test(path)||path.slice(2).includes(':')||path!==win32.normalize(path)||path.split('\\').some(p=>/[ .]$/.test(p)||/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(p))||(!allowCloud&&/(^|\\)(OneDrive[^\\]*|Dropbox|Google Drive|iCloudDrive)(\\|$)/i.test(path)))throw new Error('unsafe-path');
 }
 export function parseConfig(value: unknown): CollectorConfig {
@@ -30,10 +31,11 @@ export function parseConfig(value: unknown): CollectorConfig {
   if(Object.keys(c).sort().join(',')!=='collectionEnabled,language,namespace,ownerDirectory,schemaVersion,sourcePath,stateDirectory,timezone'||c.schemaVersion!=='1.0'||typeof c.namespace!=='string'||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(c.namespace)||typeof c.collectionEnabled!=='boolean'||!c.language||Object.keys(c.language).some(k=>!['enabled','excludedApps','excludedTerms'].includes(k))||typeof c.language.enabled!=='boolean')throw new Error('invalid-config');
   const {excludedApps,excludedTerms}=c.language;
   if(excludedApps!==undefined&&(!Array.isArray(excludedApps)||excludedApps.length>APPS.length||new Set(excludedApps).size!==excludedApps.length||excludedApps.some(app=>!APPS.includes(app))))throw new Error('invalid-config');
+  // eslint-disable-next-line no-control-regex -- rejects control characters
   if(excludedTerms!==undefined&&(!Array.isArray(excludedTerms)||excludedTerms.length>100||excludedTerms.some(term=>typeof term!=='string'||!term.trim()||term.length>100||/[\x00-\x1f]/.test(term))))throw new Error('invalid-config');
   windowsPath(c.ownerDirectory);windowsPath(c.sourcePath);windowsPath(c.stateDirectory);
   if(!contained(c.ownerDirectory,c.sourcePath)||!contained(c.ownerDirectory,c.stateDirectory)||contained(c.stateDirectory,c.sourcePath)||c.stateDirectory.toLowerCase()===c.sourcePath.toLowerCase())throw new Error('unsafe-path');
-  try{if(typeof c.timezone!=='string'||c.timezone.length>80)throw 0;new Intl.DateTimeFormat('en',{timeZone:c.timezone});}catch{throw new Error('invalid-config');}
+  try{if(typeof c.timezone!=='string'||c.timezone.length>80)throw new Error('invalid-config');new Intl.DateTimeFormat('en',{timeZone:c.timezone});}catch{throw new Error('invalid-config');}
   return structuredClone(c);
 }
 

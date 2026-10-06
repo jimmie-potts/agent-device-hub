@@ -1,4 +1,3 @@
-import {join} from 'node:path';
 import {Config,exact,sha} from './config.js';
 import {Adapters,Issue,safeSourcePath} from './adapters.js';
 import {Finding} from './journal.js';

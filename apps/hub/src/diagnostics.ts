@@ -100,7 +100,7 @@ export function createCommandDiagnostics(options:Options) {
         }
         return result;
       };
-      try { context.with(active,once); } catch { failed(); }
+      try { void context.with(active,once); } catch { failed(); }
       try {
         const response = await once();
         finish({'bunny.outcome':outcome[response.body.outcome] ?? 'unavailable'},false);

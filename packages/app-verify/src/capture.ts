@@ -10,7 +10,7 @@ import {resolveInputs} from './inputs.js';
 import {EXIT, Failure, has, load, reseed, reseedInputs, UsageError, type Io} from './lifecycle.js';
 import {artifactDigest} from './roots.js';
 import * as systemd from './systemd.js';
-import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
+import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult} from './types.js';
 import {errorText, iso, loopback, redact} from './util.js';
 
 interface Assertion {
@@ -80,7 +80,7 @@ function vint(bytes: Buffer, at: number, id: boolean): {value: number; length: n
   if (at + length > bytes.length) return undefined;
   let value = id ? first : first & (mask - 1), allOnes = (first & (mask - 1)) === mask - 1;
   for (let k = 1; k < length; k++) {
-    value = value * 256 + bytes[at + k]!;
+    value = value * 256 + bytes[at + k];
     if (bytes[at + k] !== 0xff) allOnes = false;
   }
   return {value, length, unknown: !id && allOnes};
@@ -315,7 +315,7 @@ async function writeLog(dir: string, fields: Record<string, unknown>, finished: 
  */
 export async function runCaptureStep(plugin: AppPlugin, stepName: string, options: CaptureStepOptions): Promise<CaptureStepResult> {
   if (!has(plugin.captureSteps, stepName)) throw new Error(`unknown capture step ${stepName}`);
-  const step = plugin.captureSteps[stepName]!;
+  const step = plugin.captureSteps[stepName];
   const url = loopback(options.url);
   if (typeof url === 'string') throw new Error(`runCaptureStep needs an http://127.0.0.1:<port>/ URL without credentials, a query or a fragment; it got ${url}`);
   if (existsSync(options.outputDir) && (await readdir(options.outputDir)).length > 0) throw new Error('runCaptureStep needs a new or empty output directory');
@@ -348,7 +348,7 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
 
 export async function capture(plugin: AppPlugin, io: Io, runId: string | undefined, stepName: string | undefined) {
   if (!stepName || !has(plugin.captureSteps, stepName)) throw new UsageError(`unknown capture step ${stepName ?? '(none)'}; see help`);
-  const step = plugin.captureSteps[stepName]!;
+  const step = plugin.captureSteps[stepName];
   const run = await load(plugin, io, runId);
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   const current = await run.store.read();

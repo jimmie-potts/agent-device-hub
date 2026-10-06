@@ -3,7 +3,7 @@ import { fork, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSource } from '../dist/reader.js';
 

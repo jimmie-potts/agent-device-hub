@@ -49,7 +49,7 @@ function adapterChecks(value: unknown): PrerequisiteCheck[] | 'missing-action' |
     if (typeof id !== 'string' || !KEBAB.test(id) || seen.has(id) || !phases.includes(phase as Phase) || !statuses.has(status as PrerequisiteCheck['status'])) return undefined;
     if (CORE_IDS.has(id) || (id === 'app-build' && phase !== 'launch')) return undefined;
     if (typeof reason !== 'string' || !KEBAB.test(reason)) return undefined;
-    if (next !== undefined && (typeof next !== 'string' || next.length > 120 || /[\r\n\0\/\\]/.test(next))) return undefined;
+    if (next !== undefined && (typeof next !== 'string' || next.length > 120 || /[\r\n\0/\\]/.test(next))) return undefined;
     if (status === 'missing' && (typeof next !== 'string' || !next.trim())) return 'missing-action';
     seen.add(id);
     checked.push({id, phase: phase as Phase, status: status as PrerequisiteCheck['status'], reason, ...(next ? {next} : {})});

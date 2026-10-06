@@ -319,7 +319,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.deepEqual(await h11.locator('.idea-extends a.issue').evaluateAll(es=>es.map(e=>e.dataset.issue)),['N47','H252'],'A known row patches its Extends in place');
      if(pixooIdeas.length) assert.equal(await ideas.locator(`li.idea[data-key="${pixooIdeas[0]}"] .idea-reason`).textContent(),pixooReasonBefore,'A failed repository keeps its snapshot row');
      // A story that closes live, or loses its mark, is removed from the section and from Later ideas.
-     await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[{...blocked,body:blocked.body.replace(/\n\*\*Highlight:\*\*[^\n]*\n\*\*Extends:\*\*[^\n]*/,'')},...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
+     await page.evaluate(([blocked,_guided,more])=>window.updateWorkOverview('H',[{...blocked,body:blocked.body.replace(/\n\*\*Highlight:\*\*[^\n]*\n\*\*Extends:\*\*[^\n]*/,'')},...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
      assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas.filter(key=>key!=='H998'&&key!=='H11'),'Closed and unmarked stories leave the section');
      assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas.filter(key=>key!=='H998'&&key!=='H11'));
      assert.equal(await ideas.locator('summary .guide-count').textContent(),`${1+pixooIdeas.length} marked`);

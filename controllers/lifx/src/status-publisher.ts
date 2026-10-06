@@ -156,7 +156,7 @@ export class LifxStatusPublisher {
   #mode(deviceId: string): Mode | undefined {
     try {
       const desired = this.#controller.snapshot(deviceId).controller.state.desired.mode;
-      return desired.status === 'known' ? desired.value as Mode : 'Free';
+      return desired.status === 'known' ? desired.value : 'Free';
     } catch {
       return undefined; // Unknown device: nothing to paint.
     }

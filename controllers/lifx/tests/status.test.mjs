@@ -41,7 +41,7 @@ test("a qualified bulb advertises Work/Quiet/Free; an unqualified one advertises
   d.close();
 });
 
-test("without a configured modeStateRoot, a qualified bulb still advertises no modes and mode.set is unsupported-capability", async (t) => {
+test("without a configured modeStateRoot, a qualified bulb still advertises no modes and mode.set is unsupported-capability", async () => {
   const c = new LifxController({
     controllerId: "lifx", sourceId: "test", bulbs: [bulb()],
     transportFactory: () => ({ exchange: async () => Buffer.alloc(0), close() {} }),
@@ -151,7 +151,7 @@ test("onModeChange notifies only after a successful mode.set, and unsubscribe st
 
 test("paintStatus sends one absolute LightSetColor with full HSBK, no LightGet, and never touches power", async (t) => {
   const calls = [];
-  const c = setup(t, async (type, payload) => { calls.push(type); return type === 101 ? Buffer.alloc(52) : Buffer.alloc(0); });
+  const c = setup(t, async (type) => { calls.push(type); return type === 101 ? Buffer.alloc(52) : Buffer.alloc(0); });
   const hsbk = { hue: 100, saturation: 200, brightness: 300, kelvin: 3500 };
   const submission = c.paintStatus("bulb-1", hsbk);
   assert.equal(submission.decision, "queued");

@@ -5,7 +5,6 @@ import {normalizeHook} from '../dist/providers.js';
 
 // #225: a newer turn proves that an approval without a request ID on the retired turn was answered.
 const source={provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop'};
-const identity={...source,sessionId:'session'};
 const hook=(name,turn)=>normalizeHook({session_id:'session',turn_id:turn},{...source,hook:name},1000);
 const options=storage=>({storage,ownerId:'owner',consumers:[{id:'nanoleaf',clearOnNewTurn:true}],clock:()=>1000});
 const approvals=owner=>owner.snapshot().sessions[0].attention.filter(item=>item.kind==='approval')

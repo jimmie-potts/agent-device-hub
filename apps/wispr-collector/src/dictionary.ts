@@ -29,13 +29,13 @@ export function readDictionary(db:DatabaseSync,maxRows=100_000,maxBytes=256*1024
     if(result.activeSnippets!==null){const flag=countValue(row.isSnippet);if(flag===0||flag===1)result.activeSnippets+=flag;else result.activeSnippets=null;}
     for(const [field,target] of [['frequencyUsed','localUsage'],['remoteFrequencyUsed','remoteUsage']] as const){
       if(result[target]===null)continue;const value=countValue(row[field]);
-      result[target]=value===null||!Number.isSafeInteger(result[target]!+value)?null:result[target]!+value;
+      result[target]=value===null||!Number.isSafeInteger(result[target]+value)?null:result[target]+value;
     }
   }
   return result;
 }
 
 export function dictionarySnapshot(previous:Dictionary,current:Dictionary,reset=false):Dictionary {
-  const decreased=(['localUsage','remoteUsage'] as const).some(key=>previous[key]!==null&&current[key]!==null&&current[key]!<previous[key]!);
+  const decreased=(['localUsage','remoteUsage'] as const).some(key=>previous[key]!==null&&current[key]!==null&&current[key]<previous[key]);
   return {...current,segment:previous.segment+Number(reset||decreased)};
 }

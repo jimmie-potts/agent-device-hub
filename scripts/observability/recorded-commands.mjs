@@ -49,10 +49,12 @@ export async function performRecordedCommands({directory,plan,signal}) {
         events:accounting.events,bytes:accounting.bytes}:null,oracle:oracle?{complete:oracle.complete,executed:oracle.executed}:null,
         diagnostics:diagnostics??null,ingestion:ingestion??null};
       workload.record({kind:'qualification-result',value:result});
+      // eslint-disable-next-line no-unsafe-finally -- the result is returned after cleanup; the outer catch already recorded any failure
       return result;
     } finally {
       let closeFailed=false;
       for(const journal of [workload,telemetry,queries])try{journal?.close();}catch{closeFailed=true;}
+      // eslint-disable-next-line no-unsafe-finally -- a journal close failure fails the qualification after cleanup
       if(closeFailed)throw new Error('Qualification journal close failed');
     }
   }
@@ -107,6 +109,7 @@ export async function performCommandFaults({directory,plan,signal}) {
   finally {
     let closeFailed=false;
     for(const journal of [workload,telemetry,queries])try{journal?.close();}catch{closeFailed=true;}
+    // eslint-disable-next-line no-unsafe-finally -- a journal close failure fails the qualification after cleanup
     if(closeFailed)throw new Error('Qualification journal close failed');
   }
 }

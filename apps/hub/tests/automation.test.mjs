@@ -308,7 +308,7 @@ test('arbitration blocks in order with the stated reason and hands nothing over 
 });
 
 test('each target is handed the moment once; failures are logged per target and nothing retries (AC4)',async()=>{
- const sender=fakeSender(({target,moment})=>{
+ const sender=fakeSender(({target})=>{
   if(target==='wall')throw new Error('PRIVATE_CANARY socket reset');
   if(target==='panel')return {kind:'receipt',receipt:{...validReceipt,outcome:'failed',failure:{code:'moment-blocked'}},note:'PRIVATE_CANARY'};
   return {kind:'receipt',receipt:{...validReceipt,outcome:'queued'}};

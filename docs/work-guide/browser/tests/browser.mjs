@@ -38,7 +38,7 @@ for(const [index,[state,body]] of Object.entries(bodies).entries()) {
 }
 d.repositories[0].recentClosures.complete=false;d.repositories[0].recentClosures.reason='Fixture partial history';
 d.datasetId=datasetIdentity(d);
-let manifest=await buildCandidate(d,{output});
+await buildCandidate(d,{output});let manifest;
 const server=createServer(async(req,res)=>{try{const path=resolve(output,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));if(!path.startsWith(output+'/'))throw Error('invalid path');const bytes=await readFile(path.endsWith('/')?join(path,'index.html'):path);res.setHeader('content-type',path.endsWith('.json')?'application/json':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');res.end(bytes);}catch{res.statusCode=404;res.end('missing');}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const origin=`http://127.0.0.1:${server.address().port}`;

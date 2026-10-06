@@ -23,7 +23,7 @@ export function hookCommand(node:string,hook:string,config:string,distribution?:
 function validate(input:SetupInput){
  if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile','lifecycleVersion'].includes(k))||input.lifecycleVersion!==undefined&&input.lifecycleVersion!=='1.1'&&input.lifecycleVersion!=='1.2'||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
  if(input.windowsDistribution!==undefined&&input.source.provider!=='codex')throw new Error('unsupported-windows-client');
- const emitter=createEmitter({source:input.source,enabled:false,send:async()=>{}});emitter.close();
+ const emitter=createEmitter({source:input.source,enabled:false,send:async()=>{}});void emitter.close();
  if(loopbackEndpoint(input.endpoint).pathname!=='/api/monitor/v1/events')throw new Error('invalid-endpoint');
  if(input.target===join(input.directory,'receipt.json')||input.target===join(input.directory,'producer.json'))throw new Error('overlapping-setup');
  hookCommand(input.node,input.hook,join(input.directory,'producer.json'),input.windowsDistribution);
@@ -38,7 +38,7 @@ function entries(input:SetupInput,previous=false):Entry[]{
 }
 function config(text:string){if(Buffer.byteLength(text)>262144)throw new Error('client-configuration-limit');const value=JSON.parse(text);
  const pending:[unknown,number][]=[[value,0]];let nodes=0;while(pending.length){const [item,depth]=pending.pop()!;if(++nodes>10000||depth>20)throw new Error('client-configuration-limit');if(item&&typeof item==='object')for(const child of Object.values(item))pending.push([child,depth+1]);}
-if(!object(value)||value.hooks!==undefined&&!object(value.hooks))throw new Error('invalid-client-configuration');const hooks=(value.hooks??{}) as Record<string,unknown>;for(const groups of Object.values(hooks))if(!Array.isArray(groups))throw new Error('invalid-client-configuration');return {...value,hooks};}
+if(!object(value)||value.hooks!==undefined&&!object(value.hooks))throw new Error('invalid-client-configuration');const hooks=(value.hooks??{});for(const groups of Object.values(hooks))if(!Array.isArray(groups))throw new Error('invalid-client-configuration');return {...value,hooks};}
 async function receipt(directory:string):Promise<Receipt|null>{
  const raw=await readPrivate(join(directory,'receipt.json'),true);if(raw===null)return null;
  const value=JSON.parse(raw) as Receipt;

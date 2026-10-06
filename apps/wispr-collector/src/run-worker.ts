@@ -4,10 +4,11 @@ import type { CollectorConfig } from './config.js';
 import { safeCode } from './supervisor.js';
 const disconnected=()=>process.exit(1);
 process.once('disconnect',disconnected);
+// eslint-disable-next-line @typescript-eslint/no-misused-promises -- the worker entry handles its own errors
 process.once('message',async (message:{config:CollectorConfig;operation:Operation;workerMemoryLimit:number})=>{
   let guard:ReturnType<typeof acquireLease>|undefined;
   const connected=()=>{if(!Number.isSafeInteger(message.workerMemoryLimit)||message.workerMemoryLimit<1||message.workerMemoryLimit>512*1024*1024)throw new Error('invalid-config');if(process.memoryUsage().rss>message.workerMemoryLimit)throw new Error('source-capacity');if(!process.connected)throw new Error('run-cancelled');};
-  const send=(value:unknown)=>{connected();process.send!(value as object);};
+  const send=(value:unknown)=>{connected();process.send!(value);};
   const heartbeat=setInterval(()=>{try{send({type:'memory',rss:process.memoryUsage().rss});}catch(error){if(process.connected)process.send!({type:'failure',code:safeCode(error)},()=>process.exit(1));else process.exit(1);}},50);
   try{
     guard=acquireLease(message.config.stateDirectory,'worker-lease.sqlite');connected();

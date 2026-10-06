@@ -163,7 +163,7 @@ test('handoff freezes the verified set; reset, extend and later captures never c
       `Extend    node verify.mjs extend ${runId}`,
       `Stop      node verify.mjs stop ${runId}`,
     ]);
-    assert.match(handoff.result.card[2], /^Expires   \d{4}-\d\d-\d\d \d\d:\d\d:\d\dZ \(in \d+ min\)$/);
+    assert.match(handoff.result.card[2], /^Expires {3}\d{4}-\d\d-\d\d \d\d:\d\d:\d\dZ \(in \d+ min\)$/);
     assert.match(handoff.stderr, /Preview {3}http:\/\/127\.0\.0\.1:/, 'the card is printed for the human');
     assert.match(await (await fetch(url)).text(), /Count: 10/, 'the human starts from the reset scenario');
 

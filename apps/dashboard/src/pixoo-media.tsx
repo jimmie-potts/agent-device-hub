@@ -44,6 +44,7 @@ function Animation({api,alias,id,active,label}:{api:Api;alias:string;id:string;a
 }
 function useThumbnails(api:Api,alias:string,ids:readonly string[],active:boolean){
  const [images,setImages]=useState<Record<string,ImageBitmap>>({}),[error,setError]=useState(''),key=ids.join(',');
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the content key of ids
  useEffect(()=>{const stop=new AbortController(),owned:ImageBitmap[]=[];setImages({});setError('');if(active)void(async()=>{for(const id of new Set(ids)){const {blob}=await api.png(`${prefix(alias)}/renditions/${id}/preview.png`,stop.signal);const bitmap=await createImageBitmap(blob);if(stop.signal.aborted){bitmap.close();return;}owned.push(bitmap);setImages(old=>({...old,[id]:bitmap}));}})().catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>{stop.abort();owned.forEach(b=>b.close());};},[api,alias,key,active]);
  return {images,error};
 }
@@ -73,6 +74,7 @@ function CatalogWidget({api,alias,snapshot,visible,onNames,declaredPlaylistIds=[
    if(page.catalogRevision!==revision)throw new ApiError('catalog-changed');
    if(!stop.signal.aborted){setPlaylists(page);onNames?.(declaredPlaylistIds.flatMap(id=>found.has(id)?[found.get(id)!]:[]));}
   }
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- declaredKey is the content key of the declared playlists; onNames is a notification
  })().catch(e=>{if(!stop.signal.aborted)setError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,epoch,offset,playlistOffset,reload,part,declaredKey]);
  useEffect(()=>{const stop=new AbortController();setDetail(undefined);setDetailError('');if(visible&&enabled&&selectedPlaylist)void api.request<PlaylistReply>(`${prefix(alias)}/catalog/playlists/${selectedPlaylist}`,undefined,stop.signal).then(value=>{if(value.catalogRevision!==revision)throw new ApiError('catalog-changed');if(!stop.signal.aborted)setDetail(value);}).catch(e=>{if(!stop.signal.aborted)setDetailError(message(e));});return()=>stop.abort();},[api,alias,enabled,visible,revision,epoch,selectedPlaylist,reload]);
  const mediaThumbs=useThumbnails(api,alias,media?.items.map(r=>r.renditionId)??[],visible&&enabled),itemThumbs=useThumbnails(api,alias,detail?.playlist.items.slice(itemOffset,itemOffset+25).map(i=>i.renditionId)??[],visible&&enabled);

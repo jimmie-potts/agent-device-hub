@@ -151,7 +151,7 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
   function principal(req: IncomingMessage): Credential | undefined {
     const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization ?? '');
     if (!match) return undefined;
-    const digest = createHash('sha256').update(match[1]!).digest();
+    const digest = createHash('sha256').update(match[1]).digest();
     for (const credential of credentials.values()) {
       if (timingSafeEqual(digest, Buffer.from(credential.digest, 'hex'))) return credential;
     }

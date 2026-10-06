@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFile,readdir,stat,writeFile} from 'node:fs/promises';
+import {readFile,stat,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {runProcess} from '../dist/process.js';
 import {fixture} from './fixture.mjs';

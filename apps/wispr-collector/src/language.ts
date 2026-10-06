@@ -120,7 +120,7 @@ export function analyzeStages(input:LanguageInput,excludedTerms:readonly string[
   const tokens:Partial<Record<typeof stages[number],(string|null)[]>>={};
   const result={} as LanguageFeatures;
   for(const stage of stages){
-    const value=input[stage];let reason:StageReason|null=null;
+    const value=input[stage];let reason:StageReason|null;
     if(input.oversized?.includes(stage))reason='oversized';
     else if(value===null)reason='missing';
     else if(!/^en(?:-[a-z0-9]{2,8})*$/i.test(input.language??''))reason='unsupportedLanguage';
@@ -173,6 +173,7 @@ function rankingBatch(readRows:()=>Iterable<RetainedLanguage>,preset:PresetWindo
       let keys=0;
       const add=(map:Ranked,text:string,occurrences:number)=>{
         let count=map.get(text);
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- a symbol sentinel the partition loop catches
         if(!count){if(++keys>250_000)throw partitionFull;count={occurrences:0,dictations:0};map.set(text,count);}
         count.occurrences+=occurrences;count.dictations++;
       };

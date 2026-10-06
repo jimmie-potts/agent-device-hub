@@ -30,12 +30,12 @@ export function panelsLayout(geometry: Geometry | undefined): PanelsLayoutInput 
  return {name: 'Nanoleaf Light Panels', elements: geometry.elements.map(e => ({id: e.id, number: e.number, points: (e.points as [number, number][]).map(([x, y]) => [x, y])}))};
 }
 export const artMode = (mode: string | undefined): Mode => mode === 'Work' ? 'work' : mode === 'Quiet' ? 'quiet' : 'free';
-const pendingIds = (pending: unknown): Set<string> => { const value = pending as {elements?: {id?: unknown}[]} | null; return new Set(Array.isArray(value?.elements) ? value!.elements!.map(e => String(e?.id ?? '')).filter(Boolean) : []); };
+const pendingIds = (pending: unknown): Set<string> => { const value = pending as {elements?: {id?: unknown}[]} | null; return new Set(Array.isArray(value?.elements) ? value.elements.map(e => String(e?.id ?? '')).filter(Boolean) : []); };
 /** The wall map's color rule: the status color on both zones; in the project layout style the signature zone takes the reservation's project color. With no status source the base is the wall map's own reading of a Line without a task. */
 export function elementColors(element: {projectId: string | null; signature: number} | undefined, style: string | undefined, projects: {id: string; color: string}[], status: ElementStatus | undefined, tokens: StatusTokens): [string, string] {
  const base = tokens[status ?? 'unread'];
  const colors: [string, string] = [base, base];
- if (style === 'project' && element) { const owner = projects.find(p => p.id === element.projectId); colors[element.signature === 1 ? 1 : 0] = isHex(owner?.color) ? owner!.color : tokens.unread; }
+ if (style === 'project' && element) { const owner = projects.find(p => p.id === element.projectId); colors[element.signature === 1 ? 1 : 0] = isHex(owner?.color) ? owner.color : tokens.unread; }
  return colors;
 }
 function describe(kind: 'lines' | 'panels', number: number | string, element: {projectId: string | null} | undefined, style: string | undefined, status: ElementStatus | undefined, active: boolean) {

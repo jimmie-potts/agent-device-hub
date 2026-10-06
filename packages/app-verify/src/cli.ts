@@ -29,7 +29,7 @@ function parse(argv: readonly string[]): {operation: string; positional: string[
   const [operation = 'help', ...rest] = argv;
   const positional: string[] = [], flags: Record<string, string> = {}, inputs: string[] = [];
   for (let index = 0; index < rest.length; index++) {
-    const argument = rest[index]!;
+    const argument = rest[index];
     if (argument.startsWith('--')) {
       if (!(FLAGS[operation] ?? []).includes(argument)) throw new UsageError(`${operation} does not take ${argument}`);
       const value = rest[++index];
@@ -104,7 +104,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
         break;
       case 'scenario':
         arity(positional, 2, operation);
-        if (!has(plugin.scenarios, positional[1]!)) throw new UsageError(`the fixtures define no scenario ${positional[1]}; see help`);
+        if (!has(plugin.scenarios, positional[1])) throw new UsageError(`the fixtures define no scenario ${positional[1]}; see help`);
         outcome = await scenario(plugin, io, positional[0], positional[1], given);
         break;
       case 'capture':

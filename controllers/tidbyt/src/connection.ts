@@ -61,7 +61,7 @@ export const MAX_ADDITIONAL_INSTALLATIONS = 4;
 const DEFAULT_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 15 * 60_000;
 /** A write for an installation this connection does not list; nothing is sent. */
-const REFUSED: PushOutcome = Object.freeze({ outcome: 'failed', failure: 'invalid-request', priorEffects: 'none' }) as PushOutcome;
+const REFUSED: PushOutcome = Object.freeze({ outcome: 'failed', failure: 'invalid-request', priorEffects: 'none' });
 // Failures raised before any request bytes can have left this host.
 const PRE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME', 'UND_ERR_CONNECT_TIMEOUT']);
 
@@ -71,7 +71,7 @@ const CAPABILITIES: ConnectionCapabilities = Object.freeze({
   foregroundPush: Object.freeze({ supported: false }),
   installationRead: Object.freeze({ supported: true }),
   installationRemove: Object.freeze({ supported: true }),
-}) as ConnectionCapabilities;
+});
 
 type Response = globalThis.Response;
 

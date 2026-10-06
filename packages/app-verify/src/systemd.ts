@@ -103,7 +103,7 @@ export async function startService(spec: ServiceSpec): Promise<{ok: true} | {ok:
     '--', ...spec.argv,
   ];
   const result = await exec('systemd-run', args, {timeoutMs: 30000});
-  return result.code === 0 ? {ok: true} : {ok: false, reason: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]!};
+  return result.code === 0 ? {ok: true} : {ok: false, reason: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]};
 }
 
 /**
@@ -120,7 +120,7 @@ export async function startLease(base: string, unit: string, expiresAt: number, 
     `--description=${description}`,
     '--', systemctl, '--user', 'stop', unit,
   ], {timeoutMs: 30000});
-  if (result.code !== 0) return {ok: false, reason: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]!};
+  if (result.code !== 0) return {ok: false, reason: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]};
   const state = await timerState(`${base}.timer`);
   if (!state?.loaded || state.active !== 'active' || state.nextElapse !== expiresAt) {
     // Never leave a timer the receipt does not name: it could stop the unit at an unrecorded time.
@@ -172,7 +172,7 @@ export async function listeningPorts(unit: string): Promise<number[] | undefined
   let attributed = false;
   for (const line of listed.stdout.split('\n')) {
     const local = /\s(127\.0\.0\.1|\[::ffff:127\.0\.0\.1\]):(\d+)\s/.exec(line);
-    const owners = [...line.matchAll(/pid=(\d+)/g)].map(m => m[1]!);
+    const owners = [...line.matchAll(/pid=(\d+)/g)].map(m => m[1]);
     if (owners.length) attributed = true;
     if (local && owners.some(pid => pids.has(pid))) ports.add(Number(local[2]));
   }

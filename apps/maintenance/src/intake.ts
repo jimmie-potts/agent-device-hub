@@ -1,5 +1,5 @@
-import {Config,Request,request,REPOSITORY,sha,fingerprints} from './config.js';
-import {Adapters,Issue,eligible} from './adapters.js';
+import {Config,Request,request,REPOSITORY,fingerprints} from './config.js';
+import {Adapters,eligible} from './adapters.js';
 import {Finding,Extract} from './journal.js';
 import {investigate,Proposal} from './planner.js';
 import {PrivateStore,requireValue} from './storage.js';

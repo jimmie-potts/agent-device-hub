@@ -23,12 +23,12 @@ export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;ar
  const child=spawn(process.execPath,[input.entrypoint,...input.args],{env:input.environment,stdio:['ignore','pipe','pipe']});
  const exit=new Promise<number|null>((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);});
  // Drain bounded diagnostics without exposing paths or credentials.
- child.stderr!.resume();let output='';
+ child.stderr.resume();let output='';
  let timer:ReturnType<typeof setTimeout>|undefined;
  try{
   const url=await Promise.race([new Promise<string>((resolve,reject)=>{
    timer=setTimeout(()=>reject(new Error('owner-start-timeout')),5000);
-   child.stdout!.on('data',chunk=>{
+   child.stdout.on('data',chunk=>{
     output+=chunk.toString();if(Buffer.byteLength(output)>8192){reject(new Error('owner-start-invalid'));return;}
     const lines=output.split('\n');output=lines.pop()!;
     for(const line of lines){
@@ -38,7 +38,7 @@ export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;ar
    });
   }),exit.then(()=>{throw new Error('owner-start-failed');})]);
   const parsed=loopbackEndpoint(url+'/');if(parsed.pathname!=='/'||url!==parsed.origin)throw new Error('owner-start-invalid');
-  child.stdout!.removeAllListeners('data');child.stdout!.resume();
+  child.stdout.removeAllListeners('data');child.stdout.resume();
   if (!child.pid || child.exitCode!==null || child.signalCode!==null) throw new Error('owner-start-failed');
   const owner=Object.freeze({url,pid:child.pid});managed.set(owner,{child,exit,token:input.token,quiescing:false,kind:input.kind,config});return owner;
  }catch(error){child.kill('SIGTERM');await Promise.race([exit.catch(()=>{}),new Promise(r=>{const timer=setTimeout(r,1000);timer.unref();})]);if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exit.catch(()=>{});}throw error;}

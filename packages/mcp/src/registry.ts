@@ -1,5 +1,5 @@
 import { validate } from '@jimmie-potts/device-contracts';
-import type { DeviceRegistration, ServiceExtension } from './types.js';
+import type { DeviceRegistration } from './types.js';
 
 function freezeSchema<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freezeSchema); Object.freeze(value); }
@@ -20,7 +20,7 @@ export class DeviceRegistry {
       }
       this.#registrations.set(deviceId, Object.freeze({ deviceId, controllerId, ...(label === undefined ? {} : { label }),
         ...(service ? { service: Object.freeze({ readSnapshot: service.readSnapshot.bind(service), submit: service.submit.bind(service) }) } : {}),
-        extensions: Object.freeze(Object.fromEntries(Object.entries(extensions ?? {} as Record<string, ServiceExtension>).map(([name, extension]) => [name,
+        extensions: Object.freeze(Object.fromEntries(Object.entries(extensions ?? {}).map(([name, extension]) => [name,
           Object.freeze({ ...extension, inputSchema: freezeSchema(structuredClone(extension.inputSchema)), outputSchema: freezeSchema(structuredClone(extension.outputSchema)),
             annotations: Object.freeze({ ...extension.annotations }), invoke: extension.invoke.bind(extension) })]))) }));
     }

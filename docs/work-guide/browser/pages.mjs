@@ -12,7 +12,7 @@ export function makeView(dataset, kind, record=null) {
   const active=x=>PREDICATES.active(x), blocked=x=>PREDICATES.blocked(x,{dataset}), later=x=>PREDICATES.later(x);
   const ready=x=>eligibility(dataset,x.id,'ready',policy).allowed;
   const open=dataset.issues.filter(x=>x.state==='OPEN' && dataset.repositories.some(r=>r.name===x.repository && r.scope==='primary'));
-  let root=[];
+  let root;
   if(kind==='home') root=[section('epics',dataset.issues.filter(x=>isEpic(x)&&x.placement.state==='root').map(epicSummary)),
     section('current-work',open.filter(active).map(x=>card(x))),
     section('newly-added',[...open].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,12).map(x=>card(x))),

@@ -80,6 +80,7 @@ export async function performCollectionFaults({directory,plan,receipt,backend,co
       // teardown remains the independent bounded cleanup path.
       try {
         const current=await backend.collector(plan,receipt,'inspect');record({kind:'collector-restoration-state',value:current});
+        // eslint-disable-next-line no-unsafe-finally -- the enclosing catch handles this throw
         if(current.pid!==identity.pid || current.startTicks!==identity.startTicks)throw new Error('Collector identity changed');
         if(['T','t'].includes(current.state))await effect('resume',{});
         const deadline=performance.now()+5000;
@@ -98,5 +99,6 @@ export async function performCollectionFaults({directory,plan,receipt,backend,co
     accounting:accounting?{complete:accounting.complete,counts:accounting.counts}:null,diagnostics:diagnostics??null};
   try{record({kind:'qualification-result',value:result});return result;}
   finally {let closeFailed=false;for(const journal of [workload,telemetry])try{journal?.close();}catch{closeFailed=true;}
+    // eslint-disable-next-line no-unsafe-finally -- a journal close failure fails the qualification after cleanup
     if(closeFailed)throw new Error('Collection journal close failed');}
 }

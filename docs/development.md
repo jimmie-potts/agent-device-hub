@@ -181,7 +181,7 @@ Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal Depot CI has eight Linux jobs:
+Normal Depot CI has nine Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -192,10 +192,11 @@ Normal Depot CI has eight Linux jobs:
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build/type, controller-backed browser fixtures and accessibility |
+| Static analysis | Node 24 build, then ESLint over maintained JavaScript and TypeScript; see [Static analysis](#static-analysis) |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip because the runner has no systemd |
 
 Each combined contracts/state job installs dependencies, builds and typechecks
-once before running its suites. The core workflow performs five full builds
+once before running its suites. The core workflow performs six full builds
 across its jobs. Local validation runs the same commands. Later runtime and
 browser changes must add their own issue-appropriate checks.
 
@@ -203,6 +204,87 @@ Native Windows is outside the supported CI matrix. Windows development uses
 Linux Node/Python runtimes inside WSL. Ubuntu CI does not establish installed
 WSL/client or device compatibility. Keep that acceptance evidence separate.
 Existing provider qualification records and device ownership are unchanged.
+
+## Static analysis
+
+`npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).
+Run `npm run build` first. Typed rules read the workspace packages' built
+declaration files, so missing or stale `dist/` output changes the results. The
+Depot Static analysis job runs `npm ci`, `npm run build` and `npm run lint:js`,
+and never fixes files.
+
+Coverage is every tracked `.js`, `.mjs`, `.cjs`, `.ts` and `.tsx` file outside the
+exclusions below.
+
+- **All files** get ESLint's recommended rules.
+- **TypeScript files** also get typescript-eslint's type-checked recommended
+  rules, including `no-floating-promises` and `no-misused-promises`.
+  - Each file uses its nearest `tsconfig.json`.
+  - The config lists the few files that belong to no project; they use the
+    default project.
+  - JavaScript files get no type-aware rules.
+- **Dashboard files** also get the React Hooks rules `rules-of-hooks` and
+  `exhaustive-deps`.
+- **Globals:**
+  - Page code gets browser globals.
+  - Node scripts that pass callbacks to Playwright get browser and Node globals.
+  - ES modules get Node's built-in globals.
+  - `.cjs` files also get the CommonJS globals.
+
+The excluded categories are:
+
+- everything the root `.gitignore` lists, including dependencies, build output,
+  local data and agent worktrees, plus the firmware build trees;
+- the Work guide's published releases (`docs/work-guide/outputs/`);
+- vendored reference assets (`docs/system-design/reference/assets/` and
+  `docs/system-design/reference/database/`);
+- saved source copies from other repositories
+  (`docs/work-guide/work/architecture/sources/`).
+
+Add a category only with its reason. Do not exclude maintained source to hide
+findings.
+
+The config adjusts some rule options to match existing idioms rather than
+defects:
+- empty `catch` blocks are allowed for best-effort cleanup;
+- a leading underscore marks a deliberately unused name;
+- side-effect ternaries are allowed;
+- a promise may be rejected with a caught error of unknown type;
+- `prefer-const` ignores a handle that signal handlers read before its single
+  assignment.
+
+For a deliberate exception elsewhere, use
+`// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
+
+### Adoption baseline
+
+[`eslint-suppressions.json`](../eslint-suppressions.json) records how many
+findings each file had for each rule when the gate was adopted.
+
+ESLint fails when a file exceeds its recorded count for a rule. It also fails
+when a linted file has fewer findings than recorded, until you run
+`npx eslint . --prune-suppressions` and commit the smaller file. After deleting
+or renaming a file, run the same prune, because entries for files ESLint no
+longer lints are not reported.
+
+Never use `--suppress-all` or `--suppress-rule` to pass new findings. Fix the
+code instead.
+
+| Baselined rules | Why they remain | Triage owner |
+| --- | --- | --- |
+| `no-unsafe-*`, `no-explicit-any`, `restrict-*`, `no-base-to-string`, `unbound-method`, `no-redundant-type-constituents` | Untyped parsed or external data passes through code that predates the rules. Typing it means a refactor in each module, not a mechanical fix. | [#770](https://github.com/jimmie-potts/agent-device-hub/issues/770). Code that the B.U.N.N.Y. runtime replaces drops its entries when retired. |
+| `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
+| Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
+
+To give a package stricter rules, add a config block after `bunny/typescript`
+with the package's `files` glob and the extra rules.
+[#830](https://github.com/jimmie-potts/agent-device-hub/issues/830) defines the
+strict profile for new runtime code.
+
+Guide-only revisions skip the Static analysis job under the
+[SDLC exception](sdlc.md#guide-only-ci-exception). Run
+`npx eslint docs/work-guide` for them. It needs no build, because the guide has
+no linted TypeScript.
 
 ## Depot diagnostic access
 

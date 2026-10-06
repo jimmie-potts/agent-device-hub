@@ -54,6 +54,7 @@ export function useCommandLifecycle(source:unknown,options:ResultOptions,key?:st
  const running=useRef(false);
  const isRunning=()=>shared?shared.running:running.current,setRunning=(value:boolean)=>{if(shared)shared.running=value;else running.current=value;};
  const keepFocus=useRestoredFocus(state.busy);
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- re-observe only when the source or the option fields that matter change
  useEffect(()=>dispatch({type:'observed',source,options}),[source,state.watching,options.device,options.sameMode]);
  async function run(attempt:Omit<Attempt,'options'>){
   if(isRunning()||(shared?shared.state.locked:state.locked))return;
@@ -289,7 +290,7 @@ export function lightingNote(d:DeviceControls):string|undefined{
 export function LightingCards({d}:{d:DeviceControls}){
  const {disabled,api,refresh,reread,component}=d,lighting=d.device.lighting,path=d.path+'/lighting/commands';
  if(!lighting||lightingNote(d))return null;
- const reasons=lightingReasons(lighting,disabled),observed=observedColor(lighting.lighting),source=lighting.controller,revision=String(source.configurationRevision);
+ const reasons=lightingReasons(lighting,disabled),observed=observedColor(lighting.lighting),source=lighting.controller;
  const range=lighting.lighting.capabilities.temperature??{minimum:1500,maximum:9000};
  const kelvin=observed?Math.min(range.maximum,Math.max(range.minimum,observed.kelvin)):2700;
  const prepare=(name:'color'|'temperature')=>()=>reread((latest,a)=>{const reason=lightingReasons(latest.lighting,a.disabled)[name];return reason??{source:latest.lighting!.controller,revision:String(latest.lighting!.controller.configurationRevision)};});

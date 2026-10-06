@@ -10,7 +10,6 @@ const browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS??'/tmp/gh355-art-receipts';await mkdir(output,{recursive:true});
 const checks=[];
 async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
-async function until(condition){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout');await new Promise(r=>setTimeout(r,25));}}
 async function scenario(name,run,{options={},viewport={width:1280,height:900},reducedMotion='reduce'}={}){
  const f=await fixture(options),context=await browser.newContext({viewport,reducedMotion}),page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();await run(f,page);assert.deepEqual(errors,[]);checks.push(name);}

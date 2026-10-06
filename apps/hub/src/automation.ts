@@ -77,7 +77,7 @@ export function parseEvent(value:unknown): HubEvent|null {
   if (!object(value) || !keysWithin(value,['id','source','kind','delivery'],['id','source','kind','alias','agent','task','delivery','pullRequestTitle','repositoryName','meetingTitle']) ||
       !screenedId(value.id) || !source(value.source) || !eventKind(value.kind) || !['live','replay'].includes(value.delivery as string) ||
       !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id)) return null;
-  const text = eventText(value as EventText);
+  const text = eventText(value);
   if (!text) return null;
   return {id:value.id,source:value.source,kind:value.kind,...(value.alias === undefined ? {} : {alias:value.alias as string}),
     ...(value.agent === undefined ? {} : {agent:value.agent as string}),...(value.task === undefined ? {} : {task:value.task as string}),

@@ -8,7 +8,7 @@ import type {Snapshot} from './types.js';
 const MAX_BYTES=16*1024*1024,MAX_NODES=1000000;
 const check=new Ajv2020({strict:true,allErrors:false}).compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.3.schema.json',import.meta.url),'utf8')));
 type Validation={ok:true;value:Snapshot}|{ok:false;code:'invalid-state'};
-const invalid:Validation=Object.freeze({ok:false,code:'invalid-state'}) as Validation;
+const invalid:Validation=Object.freeze({ok:false,code:'invalid-state'});
 
 // Reject accessors and non-JSON input before serialization or schema traversal.
 function bounded(value:unknown,depth=0,budget={nodes:0,bytes:0}):boolean {

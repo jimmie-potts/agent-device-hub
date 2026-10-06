@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  host = await startLocalControllers(loadHostConfig(process.argv[2]!));
+  host = await startLocalControllers(loadHostConfig(process.argv[2]));
   console.log('local-controllers-started');
   if (requested) stop();
 }

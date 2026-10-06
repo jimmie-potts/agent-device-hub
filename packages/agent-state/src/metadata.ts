@@ -12,6 +12,7 @@ let pending=0;
 export type MetadataOptions={codexHome?:string};
 type Title=NonNullable<Envelope['title']>;
 function path(value:string):string|null {
+  // eslint-disable-next-line no-control-regex -- rejects control characters
   if(value.length>4096||/[\u0000-\u001f\u007f]/u.test(value))return null;
   if(process.platform==='linux'&&/^[A-Za-z]:[\\/]/u.test(value))return `/mnt/${value[0].toLowerCase()}/${value.slice(3).replaceAll('\\','/')}`;
   return isAbsolute(value)?value:null;

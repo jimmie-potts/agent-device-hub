@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,symlink,open} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,rm,symlink,open} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createPlan,assertApproval,installationStatus,protectedPath} from '../dist/install/plan.js';

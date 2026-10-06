@@ -1,6 +1,7 @@
 import { scanNumeric } from './reader-engine.js';
 import { SourceError, sourceLimits, type SourceLimits } from './reader-types.js';
 
+// eslint-disable-next-line @typescript-eslint/no-misused-promises -- the worker entry reports its own failures, and any rejection ends the worker process
 process.once('message', async raw => {
   try {
     const input = raw as { path: string; limits: SourceLimits };

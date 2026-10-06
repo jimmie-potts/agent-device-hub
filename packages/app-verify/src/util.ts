@@ -125,7 +125,7 @@ export function redact(text: string, roots: {runtime: string; proof: string}): s
 
 export function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
-  return text.split('\n')[0]!.slice(0, 500);
+  return text.split('\n')[0].slice(0, 500);
 }
 
 /** A process's start time in clock ticks since boot (`/proc/<pid>/stat` field 22), or undefined. */

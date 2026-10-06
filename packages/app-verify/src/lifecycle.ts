@@ -116,7 +116,7 @@ async function seed(run: Run, scenario: string, inputs: RunInputs): Promise<void
   await writeFile(run.stdoutLog, '', {mode: 0o600});
   await writeFile(run.stderrLog, '', {mode: 0o600});
   if (!has(run.plugin.scenarios, scenario)) throw new Failure('seed-failed', `unknown scenario ${scenario}`);
-  const definition = run.plugin.scenarios[scenario]!;
+  const definition = run.plugin.scenarios[scenario];
   try {
     await definition.seed({...run.paths(), scenario, inputs: surface(inputs).inputs});
   } catch (error) {
@@ -136,7 +136,7 @@ async function launch(run: Run, scenario: string, port: number, env: Env, inputs
   if (!Array.isArray(spec.argv) || spec.argv.length === 0) throw new Failure('launch-failed', 'launch returned no argv');
   const path = [dirname(process.execPath), ...(env.PATH ?? '/usr/local/bin:/usr/bin:/bin').split(delimiter)].join(delimiter);
   const cwd = spec.cwd ?? run.plugin.root;
-  const program = which(spec.argv[0]!, path, cwd);
+  const program = which(spec.argv[0], path, cwd);
   if (!program) throw new Failure('launch-failed', `program ${spec.argv[0]} was not found on PATH`);
   for (const [key, value] of Object.entries(spec.env ?? {})) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || /[\n\0]/.test(value)) throw new Failure('launch-failed', `invalid environment entry ${key}`);
@@ -209,7 +209,7 @@ async function ready(run: Run, scenario: string, inputs: RunInputs, expected?: {
             for (const [name, recordedUrl] of Object.entries(expected.endpoints)) {
               const was = Number(new URL(recordedUrl).port);
               if (!Object.hasOwn(endpoints, name)) throw new Failure('port-changed', `endpoint ${name} was not announced again, expected port ${was}`);
-              const now = Number(new URL(endpoints[name]!).port);
+              const now = Number(new URL(endpoints[name]).port);
               if (now !== was) throw new Failure('port-changed', `endpoint ${name} relaunched on port ${now}, expected ${was}`);
             }
           }
@@ -279,7 +279,7 @@ async function identity(run: Run): Promise<{mainPid: number; mainStartMonotonic:
 async function appCause(run: Run): Promise<string | undefined> {
   const name = run.plugin.readiness.failureCause;
   if (!name) return undefined;
-  let tail = '';
+  let tail: string;
   try {
     const handle = await open(run.stderrLog, 'r');
     try {
@@ -506,7 +506,7 @@ async function readReceipt(run: Run): Promise<Receipt> {
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   const receipt = await run.store.read();
   const checked = validateReceipt(receipt);
-  if (!checked.ok) throw new Failure('invalid-receipt', checked.errors[0]!);
+  if (!checked.ok) throw new Failure('invalid-receipt', checked.errors[0]);
   return receipt;
 }
 
@@ -797,7 +797,7 @@ export async function doctor(plugin: AppPlugin, io: Io, runId: string | undefine
     const units = await systemd.listUnits(`app-verify-${plugin.app}-`);
     for (const name of units ?? []) {
       const match = /^app-verify-(.+?)(?:-lease(?:-\d+)?)?\.(?:service|timer)$/.exec(name);
-      if (match && pattern.test(match[1]!)) ids.add(match[1]!);
+      if (match && pattern.test(match[1])) ids.add(match[1]);
     }
     for (const root of [found.runtime, found.proof]) {
       for (const entry of existsSync(root) ? await readdir(root) : []) if (pattern.test(entry)) ids.add(entry);
@@ -805,7 +805,7 @@ export async function doctor(plugin: AppPlugin, io: Io, runId: string | undefine
   }
   const runs = [];
   for (const id of [...ids].sort()) runs.push(await assess(new Run(plugin, found, id), io));
-  if (runId !== undefined && runs[0]!.receipt === null && runs[0]!.unit === null && runs[0]!.runtimeDir === 'missing' && runs[0]!.leaseTimer === null) {
+  if (runId !== undefined && runs[0].receipt === null && runs[0].unit === null && runs[0].runtimeDir === 'missing' && runs[0].leaseTimer === null) {
     throw new Failure('unknown-run', `nothing is known about ${runId}`);
   }
   return {code: EXIT.ok, value: {operation: 'doctor', app: plugin.app, runs}};
@@ -821,7 +821,7 @@ async function assess(run: Run, io: Io) {
       const checked = validateReceipt(receipt);
       if (checked.ok) receiptInfo = {state: receipt.state};
       else {
-        receiptInfo = {state: null, problem: checked.errors[0]!};
+        receiptInfo = {state: null, problem: checked.errors[0]};
         receipt = undefined;
       }
     } catch (error) {
@@ -854,12 +854,12 @@ async function assess(run: Run, io: Io) {
         state = 'stale';
         reasons.push('identity-mismatch');
       }
-      if (!timers.some(t => t.name === receipt!.owned.leaseTimer && t.active === 'active')) {
+      if (!timers.some(t => t.name === receipt.owned.leaseTimer && t.active === 'active')) {
         state = 'stale';
         reasons.push('lease-timer-missing');
       }
       // Another armed lease could stop the run before the recorded expiry.
-      if (timers.some(t => t.name !== receipt!.owned.leaseTimer)) {
+      if (timers.some(t => t.name !== receipt.owned.leaseTimer)) {
         state = 'stale';
         reasons.push('extra-lease-timer');
       }

@@ -189,7 +189,7 @@ export function fetchTransport({ token, fetchImpl = globalThis.fetch, timeoutMs 
       signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await response.text();
-    let json = null;
+    let json;
     try {
       json = text ? JSON.parse(text) : null;
     } catch {

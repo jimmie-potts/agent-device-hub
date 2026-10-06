@@ -10,6 +10,7 @@ const positive:Check=v=>count(v)&&(v as number)>0;
 const boolean:Check=v=>typeof v==='boolean';
 const hash:Check=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const uuid:Check=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
+// eslint-disable-next-line no-control-regex -- rejects control characters
 const name:Check=v=>typeof v==='string'&&v.length>=1&&v.length<=120&&v.trim()===v&&!/[\x00-\x1f\x7f]/.test(v);
 export type PlaybackPolicy={mode:'duration';durationMs:number}|{mode:'plays';totalPlays:number};
 export type Rendition={assetId:string;renditionId:string;name:string;format:'png'|'jpeg'|'gif';frameCount:number;durationMs:number|null;compatible:boolean};

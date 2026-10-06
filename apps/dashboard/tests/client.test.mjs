@@ -69,7 +69,7 @@ try {
  });
  test('controller reads and commands serialize per device without blocking another device',async()=>{
   const original=globalThis.fetch;const order=[];let release;
-  globalThis.fetch=async(url,options)=>{order.push(url);if(url.endsWith('/slow'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
+  globalThis.fetch=async(url)=>{order.push(url);if(url.endsWith('/slow'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
   try {const api=new Api('a'.repeat(43));const slow=api.request('/api/controllers/v1/one/slow');const write=api.request('/api/controllers/v1/one/commands',{});await api.request('/api/controllers/v1/two/snapshot');assert.deepEqual(order,['/api/controllers/v1/one/slow','/api/controllers/v1/two/snapshot']);release(Response.json({revision:1}));await slow;await write;assert.equal(order.at(-1),'/api/controllers/v1/one/commands');}finally{globalThis.fetch=original;}
  });
  test('general controls name the missing capability, scope or mode and preserve declared power',()=>{

@@ -18,7 +18,7 @@ test('fresh baseline and instrumented application processes preserve command out
   const parent=await mkdtemp(join(tmpdir(),'wp-')), local=join(parent,'.local');await mkdir(local);
   t.after(()=>rm(parent,{recursive:true,force:true}));
   let requests=0,rejectCollection=false;
-  const collector=createServer(async(req,res)=>{for await(const chunk of req){} requests++;res.statusCode=rejectCollection?500:200;res.setHeader('content-type','application/json');res.end('{}');});
+  const collector=createServer(async(req,res)=>{for await(const _chunk of req){/* drain the body */} requests++;res.statusCode=rejectCollection?500:200;res.setHeader('content-type','application/json');res.end('{}');});
   await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port, others=[43000,43002,43003,43004,43005].filter(p=>p!==port);
@@ -77,7 +77,7 @@ test('fresh baseline and instrumented application processes preserve command out
 test('fixed command fault sequence preserves baseline outcomes, counts each side effect and excludes private fixtures',async t=>{
   const parent=await mkdtemp(join(tmpdir(),'wf-')),local=join(parent,'.local');await mkdir(local);
   t.after(()=>rm(parent,{recursive:true,force:true}));
-  const collector=createServer(async(req,res)=>{for await(const chunk of req){}res.setHeader('content-type','application/json');res.end('{}');});
+  const collector=createServer(async(req,res)=>{for await(const _chunk of req){/* drain the body */}res.setHeader('content-type','application/json');res.end('{}');});
   await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'faults');
@@ -113,7 +113,7 @@ test('fixed command fault sequence preserves baseline outcomes, counts each side
 test('stalled collection saturates bounded queues without exceeding the full one-second shutdown flush budget',async t=>{
   const parent=await mkdtemp(join(tmpdir(),'ws-')),local=join(parent,'.local');await mkdir(local);
   t.after(()=>rm(parent,{recursive:true,force:true}));
-  const collector=createServer(async req=>{for await(const chunk of req){}});
+  const collector=createServer(async req=>{for await(const _chunk of req){/* drain the body */}});
   await new Promise(resolve=>collector.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>{collector.close(resolve);collector.closeAllConnections();}));
   const port=collector.address().port,other=[43000,43002,43003,43004,43005].filter(p=>p!==port),directory=join(local,'stalled');
