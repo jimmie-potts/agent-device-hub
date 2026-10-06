@@ -1,0 +1,45 @@
+# The workflow checks run for every change outside docs/work-guide/, Markdown-only changes included (#861).
+name: Workflow
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/work-guide/**']
+  pull_request:
+    paths-ignore: ['docs/work-guide/**']
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  workflow:
+    name: Workflow checks on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:workflow
+      - run: npm run test:workflow
+      - name: Validate guide record contract fixtures
+        run: node --test docs/work-guide/contracts/records.test.mjs
+      - name: Validate epic Guide contract fixtures
+        run: node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs
+      - run: npm run test:preflight
+      - name: Check isolated Linux hook qualification
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap apparmor-profiles
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
+          npm run test:performance:linux
+          npm run test:performance:standalone

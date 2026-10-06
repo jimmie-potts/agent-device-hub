@@ -87,7 +87,9 @@ automatic merge.
 Use the Depot evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
 Only changes entirely under docs/work-guide/ may use the intentional CI-filter
-exception in docs/sdlc.md; read its evidence requirements before merge or closure. Recheck
+exception in docs/sdlc.md; read its evidence requirements before merge or closure.
+Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
+Validate locally and push only review-ready heads, because CI minutes are limited. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
@@ -98,7 +100,7 @@ and accessibility validation, independent reviews and CI under the
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
 npm run check:workflow and npm run test:workflow from the assigned worktree root.
 Both checks must exit zero; report the actual specification inventory.
-For controller contract changes, use Node 24 and Python 3.12 or 3.14 and run
+For controller contract changes, use Node 24 and Python 3.14 and run
 npm run build, npm run typecheck, npm run test:contracts,
 npm run test:contracts:python and npm run test:package from the worktree root.
 All must exit zero. Read docs/controller-contract.md before changing wire values,

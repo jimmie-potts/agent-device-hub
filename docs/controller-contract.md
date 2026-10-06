@@ -230,7 +230,7 @@ Schema checking proves payload shape. Pure semantic fixtures prove the reference
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
 | TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 327 shared cases (190 schema, 137 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 327 cases and archive import |
+| Python reference | Python 3.14, Ubuntu | jsonschema 4.19.2, the same 327 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
 

@@ -87,28 +87,28 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.match(report.notice, new RegExp(HEAD));
 });
 
-test('the real Depot configuration enumerates the nine expected jobs and filters guide-only changes', () => {
-  const workflows = ['ci.yml', 'work-guide.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
+test('the real Depot configuration enumerates the six expected jobs and filters guide-only and Markdown-only changes', () => {
+  const workflows = ['ci.yml', 'work-guide.yml', 'workflow.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true });
   assert.deepEqual(source.jobs.map(item => item.name).sort(), [
     'Checks / App verification on ubuntu-latest',
-    'Checks / Contracts and state Python 3.12 on ubuntu-latest',
-    'Checks / Contracts and state Python 3.14 on ubuntu-latest',
+    'Checks / Build, lint and core tests on ubuntu-latest',
     'Checks / Dashboard browser and contracts on ubuntu-latest',
     'Checks / Firmware host tests and ARM build on ubuntu-latest',
-    'Checks / MCP on ubuntu-latest',
-    'Checks / Static analysis on ubuntu-latest',
-    'Checks / Workflow checks on ubuntu-latest',
     'Work guide / Work guide build and browser checks',
+    'Workflow / Workflow checks on ubuntu-latest',
   ]);
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true });
-  assert.equal(push.jobs.length, 9);
+  // Hub #861: a Markdown-only change skips Checks but still runs the workflow and Guide jobs.
+  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Work guide / Work guide build and browser checks', 'Workflow / Workflow checks on ubuntu-latest']);
+  const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true });
+  assert.equal(mixed.jobs.length, 6, 'one non-Markdown path keeps every job expected');
   const guide = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/outputs/agent-device-work-guides.html'], filesComplete: true });
   assert.deepEqual(guide.jobs, []);
-  assert.equal(guide.filtered.length, 2);
+  assert.equal(guide.filtered.length, 3);
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false });
-  assert.equal(incomplete.jobs.length, 9, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 6, 'an incomplete file list keeps every job expected');
   const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true });
   assert.deepEqual(branchPush.jobs, []);
 });
@@ -127,7 +127,7 @@ test('workflow shapes the preflight cannot evaluate are reported, not guessed', 
 // ---- CI evidence ----
 
 const ciCases = [
-  ['a missing expected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/MCP/)); }, /MCP on ubuntu-latest: missing/],
+  ['a missing expected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/Firmware/)); }, /Firmware host tests and ARM build on ubuntu-latest: missing/],
   ['a pending job', world => { Object.assign(world.checkRuns[HEAD][0], { status: 'in_progress', conclusion: null }); }, /pending/],
   ['a failed job', world => { world.checkRuns[HEAD][1].conclusion = 'failure'; }, /failure/],
   ['a skipped job', world => { world.checkRuns[HEAD][2].conclusion = 'skipped'; }, /skipped/],
@@ -186,15 +186,17 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
   const world = cleanWorld();
   const ci = world.workflows[HEAD]['ci.yml'];
   world.workflows[BASE] = { ...world.workflows[HEAD] };
-  world.workflows[HEAD] = { ...world.workflows[HEAD], 'ci.yml': ci.replace(/\n {2}mcp:\n[\s\S]*?(?=\n {2}dashboard:)/, '') };
+  world.workflows[HEAD] = { ...world.workflows[HEAD], 'ci.yml': ci.replace(/\n {2}firmware:\n[\s\S]*?(?=\n {2}dashboard:)/, '') };
   world.files.push({ filename: '.depot/workflows/ci.yml', status: 'modified' });
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/MCP/));
-  assertUnresolved(await preflight(world), 'ci-pr', /MCP on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/Firmware/));
+  assertUnresolved(await preflight(world), 'ci-pr', /Firmware host tests and ARM build on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
 
   const added = cleanWorld();
   added.workflows[BASE] = { ...added.workflows[HEAD] };
-  added.workflows[HEAD] = { ...added.workflows[HEAD], 'ci.yml': ci.replace('      - run: npm run test:workflow\n', '      - run: npm run test:workflow\n      - run: npm run test:preflight\n') };
-  added.files.push({ filename: '.depot/workflows/ci.yml', status: 'modified' });
+  const checks = added.workflows[HEAD]['workflow.yml'];
+  assert.ok(checks.includes('      - run: npm run test:workflow\n'));
+  added.workflows[HEAD] = { ...added.workflows[HEAD], 'workflow.yml': checks.replace('      - run: npm run test:workflow\n', '      - run: npm run test:workflow\n      - run: npm run test:preflight\n') };
+  added.files.push({ filename: '.depot/workflows/workflow.yml', status: 'modified' });
   const report = await preflight(added);
   assert.equal(gate(report, 'ci-pr').status, 'satisfied');
   assert.match(gate(report, 'ci-pr').reasons.join(), /no job expected at [0-9a-f]{12} is dropped/);
@@ -202,8 +204,8 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
 
 test('CI: filters that skip non-guide paths leave the change without CI, never under the guide exception', async t => {
   const world = cleanWorld();
-  for (const file of ['ci.yml', 'work-guide.yml']) {
-    world.workflows[HEAD][file] = world.workflows[HEAD][file].replaceAll("paths-ignore: ['docs/work-guide/**']", "paths-ignore: ['docs/**']");
+  for (const file of ['ci.yml', 'work-guide.yml', 'workflow.yml']) {
+    world.workflows[HEAD][file] = world.workflows[HEAD][file].replaceAll(/paths-ignore: \[[^\]]*\]/g, "paths-ignore: ['docs/**']");
   }
   world.files = [{ filename: 'docs/sdlc.md', status: 'modified' }];
   world.compares[`${BASE}...${HEAD}`].files = world.files;
@@ -212,6 +214,18 @@ test('CI: filters that skip non-guide paths leave the change without CI, never u
   const record = comment(`Guide evidence for ${HEAD}, HTML sha256 ${sha256(GUIDE_HTML)}.`);
   world.comments.push(record);
   assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /no configured job applies and no exception covers this change/);
+});
+
+test('CI: a Markdown-only change needs only the workflow and Guide jobs (Hub #861)', async () => {
+  const world = cleanWorld();
+  world.files = [{ filename: 'docs/development.md', status: 'modified' }, { filename: 'README.md', status: 'modified' }];
+  world.compares[`${BASE}...${HEAD}`].files = world.files;
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow|Work guide) \//.test(run.name));
+  assert.equal(world.checkRuns[HEAD].length, 2);
+  const ci = gate(await preflight(world), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  world.files.push({ filename: 'apps/hub/src/server.ts', status: 'modified' });
+  assertUnresolved(await preflight(world), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
 });
 
 // ---- Identity ----
@@ -714,7 +728,7 @@ test('an incomplete changed-file list keeps path-filtered jobs expected', async 
   world.pr.changed_files = world.files.length + 1;
   const report = await preflight(world);
   assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
-  assertUnresolved(report, 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
+  assertUnresolved(report, 'ci-pr', /Workflow \/ Workflow checks on ubuntu-latest: missing/);
   assert.match(gate(report, 'ci-pr').reasons.join(), /path filters are not applied and every job stays expected/);
 });
 
@@ -842,13 +856,31 @@ test('guide-only: missing runs alone never establish the exception', async () =>
   assertUnresolved(await preflight(guideOnlyWorld()), 'ci-pr', /guide-only exception needs the guide verification receipt/);
 });
 
+test('guide files with other Markdown skip Checks and need the guide evidence (Hub #861)', async t => {
+  const mixed = () => {
+    const world = guideOnlyWorld();
+    world.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
+    world.compares[`${BASE}...${HEAD}`].files = world.files;
+    world.checkRuns[HEAD] = cleanWorld().checkRuns[HEAD].filter(run => /^(Workflow|Work guide) \//.test(run.name));
+    world.checkSuites[HEAD] = cleanWorld().checkSuites[HEAD];
+    return world;
+  };
+  const missing = await preflight(mixed());
+  assertUnresolved(missing, 'ci-pr', /needs the guide verification receipt/);
+  assert.match(gate(missing, 'ci-pr').reasons.join(), /skip ci\.yml; docs\/sdlc\.md#markdown-only-ci-routing requires the guide evidence/);
+  const world = mixed();
+  const receipt = writeGuideEvidence(scratch(t));
+  const ci = gate(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] }), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+});
+
 test('guide-only: mixed changes, renames out of the folder and inconsistent runs cannot use it', async t => {
   const directory = scratch(t);
   const receipt = writeGuideEvidence(directory);
   const mixed = guideOnlyWorld();
-  mixed.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
-  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
-  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: docs\/sdlc\.md/);
+  mixed.files.push({ filename: 'scripts/check-workflow.cjs', status: 'modified' });
+  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
+  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: scripts\/check-workflow\.cjs/);
 
   const renamed = guideOnlyWorld();
   renamed.files.push({ filename: 'docs/build_guide.py', previous_filename: 'docs/work-guide/work/build_guide.py', status: 'renamed' });
@@ -1169,7 +1201,7 @@ test('the text report is concise, names full revisions and hides credentials', a
   const text = renderText(report);
   assert.match(text, new RegExp(`head ${HEAD}`));
   assert.match(text, /UNRESOLVED/);
-  assert.match(text, /Work guide \/ Work guide build and browser checks: missing/);
+  assert.match(text, /Workflow \/ Workflow checks on ubuntu-latest: missing/);
   assert.match(text, /not authorization/);
   assert.ok(text.split('\n').length < 60, text);
   assert.doesNotMatch(text, /Verdict: satisfied/, 'reviewer text stays in the linked report, not the preflight output');

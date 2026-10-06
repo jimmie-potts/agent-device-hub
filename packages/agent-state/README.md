@@ -244,7 +244,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 | Agent state 3.6.0 | Lifecycle envelopes 1.0, 1.1 and 1.2 from lifecycle package 1.2.0 |
 | Snapshots / durable exports | Closed snapshots 1.0, 1.1 and opt-in 1.2 and 1.3; durable 2.1 with 1.0/2.0 import; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
-| Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
+| Python snapshot consumer | Python 3.14 with `requirements-contracts.txt` |
 
 Python imports `agent_state.validate_snapshot` with the extracted package's
 `python/` on `PYTHONPATH`. Keep the adjacent `schemas/` directory intact. Both

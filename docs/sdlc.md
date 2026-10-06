@@ -281,6 +281,12 @@ permission to replace an owner.
    Obtain successful current sync/archive lookups; synchronize every affected spec
    and archive on the delivery branch before final review. Incomplete tasks,
    missing acceptance or failed lookups prevent archive.
+   Depot CI minutes are limited and every pushed revision runs every applicable
+   job, so validate locally first. Build once, then run the affected `:built`
+   checks before each push. Push the first review candidate and one head per fix
+   round, not intermediate commits. Prove that a check fails with a local
+   negative control. Push a failing probe only when the issue requires hosted
+   failure evidence.
 2. Commit the candidate and open a PR with Refs #<issue>. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
@@ -498,12 +504,13 @@ authorized updates; do not rewrite historical approval evidence. Publication and
 physical device operations retain their own authority requirements.
 
 Assess the guide-only CI exception separately against every changed path.
-Changes outside `docs/work-guide/`, including this policy, require normal CI.
+Changes outside `docs/work-guide/`, including this policy, require normal CI as
+the workflows route it; see [Markdown-only CI routing](#markdown-only-ci-routing).
 The heading retains its existing anchor for links from older records.
 
 ### Guide-only CI exception
 
-Both Depot workflows exclude changes entirely under `docs/work-guide/`. This includes
+All Depot workflows exclude changes entirely under `docs/work-guide/`. This includes
 its generators and tests. For a guide-only PR and its main merge, the coordinator
 may accept intentionally absent runs only after recording all of the following:
 
@@ -524,10 +531,11 @@ apply. Follow the separate [UI verification policy](#ui-approval-scope). Require
 that remain pending block merge; never bypass protections or emit dummy success
 checks. Record unavailable protection reads and inspect the PR's authoritative
 merge/check state.
-Any changed path outside the guide folder requires all normal CI, including a
+Any changed path outside the guide folder requires normal CI, including a
 rename out of the folder. If path scope or filter applicability is uncertain,
-retain the normal gate until resolved. Workflow/policy changes themselves receive
-full CI and cannot use their proposed exception to approve their own delivery.
+retain the normal gate until resolved. Changes to workflows, CI scripts or the
+delivery preflight receive full CI and cannot use their proposed exception to
+approve their own delivery.
 
 For issue closure and later authorized publication, the verified guide-only
 receipt replaces only the absent Hub CI evidence. All other acceptance and
@@ -537,6 +545,27 @@ The initial GitHub-generated README commit only creates the default branch.
 Subsequent bootstrap and product changes use PRs. Do not assume private-plan
 branch protection is available or absent; honor configured protections and retain
 these procedural gates.
+
+### Markdown-only CI routing
+
+The Checks workflow ignores `**/*.md`. A revision whose every changed path is a
+Markdown file runs only the Workflow and Work guide jobs. Those jobs must
+succeed, and the delivery preflight derives that expected set from the
+workflows. The Workflow job still runs OpenSpec validation, the issue-template
+and fixture tests and the delivery preflight fixtures. Markdown-only edits to
+this policy, `AGENTS.md` or `CLAUDE.md` take this route too, because no Checks
+job reads them. Reviews, guarded merge and merged-main CI apply as usual.
+
+Package scripts copy some Markdown files into published archives, such as
+contract documents and package READMEs. Text edits to those files stay
+Markdown-only. The Workflow job fails if any of them is missing, so delete or
+rename one only together with its package script. That change runs every job.
+
+The `docs/work-guide/` and `**/*.md` filters combine. A revision that changes
+only guide files and other Markdown therefore skips Checks too, and it needs
+the [guide-only evidence](#guide-only-ci-exception) for its guide files; the
+delivery preflight requires it. If a change's file list or filter behavior is
+uncertain, keep the full gate.
 
 ## Installation and evidence
 

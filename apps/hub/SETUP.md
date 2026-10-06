@@ -4,7 +4,7 @@ This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-
 
 ## Supported evidence
 
-Use Node 24 on Linux, including Linux inside WSL. The package includes `setup`, `setup-authority`, `setup-consumer`, `monitor-hook`, and the existing supervised migration APIs. No native Windows service installer is supplied. Python 3.12 and 3.14 remain the shared contract CI versions.
+Use Node 24 on Linux, including Linux inside WSL. The package includes `setup`, `setup-authority`, `setup-consumer`, `monitor-hook`, and the existing supervised migration APIs. No native Windows service installer is supplied. Python 3.14 remains the shared contract CI version.
 
 The [provider inventory](../../docs/provider-qualification.md) recorded Codex CLI 0.153.4 and Claude Code 2.1.236 artifacts on WSL on September 8, 2026. These are historical artifact observations, not installed-hook qualification. Codex Desktop's version and hook path remain unknown. No actual client version is newly qualified by this delivery. Synthetic Codex and Claude JSON inputs prove normalization, privacy and bounded failure behavior only. A future installation owner must record the actual version, execution path, trust review, event coverage and missing-signal behavior before setting `qualified: true`. Otherwise keep it false.
 

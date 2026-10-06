@@ -211,32 +211,41 @@ for (const name of ['feature', 'investigation']) {
   });
 }
 
-const expectedTriggers = {
+const guideTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
   pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
 };
+// Hub #861: the heavy Checks workflow also skips Markdown-only changes.
+const expectedTriggers = {
+  push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
+  pull_request: { 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
+};
 
-test('both workflows exclude only guide-only changes', () => {
+test('every workflow skips guide-only changes and Checks also skips Markdown-only changes', () => {
+  // [name, paths, skipped by the guide-only filter, skipped by the Checks filter]
   const cases = [
-    ['guide addition', ['docs/work-guide/new.md'], true],
-    ['generator and test edits', ['docs/work-guide/work/build_guide.py', 'docs/work-guide/work/test_maintenance.py'], true],
-    ['output deletion', ['docs/work-guide/outputs/retired.html'], true],
-    ['source', ['docs/work-guide/work/backlogs/snapshot.json', 'packages/mcp/src/server.ts'], false],
-    ['root documentation', ['docs/work-guide/work/backlogs/snapshot.json', 'docs/development.md'], false],
-    ['dependency', ['docs/work-guide/work/backlogs/snapshot.json', 'package-lock.json'], false],
-    ['workflow', ['docs/work-guide/README.md', '.depot/workflows/ci.yml'], false],
-    ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false],
-    ['similarly named folder', ['docs/work-guides/new.md'], false],
+    ['guide addition', ['docs/work-guide/new.md'], true, true],
+    ['generator and test edits', ['docs/work-guide/work/build_guide.py', 'docs/work-guide/work/test_maintenance.py'], true, true],
+    ['output deletion', ['docs/work-guide/outputs/retired.html'], true, true],
+    ['source', ['docs/work-guide/work/backlogs/snapshot.json', 'packages/mcp/src/server.ts'], false, false],
+    ['root documentation', ['docs/work-guide/work/backlogs/snapshot.json', 'docs/development.md'], false, true],
+    ['dependency', ['docs/work-guide/work/backlogs/snapshot.json', 'package-lock.json'], false, false],
+    ['workflow', ['docs/work-guide/README.md', '.depot/workflows/ci.yml'], false, false],
+    ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false, false],
+    ['similarly named folder', ['docs/work-guides/new.md'], false, true],
+    ['Markdown only', ['README.md', 'AGENTS.md', 'docs/sdlc.md', 'apps/hub/README.md', 'openspec/specs/unified-dashboard/spec.md'], false, true],
+    ['Markdown with source', ['docs/development.md', 'apps/hub/src/server.ts'], false, false],
+    ['Markdown-like name', ['docs/notes.md.txt'], false, false],
   ];
-  for (const file of ['ci.yml', 'work-guide.yml']) {
+  for (const [file, triggers, checks] of [['ci.yml', expectedTriggers, true], ['workflow.yml', guideTriggers, false], ['work-guide.yml', guideTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'));
-    assert.deepEqual(workflow.on, expectedTriggers, file);
+    assert.deepEqual(workflow.on, triggers, file);
     for (const event of ['push', 'pull_request']) {
       const patterns = workflow.on[event]['paths-ignore'];
       // Exercise the configured simple glob against bounded path sets, not
       // Depot's hosted event scheduler or diff selection.
-      for (const [name, paths, ignored] of cases) {
-        assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), ignored, `${file} ${event}: ${name}`);
+      for (const [name, paths, guideSkip, checksSkip] of cases) {
+        assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), checks ? checksSkip : guideSkip, `${file} ${event}: ${name}`);
       }
     }
     assert.deepEqual(workflow.permissions, { contents: 'read' });
@@ -247,13 +256,18 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('Depot CI runs nine Linux jobs and retains every suite', () => {
-  const ci = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/ci.yml'), 'utf8'));
-  const guide = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
+test('Depot CI runs six Linux jobs and retains every suite once', () => {
+  const read = file => YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'));
+  const checks = read('ci.yml'), guide = read('work-guide.yml'), workflowChecks = read('workflow.yml');
+  assert.deepEqual(fs.readdirSync(path.join(root, '.depot/workflows')).sort(), ['ci.yml', 'work-guide.yml', 'workflow.yml']);
+  // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
+  assert.equal(workflowChecks.name, 'Workflow');
+  assert.deepEqual(Object.keys(workflowChecks.jobs), ['workflow']);
+  const ci = { ...checks, jobs: { ...checks.jobs, ...workflowChecks.jobs } };
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 9, 'normal CI must run exactly nine jobs');
-  assert.deepEqual(ci.on, expectedTriggers);
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 6, 'normal CI must run exactly six jobs');
+  assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
     'cancel-in-progress': true,
@@ -262,24 +276,24 @@ test('Depot CI runs nine Linux jobs and retains every suite', () => {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'node --test docs/work-guide/contracts/records.test.mjs',
       'node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs', 'npm run test:preflight'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios'],
-    dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+      'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built'],
+    dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
-    lint: ['npm ci', 'npm run build', 'npm run lint:js'],
     'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
-    contracts: 'Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}',
+    core: 'Build, lint and core tests on ${{ matrix.os }}',
     dashboard: 'Dashboard browser and contracts on ${{ matrix.os }}',
     firmware: 'Firmware host tests and ARM build on ${{ matrix.os }}',
-    mcp: 'MCP on ${{ matrix.os }}',
     'app-verify': 'App verification on ${{ matrix.os }}',
-    lint: 'Static analysis on ${{ matrix.os }}',
   };
-  assert.deepEqual(ci.permissions, { contents: 'read' });
+  assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
+  // Each suite runs in exactly one job.
+  const runs = Object.values(suites).flat().filter(run => run.startsWith('npm run test:'));
+  assert.deepEqual(runs, [...new Set(runs)]);
   let builds = 0;
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
@@ -288,21 +302,20 @@ test('Depot CI runs nine Linux jobs and retains every suite', () => {
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
       { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24', cache: 'npm' } },
     ];
-    if (id === 'contracts') expectedSetup.push({
+    // One Python version: the installed Nanoleaf runtime's (Hub #861).
+    if (id === 'core') expectedSetup.push({
       uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-      with: { 'python-version': '${{ matrix.python }}', cache: 'pip', 'cache-dependency-path': 'requirements-contracts.txt' },
+      with: { 'python-version': '3.14', cache: 'pip', 'cache-dependency-path': 'requirements-contracts.txt' },
     });
     assert.deepEqual(setup, expectedSetup);
     builds += Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1)
       * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], '${{ matrix.os }}');
-    assert.equal(job['timeout-minutes'], 10);
+    // The core job runs every Node and Python suite once; it takes about 8.5 minutes.
+    assert.equal(job['timeout-minutes'], id === 'core' ? 15 : 10);
     assert.equal(job.strategy['fail-fast'], false);
-    assert.deepEqual(job.strategy.matrix, {
-      os: ['ubuntu-latest'],
-      ...(id === 'contracts' ? { python: ['3.12', '3.14'] } : {}),
-    });
+    assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
     assert.equal(job.concurrency, undefined, 'matrix siblings must not cancel each other');
     const linuxSteps = job.steps.filter(step => step.name === 'Check isolated Linux hook qualification');
@@ -318,7 +331,33 @@ test('Depot CI runs nine Linux jobs and retains every suite', () => {
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 6);
+  assert.equal(builds, 3);
+});
+
+// Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.
+const packagedMarkdown = [
+  'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/maintenance/README.md', 'apps/wispr-collector/README.md',
+  'docs/agent-lifecycle-contract.md', 'docs/app-verification.md', 'docs/controller-contract.md',
+  'docs/decisions/0009-app-verification-runs.md', 'docs/install-contract.md', 'docs/observability-contract.md',
+  'docs/provider-qualification.md', 'packages/agent-state/README.md', 'packages/app-verify/README.md',
+  'packages/mcp/README.md', 'packages/observability/README.md', 'packages/wispr-contracts/README.md',
+];
+const packagedNames = new Set(['README.md', 'SETUP.md', 'CONTRACT.md', 'install-contract.md', 'provider-qualification.md',
+  'app-verification.md', 'adr-0009-app-verification-runs.md']);
+
+test('Markdown that package checks copy exists, and the hash-checked vendor folders hold none', () => {
+  for (const file of packagedMarkdown) assert.ok(fs.existsSync(path.join(root, file)), `${file} is copied by a package script; delete or rename it only with that script`);
+  for (const script of fs.readdirSync(path.join(root, 'scripts')).filter(file => /^package-.*\.mjs$/.test(file))) {
+    const text = fs.readFileSync(path.join(root, 'scripts', script), 'utf8');
+    for (const [, name] of text.matchAll(/['"`]([^'"`\s]*\.md)['"`]/g)) {
+      assert.ok(packagedMarkdown.includes(name) || packagedNames.has(name), `${script} copies ${name}; add it to packagedMarkdown`);
+    }
+  }
+  // The performance admission checks reject any entry in a vendored source folder outside its hash list.
+  for (const folder of ['nanoleaf', 'nanoleaf-linux']) {
+    const entries = fs.readdirSync(path.join(root, 'scripts/performance/vendor', folder), { recursive: true }).map(String);
+    assert.deepEqual(entries.filter(file => file.endsWith('.md')), [], `scripts/performance/vendor/${folder}`);
+  }
 });
 
 const builtPayloads = {
