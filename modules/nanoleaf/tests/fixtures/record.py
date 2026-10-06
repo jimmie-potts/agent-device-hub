@@ -728,6 +728,8 @@ def parsing_values():
         'entry without shapeType': [zone1, zone2, {'panelId': 3, 'x': 0, 'y': 0, 'o': 0}],
         'non-object entry': [zone1, zone2, 'panel'],
         'zone without o': [without_o(zone1), zone2],
+        'odd count, one zone without o': [zone1, zone2, without_o(dict(zone2, panelId=3, y=120))],
+        'string panel IDs': [dict(zone1, panelId='a'), dict(zone2, panelId='b')],
     }
     loading = {
         'saved Lines, positions without o': ([[1, 2]], [without_o(zone1), without_o(zone2)]),
@@ -735,6 +737,7 @@ def parsing_values():
         'discovered Lines, connector after a zone with its panel ID': (None, [zone1, connector1, zone2]),
         'saved Lines, non-object entry': ([[1, 2]], [zone1, zone2, 'panel']),
         'saved Lines, entry without panelId': ([[1, 2]], [zone1, zone2, {'x': 0, 'y': 0, 'shapeType': 19}]),
+        'discovered Lines, string panel IDs': (None, [dict(zone1, panelId='a'), dict(zone2, panelId='b')]),
     }
     result = {'pairLines': [], 'loadConfig': []}
     for name, points in pairing.items():

@@ -1509,6 +1509,12 @@
     "name":"saved Lines, entry without panelId",
     "outcome":{"error":"KeyError","message":"'panelId'"},
     "savedGroups":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":"a","shapeType":18,"x":0,"y":0},{"o":0,"panelId":"b","shapeType":18,"x":0,"y":60}]}},
+    "name":"discovered Lines, string panel IDs",
+    "outcome":{"error":"ValueError","message":"Invalid physical Line mapping."},
+    "savedGroups":null
    }
   ],
   "pairLines":[
@@ -1541,6 +1547,16 @@
     "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
     "name":"zone without o",
     "outcome":{"error":"KeyError","message":"'o'"}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60},{"panelId":3,"shapeType":18,"x":0,"y":120}]}},
+    "name":"odd count, one zone without o",
+    "outcome":{"error":"ValueError","message":"Expected two light zones per Line."}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":"a","shapeType":18,"x":0,"y":0},{"o":0,"panelId":"b","shapeType":18,"x":0,"y":60}]}},
+    "name":"string panel IDs",
+    "outcome":{"result":[["a","b"]]}
    }
   ]
  }

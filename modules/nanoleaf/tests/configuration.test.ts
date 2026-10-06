@@ -146,14 +146,31 @@ const PARSING = (fixtureJson('recorded/rendering.json') as {parsing: Parsing}).p
 const refusal = (outcome: Outcome): {name: string; message?: string} =>
   (outcome.error === 'ValueError' && outcome.message !== undefined ? {name: 'ValueError', message: outcome.message} : {name: 'ValueError'});
 
+/**
+ * Recorded cases where the port differs from Python on purpose (PORTING.md, Known differences): pairing refuses a panel ID
+ * that is not a number, which Python paired and load_config then refused with another message.
+ */
+const DIFFERENT: Readonly<Record<string, Outcome>> = {
+  'string panel IDs': {error: 'ValueError', message: 'A reported Lines position has a non-numeric panelId.'},
+  'discovered Lines, string panel IDs': {error: 'ValueError', message: 'A reported Lines position has a non-numeric panelId.'},
+};
+
 suite('Lines replies parsed as Python parsed them', () => {
   test('pairing reads every reported entry in order, duplicates and connectors included', () => {
     for (const {name, layout, outcome} of PARSING.pairLines) {
-      if (outcome.error === undefined) assert.deepEqual(pairLines(structuredClone(layout)), outcome.result, name);
-      else assert.throws(() => pairLines(structuredClone(layout)), refusal(outcome), name);
+      const expected = DIFFERENT[name] ?? outcome;
+      if (expected.error === undefined) assert.deepEqual(pairLines(structuredClone(layout)), expected.result, name);
+      else assert.throws(() => pairLines(structuredClone(layout)), refusal(expected), name);
     }
     assert.deepEqual(PARSING.pairLines.map(entry => entry.outcome.error ?? 'paired'),
-      ['ValueError', 'paired', 'paired', 'KeyError', 'TypeError', 'KeyError']);
+      ['ValueError', 'paired', 'paired', 'KeyError', 'TypeError', 'KeyError', 'ValueError', 'paired']);
+    // Python counted the zones before reading any of their fields.
+    assert.deepEqual(PARSING.pairLines.find(entry => entry.name === 'odd count, one zone without o')?.outcome,
+      {error: 'ValueError', message: 'Expected two light zones per Line.'});
+    // Python paired string IDs; load_config then refused them as an invalid Line mapping.
+    assert.deepEqual(PARSING.pairLines.find(entry => entry.name === 'string panel IDs')?.outcome, {result: [['a', 'b']]});
+    assert.deepEqual(PARSING.loadConfig.find(entry => entry.name === 'discovered Lines, string panel IDs')?.outcome,
+      {error: 'ValueError', message: 'Invalid physical Line mapping.'});
   });
 
   test('Line positions read only x and y, from the last entry with each panel ID', async context => {
@@ -166,8 +183,9 @@ suite('Lines replies parsed as Python parsed them', () => {
         return {line_groups: config.line_groups, line_positions: config.line_positions,
           layout: JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8')) as unknown};
       };
-      if (outcome.error === undefined) assert.deepEqual(await load(), outcome.result, name);
-      else await assert.rejects(load(), refusal(outcome), name);
+      const expected = DIFFERENT[name] ?? outcome;
+      if (expected.error === undefined) assert.deepEqual(await load(), expected.result, name);
+      else await assert.rejects(load(), refusal(expected), name);
     }
   });
 });
