@@ -556,6 +556,18 @@ suite('control checks the port adds', () => {
     assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
   });
 
+  test('a hold set during a control\'s write stops the Work display write', async context => {
+    // During the brightness write a second control is admitted and then expires, as an outside expiry may do (#844's
+    // host, while a worker is stopped), and holds the device. The pass's Work display write is refused at the hold.
+    const {run} = await steps(context, [['feed', 'prompt', 'a'], ['command', 'b', {kind: 'brightness.set', percent: 60}],
+      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['command', 'b2', {kind: 'brightness.set', percent: 30}]}],
+      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['expireAll']}], ['run', 1004]]);
+    assert.deepEqual(run.hookResults, [[{result: 'accepted'}], [{result: null}]]);
+    assert.deepEqual(puts(run.device.calls), [['/state', {brightness: {value: 60, duration: 0}}]]);
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'succeeded', 'transmitted'));
+    assert.deepEqual(run.outcomes().get('b2'), outcome('b2', 'failed', 'none', 'expired'));
+  });
+
   test('a held worker ends once shared input is no longer selected', async context => {
     // A new configuration pauses shared input; a worker waiting on a hold then ends, as Python's did.
     const {results: values} = await steps(context, [['command', 'q', {kind: 'mode.set', mode: 'Quiet'}], ['attempting', 'q'],
