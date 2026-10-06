@@ -89,7 +89,7 @@ and conditional job/log inspection; diagnostic access is in docs/development.md.
 Only changes entirely under docs/work-guide/ may use the intentional CI-filter
 exception in docs/sdlc.md; read its evidence requirements before merge or closure.
 Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
-Validate locally, review the local commit, and push only reviewed heads, because CI minutes are limited. Recheck
+Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.

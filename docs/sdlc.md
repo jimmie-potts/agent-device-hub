@@ -281,20 +281,17 @@ permission to replace an owner.
    Obtain successful current sync/archive lookups; synchronize every affected spec
    and archive on the delivery branch before final review. Incomplete tasks,
    missing acceptance or failed lookups prevent archive.
-   CI minutes are limited and every pushed revision runs every applicable
-   job, so validate locally first. Build once, then run the affected `:built`
-   checks before each push. Push only reviewed heads: the first after step 3's
-   reviews, then one per later fix round after its re-review. Prove that a
-   check fails with a local negative control. The one exception to pushing
-   only reviewed heads is a failing probe, pushed only when the issue requires
-   hosted failure evidence. Before review, check every
-   acceptance item against its evidence, search the docs for each fact the
-   change alters, and state limits and remaining uncertainty in the review brief
+   Validate locally before every push: build once, then run the affected
+   `:built` checks. Prove that a check fails with a local negative control.
+   Before review, check every acceptance item against its evidence. Search
+   `README.md`, `docs/architecture.md`, `AGENTS.md`, the ADRs under
+   `docs/decisions/` and the affected package or module READMEs for each fact
+   the change alters. State limits and remaining uncertainty in the review brief
    and the PR body.
-2. Commit the candidate and run step 3's reviews, including an Acceptance review
-   when one applies, on that local commit before the first push, so a review fix
-   round costs no CI run. Push the reviewed head and open a PR with
-   Refs #<issue>. Record base, head,
+2. Commit the candidate, push it once its local checks pass, and open a PR with
+   Refs #<issue>. Start step 3's reviews on that head while hosted CI runs:
+   hosted runners find problems local checks cannot, such as #873, #875 and
+   #877. Push one head per fix round, not intermediate commits. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
    keyword (or variant) before `#<n>` anywhere in the body, including inside an
@@ -305,11 +302,19 @@ permission to replace an owner.
    to clear a reference (the read can lag a few minutes), and read back the
    issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. The comparison's head may be a local
-   commit. A fix that follows CI feedback is re-reviewed before its push. When the change has observable
+   fixed comparison through code-review. When the change has observable
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
+   A later delta goes back to both reviewers, unless it is a pure rebase (the
+   range-diff shows every commit identical) or changes only prose or comments;
+   then one of them confirms it. Any change to code, schemas, tests,
+   configuration or behavior goes back to both. Reviewer briefs say that
+   reviewers make no GitHub writes, including reruns, merges and comments, and
+   that they use a short TMPDIR outside every checkout.
+   Merge each story as soon as its gates pass, and start new work from merged
+   main rather than from an unmerged branch. Stories that change root manifests,
+   the lockfile or CI workflows land one at a time.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
