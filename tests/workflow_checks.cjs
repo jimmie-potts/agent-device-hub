@@ -317,8 +317,9 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], '${{ matrix.os }}');
     // The core job runs every Node and Python suite once; it takes about 8.5 minutes. The dashboard job took
-    // 523 s on GitHub-hosted runners (#870).
-    assert.equal(job['timeout-minutes'], ['core', 'dashboard'].includes(id) ? 15 : 10);
+    // 523 s on GitHub-hosted runners (#870). App verification took 7-9.6 minutes and once timed out at 10, because
+    // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners.
+    assert.equal(job['timeout-minutes'], ['core', 'dashboard', 'app-verify'].includes(id) ? 15 : 10);
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
