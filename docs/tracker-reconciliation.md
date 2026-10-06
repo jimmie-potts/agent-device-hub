@@ -97,7 +97,10 @@ Change only affected sections, checkboxes, labels and native relationships.
 Preserve unrelated prose and edits. Apply the SDLC's existing label rules.
 Read back each result and verify both the intended change and preservation of
 unrelated data. If a write returns an ambiguous result, inspect authoritative
-state before retrying. Resume only the missing authorized change.
+state before retrying. Resume only the missing authorized change. Keep stderr
+visible on every tracker write, including the delivered issue's closure; an
+exit status or silence is not verification. A close of #877 failed unseen while
+its stderr was discarded.
 
 Unchanged inputs and an already correct record produce a no-op: do not rewrite
 text, refresh dates or fingerprints, or add duplicate comments. Preserve enough

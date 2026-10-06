@@ -44,10 +44,13 @@ reports the assessment instead of editing the issue.
 
 A story split from an epic or another story is drafted too, so it carries its
 assessment when filed. The #830 split stories (#879-#883) had none, and the
-decisions they needed surfaced at PR time. When parallel stories share an
-interface or a file, the split names the interface and the one story that owns
-each shared file, such as `packages/sdk`, before work starts. Another story
-asks that owner for a change instead of editing the file.
+decisions they needed surfaced at PR time. When parallel stories change the
+same source module or interface, such as `packages/sdk/src`, each split story's
+issue names the interface and the one story that owns the module before work
+starts; another story asks that owner for a change instead of editing it.
+Shared documentation, specs, root manifests, the lockfile and CI stay under the
+coordinator rule in [Scope and implementation](#scope-and-implementation), and
+each story still adds its own checks and spec deltas.
 
 At every pickup, read the current issue and dependencies, current main, the
 accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
@@ -257,10 +260,6 @@ authority; narrower user scope prevails. The checkpoint grants no additional
 installation, device, publication, Project configuration or cross-repository
 policy-write authority.
 
-Keep stderr visible on every tracker write and read back its effect; an exit
-status or silence is not verification. A close of #877 failed unseen while its
-stderr was discarded.
-
 At authorized planning, implementation, review and closeout checkpoints, follow
 [Project maintenance](project-maintenance.md) for selected Project items. Run the
 native checkpoint before projecting its resulting state. Project synchronization
@@ -320,9 +319,10 @@ permission to replace an owner.
    fixed comparison through code-review. When the change has observable
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings. Also fix a P3 that affects
-   correctness, test coverage or a later story, such as a mutant the suite
-   lets survive; record the disposition of each remaining P3, which touches
-   only wording. Reassess changed candidates. Self-review cannot authorize merge.
+   correctness, test coverage or a named later story, such as a mutant the
+   suite lets survive; reviewers mark which P3s these are. Record a disposition
+   for every other P3. Reassess changed candidates. Self-review cannot
+   authorize merge.
    Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
    `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
    owns the issue, the OpenSpec specs and the contract documents. A later delta
@@ -349,11 +349,17 @@ permission to replace an owner.
    [Acceptance review](#acceptance-review) rules are unchanged.
    Reviewer briefs say that reviewers make no GitHub writes, including reruns,
    merges and comments. Each brief names a short TMPDIR outside every checkout
-   that no other reviewer uses: two reviewers that chose the same name deleted
-   each other's copies. Reviewers read a shared worktree but never build or test
-   in it, because a build rewrites `dist/` under the coordinator and the other
-   reviewers; they build and test in a private `git archive` copy under their
-   TMPDIR. An Acceptance reviewer keeps its own write limits.
+   that no other agent uses, including the coordinator, such as
+   `~/.cache/agent-device-hub/r<PR>-<axis>-<suffix>`: two reviewers that chose
+   the same name deleted each other's copies. The reviewer removes it at the
+   end. Standards and Specification reviewers read a shared worktree but never
+   build or test in it, because a build rewrites `dist/` under the coordinator
+   and the other reviewers. They build and test in a `git clone` of the
+   repository under their TMPDIR, checked out detached at the head; a
+   `git archive` extract lacks the Git metadata that the Hub and observability
+   package suites read. The coordinator leaves a worktree under review
+   unchanged until that round's reviews return. An Acceptance reviewer follows
+   [Acceptance review](#acceptance-review).
    Merge each story as soon as its gates pass, and start new work from merged
    main rather than from an unmerged branch.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
