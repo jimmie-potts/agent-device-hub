@@ -136,7 +136,8 @@ export class InProcessBus {
         const scope = {source, pattern: `sync ${families.join(',')}`};
         return startSync({
           now: this.#now,
-          subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(member, pattern, deliver, subscribeOptions)),
+          // Like the participant's own calls, a copy's subscriptions are refused once the participant has closed.
+          subscribe: (pattern, deliver, subscribeOptions) => open(() => this.#subscribe(member, pattern, deliver, subscribeOptions)),
           request: outgoing => this.#sync.request(source, outgoing),
           report: error => { this.#report(error, scope); },
           restarted: () => {

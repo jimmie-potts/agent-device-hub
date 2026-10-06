@@ -54,7 +54,7 @@ const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // setTimeout's longest delay; a longer one would fire at once.
 const MAX_DELAY_MS = 2_147_483_647;
-/** One subscription's dropped deliveries are logged at once, then at most once more per window, with a count. */
+/** One subscription's first dropped delivery is logged at once, then the later ones once per window while they go on. */
 export const DROP_WINDOW_MS = 60_000;
 // The module whose code runs in the current async flow, so that an error escaping to the process names its module.
 const running = new AsyncLocalStorage<Flow>();
@@ -151,7 +151,11 @@ export class ModuleHost {
       if (slot.state === 'starting' || slot.state === 'running') slot.state = 'stopping';
       return this.#teardown(slot);
     }));
-    for (const [key, drops] of [...this.#drops]) this.#closeWindow(key, drops);
+    for (const drops of this.#drops.values()) {
+      drops.cancel();
+      this.#logDrops(drops);
+    }
+    this.#drops.clear();
   }
 
   health(): ModuleHealth[] {
@@ -268,14 +272,29 @@ export class ModuleHost {
     }
     this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': 1});
     const drops: Drops = {scope, count: 0, cancel: () => {}};
-    drops.cancel = this.#options.scheduler.after(DROP_WINDOW_MS, () => { this.#closeWindow(key, drops); });
     this.#drops.set(key, drops);
+    this.#openWindow(key, drops);
   }
 
-  /** Ends one subscription's window, logging the drops it counted after the first. */
-  #closeWindow(key: string, {scope, count, cancel}: Drops): void {
-    cancel();
-    this.#drops.delete(key);
+  /**
+   * At the window's end, the drops it counted are logged and the next window opens, so drops that go on are logged
+   * once a minute. A quiet window ends the subscription's windows: its next drop is logged at once again.
+   */
+  #openWindow(key: string, drops: Drops): void {
+    drops.cancel = this.#options.scheduler.after(DROP_WINDOW_MS, () => {
+      if (drops.count === 0) {
+        this.#drops.delete(key);
+        return;
+      }
+      this.#logDrops(drops);
+      this.#openWindow(key, drops);
+    });
+  }
+
+  /** Logs the drops counted since the last record, at the runtime's stop or a window's end. */
+  #logDrops(drops: Drops): void {
+    const {scope, count} = drops;
+    drops.count = 0;
     if (count > 0) this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': count});
   }
 

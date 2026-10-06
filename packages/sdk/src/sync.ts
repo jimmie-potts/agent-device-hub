@@ -220,11 +220,19 @@ class Copy<T extends object> implements SyncedCopy<T> {
     // Subscribe before asking, so that nothing published after the snapshot is missed.
     try {
       for (const family of this.#families) {
-        this.#subscriptions.push(await this.#transport.subscribe(`bunny.state.${family}.*`, message => { this.#arrive(message); }, {
+        const subscription = await this.#transport.subscribe(`bunny.state.${family}.*`, message => { this.#arrive(message); }, {
           onOverflow: () => { this.#overflow(); },
-        }));
+        });
+        // A close while this subscription was being made has settled the sync and closed the ones before it.
+        if (this.#closed()) {
+          await subscription.close();
+          return result;
+        }
+        this.#subscriptions.push(subscription);
       }
     } catch (error) {
+      // A closed copy's transport may refuse; the close has already settled the sync.
+      if (this.#closed()) return result;
       await this.#stop();
       throw error;
     }
@@ -232,6 +240,11 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#wanted = true;
     this.#wake();
     return result;
+  }
+
+  /** Whether the copy has closed; a method, so that a check after an `await` is not narrowed away. */
+  #closed(): boolean {
+    return this.#phase === 'closed';
   }
 
   get(entity: EntityRef): Message<T> | undefined {

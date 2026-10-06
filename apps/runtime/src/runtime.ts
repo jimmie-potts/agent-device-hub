@@ -6,7 +6,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MODULE_API_VERSION, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {LogWriter, errorFields, stderrSink, type LogLevel, type LogSink} from './log.js';
-import {prepareStateDirectory} from './state.js';
+import {RuntimeError, prepareStateDirectory} from './state.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
 export type {ModuleHealth, ModuleState} from './host.js';
@@ -73,7 +73,9 @@ function serve(port: number, health: () => RuntimeHealth): Promise<Server> {
   let hosts: readonly string[] = [];
   const server = createServer((request, response) => {
     const site = request.headers['sec-fetch-site'];
-    const local = hosts.includes(request.headers.host ?? '') && request.headers.origin === undefined && (site === undefined || site === 'none');
+    // A host name is not case-sensitive; the port must match exactly.
+    const host = (request.headers.host ?? '').toLowerCase();
+    const local = hosts.includes(host) && request.headers.origin === undefined && (site === undefined || site === 'none');
     const found = request.method === 'GET' && request.url === HEALTH_PATH;
     const [status, body] = !local ? [403, errorBody('forbidden', {detail: 'health answers only local requests that name this listener'})]
       : found ? [200, health()] : [404, errorBody('not-found', {detail: 'no such route'})];
@@ -100,7 +102,7 @@ function close(server: Server): Promise<void> {
 /** Prepares the state directory, serves health, then starts the modules and resolves when each start has settled. */
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
-  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RangeError('port must be an integer from 0 to 65535');
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   const logs = new LogWriter(options.log ?? stderrSink, options.logLevel ?? 'info', clock);

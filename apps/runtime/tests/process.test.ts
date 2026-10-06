@@ -155,14 +155,14 @@ it('the entry point imports only the launcher, so its signal handlers come befor
 });
 
 it('a signal while the runtime still loads stops it with exit 0, before it creates any state', async context => {
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  for (const [mode, signal] of [['wait', 'SIGTERM'], ['wait', 'SIGINT'], ['block', 'SIGTERM']] as const) {
     const dir = join(await stateDir(context), 'state');
-    const runtime = spawnRuntime(context, SLOW_LOAD, ['--port', '0', '--state-dir', dir]);
+    const runtime = spawnRuntime(context, SLOW_LOAD, [mode, '--port', '0', '--state-dir', dir]);
     await waitFor(() => recorded(runtime, 'fixture.loading'), 5000, 'the load to begin');
     runtime.child.kill(signal);
-    assert.deepEqual(await runtime.exited, {code: 0, signal: null}, signal);
-    await assert.rejects(access(dir), `${signal}: no state was created`);
-    assert.equal(runtime.stdout(), '', `${signal}: no ready line`);
+    assert.deepEqual(await runtime.exited, {code: 0, signal: null}, `${mode} ${signal}`);
+    await assert.rejects(access(dir), `${mode} ${signal}: no state was created`);
+    assert.equal(runtime.stdout(), '', `${mode} ${signal}: no ready line`);
   }
 });
 
