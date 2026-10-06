@@ -204,3 +204,17 @@ it('the work runs synchronously in the outbox\'s own transaction', async context
   await flush();
   assert.deepEqual(core.raw, []);
 });
+
+it('a run forgets only what it published itself, never what an earlier run left unconfirmed', async context => {
+  const {core, start} = await world(context);
+  const first = await start();
+  const [earlier] = await first.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 1))]);
+  // The next run never republishes, and its own message is confirmed by its retention time.
+  const second = await start();
+  await second.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 2))]);
+  second.clock.advance(RETAIN_MS);
+  const third = await start();
+  await third.outbox.republish();
+  await flush();
+  assert.deepEqual(core.raw.slice(2), [earlier], 'only the earlier run\'s message goes out again');
+});
