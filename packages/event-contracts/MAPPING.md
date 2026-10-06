@@ -13,7 +13,7 @@ A field lands in one of these places:
 - a payload the profile owns (reply, outcome, removal, sync);
 - a value consumers derive;
 - the owner's own store, where it is never published;
-- nowhere. A field with **no 2.0 home** has a proposed disposition, and the coordinator decides it.
+- nowhere. A field with **no 2.0 home** has a disposition the coordinator decided on 2026-10-06.
 
 `tests/mapping.test.mjs` checks that every field path of the 1.x schemas appears
 in the first column below. It also converts the 1.x fixture corpora and a real
@@ -38,7 +38,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `identity`, `identity.provider`, `identity.client`, `identity.hostId`, `identity.sourceId`, `identity.sessionId` | `session /identity` | Unchanged. Codex uses `cli` or `desktop`, Claude uses `code` (schema). |
 | `turn`, `turn.status`, `turn.id` | `session /turn` | Unchanged tagged known ID. |
 | `parent`, `parent.status`, `parent.identity` | `session /parent` | Unchanged. A known parent must have the same provider, client, host and source and a different session ID. The validator refuses cross-source parentage, as `validateSnapshot` did through the lifecycle validator. |
-| `activity` | `session /activity` | `unknown`, `active`, `idle` or `interrupted`. `ended` has **no 2.0 value**: the reducer no longer produces it, and the owner settles stored `ended` records at startup. A runtime end removes the record instead. Proposed: migrate only settled stores. |
+| `activity` | `session /activity` | `unknown`, `active`, `idle` or `interrupted`. `ended` has **no 2.0 value**: the reducer no longer produces it, and the owner settles stored `ended` records at startup. A runtime end removes the record instead. Decided by the coordinator, 2026-10-06: migrate only stores that the 3.2 owner has already settled. |
 | `attention`, `attention[].id`, `attention[].kind`, `attention[].turn` | `session /attention` | Unchanged. Adding one also publishes `attention-raised`. Removing one publishes `attention-cleared` with its cause. |
 | `notices`, `notices[].id`, `notices[].kind`, `notices[].turn`, `notices[].acknowledgedBy` | `session /notices` | Unchanged. These are per-consumer notices, cleared by consumer policy and gone with the record. The shared inbox's turn-ended item (`inbox-item`) is a separate durable fact that names the notice by `noticeId`. The validator refuses a repeated notice ID. |
 | `read` | `session /read` | Only Codex Desktop may report `read` or `unread` (schema). |
@@ -46,7 +46,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `unavailable[].kind` | none | Always `evidence.unavailable`, so the list name carries it. Dropped. |
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
-| `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Proposed: not published. |
+| `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
 | `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). |
 | `restartUncertain` | `session /restartUncertain` | Unchanged. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
@@ -66,8 +66,8 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `revision` | `sync-completed /revision`, `session /revision` | The owner's revision. Each record carries the revision of its last change. |
 | `asOfMs` | envelope `time` | |
 | `sessions` | one `session` state event per record; `sync-completed /members` | A sync replaces the consumer's membership. Between syncs, removal events drop entities. |
-| `collector` | **no 2.0 home** | Owner health. Proposed: the runtime's module health (#830, #831), not a core family. |
-| `lossCount` | **no 2.0 home** | Proposed: the same health surface. A capacity displacement still publishes its removals with reason `retired`. |
+| `collector` | **no 2.0 home** | Owner health. Decided by the coordinator, 2026-10-06: the runtime's module health (#830, #831), not a core family. |
+| `lossCount` | **no 2.0 home** | Decided by the coordinator, 2026-10-06: the runtime's module health (#830, #831), as for `collector`. A capacity displacement still publishes its removals with reason `retired`. |
 
 ## Lifecycle observation
 
@@ -130,12 +130,12 @@ are `org.bunny.mode.set.completed` and `org.bunny.moment.play.completed`.
 | `apiVersion` | envelope `dataschema` | `reply/2.0` or `outcome/2.0`. |
 | `controllerId` | envelope `source` | `bunny/<module>`. The module publishes; controller IDs become module-internal. |
 | `deviceId` | envelope `subject` | The target. The payload names no device. |
-| `requestId`, `requestId.epoch`, `requestId.sequence` | reply and outcome `/requestId` | The request's string ID correlates the request, its reply and its outcome. A module that keeps `{epoch, sequence}` tickets keeps them inside its own device command family. Proposed: history migration spells a 1.x ticket `<epoch>.<sequence>`. |
+| `requestId`, `requestId.epoch`, `requestId.sequence` | reply and outcome `/requestId` | The request's string ID correlates the request, its reply and its outcome. A module that keeps `{epoch, sequence}` tickets keeps them inside its own device command family. Decided by the coordinator, 2026-10-06: how history migration spells a 1.x ticket is deferred to the cutover's migration ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). |
 | `configurationRevision` | module state `/revision` | **No core home.** The module's own device state family carries it. |
 | `generation` | module state | **No core home.** The module's own device state family carries it. |
 | `outcome` | reply, or outcome `/result` | See the outcome table. |
 | `priorEffects` | outcome `/evidence` | `none` becomes `none`, and `confirmed-transmission` becomes `transmitted`. `possible` becomes `none` with result `uncertain`. Decided by the coordinator, 2026-10-06: evidence `none` means there is no evidence that anything reached the device, as after a failure before sending or a lost answer, and ADR 0012 says so. |
-| `completedOperations`, `uncertainOperations` | **no 2.0 home** | The profile's outcome payload is closed. Proposed: the module keeps them in its own state or history, or profile 2.1 adds an optional operations list to the outcome. |
+| `completedOperations`, `uncertainOperations` | **no 2.0 home** | The profile's outcome payload is closed. Decided by the coordinator, 2026-10-06: the module keeps them in its own device state and command families. Profile 2.0's outcome stays unchanged, with no 2.1 operations list now. |
 | `failure`, `failure.code` | reply or outcome `/error` | See the error table. When codes merged, the 1.x code goes in `detail`. |
 
 | 1.x outcome | 2.0 |
@@ -192,7 +192,7 @@ The source is the Hub's `/api/playback/v1/snapshot`. The 2.0 home is
 | `sourceId` | `playback /id` | The envelope subject. |
 | `availability` | `playback /availability` | The owner publishes a new revision when it changes. Decided by the coordinator, 2026-10-06. |
 | `observedAtMs` | `playback /observedAtMs` | Absent rather than null. |
-| `ageMs` | derived | Read context, like `observationAgeMs`. |
+| `ageMs` | derived | Read context, like `observationAgeMs`. Decided by the coordinator, 2026-10-06: consumers derive it. |
 | `playback` | `playback /playback` | Null becomes `{"status": "unknown"}`. |
 | `playback.status` | `playback /playback/player` | Renamed, because `status` now tags known and unknown. |
 | `playback.title`, `playback.artist`, `playback.album`, `playback.controls` | `playback /playback/title`, `/artist`, `/album`, `/controls` | Unchanged. |
