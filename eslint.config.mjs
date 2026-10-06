@@ -134,7 +134,10 @@ export default defineConfig(
     files: ['modules/**/*.{ts,tsx,js,mjs}'],
     ignores: staged,
     plugins: {bunny},
-    rules: {'bunny/module-boundary': ['error', {allowedPackages: modulePackages}]},
+    rules: {
+      'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages}],
+      'bunny/disable-reason': 'error',
+    },
   },
   {
     name: 'bunny/react-hooks',

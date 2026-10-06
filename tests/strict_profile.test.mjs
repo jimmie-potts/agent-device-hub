@@ -1,9 +1,9 @@
 // The strict profile for new code (Hub #867): which files it covers, the local rules and the compiler base.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join, relative, resolve} from 'node:path';
 import {describe, it, test} from 'node:test';
 import {ESLint, RuleTester} from 'eslint';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
@@ -29,6 +29,58 @@ test('the strict rules cover new code and skip old and staged code', async () =>
   }
 });
 
+test('the strict rules keep their intended options', async () => {
+  const config = await new ESLint({cwd: root}).calculateConfigForFile(join(root, 'modules/example/src/a.ts'));
+  assert.deepEqual(config.rules['@typescript-eslint/switch-exhaustiveness-check'].slice(1)[0],
+    {considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: false});
+  assert.deepEqual(config.rules['@typescript-eslint/strict-boolean-expressions'].slice(1)[0],
+    {allowString: false, allowNumber: false, allowNullableObject: true});
+  const boundary = (await new ESLint({cwd: root}).calculateConfigForFile(join(root, 'modules/example/src/a.ts'))).rules['bunny/module-boundary'][1];
+  assert.equal(boundary.root, root);
+  assert.deepEqual(boundary.allowedPackages, ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts']);
+  const base = JSON.parse(readFileSync(join(root, 'tsconfig.strict.json'), 'utf8')).compilerOptions;
+  for (const option of ['noUncheckedIndexedAccess', 'exactOptionalPropertyTypes', 'noImplicitOverride', 'noImplicitReturns', 'noFallthroughCasesInSwitch']) {
+    assert.equal(base[option], true, option);
+  }
+});
+
+// Guards for conventions the lint rules alone cannot enforce.
+const covered = ['apps/runtime', 'packages/sdk', 'modules'];
+const staged = ['modules/pixoo'];
+function tsconfigs(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return ['node_modules', 'dist'].includes(entry.name) || staged.includes(relative(root, path)) ? [] : tsconfigs(path);
+    return /^tsconfig.*\.json$/.test(entry.name) ? [path] : [];
+  });
+}
+function extendsStrict(file, seen = new Set()) {
+  if (resolve(file) === join(root, 'tsconfig.strict.json')) return true;
+  if (seen.has(file) || !existsSync(file)) return false;
+  seen.add(file);
+  const parent = JSON.parse(readFileSync(file, 'utf8')).extends;
+  return typeof parent === 'string' && parent.startsWith('.') && extendsStrict(resolve(dirname(file), parent), seen);
+}
+
+test('every TypeScript project under a covered path extends the strict compiler base', () => {
+  for (const file of covered.flatMap(dir => tsconfigs(join(root, dir)))) {
+    assert.ok(extendsStrict(file), `${relative(root, file)} must extend tsconfig.strict.json`);
+  }
+});
+
+test('covered paths have no lint baseline, and every workspace package is scoped', () => {
+  const baseline = Object.keys(JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8')));
+  const inCovered = baseline.filter(file => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')));
+  assert.deepEqual(inCovered, []);
+  // The module boundary treats unscoped names as third-party, so workspace packages must use the scope.
+  const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
+  for (const dir of workspaces) {
+    const name = JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8')).name;
+    assert.ok(name.startsWith('@jimmie-potts/'), `${dir} is named ${name}`);
+  }
+});
+
 RuleTester.describe = describe;
 RuleTester.it = it;
 const tester = new RuleTester({languageOptions: {ecmaVersion: 'latest', sourceType: 'module'}});
@@ -49,6 +101,11 @@ tester.run('module-boundary', bunny.rules['module-boundary'], {
     {code: "import {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: "export * from '../../../apps/hub/src/a.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
     {code: "await import('@jimmie-potts/hub');", filename: inModule, options, errors: [{messageId: 'workspace'}]},
+    {code: "export {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
+    {code: 'await import(`@jimmie-potts/hub`);', filename: inModule, options, errors: [{messageId: 'workspace'}]},
+    {code: 'const name = "x"; await import(`./${name}.mjs`);', filename: inModule, options, errors: [{messageId: 'dynamic'}]},
+    {code: "import {x} from '/etc/other.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
+    {code: "import {x} from '../../other/src/y.mjs';", filename: inModule, options: [{...options[0], root: process.cwd()}], errors: [{messageId: 'outside'}]},
   ],
 });
 
@@ -61,6 +118,7 @@ tester.run('disable-reason', bunny.rules['disable-reason'], {
   invalid: [
     {code: '// eslint-disable-next-line no-console\nconsole.log(1);', errors: [{messageId: 'reason'}]},
     {code: '/* eslint-disable no-console --  */', errors: [{messageId: 'reason'}]},
+    {code: '/* eslint no-console: "off" */\nconsole.log(1);', errors: [{messageId: 'configuration'}]},
   ],
 });
 

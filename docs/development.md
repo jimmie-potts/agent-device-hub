@@ -318,13 +318,19 @@ rules until its module story converts it. To cover another path, such as the
 - **Lint (`bunny/strict`):**
   - switches over a union must handle every member, and a catch-all `default`
     does not count;
-  - conditions check missing values explicitly, so `undefined` is never
-    confused with zero, `false` or an empty string;
+  - conditions must be explicit: strings, numbers and nullable values are
+    compared, never tested for truthiness, so `undefined` is never confused
+    with zero, `false` or an empty string;
   - no non-null assertions;
-  - every `eslint-disable` comment gives a reason after ` -- `.
+  - every `eslint-disable` comment gives a reason after ` -- `, and no comment
+    configures a rule inline. This also applies to JavaScript files under
+    `modules/`.
 - **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
-  Node built-ins and third-party packages.
+  Node built-ins and third-party packages. It checks static, re-export, type and
+  literal dynamic imports, and rejects non-literal dynamic imports. Paths resolve
+  from the repository root, so the rule works from any directory. `createRequire`
+  and `.cjs` files are not checked.
 - **Compiler:** new packages extend `tsconfig.strict.json`, which adds
   `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
   `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
@@ -332,8 +338,12 @@ rules until its module story converts it. To cover another path, such as the
 
 The local rules live in `scripts/eslint/bunny-rules.mjs`.
 `tests/strict_profile.test.mjs`, run by `npm run test:workflow`, checks:
-- which paths the profile covers;
+- which paths the profile covers, and the exact rule options;
 - both local rules;
+- that every `tsconfig*.json` under a covered path extends
+  `tsconfig.strict.json`;
+- that covered paths have no lint baseline entries;
+- that every workspace package uses the `@jimmie-potts/` scope;
 - that the compiler base rejects an unchecked index and an explicit `undefined`
   optional property.
 
