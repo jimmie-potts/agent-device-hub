@@ -704,6 +704,64 @@ def near_misses():
     return cases
 
 
+def outcome_of(call):
+    """A call's result, or the exception it raised by class and message."""
+    try:
+        return {'result': call()}
+    except Exception as error:  # noqa: BLE001 - every outcome is recorded, including Python's KeyError and TypeError
+        return {'error': type(error).__name__, 'message': str(error)}
+
+
+def parsing_values():
+    """pair_lines and load_config on reported Lines layouts with duplicate, mixed and malformed entries."""
+    import configuration
+    zone1 = {'panelId': 1, 'x': 0, 'y': 0, 'o': 0, 'shapeType': 18}
+    zone2 = {'panelId': 2, 'x': 0, 'y': 60, 'o': 0, 'shapeType': 18}
+    connector1 = {'panelId': 1, 'x': 0, 'y': -30, 'o': 0, 'shapeType': 19}
+    without_o = lambda point: {key: value for key, value in point.items() if key != 'o'}
+    def reported(points):
+        return {'globalOrientation': {'value': 0}, 'layout': {'positionData': points}}
+    pairing = {
+        'duplicate zone': [zone1, dict(zone1), zone2],
+        'connector after a zone with its panel ID': [zone1, connector1, zone2],
+        'connector before a zone with its panel ID': [connector1, zone1, zone2],
+        'entry without shapeType': [zone1, zone2, {'panelId': 3, 'x': 0, 'y': 0, 'o': 0}],
+        'non-object entry': [zone1, zone2, 'panel'],
+        'zone without o': [without_o(zone1), zone2],
+    }
+    loading = {
+        'saved Lines, positions without o': ([[1, 2]], [without_o(zone1), without_o(zone2)]),
+        'saved Lines, connector after a zone with its panel ID': ([[1, 2]], [zone1, connector1, zone2]),
+        'discovered Lines, connector after a zone with its panel ID': (None, [zone1, connector1, zone2]),
+        'saved Lines, non-object entry': ([[1, 2]], [zone1, zone2, 'panel']),
+        'saved Lines, entry without panelId': ([[1, 2]], [zone1, zone2, {'x': 0, 'y': 0, 'shapeType': 19}]),
+    }
+    result = {'pairLines': [], 'loadConfig': []}
+    for name, points in pairing.items():
+        layout = reported(points)
+        result['pairLines'].append({'name': name, 'layout': layout,
+                                    'outcome': outcome_of(lambda: configuration.pair_lines(copy.deepcopy(layout)))})
+    for name, (groups, points) in loading.items():
+        layout = reported(points)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            jsonfile.write_json(directory / 'config.json', {'ip': '192.0.2.1', 'token': 'fake'})
+            if groups is not None:
+                jsonfile.write_json(directory / 'layout.json', {'line_groups': groups})
+            def load():
+                config = configuration.load_config(directory, request=lambda *_: {'panelLayout': copy.deepcopy(layout)})
+                return {'line_groups': config['line_groups'], 'line_positions': config['line_positions'],
+                        'layout': json.loads((directory / 'layout.json').read_text())}
+            result['loadConfig'].append({'name': name, 'savedGroups': groups, 'layout': layout, 'outcome': outcome_of(load)})
+    return result
+
+
+def color_values():
+    """palette_rgb on well-formed and malformed color text."""
+    colors = ['#aabbcc', '#AABBCC', '#0a1866', '#1g2233', '#abc', '#12345', 'xaabbcc', '#aabbccdd', '#+1aabb', '# 1aabb', '']
+    return [{'color': color, 'outcome': outcome_of(lambda: list(wall.palette_rgb({'base': color})['base']))} for color in colors]
+
+
 def geometry_values():
     import configuration
     import panels
@@ -819,7 +877,8 @@ def numbers():
 
 
 def rendering():
-    write_nested('rendering.json', {'geometry': geometry_values(), 'discovery': discovery_values(), 'frames': frame_values()}, 4)
+    write_nested('rendering.json', {'geometry': geometry_values(), 'discovery': discovery_values(), 'parsing': parsing_values(),
+                                    'colors': color_values(), 'frames': frame_values()}, 4)
 
 
 if __name__ == '__main__':

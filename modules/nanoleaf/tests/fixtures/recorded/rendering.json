@@ -1,4 +1,75 @@
 {
+ "colors":[
+  {
+   "color":"#aabbcc",
+   "outcome":{
+    "result":[170,187,204]
+   }
+  },
+  {
+   "color":"#AABBCC",
+   "outcome":{
+    "result":[170,187,204]
+   }
+  },
+  {
+   "color":"#0a1866",
+   "outcome":{
+    "result":[10,24,102]
+   }
+  },
+  {
+   "color":"#1g2233",
+   "outcome":{
+    "error":"ValueError",
+    "message":"invalid literal for int() with base 16: '1g'"
+   }
+  },
+  {
+   "color":"#abc",
+   "outcome":{
+    "error":"ValueError",
+    "message":"invalid literal for int() with base 16: ''"
+   }
+  },
+  {
+   "color":"#12345",
+   "outcome":{
+    "result":[18,52,5]
+   }
+  },
+  {
+   "color":"xaabbcc",
+   "outcome":{
+    "result":[170,187,204]
+   }
+  },
+  {
+   "color":"#aabbccdd",
+   "outcome":{
+    "result":[170,187,204]
+   }
+  },
+  {
+   "color":"#+1aabb",
+   "outcome":{
+    "result":[1,170,187]
+   }
+  },
+  {
+   "color":"# 1aabb",
+   "outcome":{
+    "result":[1,170,187]
+   }
+  },
+  {
+   "color":"",
+   "outcome":{
+    "error":"ValueError",
+    "message":"invalid literal for int() with base 16: ''"
+   }
+  }
+ ],
  "discovery":{
   "config":{
    "device":"wall",
@@ -1350,6 +1421,72 @@
    {
     "orientation":240,
     "polygons":[{"id":"139","number":1,"points":[[-224.73909236273107,389.86206679760824],[-374.73909236273107,389.8620667976081],[-299.7390923627311,519.7658773652739]]},{"id":"132","number":2,"points":[[-225.34421012924636,389.51270189221924],[-300.34421012924633,259.6088913245534],[-375.3442101292464,389.51270189221907]]},{"id":"104","number":3,"points":[[-150.26090763726938,519.4646071760521],[-225.26090763726936,389.56079660838634],[-300.26090763726944,519.464607176052]]},{"id":"125","number":4,"points":[[-149.73909236273101,259.95825622994244],[-299.739092362731,259.9582562299424],[-224.73909236273104,389.86206679760824]]},{"id":"111","number":5,"points":[[-74.65578987075405,389.9101615137754],[-224.65578987075403,389.91016151377534],[-149.65578987075406,519.8139720814412]]},{"id":"118","number":6,"points":[[-75.26090763726933,389.5607966083864],[-150.2609076372693,259.65698604072054],[-225.26090763726938,389.5607966083863]]},{"id":"97","number":7,"points":[[0.34421012924602223,260.00635094610965],[-149.65578987075398,260.00635094610954],[-74.65578987075402,389.9101615137754]]},{"id":"90","number":8,"points":[[-0.2609076372692556,259.65698604072065],[-75.26090763726923,129.75317547305477],[-150.26090763726933,259.6569860407205]]},{"id":"55","number":9,"points":[[0.2609076372691442,0.15063509461095342],[-149.73909236273087,0.15063509461087676],[-74.73909236273093,130.05444566227672]]},{"id":"48","number":10,"points":[[-0.3442101292461546,-0.19872981077805732],[-75.34421012924611,-130.1025403784439],[-150.3442101292462,-0.19872981077817542]]},{"id":"62","number":11,"points":[[74.82239485470771,389.60889132455355],[-0.17760514529226157,259.7050807568877],[-75.17760514529236,389.60889132455344]]},{"id":"83","number":12,"points":[[75.3442101292461,130.1025403784439],[-74.6557898707539,130.10254037844382],[0.34421012924605066,260.0063509461097]]},{"id":"20","number":13,"points":[[74.73909236273082,129.75317547305485],[-0.2609076372691494,-0.15063509461097283],[-75.26090763726924,129.75317547305477]]},{"id":"41","number":14,"points":[[75.26090763726921,-129.75317547305477],[-74.7390923627308,-129.75317547305488],[0.26090763726914323,0.15063509461096927]]},{"id":"69","number":15,"points":[[150.42751262122306,260.05444566227686],[0.4275126212230589,260.05444566227675],[75.427512621223,389.95825622994255]]},{"id":"76","number":16,"points":[[149.8223948547078,259.7050807568878],[74.8223948547078,129.80127018922195],[-0.17760514529229,259.7050807568877]]},{"id":"27","number":17,"points":[[150.34421012924616,0.1987298107781328],[0.34421012924615985,0.19872981077804813],[75.34421012924611,130.1025403784439]]},{"id":"34","number":18,"points":[[149.73909236273087,-0.15063509461087676],[74.73909236273091,-130.05444566227672],[-0.2609076372691669,-0.15063509461099933]]}]
+   }
+  ]
+ },
+ "parsing":{
+  "loadConfig":[
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"panelId":1,"shapeType":18,"x":0,"y":0},{"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"saved Lines, positions without o",
+    "outcome":{"result":{"layout":{"devices":{"wall":{"elements":[{"id":"1:2","number":1,"position":[0.0,30.0],"zones":[1,2]}],"kind":"lines"}},"version":2},"line_groups":[[1,2]],"line_positions":[[0.0,30.0]]}},
+    "savedGroups":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":1,"shapeType":19,"x":0,"y":-30},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"saved Lines, connector after a zone with its panel ID",
+    "outcome":{"result":{"layout":{"devices":{"wall":{"elements":[{"id":"1:2","number":1,"position":[0.0,15.0],"zones":[1,2]}],"kind":"lines"}},"version":2},"line_groups":[[1,2]],"line_positions":[[0.0,15.0]]}},
+    "savedGroups":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":1,"shapeType":19,"x":0,"y":-30},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"discovered Lines, connector after a zone with its panel ID",
+    "outcome":{"result":{"layout":{"devices":{"wall":{"elements":[{"id":"1:2","number":1,"position":[0.0,15.0],"zones":[1,2]}],"kind":"lines"}},"version":2},"line_groups":[[1,2]],"line_positions":[[0.0,15.0]]}},
+    "savedGroups":null
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60},"panel"]}},
+    "name":"saved Lines, non-object entry",
+    "outcome":{"error":"TypeError","message":"string indices must be integers, not 'str'"},
+    "savedGroups":[[1,2]]
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60},{"shapeType":19,"x":0,"y":0}]}},
+    "name":"saved Lines, entry without panelId",
+    "outcome":{"error":"KeyError","message":"'panelId'"},
+    "savedGroups":[[1,2]]
+   }
+  ],
+  "pairLines":[
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"duplicate zone",
+    "outcome":{"error":"ValueError","message":"Expected two light zones per Line."}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":1,"shapeType":19,"x":0,"y":-30},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"connector after a zone with its panel ID",
+    "outcome":{"result":[[1,2]]}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":19,"x":0,"y":-30},{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"connector before a zone with its panel ID",
+    "outcome":{"result":[[1,2]]}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60},{"o":0,"panelId":3,"x":0,"y":0}]}},
+    "name":"entry without shapeType",
+    "outcome":{"error":"KeyError","message":"'shapeType'"}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"o":0,"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60},"panel"]}},
+    "name":"non-object entry",
+    "outcome":{"error":"TypeError","message":"string indices must be integers, not 'str'"}
+   },
+   {
+    "layout":{"globalOrientation":{"value":0},"layout":{"positionData":[{"panelId":1,"shapeType":18,"x":0,"y":0},{"o":0,"panelId":2,"shapeType":18,"x":0,"y":60}]}},
+    "name":"zone without o",
+    "outcome":{"error":"KeyError","message":"'o'"}
    }
   ]
  }

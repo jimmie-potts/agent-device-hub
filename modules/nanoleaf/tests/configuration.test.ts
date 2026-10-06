@@ -85,6 +85,48 @@ suite('AddressChangeTest', () => {
   });
 });
 
+/** A recorded Python call: its result, or the exception class and message it raised. */
+interface Outcome {
+  result?: unknown;
+  error?: string;
+  message?: string;
+}
+interface Parsing {
+  pairLines: {name: string; layout: unknown; outcome: Outcome}[];
+  loadConfig: {name: string; savedGroups: number[][] | null; layout: unknown; outcome: Outcome}[];
+}
+const PARSING = (fixtureJson('recorded/rendering.json') as {parsing: Parsing}).parsing;
+
+/** Python's ValueError keeps its message; its KeyError and TypeError are ValueErrors here (PORTING.md, Known differences). */
+const refusal = (outcome: Outcome): {name: string; message?: string} =>
+  (outcome.error === 'ValueError' && outcome.message !== undefined ? {name: 'ValueError', message: outcome.message} : {name: 'ValueError'});
+
+suite('Lines replies parsed as Python parsed them', () => {
+  test('pairing reads every reported entry in order, duplicates and connectors included', () => {
+    for (const {name, layout, outcome} of PARSING.pairLines) {
+      if (outcome.error === undefined) assert.deepEqual(pairLines(structuredClone(layout)), outcome.result, name);
+      else assert.throws(() => pairLines(structuredClone(layout)), refusal(outcome), name);
+    }
+    assert.deepEqual(PARSING.pairLines.map(entry => entry.outcome.error ?? 'paired'),
+      ['ValueError', 'paired', 'paired', 'KeyError', 'TypeError', 'KeyError']);
+  });
+
+  test('Line positions read only x and y, from the last entry with each panel ID', async context => {
+    for (const {name, savedGroups, layout, outcome} of PARSING.loadConfig) {
+      const directory = temporary(context);
+      writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fake'});
+      if (savedGroups !== null) writeJson(join(directory, 'layout.json'), {line_groups: savedGroups});
+      const load = async (): Promise<unknown> => {
+        const config = await loadConfig(directory, 'wall', () => Promise.resolve({panelLayout: structuredClone(layout)}));
+        return {line_groups: config.line_groups, line_positions: config.line_positions,
+          layout: JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8')) as unknown};
+      };
+      if (outcome.error === undefined) assert.deepEqual(await load(), outcome.result, name);
+      else await assert.rejects(load(), refusal(outcome), name);
+    }
+  });
+});
+
 suite('discovery recorded from Python', () => {
   test('an unsaved Lines layout is paired, positioned and saved as Python saved it', async context => {
     const directory = temporary(context);

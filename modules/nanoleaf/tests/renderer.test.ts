@@ -575,6 +575,27 @@ suite('PaletteFrameTest', () => {
   });
 });
 
+suite('colors recorded from Python', () => {
+  test('a color is six hexadecimal digits after #, or a ValueError', () => {
+    const colors = (fixtureJson('recorded/rendering.json') as {colors: {color: string; outcome: {result?: number[]; error?: string}}[]}).colors;
+    for (const {color, outcome} of colors) {
+      const parse = (): Rgb => paletteRgb({...DEFAULTS, base: color}).base;
+      // Python's int(text, 16) also took a sign, spaces and extra characters; the port refuses them (PORTING.md).
+      if (/^#[0-9a-fA-F]{6}$/.test(color)) assert.deepEqual(parse(), outcome.result, color);
+      else assert.throws(parse, {name: 'ValueError'}, JSON.stringify(color));
+    }
+    assert.ok(colors.some(entry => entry.outcome.error === 'ValueError' && entry.color === '#1g2233'));
+  });
+
+  test('a saved project color that is not one is refused before rendering', context => {
+    const wall = new Wall(context);
+    wall.task('a', 'a');
+    wall.assign([0], {project: 'a'});
+    write(wall.directory, db => execute(db, "UPDATE projects SET color='#1g2233' WHERE id='a'"));
+    assert.throws(() => wall.prepare(), {name: 'ValueError'});
+  });
+});
+
 interface Scenario {
   layout: string;
   config: Record<string, unknown>;
