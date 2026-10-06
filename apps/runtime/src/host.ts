@@ -6,7 +6,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, MODULE_API_VERSION, SdkError, childOf, type BunnyModule, type Cancel, type Clock, type CommandDraft, type Draft,
+  InProcessBus, SdkError, checkApiVersion, checkModuleName, childOf, type BunnyModule, type Cancel, type Clock, type CommandDraft, type Draft,
   type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
   type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
@@ -50,8 +50,6 @@ type Outcome = {status: 'done'} | {status: 'failed'; error: unknown} | {status: 
 /** Drops on one subscription since its window opened, and the window's cancel. */
 type Drops = {scope: ErrorScope; count: number; cancel: Cancel};
 
-const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // setTimeout's longest delay; a longer one would fire at once.
 const MAX_DELAY_MS = 2_147_483_647;
 /** One subscription's first dropped delivery is logged at once, then the later ones once per window while they go on. */
@@ -68,24 +66,12 @@ function attempt(call: () => unknown): Promise<unknown> {
   }
 }
 
-/** Why a declared module API version is refused, or undefined when it matches: the same major, and no newer minor. */
-export function checkApiVersion(declared: string, supported: string): Reason | undefined {
-  const [, major, minor] = VERSION.exec(declared) ?? [];
-  const [, runtimeMajor, runtimeMinor] = VERSION.exec(supported) ?? [];
-  if (major === undefined || minor === undefined) return {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'};
-  if (major !== runtimeMajor || Number(minor) > Number(runtimeMinor)) {
-    return {code: 'unsupported-version', detail: `module API ${declared} does not match this runtime's ${supported}`};
-  }
-  return undefined;
-}
-
 /** Why a manifest is refused, or undefined when the module may start. `taken` holds the names already in use. */
 function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
-  if (!NAME.test(name) || name.length > 64) {
-    return {code: 'invalid-request', detail: 'name must be lowercase letters and digits with single hyphens, at most 64 characters'};
-  }
+  const named = checkModuleName(name);
+  if (named !== undefined) return named;
   if (taken.has(name)) return {code: 'invalid-request', detail: 'another module already has this name'};
-  return checkApiVersion(apiVersion, MODULE_API_VERSION);
+  return checkApiVersion(apiVersion);
 }
 
 /**
@@ -130,7 +116,7 @@ export class ModuleHost {
         state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
       };
       const reason = refusal(module.manifest, names);
-      if (NAME.test(name)) names.add(name);
+      if (checkModuleName(name) === undefined) names.add(name);
       if (reason !== undefined) {
         slot.state = 'refused';
         slot.reason = reason;

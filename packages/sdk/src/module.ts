@@ -11,6 +11,34 @@ import type {Cancel, Clock, Sdk, TraceContext} from './sdk.js';
  */
 export const MODULE_API_VERSION = '1.0';
 
+const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+/** Why a manifest is refused: a code from the 2.0 error registry and a fixed sentence. */
+export type ManifestProblem = {code: string; detail: string};
+
+/** Why a module name is refused, or undefined when it is lowercase letters and digits with single hyphens, at most 64. */
+export function checkModuleName(name: string): ManifestProblem | undefined {
+  if (MODULE_NAME.test(name) && name.length <= 64) return undefined;
+  return {code: 'invalid-request', detail: 'name must be lowercase letters and digits with single hyphens, at most 64 characters'};
+}
+
+/** Why a declared module API version is refused, or undefined when it matches: the same major, and no newer minor. */
+export function checkApiVersion(declared: string, supported: string = MODULE_API_VERSION): ManifestProblem | undefined {
+  const [, major, minor] = VERSION.exec(declared) ?? [];
+  const [, supportedMajor, supportedMinor] = VERSION.exec(supported) ?? [];
+  if (major === undefined || minor === undefined) return {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'};
+  if (major !== supportedMajor || Number(minor) > Number(supportedMinor)) {
+    return {code: 'unsupported-version', detail: `module API ${declared} does not match this runtime's ${supported}`};
+  }
+  return undefined;
+}
+
+/** Why the runtime would refuse this manifest on its own, or undefined when it may start. */
+export function checkManifest({name, apiVersion}: ModuleManifest): ManifestProblem | undefined {
+  return checkModuleName(name) ?? checkApiVersion(apiVersion);
+}
+
 export type ModuleManifest = {
   /**
    * Lowercase letters and digits with single hyphens, at most 64 characters. It names the module's source

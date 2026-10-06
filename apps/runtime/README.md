@@ -157,6 +157,32 @@ runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
 
+## Fixture module
+
+`tests/fixtures/lamp.ts` is a simulated lamp, the stand-in module that later
+stories build on (#846). It passes the
+[module test kit](../../packages/sdk/README.md#module-test-kit):
+- it serves its lamps (family `lamp`) through sync;
+- it copies the core's `mode` and keeps the lamps off in quiet mode;
+- it switches a lamp on `bunny.cmd.lamp.<id>`, refusing an unknown lamp with
+  `not-found`;
+- it reports each switch through its [outbox](../../packages/sdk/README.md#outbox):
+  the lamp's new state, the `org.bunny.lamp.switched` occurrence and the
+  outcome.
+
+`lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
+`tests/fixtures/core.ts` stands in for the core. It serves the mode, and it takes
+every occurrence and outcome once by `(source, id)`, keeping what it took in its
+own SQLite file across restarts. It acknowledges each outcome with the kit's
+stand-in acknowledgment, which the lamp follows, until Hub #782 defines the
+real one.
+
+A process test kills the runtime between the lamp's commit and its publish,
+then restarts it twice. At the first restart the lamp sends its state,
+occurrence and outcome, the core takes the outcome once and acknowledges it,
+and the lamp forgets it. The second restart sends nothing, and nothing ever
+sends the command again.
+
 ## Checks
 
 See [Runtime checks](../../docs/development.md#runtime-checks).

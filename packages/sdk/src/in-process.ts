@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
-import {overlaps, parseKey, parsePattern, type Category, type Pattern, type RoutingKey} from './routing.js';
+import {keyClassOf, overlaps, parseKey, parsePattern, type Pattern, type RoutingKey} from './routing.js';
 import {
   MAX_TIMEOUT_MS, SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
@@ -44,18 +44,6 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 
-/** State and removal events travel on `bunny.state` keys, occurrences and outcomes on `bunny.event` keys. */
-function categoryOf(kind: PublishedKind): Category {
-  switch (kind) {
-    case 'state':
-    case 'removal':
-      return 'state';
-    case 'occurrence':
-    case 'outcome':
-      return 'event';
-  }
-}
-
 /**
  * What a forwarding responder, such as a remote edge's, may return in place of a reply. `unanswered`: its handler had
  * the command and gave no reply, so the request is `uncertain`, never a refusal. `undelivered`: the command never
@@ -65,20 +53,7 @@ export const unanswered: unique symbol = Symbol('unanswered');
 export const undelivered: unique symbol = Symbol('undelivered');
 
 /** Whether a message of this kind travels through publish. */
-function isPublished(kind: MessageKind): kind is PublishedKind {
-  switch (kind) {
-    case 'state':
-    case 'removal':
-    case 'occurrence':
-    case 'outcome':
-      return true;
-    case 'command':
-    case 'reply':
-    case 'sync-request':
-    case 'sync-completed':
-      return false;
-  }
-}
+const isPublished = (kind: MessageKind): kind is PublishedKind => keyClassOf(kind) !== undefined;
 
 const foreign = (source: string, message: Message<unknown>): SdkError =>
   new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
@@ -243,7 +218,7 @@ export class InProcessBus {
     const route = parseKey(key);
     if (route === undefined) throw invalid(`routing key ${key}`);
     if (route.category === 'cmd') throw invalid('commands are sent with request');
-    if (categoryOf(kind) !== route.category) throw invalid(`a ${String(kind)} message cannot use a bunny.${route.category} key`);
+    if (keyClassOf(kind) !== route.category) throw invalid(`a ${String(kind)} message cannot use a bunny.${route.category} key`);
     return route;
   }
 

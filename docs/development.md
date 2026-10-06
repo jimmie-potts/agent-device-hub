@@ -708,7 +708,8 @@ The mapping test imports the built `@jimmie-potts/agent-state` and
 
 `packages/sdk` holds the SDK from [ADR 0012](decisions/0012-bunny-event-platform.md):
 publish, subscribe, request, respond and sync, on the in-process bus and over
-the SSE/HTTP remote transport. Its
+the SSE/HTTP remote transport, plus the per-module outbox and the module test
+kit (`@jimmie-potts/sdk/testing`). Its
 [README](../packages/sdk/README.md) documents the API. The package follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 
@@ -719,7 +720,8 @@ job runs `npm run test:sdk:built` after its fresh build. The tests check every
 message they see against profile 2.0 with the event contracts' validator, and a
 test fails if one is invalid; the bus itself does not validate. One conformance
 suite runs against both transports. The remote tests start an edge on
-127.0.0.1 at a free port with run-generated tokens; they need no runtime,
+127.0.0.1 at a free port with run-generated tokens, and the outbox and kit tests
+keep SQLite files under the system temporary directory. They need no runtime,
 device or other network.
 
 ## Runtime checks
@@ -736,8 +738,9 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 CI job runs `npm run test:runtime:built` after its fresh build. The tests use
 in-test fixture modules, port 0 on loopback and private state directories under
 the system temporary directory, which must be outside every Git checkout. Some
-start the runtime in child processes, as the service manager would. They need no
-device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
+start the runtime in child processes, as the service manager would; one kills it
+between the fixture lamp's commit and publish. The fixture lamp runs the module
+test kit. They need no device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123; the README's Memory section says how.
 
 ## Agent lifecycle contract checks
