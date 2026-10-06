@@ -74,10 +74,10 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Control | Firmware ID | Notes |
 | --- | --- | --- |
 | Front row, 15 white keys | `KEY_1`-`KEY_15`, left to right | The 15 task slots. Also the launcher's firmware picker keys |
-| Second row, 10 black keys | `KEY_16`-`KEY_25` | #744 utility actions through the profile's `keys` map. By default `KEY_16` (LED 15) is the Attention key (#865); the others do nothing until a later #744 slice maps them |
+| Second row, 10 black keys | `KEY_16`-`KEY_25` | #744 utility actions through the profile's `keys` map, which maps none by default; they do nothing until a later #744 slice maps them |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
 | Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
-| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) stays unassigned. Clicks are on the button chain |
+| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume (#865): turn 46 sends the system volume keys, click 34 toggles mute, LED 34 flashes on an ignored or failed volume key. Holding its click at boot enters test mode |
 | Far-left two-position switch | `SW_TOG` | Stays unmapped |
@@ -509,7 +509,7 @@ After the bridge with task pages is installed, with more than 15 open throwaway 
 
 ## Installed checks for #865
 
-These belong to #745's batched installation. After the bridge with the Attention key and volume knob is installed,
+These belong to #745's batched installation. After the bridge with the Attention click on knob 4 and the volume knob is installed,
 with more than 15 open throwaway tasks:
 
 1. Turn the volume knob slowly both ways and confirm that the Windows volume moves one step (2 points) per count and
@@ -521,12 +521,14 @@ with more than 15 open throwaway tasks:
    shows that the clients ignore it.
 3. Hold Record, turn and click the volume knob, and confirm that the volume does not change, the volume knob's LED
    flashes red and dictation keeps going; release Record and confirm that Wispr still inserts the dictation.
-4. With no task waiting, press black key 1 and confirm that it flashes red and nothing opens.
-5. Let a throwaway task on page 2 raise attention, then one on page 1. Confirm that black key 1 lights in the
-   attention color. With page 1 visible, press black key 1 and confirm that the page-2 task opens and the keys show
-   page 2. Press again within 4 s and confirm that the page-1 task opens and the keys show page 1.
-6. Confirm that the attention stays on both tasks after they open (the key acknowledged nothing), and that black key 1
-   goes dark once both are answered.
+4. With no task waiting, click knob 4 and confirm that its LED flashes red, then shows the page color again, and that
+   nothing opens.
+5. Let a throwaway task on page 2 raise attention, then one on page 1. Confirm that knob 4's LED alternates with the
+   attention color and that no black key lights. With page 1 visible, click knob 4 and confirm that the page-2 task
+   opens and the keys show page 2. Click again within 4 s and confirm that the page-1 task opens and the keys show
+   page 1.
+6. Confirm that the attention stays on both tasks after they open (the click acknowledged nothing), and that knob 4's
+   LED shows the page color steadily once both are answered.
 
 ## Findings for dependent work
 

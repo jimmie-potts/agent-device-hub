@@ -220,13 +220,13 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | `controls.back` | 28, Loop: alone it releases held keys and cancels a focus in progress; with a held Claude slot key it is the release gesture |
 | `controls.scroll` | 45, the big-wheel turn: scrolls the conversation, or steps through an open card's buttons. Its click is the turn ID minus 12 (33) |
 | `scroll` | `notchesPerStep` 1 (1-10 wheel notches per encoder count) and `invert` `false` (clockwise scrolls down) |
-| `pages` (optional, not in the shipped profile) | `count` 4 (1-8 task pages of 15 slots, so 60 tasks) and `stepCounts` (1-96 knob 4 counts per page, defaulting to the card step constant). Small knob 4's turn (control 43) pages; it is reserved, so `controls.scroll` can never be 43. Its click (control 31) is unassigned |
-| `keys` (optional, not in the shipped profile) | `{"16": "attention"}`: black key 1 is the Attention key. Maps black-key controls 16-25 to `attention` or `back` (what Loop does); a key without an entry does nothing, and `{}` turns them all off. The default lives in one constant, `DEFAULT_KEY_ACTIONS` in `src/routing/profile.ts`. A control already mapped elsewhere (slots, Record, Send, Back) is rejected; an earlier profile that already maps control 16 keeps it, and the default stands aside |
+| `pages` (optional, not in the shipped profile) | `count` 4 (1-8 task pages of 15 slots, so 60 tasks) and `stepCounts` (1-96 knob 4 counts per page, defaulting to the card step constant). Small knob 4's turn (control 43) pages; it is reserved, so `controls.scroll` can never be 43. `attentionClick` `true` makes knob 4's click (control 31) the Attention click (#865); `false` leaves the click inert. Control 31 carries nothing else: no control may map it |
+| `keys` (optional, not in the shipped profile) | None: no black key does anything. Maps black-key controls 16-25 to `attention` (the same action as the Attention click) or `back` (what Loop does), for later #744 presets; a key without an entry does nothing. A control already mapped elsewhere (slots, Record, Send, Back) is rejected |
 | `volume` (optional, not in the shipped profile) | `stepCounts` 1 (1-96 volume knob counts per volume key; Windows moves 2 points per key) and `invert` `false` (clockwise raises the volume). The volume knob's turn (46) and click (34) are reserved: with a `volume` section, `controls.scroll` 46 or `controls.record` or `controls.back` 34 is rejected; an earlier profile without one that maps them keeps its mapping, and the knob sends no volume key |
 | `cards` (optional, not in the shipped profile) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly; one slow full turn each way measured about 25 counts per revolution on the trial device (2026-10-05), so 6 is about a quarter turn. The step default lives in one constant, `DEFAULT_CARD_STEP_COUNTS` in `src/routing/profile.ts`; a profile value overrides it |
 | `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows` |
 | `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `colors.pages` (optional) lists knob 4's LED color per page, page 1 first, at least one per page; the defaults are cyan, magenta, green, grey-white, blue, pink, lime and teal, none of them the attention orange. `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
-| `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s. `attentionRepeatMs` (optional, 500-30000, default 4000) is the Attention key's repeat window |
+| `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s. `attentionRepeatMs` (optional, 500-30000, default 4000) is the Attention click's repeat window |
 | `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone; see [Qualify a client update](#qualify-a-client-update) |
 
 Validation rejects unknown fields and bad values with a path, for example
@@ -310,21 +310,26 @@ file stops start-up.
   2. Copy `<state>/slots.json` to a backup.
   3. In `slots.json`, remove every entry of `slots` whose `slot` is above 15, and set `schemaVersion` to 1.
   4. If you added `pages` or `colors.pages` to the profile, remove them: an earlier bridge rejects unknown profile
-     fields and would keep its last good profile, or refuse to start with this one.
+     fields and would keep its last good profile, or refuse to start with this one. The same goes for `keys`,
+     `volume`, `timing.attentionRepeatMs` and `pages.attentionClick` (#865). A bridge from before #865 leaves knob
+     4's click and the volume knob inert.
   5. Start the earlier bridge. Tasks that lost their slot get one again when a slot frees up, first-free.
 
-#### Attention key and volume knob
+#### Attention click and volume knob
 
-- **Attention key** (black key 1, control 16, by default). A press opens the task that has waited longest for the
-  owner, on whatever page it sits, through the same open and verify path as its slot key, and shows that page.
+- **Attention click on knob 4** (control 31, owner decision on #865, 2026-10-06). A click opens the task that has
+  waited longest for the owner, on whatever page it sits, through the same open and verify path as its slot key, and
+  shows that page. The profile switch is `pages.attentionClick` rather than a control number, because 31 carries
+  only this action and knob 4 already belongs to task pages. A black key mapped to `attention` does the same.
   - "Waited longest" is the order in which the bridge first saw each assigned task's attention (question, input or
     approval) on a current feed. Hub attention carries no time, so the bridge keeps this order in memory only; it
     restarts with the bridge, which orders tasks it sees waiting in one snapshot by slot. Attention that clears and
     comes back goes to the back.
-  - A press within `timing.attentionRepeatMs` (4 s) of the last one moves on to the next waiting task, and around to
-    the first. A later press opens the earliest waiting task again.
-  - With no task waiting, or a feed that is not current, it refuses (`attention-refused`) and its key flashes the
-    error color. Slots beyond the profile's pages have no visible key and are skipped.
+  - A click within `timing.attentionRepeatMs` (4 s) of the last one moves on to the next waiting task, and around to
+    the first. A later click opens the earliest waiting task again.
+  - With no task waiting, or a feed that is not current, it refuses (`attention-refused`) and knob 4's LED flashes
+    the error color, then shows the page again (a mapped black key flashes itself instead). Slots beyond the
+    profile's pages have no visible key and are skipped.
   - It is navigation only. Like a slot key it never acknowledges, approves or dismisses anything, and it changes no
     Hub state; the task keeps its attention.
 - **Back key.** A black key mapped to `back` does exactly what Loop does: alone it releases held keys and cancels a
@@ -353,15 +358,17 @@ file stops start-up.
 | `unknown` | Unknown activity, uncertain freshness or restart uncertainty |
 | `ended` | The Hub no longer lists the session, or it ended; the slot is kept |
 | `stale` | The feed is stale or unavailable |
-| `error` | A refused slot press on its key, a refused or uncertain Send or card press on both big-wheel LEDs, a refused Attention key press on that key, or an ignored or failed volume key on the volume knob's LED, for 1.5 s |
+| `error` | A refused slot press on its key, a refused or uncertain Send or card press on both big-wheel LEDs, a refused Attention click on knob 4's LED (or on a black key mapped to `attention`), or an ignored or failed volume key on the volume knob's LED, for 1.5 s |
 
 Slot keys show the visible page's slots, and keys for its empty slots stay off. Small knob 4's LED shows the visible
 page in its `colors.pages` color; while a task on any other page has attention, it alternates between the page color
 and the attention color on the attention pulse. Only attention shows there (owner decision on #822, 2026-10-05); other
 states, such as an unread completion, show on the keys when their page is visible.
 
-The Attention key shows the `attention` color, steady, while any task on a page waits, and is off otherwise or while
-the feed is not current. A Back key has no light. The volume knob's LED lights only for its error flash.
+The Attention click has no light of its own: a waiting task on the visible page pulses its key, and one on a hidden
+page alternates knob 4's LED as above. A black key mapped to `attention` shows the `attention` color, steady, while
+any task on a page waits, and is off otherwise or while the feed is not current. A Back key has no light. The volume
+knob's LED lights only for its error flash.
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
@@ -380,7 +387,8 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
   - the fixed link brings the expected package family (`OpenAI.Codex_2p2nqsd0c76g0` or `Claude_pzs8sxrjxfjjc`) to
     the front;
   - the exact task is selected. Codex: the thread's name (Codex's own, else the Hub's title) is on the selected row
-    and on no other row. Claude: only the target's `lastFocusedAt` moved past the press. Claude Desktop stamps it
+    and on no other row. Codex exposes only the sidebar rows on screen, so the sidebar must be expanded with the
+    task's row in view; otherwise the press fails with `selection-unknown` or `selection-mismatch`. Claude: only the target's `lastFocusedAt` moved past the press. Claude Desktop stamps it
     only when the selection changes, so a press for the session Claude already shows also verifies when Claude was
     in front before the link and the target was strictly newest among known sessions (slot records and Hub
     `hostSessionId`s, read completely), and after the link it still is and no other session's moved past the press.
@@ -437,7 +445,7 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
   mouse-wheel primitive, which acts only while that client is in front with the pointer inside it. The wheel never
   types or selects a task, never runs while Record is held, and is not retried when the adapter answers `false` or
   unknown. Small knob 4's turn pages the slot keys (see Task pages), and the volume knob steps the system volume (see
-  Attention key and volume knob); other encoder turns are inert.
+  Attention click and volume knob); other encoder turns are inert. Knob 4's click is the Attention click.
 - A controller `stale`, `session-restart` or `disconnected`, Back, a profile swap and an overflowed subscription
   release every held key and cancel pending wheel steps, pending volume keys and a focus in progress. Nothing pressed
   before them is replayed: after a reconnect, each control acts on a fresh press, evaluated at that press.
@@ -523,7 +531,9 @@ way the CLI loads `src/sim`, and tests the scenario runner. `test:chompi-bridge:
 The verification run's own checks are in [`verify/README.md`](verify/README.md#checks).
 
 `npm run test:chompi-bridge:native:built` must run under native Windows Node 24 after a build; it fails on other
-platforms. It enumerates HID devices read-only, checks that the matcher rejects the stock CHOMPI ID, checks that
+platforms. Before running it, have Codex show one ordinary task with the sidebar expanded and the selected row
+visible: Codex exposes only on-screen rows, and the selected-thread probe otherwise fails with `selected-row-count`
+or `document-count`. It enumerates HID devices read-only, checks that the matcher rejects the stock CHOMPI ID, checks that
 the named-pipe lock refuses a second holder and is released on exit and on kill, runs the Windows adapter's read-only
 observations (koffi load, foreground identity, a UI Automation helper ping, composer, Codex selected-thread, approval
 and card-button observations and client versions, with `SendInput` and `ShellExecute` replaced by throwing guards; it

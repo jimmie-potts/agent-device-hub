@@ -87,12 +87,12 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   carry their LED color and a name for it, for example "Slot 2, light idle". The run names each light by what its
   role can show (a slot state, Record's record color, the wheel's error flash, knob 4's task page), so a held Record
   reads "light record" even though the record and error colors are the same red, and knob 4's LED reads "page 2", or
-  "attention" while it alternates for a task on a hidden page. Black key 1 is the Attention key (#865): its light
-  reads "attention" while a task waits, "error" after a refused press and "off" otherwise. A key goes down while
+  "attention" while it alternates for a task on a hidden page, or "error" after a refused Attention click (#865). The
+  black keys read "off" in the shipped profile, which maps none. A key goes down while
   the mouse button, Space or Enter is held, and comes up on release. **Latch keys** makes each activation toggle a key, for
   holds such as Record or the release gesture. Knobs 1-4, the big wheel and volume each turn left or right by their
   "Counts per turn" and click. The wheel starts at one card step and knob 4 at one page step (6 counts each in the
-  shipped profile), so one knob 4 turn shows the next or previous task page; its click stays unassigned. The volume
+  shipped profile), so one knob 4 turn shows the next or previous task page; its click is the Attention click. The volume
   knob starts at one volume key per turn, and its click toggles mute. The slot keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
   **Unplug controller** unplugs and replugs the simulator. All of these inject protocol input through
   `ChompiSimulator`, so the bridge sees real reports.
@@ -131,9 +131,10 @@ an action, an expectation within a time bound, or an observation that must hold 
 (#822): knob 4 pages only on a deliberate turn, a page-2 task opens with its key, a hidden page's attention shows on
 knob 4's LED without switching pages, a held key's release gesture acts on the slot it showed when pressed though the
 page changed, and paging sends no input and keeps the window in front. `attention-key` (#865) uses the same 18 tasks:
-with nothing waiting the Attention key refuses with a red flash and no input; with a page-2 task and then a page-1
-task waiting, it opens the page-2 task first and shows page 2, a repeat press opens the page-1 task, and after the
-repeat window the earliest opens again; every Hub request stays a read and both tasks keep their attention.
+with nothing waiting the Attention click on knob 4 refuses with a red flash on knob 4's LED and no input, and the
+LED returns to the page color; with a page-2 task and then a page-1 task waiting, it opens the page-2 task first and
+shows page 2, a repeat click opens the page-1 task, and after the repeat window the earliest opens again; every Hub
+request stays a read, both tasks keep their attention and no black key lights.
 `volume-knob` (#865) turns and clicks the volume knob with Codex in front and a draft in its composer: the synthetic
 system volume steps and mutes, no client receives input, and while Record holds the chord the knob is ignored with
 a red volume LED and the chord stays exactly the dictation chord. Tier 1 runs the same steps in memory on a manual clock:

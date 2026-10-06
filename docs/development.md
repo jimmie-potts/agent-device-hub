@@ -1036,7 +1036,10 @@ runs `npm run test:chompi-bridge:built` after the shared build.
 
 Run `npm run test:chompi-bridge:native:built` separately under native Windows
 Node 24 after a build, using an isolated runtime rather than changing the
-global Windows Node. It fails on other platforms. On a `\\wsl.localhost`
+global Windows Node. It fails on other platforms. Before running it, have Codex
+show one ordinary task with the sidebar expanded and the selected row visible:
+Codex exposes only on-screen rows, so the selected-thread probe otherwise fails
+with `selected-row-count` or `document-count`. On a `\\wsl.localhost`
 checkout installed from Linux, run `npm ci` on Windows first so the
 `@koromix/koffi-win32-x64` prebuild sits beside koffi. The check enumerates
 HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
@@ -1063,7 +1066,7 @@ token-file privacy), slot assignment, release and persistence across task pages 
 file migration, interrupted writes, corrupt files and rollback), knob-4 paging, state lights and the page LED,
 each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
 answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), the
-Attention key and volume knob (#865: first-seen order across pages, repeat cycling, refusal, volume detents, mute and
+Attention click on knob 4 and volume knob (#865: first-seen order across pages, repeat cycling, refusal, volume detents, mute and
 Record), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
