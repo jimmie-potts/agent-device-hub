@@ -225,6 +225,8 @@ function renderDesktop(desktop) {
   }
   setText($('desktop-front'), `In front: ${desktop.foreground ? CLIENT_NAMES[desktop.foreground] : 'nothing'}.`);
   setText($('desktop-held'), desktop.held.length ? `Held keys: ${desktop.held.join(' + ')}${desktop.dictating ? ' (dictating)' : ''}.` : 'No keys held.');
+  // The synthetic system audio the volume knob changes (#865); no window receives volume keys.
+  if (desktop.system) setText($('desktop-audio'), `System volume ${desktop.system.volume}%${desktop.system.muted ? ', muted' : ''}.`);
   for (const id of ['codex', 'claude', 'other']) {
     const card = windows[id];
     const isFront = desktop.foreground === id;
@@ -263,6 +265,7 @@ function describe(e) {
     case 'card-press': return `${time} card stop pressed in ${CLIENT_NAMES[e.client]}: ${e.stop}`;
     case 'scroll': return `${time} scrolled ${CLIENT_NAMES[e.client]} ${e.notches}`;
     case 'dictation': return `${time} dictation ended${e.client ? `, text into ${CLIENT_NAMES[e.client]}` : ', no composer had focus'}`;
+    case 'volume': return `${time} system volume key ${e.key}${e.presses > 1 ? ` x${e.presses}` : ''}, no window: volume ${e.volume}%${e.muted ? ', muted' : ''}`;
     default: return `${time} operator ${e.action}`;
   }
 }

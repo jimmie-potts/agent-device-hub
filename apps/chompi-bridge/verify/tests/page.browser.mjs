@@ -102,10 +102,28 @@ try {
     assert.equal((await state()).desktop.foreground, 'other', 'paging brought no window to the front');
   });
 
-  await check('the Hub controls change a slot light: attention on the Codex task', async () => {
+  await check('the volume knob\'s turns and click show as system volume keys in the desktop log, reaching no window (#865)', async () => {
+    assert.equal(await page.getByLabel('Counts per turn').nth(5).inputValue(), '1', 'the volume knob starts at one volume key');
+    const front = (await state()).desktop.foreground;
+    await page.getByRole('button', { name: 'Volume turn right' }).click();
+    await page.locator('#desktop-log li').filter({ hasText: 'system volume key VolumeUp, no window: volume 52%' }).first().waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Volume click' }).click();
+    await page.locator('#desktop-log li').filter({ hasText: 'system volume key VolumeMute, no window: volume 52%, muted' }).first().waitFor({ timeout: 5000 });
+    await page.locator('#desktop-audio').filter({ hasText: 'System volume 52%, muted.' }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Volume click' }).click();
+    await page.locator('#desktop-audio').filter({ hasText: /^System volume 52%\.$/ }).waitFor({ timeout: 5000 });
+    assert.equal((await state()).desktop.foreground, front, 'no window came to the front');
+  });
+
+  await check('the Attention key (black key 1) reads light off while no task waits (#865)', async () => {
+    await page.getByRole('button', { name: 'Black key 1, light off', exact: true }).waitFor({ timeout: 5000 });
+  });
+
+  await check('the Hub controls change a slot light: attention on the Codex task, which also lights the Attention key', async () => {
     await page.getByLabel('Attention of Synthetic Codex task 1').selectOption('approval');
     const slot = (await state()).slots.find(s => s.client === 'codex').slot;
     await page.getByRole('button', { name: new RegExp(`^Slot ${slot}, light attention`) }).waitFor({ timeout: 8000 });
+    await page.getByRole('button', { name: 'Black key 1, light attention', exact: true }).waitFor({ timeout: 5000 });
   });
 
   await check('the desktop log and the bridge log are shown', async () => {
