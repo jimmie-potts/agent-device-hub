@@ -15,7 +15,7 @@ unchanged; consumers must select an explicit adapter before adopting this profil
   both runners assert every case's expected result and immutable input.
 
 Run `npm run test:events` and `npm run test:events:python` from the repository
-root using Node 24 and Python 3.12/3.14. The Python runner uses the repository's
+root using Node 24 and Python 3.14. The Python runner uses the repository's
 `requirements-contracts.txt`. Shared build/type/workflow and compatibility checks
 are documented in [development](../../docs/development.md#shared-event-contract-checks).
 

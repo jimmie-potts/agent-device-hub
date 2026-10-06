@@ -37,7 +37,7 @@ not a general OS filesystem sandbox.
 
 ## Run and inspect
 
-Use an existing Python 3.12 or 3.14 environment. No Python dependencies or
+Use an existing Python 3.14 environment. No Python dependencies or
 installed agent clients are needed for this admission-only tool.
 
 ```bash
@@ -97,7 +97,7 @@ The Python worker also verifies the imported jsonschema distribution origin. It 
 that lock records dependencies, but the tool does not independently hash every
 installed transitive dependency file. Use a fresh consumer from that lock.
 
-Use Node 24 and an existing Python 3.12/3.14 environment with the repository's
+Use Node 24 and an existing Python 3.14 environment with the repository's
 pinned jsonschema 4.19.2 dependency. Copy the retained consumer package/lock and
 release archive into a new directory outside the hub checkout and any other Node
 project, such as `/tmp/hub30-prepared-lifecycle-consumer`, then run
@@ -182,7 +182,7 @@ mkdir -p .local/evidence/hub30
 /usr/bin/python3 -B scripts/performance/linux_hook.py --output .local/evidence/hub30/linux-new-run
 ```
 
-Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
+Use Linux system Python 3.14 under `/usr` with bubblewrap installed.
 The thirteen correctness checks take about five seconds locally. CI runs these
 once on Ubuntu; the 9,000-call benchmark is an explicit local command, never
 part of CI. On Ubuntu, CI loads the distribution's packaged Bubblewrap

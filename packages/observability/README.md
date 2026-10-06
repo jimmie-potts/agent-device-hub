@@ -9,7 +9,7 @@ prove the contract; they do not prove ingestion, installation or device behavior
 Node 24 consumers import the pure API from `@jimmie-potts/bunny-observability`
 and the explicit Pino/context adapter from `@jimmie-potts/bunny-observability/node`.
 Browser applications bundle only the pure entrypoint. Validation is compiled at
-build time and works without `unsafe-eval`. Python 3.12/3.14 consumers add the
+build time and works without `unsafe-eval`. Python 3.14 consumers add the
 artifact's `python` directory to their module path and install the pinned
 `requirements-contracts.txt` in their own environment.
 
