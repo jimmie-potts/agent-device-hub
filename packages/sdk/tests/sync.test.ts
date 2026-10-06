@@ -80,6 +80,7 @@ it('a consumer gets the owner\'s current state at a revision, then follows live 
   assert.equal(result.message.kind, 'sync-completed');
   assert.equal(result.message.type, 'org.bunny.sync.completed');
   assert.equal(result.message.source, 'bunny/core');
+  assert.equal(trace(result.message.traceparent).traceId, PARENT_TRACE);
   assert.deepEqual(result.message.data, {requestId: request.data.requestId, revision: 4, members: [{family: 'session', id: 's1'}, {family: 'session', id: 's2'}]});
   const s1 = result.copy.get({family: 'session', id: 's1'});
   assert.ok(s1);
