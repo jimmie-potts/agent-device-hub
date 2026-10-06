@@ -101,7 +101,7 @@
   {
    "layout":"lines",
    "name":"settings {\"palette\": {\"base\": \"#000000\", \"unread\": \"#FF00C0\"}}",
-   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[["unread","#ff00c0"],["base","#000000"]],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
+   "rows":{"comets":[],"line_prefs":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["event_revision","2"],["dirty","1"]],"palette":[["base","#000000"],["unread","#ff00c0"]],"projects":[["a","#aa55ff"],["b","#33ccee"]],"slots":[],"task_info":[["a",null]]},
    "setup":{},
    "steps":[{"args":[{"palette":{"base":"#000000","unread":"#FF00C0"}}],"op":"settings","outcome":{"result":null}}]
   },

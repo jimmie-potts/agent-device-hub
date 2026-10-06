@@ -1,4 +1,5 @@
-// Shared records in the database's meta table: the display wake-up and each device's control state (store.py).
+// Shared records in the database's meta table: the display wake-up, each device's control state (store.py) and its
+// native overrides (controller_state.overrides).
 // Each runs inside the caller's transaction; none opens a connection.
 import {parseFloatText, parseIntText} from './compat.js';
 import {DEFAULT, metaKey} from './devices.js';
@@ -36,6 +37,20 @@ export function controlState(db: Db, device: string = DEFAULT): ControlState {
     wave_cutoff: parseFloatText(textOf(value('wave_cutoff'), '-inf')),
     error: error === undefined || error === null ? null : String(error),
   };
+}
+
+/** A device's native power and brightness overrides, or null where none is set (controller_state.overrides). */
+export interface Overrides {
+  power: boolean | null;
+  brightness: number | null;
+}
+
+export function overrides(db: Db, device: string = DEFAULT): Overrides {
+  const values = meta(db);
+  const power = values.get(metaKey('controller_power', device));
+  const brightness = values.get(metaKey('controller_brightness', device));
+  return {power: power === undefined || power === null ? null : power === '1',
+    brightness: brightness === undefined || brightness === null ? null : parseIntText(String(brightness))};
 }
 
 /** Record that the device's worker has applied every mode command up to `revision`. */

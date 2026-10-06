@@ -281,7 +281,9 @@ suite('ProjectTest', () => {
   test('test_rendering_endpoint_reports_pending_failed_free_and_unknown', context => {
     const p = new Projects(context);
     const receipt = {apiVersion: '1.0', deviceId: 'wall', effect: {write: {animData: 'frames'}}};
-    const meta = (sql: string, ...params: string[]): void => write(p.directory, db => execute(db, sql, ...params));
+    const meta = (sql: string, ...params: string[]): void => {
+      write(p.directory, db => execute(db, sql, ...params));
+    };
     meta('INSERT OR REPLACE INTO meta VALUES (?,?)', 'rendering_receipt', JSON.stringify(receipt));
     assert.equal(p.rendering().outcome, 'last-sent');
     meta("INSERT OR REPLACE INTO meta VALUES ('dirty','1')");

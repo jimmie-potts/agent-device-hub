@@ -969,7 +969,9 @@ def edit_cases():
     layouts = edit_layouts()
     first = layouts['triangles']['elements'][0]['id']
     def case(name, steps, layout='lines', **setup):
-        return {'name': name, 'layout': layout, 'setup': setup, 'steps': [{'op': op, 'args': args} for op, *args in steps]}
+        # Arguments run as they are recorded, with sorted keys, so the port replays them in the same order.
+        return {'name': name, 'layout': layout, 'setup': setup,
+                'steps': [{'op': op, 'args': json.loads(json.dumps(args, sort_keys=True))} for op, *args in steps]}
     settings = [{'style': 'project'}, {'style': 'bad'}, {'style': True}, {'style': None}, {'coverage': 'status'}, {'rotation': 90},
                 {'rotation': 90.0}, {'rotation': 45}, {'rotation': False}, {'flip_x': True}, {'flip_x': 2},
                 {'flip_y': 1, 'rotation': 270, 'style': 'project', 'coverage': 'whole'}, {}, {'unknown': 1},

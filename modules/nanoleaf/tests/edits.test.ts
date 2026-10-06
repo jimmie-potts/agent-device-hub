@@ -443,6 +443,6 @@ suite('mode command checks the port adds', () => {
   test('an unknown mode is refused before anything changes', context => {
     const directory = temporary(context);
     assert.throws(() => setMode(directory, 'party'), {name: 'ValueError', message: 'Unknown lighting mode.'});
-    assert.deepEqual(query(directory, "SELECT * FROM meta WHERE key LIKE 'mode%'"), []);
+    assert.deepEqual(query(directory, "SELECT * FROM meta WHERE key IN ('mode','mode_revision','wave_cutoff','dirty')"), []);
   });
 });

@@ -1,16 +1,17 @@
-// Project metadata, persistent wall preferences, task placement, the palette and the renderer's map settings
-// (project_map.py). Map geometry is in geometry.ts; palette writes, rendering receipts, map edits and Locate move with
-// the edits and worker slice (PORTING.md).
+// Project metadata, persistent wall preferences, task placement, the palette, the rendering receipt, the pending wall
+// edit, Locate and the renderer's map settings (project_map.py). Map geometry is in geometry.ts; the edits that check
+// their requests and call these are in edits.ts.
 import {statSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {compareText, isObject, normpath, own, parseJson, pyJson, pyRound, splitText, titleCase, type Json, type JsonObject} from './compat.js';
-import {create, DEFAULT, deviceOf, elementId, elements, type DeviceConfig} from './devices.js';
+import {create, DEFAULT, deviceOf, elementId, elements, metaKey, type DeviceConfig} from './devices.js';
 import {ValueError} from './errors.js';
 import {readText} from './jsonfile.js';
 import type {Rgb} from './effects.js';
 import type {Indication} from './line-projection.js';
-import type {RenderConfig} from './renderer.js';
+import type {Flash, RenderConfig} from './renderer.js';
 import {execute, first, rows, sameRow, totalChanges, type Db, type Row, type SqlValue} from './sqlite.js';
+import {meta} from './store.js';
 
 export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
 /** The task statuses a Line indicates, in preview order; each has a palette role. */
@@ -23,6 +24,11 @@ export type Role = keyof typeof DEFAULT_PALETTE;
 export const ROLES = Object.keys(DEFAULT_PALETTE) as Role[];
 export const isRole = (value: unknown): value is Role => ROLES.some(role => role === value);
 export const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** The map settings a device saves, in their column order. */
+export const SETTING_NAMES = ['style', 'coverage', 'rotation', 'flip_x', 'flip_y'] as const;
+export type SettingName = typeof SETTING_NAMES[number];
+export const isSettingName = (value: unknown): value is SettingName => SETTING_NAMES.some(name => name === value);
 
 export interface MapSettings {
   style: SqlValue;
@@ -70,6 +76,69 @@ function hexRgb(color: string): Rgb {
 export function paletteRgb(value: Readonly<Record<Role, string>>): Record<Role, Rgb> {
   return {base: hexRgb(value.base), working: hexRgb(value.working), question: hexRgb(value.question), blocked: hexRgb(value.blocked),
     unread: hexRgb(value.unread)};
+}
+
+export type PaletteWrite = 'default' | Partial<Record<Role, string>>;
+
+/** Check a palette write before anything is saved: 'default' or one to five role colors, returned in lowercase. */
+export function validatePalette(value: unknown): PaletteWrite {
+  if (value === 'default') return value;
+  if (!isObject(value) || Object.keys(value).length === 0) throw new ValueError('Invalid palette.');
+  const result: Partial<Record<Role, string>> = {};
+  for (const [role, color] of Object.entries(value)) {
+    if (!isRole(role) || typeof color !== 'string' || !HEX.test(color)) throw new ValueError('Invalid palette.');
+    result[role] = color.toLowerCase();
+  }
+  return result;
+}
+
+/** Save a checked palette write: 'default' removes every chosen color. */
+export function savePalette(db: Db, value: PaletteWrite): void {
+  if (value === 'default') {
+    execute(db, 'DELETE FROM palette');
+    return;
+  }
+  for (const [role, color] of Object.entries(value)) execute(db, 'INSERT OR REPLACE INTO palette VALUES (?,?)', role, color);
+}
+
+export type RenderingOutcome = 'pending' | 'failed' | 'externally-controlled' | 'unknown' | 'last-sent';
+
+export interface Rendering {
+  apiVersion: '1.0';
+  deviceId: string;
+  mode: string;
+  outcome: RenderingOutcome;
+  pending: boolean;
+  failedAttempt: boolean;
+  sampledAtMs: number;
+  lastSuccessful: JsonObject | null;
+}
+
+/** The device's latest rendering receipt and what became of the last attempt, read without changing anything. */
+export function renderingSnapshot(db: Db, config: DeviceConfig, mode: string, modePending: boolean, error: string | null,
+  instant: number): Rendering {
+  const device = deviceOf(config);
+  const values = meta(db);
+  const saved = values.get(metaKey('rendering_receipt', device));
+  let receipt: JsonObject | null = null;
+  if (saved !== undefined && saved !== null && saved !== '') {
+    try {
+      const parsed = parseJson(String(saved));
+      if (isObject(parsed)) receipt = parsed;
+    } catch (failure) {
+      if (!(failure instanceof ValueError)) throw failure;
+    }
+  }
+  const pending = values.get('dirty') === '1' || modePending;
+  const failed = error !== null && error !== '';
+  let outcome: RenderingOutcome;
+  if (pending) outcome = 'pending';
+  else if (failed) outcome = 'failed';
+  else if (mode === 'free') outcome = 'externally-controlled';
+  else if (receipt === null || receipt.outcome === 'unknown') outcome = 'unknown';
+  else outcome = 'last-sent';
+  return {apiVersion: '1.0', deviceId: device, mode, outcome, pending, failedAttempt: failed, sampledAtMs: pyRound(instant * 1000),
+    lastSuccessful: receipt !== null && receipt.outcome !== 'unknown' ? receipt : null};
 }
 
 export const lineId = (pair: readonly number[]): string => elementId(pair);
@@ -319,6 +388,131 @@ export function allocate(db: Db, config: DeviceConfig, tasks: readonly TaskRow[]
     }
   }
   return assignments;
+}
+
+/**
+ * A map edit: settings, per-element project and half choices, and per-task manual projects. Values are saved as the
+ * request gave them, after the edit checked them.
+ */
+export interface Patch {
+  settings?: JsonObject;
+  lines?: Record<string, JsonObject>;
+  tasks?: JsonObject;
+}
+
+/** The device's pending wall edit, waiting for its comet to end. */
+export function pending(db: Db, device: string = DEFAULT): Patch | null {
+  const row = first(db, 'SELECT payload FROM map_pending WHERE device=?', device);
+  if (row === undefined) return null;
+  const value = parseJson(String(row[0]));
+  if (!isObject(value)) throw new TypeError('A pending wall edit must be an object.');
+  return value;
+}
+
+/** SQLite's binding of a checked edit value; Python bound true and false as 1 and 0. */
+function bound(value: Json | undefined): SqlValue {
+  if (value === undefined || value === null || typeof value === 'string' || typeof value === 'number') return value ?? null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  throw new TypeError('Error binding parameter: type is not supported.');
+}
+
+/** Save an edit's rows; an element keeps the field the edit leaves out. */
+export function applyPatch(db: Db, patch: Patch, device: string = DEFAULT): void {
+  const changes = patch.settings ?? {};
+  if (Object.keys(changes).length > 0) {
+    execute(db, 'INSERT OR IGNORE INTO map_settings (style,coverage,rotation,flip_x,flip_y,device) VALUES (?,?,?,?,?,?)', ...DEFAULT_SETTINGS, device);
+    for (const [name, value] of Object.entries(changes)) {
+      // Only a known column name reaches the statement.
+      if (!isSettingName(name)) throw new ValueError('Invalid setting.');
+      execute(db, `UPDATE map_settings SET ${name}=? WHERE device=?`, bound(value), device);
+    }
+  }
+  for (const [line, value] of Object.entries(patch.lines ?? {})) {
+    const [project = null, signature = 0] = first(db, 'SELECT project,signature FROM line_prefs WHERE line_id=? AND device=?', line, device) ?? [];
+    execute(db, 'INSERT OR REPLACE INTO line_prefs (line_id,project,signature,device) VALUES (?,?,?,?)', line,
+      Object.hasOwn(value, 'project') ? bound(value.project) : project, Object.hasOwn(value, 'signature') ? bound(value.signature) : signature, device);
+  }
+  for (const [session, project] of Object.entries(patch.tasks ?? {})) {
+    execute(db, 'UPDATE task_info SET manual_project=? WHERE session=?', bound(project), session);
+  }
+}
+
+const startedComet = (db: Db, device: string): Row | undefined =>
+  first(db, 'SELECT session,source FROM comets WHERE started IS NOT NULL AND device=?', device);
+
+/**
+ * Merge an edit into the device's pending wall edit, then apply the result, or keep it pending while a running comet
+ * would move: when it changes the style, the comet's source element or the comet's task. True when it is deferred.
+ */
+export function requestPatch(db: Db, patch: Patch, config: DeviceConfig): boolean {
+  const device = deviceOf(config);
+  const previous = pending(db, device) ?? {};
+  const previousLines = previous.lines ?? {};
+  const patchLines = patch.lines ?? {};
+  const lines: Record<string, JsonObject> = {};
+  for (const key of Object.keys({...previousLines, ...patchLines})) lines[key] = {...previousLines[key], ...patchLines[key]};
+  const merged: Required<Patch> = {settings: {...previous.settings, ...patch.settings}, lines, tasks: {...previous.tasks, ...patch.tasks}};
+  let defer = false;
+  const comet = startedComet(db, device);
+  if (comet !== undefined) {
+    const [session = null, source = null] = comet;
+    const items = elements(config);
+    if (typeof source !== 'number') throw new TypeError('A started comet needs a source element.');
+    // Python's list index: a negative source counts from the end.
+    const element = items[source < 0 ? items.length + source : source];
+    if (element === undefined) throw new RangeError('The comet source is not an element of this device.');
+    defer = Object.hasOwn(merged.settings, 'style') || Object.hasOwn(merged.lines, element.id)
+      || (typeof session === 'string' && Object.hasOwn(merged.tasks, session));
+  }
+  if (defer) {
+    execute(db, 'INSERT OR REPLACE INTO map_pending (payload,device) VALUES (?,?)', pyJson(merged), device);
+  } else {
+    applyPatch(db, merged, device);
+    execute(db, 'DELETE FROM map_pending WHERE device=?', device);
+  }
+  return defer;
+}
+
+/** Apply the device's pending wall edit once no comet runs on it; true when it was applied. */
+export function applyPending(db: Db, device: string = DEFAULT): boolean {
+  const change = pending(db, device);
+  if (change !== null && Object.keys(change).length > 0 && startedComet(db, device) === undefined) {
+    applyPatch(db, change, device);
+    execute(db, 'DELETE FROM map_pending WHERE device=?', device);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The device's Locate flash: it starts when no comet runs and lasts one second. Free mode, an element no longer on the
+ * device and the end of the flash each remove the request.
+ */
+export function locateState(db: Db, config: DeviceConfig, instant: number, mode: string): Flash | null {
+  const device = deviceOf(config);
+  if (mode === 'free') {
+    execute(db, 'DELETE FROM locate WHERE device=?', device);
+    return null;
+  }
+  const row = first(db, 'SELECT line_id,started FROM locate WHERE device=?', device);
+  if (row === undefined) return null;
+  const [key = null, saved = null] = row;
+  if (saved !== null && instant >= Number(saved) + 1) {
+    execute(db, 'DELETE FROM locate WHERE device=?', device);
+    return null;
+  }
+  if (first(db, 'SELECT 1 FROM comets WHERE started IS NOT NULL AND device=?', device) !== undefined) return null;
+  const source = elements(config).findIndex(element => element.id === key);
+  if (source < 0) {
+    execute(db, 'DELETE FROM locate WHERE device=?', device);
+    return null;
+  }
+  let started = saved === null ? null : Number(saved);
+  if (started === null) {
+    started = instant;
+    execute(db, 'UPDATE locate SET started=? WHERE device=?', started, device);
+  }
+  return {source, started};
 }
 
 /** Add the device's map style, coverage, palette and per-element project halves to a worker pass's configuration. */
