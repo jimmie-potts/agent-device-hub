@@ -152,6 +152,31 @@ it('an entity that arrives live above the sync revision survives the sync (#842:
   assert.deepEqual(held(copy), ['a@5', 'y@15']);
 });
 
+it('a removal that arrives during a sync stays removed after it (#842: removal at 16, sync at 14 listing y, late y@15)', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  const owner = sessionOwner(core);
+  await owner.update('y', 10);
+  let served = 0;
+  await core.serveSync(['session'], async () => {
+    served += 1;
+    const snapshot = owner.snapshot();
+    if (served === 2) await owner.remove('y', 16);
+    return snapshot;
+  });
+  const changes: string[] = [];
+  const copy = await synced(wall, changes);
+  // x appears and is removed at revision 14 in one burst; the dropped removal makes the copy sync again.
+  void owner.update('x', 13);
+  void owner.remove('x', 14);
+  await flush();
+  assert.equal(served, 2);
+  // A late state at 15, below y's removal at 16, arrives after the sync.
+  await core.publish('bunny.state.session.y', session('y', 15));
+  await flush();
+  assert.deepEqual(changes, ['updated y@10', 'synced @10', 'synced @14', 'removed y@16']);
+  assert.deepEqual(held(copy), []);
+});
+
 it('a buffer overflow restarts the sync instead of combining partial state', async () => {
   const {core, wall} = bus();
   const owner = sessionOwner(core);
