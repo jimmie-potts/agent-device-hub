@@ -1,6 +1,6 @@
 // Per-subscriber delivery queues: a slow consumer lags only itself and cannot block the bus (ADR 0012).
 import assert from 'node:assert/strict';
-import {SdkError} from '../src/index.js';
+import {InProcessBus, SdkError} from '../src/index.js';
 import {bus, deferred, flush, it, peek, session, setMode, settled} from './support.js';
 
 it('a slow subscriber delays only itself, and catches up in order', async () => {
@@ -97,4 +97,14 @@ it('closing a subscription waits for its running handler and drops what is queue
   await closed;
   await flush();
   assert.deepEqual(handled, [1]);
+});
+
+it('without an error handler, a handler error becomes a process warning', async () => {
+  const created = new InProcessBus();
+  const core = created.connect('bunny/core');
+  const warned = new Promise<Error>(resolve => { process.once('warning', resolve); });
+  await core.subscribe('bunny.state.session.*', () => { throw new Error('bad handler'); });
+  await core.publish('bunny.state.session.s1', session('s1', 1));
+  const warning = await warned;
+  assert.equal(warning.message, 'bad handler');
 });

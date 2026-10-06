@@ -1,8 +1,8 @@
 // Request and respond: one command to its owner, one reply, accepted or refused in the shared error body (ADR 0012).
 import assert from 'node:assert/strict';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Command} from '../src/index.js';
-import {assertValid, bus, it, setMode, trace, type Mode} from './support.js';
+import {SdkError, type Command, type Reply} from '../src/index.js';
+import {assertValid, bus, deferred, flush, it, peek, setMode, trace, type Mode} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
@@ -65,6 +65,25 @@ it('a request nobody responds to is refused as unavailable at once', async () =>
   assert.equal(result.error.error.code, 'unavailable');
   assert.equal(result.error.error.retryable, true, 'nothing reached an owner, so sending again is safe');
   assert.equal(result.error.error.requestId, result.requestId);
+  const long = await core.request(`bunny.cmd.mode.${'x'.repeat(2000)}`, setMode('work'), {timeoutMs: 60_000});
+  assert.equal(long.status, 'rejected');
+  assert.equal(long.error.error.detail?.length, 1024, 'a detail quoting a long key is cut to the error block\'s limit');
+});
+
+it('closing a responder refuses the requests still waiting for it as unavailable', async () => {
+  const {core, wall} = bus();
+  const gate = deferred<Reply>();
+  const owner = await wall.respond('bunny.cmd.mode.wall', () => gate.promise);
+  const first = core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});
+  const waiting = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 60_000});
+  await flush();
+  const closed = owner.close();
+  const refused = await peek(waiting);
+  assert.equal(refused?.status, 'rejected');
+  assert.equal(refused.error.error.code, 'unavailable');
+  gate.resolve({status: 'accepted'});
+  await closed;
+  assert.equal((await peek(first))?.status, 'accepted', 'the command already being handled still gets its reply');
 });
 
 it('one responder owns each command key', async () => {
@@ -81,7 +100,7 @@ it('one responder owns each command key', async () => {
 it('a request needs a command key, a positive whole timeout and a valid requestId', async () => {
   const {core} = bus();
   await assert.rejects(core.request('bunny.state.mode.wall', setMode('work'), {timeoutMs: 5000}), refused('invalid-request'));
-  for (const timeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+  for (const timeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31]) {
     await assert.rejects(core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs}), refused('invalid-request'), String(timeoutMs));
   }
   await assert.rejects(core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'not an id'}), refused('invalid-request'));
