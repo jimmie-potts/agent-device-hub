@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/session/2.0",
+  "description": "State: the full record of one agent session (Hub #842). The owner publishes the whole record whenever any field changes, freshness and child counts included. `id` is sessionEntityId(identity). The validator also refuses cross-source parentage, a self parent, ordering under another authority and repeated notices or unavailable dimensions (families.ts). Display precedence: the label (a user label is never replaced by an agent label), then the title, then the consumer's neutral fallback.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "generation", "identity", "parent", "turn", "activity", "attention", "notices", "read", "unavailable",
+    "ordering", "observedAtMs", "lastEvidenceAtMs", "freshness", "restartUncertain", "children"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "parent": {"$ref": "#/$defs/parent"},
+    "turn": {"$ref": "#/$defs/knownId"},
+    "activity": {"enum": ["unknown", "active", "idle", "interrupted"]},
+    "attention": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/attention"}},
+    "notices": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/notice"}},
+    "read": {"enum": ["unknown", "read", "unread"]},
+    "unavailable": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/unavailable"}},
+    "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "lastEvidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "freshness": {"enum": ["current", "uncertain"]},
+    "restartUncertain": {"type": "boolean"},
+    "children": {"type": "object", "additionalProperties": false, "required": ["active", "uncertain"],
+      "properties": {"active": {"$ref": "#/$defs/count"}, "uncertain": {"$ref": "#/$defs/count"}}},
+    "label": {"$ref": "#/$defs/label"},
+    "title": {"$ref": "#/$defs/title"},
+    "project": {"$ref": "#/$defs/project"},
+    "projectId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "hostSessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+  },
+  "allOf": [
+    {"$ref": "#/$defs/readOnlyFromCodexDesktop"},
+    {"$ref": "#/$defs/hostSessionOnlyAtRoot"},
+    {"if": {"properties": {"restartUncertain": {"const": true}}}, "then": {"properties": {"freshness": {"const": "uncertain"}}}}
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "identity": {
+      "description": "The native session selector. Codex uses client cli or desktop; Claude uses code.",
+      "type": "object", "additionalProperties": false, "required": ["provider", "client", "hostId", "sourceId", "sessionId"],
+      "properties": {
+        "provider": {"enum": ["codex", "claude"]},
+        "client": {"enum": ["cli", "desktop", "code"]},
+        "hostId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "sourceId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "sessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+      },
+      "if": {"properties": {"provider": {"const": "codex"}}},
+      "then": {"properties": {"client": {"enum": ["cli", "desktop"]}}},
+      "else": {"properties": {"client": {"const": "code"}}}
+    },
+    "knownId": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "id"],
+        "properties": {"status": {"const": "known"}, "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}}
+    ]},
+    "parent": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "top-level"}}},
+      {"type": "object", "additionalProperties": false, "required": ["status", "identity"],
+        "properties": {"status": {"const": "known"}, "identity": {"$ref": "#/$defs/identity"}}}
+    ]},
+    "attentionKind": {"enum": ["question", "input", "approval"]},
+    "attention": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "turn"],
+      "properties": {"id": {"$ref": "#/$defs/knownId"}, "kind": {"$ref": "#/$defs/attentionKind"}, "turn": {"$ref": "#/$defs/knownId"}}},
+    "occurrenceAttention": {"type": "object", "additionalProperties": false, "required": ["id", "kind"],
+      "properties": {"id": {"$ref": "#/$defs/knownId"}, "kind": {"$ref": "#/$defs/attentionKind"}}},
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "notice": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "turn", "acknowledgedBy"],
+      "properties": {
+        "id": {"$ref": "#/$defs/hash"},
+        "kind": {"const": "turn-ended"},
+        "turn": {"$ref": "#/$defs/knownId"},
+        "acknowledgedBy": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}
+      }},
+    "unavailable": {"type": "object", "additionalProperties": false, "required": ["dimension", "reason"],
+      "properties": {
+        "dimension": {"enum": ["activity", "attention", "turn", "parent", "read", "ordering"]},
+        "reason": {"enum": ["unsupported", "inaccessible", "missing", "ambiguous", "lost"]}
+      }},
+    "displayText": {
+      "description": "1 to 160 Unicode scalar values with no control characters and no recognizable credential.",
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^(?![\\s\\S]*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "label": {"type": "object", "additionalProperties": false, "required": ["value", "origin"],
+      "properties": {"value": {"type": "string", "$ref": "#/$defs/displayText", "maxLength": 80}, "origin": {"enum": ["user", "agent"]}}},
+    "title": {"type": "object", "additionalProperties": false, "required": ["value", "source"],
+      "properties": {"value": {"$ref": "#/$defs/displayText"}, "source": {"enum": ["provider", "user"]}}},
+    "project": {"type": "string", "$ref": "#/$defs/displayText", "maxLength": 80},
+    "readOnlyFromCodexDesktop": {
+      "description": "Read evidence exists only for Codex Desktop.",
+      "type": "object",
+      "if": {"properties": {"identity": {"type": "object", "not": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}},
+      "then": {"properties": {"read": {"const": "unknown"}}}
+    },
+    "hostSessionOnlyAtRoot": {
+      "description": "A record or observation whose parent is known never carries a host session ID.",
+      "type": "object",
+      "if": {"properties": {"parent": {"type": "object", "properties": {"status": {"const": "known"}}}}},
+      "then": {"properties": {"hostSessionId": false}}
+    },
+    "occurrence": {
+      "description": "What every agent occurrence carries: the session it happened to, the turn, the observation's evidence and the owner revision that committed it.",
+      "type": "object", "required": ["session", "identity", "turn", "observedAtMs", "ordering", "revision"],
+      "properties": {
+        "session": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "identity": {"$ref": "#/$defs/identity"},
+        "turn": {"$ref": "#/$defs/knownId"},
+        "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "occurredAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+        "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+      }
+    }
+  }
+}

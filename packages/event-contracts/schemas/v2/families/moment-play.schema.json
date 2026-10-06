@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/moment-play/2.0",
+  "description": "Command: play one moment, a short presentation intent (ADR 0006, Hub #842). The envelope subject names the target; the payload names no device and carries no frames, raw protocol or text. `startAtMs` is on the runtime's wall clock, at most 60,000 ms after the envelope time; a module more than `toleranceMs` past it drops the moment as missed. A flourish never covers status. The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "momentId", "mood", "durationMs", "priorityClass", "coversStatus", "startAtMs", "toleranceMs"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "momentId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "mood": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
+    "palette": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}},
+    "durationMs": {"type": "integer", "minimum": 1000, "maximum": 300000},
+    "priorityClass": {"enum": ["event", "flourish"]},
+    "coversStatus": {"type": "boolean"},
+    "startAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "toleranceMs": {"type": "integer", "minimum": 0, "maximum": 60000}
+  },
+  "if": {"properties": {"priorityClass": {"const": "flourish"}}},
+  "then": {"properties": {"coversStatus": {"const": false}}}
+}

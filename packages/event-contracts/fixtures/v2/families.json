@@ -1,0 +1,1656 @@
+{
+ "description": "Core payload families of profile 2.0 (Hub #842). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy described in tests/families.test.mjs and names the messages whose payloads remain.",
+ "valid": {
+  "session": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-root",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "revision": 12,
+    "generation": 3,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "activity": "idle",
+    "attention": [
+     {
+      "id": {
+       "status": "known",
+       "id": "approval-1"
+      },
+      "kind": "approval",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      }
+     }
+    ],
+    "notices": [
+     {
+      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+      "kind": "turn-ended",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      },
+      "acknowledgedBy": [
+       "nanoleaf"
+      ]
+     }
+    ],
+    "read": "unread",
+    "unavailable": [
+     {
+      "dimension": "parent",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "observedAtMs": 1791287998000,
+    "lastEvidenceAtMs": 1791287998000,
+    "freshness": "current",
+    "restartUncertain": false,
+    "children": {
+     "active": 1,
+     "uncertain": 0
+    },
+    "label": {
+     "value": "Port Nanoleaf",
+     "origin": "user"
+    },
+    "title": {
+     "value": "Translate the bridge tests",
+     "source": "provider"
+    },
+    "project": "agent-device-hub",
+    "projectId": "hub"
+   }
+  },
+  "session-child": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-child",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+    "revision": 11,
+    "generation": 9,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-child"
+    },
+    "parent": {
+     "status": "known",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     }
+    },
+    "turn": {
+     "status": "unknown"
+    },
+    "activity": "active",
+    "attention": [],
+    "notices": [],
+    "read": "unknown",
+    "unavailable": [],
+    "ordering": {
+     "status": "unknown"
+    },
+    "observedAtMs": 1791287999000,
+    "lastEvidenceAtMs": 1791287999000,
+    "freshness": "current",
+    "restartUncertain": false,
+    "children": {
+     "active": 0,
+     "uncertain": 0
+    },
+    "label": {
+     "value": "Review the schema",
+     "origin": "agent"
+    }
+   }
+  },
+  "session-claude": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-claude",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+    "revision": 10,
+    "generation": 10,
+    "identity": {
+     "provider": "claude",
+     "client": "code",
+     "hostId": "host-a",
+     "sourceId": "claude-code",
+     "sessionId": "session-claude"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "claude-turn-2"
+    },
+    "activity": "unknown",
+    "attention": [
+     {
+      "id": {
+       "status": "unknown"
+      },
+      "kind": "input",
+      "turn": {
+       "status": "known",
+       "id": "claude-turn-2"
+      }
+     }
+    ],
+    "notices": [],
+    "read": "unknown",
+    "unavailable": [
+     {
+      "dimension": "read",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "unknown"
+    },
+    "observedAtMs": 1791287400000,
+    "lastEvidenceAtMs": 1791287400000,
+    "freshness": "uncertain",
+    "restartUncertain": true,
+    "children": {
+     "active": 0,
+     "uncertain": 0
+    },
+    "title": {
+     "value": "Plan the cutover",
+     "source": "user"
+    },
+    "project": "agent-device-hub",
+    "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+   }
+  },
+  "session-root-later": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-root-15",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "revision": 15,
+    "generation": 3,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "activity": "active",
+    "attention": [],
+    "notices": [
+     {
+      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+      "kind": "turn-ended",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      },
+      "acknowledgedBy": [
+       "nanoleaf"
+      ]
+     }
+    ],
+    "read": "unread",
+    "unavailable": [
+     {
+      "dimension": "parent",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "observedAtMs": 1791287998000,
+    "lastEvidenceAtMs": 1791287998000,
+    "freshness": "current",
+    "restartUncertain": false,
+    "children": {
+     "active": 0,
+     "uncertain": 0
+    },
+    "label": {
+     "value": "Port Nanoleaf",
+     "origin": "user"
+    },
+    "title": {
+     "value": "Translate the bridge tests",
+     "source": "provider"
+    },
+    "project": "agent-device-hub",
+    "projectId": "hub"
+   }
+  },
+  "mode": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-mode",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.updated",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/mode/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "hub",
+    "revision": 4,
+    "mode": "quiet",
+    "selectedAtMs": 1791287940000
+   }
+  },
+  "inbox-item-turn-ended": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-inbox-1",
+   "source": "bunny/core",
+   "type": "org.bunny.inbox-item.updated",
+   "subject": "inbox-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/inbox-item/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "inbox-1",
+    "revision": 5,
+    "createdAtMs": 1791287997000,
+    "dismissedBy": [
+     "pixoo"
+    ],
+    "item": {
+     "kind": "turn-ended",
+     "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     },
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     },
+     "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+    }
+   }
+  },
+  "inbox-item-failed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-inbox-2",
+   "source": "bunny/core",
+   "type": "org.bunny.inbox-item.updated",
+   "subject": "inbox-2",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/inbox-item/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "inbox-2",
+    "revision": 6,
+    "createdAtMs": 1791287998000,
+    "dismissedBy": [],
+    "item": {
+     "kind": "operation",
+     "requestId": "req-moment-1",
+     "command": "org.bunny.moment.play.requested",
+     "target": "wall",
+     "result": "failed",
+     "error": {
+      "code": "invalid-state",
+      "retryable": false,
+      "detail": "moment-blocked"
+     }
+    }
+   }
+  },
+  "inbox-item-uncertain": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-inbox-3",
+   "source": "bunny/core",
+   "type": "org.bunny.inbox-item.updated",
+   "subject": "inbox-3",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/inbox-item/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "inbox-3",
+    "revision": 7,
+    "createdAtMs": 1791287999000,
+    "dismissedBy": [],
+    "item": {
+     "kind": "operation",
+     "requestId": "req-mode-2",
+     "command": "org.bunny.mode.set.requested",
+     "target": "pixoo",
+     "result": "uncertain"
+    }
+   }
+  },
+  "playback": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-playback",
+   "source": "bunny/core",
+   "type": "org.bunny.playback.updated",
+   "subject": "living-room",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/playback/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "living-room",
+    "revision": 30,
+    "availability": "available",
+    "observedAtMs": 1791287998500,
+    "playback": {
+     "status": "known",
+     "player": "playing",
+     "title": "Song",
+     "artist": "Artist",
+     "album": "Album",
+     "controls": [
+      "pause",
+      "next",
+      "previous"
+     ]
+    }
+   }
+  },
+  "playback-unavailable": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-playback-gone",
+   "source": "bunny/core",
+   "type": "org.bunny.playback.updated",
+   "subject": "living-room",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/playback/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "living-room",
+    "revision": 31,
+    "availability": "unavailable",
+    "playback": {
+     "status": "unknown"
+    }
+   }
+  },
+  "lifecycle": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-1",
+   "source": "bunny/hook/codex-desktop",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "event": {
+     "kind": "attention-approval",
+     "attention": {
+      "status": "known",
+      "id": "approval-1"
+     }
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "nativeEventId": "native-77",
+    "occurredAtMs": 1791287999850,
+    "projectId": "hub",
+    "label": {
+     "value": "Port Nanoleaf",
+     "origin": "user"
+    },
+    "title": {
+     "value": "Translate the bridge tests",
+     "source": "provider"
+    },
+    "project": "agent-device-hub"
+   }
+  },
+  "lifecycle-child": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-2",
+   "source": "bunny/hook/codex-desktop",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-child"
+    },
+    "turn": {
+     "status": "unknown"
+    },
+    "parent": {
+     "status": "known",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     }
+    },
+    "event": {
+     "kind": "session-started"
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "unknown"
+    }
+   }
+  },
+  "lifecycle-claude-desktop": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-3",
+   "source": "bunny/hook/claude-code",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "claude",
+     "client": "code",
+     "hostId": "host-a",
+     "sourceId": "claude-code",
+     "sessionId": "session-claude"
+    },
+    "turn": {
+     "status": "known",
+     "id": "claude-turn-2"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "event": {
+     "kind": "turn-started"
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "unknown"
+    },
+    "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+   }
+  },
+  "lifecycle-acknowledged": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-4",
+   "source": "bunny/hook/codex-desktop",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "event": {
+     "kind": "notice-acknowledged",
+     "consumerId": "nanoleaf",
+     "noticeId": "notice-1"
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "unknown"
+    }
+   }
+  },
+  "lifecycle-read": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-5",
+   "source": "bunny/hook/codex-desktop",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "event": {
+     "kind": "read-observed",
+     "state": "read"
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "unknown"
+    }
+   }
+  },
+  "lifecycle-unavailable": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "obs-6",
+   "source": "bunny/hook/codex-desktop",
+   "type": "org.bunny.lifecycle.observed",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/lifecycle/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "event": {
+     "kind": "evidence-unavailable",
+     "dimension": "ordering",
+     "reason": "missing"
+    },
+    "observedAtMs": 1791287999900,
+    "ordering": {
+     "status": "unknown"
+    }
+   }
+  },
+  "attention-raised": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-attention-raised",
+   "source": "bunny/core",
+   "type": "org.bunny.attention.raised",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/attention-raised/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "observedAtMs": 1791287999500,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "revision": 12,
+    "occurredAtMs": 1791287999400,
+    "attention": {
+     "id": {
+      "status": "known",
+      "id": "approval-1"
+     },
+     "kind": "approval"
+    }
+   }
+  },
+  "attention-cleared": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-attention-cleared",
+   "source": "bunny/core",
+   "type": "org.bunny.attention.cleared",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/attention-cleared/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "observedAtMs": 1791287999500,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "revision": 15,
+    "attention": {
+     "id": {
+      "status": "known",
+      "id": "approval-1"
+     },
+     "kind": "approval"
+    },
+    "cause": "resolved"
+   }
+  },
+  "turn-ended": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-turn-ended",
+   "source": "bunny/core",
+   "type": "org.bunny.turn.ended",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/turn-ended/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "observedAtMs": 1791287999500,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "revision": 12,
+    "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+   }
+  },
+  "session-ended": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-ended",
+   "source": "bunny/core",
+   "type": "org.bunny.session.ended",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session-ended/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "observedAtMs": 1791287999500,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "revision": 14
+   }
+  },
+  "moment-ended": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-moment-ended",
+   "source": "bunny/nanoleaf",
+   "type": "org.bunny.moment.ended",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/moment-ended/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-moment-1",
+    "momentId": "moment-1",
+    "ending": "preempted",
+    "endedAtMs": 1791287999900
+   }
+  },
+  "mode-set": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-mode-set",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.requested",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/mode-set/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-mode-1",
+    "mode": "work",
+    "expectedRevision": 4
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "mode-set-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-mode-set-replied",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.replied",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-mode-1",
+    "status": "accepted"
+   }
+  },
+  "mode-set-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-mode-set-completed",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.completed",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-mode-1",
+    "result": "succeeded",
+    "evidence": "observed"
+   }
+  },
+  "moment-play": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-moment-play",
+   "source": "bunny/core",
+   "type": "org.bunny.moment.play.requested",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/moment-play/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-moment-1",
+    "momentId": "moment-1",
+    "mood": "celebrate",
+    "palette": [
+     "#ff8800",
+     "#00AAFF"
+    ],
+    "durationMs": 8000,
+    "priorityClass": "event",
+    "coversStatus": true,
+    "startAtMs": 1791288001000,
+    "toleranceMs": 10000
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "moment-play-missed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-moment-play-missed",
+   "source": "bunny/core",
+   "type": "org.bunny.moment.play.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-moment-1",
+    "result": "failed",
+    "evidence": "none",
+    "error": {
+     "code": "expired",
+     "retryable": false,
+     "detail": "moment-missed"
+    }
+   }
+  },
+  "moment-play-uncertain": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-moment-play-uncertain",
+   "source": "bunny/core",
+   "type": "org.bunny.moment.play.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-moment-1",
+    "result": "uncertain",
+    "evidence": "transmitted",
+    "error": {
+     "code": "uncertain-result",
+     "retryable": false
+    }
+   }
+  },
+  "session-expired": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-expired",
+   "source": "bunny/core",
+   "type": "org.bunny.session.removed",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "session",
+     "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+    },
+    "revision": 13,
+    "reason": "expired"
+   }
+  },
+  "session-retired-root": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-retired-root",
+   "source": "bunny/core",
+   "type": "org.bunny.session.removed",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "session",
+     "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
+    },
+    "revision": 14,
+    "reason": "retired"
+   }
+  },
+  "session-retired-child": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-retired-child",
+   "source": "bunny/core",
+   "type": "org.bunny.session.removed",
+   "subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "session",
+     "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d"
+    },
+    "revision": 14,
+    "reason": "retired"
+   }
+  },
+  "inbox-item-deleted": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-inbox-1-deleted",
+   "source": "bunny/core",
+   "type": "org.bunny.inbox-item.removed",
+   "subject": "inbox-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "inbox-item",
+     "id": "inbox-1"
+    },
+    "revision": 8,
+    "reason": "deleted"
+   }
+  },
+  "sync-request": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-request",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.requested",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-request",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-request/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-1",
+    "families": [
+     "session"
+    ]
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "sync-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-completed",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.completed",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-completed",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-completed/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-1",
+    "revision": 15,
+    "members": [
+     {
+      "family": "session",
+      "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
+     }
+    ]
+   }
+  }
+ },
+ "invalid": [
+  {
+   "name": "a parent in another source",
+   "base": "session-child",
+   "set": {
+    "/data/parent/identity/sourceId": "codex-cli"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /parent/identity another source"
+  },
+  {
+   "name": "a parent from another provider",
+   "base": "lifecycle-child",
+   "set": {
+    "/data/parent/identity": {
+     "provider": "claude",
+     "client": "code",
+     "hostId": "host-a",
+     "sourceId": "claude-code",
+     "sessionId": "session-claude"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /parent/identity another source"
+  },
+  {
+   "name": "a session as its own parent",
+   "base": "session-child",
+   "set": {
+    "/data/parent/identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-child"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /parent/identity same session"
+  },
+  {
+   "name": "a lifecycle session as its own parent",
+   "base": "lifecycle-child",
+   "set": {
+    "/data/parent/identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-child"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /parent/identity same session"
+  },
+  {
+   "name": "an id that is not the identity key",
+   "base": "session",
+   "set": {
+    "/data/id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+    "/subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id not the identity key"
+  },
+  {
+   "name": "a subject that is not the entity",
+   "base": "session",
+   "set": {
+    "/subject": "session-root"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "ordering under another authority",
+   "base": "session",
+   "set": {
+    "/data/ordering/authority": "claude-code"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ordering/authority not the source"
+  },
+  {
+   "name": "lifecycle ordering under another authority",
+   "base": "lifecycle",
+   "set": {
+    "/data/ordering/authority": "other"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ordering/authority not the source"
+  },
+  {
+   "name": "a repeated notice",
+   "base": "session",
+   "set": {
+    "/data/notices/1": {
+     "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+     "kind": "turn-ended",
+     "turn": {
+      "status": "unknown"
+     },
+     "acknowledgedBy": []
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /notices duplicate id"
+  },
+  {
+   "name": "a repeated unavailable dimension",
+   "base": "session",
+   "set": {
+    "/data/unavailable/1": {
+     "dimension": "parent",
+     "reason": "lost"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /unavailable duplicate dimension"
+  },
+  {
+   "name": "read evidence outside Codex Desktop",
+   "base": "session-claude",
+   "set": {
+    "/data/read": "read"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /read const"
+  },
+  {
+   "name": "read evidence from the Codex CLI",
+   "base": "lifecycle-read",
+   "set": {
+    "/data/identity/client": "cli",
+    "/subject": "c654e11645d7b2f74d21044cb3258c0d0843c61bf5dd3ad478dcf1a1b681010e"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /identity/client const"
+  },
+  {
+   "name": "a Claude session claiming the Desktop client",
+   "base": "session-claude",
+   "set": {
+    "/data/identity/client": "desktop"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /identity/client const"
+  },
+  {
+   "name": "a host session ID on a child",
+   "base": "session-child",
+   "set": {
+    "/data/hostSessionId": "local_1"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /hostSessionId false schema"
+  },
+  {
+   "name": "restart uncertainty claiming current freshness",
+   "base": "session-claude",
+   "set": {
+    "/data/freshness": "current"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /freshness const"
+  },
+  {
+   "name": "an ended activity",
+   "base": "session",
+   "set": {
+    "/data/activity": "ended"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /activity enum"
+  },
+  {
+   "name": "a missing freshness",
+   "base": "session",
+   "set": {
+    "/data/freshness": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required freshness"
+  },
+  {
+   "name": "a label over 80 characters",
+   "base": "session",
+   "set": {
+    "/data/label/value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /label/value maxLength"
+  },
+  {
+   "name": "a credential in a title",
+   "base": "session",
+   "set": {
+    "/data/title/value": "token: abc123"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /title/value pattern"
+  },
+  {
+   "name": "an undeclared prompt field",
+   "base": "lifecycle",
+   "set": {
+    "/data/prompt": "text"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties prompt"
+  },
+  {
+   "name": "attention without its evidence",
+   "base": "lifecycle",
+   "set": {
+    "/data/event": {
+     "kind": "attention-input"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /event oneOf"
+  },
+  {
+   "name": "a dotted 1.x event kind",
+   "base": "lifecycle",
+   "set": {
+    "/data/event/kind": "attention.approval"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /event oneOf"
+  },
+  {
+   "name": "an occurrence for another session",
+   "base": "attention-raised",
+   "set": {
+    "/data/session": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /session not the identity key"
+  },
+  {
+   "name": "an occurrence under another subject",
+   "base": "turn-ended",
+   "set": {
+    "/subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the session"
+  },
+  {
+   "name": "an unknown clearing cause",
+   "base": "attention-cleared",
+   "set": {
+    "/data/cause": "expired"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /cause enum"
+  },
+  {
+   "name": "a session record sent as an occurrence",
+   "base": "session",
+   "set": {
+    "/kind": "occurrence"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /kind session is a state family"
+  },
+  {
+   "name": "a session record under another type",
+   "base": "session",
+   "set": {
+    "/type": "org.bunny.session.changed"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type session uses org.bunny.session.updated"
+  },
+  {
+   "name": "a mode in device spelling",
+   "base": "mode",
+   "set": {
+    "/data/mode": "Work"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /mode enum"
+  },
+  {
+   "name": "a device-native mode",
+   "base": "mode-set",
+   "set": {
+    "/data/mode": "monitor"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /mode enum"
+  },
+  {
+   "name": "a mode request naming a device",
+   "base": "mode-set",
+   "set": {
+    "/data/deviceId": "wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties deviceId"
+  },
+  {
+   "name": "a moment request naming a controller",
+   "base": "moment-play",
+   "set": {
+    "/data/controllerId": "nanoleaf"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties controllerId"
+  },
+  {
+   "name": "a moment request in a controller clock",
+   "base": "moment-play",
+   "set": {
+    "/data/start": {
+     "domain": "controller-monotonic",
+     "epoch": "e",
+     "atMs": 1,
+     "toleranceMs": 0
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties start"
+  },
+  {
+   "name": "a flourish that covers status",
+   "base": "moment-play",
+   "set": {
+    "/data/priorityClass": "flourish"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /coversStatus const"
+  },
+  {
+   "name": "a moment shorter than one second",
+   "base": "moment-play",
+   "set": {
+    "/data/durationMs": 999
+   },
+   "expect": "invalid-message",
+   "detail": "payload /durationMs minimum"
+  },
+  {
+   "name": "a start window over one minute",
+   "base": "moment-play",
+   "set": {
+    "/data/toleranceMs": 60001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /toleranceMs maximum"
+  },
+  {
+   "name": "a start more than a minute ahead",
+   "base": "moment-play",
+   "set": {
+    "/data/startAtMs": 1791288060001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /startAtMs more than 60000 ms after time"
+  },
+  {
+   "name": "a mood outside the kebab-case vocabulary",
+   "base": "moment-play",
+   "set": {
+    "/data/mood": "Celebrate"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /mood pattern"
+  },
+  {
+   "name": "a moment ending that is not one of the four",
+   "base": "moment-ended",
+   "set": {
+    "/data/ending": "cancelled"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ending enum"
+  },
+  {
+   "name": "a failed operation without its error",
+   "base": "inbox-item-failed",
+   "set": {
+    "/data/item/error": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /item oneOf"
+  },
+  {
+   "name": "a dismissal list with a repeated display",
+   "base": "inbox-item-turn-ended",
+   "set": {
+    "/data/dismissedBy": [
+     "pixoo",
+     "pixoo"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /dismissedBy uniqueItems"
+  },
+  {
+   "name": "playback metadata kept while unavailable",
+   "base": "playback",
+   "set": {
+    "/data/availability": "unavailable"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /playback additionalProperties player"
+  },
+  {
+   "name": "playback without an observation claiming availability",
+   "base": "playback-unavailable",
+   "set": {
+    "/data/availability": "stale"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required observedAtMs"
+  },
+  {
+   "name": "a repeated playback control",
+   "base": "playback",
+   "set": {
+    "/data/playback/controls": [
+     "pause",
+     "pause"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /playback oneOf"
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "an expired session is removed",
+   "steps": [
+    "session",
+    "session-claude",
+    "session-expired"
+   ],
+   "expect": [
+    "session"
+   ]
+  },
+  {
+   "name": "a retired subtree is removed entity by entity",
+   "steps": [
+    "session",
+    "session-child",
+    "session-claude",
+    "session-ended",
+    "session-retired-root",
+    "session-retired-child"
+   ],
+   "expect": [
+    "session-claude"
+   ]
+  },
+  {
+   "name": "a deleted inbox item is removed",
+   "steps": [
+    "inbox-item-turn-ended",
+    "inbox-item-failed",
+    "inbox-item-deleted"
+   ],
+   "expect": [
+    "inbox-item-failed"
+   ]
+  },
+  {
+   "name": "a late state with an older revision does not bring a removed session back",
+   "steps": [
+    "session",
+    "session-claude",
+    "session-expired",
+    "session-claude"
+   ],
+   "expect": [
+    "session"
+   ]
+  },
+  {
+   "name": "a sync drops entities the consumer still held and keeps other families",
+   "steps": [
+    "session",
+    "session-child",
+    "session-claude",
+    "mode",
+    "sync-request",
+    "session-root-later",
+    "sync-completed"
+   ],
+   "expect": [
+    "session-root-later",
+    "mode"
+   ]
+  },
+  {
+   "name": "live messages at or below the sync revision are stale after the sync",
+   "steps": [
+    "session",
+    "session-claude",
+    "sync-request",
+    "session-root-later",
+    "sync-completed",
+    "session-claude",
+    "session"
+   ],
+   "expect": [
+    "session-root-later"
+   ]
+  }
+ ]
+}

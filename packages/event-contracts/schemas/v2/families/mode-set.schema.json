@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/mode-set/2.0",
+  "description": "Command: select a mode (Hub #842). The envelope subject names the owner of the mode it changes; the payload names no device. `expectedRevision`, when present, refuses the request with `revision-conflict` if the mode record has moved on. The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "mode"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "mode": {"$ref": "https://bunny.invalid/events/mode/2.0#/$defs/mode"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+  }
+}

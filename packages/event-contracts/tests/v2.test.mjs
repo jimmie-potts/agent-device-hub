@@ -87,6 +87,18 @@ test('modules register payload schemas built from the shared blocks, but not res
   assert.throws(() => v.register('https://bunny.invalid/events/Example/2.0', {}), /invalid dataschema/);
 });
 
+test('a registered check refuses a payload its schema accepts, naming where', () => {
+  const v = new MessageValidator();
+  const uri = 'https://bunny.invalid/events/example-session/2.0';
+  v.register(uri, fixtures.schemas[uri], message => message.data.status === 'working' ? 'payload /status not while working' : undefined);
+  assert.equal(v.validate(fixtures.valid.state).ok, true);
+  assert.deepEqual(v.validate(fixtures.valid['state-unknown-order']).error,
+    {code: 'invalid-message', retryable: false, detail: 'payload /status not while working'});
+  const broken = structuredClone(fixtures.valid['state-unknown-order']);
+  delete broken.data.ordering;
+  assert.equal(v.validate(broken).error.detail, 'payload / required ordering', 'the schema runs first');
+});
+
 test('non-JSON input is refused without throwing', () => {
   const v = validator();
   for (const input of [undefined, null, 5, 'text', [], new Map(), Object.create(null), {toJSON: () => ({})}]) {

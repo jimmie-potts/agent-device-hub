@@ -51,6 +51,11 @@ export function errorBody(code: ErrorCode, extra: {requestId?: string; traceId?:
 }
 
 export type Validation<T = Record<string, unknown>> = {ok: true; value: Message<T>} | {ok: false; error: ErrorDetail};
+/**
+ * A rule that JSON Schema cannot state, such as two fields that must agree. It runs after the payload schema passes
+ * and returns where the message breaks it, for example `payload /parent/identity another source`, or undefined.
+ */
+export type PayloadCheck = (message: Message) => string | undefined;
 
 type SchemaId = {family: string; version: string};
 const parseSchemaId = (uri: string): SchemaId | undefined => {
@@ -102,6 +107,7 @@ export class MessageValidator {
   readonly #ajv = new Ajv2020({strict: true, allErrors: false});
   readonly #envelope: ValidateFunction;
   readonly #payloads = new Map<string, ValidateFunction>();
+  readonly #checks = new Map<string, PayloadCheck>();
 
   constructor() {
     this.#ajv.addSchema(schemas.blocks as object);
@@ -112,8 +118,11 @@ export class MessageValidator {
     }
   }
 
-  /** Registers a payload schema under `https://bunny.invalid/events/<family>/<major>.<minor>`. */
-  register(dataschema: string, schema: object): void {
+  /**
+   * Registers a payload schema under `https://bunny.invalid/events/<family>/<major>.<minor>`, with an optional check
+   * for rules the schema cannot state. A message that fails the check is refused with `invalid-message`.
+   */
+  register(dataschema: string, schema: object, check?: PayloadCheck): void {
     const id = parseSchemaId(dataschema);
     if (id === undefined || !/^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/.test(id.family) || !/^[0-9]+\.[0-9]+$/.test(id.version)) {
       throw new Error(`invalid dataschema: ${dataschema}`);
@@ -123,6 +132,7 @@ export class MessageValidator {
     }
     if (this.#payloads.has(dataschema)) throw new Error(`schema already registered: ${dataschema}`);
     this.#payloads.set(dataschema, this.#ajv.compile(schema));
+    if (check !== undefined) this.#checks.set(dataschema, check);
   }
 
   /** Checks one message. `nowMs`, when given, rejects a command or sync request past its expiry. */
@@ -153,6 +163,8 @@ export class MessageValidator {
       return sameFamily ? fail('unsupported-version', message.dataschema) : fail('unknown-schema', message.dataschema);
     }
     if (!validatePayload(message.data)) return fail('invalid-message', describe('payload', validatePayload.errors));
+    const broken = this.#checks.get(message.dataschema)?.(message as Message);
+    if (broken !== undefined) return fail('invalid-message', broken);
     if (message.expiresat !== undefined) {
       if (!realInstant(message.expiresat)) return fail('invalid-message', 'expiresat');
       if (options.nowMs !== undefined && Date.parse(message.expiresat) <= options.nowMs) return fail('expired', message.expiresat);

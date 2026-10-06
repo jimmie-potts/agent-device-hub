@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/session-ended/2.0",
+  "description": "Occurrence: the owner accepted an agent runtime end (Hub #842). The owner then removes the session and its known descendants, each with a removal event whose reason is `retired`. An end is not acknowledgment, readership, success or cancellation.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/session/2.0#/$defs/occurrence",
+  "unevaluatedProperties": false
+}

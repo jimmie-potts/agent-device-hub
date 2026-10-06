@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/turn-ended/2.0",
+  "description": "Occurrence: an agent turn ended (Hub #842). It never proves successful work or readership. `noticeId` names the turn-ended notice the owner retained, when it retained one.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/session/2.0#/$defs/occurrence",
+  "unevaluatedProperties": false,
+  "properties": {
+    "noticeId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/hash"}
+  }
+}

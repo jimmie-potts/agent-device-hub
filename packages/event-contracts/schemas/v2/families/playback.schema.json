@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback/2.0",
+  "description": "State: the presented playback source, the full record (Hub #842). The owner publishes a new record when availability changes as its last observation ages: stale after 5 s, unavailable after 30 s, when it withholds old metadata. `controls` are the actions the source offers now.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "availability", "playback"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "availability": {"enum": ["available", "stale", "unavailable"]},
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "playback": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "player", "controls"],
+        "properties": {
+          "status": {"const": "known"},
+          "player": {"enum": ["playing", "paused", "stopped", "inactive", "unknown"]},
+          "title": {"$ref": "#/$defs/text"},
+          "artist": {"$ref": "#/$defs/text"},
+          "album": {"$ref": "#/$defs/text"},
+          "controls": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"enum": ["play", "pause", "next", "previous"]}}
+        }}
+    ]}
+  },
+  "allOf": [
+    {"if": {"properties": {"availability": {"const": "unavailable"}}},
+      "then": {"properties": {"playback": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"}}}},
+    {"if": {"properties": {"availability": {"enum": ["available", "stale"]}}}, "then": {"required": ["observedAtMs"], "properties": {"observedAtMs": true}}}
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 256}
+  }
+}
