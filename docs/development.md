@@ -1569,6 +1569,29 @@ changes power. No test contacts a bulb, and every test that constructs a
 controller, publisher or host passes its own temporary mode/lease directory,
 never the real default under a developer's home.
 
+## Nanoleaf port
+
+Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
+the strict profile. Nothing runs it yet; the Nanoleaf module story (#844) wires it.
+[`modules/nanoleaf/PORTING.md`](../modules/nanoleaf/PORTING.md) records the
+provenance, maps every Python module and test file to a slice, and lists the known
+differences.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:nanoleaf` from the worktree root. The core CI job runs
+`npm run test:nanoleaf:built` after its fresh build. The suite needs no device,
+Hub or Python.
+
+- **Slice 1 (ported):** session-to-Line projection, shared and legacy source
+  switching, Codex metadata, Line placement, NL22 enrollment, and the device
+  registry, layout and database migration they need. The translated Python tests
+  keep their class and method names. A replay of recorded Python sequences checks
+  every saved row.
+- **Slice 2 (planned):** device configuration loading, geometry, the renderer,
+  effects and the Nanoleaf HTTP client.
+- **Slice 3 (planned):** the worker, legacy hook input, modes, scenes, comets and
+  edits.
+
 ## Local controller host checks
 
 Hub #289 adds `apps/local-controllers`, the loopback host that serves controller
