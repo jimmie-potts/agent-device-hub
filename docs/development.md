@@ -727,7 +727,8 @@ CI job runs `npm run test:runtime:built` after its fresh build. The tests use
 in-test fixture modules, port 0 on loopback and private state directories under
 the system temporary directory, which must be outside every Git checkout. Some
 start the runtime in child processes, as the service manager would. They need no
-device or network.
+device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
+zero-module memory for #123; the README's Memory section says how.
 
 ## Agent lifecycle contract checks
 

@@ -52,10 +52,14 @@ if (synced.status === 'synced') render(synced.copy.states());
   deliveries. By default, each one becomes a `BunnySdkWarning` process warning
   whose message names the source and pattern, with the original error as its
   `cause`.
-- `scheduler`: runs request deadlines through `after(delayMs, callback)`, which
-  returns a function that cancels the callback. Defaults to the global
-  `setTimeout`. The runtime passes the scheduler and clock it gives its modules,
-  so a module's deadlines follow the module's clock.
+- `scheduler`: runs request and sync deadlines through
+  `after(delayMs, callback)`, which returns a function that cancels the
+  callback. Defaults to the global `setTimeout`. The runtime passes the
+  scheduler and clock it gives its modules, so a module's deadlines follow the
+  module's clock.
+- `onSyncRestart({source, pattern})`: hears of each overflow that restarts a
+  copy's sync, with the copy's source and `sync <families>` as its pattern. The
+  runtime counts these per module in health, so a restart loop shows.
 
 `bus.connect(source)` returns a `Participant`: the `Sdk` calls for one
 participant, plus [`close()`](#closing-a-participant). `source` is its
@@ -238,9 +242,13 @@ follows:
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
 | `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
+| `cancelled` | The copy closed, or its participant closed, before the answer came. |
 | `capacity` | The owner's queue is full. |
 | `invalid-request` | The families belong to more than one owner. |
 
+A request still waiting in the owner's queue at its deadline leaves the queue,
+so the owner never serves it and its room is free for another. It is still
+`unavailable`, never `expired`: a sync changes nothing, so asking again is safe.
 An owner ignores a sync request past its expiry. A malformed call, such as an
 empty or repeated family list, rejects with `SdkError` and `invalid-request`.
 
@@ -253,7 +261,11 @@ module leaves nothing behind:
    responder is taken out and the request is `rejected` with `cancelled`. One
    that the responder's handler has becomes `uncertain`. Their deadlines are
    cleared, so no timer keeps the process alive.
-3. Its subscriptions and responders close as their own `close()` does.
+3. Its subscriptions, responders, sync copies and sync owners close as their
+   own `close()` does. A copy withdraws its outstanding sync request, which
+   leaves the owner's queue if it still waits there, and a first sync still
+   under way resolves as `rejected` with `cancelled`. An owner refuses its
+   waiting requests as `unavailable`.
 
 It resolves when the participant's running handlers have finished. Because its
 own requests settle first, a handler that awaits another participant's reply can
@@ -295,8 +307,9 @@ export const lamp: BunnyModule = {
   module.
 - **`stop()`** releases what the module holds. The runtime calls it once for
   every module whose start it called, even when start failed or has not
-  finished, after closing the module's participant, so no handler of the module
-  is still running.
+  finished. It runs after the module's participant has closed, which waits for
+  the module's running handlers up to the stop deadline; a handler that outlasts
+  that deadline may still be running.
 
 The context:
 
@@ -311,8 +324,9 @@ The context:
 | `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. |
 | `signal` | Aborted when the module stops, so device calls given it end. |
 
-After the module stops, every part of the context refuses use with an
-`SdkError` carrying `invalid-state`.
+Once the module's stop begins, its `sdk`, `scheduler`, `workers` and
+`database()` refuse use with an `SdkError` carrying `invalid-state`. Its `log`,
+`trace`, `clock` and `signal` keep working, so `stop()` can still log.
 
 ## Trace context
 

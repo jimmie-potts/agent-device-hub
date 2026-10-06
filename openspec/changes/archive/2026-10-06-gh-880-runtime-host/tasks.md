@@ -24,3 +24,17 @@
 - [x] 4.1 Add one core CI step, `npm run test:runtime:built`, with its `tests/workflow_checks.cjs` entry; `npm run test:workflow` passes.
 - [x] 4.2 Add `apps/runtime/README.md`, "Runtime checks" in `docs/development.md`, the SDK README's Modules section and the architecture note.
 - [x] 4.3 Validate this change with `--strict`, then sync and archive it. `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:events:built`, `npm run test:workflow`, `npm run check:workflow` and `npm run openspec -- validate --specs --strict` exit zero, each suite twice.
+
+## 5. Review round (PR #899)
+
+- [x] 5.1 Write failing tests for each finding and for the #881 fold-in, against stubs that keep the old behavior: 11 runtime tests and 4 SDK tests fail, and the watchdog's pause decision fails 2 unit tests.
+- [x] 5.2 Run a module's whole stop in its own async flow; abort listeners that throw or reject on a handler error, a failed start and the runtime's stop stay with their module, and SIGTERM exits 0. Without it the abort-listener process test fails.
+- [x] 5.3 Narrow the context's refusal and `stop()`'s handler wording in `module.ts`, both READMEs, `bunny-runtime` and design.md.
+- [x] 5.4 Install the signal handlers before the runtime starts and stop once the starts settle; without it the process dies by SIGTERM and the startup-signal test fails.
+- [x] 5.5 Discount the watchdog's own overrun, and detect a watchdog that exits; health shows `lagCheck`. Without the discount 2 lag unit tests fail; without exit detection the lag-check health test fails.
+- [x] 5.6 Check the whole state path before creating anything and never create through a link; refuse a dangling link and a file with clear messages; cover `/mnt`. With the old order the link test fails.
+- [x] 5.7 Record the error's type and code, never its raw message; check the Host header, Origin and Sec-Fetch-Site; aggregate dropped-delivery warnings per subscription per minute. Without the Host check its test fails.
+- [x] 5.8 Fold in #881: participant close covers sync copies, owners and deadlines; a queued sync request leaves the owner's queue at its deadline and stays `unavailable`; `onSyncRestart`; health counts sync restarts; reorder the "even when an overflow comes first" sentence.
+- [x] 5.9 Amend ADR 0012 for `expired`, make the two-handler deadlock explicit in `bunny-sdk`, and send a later command in the at-expiry test.
+- [x] 5.10 Add `apps/runtime/scripts/measure-memory.mjs` and record the zero-module baseline for #123.
+- [x] 5.11 Keep this change's deltas identical to the synced `bunny-runtime` and `bunny-sdk` specs; `npm run openspec -- validate --specs --strict`, `npm run check:workflow` and `npm run test:workflow` exit zero.

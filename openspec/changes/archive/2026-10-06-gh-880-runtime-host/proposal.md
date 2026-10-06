@@ -13,6 +13,8 @@
 - **Failure isolation.** A module's thrown error, rejected promise or device timeout stops only that module through its participant's close, and health shows it `failed`. Errors that escape to the process are attributed to the module whose async flow raised them. Any other escaped error exits 1.
 - **Event-loop lag check.** A watchdog thread kills a process whose event loop stays stuck past the lag limit, and systemd's `Restart=on-failure` restarts the runtime.
 - **Wiring.** The workspace joins `build` and `typecheck`, adds `test:runtime` and `test:runtime:built`, and the core CI job runs `test:runtime:built`.
+- **Sync (#881) fold-in, from the review round.** Participant close also closes the participant's sync copies and sync owners, and a closed copy withdraws its outstanding request. A sync request still queued at its deadline leaves the owner's queue and stays `unavailable`. Sync deadlines run on the injected scheduler, `onSyncRestart` reports each overflow restart, and health counts them per module. One sentence of "Sync a consumer's copy from its owner" is reordered.
+- **ADR 0012 amendment.** "High-impact messages" says that a command still queued at its deadline is answered `expired`, and that only an unknown fate is uncertain.
 
 ## Capabilities
 
@@ -20,7 +22,7 @@
 - `bunny-runtime`: the runtime process and module host, with health, manifests and the API version check, the module context, failure isolation, private state and the event-loop lag check.
 
 ### Modified Capabilities
-- `bunny-sdk`: participant close, deadlines on an injected clock and scheduler, `expired` for a command that never reached its handler, and the close-from-a-handler rules for other subscriptions and left-behind continuations.
+- `bunny-sdk`: participant close, including sync copies and owners; request and sync deadlines on an injected clock and scheduler; `expired` for a command that never reached its handler; a sync request still queued at its deadline leaving the owner's queue; `onSyncRestart`; and the close-from-a-handler rules for other subscriptions and left-behind continuations.
 
 ## Impact
 
@@ -30,6 +32,7 @@
   - `.github/workflows/checks.yml` and `tests/workflow_checks.cjs`, for one core-job step;
   - `docs/development.md`, for "Runtime checks";
   - `docs/architecture.md`, which notes that the runtime skeleton exists as source;
+  - `docs/decisions/0012-bunny-event-platform.md`, for the `expired` amendment;
   - `openspec/changes/archive/2026-10-06-gh-879-sdk-bus/proposal.md`, for the capacity wording.
 - **Behavior change for SDK callers:** a request whose command was still queued at its deadline now resolves as `rejected` with `expired`, not `uncertain` with `uncertain-result`. Nothing outside the SDK's tests uses the SDK yet.
 - **Nothing else:** no Hub, controller, contract, installation or device change. The runtime binds only the port it is given; tests use port 0. Delivery target: source-only. The zero-module memory baseline is measured for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123).
