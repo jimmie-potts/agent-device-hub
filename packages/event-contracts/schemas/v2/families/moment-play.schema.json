@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/moment-play/2.0",
-  "description": "Command: play one moment, a short presentation intent (ADR 0006, Hub #842). The envelope subject names the target; the payload names no device and carries no frames, raw protocol or text. `startAtMs` is on the runtime's wall clock, at most 60,000 ms after the envelope time; a module more than `toleranceMs` past it drops the moment as missed. A flourish never covers status. The reply and the outcome use the profile's reply and outcome payloads.",
+  "description": "Command: play one moment, a short presentation intent (ADR 0006, Hub #842). The envelope subject names the target; the payload names no device and carries no frames, raw protocol or text. `startAtMs` is on the runtime's wall clock, at most 60,000 ms after the envelope time; a module converts it to a deadline on its own monotonic clock when the request arrives, and drops the moment as missed when it is more than `toleranceMs` past it. A flourish never covers status. The reply and the outcome use the profile's reply and outcome payloads.",
   "type": "object",
   "additionalProperties": false,
   "required": ["requestId", "momentId", "mood", "durationMs", "priorityClass", "coversStatus", "startAtMs", "toleranceMs"],

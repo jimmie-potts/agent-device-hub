@@ -1,7 +1,8 @@
 // A reference consumer copy of one owner's entities, for tests only (ADR 0012 "Consumers and recovery"). The SDK
 // (#830) owns the real consumer. A state event replaces the copy unless it is older than what the consumer holds or
-// removed; a removal drops it; `sync.completed` drops every held entity of the synced families that is not a member,
-// and makes everything at or below its revision stale.
+// removed; a removal drops it. `sync.completed` drops every held entity of the synced families that is not a member
+// and is at or below its revision, and makes everything at or below that revision stale. An entity above it arrived
+// live during the sync; ADR 0012 applies those after the sync, so it stays.
 export const familyOf = message => message.dataschema.split('/').at(-2);
 
 export function consumerCopy() {
@@ -37,8 +38,10 @@ export function consumerCopy() {
           if (families === undefined) return 'ignored';
           pending.delete(data.requestId);
           const members = new Set(data.members.map(entity => key(entity.family, entity.id)));
-          for (const k of [...held.keys()]) if (families.includes(k.split('/')[0]) && !members.has(k)) held.delete(k);
-          removed.clear();
+          for (const [k, record] of [...held]) {
+            if (families.includes(k.split('/')[0]) && !members.has(k) && record.revision <= data.revision) held.delete(k);
+          }
+          for (const [k, revision] of [...removed]) if (revision <= data.revision) removed.delete(k);
           floor = data.revision;
           return 'synced';
         }

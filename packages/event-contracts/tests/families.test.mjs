@@ -55,13 +55,14 @@ test('each family has one kind and one type, and its schema is built from the sh
   const v = validator();
   const types = new Set();
   const refs = schema => [...JSON.stringify(schema).matchAll(/"\$ref":"(https:[^"#]+)/g)].map(match => match[1]);
+  const profile = uri => uri.endsWith('/blocks/2.0') || uri.endsWith('/kinds/2.0');
   const usesBlocks = schema => refs(schema).some(uri => uri.endsWith('/blocks/2.0') ||
     usesBlocks(coreFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
   for (const {family, kind, type, dataschema, schema} of coreFamilies) {
     assert.equal(schema.$id, dataschema, family);
     assert.equal(dataschema, `https://bunny.invalid/events/${family}/2.0`);
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
-    for (const uri of refs(schema)) assert.ok(uri.endsWith('/blocks/2.0') || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
+    for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);
     assert.ok(!types.has(type), `${type} belongs to one family`);
     types.add(type);

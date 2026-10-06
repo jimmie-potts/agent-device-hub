@@ -87,7 +87,9 @@ follows the strict profile for new code.
     payload schema under `https://bunny.invalid/events/<family>/<major>.<minor>`;
     it refuses reserved families and duplicates. The optional `check` states a
     rule the schema cannot, such as two fields that must agree; it runs after
-    the schema passes and returns where the message breaks it. `validate(input, {nowMs})`
+    the schema passes and returns where the message breaks it. A check that
+    throws or returns an empty or non-string answer still refuses the message
+    with `invalid-message`, and validation never throws. `validate(input, {nowMs})`
     returns `{ok:true,value}` or `{ok:false,error}`, where `error` is the
     registry's error detail.
   - `errorBody(code, extra)`, which builds `{"error":{...}}`, takes
@@ -140,9 +142,14 @@ carries a device-specific payload: modules define those.
 The rules:
 - A state event carries the full record of one entity, and its `subject` is the
   entity's `id`.
-- A session's `id` is `sessionEntityId(identity)`, the SHA-256 of the identity.
-- Agent occurrences name the session, its identity, the turn, the observation's
-  evidence and the owner revision that committed them.
+- A session's `id` is `sessionEntityId(identity)`, the lowercase hex SHA-256 of
+  the identity as compact sorted-key UTF-8 JSON.
+- Agent occurrences name the session, its identity, the observation's turn and
+  evidence, and the owner revision that committed them. An attention occurrence
+  also carries the item's own turn, which a clearing observation's turn may have
+  left behind.
+- The owner publishes a new revision when a session's freshness or the playback
+  availability changes.
 - Commands name no device: the envelope `subject` names the target. Their
   replies and outcomes use the profile's reply and outcome payloads.
 - A removal event, with reason `expired`, `retired` or `deleted`, drops an
@@ -154,7 +161,13 @@ for rules a schema cannot state. The core families use it to refuse:
 - a known parent in another provider, client, host or source, or with the same
   session ID (cross-source parentage);
 - known ordering whose `authority` is not the identity's `sourceId`;
-- a session `id` or `subject` that is not the identity key;
+- a session `id` or `subject` that is not the identity key, an occurrence or a
+  turn-ended inbox item whose `session` is not, and a state event whose
+  `subject` is not its `id`;
+- a session `generation` after its `revision`;
+- freshness that disagrees with the envelope `time`: `current` five minutes or
+  more after the last evidence, or `uncertain` before that without a restart;
+- a raised attention item from a turn other than the observation's;
 - repeated notice IDs or unavailable dimensions;
 - a moment that starts more than 60 s after the request.
 

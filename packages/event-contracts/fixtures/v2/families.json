@@ -1,5 +1,5 @@
 {
- "description": "Core payload families of profile 2.0 (Hub #842). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy described in tests/families.test.mjs and names the messages whose payloads remain.",
+ "description": "Core payload families of profile 2.0 (Hub #842). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain.",
  "valid": {
   "session": {
    "specversion": "1.0",
@@ -380,7 +380,8 @@
       "code": "invalid-state",
       "retryable": false,
       "detail": "moment-blocked"
-     }
+     },
+     "evidence": "none"
     }
    }
   },
@@ -748,7 +749,11 @@
       "status": "known",
       "id": "approval-1"
      },
-     "kind": "approval"
+     "kind": "approval",
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     }
     }
    }
   },
@@ -790,9 +795,59 @@
       "status": "known",
       "id": "approval-1"
      },
-     "kind": "approval"
+     "kind": "approval",
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     }
     },
     "cause": "resolved"
+   }
+  },
+  "attention-cleared-retired": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-attention-cleared-retired",
+   "source": "bunny/core",
+   "type": "org.bunny.attention.cleared",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/attention-cleared/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-8"
+    },
+    "observedAtMs": 1791287999600,
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "revision": 16,
+    "attention": {
+     "id": {
+      "status": "unknown"
+     },
+     "kind": "approval",
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     }
+    },
+    "cause": "turn-retired"
    }
   },
   "turn-ended": {
@@ -943,7 +998,7 @@
    "specversion": "1.0",
    "bunnyprofile": "2.0",
    "id": "msg-mode-set-lost",
-   "source": "bunny/core",
+   "source": "bunny/pixoo",
    "type": "org.bunny.mode.set.completed",
    "subject": "pixoo",
    "time": "2026-10-06T12:00:00.000Z",
@@ -993,7 +1048,7 @@
    "specversion": "1.0",
    "bunnyprofile": "2.0",
    "id": "msg-moment-play-missed",
-   "source": "bunny/core",
+   "source": "bunny/nanoleaf",
    "type": "org.bunny.moment.play.completed",
    "subject": "wall",
    "time": "2026-10-06T12:00:00.000Z",
@@ -1016,7 +1071,7 @@
    "specversion": "1.0",
    "bunnyprofile": "2.0",
    "id": "msg-moment-play-uncertain",
-   "source": "bunny/core",
+   "source": "bunny/nanoleaf",
    "type": "org.bunny.moment.play.completed",
    "subject": "wall",
    "time": "2026-10-06T12:00:00.000Z",
@@ -1153,6 +1208,209 @@
    "data": {
     "requestId": "sync-1",
     "revision": 15,
+    "members": [
+     {
+      "family": "session",
+      "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
+     }
+    ]
+   }
+  },
+  "session-at-5": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-root-5",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "revision": 5,
+    "generation": 3,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "activity": "idle",
+    "attention": [
+     {
+      "id": {
+       "status": "known",
+       "id": "approval-1"
+      },
+      "kind": "approval",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      }
+     }
+    ],
+    "notices": [
+     {
+      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+      "kind": "turn-ended",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      },
+      "acknowledgedBy": [
+       "nanoleaf"
+      ]
+     }
+    ],
+    "read": "unread",
+    "unavailable": [
+     {
+      "dimension": "parent",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "observedAtMs": 1791287998000,
+    "lastEvidenceAtMs": 1791287998000,
+    "freshness": "current",
+    "restartUncertain": false,
+    "children": {
+     "active": 1,
+     "uncertain": 0
+    },
+    "label": {
+     "value": "Port Nanoleaf",
+     "origin": "user"
+    },
+    "title": {
+     "value": "Translate the bridge tests",
+     "source": "provider"
+    },
+    "project": "agent-device-hub",
+    "projectId": "hub"
+   }
+  },
+  "session-claude-at-15": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-claude-15",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+    "revision": 15,
+    "generation": 10,
+    "identity": {
+     "provider": "claude",
+     "client": "code",
+     "hostId": "host-a",
+     "sourceId": "claude-code",
+     "sessionId": "session-claude"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "claude-turn-2"
+    },
+    "activity": "unknown",
+    "attention": [
+     {
+      "id": {
+       "status": "unknown"
+      },
+      "kind": "input",
+      "turn": {
+       "status": "known",
+       "id": "claude-turn-2"
+      }
+     }
+    ],
+    "notices": [],
+    "read": "unknown",
+    "unavailable": [
+     {
+      "dimension": "read",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "unknown"
+    },
+    "observedAtMs": 1791287400000,
+    "lastEvidenceAtMs": 1791287400000,
+    "freshness": "uncertain",
+    "restartUncertain": true,
+    "children": {
+     "active": 0,
+     "uncertain": 0
+    },
+    "title": {
+     "value": "Plan the cutover",
+     "source": "user"
+    },
+    "project": "agent-device-hub",
+    "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+   }
+  },
+  "sync-request-2": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-request-2",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.requested",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-request",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-request/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-2",
+    "families": [
+     "session"
+    ]
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "sync-completed-at-14": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-completed-14",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.completed",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-completed",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-completed/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-2",
+    "revision": 14,
     "members": [
      {
       "family": "session",
@@ -1601,6 +1859,135 @@
    },
    "expect": "invalid-message",
    "detail": "payload /playback oneOf"
+  },
+  {
+   "name": "a lifecycle observation under another subject",
+   "base": "lifecycle",
+   "set": {
+    "/subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the session"
+  },
+  {
+   "name": "occurrence ordering under another authority",
+   "base": "attention-raised",
+   "set": {
+    "/data/ordering/authority": "claude-code"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ordering/authority not the source"
+  },
+  {
+   "name": "a mode under another subject",
+   "base": "mode",
+   "set": {
+    "/subject": "office"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "an inbox item under another subject",
+   "base": "inbox-item-turn-ended",
+   "set": {
+    "/subject": "inbox-9"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "playback under another subject",
+   "base": "playback",
+   "set": {
+    "/subject": "kitchen"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "an inbox item for another session",
+   "base": "inbox-item-turn-ended",
+   "set": {
+    "/data/item/session": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /item/session not the identity key"
+  },
+  {
+   "name": "an operation evidence outside the profile",
+   "base": "inbox-item-failed",
+   "set": {
+    "/data/item/evidence": "possible"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /item oneOf"
+  },
+  {
+   "name": "a generation after the revision",
+   "base": "session",
+   "set": {
+    "/data/generation": 13
+   },
+   "expect": "invalid-message",
+   "detail": "payload /generation after the revision"
+  },
+  {
+   "name": "current freshness five minutes after the last evidence",
+   "base": "session",
+   "set": {
+    "/data/lastEvidenceAtMs": 1791287700000
+   },
+   "expect": "invalid-message",
+   "detail": "payload /freshness current after five minutes"
+  },
+  {
+   "name": "uncertain freshness with recent evidence and no restart",
+   "base": "session",
+   "set": {
+    "/data/freshness": "uncertain"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /freshness uncertain before five minutes"
+  },
+  {
+   "name": "an undeclared occurrence field",
+   "base": "turn-ended",
+   "set": {
+    "/data/prompt": "text"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / unevaluatedProperties prompt"
+  },
+  {
+   "name": "a raised attention from another turn",
+   "base": "attention-raised",
+   "set": {
+    "/data/attention/turn": {
+     "status": "known",
+     "id": "turn-6"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /attention/turn not the observed turn"
+  },
+  {
+   "name": "a cleared attention without its own turn",
+   "base": "attention-cleared-retired",
+   "set": {
+    "/data/attention/turn": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /attention required turn"
+  },
+  {
+   "name": "the retired turn-started cause",
+   "base": "attention-cleared",
+   "set": {
+    "/data/cause": "turn-started"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /cause enum"
   }
  ],
  "scenarios": [
@@ -1681,6 +2068,19 @@
    ],
    "expect": [
     "session-root-later"
+   ]
+  },
+  {
+   "name": "an entity above the sync revision survives the sync",
+   "steps": [
+    "session-at-5",
+    "sync-request-2",
+    "session-claude-at-15",
+    "sync-completed-at-14"
+   ],
+   "expect": [
+    "session-at-5",
+    "session-claude-at-15"
    ]
   }
  ]

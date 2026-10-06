@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/session/2.0",
-  "description": "State: the full record of one agent session (Hub #842). The owner publishes the whole record whenever any field changes, freshness and child counts included. `id` is sessionEntityId(identity). The validator also refuses cross-source parentage, a self parent, ordering under another authority and repeated notices or unavailable dimensions (families.ts). Display precedence: the label (a user label is never replaced by an agent label), then the title, then the consumer's neutral fallback.",
+  "description": "State: the full record of one agent session (Hub #842). The owner publishes the whole record whenever any field changes, freshness and child counts included. `id` is sessionEntityId(identity), the SHA-256 of the identity as compact sorted-key UTF-8 JSON. The validator also refuses a generation after the revision and `current` freshness five minutes or more after the last evidence, by the envelope time. The validator also refuses cross-source parentage, a self parent, ordering under another authority and repeated notices or unavailable dimensions (families.ts). Display precedence: the label (a user label is never replaced by an agent label), then the title, then the consumer's neutral fallback.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "revision", "generation", "identity", "parent", "turn", "activity", "attention", "notices", "read", "unavailable",
@@ -64,10 +64,9 @@
         "properties": {"status": {"const": "known"}, "identity": {"$ref": "#/$defs/identity"}}}
     ]},
     "attentionKind": {"enum": ["question", "input", "approval"]},
-    "attention": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "turn"],
+    "attention": {"description": "One attention item. `turn` is the turn the item was raised on, which an occurrence's own `turn` may have left behind.",
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "turn"],
       "properties": {"id": {"$ref": "#/$defs/knownId"}, "kind": {"$ref": "#/$defs/attentionKind"}, "turn": {"$ref": "#/$defs/knownId"}}},
-    "occurrenceAttention": {"type": "object", "additionalProperties": false, "required": ["id", "kind"],
-      "properties": {"id": {"$ref": "#/$defs/knownId"}, "kind": {"$ref": "#/$defs/attentionKind"}}},
     "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "notice": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "turn", "acknowledgedBy"],
       "properties": {
@@ -104,7 +103,7 @@
       "then": {"properties": {"hostSessionId": false}}
     },
     "occurrence": {
-      "description": "What every agent occurrence carries: the session it happened to, the turn, the observation's evidence and the owner revision that committed it.",
+      "description": "What every agent occurrence carries: the session it happened to, the observation's turn and evidence, and the owner revision that committed it.",
       "type": "object", "required": ["session", "identity", "turn", "observedAtMs", "ordering", "revision"],
       "properties": {
         "session": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},

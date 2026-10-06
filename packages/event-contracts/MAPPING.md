@@ -39,7 +39,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `turn`, `turn.status`, `turn.id` | `session /turn` | Unchanged tagged known ID. |
 | `parent`, `parent.status`, `parent.identity` | `session /parent` | Unchanged. A known parent must have the same provider, client, host and source and a different session ID. The validator refuses cross-source parentage, as `validateSnapshot` did through the lifecycle validator. |
 | `activity` | `session /activity` | `unknown`, `active`, `idle` or `interrupted`. `ended` has **no 2.0 value**: the reducer no longer produces it, and the owner settles stored `ended` records at startup. A runtime end removes the record instead. Decided by the coordinator, 2026-10-06: migrate only stores that the 3.2 owner has already settled. |
-| `attention`, `attention[].id`, `attention[].kind`, `attention[].turn` | `session /attention` | Unchanged. Adding one also publishes `attention-raised`. Removing one publishes `attention-cleared` with its cause. |
+| `attention`, `attention[].id`, `attention[].kind`, `attention[].turn` | `session /attention` | Unchanged. Adding one also publishes `attention-raised`, and removing one publishes `attention-cleared` with its cause. Both carry the whole item, including the turn it was raised on. |
 | `notices`, `notices[].id`, `notices[].kind`, `notices[].turn`, `notices[].acknowledgedBy` | `session /notices` | Unchanged. These are per-consumer notices, cleared by consumer policy and gone with the record. The shared inbox's turn-ended item (`inbox-item`) is a separate durable fact that names the notice by `noticeId`. The validator refuses a repeated notice ID. |
 | `read` | `session /read` | Only Codex Desktop may report `read` or `unread` (schema). |
 | `unavailable`, `unavailable[].dimension`, `unavailable[].reason` | `session /unavailable` | The validator refuses a repeated dimension. |
@@ -47,10 +47,10 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
-| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). |
+| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). |
 | `restartUncertain` | `session /restartUncertain` | Unchanged. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
-| `generation` | `session /generation` | Required. Snapshot 1.0 records read as 0. |
+| `generation` | `session /generation` | Required, and never after the record's `revision` (validator). Snapshot 1.0 records read as 0. |
 | `label`, `labelOrigin` | `session /label` `{value, origin}` | Snapshots 1.0 and 1.1 hid agent labels, and 1.2 added `labelOrigin`. 2.0 always carries the winning label with its origin. Precedence holds: the owner never lets an agent label replace a user label, and the display order is the label, then the title, then a neutral fallback (`sessionTitle`). The label uses the lifecycle 1.1 credential check, which `setLabel` already applies. |
 | `title`, `title.value`, `title.source` | `session /title` | Unchanged, with the credential check. |
 | `project` | `session /project` | The display name, separate from `projectId`. |
@@ -98,22 +98,43 @@ is `sessionEntityId(identity)`.
 for an event the owner admits. In 2.0 only the profile's 256 KiB cap is in the
 contract. The owner and the hook keep their own bounds.
 
-What the core publishes for each accepted observation:
+What the core publishes for each accepted observation (agent-state `reducer.ts`
+is the reference):
 
 | Event kind | Session record | Occurrence |
 | --- | --- | --- |
-| `session-started`, `activity-observed`, `turn-interrupted` | created or updated | none |
-| `turn-started` | the new turn is current | `attention-cleared` with cause `turn-started` for each approval without a request ID that the new turn retires |
-| `question-continuing`, `attention-input`, `attention-approval` | attention added | `attention-raised` |
-| `attention-resolved` | the correlated attention removed | `attention-cleared` with cause `resolved` |
-| `turn-ended` | a notice retained | `turn-ended`; `attention-cleared` with cause `turn-ended` for approvals without a request ID |
+| `session-started`, `activity-observed`, `turn-interrupted` | created or updated; activity `active`, or `interrupted` | none of its own; see turn selection below |
+| `turn-started` | activity `active`; see turn selection below | none of its own; see turn selection below |
+| `question-continuing`, `attention-input`, `attention-approval` | the attention item added on the observation's turn | `attention-raised`, whose `attention.turn` is the observation's turn |
+| `attention-resolved` | With a known ID on a known turn, the correlated item is removed, and so is every approval without a request ID on that turn. Otherwise attention is marked ambiguous and nothing is removed. | `attention-cleared` with cause `resolved` for each removed item |
+| `turn-ended` | activity `idle`, a notice retained, and the turn's approvals without a request ID removed | `turn-ended`; `attention-cleared` with cause `turn-ended` for each removed approval |
 | `runtime-ended` | the record and its known descendants removed | `session-ended`, then one removal per record, reason `retired` |
 | `notice-acknowledged`, `read-observed`, `evidence-unavailable` | updated | none |
 
-The owner also removes records without an observation. Expiry after 24 hours
-without evidence publishes a removal with reason `expired`. Displacing a finished
-child subtree publishes removals with reason `retired`. Explicit approval
-recovery publishes `attention-cleared` with cause `recovered`.
+Turn selection: selecting a newer known turn retires the current one. The owner
+then removes every approval without a request ID raised on a retired turn, and
+publishes `attention-cleared` with cause `turn-retired` for each. In that
+occurrence, `turn` is the observation's turn and `attention.turn` is the retired
+turn the item was raised on. A newer turn is selected in two ways:
+- Any kind selects it when the observation's ordering is known and comparable
+  with the record's: the same epoch and a higher sequence.
+- With unknown ordering and no qualified activity ordering on the record, a
+  `turn-started` for a known turn selects it by receipt order. This is best
+  effort.
+
+The best-effort conflict path is the remaining case: an unordered start, activity,
+end, interruption, runtime end or acknowledgment for a different known turn. The
+owner retires the current turn without selecting a new one. It sets the turn
+unknown and marks turn and ordering ambiguous. The retired turn's approvals are
+still removed with cause `turn-retired`.
+
+The owner also changes records without an observation:
+- Expiry after 24 hours without evidence publishes a removal with reason `expired`.
+- Displacing a finished child subtree publishes removals with reason `retired`.
+- Explicit approval recovery publishes `attention-cleared` with cause `recovered`.
+- Startup settlement of approvals on already retired turns publishes
+  `attention-cleared` with cause `turn-retired`.
+- Freshness turning `uncertain` publishes the record at a new revision.
 
 ## Controller receipt
 
@@ -133,20 +154,37 @@ are `org.bunny.mode.set.completed` and `org.bunny.moment.play.completed`.
 | `requestId`, `requestId.epoch`, `requestId.sequence` | reply and outcome `/requestId` | The request's string ID correlates the request, its reply and its outcome. A module that keeps `{epoch, sequence}` tickets keeps them inside its own device command family. Decided by the coordinator, 2026-10-06: how history migration spells a 1.x ticket is deferred to the cutover's migration ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). |
 | `configurationRevision` | module state `/revision` | **No core home.** The module's own device state family carries it. |
 | `generation` | module state | **No core home.** The module's own device state family carries it. |
-| `outcome` | reply, or outcome `/result` | See the outcome table. |
-| `priorEffects` | outcome `/evidence` | `none` becomes `none`, and `confirmed-transmission` becomes `transmitted`. `possible` becomes `none` with result `uncertain`. Decided by the coordinator, 2026-10-06: evidence `none` means there is no evidence that anything reached the device, as after a failure before sending or a lost answer, and ADR 0012 says so. |
+| `outcome` | reply, or outcome `/result` | See the rule below. |
+| `priorEffects` | outcome `/evidence` | See the rule below. Decided by the coordinator, 2026-10-06: evidence `none` means there is no evidence that anything reached the device, as after a failure before sending or a lost answer, and ADR 0012 says so. |
 | `completedOperations`, `uncertainOperations` | **no 2.0 home** | The profile's outcome payload is closed. Decided by the coordinator, 2026-10-06: the module keeps them in its own device state and command families. Profile 2.0's outcome stays unchanged, with no 2.1 operations list now. |
-| `failure`, `failure.code` | reply or outcome `/error` | See the error table. When codes merged, the 1.x code goes in `detail`. |
+| `failure`, `failure.code` | reply or outcome `/error` | See the rule and the error table below. |
 
-| 1.x outcome | 2.0 |
-| --- | --- |
-| `queued` | Reply `accepted`, with no outcome yet. |
-| `sent` | Outcome `succeeded` with evidence `transmitted`. A failure code on a sent receipt is dropped, because a succeeded outcome carries no error. |
-| `failed` with an admission code (`unauthenticated`, `forbidden`, `unsupported-capability`, `invalid-request`, `unknown-device`, `revision-conflict`, `stale-generation`, `request-conflict`, `request-expired`, `request-order`, `capacity`) | A reply carrying the error. 1.x retained these as the request's receipt; 2.0 refuses the request in the reply. |
-| `failed` with any other code, or none | Outcome `failed` with the mapped evidence and the error. A failed receipt without a code gets `internal`. |
-| `partially-applied` | Outcome `uncertain` with evidence `transmitted`, and error `uncertain-result` whose detail is `partially-applied`. |
-| `uncertain` | Outcome `uncertain` with the mapped evidence and error `uncertain-result`. |
-| `cancelled` | Outcome `failed` with the mapped evidence and error `cancelled`. The detail is the 1.x code when there was one, such as `stale-generation`. |
+The receipt rule, applied in this order:
+1. `queued` becomes the reply `accepted`, with no outcome yet.
+2. Any receipt with `priorEffects: possible` becomes the outcome `uncertain` with
+   evidence `none` and error `uncertain-result`, whatever its 1.x outcome. This
+   includes `failed` and `cancelled`: LIFX, for one, reports a write cut short
+   by a generation change as `cancelled` with `possible`. Decided by the
+   coordinator, 2026-10-06.
+3. Otherwise the evidence follows `priorEffects`: `none` stays `none`, and
+   `confirmed-transmission` becomes `transmitted`.
+   - `sent` becomes `succeeded` with `transmitted`. A failure code on a sent
+     receipt is dropped, because a succeeded outcome carries no error.
+   - `failed` with an admission code (`unauthenticated`, `forbidden`,
+     `unsupported-capability`, `invalid-request`, `unknown-device`,
+     `revision-conflict`, `stale-generation`, `request-conflict`,
+     `request-expired`, `request-order` or `capacity`) becomes a reply carrying
+     the error. 1.x kept these as the request's receipt; 2.0 refuses the request
+     in the reply.
+   - `failed` with any other code becomes `failed` with the error. Without a
+     code, the error is `internal`.
+   - `partially-applied` and `uncertain` become `uncertain` with error
+     `uncertain-result`.
+   - `cancelled` becomes `failed` with error `cancelled`.
+
+The error's `detail` is the 1.x failure code. Without one, it is the 1.x outcome
+when the 2.0 result renames it, such as `partially-applied`, or `cancelled` under
+rule 2. The detail is omitted when it equals the 2.0 code.
 
 The coordinator accepted these code mappings on 2026-10-06.
 
@@ -173,7 +211,7 @@ The source is the controller 1.1 `moment` command and the snapshot's
 | `kind` | envelope `type` | `org.bunny.moment.play.requested`. |
 | `momentId`, `palette`, `durationMs`, `priorityClass`, `coversStatus` | `moment-play /momentId`, `/palette`, `/durationMs`, `/priorityClass`, `/coversStatus` | Unchanged. A flourish never covers status (schema). |
 | `mood` | `moment-play /mood` | Narrowed to kebab-case. Every mood declared today is kebab-case. Decided by the coordinator, 2026-10-06. |
-| `start`, `start.domain`, `start.epoch`, `start.atMs`, `start.toleranceMs` | `moment-play /startAtMs`, `/toleranceMs` | **Meaning change.** Decided by the coordinator, 2026-10-06. Modules run in the runtime's one process and share its clock, so one wall-clock start serves every target. The per-device translation into a controller-monotonic epoch goes away. The start is at most 60,000 ms after the envelope `time` (validator). |
+| `start`, `start.domain`, `start.epoch`, `start.atMs`, `start.toleranceMs` | `moment-play /startAtMs`, `/toleranceMs` | **Meaning change.** Decided by the coordinator, 2026-10-06. Modules run in the runtime's one process and share its clock, so one wall-clock start serves every target. The per-device translation into a controller-monotonic epoch goes away: a module converts `startAtMs` to a deadline on its own monotonic clock when the request arrives. The start is at most 60,000 ms after the envelope `time` (validator). |
 | `state.moment.last` (`momentId`, `requestId`, `ending`, `endedAt`) | `moment-ended` occurrence | `endedAt` becomes `endedAtMs` on the runtime's clock. |
 | `state.moment.current` | module state | Device state. The module's own family carries it. |
 

@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/attention-cleared/2.0",
-  "description": "Occurrence: the owner removed one attention item from a session record (Hub #842). `cause` says which evidence cleared it: a correlated resolution, the turn ending, a newer turn starting, or the owner's explicit approval recovery, whose outcome stays ambiguous. Expiry and retirement remove the whole record instead.",
+  "description": "Occurrence: the owner removed one attention item from a session record (Hub #842). The occurrence's `turn` is the observation that cleared it; `attention.turn` is the turn the item was raised on. `cause` says which evidence cleared it: `resolved`, a known-ID resolution of the item or, for an approval without a request ID, of its turn; `turn-ended`, its turn ended; `turn-retired`, the owner selected a newer turn, which retires the item's turn; `recovered`, the owner's explicit approval recovery, whose outcome stays ambiguous. Expiry and retirement remove the whole record instead.",
   "type": "object",
   "$ref": "https://bunny.invalid/events/session/2.0#/$defs/occurrence",
   "unevaluatedProperties": false,
   "required": ["attention", "cause"],
   "properties": {
-    "attention": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/occurrenceAttention"},
-    "cause": {"enum": ["resolved", "turn-ended", "turn-started", "recovered"]}
+    "attention": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/attention"},
+    "cause": {"enum": ["resolved", "turn-ended", "turn-retired", "recovered"]}
   }
 }

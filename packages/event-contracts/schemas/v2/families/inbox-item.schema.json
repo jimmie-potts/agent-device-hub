@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/inbox-item/2.0",
-  "description": "State: one item in the core's shared inbox, the full record (ADR 0012, Hub #842). An item is a retained turn-ended notice or a failed or uncertain operation. It stays until handled, with no expiry; handling it publishes a removal whose reason is `deleted`. `dismissedBy` lists the displays that dismissed it, a separate fact that does not handle it.",
+  "description": "State: one item in the core's shared inbox, the full record (ADR 0012, Hub #842). An item is a retained turn-ended notice or a failed or uncertain operation. It stays until handled, with no expiry; handling it publishes a removal whose reason is `deleted`. `dismissedBy` lists the displays that dismissed it, a separate fact that does not handle it. An operation's optional `evidence` is its outcome's evidence, so a person can see whether anything reached the device. A turn-ended item's `session` is sessionEntityId(identity) (validator).",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "revision", "createdAtMs", "dismissedBy", "item"],
@@ -26,6 +26,7 @@
           "command": {"type": "string", "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,3}\\.requested$", "maxLength": 256},
           "target": {"type": "string", "minLength": 1, "maxLength": 256},
           "result": {"enum": ["failed", "uncertain"]},
+          "evidence": {"$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome/properties/evidence"},
           "error": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"}
         },
         "if": {"properties": {"result": {"const": "failed"}}},

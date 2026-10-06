@@ -10,12 +10,16 @@ import {SCHEMA_BASE, type ErrorDetail, type Message, type MessageKind, type Mess
 export const FAMILY_VERSION = '2.0';
 /** A moment request's start lies at most this far after the request was sent. */
 export const MOMENT_MAX_LEAD_MS = 60_000;
+/** Freshness is `uncertain` once this long has passed without session evidence. */
+export const STALE_AFTER_MS = 300_000;
 
 export type Identity = {provider: 'codex' | 'claude'; client: 'cli' | 'desktop' | 'code'; hostId: string; sourceId: string; sessionId: string};
 export type KnownId = {status: 'unknown'} | {status: 'known'; id: string};
 export type Parent = {status: 'unknown'} | {status: 'top-level'} | {status: 'known'; identity: Identity};
 export type Ordering = {status: 'unknown'} | {status: 'known'; authority: string; epoch: string; sequence: number};
 export type AttentionKind = 'question' | 'input' | 'approval';
+/** One attention item. `turn` is the turn it was raised on. */
+export type Attention = {id: KnownId; kind: AttentionKind; turn: KnownId};
 export type Unavailable = {
   dimension: 'activity' | 'attention' | 'turn' | 'parent' | 'read' | 'ordering';
   reason: 'unsupported' | 'inaccessible' | 'missing' | 'ambiguous' | 'lost';
@@ -27,7 +31,7 @@ export type Title = {value: string; source: 'provider' | 'user'};
 export type SessionRecord = {
   id: string; revision: number; generation: number; identity: Identity; parent: Parent; turn: KnownId;
   activity: 'unknown' | 'active' | 'idle' | 'interrupted';
-  attention: {id: KnownId; kind: AttentionKind; turn: KnownId}[];
+  attention: Attention[];
   notices: {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]}[];
   read: 'unknown' | 'read' | 'unread'; unavailable: Unavailable[]; ordering: Ordering;
   observedAtMs: number; lastEvidenceAtMs: number; freshness: 'current' | 'uncertain'; restartUncertain: boolean;
@@ -46,12 +50,12 @@ export type LifecycleObservation = {
   observedAtMs: number; occurredAtMs?: number; ordering: Ordering;
   projectId?: string; label?: Label; title?: Title; project?: string; hostSessionId?: string;
 };
-/** What every agent occurrence carries. */
+/** What every agent occurrence carries. `turn` is the observation's turn. */
 export type AgentOccurrence = {
   session: string; identity: Identity; turn: KnownId; observedAtMs: number; occurredAtMs?: number; ordering: Ordering; revision: number;
 };
-export type AttentionRaised = AgentOccurrence & {attention: {id: KnownId; kind: AttentionKind}};
-export type AttentionCleared = AttentionRaised & {cause: 'resolved' | 'turn-ended' | 'turn-started' | 'recovered'};
+export type AttentionRaised = AgentOccurrence & {attention: Attention};
+export type AttentionCleared = AttentionRaised & {cause: 'resolved' | 'turn-ended' | 'turn-retired' | 'recovered'};
 export type TurnEnded = AgentOccurrence & {noticeId?: string};
 export type SessionEnded = AgentOccurrence;
 export type MomentEnded = {requestId: string; momentId: string; ending: 'completed' | 'preempted' | 'superseded' | 'interrupted'; endedAtMs: number};
@@ -66,7 +70,10 @@ export type InboxItem = {
   id: string; revision: number; createdAtMs: number; dismissedBy: string[];
   item:
     | {kind: 'turn-ended'; session: string; identity: Identity; turn: KnownId; noticeId: string}
-    | {kind: 'operation'; requestId: string; command: string; target: string; result: 'failed' | 'uncertain'; error?: ErrorDetail};
+    | {
+      kind: 'operation'; requestId: string; command: string; target: string; result: 'failed' | 'uncertain';
+      evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
+    };
 };
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
 export type PlaybackState = {
@@ -78,8 +85,9 @@ export type PlaybackState = {
 };
 
 /**
- * The ID of a session entity: the lowercase hex SHA-256 of its identity as JSON with sorted keys. The same identity
- * always has the same ID, so a recreated session reuses it and its `generation` tells the two records apart.
+ * The ID of a session entity: the lowercase hex SHA-256 of its identity as compact JSON with sorted keys, in UTF-8.
+ * The same identity always has the same ID, so a recreated session reuses it and its `generation` tells the two
+ * records apart.
  */
 export function sessionEntityId(identity: Identity): string {
   const {client, hostId, provider, sessionId, sourceId} = identity;
@@ -104,11 +112,21 @@ const authority = (identity: Identity, ordering: Ordering): string | undefined =
 const repeated = (values: string[]): boolean => new Set(values).size !== values.length;
 const entity = (message: Message, id: unknown): string | undefined => message.subject === id ? undefined : 'envelope /subject not the entity';
 
+const sameId = (a: KnownId, b: KnownId): boolean => a.status === b.status && (a.status === 'unknown' || (b.status === 'known' && a.id === b.id));
+// 1.x computed freshness at each read; 2.0 publishes it, so it must match the envelope time: uncertain exactly when the
+// owner restarted since the last evidence or five minutes or more have passed.
+function fresh(message: Message, record: SessionRecord): string | undefined {
+  const stale = Date.parse(message.time) - record.lastEvidenceAtMs >= STALE_AFTER_MS;
+  if (record.freshness === 'current') return stale ? 'payload /freshness current after five minutes' : undefined;
+  return stale || record.restartUncertain ? undefined : 'payload /freshness uncertain before five minutes';
+}
+
 const checkSession: PayloadCheck = message => {
   const record = message.data as SessionRecord;
   if (record.id !== sessionEntityId(record.identity)) return 'payload /id not the identity key';
+  if (record.generation > record.revision) return 'payload /generation after the revision';
   return entity(message, record.id) ?? parentage(record.identity, record.parent) ?? authority(record.identity, record.ordering) ??
-    (repeated(record.notices.map(notice => notice.id)) ? 'payload /notices duplicate id' : undefined) ??
+    fresh(message, record) ?? (repeated(record.notices.map(notice => notice.id)) ? 'payload /notices duplicate id' : undefined) ??
     (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined);
 };
 const checkLifecycle: PayloadCheck = message => {
@@ -122,7 +140,17 @@ const checkOccurrence: PayloadCheck = message => {
   if (message.subject !== occurrence.session) return 'envelope /subject not the session';
   return authority(occurrence.identity, occurrence.ordering);
 };
+// A raised item belongs to the observation's turn; a cleared one keeps the turn it was raised on.
+const checkRaised: PayloadCheck = message => {
+  const raised = message.data as AttentionRaised;
+  return checkOccurrence(message) ?? (sameId(raised.attention.turn, raised.turn) ? undefined : 'payload /attention/turn not the observed turn');
+};
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
+const checkInbox: PayloadCheck = message => {
+  const {item} = message.data as InboxItem;
+  return entity(message, message.data.id) ??
+    (item.kind === 'turn-ended' && item.session !== sessionEntityId(item.identity) ? 'payload /item/session not the identity key' : undefined);
+};
 const checkMoment: PayloadCheck = message => (message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
   `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined;
 
@@ -137,10 +165,10 @@ const define = (family: string, kind: MessageKind, type: string, check?: Payload
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
-  define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkEntity),
+  define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkInbox),
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
-  define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkOccurrence),
+  define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
   define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence),
   define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence),
   define('session-ended', 'occurrence', 'org.bunny.session.ended', checkOccurrence),

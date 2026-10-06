@@ -94,7 +94,9 @@ const describe = (scope: string, errors: ErrorObject[] | null | undefined): stri
   const first = [...(errors ?? [])].reverse().find(error => error.keyword === 'oneOf') ?? errors?.[0];
   if (first === undefined) return scope;
   const missing = first.keyword === 'required' ? ` ${String((first.params as {missingProperty?: unknown}).missingProperty)}` : '';
-  const extra = first.keyword === 'additionalProperties' ? ` ${String((first.params as {additionalProperty?: unknown}).additionalProperty)}` : '';
+  const params = first.params as {additionalProperty?: unknown; unevaluatedProperty?: unknown};
+  const extra = first.keyword === 'additionalProperties' ? ` ${String(params.additionalProperty)}` :
+    first.keyword === 'unevaluatedProperties' ? ` ${String(params.unevaluatedProperty)}` : '';
   return `${scope} ${first.instancePath === '' ? '/' : first.instancePath} ${first.keyword}${missing}${extra}`;
 };
 const fail = (code: ErrorCode, detail: string): {ok: false; error: ErrorDetail} => ({ok: false, error: errorBody(code, {detail: detail.slice(0, MAX_DETAIL)}).error});
@@ -135,6 +137,20 @@ export class MessageValidator {
     if (check !== undefined) this.#checks.set(dataschema, check);
   }
 
+  // A registered check never makes validation throw: an empty or non-string answer, or a throw, still refuses.
+  #check(message: Message): string | undefined {
+    const check = this.#checks.get(message.dataschema);
+    if (check === undefined) return undefined;
+    let broken: unknown;
+    try {
+      broken = check(message);
+    } catch {
+      return 'payload check threw';
+    }
+    if (broken === undefined) return undefined;
+    return typeof broken === 'string' && broken.length > 0 ? broken : 'payload check failed';
+  }
+
   /** Checks one message. `nowMs`, when given, rejects a command or sync request past its expiry. */
   validate<T = Record<string, unknown>>(input: unknown, options: {nowMs?: number} = {}): Validation<T> {
     let encoded: string;
@@ -163,7 +179,7 @@ export class MessageValidator {
       return sameFamily ? fail('unsupported-version', message.dataschema) : fail('unknown-schema', message.dataschema);
     }
     if (!validatePayload(message.data)) return fail('invalid-message', describe('payload', validatePayload.errors));
-    const broken = this.#checks.get(message.dataschema)?.(message as Message);
+    const broken = this.#check(message as Message);
     if (broken !== undefined) return fail('invalid-message', broken);
     if (message.expiresat !== undefined) {
       if (!realInstant(message.expiresat)) return fail('invalid-message', 'expiresat');

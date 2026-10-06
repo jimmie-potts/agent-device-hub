@@ -18,8 +18,9 @@ const valid = message => {
   assert.equal(result.ok, true, JSON.stringify([result.error, message.data]));
 };
 let sent = 0;
-const message = (family, kind, type, subject, data) => ({
-  specversion: '1.0', bunnyprofile: '2.0', id: `msg-${++sent}`, source: 'bunny/core', type, subject, time: '2026-10-06T12:00:00.000Z',
+const AT = Date.parse('2026-10-06T12:00:00.000Z');
+const message = (family, kind, type, subject, data, atMs = AT) => ({
+  specversion: '1.0', bunnyprofile: '2.0', id: `msg-${++sent}`, source: 'bunny/core', type, subject, time: new Date(atMs).toISOString(),
   kind, datacontenttype: 'application/json', dataschema: `https://bunny.invalid/events/${family}/2.0`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
 });
@@ -83,16 +84,50 @@ function record(session, revision) {
     ...(label === undefined ? {} : {label: {value: label, origin: labelOrigin ?? 'user'}}),
   };
 }
-const state = data => message('session', 'state', 'org.bunny.session.updated', data.id, data);
+const state = (data, atMs) => message('session', 'state', 'org.bunny.session.updated', data.id, data, atMs);
 
-// 1.x refusals that concern one observation or one record. 2.0 refuses each of them too.
-const REFUSED_OBSERVATIONS = ['self-parent', 'cross-provider-parent', 'provider-client-mismatch', 'cli-read-unsupported-read',
-  'cli-read-unsupported-unread', 'label-trailing-newline', 'label-only-newline', 'overlong-title', 'overlong-project', 'empty-title',
-  'control-title', 'credential-title', 'credential-label', 'credential-after-0x2028-title', 'credential-after-0x2029-project',
-  'child-rejects-host-session', 'host-session-space', 'host-session-path', 'host-session-non-ascii'];
-const REFUSED_RECORDS = ['self-parent', 'foreign-parent-source', 'invalid-provider-client', 'invented-cli-read', 'invented-claude-read',
-  'duplicate-notice', 'notice-hash-newline', 'labels-exclude-controls', 'restart-claimed-current', 'non-ascii-neutral-id', 'credential',
-  'overlong-project', 'credential-after-0x2028-title', 'host-session-child', 'host-session-malformed'];
+// 1.x refusals that concern one observation or one record, and where 2.0 refuses each of them.
+const REFUSED_OBSERVATIONS = {
+  'self-parent': 'payload /parent/identity same session',
+  'cross-provider-parent': 'payload /parent/identity another source',
+  'provider-client-mismatch': 'payload /identity/client const',
+  'cli-read-unsupported-read': 'payload /identity/client const',
+  'cli-read-unsupported-unread': 'payload /identity/client const',
+  'label-trailing-newline': 'payload /label/value pattern',
+  'label-only-newline': 'payload /label/value pattern',
+  'overlong-title': 'payload /title/value maxLength',
+  'overlong-project': 'payload /project maxLength',
+  'empty-title': 'payload /title/value minLength',
+  'control-title': 'payload /title/value pattern',
+  'credential-title': 'payload /title/value pattern',
+  'credential-label': 'payload /label/value pattern',
+  'credential-after-0x2028-title': 'payload /title/value pattern',
+  'credential-after-0x2029-project': 'payload /project pattern',
+  'child-rejects-host-session': 'payload /hostSessionId false schema',
+  'host-session-space': 'payload /hostSessionId pattern',
+  'host-session-path': 'payload /hostSessionId pattern',
+  'host-session-non-ascii': 'payload /hostSessionId pattern',
+};
+const REFUSED_RECORDS = {
+  'self-parent': 'payload /parent/identity same session',
+  'foreign-parent-source': 'payload /parent/identity another source',
+  'invalid-provider-client': 'payload /identity/client const',
+  'invented-cli-read': 'payload /read const',
+  'invented-claude-read': 'payload /read const',
+  'duplicate-notice': 'payload /notices duplicate id',
+  'notice-hash-newline': 'payload /notices/0/id pattern',
+  'labels-exclude-controls': 'payload /label/value pattern',
+  'restart-claimed-current': 'payload /freshness const',
+  'false-freshness': 'payload /freshness uncertain before five minutes',
+  'freshness-after-five-minutes': 'payload /freshness current after five minutes',
+  'generation-after-revision': 'payload /generation after the revision',
+  'non-ascii-neutral-id': 'payload /identity/sessionId pattern',
+  'credential': 'payload /title/value pattern',
+  'overlong-project': 'payload /project maxLength',
+  'credential-after-0x2028-title': 'payload /title/value pattern',
+  'host-session-child': 'payload /hostSessionId false schema',
+  'host-session-malformed': 'payload /hostSessionId pattern',
+};
 
 test('every valid lifecycle 1.x observation converts to a valid 2.0 observation, and per-observation refusals stay refused', () => {
   const cases = ['lifecycle-v1', 'lifecycle-v1.1', 'lifecycle-v1.2'].flatMap(name => read(`../../lifecycle-contracts/fixtures/${name}.json`).cases);
@@ -100,10 +135,10 @@ test('every valid lifecycle 1.x observation converts to a valid 2.0 observation,
     const converted = observation(input);
     assert.equal(validator.validate(converted).ok, true, `${id}: ${JSON.stringify(validator.validate(converted).error)}`);
   }
-  for (const id of REFUSED_OBSERVATIONS) {
+  for (const [id, detail] of Object.entries(REFUSED_OBSERVATIONS)) {
     const item = cases.find(candidate => candidate.id === id);
     assert.equal(item.valid, false, `${id} is a 1.x refusal`);
-    assert.equal(validator.validate(observation(item.input)).ok, false, `${id} is refused in 2.0`);
+    assert.equal(validator.validate(observation(item.input)).error?.detail, detail, `${id} is refused in 2.0`);
   }
 });
 
@@ -112,43 +147,49 @@ test('every valid snapshot session converts to a valid 2.0 session record, and p
   let records = 0;
   for (const {id, input} of cases.filter(item => item.valid)) {
     for (const session of input.sessions) {
-      const converted = state(record(session, input.revision));
+      const converted = state(record(session, input.revision), input.asOfMs);
       assert.equal(validator.validate(converted).ok, true, `${id}: ${JSON.stringify(validator.validate(converted).error)}`);
       records++;
     }
   }
   assert.ok(records >= 20, `${records} records`);
-  for (const id of REFUSED_RECORDS) {
+  for (const [id, detail] of Object.entries(REFUSED_RECORDS)) {
     const item = cases.find(candidate => candidate.id === id);
     assert.equal(item.valid, false, `${id} is a 1.x refusal`);
-    const converted = item.input.sessions.map(session => state(record(session, typeof item.input.revision === 'number' ? item.input.revision : 1)));
-    assert.ok(converted.some(each => !validator.validate(each).ok), `${id} is refused in 2.0`);
+    const refusals = item.input.sessions.map(session => validator.validate(state(record(session, item.input.revision), item.input.asOfMs)))
+      .filter(result => !result.ok).map(result => result.error.detail);
+    assert.equal(refusals[0], detail, `${id} is refused in 2.0`);
   }
 });
 
-// The receipt rules in MAPPING.md "Controller receipt".
+// The receipt rule in MAPPING.md "Controller receipt". The error's detail is the 1.x failure code; without one, it is
+// the 1.x outcome when the 2.0 result renames it. It is omitted when it equals the 2.0 code.
 const ADMISSION = ['unauthenticated', 'forbidden', 'unsupported-capability', 'invalid-request', 'unknown-device', 'revision-conflict',
   'stale-generation', 'request-conflict', 'request-expired', 'request-order', 'capacity'];
 const CODES = {'unknown-device': 'not-found', 'stale-generation': 'revision-conflict', 'request-conflict': 'duplicate-conflict',
   'request-expired': 'expired', 'moment-missed': 'expired', 'request-order': 'revision-conflict', 'external-control': 'invalid-state',
   'moment-blocked': 'invalid-state', 'moment-duplicate': 'invalid-state'};
+const RESULTS = {sent: 'succeeded', failed: 'failed', 'partially-applied': 'uncertain', uncertain: 'uncertain', cancelled: 'failed'};
 const RETRYABLE = new Set(['capacity', 'unavailable']);
 const error = (code, detail) => ({code, retryable: RETRYABLE.has(code), ...(detail === undefined || detail === code ? {} : {detail})});
-function receiptMessage(receipt, sentBefore = receipt.priorEffects !== 'none') {
+function receiptMessage(receipt) {
   const requestId = `${receipt.requestId.epoch}.${receipt.requestId.sequence}`, failure = receipt.failure?.code;
   const reply = data => message('reply', 'reply', 'org.bunny.device.command.replied', receipt.deviceId, {requestId, ...data});
-  const outcome = (result, code) => message('outcome', 'outcome', 'org.bunny.device.command.completed', receipt.deviceId, {
-    requestId, result, evidence: receipt.priorEffects === 'confirmed-transmission' ? 'transmitted' : 'none',
-    ...(code === undefined ? {} : {error: error(code, code === 'cancelled' ? failure : failure ?? receipt.outcome)}),
+  const outcome = (result, evidence, code) => message('outcome', 'outcome', 'org.bunny.device.command.completed', receipt.deviceId, {
+    requestId, result, evidence,
+    ...(code === undefined ? {} : {error: error(code, failure ?? (receipt.outcome === result ? undefined : receipt.outcome))}),
   });
-  const mapped = failure === 'transport-failure' ? (sentBefore ? 'uncertain-result' : 'unavailable') : CODES[failure] ?? failure;
+  if (receipt.outcome === 'queued') return reply({status: 'accepted'});
+  // Possible prior effects: no evidence that anything reached the device, and no evidence that nothing did.
+  if (receipt.priorEffects === 'possible') return outcome('uncertain', 'none', 'uncertain-result');
+  const evidence = receipt.priorEffects === 'confirmed-transmission' ? 'transmitted' : 'none';
+  const mapped = failure === 'transport-failure' ? (evidence === 'none' ? 'unavailable' : 'uncertain-result') : CODES[failure] ?? failure;
   switch (receipt.outcome) {
-    case 'queued': return reply({status: 'accepted'});
-    case 'sent': return outcome('succeeded');
-    case 'failed': return ADMISSION.includes(failure) ? reply({error: error(mapped, failure)}) : outcome('failed', mapped ?? 'internal');
-    case 'partially-applied': return outcome('uncertain', 'uncertain-result');
-    case 'uncertain': return outcome('uncertain', 'uncertain-result');
-    case 'cancelled': return outcome('failed', 'cancelled');
+    case 'sent': return outcome('succeeded', 'transmitted');
+    case 'failed': return ADMISSION.includes(failure) ? reply({error: error(mapped, failure)}) : outcome('failed', evidence, mapped ?? 'internal');
+    case 'partially-applied':
+    case 'uncertain': return outcome('uncertain', evidence, 'uncertain-result');
+    case 'cancelled': return outcome('failed', evidence, 'cancelled');
   }
   throw new Error(receipt.outcome);
 }
@@ -170,9 +211,10 @@ test('every controller receipt in the 1.x corpus and every receipt shape 1.x acc
     outcomes.add(receipt.outcome);
   }
   assert.deepEqual([...outcomes].sort(), ['failed', 'partially-applied', 'queued', 'sent', 'uncertain']);
-  // Every receipt shape the 1.x schema accepts: each outcome, prior effect, operation list and failure code.
+  // Every receipt shape the 1.x schema accepts: each outcome, prior effect, operation list and failure code. LIFX, for
+  // one, reports a write cut short by a generation change as `cancelled` with `possible` prior effects.
   const codes = controller.$defs.failureCodeV1_1.enum;
-  let shapes = 0;
+  let shapes = 0, possible = 0;
   for (const outcome of controller.$defs.receiptV1_1.properties.outcome.enum) {
     for (const priorEffects of controller.$defs.priorEffects.enum) {
       for (const [completedOperations, uncertainOperations] of [[[], []], [['power'], []], [[], ['zone-two']], [['power'], ['zone-two']]]) {
@@ -181,45 +223,62 @@ test('every controller receipt in the 1.x corpus and every receipt shape 1.x acc
             configurationRevision: 5, generation: {epoch: 'generation-1', sequence: 3}, outcome, priorEffects, completedOperations, uncertainOperations,
             ...(failure === undefined ? {} : {failure})};
           if (!validateController('receiptV1_1', receipt)) continue;
-          valid(receiptMessage(receipt));
+          const converted = receiptMessage(receipt), data = converted.data, shape = JSON.stringify([outcome, priorEffects, failure?.code]);
+          valid(converted);
           shapes++;
+          if (outcome === 'queued') {
+            assert.deepEqual([converted.kind, data.status], ['reply', 'accepted'], shape);
+          } else if (priorEffects === 'possible') {
+            possible++;
+            const detail = failure !== undefined ? failure.code : outcome === 'uncertain' ? undefined : outcome;
+            assert.deepEqual([converted.kind, data.result, data.evidence, data.error.code, data.error.detail],
+              ['outcome', 'uncertain', 'none', 'uncertain-result', detail === 'uncertain-result' ? undefined : detail], shape);
+          } else if (converted.kind === 'outcome') {
+            assert.deepEqual([data.result, data.evidence], [RESULTS[outcome], priorEffects === 'none' ? 'none' : 'transmitted'], shape);
+          } else {
+            assert.ok(outcome === 'failed' && ADMISSION.includes(failure?.code), shape);
+          }
         }
       }
     }
   }
-  assert.ok(shapes > 400, `${shapes} receipt shapes`);
+  assert.ok(shapes > 400 && possible > 50, `${shapes} receipt shapes, ${possible} with possible prior effects`);
 });
 
-// Publishes a real agent-state owner's changes as 2.0 messages (MAPPING.md "Agent-state session record"). Its revision
-// advances on every publication with a change, freshness included, which the 1.x revision did not count.
+// Publishes a real agent-state owner's changes as 2.0 messages (MAPPING.md "Agent-state session record") at the owner's
+// clock. Its revision follows the owner's and also advances when only freshness changes, which 1.x did not count.
 function publisher(owner) {
   let revision = owner.snapshot().revision;
   const published = new Map();
-  const current = () => new Map(owner.snapshot('1.3').sessions.map(session => [sessionEntityId(session.identity), session]));
+  const current = () => owner.snapshot('1.3');
   return {
     publish(reason) {
-      const messages = [], now = current(), next = revision + 1;
+      const snapshot = current(), now = new Map(snapshot.sessions.map(session => [sessionEntityId(session.identity), session]));
+      const messages = [], next = Math.max(revision + 1, snapshot.revision);
       for (const [id, session] of now) {
         const data = record(session, next), prior = published.get(id);
         if (prior !== undefined && JSON.stringify({...prior, revision: next}) === JSON.stringify(data)) continue;
-        messages.push(state(data));
+        messages.push(state(data, snapshot.asOfMs));
         published.set(id, data);
       }
       for (const id of [...published.keys()].filter(id => !now.has(id))) {
-        messages.push(message('removal', 'removal', 'org.bunny.session.removed', id, {entity: {family: 'session', id}, revision: next, reason}));
+        messages.push(message('removal', 'removal', 'org.bunny.session.removed', id, {entity: {family: 'session', id}, revision: next, reason},
+          snapshot.asOfMs));
         published.delete(id);
       }
       if (messages.length > 0) revision = next;
       return messages;
     },
     sync(requestId) {
-      const expiresat = '2026-10-06T12:00:05.000Z';
-      return [{...message('sync-request', 'sync-request', 'org.bunny.sync.requested', 'core', {requestId, families: ['session']}), expiresat},
-        ...[...published.values()].map(state),
-        message('sync-completed', 'sync-completed', 'org.bunny.sync.completed', 'core',
-          {requestId, revision, members: [...published.keys()].map(id => ({family: 'session', id}))})];
+      const asOfMs = current().asOfMs;
+      return [{...message('sync-request', 'sync-request', 'org.bunny.sync.requested', 'core', {requestId, families: ['session']}, asOfMs),
+        expiresat: new Date(asOfMs + 5000).toISOString()},
+      ...[...published.values()].map(data => state(data, asOfMs)),
+      message('sync-completed', 'sync-completed', 'org.bunny.sync.completed', 'core',
+        {requestId, revision, members: [...published.keys()].map(id => ({family: 'session', id}))}, asOfMs)];
     },
     published,
+    revision: () => revision,
   };
 }
 const deliver = (copy, messages) => {
@@ -229,7 +288,7 @@ const deliver = (copy, messages) => {
   }
 };
 
-test('the owner expiry scenario reaches a consumer as an expired removal (agent-state retention test)', async () => {
+test('the owner expiry scenario reaches a live and a synced consumer, and freshness flips publish a revision (agent-state retention test)', async () => {
   const DAY = 86400000;
   let clock = 1000;
   const identity = sessionId => ({provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId});
@@ -237,24 +296,35 @@ test('the owner expiry scenario reaches a consumer as an expired removal (agent-
     parent: {status: 'unknown'}, event: {kind}, observedAtMs: clock, ordering: {status: 'unknown'}, ...extra});
   const owner = await createAgentState({storage: new MemoryStorage(), ownerId: 'owner', consumers: [{id: 'nanoleaf', clearOnNewTurn: true}], clock: () => clock});
   try {
-    const feed = publisher(owner), copy = consumerCopy();
+    const feed = publisher(owner), live = consumerCopy();
     await owner.ingest(event('renewed', 'session.started'));
     await owner.ingest(event('labelled', 'turn.started'));
     await owner.ingest(event('labelled', 'turn.ended'));
-    deliver(copy, feed.publish('expired'));
-    clock += 3600000;
+    deliver(live, feed.publish('expired'));
+    // Five minutes without evidence: the owner's revision stands still, but both records turn uncertain.
+    const [ownerRevision, published] = [owner.snapshot().revision, feed.revision()];
+    clock += 300000;
+    const flipped = feed.publish('expired');
+    assert.equal(owner.snapshot().revision, ownerRevision);
+    assert.deepEqual(flipped.map(each => [each.kind, each.data.freshness, each.data.revision]),
+      [['state', 'uncertain', published + 1], ['state', 'uncertain', published + 1]]);
+    deliver(live, flipped);
+    clock += 3600000 - 300000;
     await owner.ingest(event('renewed', 'turn.started', {turn: {status: 'known', id: 'turn-2'}}));
     const labelled = owner.snapshot().sessions.find(session => session.identity.sessionId === 'labelled');
     await owner.setLabel(labelled.identity, 'Chosen label');
-    deliver(copy, feed.publish('expired'));
+    deliver(live, feed.publish('expired'));
     clock += DAY - 3600000;
     await owner.maintain();
     const removed = feed.publish('expired');
     assert.deepEqual(removed.filter(each => each.kind === 'removal').map(each => each.data), [{entity: {family: 'session', id: sessionEntityId(identity('labelled'))},
-      revision: removed[0].data.revision, reason: 'expired'}]);
-    deliver(copy, removed);
-    assert.deepEqual([...copy.held.values()], [...feed.published.values()]);
-    assert.deepEqual([...copy.held.values()].map(each => each.identity.sessionId), ['renewed']);
+      revision: feed.revision(), reason: 'expired'}]);
+    deliver(live, removed);
+    assert.deepEqual([...live.held.values()], [...feed.published.values()]);
+    assert.deepEqual([...live.held.values()].map(each => each.identity.sessionId), ['renewed']);
+    const synced = consumerCopy();
+    deliver(synced, feed.sync('sync-1'));
+    assert.deepEqual(synced.held, live.held);
   } finally {
     await owner.shutdown();
   }

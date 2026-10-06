@@ -99,6 +99,19 @@ test('a registered check refuses a payload its schema accepts, naming where', ()
   assert.equal(v.validate(broken).error.detail, 'payload / required ordering', 'the schema runs first');
 });
 
+test('a check that returns an empty detail, a long one or throws refuses the message without throwing', () => {
+  const uri = 'https://bunny.invalid/events/example-session/2.0';
+  const refusal = check => {
+    const v = new MessageValidator();
+    v.register(uri, fixtures.schemas[uri], check);
+    return v.validate(fixtures.valid.state).error;
+  };
+  assert.deepEqual(refusal(() => ''), {code: 'invalid-message', retryable: false, detail: 'payload check failed'});
+  assert.deepEqual(refusal(() => 7), {code: 'invalid-message', retryable: false, detail: 'payload check failed'});
+  assert.deepEqual(refusal(() => { throw new Error('boom'); }), {code: 'invalid-message', retryable: false, detail: 'payload check threw'});
+  assert.equal(refusal(() => 'x'.repeat(5000)).detail.length, 1024);
+});
+
 test('non-JSON input is refused without throwing', () => {
   const v = validator();
   for (const input of [undefined, null, 5, 'text', [], new Map(), Object.create(null), {toJSON: () => ({})}]) {
