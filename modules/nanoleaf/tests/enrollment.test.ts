@@ -1,5 +1,5 @@
-// Translated from codex-nanoleaf tests/test_enrollment.py (#45, #114). The command line, credential prompt, pairing request
-// and controller ledger are not ported; PORTING.md lists every case and where the rest went.
+// Translated from codex-nanoleaf tests/test_enrollment.py (#45, #114). The command line, credential prompt and controller
+// ledger are not ported; PORTING.md lists every case and where the rest went.
 import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
@@ -9,11 +9,12 @@ import {isObject, type JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import {linesEntry, lockFile, sceneFile, saveLayout} from '../src/devices.js';
 import {loadConfig} from '../src/configuration.js';
-import {changeAddress, check, enroll, remove, type Enrollment} from '../src/enrollment.js';
+import {changeAddress, check, enroll, pair, remove, type Enrollment} from '../src/enrollment.js';
 import {Partial as PartialChange} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
+import type {HttpRequest, HttpResponse} from '../src/transport.js';
 import {fixtureJson, loadDump, recordedSetup, refuse, setMode, suite, temporary, test, write} from './support.js';
 
 const FIXTURE = (fixtureJson('nl22-panels-fixture.json') as {panelLayout: JsonObject}).panelLayout;
@@ -261,6 +262,21 @@ suite('PrivacyTest', () => {
     const e = new Enrolling(context);
     for (const [device, ip] of [['panels', LINES_IP], ['wall', PANELS_IP]] as const) await assert.rejects(check(e.directory, device, ip), {name: 'ValueError'});
     assert.deepEqual(e.fake.seen, []);
+  });
+
+  test('test_pair_posts_to_the_new_endpoint_without_a_proxy', async () => {
+    // The request goes through the HTTP transport; transport.test.ts checks that it never uses a configured proxy.
+    const requests: [string, string, number][] = [];
+    const open = (request: HttpRequest): Promise<HttpResponse> => {
+      requests.push([request.url, request.method, request.timeoutSeconds]);
+      return Promise.resolve({status: 200, body: JSON.stringify({auth_token: PANELS_TOKEN})});
+    };
+    assert.equal(await pair(PANELS_IP, open), PANELS_TOKEN);
+    assert.deepEqual(requests, [[`http://${PANELS_IP}:16021/api/v1/new`, 'POST', 5]]);
+    const closed = (): Promise<HttpResponse> => Promise.resolve({status: 403, body: 'Forbidden'});
+    await assert.rejects(pair(PANELS_IP, closed), refused(/pairing/));
+    await assert.rejects(pair('8.8.8.8', open), refused(/private IPv4/));
+    assert.equal(requests.length, 1);
   });
 
   test('test_windows_mounted_state_is_refused', async () => {

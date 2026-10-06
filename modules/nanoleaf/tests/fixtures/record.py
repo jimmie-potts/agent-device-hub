@@ -644,7 +644,7 @@ def apply(path, operation):
     raise AssertionError(op)
 
 
-# Slice 2: Line pairing, map geometry and the renderer's frames on synthetic layouts.
+# Slice 2: Line pairing, map geometry, animation effects and the renderer's frames on synthetic layouts.
 
 def fixture_json(name):
     return json.loads((SOURCE / 'tests/fixtures' / name).read_text())
@@ -662,7 +662,7 @@ def midpoints(layout, groups):
 
 
 def render_layouts():
-    """The layouts the frame recordings use, by name."""
+    """The layouts the effect and frame recordings use, by name."""
     import configuration
     import panels
     lines = fixture_json('lines-layout.json')
@@ -797,6 +797,34 @@ def discovery_values():
                 'layout': json.loads((directory / 'layout.json').read_text())}
 
 
+def effect_values():
+    """A digest of every pattern, color set, speed, direction and loop choice on each layout."""
+    import effects
+    rng = random.Random(2603)
+    palettes = [['#336699'], ['#ffffff'] * effects.MAX_COLORS,
+                ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#808080', '#ffffff'],
+                ['#%06x' % rng.randrange(1 << 24) for _ in range(3)]]
+    result = {'palettes': palettes, 'layouts': {}}
+    for name, layout in render_layouts().items():
+        digest, outcomes = hashlib.sha256(), []
+        for pattern in effects.PATTERNS:
+            for colors in palettes:
+                for speed in effects.SPEEDS:
+                    for direction in (effects.DIRECTIONS if effects.PATTERNS[pattern] else (None,)):
+                        for loop in (True, False):
+                            fields = {'kind': 'animation.play', 'pattern': pattern, 'colors': colors, 'speed': speed, 'loop': loop}
+                            if direction is not None:
+                                fields['direction'] = direction
+                            try:
+                                text = json.dumps(effects.render(fields, layout['line_groups'], layout['line_positions']))
+                            except effects.Rejected as error:
+                                text = 'rejected:' + error.code
+                            digest.update(text.encode())
+                            outcomes.append(hashlib.sha256(text.encode()).hexdigest()[:12])
+        result['layouts'][name] = {'sha256': digest.hexdigest(), 'outcomes': outcomes}
+    return result
+
+
 def frame_values():
     """Zone colors sampled from random renderer states, and the effect payload of each state."""
     rng = random.Random(2604)
@@ -878,7 +906,7 @@ def numbers():
 
 def rendering():
     write_nested('rendering.json', {'geometry': geometry_values(), 'discovery': discovery_values(), 'parsing': parsing_values(),
-                                    'colors': color_values(), 'frames': frame_values()}, 4)
+                                    'colors': color_values(), 'effects': effect_values(), 'frames': frame_values()}, 4)
 
 
 if __name__ == '__main__':

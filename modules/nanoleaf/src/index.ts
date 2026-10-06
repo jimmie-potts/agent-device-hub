@@ -7,6 +7,7 @@ export * from './devices.js';
 export * as effects from './effects.js';
 export * from './enrollment.js';
 export * from './errors.js';
+export * from './favorites.js';
 export * from './geometry.js';
 export * from './jsonfile.js';
 export * from './line-projection.js';

@@ -1,7 +1,12 @@
-// Requests to a Nanoleaf controller's local API (transport.py): the request shape callers inject and the address check.
-// The HTTP client itself moves with slice 2b (PORTING.md).
+// Requests to a Nanoleaf controller's local API (transport.py). Callers decide what a request means.
+// Every request carries its own timeout and goes straight to the device, never through a configured proxy.
 import {isIPv6} from 'node:net';
 import {ValueError} from './errors.js';
+
+/** The Nanoleaf local API's port. */
+export const PORT = 16021;
+/** Seconds a light request may take, as the Python client's 1.2-second socket timeout. */
+export const LIGHT_TIMEOUT_SECONDS = 1.2;
 
 export interface LightAddress {
   ip: string;
@@ -12,9 +17,35 @@ export interface LightAddress {
  * A Nanoleaf controller request: the device address and credential, an HTTP method, an endpoint and an optional body.
  * It must settle within its own timeout, as the Python client's did: registry operations for the same state directory
  * take turns in this process, and a worker pass holds its device's lock, so one request that never settles holds every
- * later one.
+ * later one. `lightRequest` gives up after LIGHT_TIMEOUT_SECONDS.
  */
 export type LightRequest = (address: LightAddress, method: string, endpoint?: string, payload?: unknown) => Promise<unknown>;
+
+/** One HTTP exchange with a device. `timeoutSeconds` bounds the whole exchange, from connecting to the last byte. */
+export interface HttpRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string | null;
+  readonly timeoutSeconds: number;
+}
+
+export interface HttpResponse {
+  readonly status: number;
+  readonly body: string;
+}
+
+/** Sends one request and settles within its timeout. Network failures reject with an error that has a `code`. */
+export type HttpTransport = (request: HttpRequest) => Promise<HttpResponse>;
+
+/** urllib's HTTPError: the device answered with a status outside 2xx. Like Python's, it is an OS-level failure. */
+export class HttpError extends Error {
+  override name = 'HttpError';
+  readonly code = 'EHTTP';
+  constructor(readonly status: number) {
+    super(`HTTP Error ${status}`);
+  }
+}
 
 // ipaddress.IPv4Address.is_private in Python 3.12.4 and later.
 const PRIVATE: readonly (readonly [string, number])[] = [['0.0.0.0', 8], ['10.0.0.0', 8], ['127.0.0.0', 8], ['169.254.0.0', 16],
@@ -48,4 +79,17 @@ export function privateAddress(ip: string): string {
     throw new ValueError('Use a private IPv4 address for the lights.');
   }
   return ip;
+}
+
+const notPorted = (): never => {
+  throw new Error('Not ported yet (Hub #26, slice 2b).');
+};
+
+/** HTTP over node:http with a whole-exchange deadline and no proxy. */
+export const nodeTransport: HttpTransport = () => Promise.resolve(notPorted());
+
+/** transport.light_request: one request to the device's local API; its JSON reply, or null for an empty one. */
+export function lightRequest(_address: LightAddress, _method: string, _endpoint = '', _payload: unknown = null,
+  _transport: HttpTransport = nodeTransport): Promise<unknown> {
+  return Promise.resolve(notPorted());
 }

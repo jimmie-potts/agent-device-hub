@@ -1,5 +1,5 @@
 // Enroll NL22 Light Panels beside the original Lines device, change their address, or remove them again (enrollment.py).
-// The command line, the hidden credential prompt and the pairing request are not ported (PORTING.md).
+// The command line and the hidden credential prompt are not ported (PORTING.md).
 import {existsSync, lstatSync, readlinkSync, unlinkSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
@@ -14,11 +14,18 @@ import {readJson, writeJson} from './jsonfile.js';
 import {readLayout} from './panels.js';
 import {execute, first, transaction} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
-import {privateAddress, type LightRequest} from './transport.js';
+import {nodeTransport, privateAddress, type HttpTransport, type LightRequest} from './transport.js';
 
 export const KIND = 'panels';
 export const MODEL = 'NL22';
 export const REMOVE_WAIT_SECONDS = 10.0;
+/** Seconds the pairing request may take. */
+export const PAIR_TIMEOUT_SECONDS = 5;
+
+/** Ask the device for a new credential while its pairing window is open (enrollment.pair). */
+export function pair(_ip: string, _transport: HttpTransport = nodeTransport): Promise<string> {
+  return Promise.reject(new Error('Not ported yet (Hub #26, slice 2b).'));
+}
 
 /** Python's os.path.realpath(strict=False): resolve every symlink that exists and keep the rest of the path. */
 function realpath(path: string): string {
