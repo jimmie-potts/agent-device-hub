@@ -353,7 +353,7 @@ The local rule lives in `scripts/eslint/bunny-rules.mjs`.
 - that every TypeScript project compiling covered code keeps the five compiler
   settings, as `tsc --showConfig` reports them;
 - that covered paths have no lint baseline entries;
-- that every workspace package uses the `@jimmie-potts/` scope;
+- that every workspace package uses a scope listed in `workspaceScopes`;
 - that the compiler base rejects an unchecked index and an explicit `undefined`
   optional property.
 

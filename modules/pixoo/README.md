@@ -196,7 +196,7 @@ Each line names the runtime part that replaces the files.
   `tsconfig.tests.json`, `vitest.config.ts`, `tests/workflow_checks.cjs`,
   `AGENTS.md`, `CLAUDE.md`, `README.md` and `.github/` (issue and PR templates and
   the CI workflow). Replaced by this repository's manifests, lint configuration,
-  instructions, Depot CI and the files under `modules/pixoo/`.
+  instructions, GitHub Actions CI and the files under `modules/pixoo/`.
 - **Documentation and specifications** (`docs/`, 51 files, and `openspec/`, 242
   files). They stay in the archived repository; the runtime gets fresh
   specifications (#827).
