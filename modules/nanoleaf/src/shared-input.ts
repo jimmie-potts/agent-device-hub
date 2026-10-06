@@ -1,7 +1,7 @@
 // Nanoleaf presentation of validated shared state; no provider interpretation (shared_input.py).
 // The feed transport, its credential files and the snapshot schema check are not ported: the runtime delivers
 // validated session state (PORTING.md). Everything here runs inside the caller's transaction.
-import {compareText, dumps, floatText, isObject, parseJson, sameValue, sha256Hex, type Json} from './compat.js';
+import {compareText, dumps, floatText, isObject, parseFloatText, parseJson, sameValue, sha256Hex, type Json} from './compat.js';
 // shared_input.ID is the same pattern as devices.ID.
 import {DEFAULT, ID, legacyRow} from './devices.js';
 import {FeedError, ValueError} from './errors.js';
@@ -641,6 +641,16 @@ function firstText(...values: readonly (SqlValue | undefined)[]): string | null 
  * shared_input.render_config: hold idle and stale tasks' Lines steady, suppress outward waves a recovered task must not
  * replay, and apply the shared wave cutoff, for one worker pass.
  */
-export function sharedRenderConfig(_db: Db, _config: RenderConfig): void {
-  throw new Error('Not ported yet (Hub #26, slice 2).');
+export function sharedRenderConfig(db: Db, config: RenderConfig): void {
+  const device = config.device ?? DEFAULT_DEVICE;
+  const slots = (sql: string): number[] => rows(db, sql, device).map(([slot]) => {
+    if (typeof slot !== 'number') throw new TypeError('A saved slot must be a number.');
+    return slot;
+  });
+  config._steady_slots = slots('SELECT slot FROM slots JOIN sessions ON sessions.id=slots.session WHERE slots.device=? AND '
+    + "(sessions.status='idle' OR EXISTS (SELECT 1 FROM shared_stale WHERE shared_stale.session=slots.session))");
+  config._wave_suppressed_slots = slots('SELECT slot FROM slots JOIN shared_suppressed_waves USING (session) JOIN activity USING (session) '
+    + 'WHERE epoch=started AND slots.device=?');
+  const row = first(db, "SELECT value FROM meta WHERE key='shared_wave_cutoff'");
+  if (row !== undefined) config._wave_cutoff = Math.max(config._wave_cutoff ?? -Infinity, parseFloatText(String(row[0])));
 }

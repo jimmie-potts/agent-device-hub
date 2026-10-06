@@ -53,14 +53,19 @@ export function settings(db: Db, device: string = DEFAULT): MapSettings {
 }
 
 /** The effective palette; a damaged row falls back to that role's default. */
-export function palette(_db: Db): Record<Role, string> {
-  throw new Error('Not ported yet (Hub #26, slice 2).');
+export function palette(db: Db): Record<Role, string> {
+  const result: Record<Role, string> = {...DEFAULT_PALETTE};
+  for (const [role = null, color = null] of rows(db, 'SELECT role,color FROM palette')) {
+    if (isRole(role) && typeof color === 'string' && HEX.test(color)) result[role] = color.toLowerCase();
+  }
+  return result;
 }
 
+const hexRgb = (color: string): Rgb => [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+
 export function paletteRgb(value: Readonly<Record<Role, string>>): Record<Role, Rgb> {
-  const channels = (color: string): Rgb => [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16)) as unknown as Rgb;
-  return {base: channels(value.base), working: channels(value.working), question: channels(value.question), blocked: channels(value.blocked),
-    unread: channels(value.unread)};
+  return {base: hexRgb(value.base), working: hexRgb(value.working), question: hexRgb(value.question), blocked: hexRgb(value.blocked),
+    unread: hexRgb(value.unread)};
 }
 
 export const lineId = (pair: readonly number[]): string => elementId(pair);
@@ -313,6 +318,27 @@ export function allocate(db: Db, config: DeviceConfig, tasks: readonly TaskRow[]
 }
 
 /** Add the device's map style, coverage, palette and per-element project halves to a worker pass's configuration. */
-export function renderConfig(_db: Db, _config: RenderConfig, _snapshot: readonly Indication[]): void {
-  throw new Error('Not ported yet (Hub #26, slice 2).');
+export function renderConfig(db: Db, config: RenderConfig, snapshot: readonly Indication[]): void {
+  const device = deviceOf(config);
+  const prefs = owners(db, config);
+  const projects = taskProjects(db);
+  const colors = new Map(rows(db, 'SELECT id,color FROM projects').map(([id = null, color = null]) => {
+    if (typeof color !== 'string') throw new TypeError('A saved project color must be text.');
+    return [id, hexRgb(color)] as const;
+  }));
+  const active = new Map<number, SqlValue>();
+  for (const [session = null, slot = null] of rows(db, 'SELECT session,slot FROM slots WHERE device=?', device)) {
+    if (typeof slot === 'number' && slot >= 0 && slot < snapshot.length && snapshot[slot] !== null) active.set(slot, projects.get(session) ?? null);
+  }
+  const {style, coverage} = settings(db, device);
+  config._style = style;
+  config._coverage = coverage;
+  config._palette = paletteRgb(palette(db));
+  // Project/status halves are a Lines feature; a triangle always shows its status.
+  config._signatures = (config.kind ?? 'lines') === 'lines'
+    ? prefs.map(([owner, signature], i) => {
+      const project = active.get(i) ?? null;
+      return [colors.get(project !== null && project !== '' && project !== 0 ? project : owner) ?? null, signature] as const;
+    })
+    : [];
 }
