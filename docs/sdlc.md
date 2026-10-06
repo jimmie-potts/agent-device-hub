@@ -283,11 +283,18 @@ permission to replace an owner.
    missing acceptance or failed lookups prevent archive.
    Depot CI minutes are limited and every pushed revision runs every applicable
    job, so validate locally first. Build once, then run the affected `:built`
-   checks before each push. Push the first review candidate and one head per fix
-   round, not intermediate commits. Prove that a check fails with a local
-   negative control. Push a failing probe only when the issue requires hosted
-   failure evidence.
-2. Commit the candidate and open a PR with Refs #<issue>. Record base, head,
+   checks before each push. Push only reviewed heads: the first after step 3's
+   reviews, then one per later fix round after its re-review. Prove that a
+   check fails with a local negative control. The one exception to pushing
+   only reviewed heads is a failing probe, pushed only when the issue requires
+   hosted failure evidence. Before review, check every
+   acceptance item against its evidence, search the docs for each fact the
+   change alters, and state limits and remaining uncertainty in the review brief
+   and the PR body.
+2. Commit the candidate and run step 3's reviews, including an Acceptance review
+   when one applies, on that local commit before the first push, so a review fix
+   round costs no CI run. Push the reviewed head and open a PR with
+   Refs #<issue>. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
    keyword (or variant) before `#<n>` anywhere in the body, including inside an
@@ -298,7 +305,8 @@ permission to replace an owner.
    to clear a reference (the read can lag a few minutes), and read back the
    issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. When the change has observable
+   fixed comparison through code-review. The comparison's head may be a local
+   commit. A fix that follows CI feedback is re-reviewed before its push. When the change has observable
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
@@ -342,7 +350,8 @@ review.
 Verification has three tiers.
 
 1. **Automatic.** Once an application has a shared scenario catalog, every PR
-   runs it in CI through the in-memory end-to-end harness.
+   that runs the Checks workflow runs it in CI through the in-memory end-to-end
+   harness. Markdown-only and guide-only changes skip it.
    [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
    adds both for the new runtime that
    [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
@@ -560,6 +569,9 @@ Package scripts copy some Markdown files into published archives, such as
 contract documents and package READMEs. Text edits to those files stay
 Markdown-only. The Workflow job fails if any of them is missing, so delete or
 rename one only together with its package script. That change runs every job.
+That guard checks only that the files exist. Package scripts may copy the
+guarded files, but no Checks test may depend on Markdown content. A test that
+does must run in the Workflow job, which still runs for Markdown-only changes.
 
 The `docs/work-guide/` and `**/*.md` filters combine. A revision that changes
 only guide files and other Markdown therefore skips Checks too, and it needs
