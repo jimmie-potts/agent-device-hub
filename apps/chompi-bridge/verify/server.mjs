@@ -28,7 +28,7 @@ import { defaultLockPath } from '../dist/lock.js';
 import { createNodeHidTransport } from '../dist/node-hid-transport.js';
 import { isPressControl, isTurnControl } from '../dist/protocol.js';
 import { loadOsAdapter } from '../dist/routing/index.js';
-import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PAGE_SETTINGS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS } from '../dist/routing/profile.js';
+import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MODEL_SETTINGS, DEFAULT_PAGE_SETTINGS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS } from '../dist/routing/profile.js';
 import { SyntheticHub } from '../dist/sim/hub.js';
 import { CONTROL, PANEL_ENCODERS, PANEL_KEYS, describeLights } from '../dist/sim/panel.js';
 import { READY_STEP, SCENARIOS, ready, readiness, runScenario, seedDesktop, seedHub, taskIds } from '../dist/sim/scenarios.js';
@@ -434,11 +434,12 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (request.method === 'GET' && url.pathname === '/api/harness/state') return send(response, 200, await state());
       if (request.method === 'GET' && url.pathname === '/api/harness/boundaries') return send(response, 200, boundaries());
       if (request.method === 'GET' && url.pathname === '/api/harness/panel') {
-        // Default counts per turn, from the profile: one card step for the big wheel, one page step for knob 4 (#822) and
-        // one volume key for the volume knob (#865).
+        // Default counts per turn, from the profile: one card step for the big wheel, one page step for knob 4 (#822),
+        // one volume key for the volume knob (#865), and one model or effort step for knobs 1 and 2 (#906).
         const counts = {
           wheel: profile.cards?.stepCounts ?? DEFAULT_CARD_STEP_COUNTS, 'knob-4': profile.pages?.stepCounts ?? DEFAULT_PAGE_SETTINGS.stepCounts,
           volume: profile.volume?.stepCounts ?? DEFAULT_VOLUME_SETTINGS.stepCounts,
+          'knob-1': profile.model?.stepCounts ?? DEFAULT_MODEL_SETTINGS.stepCounts, 'knob-2': profile.effort?.stepCounts ?? DEFAULT_EFFORT_SETTINGS.stepCounts,
         };
         return send(response, 200, { keys: PANEL_KEYS, encoders: PANEL_ENCODERS, controls: CONTROL, counts, cards: Object.keys(CARD_STOPS) });
       }

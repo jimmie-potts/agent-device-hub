@@ -1,9 +1,12 @@
 import type { Rgb } from '../protocol.js';
 import { LED_COUNT } from '../protocol.js';
-import { PAGE_LED, PULSE_LOW, SLOT_STATES, VOLUME_LED, WHEEL_LEDS, keyControls, ledIndex, scale } from '../routing/lights.js';
-import { DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type KeyMap } from '../routing/profile.js';
+import { KNOB_LEDS, PAGE_LED, PULSE_LOW, SLOT_STATES, VOLUME_LED, WHEEL_LEDS, keyControls, ledIndex, scale } from '../routing/lights.js';
+import {
+  DEFAULT_APPLIED_COLOR, DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN,
+  type KeyMap,
+} from '../routing/profile.js';
 
-export { PAGE_LED, VOLUME_LED, WHEEL_LEDS };
+export { KNOB_LEDS, PAGE_LED, VOLUME_LED, WHEEL_LEDS };
 
 /**
  * The CHOMPI panel as protocol v1 numbers it (packages/chompi-protocol/README.md "Control and LED IDs"), for the
@@ -36,22 +39,23 @@ export const PANEL_ENCODERS: readonly PanelEncoder[] = Object.freeze([
 
 /**
  * Named controls the shipped profile uses: knob 4's turn, which always pages tasks (#822), knob 4's click, the
- * Attention click, and the volume knob (#865).
+ * Attention click, the volume knob (#865), and knob 1 (model) and knob 2 (effort), #906.
  */
 export const CONTROL = Object.freeze({
   record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45, pageTurn: PAGE_TURN, attentionClick: PAGE_CLICK, volumeTurn: VOLUME_TURN,
-  volumeClick: VOLUME_CLICK,
+  volumeClick: VOLUME_CLICK, modelTurn: MODEL_TURN, modelClick: MODEL_CLICK, effortTurn: EFFORT_TURN, effortClick: EFFORT_CLICK,
 });
 
 /** Which routing light an LED can show, from the profile's controls. */
-export type LightRole = 'slot' | 'record' | 'wheel' | 'page' | 'attention' | 'volume' | 'unused';
+export type LightRole = 'slot' | 'record' | 'wheel' | 'page' | 'attention' | 'volume' | 'knob' | 'unused';
 
 /**
  * The colors each role can show, as the router renders them (`renderFrame` in routing/lights.ts): the error flash
  * before any slot state (it overrides one), the Record color, the wheel's error flash, on knob 4's page LED a refused
  * Attention click's error flash and the attention color it alternates with while a hidden page has attention (the page
- * colors are matched separately), a black key mapped to `attention` with its attention color and refusal flash, and
- * the volume knob's error flash.
+ * colors are matched separately), a black key mapped to `attention` with its attention color and refusal flash, the
+ * volume knob's error flash, and knob 1's and knob 2's open control (`active`), confirmed change (`applied`), unconfirmed
+ * change (`unknown`) and refusal (`error`), #906.
  */
 const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze({
   slot: ['error', ...SLOT_STATES.filter(state => state !== 'empty')],
@@ -60,6 +64,7 @@ const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze
   page: ['error', 'attention'],
   attention: ['error', 'attention'],
   volume: ['error'],
+  knob: ['error', 'applied', 'unknown', 'active'],
   unused: [],
 });
 
@@ -67,7 +72,10 @@ export interface LightProfile {
   controls: { slots: readonly number[]; record: number };
   /** Black-key actions; absent, the router's default (none). */
   keys?: KeyMap;
-  /** Named colors, and `pages`: knob 4's color for each task page, page 1 first (the shipped defaults when absent). */
+  /**
+   * Named colors, `pages`: knob 4's color for each task page, page 1 first (the shipped defaults when absent), and
+   * `applied`, the knobs' confirmed-change flash (the default when absent).
+   */
   colors: Readonly<Record<string, readonly number[]>> & { readonly pages?: readonly (readonly number[])[] };
 }
 
@@ -86,6 +94,7 @@ export function lightRoles(profile: LightProfile): LightRole[] {
     if (index !== undefined && roles[index] === 'unused') roles[index] = 'attention';
   }
   roles[VOLUME_LED] = 'volume';
+  for (const index of Object.values(KNOB_LEDS)) roles[index] = 'knob';
   return roles;
 }
 
@@ -100,7 +109,8 @@ export function describeLights(profile: LightProfile, leds: readonly Rgb[]): str
     if (rgb.every(v => v === 0)) return 'off';
     const role = roles[i] ?? 'unused';
     const match = (color: readonly number[] | undefined) => !!color && color.every((v, c) => v === rgb[c]);
-    const name = ROLE_NAMES[role].find(n => match(profile.colors[n]));
+    const colorOf = (n: string) => n === 'applied' ? profile.colors.applied ?? DEFAULT_APPLIED_COLOR : profile.colors[n];
+    const name = ROLE_NAMES[role].find(n => match(colorOf(n)));
     if (name) return name;
     if (role === 'page') {
       const page = (profile.colors.pages ?? DEFAULT_PAGE_COLORS).findIndex(match);

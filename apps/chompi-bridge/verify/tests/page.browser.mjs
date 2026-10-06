@@ -124,6 +124,23 @@ try {
     await page.getByRole('button', { name: 'Black key 1, light off', exact: true }).waitFor({ timeout: 5000 });
   });
 
+  await check('knob 2 turns Claude\'s effort up one level; the window, its light and the desktop log show it, and its click closes the slider (#906)', async () => {
+    assert.equal(await page.getByLabel('Counts per turn').nth(1).inputValue(), '6', 'knob 2 starts at one effort step');
+    const claude = page.locator('[data-window="claude"]');
+    await page.getByRole('button', { name: 'Bring Claude to front' }).click();
+    await claude.getByRole('button', { name: 'Focus composer' }).click();
+    await until(async () => (await state()).desktop.windows.claude.composer.focused, 'the Claude composer has focus');
+    await page.getByRole('button', { name: 'Knob 2 turn right' }).click();
+    await claude.locator('dd').filter({ hasText: /^Medium$/ }).waitFor({ timeout: 5000 });
+    await claude.locator('dd').filter({ hasText: /^Effort slider open$/ }).waitFor({ timeout: 5000 });
+    await page.locator('[data-encoder="knob-2"] > .light').filter({ hasText: /^applied$/ }).waitFor({ timeout: 5000 });
+    await page.locator('#desktop-log li').filter({ hasText: 'Claude effort set to Medium (2 of 4)' }).first().waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Knob 2 click' }).click();
+    await claude.locator('dd').filter({ hasText: /^closed$/ }).waitFor({ timeout: 5000 });
+    await page.locator('[data-encoder="knob-2"] > .light').filter({ hasText: /^off$/ }).waitFor({ timeout: 5000 });
+    assert.deepEqual((await state()).desktop.windows.claude.composer.submitted, [], 'nothing was sent');
+  });
+
   await check('the Hub controls change a slot light: attention on the Codex task', async () => {
     await page.getByLabel('Attention of Synthetic Codex task 1').selectOption('approval');
     const slot = (await state()).slots.find(s => s.client === 'codex').slot;
