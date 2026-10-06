@@ -119,10 +119,12 @@ export function admitCommand(db: Db, directory: string, admission: Admission, re
   const command = parseCommand(admission.command);
   const control = controlState(db, device);
   if (command.kind === ANIMATION) {
-    // Content for Free only, and only on the Lines; Work and Quiet present agent status (hub ADR 0005).
-    if (device !== DEFAULT || control.mode !== 'free') throw new Refused('unsupported-capability', 'Animations play only on the Lines in Free.');
+    // In integration_api.admit's order: the Lines alone play requested animations, one waits at a time, the saved
+    // layout must place it, and only in Free, since Work and Quiet present agent status (hub ADR 0005).
+    if (device !== DEFAULT) throw new Refused('unsupported-capability', 'Animations play only on the Lines.');
     if (journal(db, device, 'AND kind=?', ANIMATION).length > 0) throw new Refused('capacity', 'Another animation is waiting.');
     const {groups, positions} = savedGeometry(directory);
+    if (control.mode !== 'free') throw new Refused('unsupported-capability', 'Animations play only in Free.');
     animationPayload(db, command, groups, positions);
     // Like a fresh native control, a requested animation authorizes another attempt.
     release(db, device);
