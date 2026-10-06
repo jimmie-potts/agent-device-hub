@@ -115,15 +115,19 @@ try {
     assert.equal((await state()).desktop.foreground, front, 'no window came to the front');
   });
 
-  await check('the Attention key (black key 1) reads light off while no task waits (#865)', async () => {
+  await check('knob 4\'s click is the Attention click: with no task waiting its light reads error, then the page again (#865)', async () => {
+    const light = page.locator('[data-encoder="knob-4"] > .light');
+    await page.getByRole('button', { name: 'Knob 4 click' }).click();
+    await until(async () => (await state()).log.some(entry => entry.line.type === 'attention-refused' && entry.line.reason === 'none-waiting'), 'the click is refused');
+    await light.filter({ hasText: /^error$/ }).waitFor({ timeout: 5000 });
+    await light.filter({ hasText: /^page 1$/ }).waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: 'Black key 1, light off', exact: true }).waitFor({ timeout: 5000 });
   });
 
-  await check('the Hub controls change a slot light: attention on the Codex task, which also lights the Attention key', async () => {
+  await check('the Hub controls change a slot light: attention on the Codex task', async () => {
     await page.getByLabel('Attention of Synthetic Codex task 1').selectOption('approval');
     const slot = (await state()).slots.find(s => s.client === 'codex').slot;
     await page.getByRole('button', { name: new RegExp(`^Slot ${slot}, light attention`) }).waitFor({ timeout: 8000 });
-    await page.getByRole('button', { name: 'Black key 1, light attention', exact: true }).waitFor({ timeout: 5000 });
   });
 
   await check('the desktop log and the bridge log are shown', async () => {

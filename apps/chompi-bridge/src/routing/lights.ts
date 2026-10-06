@@ -45,9 +45,12 @@ export interface RenderInput {
   recording: boolean;
   /** A refused or uncertain Send or card press: both big-wheel LEDs show the error color. */
   wheelError?: boolean;
-  /** The visible task page (1-based) for knob 4's LED, and whether a hidden page holds a task with attention. */
-  page?: { number: number; hiddenAttention: boolean };
-  /** Whether any task on a page waits for the owner: the Attention key's light (#865). */
+  /**
+   * The visible task page (1-based) for knob 4's LED, whether a hidden page holds a task with attention, and whether a
+   * refused Attention click flashes the LED in the error color (#865).
+   */
+  page?: { number: number; hiddenAttention: boolean; error?: boolean };
+  /** Whether any task on a page waits for the owner: the light of a black key mapped to `attention` (#865). */
   attentionWaiting?: boolean;
   /** Black-key controls flashing the error color for a refused press. */
   keyErrors?: ReadonlySet<number>;
@@ -92,8 +95,9 @@ export function renderFrame({
   if (recording && record !== undefined) frame[record] = colors.record;
   if (wheelError) for (const index of WHEEL_LEDS) frame[index] = colors.error;
   // Knob 4's LED shows the visible page; it alternates with the attention color while a hidden page has attention.
-  if (page) frame[PAGE_LED] = page.hiddenAttention && pulseOn ? colors.attention : colors.pages[page.number - 1] ?? OFF;
-  // The Attention key shows the attention color, steady, while any task waits; a Back key has no light.
+  // A refused Attention click flashes it in the error color, then it shows the page again.
+  if (page) frame[PAGE_LED] = page.error ? colors.error : page.hiddenAttention && pulseOn ? colors.attention : colors.pages[page.number - 1] ?? OFF;
+  // A black key mapped to `attention` shows the attention color, steady, while any task waits; a Back key has no light.
   for (const control of keyControls(profile.keys, 'attention')) {
     const index = ledIndex(control);
     if (index !== undefined) frame[index] = keyErrors?.has(control) ? colors.error : attentionWaiting ? colors.attention : OFF;

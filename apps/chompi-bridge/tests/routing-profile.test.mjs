@@ -115,13 +115,15 @@ test('card settings are optional, field by field, and bounded', () => {
 
 test('page settings are optional and bounded, with one color per page (#822)', () => {
   const profile = validateProfile(shipped());
-  assert.deepEqual(profile.pages, { count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS });
+  assert.deepEqual(profile.pages, { count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS, attentionClick: true });
   assert.equal(profile.colors.pages.length, 8);
   assert.equal(new Set(profile.colors.pages.map(c => JSON.stringify(c))).size, 8, 'distinct page colors');
   for (const color of profile.colors.pages) assert.notDeepEqual(color, profile.colors.attention, 'no page color looks like attention');
-  assert.deepEqual(validateProfile(installedTrialProfile()).pages, { count: 4, stepCounts: 6 }, 'an earlier profile keeps validating');
-  assert.deepEqual(validateProfile({ ...shipped(), pages: { count: 2 } }).pages, { count: 2, stepCounts: 6 });
-  assert.deepEqual(validateProfile({ ...shipped(), pages: { stepCounts: 12 } }).pages, { count: 4, stepCounts: 12 });
+  assert.deepEqual(validateProfile(installedTrialProfile()).pages, { count: 4, stepCounts: 6, attentionClick: true }, 'an earlier profile keeps validating, with the Attention click');
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { count: 2 } }).pages, { count: 2, stepCounts: 6, attentionClick: true });
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { stepCounts: 12 } }).pages, { count: 4, stepCounts: 12, attentionClick: true });
+  assert.deepEqual(validateProfile({ ...shipped(), pages: { attentionClick: false } }).pages, { count: 4, stepCounts: 6, attentionClick: false });
+  for (const attentionClick of [1, 'true', null]) assert.deepEqual(issues(() => validateProfile({ ...shipped(), pages: { attentionClick } })), ['profile.pages.attentionClick: must be true or false']);
   for (const count of [0, 9, 1.5, '4']) assert.match(issues(() => validateProfile({ ...shipped(), pages: { count } }))[0], /^profile\.pages\.count: must be an integer 1-8$/);
   for (const stepCounts of [0, 97]) assert.match(issues(() => validateProfile({ ...shipped(), pages: { stepCounts } }))[0], /^profile\.pages\.stepCounts: must be an integer 1-96$/);
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), pages: { count: 2, knob: 43 } })), ['profile.pages.knob: unknown field']);
@@ -133,7 +135,7 @@ test('page settings are optional and bounded, with one color per page (#822)', (
   assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, scroll: 43 } }))[0], /knob 4/, 'knob 4\'s turn pages and cannot scroll');
   for (const field of ['record', 'back']) {
     assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, [field]: 31 } })),
-      [`profile.controls.${field}: 31 is small knob 4's click, which stays unassigned`]);
+      [`profile.controls.${field}: 31 is small knob 4's click, which carries only the Attention action`]);
   }
   assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, send: [31] } }))[0], /small-knob click and can never send/);
 });
@@ -151,12 +153,12 @@ test('timing and qualified versions are bounded', () => {
   assert.match(issues(() => validateProfile({ ...shipped(), qualifiedVersions: { claude: ['2.19675.0.0'], codex: ['x y'] } }))[0], /qualifiedVersions\.codex\[0\]/);
 });
 
-test('black keys: an optional map from controls 16-25 to attention or back, defaulting to an Attention key on 16 (#865)', () => {
-  assert.equal('keys' in shipped(), false, 'the shipped profile leaves the default to the one constant in profile.ts');
-  assert.deepEqual(DEFAULT_KEY_ACTIONS, { 16: 'attention' });
-  assert.deepEqual(validateProfile(shipped()).keys, { 16: 'attention' });
-  assert.deepEqual(validateProfile(installedTrialProfile()).keys, { 16: 'attention' }, 'the installed profile gets the Attention key without edits');
-  assert.deepEqual(validateProfile({ ...shipped(), keys: {} }).keys, {}, 'an empty map turns every black key off');
+test('black keys: an optional map from controls 16-25 to attention or back, with no default (#865)', () => {
+  assert.equal('keys' in shipped(), false);
+  assert.deepEqual(DEFAULT_KEY_ACTIONS, {}, 'the Attention action is on knob 4\'s click (owner decision of 2026-10-06)');
+  assert.deepEqual(validateProfile(shipped()).keys, {});
+  assert.deepEqual(validateProfile(installedTrialProfile()).keys, {});
+  assert.deepEqual(validateProfile({ ...shipped(), keys: {} }).keys, {});
   assert.deepEqual(validateProfile({ ...shipped(), keys: { 25: 'attention', 17: 'back' } }).keys, { 17: 'back', 25: 'attention' });
   const withKeys = keys => () => validateProfile({ ...shipped(), keys });
   for (const control of ['15', '26', '1', 'x', '16.0', '016']) {
@@ -168,7 +170,7 @@ test('black keys: an optional map from controls 16-25 to attention or back, defa
   assert.match(issues(withKeys(['attention']))[0], /^profile\.keys: must be an object$/);
 });
 
-test('black keys: a control already used elsewhere is rejected; the default yields to an older mapping (#865)', () => {
+test('black keys: a control already used elsewhere is rejected; an older mapping of a black key still loads (#865)', () => {
   const slots = [16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, slots }, keys: { 16: 'attention' } })),
     ['profile.keys.16: 16 is already mapped by profile.controls.slots[0]']);
@@ -176,7 +178,7 @@ test('black keys: a control already used elsewhere is rejected; the default yiel
     assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, [field]: value }, keys: { 17: 'back' } }))[0],
       new RegExp(`^profile\\.keys\\.17: 17 is already mapped by profile\\.controls\\.${field}`));
   }
-  // An earlier profile that already used control 16 still loads: the default Attention key stands aside.
+  // An earlier profile that already used a black key still loads: nothing is mapped there by default.
   assert.deepEqual(validateProfile({ ...shipped(), controls: { ...shipped().controls, record: 16 } }).keys, {});
   assert.deepEqual(validateProfile({ ...shipped(), controls: { ...shipped().controls, slots } }).keys, {});
 });

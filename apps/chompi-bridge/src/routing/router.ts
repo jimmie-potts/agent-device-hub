@@ -4,7 +4,7 @@ import { MAX_VOLUME_PRESSES, type CardButtons, type ClaudeDesktopSession, type C
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
-import { PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
+import { PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
 import { Detent } from './detent.js';
 import { SLOT_COUNT, candidatesFromSessions, sessionsForSlot, slotKey, type SlotReleaseReason, type SlotRecord, type SlotStore } from './slots.js';
 
@@ -142,15 +142,17 @@ export class TaskRouter {
   /** Until when the big-wheel LEDs show a refused or uncertain Send or card press. */
   #wheelErrorUntil = Number.NEGATIVE_INFINITY;
   /**
-   * The Attention key (#865): when the bridge first saw each assigned task waiting, as a sequence number by slot key.
+   * The Attention click on knob 4 (#865): when the bridge first saw each assigned task waiting, as a sequence number by slot key.
    * The Hub's attention entries carry no time, so this order lives in memory only and restarts with the bridge.
    */
   readonly #attentionSeen = new Map<string, number>();
   #attentionSequence = 0;
-  /** The last Attention key press and the task it opened, for the repeat window. */
+  /** The last Attention press and the task it opened, for the repeat window. */
   #lastAttention: { at: number; sequence: number } | null = null;
   /** Black-key controls flashing the error color for a refused press, and until when. */
   readonly #keyErrors = new Map<number, number>();
+  /** Until when knob 4's LED shows a refused Attention click. */
+  #pageErrorUntil = Number.NEGATIVE_INFINITY;
   /**
    * The volume knob (#865): partial rotation and presses waiting for the single volume worker, and whether a mute toggle
    * waits. Clicks that arrive while a volume key is being sent collapse to their parity, so an even number cancels out.
@@ -312,7 +314,10 @@ export class TaskRouter {
     else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
     else if (this.#profile.volume && event.control === VOLUME_CLICK) this.#volumeMute();
-    else {
+    else if (event.control === PAGE_CLICK) {
+      // Knob 4's click is the Attention click (#865) unless the profile turns it off.
+      if (this.#profile.pages.attentionClick) this.#attentionPress(event.control);
+    } else {
       // Black keys act as the profile maps them (#865); other controls, such as the small knobs, are inert (#744).
       const action = this.#profile.keys[String(event.control)];
       if (action === 'attention') this.#attentionPress(event.control);
@@ -858,7 +863,7 @@ export class TaskRouter {
     }
   }
 
-  // The Attention key (#865)
+  // The Attention click on knob 4, or a black key mapped to `attention` (#865)
 
   /** Tasks on the profile's pages that wait for the owner, first seen first; none unless the feed is current. */
   #waiting(): { slot: number; sequence: number }[] {
@@ -881,7 +886,9 @@ export class TaskRouter {
     const waiting = this.#waiting();
     if (waiting.length === 0) {
       this.#log({ type: 'attention-refused', reason: this.#feed.status === 'current' ? 'none-waiting' : `feed-${this.#feed.status}` });
-      this.#keyErrors.set(control, now + this.#profile.timing.errorFlashMs);
+      const until = now + this.#profile.timing.errorFlashMs;
+      if (control === PAGE_CLICK) this.#pageErrorUntil = until;
+      else this.#keyErrors.set(control, until);
       this.#render();
       return;
     }
@@ -1037,7 +1044,7 @@ export class TaskRouter {
     const half = Math.max(1, Math.floor(this.#profile.timing.attentionPulseMs / 2));
     const frame = renderFrame({
       profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, wheelError: now < this.#wheelErrorUntil,
-      page: { number: this.#page, hiddenAttention: this.#hiddenAttention() },
+      page: { number: this.#page, hiddenAttention: this.#hiddenAttention(), error: now < this.#pageErrorUntil },
       attentionWaiting: this.#waiting().length > 0, keyErrors: this.#flashingKeys(now), volumeError: now < this.#volumeErrorUntil,
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });

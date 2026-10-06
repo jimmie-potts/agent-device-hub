@@ -1,7 +1,7 @@
 import type { Rgb } from '../protocol.js';
 import { LED_COUNT } from '../protocol.js';
 import { PAGE_LED, PULSE_LOW, SLOT_STATES, VOLUME_LED, WHEEL_LEDS, keyControls, ledIndex, scale } from '../routing/lights.js';
-import { DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type KeyMap } from '../routing/profile.js';
+import { DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type KeyMap } from '../routing/profile.js';
 
 export { PAGE_LED, VOLUME_LED, WHEEL_LEDS };
 
@@ -35,29 +35,29 @@ export const PANEL_ENCODERS: readonly PanelEncoder[] = Object.freeze([
 ]);
 
 /**
- * Named controls the shipped profile uses: knob 4's turn, which always pages tasks (#822), the default Attention key
- * (black key 1) and the volume knob (#865).
+ * Named controls the shipped profile uses: knob 4's turn, which always pages tasks (#822), knob 4's click, the
+ * Attention click, and the volume knob (#865).
  */
 export const CONTROL = Object.freeze({
-  record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45, pageTurn: PAGE_TURN, attention: 16, volumeTurn: VOLUME_TURN, volumeClick: VOLUME_CLICK,
+  record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45, pageTurn: PAGE_TURN, attentionClick: PAGE_CLICK, volumeTurn: VOLUME_TURN,
+  volumeClick: VOLUME_CLICK,
 });
-/** The default Attention key's LED. */
-export const ATTENTION_KEY_LED = ledIndex(CONTROL.attention)!;
 
 /** Which routing light an LED can show, from the profile's controls. */
 export type LightRole = 'slot' | 'record' | 'wheel' | 'page' | 'attention' | 'volume' | 'unused';
 
 /**
  * The colors each role can show, as the router renders them (`renderFrame` in routing/lights.ts): the error flash
- * before any slot state (it overrides one), the Record color, the wheel's error flash, on knob 4's page LED the
- * attention color it alternates with while a hidden page has attention (the page colors are matched separately), the
- * Attention key's attention color and refusal flash, and the volume knob's error flash.
+ * before any slot state (it overrides one), the Record color, the wheel's error flash, on knob 4's page LED a refused
+ * Attention click's error flash and the attention color it alternates with while a hidden page has attention (the page
+ * colors are matched separately), a black key mapped to `attention` with its attention color and refusal flash, and
+ * the volume knob's error flash.
  */
 const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze({
   slot: ['error', ...SLOT_STATES.filter(state => state !== 'empty')],
   record: ['record'],
   wheel: ['error'],
-  page: ['attention'],
+  page: ['error', 'attention'],
   attention: ['error', 'attention'],
   volume: ['error'],
   unused: [],
@@ -65,7 +65,7 @@ const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze
 
 export interface LightProfile {
   controls: { slots: readonly number[]; record: number };
-  /** Black-key actions; absent, the router's default (an Attention key on control 16). */
+  /** Black-key actions; absent, the router's default (none). */
   keys?: KeyMap;
   /** Named colors, and `pages`: knob 4's color for each task page, page 1 first (the shipped defaults when absent). */
   colors: Readonly<Record<string, readonly number[]>> & { readonly pages?: readonly (readonly number[])[] };
@@ -83,7 +83,6 @@ export function lightRoles(profile: LightProfile): LightRole[] {
   roles[PAGE_LED] = 'page';
   for (const control of keyControls(profile.keys ?? DEFAULT_KEY_ACTIONS, 'attention')) {
     const index = ledIndex(control);
-    // A default Attention key yields to a control the profile already maps, as profile validation does.
     if (index !== undefined && roles[index] === 'unused') roles[index] = 'attention';
   }
   roles[VOLUME_LED] = 'volume';

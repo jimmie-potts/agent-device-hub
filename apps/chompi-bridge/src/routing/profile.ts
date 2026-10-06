@@ -29,7 +29,10 @@ export const KEY_NAMES: readonly string[] = Object.freeze([
 export const SMALL_KNOB_CLICKS: readonly number[] = Object.freeze([29, 30, 31, 32]);
 /** Small knob 4's turn (`ENC_3`, the rightmost small knob): it pages tasks (#822) and is never mapped to anything else. */
 export const PAGE_TURN = 43;
-/** Small knob 4's click: unassigned while its turn pages tasks (#822), so no control may map it. */
+/**
+ * Small knob 4's click: the Attention click (#865, owner decision of 2026-10-06), on by default and turned off with
+ * `pages.attentionClick: false`. It carries nothing else, so no control may map it.
+ */
 export const PAGE_CLICK = 31;
 /** The volume knob (`ENC_6`): its turn steps the system volume and its click toggles mute (#865). */
 export const VOLUME_TURN = 46;
@@ -38,19 +41,18 @@ export const VOLUME_CLICK = 34;
 /** The ten second-row black keys (#865), which the optional `keys` map can give an action. */
 export const BLACK_KEYS: readonly number[] = Object.freeze(Array.from({ length: 10 }, (_, i) => 16 + i));
 /**
- * Black-key actions. `attention` opens the task that has waited longest for the owner, across pages, without
- * acknowledging it; `back` does what Loop (`controls.back`) does.
+ * Black-key actions. `attention` does what knob 4's Attention click does: it opens the task that has waited longest for
+ * the owner, across pages, without acknowledging it. `back` does what Loop (`controls.back`) does.
  */
 export const KEY_ACTIONS = ['attention', 'back'] as const;
 export type KeyAction = typeof KEY_ACTIONS[number];
 /** Black-key actions by control ID, as a JSON object with string keys. A control without an entry does nothing. */
 export type KeyMap = Readonly<Partial<Record<string, KeyAction>>>;
 /**
- * The black-key map when a profile has no `keys` section: black key 1 (control 16) is the Attention key. This is the
- * one place the default lives, so an installed profile gets the key without edits; `"keys": {}` turns it off. An
- * earlier profile that already maps control 16 elsewhere keeps that mapping, and the default stands aside.
+ * The black-key map when a profile has no `keys` section: empty, so every black key does nothing. The Attention action
+ * lives on knob 4's click (owner decision of 2026-10-06); the map stays for later #744 presets.
  */
-export const DEFAULT_KEY_ACTIONS: KeyMap = Object.freeze({ 16: 'attention' });
+export const DEFAULT_KEY_ACTIONS: KeyMap = Object.freeze({});
 
 /** The volume knob: encoder counts per volume key and the direction. */
 export interface VolumeSettings {
@@ -64,7 +66,7 @@ export interface VolumeSettings {
  * per key.
  */
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = Object.freeze({ stepCounts: 1, invert: false });
-/** How soon a second Attention key press moves on to the next waiting task instead of the earliest again. */
+/** How soon a second Attention click moves on to the next waiting task instead of the earliest again. */
 export const DEFAULT_ATTENTION_REPEAT_MS = 4000;
 
 export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
@@ -93,15 +95,17 @@ export const DEFAULT_CARD_STEP_COUNTS = 6;
 export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, clickStillMs: 250 });
 const CARD_BOUNDS: Record<keyof CardSettings, [number, number, string]> = { stepCounts: [1, 96, ''], clickStillMs: [0, 2000, ' ms'] };
 
-/** Task pages (#822): pages of 15 slots, paged with small knob 4. */
+/** Task pages (#822): pages of 15 slots, paged with small knob 4, whose click is the Attention click (#865). */
 export interface PageSettings {
   /** How many pages of 15 slots (1-8). */
   readonly count: number;
   /** Knob 4 encoder counts per page step; the count restarts on a direction reversal. */
   readonly stepCounts: number;
+  /** Whether knob 4's click (control 31) is the Attention click. False leaves the click inert. */
+  readonly attentionClick: boolean;
 }
-export const DEFAULT_PAGE_SETTINGS: PageSettings = Object.freeze({ count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS });
-const PAGE_BOUNDS: Record<keyof PageSettings, [number, number]> = { count: [1, 8], stepCounts: [1, 96] };
+export const DEFAULT_PAGE_SETTINGS: PageSettings = Object.freeze({ count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS, attentionClick: true });
+const PAGE_BOUNDS: Record<'count' | 'stepCounts', [number, number]> = { count: [1, 8], stepCounts: [1, 96] };
 /**
  * Knob 4's LED color for each page, page 1 first. Distinct from each other and from the attention color, which the
  * LED alternates with while a hidden page has attention.
@@ -163,7 +167,7 @@ export interface RoutingProfile {
   readonly colors: Readonly<Record<ColorName, Rgb>> & { readonly pages: readonly Rgb[] };
   /** Optional in the file; absent fields take `DEFAULT_PAGE_SETTINGS`. */
   readonly pages: PageSettings;
-  /** Black-key actions (#865). Optional in the file; absent, `DEFAULT_KEY_ACTIONS` less any control mapped elsewhere. */
+  /** Black-key actions (#865). Optional in the file; absent, `DEFAULT_KEY_ACTIONS` (none). */
   readonly keys: KeyMap;
   /**
    * The volume knob (#865). Optional in the file; absent fields take `DEFAULT_VOLUME_SETTINGS`. Null when an earlier
@@ -236,10 +240,10 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
     if (!isInt(control, 1, 34)) { issues.push(`${where}: ${JSON.stringify(control)} is not a click control 1-34`); return false; }
     return true;
   };
-  // Knob 4's click stays unassigned (#822); Send already refuses every small-knob click.
+  // Knob 4's click carries only the Attention action (#865); Send already refuses every small-knob click.
   const assignable = (control: unknown, where: string): boolean => {
     if (!click(control, where)) return false;
-    if (control === PAGE_CLICK) { issues.push(`${where}: ${PAGE_CLICK} is small knob 4's click, which stays unassigned`); return false; }
+    if (control === PAGE_CLICK) { issues.push(`${where}: ${PAGE_CLICK} is small knob 4's click, which carries only the Attention action`); return false; }
     return true;
   };
   if (assignable(value.record, `${path}.record`)) claim(value.record as number, `${path}.record`);
@@ -309,13 +313,14 @@ function pages(value: unknown, issues: Issues): PageSettings | undefined {
   const path = 'profile.pages';
   if (value === undefined) return DEFAULT_PAGE_SETTINGS;
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
-  const names = Object.keys(PAGE_BOUNDS) as (keyof PageSettings)[];
-  if (!fields(value, path, [], names, issues)) return undefined;
+  const names = Object.keys(PAGE_BOUNDS) as (keyof typeof PAGE_BOUNDS)[];
+  if (!fields(value, path, [], [...names, 'attentionClick'], issues)) return undefined;
   const before = issues.length;
   for (const name of names) {
     const [min, max] = PAGE_BOUNDS[name];
     if (name in value && !isInt(value[name], min, max)) issues.push(`${path}.${name}: must be an integer ${min}-${max}`);
   }
+  if ('attentionClick' in value && typeof value.attentionClick !== 'boolean') issues.push(`${path}.attentionClick: must be true or false`);
   if (issues.length > before) return undefined;
   return { ...DEFAULT_PAGE_SETTINGS, ...value as Partial<PageSettings> };
 }
@@ -335,8 +340,7 @@ function mappedControls(controls: RoutingProfile['controls']): Map<number, strin
 function blackKeys(value: unknown, controls: RoutingProfile['controls'] | undefined, issues: Issues): KeyMap | undefined {
   const path = 'profile.keys';
   const mapped = controls ? mappedControls(controls) : new Map<number, string>();
-  // The default yields to an earlier profile's own use of its control, so that profile keeps loading unchanged.
-  if (value === undefined) return Object.fromEntries(Object.entries(DEFAULT_KEY_ACTIONS).filter(([control]) => !mapped.has(Number(control))));
+  if (value === undefined) return DEFAULT_KEY_ACTIONS;
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
   const before = issues.length;
   for (const [control, action] of Object.entries(value)) {

@@ -7,7 +7,7 @@ import { SLOT_COUNT } from '../routing/slots.js';
 import type { ChompiSimulator } from '../simulator.js';
 import type { CardSeed, SimulatedDesktop, WindowId } from './desktop.js';
 import type { SyntheticHub } from './hub.js';
-import { ATTENTION_KEY_LED, CONTROL, PAGE_LED, VOLUME_LED, WHEEL_LEDS } from './panel.js';
+import { CONTROL, PAGE_LED, VOLUME_LED, WHEEL_LEDS } from './panel.js';
 
 /**
  * The CHOMPI bridge scenario catalog (#853): data plus small step functions, shared by the in-memory runner in CI
@@ -169,11 +169,14 @@ const desktopUntouched = (h: Harness): true | string => {
   return (now.length === mark.inputs && front === mark.foreground) || `foreground ${front} (was ${mark.foreground}), new input ${show(now.slice(mark.inputs).map(e => e.kind))}`;
 };
 
-/** The profile fields the Attention key and volume knob scenarios read (#865), typed. */
+/** The profile fields the Attention click and volume knob scenarios read (#865), typed. */
 interface ProfileView { colors: Record<string, readonly number[]>; volume?: { stepCounts?: number }; timing?: { attentionRepeatMs?: number } }
 const profileView = (h: Harness) => h.profile() as ProfileView;
-/** The Attention key's LED (black key 1 in the shipped profile, #865). */
-const attentionKey = (h: Harness) => h.simulator.leds[ATTENTION_KEY_LED];
+/** Every black key's LED is off: the shipped profile maps no black key (#865). */
+const blackKeysDark = (h: Harness): true | string => {
+  const lit = Array.from({ length: 10 }, (_, i) => i + 16).filter(key => !same(keyLed(h, key), [0, 0, 0]));
+  return lit.length === 0 || `black keys lit: ${lit.join(', ')}`;
+};
 const keyShowsAttention = (h: Harness, key: number): true | string => {
   const attention = profileView(h).colors.attention ?? [];
   return same(keyLed(h, key), attention) || same(keyLed(h, key), attention.map(v => Math.round(v * PULSE_LOW))) || `key ${key} ${show(keyLed(h, key))}`;
@@ -365,42 +368,43 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
   },
   {
     id: 'attention-key',
-    title: 'The Attention key opens the task first seen waiting on any page, moves on with a repeat press, refuses when nothing waits and acknowledges nothing',
+    title: 'The Attention click on knob 4 opens the task first seen waiting on any page, moves on with a repeat click, refuses with a red knob 4 LED when nothing waits and acknowledges nothing',
     seed: TWO_PAGES,
     steps: [
-      expect('no task waits: the Attention key (black key 1) is dark', h => same(attentionKey(h), [0, 0, 0]) || `Attention key ${show(attentionKey(h))}`),
+      expect('page 1 is visible and no black key is lit: there is no dedicated Attention light', h => (pageShown(h, 1) === true && blackKeysDark(h) === true) || `${show(pageShown(h, 1))}, ${show(blackKeysDark(h))}`),
       act('note the desktop: another app in front, no input yet', markDesktop),
-      act('press the Attention key', h => h.simulator.click(CONTROL.attention)),
-      expect('the press is refused with `none-waiting`', h => logged(h, 'attention-refused', { reason: 'none-waiting' }).length === 1 || 'no refusal'),
-      expect('the Attention key flashes the error color', h => same(attentionKey(h), color(h, 'error')) || `Attention key ${show(attentionKey(h))}`, 1000),
+      act('click knob 4 (the Attention click)', h => h.simulator.click(CONTROL.attentionClick)),
+      expect('the click is refused with `none-waiting`', h => logged(h, 'attention-refused', { reason: 'none-waiting' }).length === 1 || 'no refusal'),
+      expect('knob 4\'s LED flashes the error color', h => same(h.simulator.leds[PAGE_LED], color(h, 'error')) || `knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`, 1000),
       holds('the refusal sent no input and left another app in front', desktopUntouched, 500),
+      expect('knob 4\'s LED returns to page 1\'s color', h => pageShown(h, 1), 3000),
       act('Codex task 17 on hidden page 2 (slot 17) needs approval', h => h.hub.update(taskIds('codex', 17).sessionId, { attention: ['approval'] })),
-      expect('the Attention key shows the attention color', h => same(attentionKey(h), color(h, 'attention')) || `Attention key ${show(attentionKey(h))}`, 3000),
+      expect('knob 4\'s LED alternates with the attention color for the hidden page', h => same(h.simulator.leds[PAGE_LED], color(h, 'attention')) || `knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`, 3000),
       act('then Codex task 3 on page 1 (slot 3) asks a question', h => h.hub.update(taskIds('codex', 3).sessionId, { attention: ['question'] })),
       expect('slot key 3 shows attention', h => keyShowsAttention(h, 3)),
-      act('press the Attention key', h => h.simulator.click(CONTROL.attention)),
+      act('click knob 4', h => h.simulator.click(CONTROL.attentionClick)),
       expect('page 2 is visible, the first task seen waiting', h => pageShown(h, 2)),
       expect('Codex comes to the front on task 17 with its composer focused', h => focusedOn(h, 'codex', 17)),
       expect('the bridge logs `attention-open` for slot 17 with 2 waiting', h => logged(h, 'attention-open', { slot: 17, waiting: 2 }).length === 1 || `opened ${show(logged(h, 'attention-open'))}`),
-      act('press the Attention key again at once', h => h.simulator.click(CONTROL.attention)),
-      expect('page 1 is visible: the repeat press moved on to the next waiting task', h => pageShown(h, 1)),
+      act('click knob 4 again at once', h => h.simulator.click(CONTROL.attentionClick)),
+      expect('page 1 is visible: the repeat click moved on to the next waiting task', h => pageShown(h, 1)),
       expect('Codex comes to the front on task 3', h => focusedOn(h, 'codex', 3)),
-      act('wait out the repeat window, then press the Attention key', async h => {
+      act('wait out the repeat window, then click knob 4', async h => {
         await h.wait((profileView(h).timing?.attentionRepeatMs ?? DEFAULT_ATTENTION_REPEAT_MS) + 300);
-        h.simulator.click(CONTROL.attention);
+        h.simulator.click(CONTROL.attentionClick);
       }),
       expect('the earliest waiting task opens again on page 2', h => (logged(h, 'attention-open', { slot: 17 }).length === 2 && pageShown(h, 2) === true && focusedOn(h, 'codex', 17) === true)
         || `opened ${show(logged(h, 'attention-open').map(l => l.slot))}, page ${visiblePage(h)}`),
-      holds('nothing was acknowledged: both tasks keep their attention, the key stays lit and every Hub request was a read', h => {
+      holds('nothing was acknowledged: both tasks keep their attention, no black key lights and every Hub request was a read', h => {
         const waiting = h.hub.sessions().filter(s => s.attention.length > 0).length;
         const writes = h.hub.requests.filter(r => r.method !== 'GET');
-        return (waiting === 2 && writes.length === 0 && same(attentionKey(h), color(h, 'attention'))) || `${waiting} waiting, ${writes.length} non-GET requests`;
+        return (waiting === 2 && writes.length === 0 && blackKeysDark(h) === true) || `${waiting} waiting, ${writes.length} non-GET requests, ${show(blackKeysDark(h))}`;
       }, 1000),
       act('both tasks are answered in their clients', h => {
         h.hub.update(taskIds('codex', 17).sessionId, { attention: [] });
         h.hub.update(taskIds('codex', 3).sessionId, { attention: [] });
       }),
-      expect('the Attention key goes dark', h => same(attentionKey(h), [0, 0, 0]) || `Attention key ${show(attentionKey(h))}`),
+      holds('knob 4\'s LED shows page 2\'s color steadily once nothing waits', h => pageShown(h, 2), 1500),
     ],
   },
   {

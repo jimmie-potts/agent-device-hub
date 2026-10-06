@@ -1646,7 +1646,6 @@ test('pages: paging is never input: no keystroke, link, focus, adapter call or a
   front(ctx, 'codex');
   const calls = ctx.adapter.calls.length;
   for (let i = 0; i < 3; i++) { ctx.turn(KNOB4, PAGE_STEP); ctx.turn(KNOB4, -PAGE_STEP); }
-  await ctx.click(KNOB4_CLICK);
   await settle();
   assert.equal(ctx.adapter.calls.length, calls, 'paging asks the desktop nothing');
   assert.deepEqual(ctx.adapter.keys, []);
@@ -1763,9 +1762,9 @@ test('close releases held keys and stops timers', async t => {
   await ctx.slots.flush();
 });
 
-// The Attention key and the volume knob (#865)
+// The Attention click on knob 4 and the volume knob (#865)
 
-const ATTENTION = 16, VOLUME_TURN = 46, VOLUME_CLICK = 34, ATTENTION_LED = 15, VOLUME_LED = 34;
+const ATTENTION = KNOB4_CLICK, VOLUME_TURN = 46, VOLUME_CLICK = 34, VOLUME_LED = 34;
 const REPEAT = PROFILE.timing.attentionRepeatMs;
 /** Hub records for Codex tasks 1-n, with attention on the listed task numbers. */
 const tasksWith = (n, attention = {}) => Array.from({ length: n }, (_, i) => codexTask(i + 1, attention[i + 1] ? { attention: [attention[i + 1]] } : {}));
@@ -1822,7 +1821,7 @@ test('attention: order is first seen in bridge memory; attention that clears and
   assert.deepEqual(opened(fresh), ['task 1']);
 });
 
-test('attention: with nothing waiting the key refuses with a red flash, opens nothing and asks the desktop nothing', async t => {
+test('attention: with nothing waiting the click refuses with a red flash on knob 4\'s LED, opens nothing and asks the desktop nothing', async t => {
   const ctx = await setup(t, { sessions: tasksWith(3) });
   const calls = ctx.adapter.calls.length;
   await ctx.click(ATTENTION);
@@ -1830,52 +1829,49 @@ test('attention: with nothing waiting the key refuses with a red flash, opens no
   assert.equal(ctx.adapter.calls.length, calls, 'no adapter call');
   assert.deepEqual(ctx.adapter.opened, []);
   assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'none-waiting' });
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.error);
+  assert.deepEqual(ctx.lights.last[PAGE_LED], PROFILE.colors.error);
   await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0], 'the flash ends');
+  assert.deepEqual(ctx.lights.last[PAGE_LED], PROFILE.colors.pages[0], 'the flash ends and the LED shows the page again');
   assert.equal(page(ctx), 1, 'the page does not change');
 });
 
-test('attention: a stale feed refuses, because waiting is unknown; the key light is off', async t => {
+test('attention: a stale feed refuses, because waiting is unknown', async t => {
   const ctx = await setup(t, { sessions: tasksWith(3, { 2: 'approval' }) });
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention);
   ctx.feed(tasksWith(3, { 2: 'approval' }), 'stale');
   await settle();
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
   await ctx.click(ATTENTION);
   assert.deepEqual(ctx.adapter.opened, []);
   assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'feed-stale' });
+  assert.deepEqual(ctx.lights.last[PAGE_LED], PROFILE.colors.error);
   ctx.feed(tasksWith(3, { 2: 'approval' }));
   await ctx.click(ATTENTION);
   assert.deepEqual(opened(ctx), ['task 2'], 'the order survives a stale spell');
 });
 
-test('attention: the key light shows the attention color while any task waits, on any page, and off otherwise', async t => {
+test('attention: there is no dedicated Attention light; knob 4\'s LED keeps the page indicator and no black key lights', async t => {
   const ctx = await setup(t, { sessions: tasksWith(20) });
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
   ctx.feed(tasksWith(20, { 19: 'question' }));
   await settle();
-  for (let i = 0; i < 3; i++) {
-    assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention, 'steady while a task on hidden page 2 waits');
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) {
+    for (let led = 15; led < 25; led++) assert.deepEqual(ctx.lights.last[led], [0, 0, 0], `black key LED ${led} stays off`);
+    seen.add(JSON.stringify(ctx.lights.last[PAGE_LED]));
     await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2, 50);
   }
-  ctx.feed(tasksWith(20));
-  await settle();
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
+  assert.deepEqual([...seen].sort(), [JSON.stringify(PROFILE.colors.pages[0]), JSON.stringify(PROFILE.colors.attention)].sort(), 'the #822 hidden-page alternation');
 });
 
-test('attention: the key never acknowledges anything and the task keeps its attention', async t => {
+test('attention: the click never acknowledges anything and the task keeps its attention', async t => {
   const ctx = await setup(t, { sessions: tasksWith(2, { 1: 'approval' }) });
   await ctx.click(ATTENTION);
   await settle();
   assert.deepEqual(focused(ctx), [1]);
   assert.equal(ctx.router.status().slots[0].state, 'attention', 'attention stays');
-  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention, 'the key still shows a task waiting');
   assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
   assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut a slot key also types');
 });
 
-test('attention: a slot beyond the profile\'s pages has no visible key, so the Attention key skips it', async t => {
+test('attention: a slot beyond the profile\'s pages has no visible key, so the Attention click skips it', async t => {
   const ctx = await setup(t, { sessions: tasksWith(20, { 18: 'approval' }), profile: withProfile({ pages: { count: 2 } }) });
   ctx.router.setProfile(withProfile({ pages: { count: 1 } }));
   await ctx.click(ATTENTION);
@@ -1883,18 +1879,24 @@ test('attention: a slot beyond the profile\'s pages has no visible key, so the A
   assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'none-waiting' });
 });
 
-test('attention: the key follows the profile map; an unmapped black key does nothing', async t => {
-  const ctx = await setup(t, { sessions: tasksWith(2, { 2: 'approval' }), profile: withProfile({ keys: { 20: 'attention' } }) });
+test('attention: pages.attentionClick false leaves knob 4\'s click inert; a black key mapped to attention acts and lights', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(2, { 2: 'approval' }), profile: withProfile({ pages: { attentionClick: false }, keys: { 20: 'attention' } }) });
   const calls = ctx.adapter.calls.length;
   await ctx.click(ATTENTION);
-  assert.equal(ctx.adapter.calls.length, calls);
+  await ctx.click(16);
+  assert.equal(ctx.adapter.calls.length, calls, 'neither the click nor an unmapped black key does anything');
   assert.equal(ctx.lastLog('attention-refused'), undefined);
+  assert.deepEqual(ctx.lights.last[19], PROFILE.colors.attention, 'the mapped black key shows a task waiting');
   await ctx.click(20);
   assert.deepEqual(opened(ctx), ['task 2']);
+  const flashing = await setup(t, { sessions: tasksWith(2), profile: withProfile({ keys: { 20: 'attention' } }) });
+  await flashing.click(20);
+  assert.deepEqual(flashing.lights.last[19], PROFILE.colors.error, 'a refusal flashes the black key, not knob 4');
+  assert.deepEqual(flashing.lights.last[PAGE_LED], PROFILE.colors.pages[0]);
 });
 
 test('back on a black key acts like Loop: it ends dictation and is the Claude release gesture', async t => {
-  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)], profile: withProfile({ keys: { 16: 'attention', 17: 'back' } }) });
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)], profile: withProfile({ keys: { 17: 'back' } }) });
   ctx.press(RECORD);
   await settle();
   assert.equal(ctx.adapter.held.size, 2);
