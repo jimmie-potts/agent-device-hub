@@ -101,6 +101,7 @@ jobs:
       - run: npm run test:wispr:built
       - run: npm run test:wispr:package:built
       - run: npm run test:chompi-bridge:built
+      - run: npm run test:chompi-bridge:scenarios
   firmware:
     name: Firmware host tests and ARM build on ${{ matrix.os }}
     strategy:
@@ -181,3 +182,6 @@ jobs:
       - run: npm run test:app-verify:package:built
       - run: npm run test:hub:verify:built
       - run: npm run test:verify-host
+      # Hub #853: CHOMPI bridge boundary checks with real crossing runs, every capture step through runCaptureStep, and the control page's browser and accessibility check.
+      - run: npm run test:chompi-bridge:verify:built
+      - run: npm run test:chompi-bridge:browser

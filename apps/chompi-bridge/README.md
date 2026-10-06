@@ -376,7 +376,7 @@ Run from the repository root after `npm run build`:
 node apps/chompi-bridge/bin/chompi-bridge.mjs probe              # read-only enumeration
 node apps/chompi-bridge/bin/chompi-bridge.mjs monitor --simulate # scripted simulator session, JSON lines
 node apps/chompi-bridge/bin/chompi-bridge.mjs run [--simulate] [--test-pattern] [--serial <hex>]
-node apps/chompi-bridge/bin/chompi-bridge.mjs run --profile <file> --hub <origin> --token-file <path> --state <dir> [--serial <hex>]
+node apps/chompi-bridge/bin/chompi-bridge.mjs run --profile <file> --hub <origin> --token-file <path> --state <dir> [--simulate] [--desktop sim] [--serial <hex>]
 ```
 
 - `probe` lists matching controllers by VID, PID, product, usage page and usage, and only counts other HID devices.
@@ -386,7 +386,31 @@ node apps/chompi-bridge/bin/chompi-bridge.mjs run --profile <file> --hub <origin
   sends LED frames (a static dim gradient). Without `--simulate` it opens the real controller, which is #743 work
   and needs the owner's device authorization.
 
+- `--desktop sim` (with the routing flags) replaces the Windows OS adapter with the simulated desktop in
+  `src/sim/desktop.ts`. It is for verification runs and the scenario catalog; see
+  [Verification runs](#verification-runs). Without the flag the bridge never imports `src/sim`.
+
 Exit codes: 0 success, 1 failure, 2 usage, 3 another instance holds the lock.
+
+## Verification runs
+
+[#853](https://github.com/jimmie-potts/agent-device-hub/issues/853) lets a bridge change be tried before it merges,
+without the controller, the Windows desktop or the installed Hub:
+
+- `src/sim/desktop.ts` is a simulated desktop behind OS adapter interface version 3. It has Codex, Claude and one
+  other app, each with a package family and a qualified version. It models the foreground window, the selected
+  task, composers with focus and text, approval and question cards with stops and focus, Claude `lastFocusedAt`,
+  Codex thread names, synthetic dictation on the chord's release, and a key and press log.
+  `tests/adapter-contract.test.mjs` holds it and the router tests' fake adapter to the same adapter behavior.
+- `src/sim/hub.ts` is a synthetic Hub feed: the sessions snapshot (1.3 and 1.2) and change stream in the Hub's
+  released format, with a run-generated bearer token, served in memory or over loopback HTTP.
+- `src/sim/scenarios.ts` is the scenario catalog. It is shared by the in-memory runner
+  (`npm run -s test:chompi-bridge:scenarios`, Tier 1) and disposable runs
+  (`npm run -s verify:chompi -- <operation>`, Tier 2). Both run the real CLI with `--simulate --desktop sim`.
+
+[`verify/README.md`](verify/README.md) covers the run, its control page, the boundary checks and the steps. A run
+proves routing behavior only. UI Automation fidelity, real focus timing, Wispr and file hashes stay with
+`test:chompi-bridge:native:built` and the owner's installed checks.
 
 ## Dependencies
 
@@ -406,13 +430,17 @@ npm ci
 npm run build
 npm run typecheck
 npm run test:chompi-bridge
+npm run -s test:chompi-bridge:scenarios
 ```
 
 The suite runs every protocol fixture vector, the connection rules above against a fake transport and a manual
 clock, a simulator roundtrip, the lock across processes, the node-hid adapter against a stand-in module, the CLI,
 and the routing core: profile validation and reload, the feed client against a fake Hub, slots, lights, every row of
 the no-misrouting matrix against a scripted fake adapter, press-time Send, Record, big-wheel card answers, and an
-end-to-end routing run through the simulator.
+end-to-end routing run through the simulator. It also holds the simulated desktop and the fake adapter to one
+adapter contract, reads the synthetic Hub feed with the real feed client, checks that `--desktop sim` is the only
+way the CLI loads `src/sim`, and tests the scenario runner. `test:chompi-bridge:scenarios` runs the catalog (Tier 1).
+The verification run's own checks are in [`verify/README.md`](verify/README.md#checks).
 
 `npm run test:chompi-bridge:native:built` must run under native Windows Node 24 after a build; it fails on other
 platforms. It enumerates HID devices read-only, checks that the matcher rejects the stock CHOMPI ID, checks that

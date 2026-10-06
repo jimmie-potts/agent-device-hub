@@ -354,7 +354,9 @@ Verification has three tiers.
       data and simulated devices. Use the new runtime's adapter once #846
       lands. Until then, use
       `fnm exec --using=.nvmrc -- npm run -s verify -- <operation>` or the
-      `verify:compose` form in [app verification](app-verification.md). The
+      `verify:compose` form in [app verification](app-verification.md), or
+      `fnm exec --using=.nvmrc -- npm run -s verify:chompi -- <operation>` for the
+      [CHOMPI bridge](../apps/chompi-bridge/verify/README.md). The
       run must report a clean candidate, never `dirty`. A reviewer whose
       sandbox cannot reach the user manager uses the
       [host route](app-verification.md#explicit-host-route-for-codex-development-coordinators).

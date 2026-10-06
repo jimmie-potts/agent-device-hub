@@ -9,6 +9,7 @@ import { LED_COUNT, type Rgb } from './protocol.js';
 import { ChompiSimulator } from './simulator.js';
 import type { Transport } from './transport.js';
 import { OS_ADAPTER_VERSION, type OsAdapter } from './os-adapter.js';
+import type { SimulatedDesktop } from './sim/desktop.js';
 import {
   FeedConfigError, ProfileError, ProfileWatcher, SlotStateError, SlotStore, TaskRouter, createHubFeed, loadOsAdapter, loadProfile,
   type FeedView, type HubFeed, type RoutingProfile,
@@ -29,6 +30,17 @@ export interface CliDeps {
   createOsAdapter?: () => Promise<OsAdapter>;
   /** Process hooks for routing runs (exit, uncaught errors); tests pass a stand-in. Defaults to `process`. */
   process?: ProcessHooks;
+  /**
+   * Receives the simulated controller (`--simulate`) and desktop (`--desktop sim`) a routing run created, before the
+   * router starts, so a verification run can drive them (#853). Never called without those flags.
+   */
+  onSimulation?: (parts: SimulationParts) => void;
+}
+
+/** What `--simulate` and `--desktop sim` created for one routing run. */
+export interface SimulationParts {
+  simulator: ChompiSimulator | undefined;
+  desktop: SimulatedDesktop | undefined;
 }
 
 /** The part of `process` routing uses to release keys on any way out. */
@@ -50,18 +62,18 @@ const STOP_SIGNALS = (['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const).filt
 export const USAGE = `usage: chompi-bridge probe
        chompi-bridge monitor --simulate
        chompi-bridge run [--simulate] [--test-pattern] [--serial <serial>]
-       chompi-bridge run --profile <file> --hub <origin> --token-file <path> --state <dir> [--simulate] [--serial <serial>]
+       chompi-bridge run --profile <file> --hub <origin> --token-file <path> --state <dir> [--simulate] [--desktop sim] [--serial <serial>]
 `;
 
 type Command =
   | { command: 'probe' }
   | { command: 'monitor' }
-  | { command: 'run'; simulate: boolean; testPattern: boolean; serial: string | undefined; routing: RoutingFlags | undefined };
+  | { command: 'run'; simulate: boolean; testPattern: boolean; serial: string | undefined; routing: RoutingFlags | undefined; desktop: 'sim' | undefined };
 
 /** `run` with task routing: all four are required together. */
 interface RoutingFlags { profile: string; hub: string; tokenFile: string; state: string }
-const VALUE_FLAGS: Record<string, keyof RoutingFlags | 'serial'> = {
-  '--serial': 'serial', '--profile': 'profile', '--hub': 'hub', '--token-file': 'tokenFile', '--state': 'state',
+const VALUE_FLAGS: Record<string, keyof RoutingFlags | 'serial' | 'desktop'> = {
+  '--serial': 'serial', '--profile': 'profile', '--hub': 'hub', '--token-file': 'tokenFile', '--state': 'state', '--desktop': 'desktop',
 };
 
 function parse(argv: readonly string[]): Command | undefined {
@@ -70,7 +82,7 @@ function parse(argv: readonly string[]): Command | undefined {
   if (command === 'monitor') return rest.length === 1 && rest[0] === '--simulate' ? { command } : undefined;
   if (command !== 'run') return undefined;
   const seen = new Set<string>();
-  const values: Partial<Record<keyof RoutingFlags | 'serial', string>> = {};
+  const values: Partial<Record<keyof RoutingFlags | 'serial' | 'desktop', string>> = {};
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]!;
     if (seen.has(flag) || !['--simulate', '--test-pattern', ...Object.keys(VALUE_FLAGS)].includes(flag)) return undefined;
@@ -88,7 +100,9 @@ function parse(argv: readonly string[]): Command | undefined {
   if (given.length !== 0 && given.length !== routingNames.length) return undefined;
   const routing = given.length ? { profile: values.profile!, hub: values.hub!, tokenFile: values.tokenFile!, state: values.state! } : undefined;
   if (routing && seen.has('--test-pattern')) return undefined;
-  return { command, simulate: seen.has('--simulate'), testPattern: seen.has('--test-pattern'), serial: values.serial, routing };
+  // `--desktop sim` (#853) replaces the platform OS adapter with the simulated desktop; it needs routing and takes no other value.
+  if (values.desktop !== undefined && (values.desktop !== 'sim' || !routing)) return undefined;
+  return { command, simulate: seen.has('--simulate'), testPattern: seen.has('--test-pattern'), serial: values.serial, routing, desktop: values.desktop === 'sim' ? 'sim' : undefined };
 }
 
 const hex = (value: number | undefined, digits: number) => value === undefined ? null : value.toString(16).padStart(digits, '0');
@@ -221,8 +235,14 @@ async function runRouting(command: Extract<Command, { command: 'run' }>, flags: 
     return 1;
   }
   let adapter: OsAdapter;
+  let desktop: SimulatedDesktop | undefined;
   try {
-    adapter = await (deps.createOsAdapter ?? (() => loadOsAdapter()))();
+    if (command.desktop === 'sim') {
+      // Only this flag loads the simulated desktop (#853); without it the module is never imported.
+      const sim = await import('./sim/desktop.js');
+      desktop = new sim.SimulatedDesktop({ clock });
+      adapter = sim.createSimulatedOsAdapter(desktop);
+    } else adapter = await (deps.createOsAdapter ?? (() => loadOsAdapter()))();
     if (adapter.version !== OS_ADAPTER_VERSION) throw new Error(`adapter version ${String(adapter.version)} is not ${OS_ADAPTER_VERSION}`);
   } catch (error) {
     deps.stderr.write(`chompi-bridge-os-adapter-unavailable: ${(error as Error).message}\n`);
@@ -241,7 +261,7 @@ async function runRouting(command: Extract<Command, { command: 'run' }>, flags: 
   hooks.on('uncaughtException', fatal);
   hooks.on('unhandledRejection', fatal);
   try {
-    return await routeUntilStopped(command, deps, clock, print, profile, feed, slots, extras, flags, stop);
+    return await routeUntilStopped(command, deps, clock, print, profile, feed, slots, extras, flags, stop, desktop);
   } finally {
     hooks.off('uncaughtException', fatal);
     hooks.off('unhandledRejection', fatal);
@@ -252,6 +272,7 @@ async function runRouting(command: Extract<Command, { command: 'run' }>, flags: 
 async function routeUntilStopped(
   command: Extract<Command, { command: 'run' }>, deps: CliDeps, clock: Clock, print: (event: object) => unknown, profile: RoutingProfile,
   feed: HubFeed, slots: SlotStore, adapter: OsAdapter & AdapterExtras, flags: RoutingFlags, stop: Promise<void>,
+  desktop: SimulatedDesktop | undefined,
 ): Promise<number> {
   // Warm the adapter (helper process, cached client versions) before any key press can arrive.
   if (adapter.warmUp) {
@@ -265,6 +286,7 @@ async function routeUntilStopped(
 
   const simulator = command.simulate ? new ChompiSimulator({ clock }) : undefined;
   simulator?.plug();
+  if (simulator || desktop) deps.onSimulation?.({ simulator, desktop });
   const transport = simulator?.transport ?? deps.createHidTransport();
   const bridge = createChompiBridge({
     transport, clock, profileVersion: profile.profileVersion, brightnessPercent: profile.brightnessPercent,

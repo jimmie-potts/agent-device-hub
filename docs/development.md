@@ -192,7 +192,7 @@ Normal Depot CI has eight Linux jobs:
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build/type, controller-backed browser fixtures and accessibility |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer; lifecycle tests skip because the runner has no systemd |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip because the runner has no systemd |
 
 Each combined contracts/state job installs dependencies, builds and typechecks
 once before running its suites. The core workflow performs five full builds
@@ -892,6 +892,41 @@ replies for each client, and `windows-uia-helper.test.mjs` checks the helper
 operations' scope statically, including that only the two card operations
 focus or invoke anything. Live focus, dictation placement, card answers and
 lights on the device belong to the installed trials (#743, #821).
+
+### CHOMPI bridge verification runs
+
+Hub #853 adds a simulated desktop (`src/sim/desktop.ts`, selected only by
+`run --desktop sim`), a synthetic Hub feed (`src/sim/hub.ts`) and a shared
+scenario catalog (`src/sim/scenarios.ts`). After `npm run build`, with Node 24
+from the worktree root:
+
+```bash
+npm run test:chompi-bridge:built          # adapter contract, synthetic feed, flag gating, runner tests
+npm run -s test:chompi-bridge:scenarios   # Tier 1: every catalog scenario in memory
+npm run test:chompi-bridge:verify:built   # boundary checks and every capture step
+npm run test:chompi-bridge:browser        # control page browser and accessibility check
+```
+
+Tier 1 runs each scenario against the real CLI (`run --simulate --desktop sim`)
+on a manual clock, with the synthetic feed in memory. It takes about a second,
+opens no port and touches no device or desktop. Name scenarios to run only
+those, or pass `--list` or `--json`. The contracts CI job runs it after
+`test:chompi-bridge:built`.
+
+`test:chompi-bridge:verify:built` starts runs without a user manager. It starts
+the three negative-control runs and shows that each boundary check fails, and
+judges every capture step through `runCaptureStep`. `test:chompi-bridge:browser`
+drives the control page with the keyboard and runs axe (WCAG 2.1 A and AA) at
+1440 px and phone width. Both need Playwright Chromium. The App verification
+CI job runs them. Use an outside-checkout `TMPDIR` locally, as for
+the app verification tests.
+
+A disposable run (Tier 2) uses the app verification lifecycle:
+`npm run -s verify:chompi -- start`, `capture <run-id> <step>`, `stop <run-id>`.
+The run serves the bridge, the control page and the synthetic feed on one
+loopback port. The [adapter README](../apps/chompi-bridge/verify/README.md)
+lists its steps and boundaries. Runs prove routing behavior only; Windows client
+fidelity stays with the native check and the owner's installed checks.
 
 ## Wispr Hub checks
 
