@@ -20,8 +20,8 @@ import {applyPending, locateState, owners, pending, renderingSnapshot, requestPa
 import {identityKey, NOT_SELECTED, state} from '../src/shared-input.js';
 import {execute, rows, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {completion, envelope, evictTask, firstSession, fixtureJson, query, refuse, selectionSetup, selectShared, setMode, suite, taskRow,
-  temporary, test, wallView, write} from './support.js';
+import {completion, envelope, evictTask, Feed, firstSession, fixtureJson, query, refuse, selectionSetup, selectShared, setMode, suite,
+  taskRow, temporary, test, wallView, write, type FeedChange} from './support.js';
 
 interface Outcome {
   result?: Json;
@@ -36,7 +36,7 @@ interface Step {
 interface Case {
   name: string;
   layout: string;
-  setup: {comet?: boolean; mode?: string};
+  setup: {comet?: boolean; mode?: string; shared?: boolean};
   steps: Step[];
   rows: Record<string, Json[][]>;
 }
@@ -58,8 +58,15 @@ function editRows(directory: string): Record<string, unknown[][]> {
   return result;
 }
 
-/** record.edit_setup: projects a and b and task a in project a; a started comet on its Line; a commanded mode. */
-function editSetup(directory: string, setup: Case['setup']): void {
+/**
+ * record.edit_setup: shared input selected with no session; or projects a and b and task a in project a, with a started
+ * comet on its Line or a commanded mode.
+ */
+function editSetup(directory: string, setup: Case['setup'], feed: Feed): void {
+  if (setup.shared === true) {
+    feed.select(directory, 1000);
+    return;
+  }
   write(directory, db => execute(db, "INSERT INTO projects VALUES ('a','Project A','#aa55ff','[]'),('b','Project B','#33ccee','[]')"));
   write(directory, db => taskRow(db, 'a', '1', 1000));
   write(directory, db => execute(db, "UPDATE task_info SET project='a' WHERE session='a'"));
@@ -99,6 +106,8 @@ function editStep(db: Db, config: DeviceConfig & {line_groups: number[][]}, step
     case 'locateState': return locateState(db, config, num(first), str(second));
     case 'pruneComets': return pruneComets(db, num(first), str(second), device);
     case 'currentComet': return currentComet(db, num(first), device);
+    case 'dashboard': return dashboard(db, config, num(first));
+    case 'query': return rows(db, str(first)).map(row => [...row]);
     case 'changeMode': return changeMode(db, str(first), num(second), device);
     case 'rendering': {
       const control = controlState(db, device);
@@ -128,11 +137,15 @@ suite('edits recorded from Python', () => {
     for (const record of RECORDED.cases) {
       const directory = temporary(context);
       writeFileSync(join(directory, 'config.json'), JSON.stringify({ip: '192.0.2.1', token: 'fake'}));
-      editSetup(directory, record.setup);
+      const feed = new Feed();
+      editSetup(directory, record.setup, feed);
       const config = structuredClone(RECORDED.layouts[record.layout]);
       assert.ok(config !== undefined, record.name);
       record.steps.forEach((step, index) => {
-        const outcome = outcomeOf(() => write(directory, db => editStep(db, config, step)));
+        const [op, name, instant] = step.args;
+        const outcome = step.op === 'feed'
+          ? outcomeOf(() => feed.publish(directory, str(op) as FeedChange, typeof name === 'string' ? name : '', num(instant)))
+          : outcomeOf(() => write(directory, db => editStep(db, config, step)));
         assert.deepEqual(outcome, step.outcome, `${record.name}: step ${String(index)} (${step.op})`);
       });
       assert.deepEqual(editRows(directory), record.rows, record.name);

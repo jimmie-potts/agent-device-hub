@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {describe, test as nodeTest, type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {copyJson, isObject, type Json, type JsonObject} from '../src/compat.js';
+import {copyJson, isObject, sha256Hex, type Json, type JsonObject} from '../src/compat.js';
 import {registeredDevices} from '../src/configuration.js';
 import {withState} from '../src/database.js';
 import {columns, DEFAULT, deviceOf, elements, type DeviceConfig} from '../src/devices.js';
@@ -150,6 +150,78 @@ export function selectionSetup(context: TestContext): {path: string; config: Jso
 }
 
 export const exists = existsSync;
+
+export type FeedChange = 'prompt' | 'stop' | 'read' | 'question' | 'permission' | 'resolve' | 'interrupt' | 'end' | 'touch';
+
+/**
+ * The owner's shared sessions for scripted tests, all from the qualified Codex source (record.Feed). Each change publishes
+ * the next revision and the caller accepts it. A completion adds a fresh notice; `end` removes the session, as the owner
+ * does when it retires one.
+ */
+export class Feed {
+  readonly sessions = new Map<string, SharedSession>();
+  revision = 1;
+
+  envelope(): Envelope {
+    return {apiVersion: '1.0', ownerId: 'owner', connection: 'current', admissionRejected: 0, nextRequestId: `request-${String(this.revision)}`,
+      snapshot: {apiVersion: '1.2', revision: this.revision, asOfMs: 1000, collector: 'running', lossCount: 0,
+        sessions: [...this.sessions.values()].map(session => clone(session))}};
+  }
+
+  change(op: FeedChange, name = ''): void {
+    let session = this.sessions.get(name);
+    const known = (): SharedSession => {
+      if (session === undefined) throw new Error(`No shared session ${name}.`);
+      return session;
+    };
+    switch (op) {
+      case 'prompt':
+        if (session === undefined) {
+          session = {identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source', sessionId: name},
+            turn: {status: 'known', id: 't1'}, parent: {status: 'unknown'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
+            unavailable: [], ordering: {status: 'unknown'}, lastEvidenceAtMs: 1000, observedAtMs: 1000, observationAgeMs: 0,
+            freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, generation: 0};
+          this.sessions.set(name, session);
+        } else {
+          const turn = session.turn.status === 'known' ? Number(session.turn.id.slice(1)) : 0;
+          session.turn = {status: 'known', id: `t${String(turn + 1)}`};
+        }
+        Object.assign(session, {activity: 'active', attention: [], read: 'unknown'});
+        break;
+      case 'stop': {
+        const current = known();
+        const id = sha256Hex(name + ':' + (current.turn.status === 'known' ? current.turn.id : ''));
+        const notices = [...current.notices, {id, kind: 'turn-ended' as const, turn: clone(current.turn), acknowledgedBy: []}].slice(-3);
+        Object.assign(current, {activity: 'idle', attention: [], notices, read: 'unread'});
+        break;
+      }
+      case 'read': known().read = 'read'; break;
+      case 'question':
+      case 'permission': {
+        const current = known();
+        current.attention = [{id: {status: 'known', id: 'ask'}, kind: op === 'question' ? 'question' : 'approval', turn: clone(current.turn)}];
+        break;
+      }
+      case 'resolve': known().attention = []; break;
+      case 'interrupt': Object.assign(known(), {activity: 'interrupted', attention: []}); break;
+      case 'end': this.sessions.delete(name); break;
+      case 'touch': break;
+    }
+    this.revision += 1;
+  }
+
+  /** Change the feed and accept the owner's next revision at `instant`. */
+  publish(directory: string, op: FeedChange, name: string, instant: number): boolean {
+    this.change(op, name);
+    return accept(directory, this.envelope(), instant);
+  }
+
+  /** Configure shared input and select it with the feed's current envelope (record.select_feed). */
+  select(directory: string, instant: number): void {
+    configure(directory, selectionConfig(directory));
+    selectShared(directory, this.envelope(), instant);
+  }
+}
 
 /** modes.set_mode: an explicit mode command for one device, without the worker launch. */
 export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): boolean =>

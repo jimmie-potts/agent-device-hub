@@ -299,4 +299,13 @@ suite('ProjectTest', () => {
     meta("DELETE FROM meta WHERE key='mode'");
     assert.equal(p.rendering().outcome, 'unknown');
   });
+
+  test('an empty saved receipt reads as no receipt', context => {
+    // Python read an empty receipt object as none (record.py's rendering receipt case also records it).
+    const p = new Projects(context);
+    write(p.directory, db => execute(db, "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt','{}')"));
+    const rendering = p.rendering();
+    assert.equal(rendering.outcome, 'unknown');
+    assert.equal(rendering.lastSuccessful, null);
+  });
 });

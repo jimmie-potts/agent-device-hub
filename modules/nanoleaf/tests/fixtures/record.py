@@ -917,9 +917,70 @@ def edit_rows(path):
     return result
 
 
-def edit_setup(path, setup):
-    """Projects a and b and task a prompted at 1000 in project a; with `comet`, the task completed and its comet started on
-    the Lines; with `mode`, that mode commanded on the Lines."""
+class Feed:
+    """The owner's shared sessions for scripted cases, all from the qualified Codex source. Each change publishes the next
+    revision. A completion adds a fresh notice; `end` removes the session, as the owner does when it retires one."""
+    def __init__(self):
+        self.sessions = {}
+        self.revision = 1
+
+    def envelope(self):
+        return {'apiVersion': '1.0', 'ownerId': 'owner', 'connection': 'current', 'admissionRejected': 0,
+                'nextRequestId': 'request-%d' % self.revision,
+                'snapshot': {'apiVersion': '1.2', 'revision': self.revision, 'asOfMs': 1000, 'collector': 'running', 'lossCount': 0,
+                             'sessions': [copy.deepcopy(session) for session in self.sessions.values()]}}
+
+    def change(self, op, name=None):
+        session = self.sessions.get(name)
+        if op == 'prompt':
+            if session is None:
+                session = self.sessions[name] = {
+                    'identity': {'provider': 'codex', 'client': 'desktop', 'hostId': 'host', 'sourceId': 'source', 'sessionId': name},
+                    'turn': {'status': 'known', 'id': 't1'}, 'parent': {'status': 'unknown'}, 'activity': 'idle', 'attention': [],
+                    'notices': [], 'read': 'unknown', 'unavailable': [], 'ordering': {'status': 'unknown'}, 'lastEvidenceAtMs': 1000,
+                    'observedAtMs': 1000, 'observationAgeMs': 0, 'freshness': 'current', 'restartUncertain': False,
+                    'children': {'active': 0, 'uncertain': 0}, 'generation': 0}
+            else:
+                session['turn'] = {'status': 'known', 'id': 't%d' % (int(session['turn']['id'][1:]) + 1)}
+            session.update(activity='active', attention=[], read='unknown')
+        elif op == 'stop':
+            notice = {'id': hashlib.sha256((name + ':' + session['turn']['id']).encode()).hexdigest(), 'kind': 'turn-ended',
+                      'turn': copy.deepcopy(session['turn']), 'acknowledgedBy': []}
+            session.update(activity='idle', attention=[], notices=(session['notices'] + [notice])[-3:], read='unread')
+        elif op == 'read':
+            session['read'] = 'read'
+        elif op in ('question', 'permission'):
+            session['attention'] = [{'id': {'status': 'known', 'id': 'ask'}, 'kind': 'question' if op == 'question' else 'approval',
+                                     'turn': copy.deepcopy(session['turn'])}]
+        elif op == 'resolve':
+            session['attention'] = []
+        elif op == 'interrupt':
+            session.update(activity='interrupted', attention=[])
+        elif op == 'end':
+            del self.sessions[name]
+        elif op != 'touch':
+            raise AssertionError(op)
+        self.revision += 1
+
+
+SELECTION_CONFIG = {'version': 1, 'ownerId': 'owner', 'consumerId': 'nanoleaf', 'endpoint': 'http://127.0.0.1:12345/api/monitor/v1',
+                    'tokenFile': '/synthetic/token', 'clearOnNewTurn': True,
+                    'qualifiedSources': [{'provider': 'codex', 'client': 'desktop', 'hostId': 'host', 'sourceId': 'source'}]}
+
+
+def select_feed(path, feed, instant):
+    """Configure shared input and select it with the feed's current envelope."""
+    shared_source.configure(path, SELECTION_CONFIG)
+    shared_source.select_source(path, 'shared', fetch=lambda *_, **__: feed.envelope(), now=lambda: instant)
+
+
+def edit_setup(path, setup, feed):
+    """With `shared`, shared input selected at 1000 with no session. Otherwise projects a and b and task a prompted at 1000
+    in project a; with `comet`, the task completed and its comet started on the Lines; with `mode`, that mode commanded
+    on the Lines."""
+    if setup.get('shared'):
+        select_feed(path, feed, 1000.0)
+        return
     with contextlib.closing(database.connect_state(path)) as db, db:
         db.execute("INSERT INTO projects VALUES ('a','Project A','#aa55ff','[]'),('b','Project B','#33ccee','[]')")
     b.handle_event(path, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
@@ -937,9 +998,12 @@ def edit_setup(path, setup):
         modes.set_mode(path, setup['mode'], launch=lambda _: None, now=lambda: 1000.0)
 
 
-def edit_step(path, config, step):
+def edit_step(path, config, step, feed):
     import edits
     op, args = step['op'], step.get('args', [])
+    if op == 'feed':
+        feed.change(args[0], args[1])
+        return shared_source.accept(path, feed.envelope(), now=lambda: args[2])
     with contextlib.closing(database.connect_state(path)) as db, db:
         db.execute('BEGIN IMMEDIATE')
         if op == 'settings': return edits.settings(db, config, *args)
@@ -954,6 +1018,8 @@ def edit_step(path, config, step):
             return wall.locate_state(db, config, *args)
         if op == 'pruneComets': return b.prune_comets(db, args[0], args[1], devices.device_of(config))
         if op == 'currentComet': return b.current_comet(db, args[0], devices.device_of(config))
+        if op == 'dashboard': return [list(item) if item else None for item in b.dashboard(db, config, args[0])]
+        if op == 'query': return [list(row) for row in db.execute(args[0])]
         if op == 'changeMode': return modes.change_mode(db, args[0], args[1], device=devices.device_of(config))
         if op == 'rendering':
             control = store.control_state(db, devices.device_of(config))
@@ -1061,12 +1127,27 @@ def edit_cases():
         ('rendering', 1001.0), ('sql', "DELETE FROM meta WHERE key='mode'", []),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['{"outcome":"unknown"}']), ('rendering', 1002.0),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['[1,2]']), ('rendering', 1002.0),
+        ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['{}']), ('rendering', 1002.0),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt',?)", ['{broken']), ('rendering', 1002.0),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode_revision','3')", []), ('rendering', 1002.0)]))
     cases.append(case('panels rendering receipt', [
         ('sql', "DELETE FROM meta WHERE key='dirty'", []), ('rendering', 1000.0005),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('rendering_receipt@panels',?)", [receipt]), ('rendering', 1000.0015),
         ('sql', "INSERT OR REPLACE INTO meta VALUES ('mode@panels','free')", []), ('rendering', 1000.0025)], 'triangles'))
+    # CometTest cases that need only placement, comets and mode commands, with tasks from the shared feed.
+    prepare = lambda instant: [('pruneComets', instant, 'work'), ('dashboard', instant), ('currentComet', instant)]
+    complete = lambda name, instant: [('feed', 'prompt', name, instant), ('feed', 'stop', name, instant)]
+    lines = [('feed', 'prompt', str(i), 1000.0) for i in range(15)] + [('dashboard', 1000.0)]
+    cases.append(case('comet waits for its task to have a Line', lines + complete('extra', 1000.0) + prepare(1000.0)
+                      + [('feed', 'end', '0', 1000.0)] + prepare(1000.0), shared=True))
+    steps = []
+    for mode in ('free', 'quiet'):
+        steps += [('changeMode', 'work', 1000.0)] + complete('a', 1000.0) + complete('b', 1000.0) + prepare(1000.0)
+        steps += [('changeMode', mode, 1000.0), ('query', 'SELECT * FROM comets')] + complete('c', 1000.0)
+        steps += [('query', 'SELECT * FROM comets'), ('changeMode', 'work', 1000.0)] + prepare(1000.0)
+    cases.append(case('Free and Quiet clear comets and queue none', steps, shared=True))
+    cases.append(case('an expired comet is not replayed', complete('a', 1000.0) + prepare(1000.0) + prepare(1003.0)
+                      + [('feed', 'touch', None, 1003.0), ('query', 'SELECT * FROM comets')], shared=True))
     return cases
 
 
@@ -1074,15 +1155,20 @@ def edit_values():
     """Each edit case's outcomes and the rows it leaves (edits.test.ts)."""
     layouts = edit_layouts()
     cases = edit_cases()
+    # The port receives validated snapshots; the schema check stays with the feed.
+    original = shared_input.check_envelope
+    shared_input.check_envelope = lambda value, config, minimum_revision=0: dict(value)
     for record in cases:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
             (path / 'config.json').write_text(json.dumps({'ip': '192.0.2.1', 'token': 'fake'}))
-            edit_setup(path, record['setup'])
+            feed = Feed()
+            edit_setup(path, record['setup'], feed)
             config = copy.deepcopy(layouts[record['layout']])
             for step in record['steps']:
-                step['outcome'] = outcome_of(lambda: edit_step(path, config, step))
+                step['outcome'] = outcome_of(lambda: edit_step(path, config, step, feed))
             record['rows'] = edit_rows(path)
+    shared_input.check_envelope = original
     write_nested('edits.json', {'layouts': layouts, 'cases': cases}, 3)
 
 

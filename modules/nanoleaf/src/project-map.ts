@@ -124,7 +124,8 @@ export function renderingSnapshot(db: Db, config: DeviceConfig, mode: string, mo
   if (saved !== undefined && saved !== null && saved !== '') {
     try {
       const parsed = parseJson(String(saved));
-      if (isObject(parsed)) receipt = parsed;
+      // An empty object is no receipt, as Python's truthiness read it.
+      if (isObject(parsed) && Object.keys(parsed).length > 0) receipt = parsed;
     } catch (failure) {
       if (!(failure instanceof ValueError)) throw failure;
     }
