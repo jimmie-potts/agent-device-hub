@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
 import {SdkError, type Reply} from '@jimmie-potts/sdk';
-import type {LogRecord, Runtime} from '../src/index.js';
+import {contain, type LogRecord, type Runtime} from '../src/index.js';
 import {contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, turnEnded, waitFor, type Fixture} from './support.js';
 
 const WORKERS = new URL('./fixtures/', import.meta.url);
@@ -118,15 +118,14 @@ it('a module whose worker thread throws is stopped', async context => {
 
 it('an error that escapes a module\'s own async flow stops only that module', async context => {
   const trigger = deferred<undefined>();
-  let runtime: Runtime | undefined;
   let contained: boolean | undefined;
   const leaking = fixture('leaking', () => {
     // A continuation the module started, such as a callback of its own client library, as the process would see it.
-    void trigger.promise.then(() => { contained = runtime?.contain(new Error('escaped')); });
+    void trigger.promise.then(() => { contained = contain(new Error('escaped')); });
   });
   const probe = fixture('probe');
-  ({runtime} = await run(context, {modules: [leaking, steady(), probe]}));
-  assert.equal(runtime.contain(new Error('not from a module')), false, 'an error from outside every module is not contained');
+  const {runtime} = await run(context, {modules: [leaking, steady(), probe]});
+  assert.equal(contain(new Error('not from a module')), false, 'an error from outside every module is not contained');
   trigger.resolve(undefined);
   await failed(runtime, 'leaking');
   assert.equal(contained, true);
@@ -187,13 +186,14 @@ it('a stopped module leaves nothing behind', async context => {
     await sdk.subscribe('bunny.event.session.*', () => { throw new Error('fail'); });
   });
   const probe = fixture('probe');
-  const {runtime} = await run(context, {modules: [leaky, probe], clock: {now: clock.now}, scheduler: clock.scheduler});
-  const pendingBefore = clock.pending();
-  assert.equal(pendingBefore, 1, 'only the module\'s own timer waits');
+  const {runtime, logs} = await run(context, {modules: [leaky, probe], clock: {now: clock.now}, scheduler: clock.scheduler});
+  assert.equal(clock.pending(), 1, 'only the module\'s own timer waits');
 
   await contextOf(probe).sdk.publish('bunny.event.session.s1', turnEnded);
   await failed(runtime, 'leaky');
-  await waitFor(() => leaky.stops === 1, 5000, 'the stop');
+  // The runtime writes this record when it has released everything the module had.
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.module.stopped' && record.attributes['bunny.module'] === 'leaky'));
+  assert.equal(leaky.stops, 1);
   await exited.promise;
   const {sdk, signal, scheduler, workers, database: open} = contextOf(leaky);
   assert.equal(signal.aborted, true);

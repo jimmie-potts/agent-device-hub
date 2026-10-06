@@ -2,10 +2,11 @@
 
 Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. parts
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
-It holds the in-process bus: `publish`, `subscribe`, `request`, `respond`,
-`sync` and its owner side, `serveSync`. Later stories add the module host (#880)
-and the SSE/HTTP remote transport (#883) without changing these calls, so a
-module never sees which transport carries its messages.
+It holds the in-process bus (`publish`, `subscribe`, `request`, `respond`,
+`sync` and its owner side, `serveSync`) and the [module API](#modules) that the
+runtime (`apps/runtime`) hosts. A later story adds the SSE/HTTP remote transport
+(#883) without changing these calls, so a module never sees which transport
+carries its messages.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -259,6 +260,59 @@ own requests settle first, a handler that awaits another participant's reply can
 finish, and the close never waits for another participant's handler. Calling it
 again returns the same promise. The runtime closes a module's participant when
 it stops the module.
+
+## Modules
+
+A module imports only this SDK and the contracts packages, so the module API
+lives here; [`apps/runtime`](../../apps/runtime/README.md) implements it. A
+module is an object with a `manifest`, `start(context)` and `stop()`:
+
+```ts
+import type {BunnyModule} from '@jimmie-potts/sdk';
+
+export const lamp: BunnyModule = {
+  manifest: {name: 'lamp', apiVersion: '1.0'},
+  async start({sdk, log, database}) {
+    database().exec('CREATE TABLE IF NOT EXISTS scenes (id TEXT PRIMARY KEY)');
+    await sdk.respond('bunny.cmd.scene.lamp', command => {
+      log.info('scene.requested', {}, command);
+      return {status: 'accepted'};
+    });
+  },
+  stop() {},
+};
+```
+
+- **Manifest.** `name` is lowercase letters and digits with single hyphens, at
+  most 64 characters. It names the module's source (`bunny/modules/<name>`), its
+  SQLite file and its log records. `apiVersion` is the module API version the
+  module was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current
+  one, `1.0`. The runtime refuses a module with another major version or a newer
+  minor one. Write the version as a literal, so a later major version refuses
+  the module until it is updated.
+- **`start(context)`** subscribes, responds and opens devices. A throw, a
+  rejection or a start that outlasts the runtime's start deadline fails the
+  module.
+- **`stop()`** releases what the module holds. The runtime calls it once for
+  every module whose start it called, even when start failed or has not
+  finished, after closing the module's participant, so no handler of the module
+  is still running.
+
+The context:
+
+| Member | What it gives |
+| --- | --- |
+| `sdk` | The module's own participant on the runtime's bus. |
+| `log` | `debug`, `info`, `warn` and `error(event, fields?, trace?)`. Records name the module, and `trace` adds its trace and span IDs. Never put a secret in a field or an error message. |
+| `trace.span(parent?)` | A new span: in the parent's trace when one is given, otherwise a new trace. Use it as the `parent` of messages the work sends and the `trace` of its log records. |
+| `clock.now()` | The runtime's clock, which the bus also uses for `time` and `expiresat`. |
+| `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
+| `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. |
+| `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. |
+| `signal` | Aborted when the module stops, so device calls given it end. |
+
+After the module stops, every part of the context refuses use with an
+`SdkError` carrying `invalid-state`.
 
 ## Trace context
 
