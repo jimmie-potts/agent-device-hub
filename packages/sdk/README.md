@@ -7,7 +7,8 @@ and its owner side, `serveSync`, over two transports: the in-process bus, and an
 SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime.
 Both carry the same calls, so a module or remote part never sees which transport
 carries its messages. It also holds the [module API](#modules) that the runtime
-(`apps/runtime`) hosts.
+(`apps/runtime`) hosts, a module's [outbox](#outbox) and the
+[module test kit](#module-test-kit).
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -305,7 +306,9 @@ export const lamp: BunnyModule = {
   module was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current
   one, `1.0`. The runtime refuses a module with another major version or a newer
   minor one. Write the version as a literal, so a later major version refuses
-  the module until it is updated.
+  the module until it is updated. `checkManifest(manifest)`,
+  `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
+  own reason for refusing, as `{code, detail}`, or undefined.
 - **`start(context)`** subscribes, responds and opens devices. A throw, a
   rejection or a start that outlasts the runtime's start deadline fails the
   module.
@@ -331,6 +334,96 @@ The context:
 Once the module's stop begins, its `sdk`, `scheduler`, `workers` and
 `database()` refuse use with an `SdkError` carrying `invalid-state`. Its `log`,
 `trace`, `clock` and `signal` keep working, so `stop()` can still log.
+
+## Outbox
+
+ADR 0012 has each module report outcomes through its own outbox, so a crash
+never loses one. `Outbox` keeps a module's messages in its own SQLite file, in
+the table `bunny_outbox`:
+
+```ts
+import {Outbox} from '@jimmie-potts/sdk';
+
+async start({sdk, database, clock, scheduler}) {
+  const outbox = new Outbox({sdk, database: database(), clock, scheduler});
+  await outbox.republish();
+  await sdk.respond('bunny.cmd.lamp.*', async command => {
+    await outbox.transaction(add => {
+      lamps.switch(command.subject, command.data.power);
+      add(`bunny.event.lamp.${command.subject}`, outcomeOf(command), {parent: command});
+    });
+    return {status: 'accepted'};
+  });
+}
+```
+
+- `transaction(work)` runs `work` in one SQLite transaction. Each message that
+  `add(key, draft, {parent?})` stores commits with the work's own changes, and
+  goes out only after the commit, in order, through `publishMessage`, with the
+  `id` and `time` it was stored with. A throw rolls back the work and its
+  messages, and nothing goes out. `work` must be synchronous, and the outbox
+  opens the transaction itself. The promise resolves with `work`'s result once
+  the messages are published. If publishing is refused, for example because the
+  module is stopping, it rejects although the work committed; the messages stay
+  stored, and the next transaction or restart sends them.
+- Only state, removal, occurrence and outcome messages, on their own key class,
+  go in. A command never does, so nothing ever sends a command again.
+- `republish()` sends again, in order, every message still stored. Call it once
+  in the module's start, after the consumer it reports to is listening.
+- The outbox forgets a message once the module has kept running for `retainMs`
+  (60 s by default) after publishing it, using the module's scheduler. A
+  restart before then sends it again, unchanged, and the consumer drops the
+  duplicate by `(source, id)`. A run forgets only messages it published itself.
+
+In one process, a published message is in the consumer's queue at once. A
+crash before the consumer commits it is the usual way to lose it, and every
+crash ends in a restart that sends again what the module published within
+`retainMs` before it. A consumer whose full queue drops a message, or whose
+backlog outlasts `retainMs` before a crash, can still miss one. There is no
+acknowledgment: the
+[outbox decisions](../../openspec/changes/archive/2026-10-06-gh-882-module-kit/design.md)
+record why, what the consumer must do, and these risks.
+
+## Module test kit
+
+`@jimmie-potts/sdk/testing` holds one conformance suite that every module runs,
+so all modules behave the same. Its tests import it; the runtime never does.
+
+```ts
+import {moduleConformance} from '@jimmie-potts/sdk/testing';
+
+moduleConformance({
+  create: () => lamp(),
+  schemas: lampSchemas,
+  serves: ['lamp'],
+  copies: {families: ['mode'], snapshot: {revision: 1, states: [modeState('work')]}},
+  accepted: switchLamp('lamp-1', 'on'),
+  refused: {...switchLamp('lamp-9', 'on'), code: 'not-found'},
+});
+```
+
+`moduleConformance(spec)` registers a node:test suite named for the module;
+`conformanceChecks(spec)` returns the same checks as `{name, run}` for another
+runner. Each check hosts a fresh instance of the module on its own bus and state
+directory, with a stand-in owner, `bunny/core`, serving the families it copies.
+Every message the check sees must follow profile 2.0, with the core families and
+`spec.schemas` registered, and no handler, timer or worker of the module may
+fail. The checks:
+
+| Check | What passes |
+| --- | --- |
+| `declares a manifest the runtime accepts` | `checkManifest` finds nothing to refuse. |
+| `starts, and stops leaving nothing behind` | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command is refused as `unavailable`, a sync of its families is refused as `unavailable`, and no timer, worker or open database is left. |
+| `serves its families through sync` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
+| `copies the families it follows` | Only when `copies` is given: the module's start syncs them, asking for nothing else. |
+| `accepts a command and replies` | The accepted command comes back `accepted`. |
+| `refuses a command with the shared error body` | The refused command comes back `rejected` in the module's own reply, with `refused.code`. |
+| `reports the outcome through its outbox, once after a restart` | The accepted command's outcome is published, and after a restart on the same database it is published again, unchanged. |
+
+`ModuleHarness` is what the checks host a module with: its own participant on a
+given bus, a context whose SQLite file lives in a given directory, and a `stop`
+that aborts, cancels timers, closes the participant, runs `stop()`, ends workers
+and closes the database, in the runtime's order.
 
 ## Trace context
 
