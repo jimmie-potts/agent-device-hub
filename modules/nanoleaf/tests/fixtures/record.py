@@ -1611,7 +1611,7 @@ class ControlCase(WorkerCase):
             request = dict(apiVersion='1.0', controllerId='controller', deviceId='device', requestId=snap['nextRequestId'],
                            expectedConfigurationRevision=snap['configurationRevision'], expectedGeneration=snap['generation'], command=command)
             code, receipt = self.app.admit(self.token, request)
-            self.requests[args[0]] = ('command', request)
+            self.requests[args[0]] = ('command', request, code >= 400)
             return receipt_summary(code, receipt)
         if op == 'play':
             try:
@@ -1626,10 +1626,10 @@ class ControlCase(WorkerCase):
             request = dict(apiVersion=integration_api.VERSION, controllerId='controller', deviceId=args[2] if len(args) > 2 else 'device',
                            requestId=ticket, expectedRevision=revision, command=copy.deepcopy(args[1]))
             code, receipt = self.app.integration_admit(self.token, request)
-            self.requests[args[0]] = ('play', request)
+            self.requests[args[0]] = ('play', request, code >= 400)
             return receipt_summary(code, receipt)
         if op == 'attempting':
-            kind, request = self.requests[args[0]]
+            kind, request, _ = self.requests[args[0]]
             sequence = request['requestId']['sequence']
             with self.db() as db, db:
                 if kind == 'command':
@@ -1704,9 +1704,14 @@ class ControlCase(WorkerCase):
         self.patches.append(patcher)
 
     def receipts(self):
+        """Each admitted request's final receipt; a refused request has none. A refused extension request leaves its
+        ticket to the next request, so its sequence would read that request's receipt."""
         result = {}
         with self.db() as db:
-            for name, (kind, request) in self.requests.items():
+            for name, (kind, request, refused) in self.requests.items():
+                if refused:
+                    result[name] = None
+                    continue
                 table = 'controller_requests' if kind == 'command' else 'integration_requests'
                 row = db.execute(f'SELECT receipt FROM {table} WHERE sequence=?', (request['requestId']['sequence'],)).fetchone()
                 result[name] = receipt_summary(None, json.loads(row[0]) if row else None)

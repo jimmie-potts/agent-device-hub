@@ -34,7 +34,8 @@ interface RecordedCase {
   rows: Record<string, unknown[][]>;
   scene: unknown;
   device: {selected: string; brightness: number; on: boolean};
-  receipts: Record<string, Summary>;
+  /** Each admitted request's final receipt; null for a refused one. */
+  receipts: Record<string, Summary | null>;
   clock: number;
 }
 
@@ -57,12 +58,11 @@ export function replyOf(summary: Summary): Reply {
 /**
  * The outcome MAPPING.md's controller receipt rule gives a Python receipt, with the port's two documented differences:
  * a mode command that needed no change succeeds with observed evidence, and a native command that expired unsent fails
- * `expired`, where Python's listener wrote `transport-failure`. Null when the command has no outcome: it was refused or
- * is still queued.
+ * `expired`, where Python's listener wrote `transport-failure`. The command was admitted; null while it is still queued.
  */
 export function outcomeFor(id: string, summary: Summary, admission: Summary): ControlOutcome | null {
   const base = {type: 'outcome' as const, device: DEFAULT, requestId: id};
-  if (replyOf(admission) !== 'accepted' || summary.outcome === 'queued') return null;
+  if (summary.outcome === 'queued') return null;
   if (admission.code === 200) return {...base, result: 'succeeded', evidence: 'observed'};
   // Rule 2: possible effects are uncertain, with no evidence.
   if (summary.priorEffects === 'possible') return {...base, result: 'uncertain', evidence: 'none', error: {code: 'uncertain-result'}};
@@ -291,6 +291,9 @@ export async function replayControls(context: TestContext, name: string): Promis
   for (const [id, summary] of Object.entries(recorded.receipts)) {
     const admission = admissions.get(id);
     assert.ok(admission !== undefined, `${name}: ${id} has no admission`);
+    // A refused request has no receipt and no outcome.
+    assert.equal(summary === null, replyOf(admission) !== 'accepted', `${name}: ${id} receipt`);
+    if (summary === null) continue;
     const outcome = outcomeFor(id, summary, admission);
     if (outcome !== null) expected.set(id, outcome);
   }
