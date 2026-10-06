@@ -204,6 +204,21 @@ suite('SceneTest', () => {
     assert.throws(() => s.manager(), {name: 'ValueError'});
   });
 
+  test('an idle pass leaves a device the indicators do not hold', async context => {
+    // Another effect plays and the indicators released the lights: nothing is restored (checked against Python's restorer).
+    const s = new Scenes(context);
+    writeFileSync(join(s.directory, 'scene-state.json'),
+      JSON.stringify({version: 1, scene: {name: 'Beach Waves', brightness: 43}, owned: false, quiet_scene: null, quiet_brightness: null}));
+    s.device.selected = '*Dynamic*';
+    const manager = s.manager();
+    await manager.observe();
+    s.device.calls = [];
+    await manager.send(SCENE, IDLE, 1000, true);
+    assert.deepEqual(s.device.calls, []);
+    assert.equal(s.device.selected, '*Dynamic*');
+    assert.equal(s.saved().owned, false);
+  });
+
   test('a restarted worker returns a scene the indicators still own', async context => {
     // The display shown before the restart is unchanged, but the saved state says the indicators hold the lights.
     const result = await replay(context, 'an owned scene returns after a restart');
