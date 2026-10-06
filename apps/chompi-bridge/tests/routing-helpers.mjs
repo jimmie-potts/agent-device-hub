@@ -71,17 +71,19 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 }
 
 /**
- * A scripted desktop behind OS adapter interface version 3. By default the apps behave as qualified:
+ * A scripted desktop behind OS adapter interface version 4. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
  * selects the target and raises Claude with its composer focused. Like Claude Desktop, the link stamps the target's
  * `lastFocusedAt` unless Claude was already in front with that session selected. Tests then break one step.
  * Cards are scripted per client with `openCard`; pressing a card button closes the card as the clients do.
  */
 export class FakeAdapter {
-  version = 3;
+  version = 4;
   platform = 'win32';
   calls = [];
   keys = [];
+  /** System volume keys the adapter sent: { key, presses }. They reach no window. */
+  volumeKeys = [];
   opened = [];
   held = new Set();
   versions = { codex: known('26.930.3930.0'), claude: known('2.19675.0.0') };
@@ -161,6 +163,20 @@ export class FakeAdapter {
     if (request.action === 'down') for (const key of request.keys) this.held.add(key);
     if (request.action === 'up') for (const key of request.keys) this.held.delete(key);
     if (request.action === 'tap' && request.keys.join('+') === 'LeftAlt+L' && this.foreground.packageIdentity === CODEX_PACKAGE) this.composer.codex = true;
+  }
+
+  /**
+   * Like the Windows keyboard: only the three volume keys, 1-10 presses, and a volume key never joins keys the adapter
+   * holds, such as the dictation chord.
+   */
+  async sendVolumeKey(key, presses) {
+    const pending = this.#enter('sendVolumeKey', [key, presses]);
+    if (pending) return pending;
+    if (!['VolumeUp', 'VolumeDown', 'VolumeMute'].includes(key) || !Number.isInteger(presses) || presses < 1 || presses > 10) {
+      throw new Error('invalid-volume-request');
+    }
+    if (this.held.size > 0) throw new Error('keys-held');
+    this.volumeKeys.push({ key, presses });
   }
 
   async releaseAll() { this.calls.push(['releaseAll']); this.held.clear(); }

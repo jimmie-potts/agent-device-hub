@@ -8,14 +8,20 @@
  * only a boolean, count or index crosses this boundary.
  *
  * Version 3 (#821) adds the card operations: the open approval or question card's actionable buttons,
- * moving keyboard focus between them and pressing the focused one.
+ * moving keyboard focus between them and pressing the focused one. Version 4 (#865) adds `sendVolumeKey`, the
+ * system volume and mute keys, which target no window and need no window check.
  */
-export const OS_ADAPTER_VERSION = 3;
+export const OS_ADAPTER_VERSION = 4;
 
 export type Client = 'codex' | 'claude';
 
 /** Platform-neutral key names: `Enter`, `LeftControl`, `LeftWindows`, `LeftAlt`, `L`. */
 export type KeyName = string;
+
+/** The system volume keys. They change the system volume or mute it, whatever window is in front. */
+export type VolumeKey = 'VolumeUp' | 'VolumeDown' | 'VolumeMute';
+/** Presses per `sendVolumeKey` call. */
+export const MAX_VOLUME_PRESSES = 10;
 
 export interface KeyRequest {
   /** `down` and `up` hold and release a chord (dictation); `tap` presses and releases once. */
@@ -75,6 +81,13 @@ export interface OsAdapter {
 
   /** Presses, holds or releases keys. Rejects with a held-modifier error rather than typing into an unknown state. */
   sendKeys(request: KeyRequest): Promise<void>;
+
+  /**
+   * Taps a system volume key `presses` times (1-`MAX_VOLUME_PRESSES`). It needs no foreground, composer or card check,
+   * because the system, not a window, handles it. Rejects, sending nothing, while this adapter holds any key (such as
+   * the dictation chord), so a volume key never combines with held keys, and while the user holds a modifier.
+   */
+  sendVolumeKey(key: VolumeKey, presses: number): Promise<void>;
 
   /** Releases every key this adapter currently holds. Never throws. */
   releaseAll(): Promise<void>;

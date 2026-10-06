@@ -1,12 +1,13 @@
 import type { Client } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { Activity, AttentionKind } from '../routing/feed.js';
-import { DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS } from '../routing/profile.js';
+import { DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS, DEFAULT_VOLUME_SETTINGS } from '../routing/profile.js';
+import { PULSE_LOW } from '../routing/lights.js';
 import { SLOT_COUNT } from '../routing/slots.js';
 import type { ChompiSimulator } from '../simulator.js';
 import type { CardSeed, SimulatedDesktop, WindowId } from './desktop.js';
 import type { SyntheticHub } from './hub.js';
-import { CONTROL, PAGE_LED, WHEEL_LEDS } from './panel.js';
+import { CONTROL, PAGE_LED, VOLUME_LED, WHEEL_LEDS } from './panel.js';
 
 /**
  * The CHOMPI bridge scenario catalog (#853): data plus small step functions, shared by the in-memory runner in CI
@@ -166,6 +167,39 @@ const desktopUntouched = (h: Harness): true | string => {
   if (!mark) return 'the desktop was never marked';
   const now = inputs(h), front = h.desktop.snapshot().foreground;
   return (now.length === mark.inputs && front === mark.foreground) || `foreground ${front} (was ${mark.foreground}), new input ${show(now.slice(mark.inputs).map(e => e.kind))}`;
+};
+
+/** The profile fields the Attention click and volume knob scenarios read (#865), typed. */
+interface ProfileView { colors: Record<string, readonly number[]>; volume?: { stepCounts?: number }; timing?: { attentionRepeatMs?: number } }
+const profileView = (h: Harness) => h.profile() as ProfileView;
+/** Every black key's LED is off: the shipped profile maps no black key (#865). */
+const blackKeysDark = (h: Harness): true | string => {
+  const lit = Array.from({ length: 10 }, (_, i) => i + 16).filter(key => !same(keyLed(h, key), [0, 0, 0]));
+  return lit.length === 0 || `black keys lit: ${lit.join(', ')}`;
+};
+const keyShowsAttention = (h: Harness, key: number): true | string => {
+  const attention = profileView(h).colors.attention ?? [];
+  return same(keyLed(h, key), attention) || same(keyLed(h, key), attention.map(v => Math.round(v * PULSE_LOW))) || `key ${key} ${show(keyLed(h, key))}`;
+};
+const volumeStep = (h: Harness): number => profileView(h).volume?.stepCounts ?? DEFAULT_VOLUME_SETTINGS.stepCounts;
+const color = (h: Harness, name: string): readonly number[] => profileView(h).colors[name] ?? [];
+const systemVolume = (h: Harness) => h.desktop.snapshot().system;
+const volumeIs = (h: Harness, volume: number, muted: boolean): true | string =>
+  (systemVolume(h).volume === volume && systemVolume(h).muted === muted) || `system volume ${show(systemVolume(h))}`;
+/** Client input since the last mark: keys, links, submissions, card actions, scrolls and dictation, not system volume keys. */
+const clientInputs = (h: Harness) => inputs(h).filter(e => e.kind !== 'volume');
+const clientMarks = new WeakMap<Harness, { inputs: number; foreground: string | null; text: string }>();
+const markClients = (h: Harness) => {
+  const s = h.desktop.snapshot();
+  clientMarks.set(h, { inputs: clientInputs(h).length, foreground: s.foreground, text: s.windows.codex.composer.text });
+};
+/** Since the last client mark, no input reached any client window, the same window is in front and the draft is unchanged. */
+const clientsUntouched = (h: Harness): true | string => {
+  const mark = clientMarks.get(h);
+  if (!mark) return 'the clients were never marked';
+  const s = h.desktop.snapshot(), now = clientInputs(h);
+  return (now.length === mark.inputs && s.foreground === mark.foreground && s.windows.codex.composer.text === mark.text)
+    || `foreground ${s.foreground}, new client input ${show(now.slice(mark.inputs).map(e => e.kind))}, draft ${show(s.windows.codex.composer.text)}`;
 };
 
 export const SCENARIOS: readonly Scenario[] = Object.freeze([
@@ -330,6 +364,80 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
       act('let go of Loop and slot key 1', h => { h.simulator.release(CONTROL.loop); h.simulator.release(1); }),
       holds('slot 16 keeps its Codex task: nothing refused, key 1 still lit', h => (logged(h, 'release-refused').length === 0 && logged(h, 'slot-released').length === 1
         && same(keyLed(h, 1), h.profile().colors.idle)) || `refused ${show(logged(h, 'release-refused'))}, key 1 ${show(keyLed(h, 1))}`, 1000),
+    ],
+  },
+  {
+    id: 'attention-key',
+    title: 'The Attention click on knob 4 opens the task first seen waiting on any page, moves on with a repeat click, refuses with a red knob 4 LED when nothing waits and acknowledges nothing',
+    seed: TWO_PAGES,
+    steps: [
+      expect('page 1 is visible and no black key is lit: there is no dedicated Attention light', h => (pageShown(h, 1) === true && blackKeysDark(h) === true) || `${show(pageShown(h, 1))}, ${show(blackKeysDark(h))}`),
+      act('note the desktop: another app in front, no input yet', markDesktop),
+      act('click knob 4 (the Attention click)', h => h.simulator.click(CONTROL.attentionClick)),
+      expect('the click is refused with `none-waiting`', h => logged(h, 'attention-refused', { reason: 'none-waiting' }).length === 1 || 'no refusal'),
+      expect('knob 4\'s LED flashes the error color', h => same(h.simulator.leds[PAGE_LED], color(h, 'error')) || `knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`, 1000),
+      holds('the refusal sent no input and left another app in front', desktopUntouched, 500),
+      expect('knob 4\'s LED returns to page 1\'s color', h => pageShown(h, 1), 3000),
+      act('Codex task 17 on hidden page 2 (slot 17) needs approval', h => h.hub.update(taskIds('codex', 17).sessionId, { attention: ['approval'] })),
+      expect('knob 4\'s LED alternates with the attention color for the hidden page', h => same(h.simulator.leds[PAGE_LED], color(h, 'attention')) || `knob 4 LED ${show(h.simulator.leds[PAGE_LED])}`, 3000),
+      act('then Codex task 3 on page 1 (slot 3) asks a question', h => h.hub.update(taskIds('codex', 3).sessionId, { attention: ['question'] })),
+      expect('slot key 3 shows attention', h => keyShowsAttention(h, 3)),
+      act('click knob 4', h => h.simulator.click(CONTROL.attentionClick)),
+      expect('page 2 is visible, the first task seen waiting', h => pageShown(h, 2)),
+      expect('Codex comes to the front on task 17 with its composer focused', h => focusedOn(h, 'codex', 17)),
+      expect('the bridge logs `attention-open` for slot 17 with 2 waiting', h => logged(h, 'attention-open', { slot: 17, waiting: 2 }).length === 1 || `opened ${show(logged(h, 'attention-open'))}`),
+      act('click knob 4 again at once', h => h.simulator.click(CONTROL.attentionClick)),
+      expect('page 1 is visible: the repeat click moved on to the next waiting task', h => pageShown(h, 1)),
+      expect('Codex comes to the front on task 3', h => focusedOn(h, 'codex', 3)),
+      act('wait out the repeat window, then click knob 4', async h => {
+        await h.wait((profileView(h).timing?.attentionRepeatMs ?? DEFAULT_ATTENTION_REPEAT_MS) + 300);
+        h.simulator.click(CONTROL.attentionClick);
+      }),
+      expect('the earliest waiting task opens again on page 2', h => (logged(h, 'attention-open', { slot: 17 }).length === 2 && pageShown(h, 2) === true && focusedOn(h, 'codex', 17) === true)
+        || `opened ${show(logged(h, 'attention-open').map(l => l.slot))}, page ${visiblePage(h)}`),
+      holds('nothing was acknowledged: both tasks keep their attention, no black key lights and every Hub request was a read', h => {
+        const waiting = h.hub.sessions().filter(s => s.attention.length > 0).length;
+        const writes = h.hub.requests.filter(r => r.method !== 'GET');
+        return (waiting === 2 && writes.length === 0 && blackKeysDark(h) === true) || `${waiting} waiting, ${writes.length} non-GET requests, ${show(blackKeysDark(h))}`;
+      }, 1000),
+      act('both tasks are answered in their clients', h => {
+        h.hub.update(taskIds('codex', 17).sessionId, { attention: [] });
+        h.hub.update(taskIds('codex', 3).sessionId, { attention: [] });
+      }),
+      holds('knob 4\'s LED shows page 2\'s color steadily once nothing waits', h => pageShown(h, 2), 1500),
+    ],
+  },
+  {
+    id: 'volume-knob',
+    title: 'The volume knob steps the system volume and its click mutes, without input to any client; during Record it is ignored and never joins the chord',
+    seed: { ...DESK_BASIC, desktop: { foreground: 'codex', selected: { codex: 1 }, composers: { codex: { focused: true, text: 'synthetic draft' } } } },
+    steps: [
+      expect('the synthetic system volume starts at 50, not muted', h => volumeIs(h, 50, false)),
+      act('note the clients: Codex in front with a draft', markClients),
+      act('turn the volume knob three detents clockwise', h => h.simulator.turn(CONTROL.volumeTurn, 3 * volumeStep(h))),
+      expect('three volume-up keys raise the system volume to 56', h => volumeIs(h, 56, false)),
+      expect('the bridge logs the volume keys', h => logged(h, 'volume', { key: 'VolumeUp' }).length >= 1 || 'no volume line'),
+      act('turn the volume knob one detent counter-clockwise', h => h.simulator.turn(CONTROL.volumeTurn, -volumeStep(h))),
+      expect('one volume-down key lowers it to 54', h => volumeIs(h, 54, false)),
+      act('click the volume knob', h => h.simulator.click(CONTROL.volumeClick)),
+      expect('the system is muted', h => volumeIs(h, 54, true)),
+      act('click the volume knob again', h => h.simulator.click(CONTROL.volumeClick)),
+      expect('the system is unmuted', h => volumeIs(h, 54, false)),
+      holds('no volume key reached a client: no keystroke, the same window in front and the draft unchanged', clientsUntouched, 500),
+      act('hold the CHOMPI key (Record)', h => h.simulator.press(CONTROL.record)),
+      expect('the desktop holds the dictation chord', chordHeld),
+      act('turn the volume knob two detents and click it while Record is held', h => {
+        h.simulator.turn(CONTROL.volumeTurn, 2 * volumeStep(h));
+        h.simulator.click(CONTROL.volumeClick);
+      }),
+      expect('the bridge ignores both with `dictating`', h => logged(h, 'volume-ignored', { reason: 'dictating' }).length === 2 || `ignored ${logged(h, 'volume-ignored').length}`),
+      expect('the volume LED flashes the error color', h => same(h.simulator.leds[VOLUME_LED], color(h, 'error')) || `volume LED ${show(h.simulator.leds[VOLUME_LED])}`, 1000),
+      holds('the volume stays and the chord is exactly the dictation chord', h => (volumeIs(h, 54, false) === true && chordHeld(h) === true) || `${show(systemVolume(h))}, held ${show(h.desktop.held)}`, 500),
+      act('release the CHOMPI key', h => h.simulator.release(CONTROL.record)),
+      expect('the chord comes up', nothingHeld),
+      act('turn the volume knob one detent clockwise', h => h.simulator.turn(CONTROL.volumeTurn, volumeStep(h))),
+      expect('the knob works again: the volume is 56', h => volumeIs(h, 56, false)),
+      holds('no Enter was typed', h => enters(h) === 0 || `${enters(h)} Enter`, 500),
     ],
   },
 ] satisfies Scenario[]);

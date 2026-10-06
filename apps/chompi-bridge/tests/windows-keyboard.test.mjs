@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  encodeKeyboardInputs, HeldModifierError, INPUT_SIZE, Keyboard, KeyboardError, virtualKeyCode,
+  encodeKeyboardInputs, HeldModifierError, INPUT_SIZE, Keyboard, KeyboardError, VIRTUAL_KEYS, VOLUME_KEYS, virtualKeyCode,
 } from '../dist/windows/index.js';
 
 /** A fake SendInput/GetAsyncKeyState pair. `physical` holds keys the user is pressing; injected keys count as down too. */
@@ -183,4 +183,48 @@ test('keyboard INPUT records use the 64-bit Win32 layout', () => {
   assert.equal(view.getUint32(80 + 12, true), 0x0002, 'Enter key-up is not extended');
   assert.equal(view.getUint32(16, true), 0, 'time');
   assert.equal(view.getBigUint64(24, true), 0n, 'dwExtraInfo');
+});
+
+test('the three Windows volume keys are a separate system key set that profiles cannot name (#865)', () => {
+  assert.deepEqual([...VOLUME_KEYS], [['VolumeUp', 0xaf], ['VolumeDown', 0xae], ['VolumeMute', 0xad]]);
+  for (const name of VOLUME_KEYS.keys()) {
+    assert.equal(VIRTUAL_KEYS.has(name), false, `${name} is not a shortcut key`);
+    assert.throws(() => virtualKeyCode(name), error => error.code === 'unknown-key');
+  }
+  const view = new DataView(encodeKeyboardInputs([step(0xaf, false)]).buffer);
+  assert.equal(view.getUint32(12, true), 0x0001, 'volume keys are extended keys');
+});
+
+test('a volume tap sends complete down/up pairs, one per press, and leaves nothing held (#865)', () => {
+  const api = fakeKeyboardApi();
+  const keyboard = new Keyboard(api);
+  keyboard.tapVolume('VolumeUp', 3);
+  assert.deepEqual(api.calls, [[step(0xaf, false), step(0xaf, true), step(0xaf, false), step(0xaf, true), step(0xaf, false), step(0xaf, true)]]);
+  keyboard.tapVolume('VolumeMute', 1);
+  assert.deepEqual(api.calls[1], [step(0xad, false), step(0xad, true)]);
+  assert.deepEqual(keyboard.held, []);
+});
+
+test('a volume tap never joins keys the adapter holds, such as the dictation chord (#865)', () => {
+  const api = fakeKeyboardApi();
+  const keyboard = new Keyboard(api);
+  keyboard.send({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
+  for (const key of ['VolumeUp', 'VolumeDown', 'VolumeMute']) assert.throws(() => keyboard.tapVolume(key, 1), error => error instanceof KeyboardError && error.code === 'keys-held');
+  assert.equal(api.calls.length, 1, 'only the chord was sent');
+  assert.deepEqual(keyboard.held, ['LeftControl', 'LeftWindows']);
+});
+
+test('a volume tap refuses a physically held modifier and malformed requests before sending (#865)', () => {
+  const held = new Keyboard(fakeKeyboardApi({ physical: [0xa2] }));
+  assert.throws(() => held.tapVolume('VolumeUp', 1), HeldModifierError);
+  const api = fakeKeyboardApi();
+  const keyboard = new Keyboard(api);
+  for (const [key, presses] of [['Enter', 1], ['VolumeUp', 0], ['VolumeUp', 11], ['VolumeDown', 1.5], ['VolumeMute', '1'], [null, 1]]) {
+    assert.throws(() => keyboard.tapVolume(key, presses), error => error instanceof KeyboardError && error.code === 'invalid-volume-request', `${key} ${presses}`);
+  }
+  assert.equal(api.calls.length, 0);
+  const partial = fakeKeyboardApi({ insertLimit: 3 });
+  const recovering = new Keyboard(partial);
+  assert.throws(() => recovering.tapVolume('VolumeUp', 2), error => error.code === 'send-input-failed');
+  assert.deepEqual(recovering.held, [], 'the inserted key-down is released');
 });

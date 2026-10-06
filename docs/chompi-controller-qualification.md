@@ -74,12 +74,12 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Control | Firmware ID | Notes |
 | --- | --- | --- |
 | Front row, 15 white keys | `KEY_1`-`KEY_15`, left to right | The 15 task slots. Also the launcher's firmware picker keys |
-| Second row, 10 black keys | `KEY_16`-`KEY_25` | Reserved for #744 utility actions |
+| Second row, 10 black keys | `KEY_16`-`KEY_25` | #744 utility actions through the profile's `keys` map, which maps none by default; they do nothing until a later #744 slice maps them |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
 | Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
-| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) stays unassigned. Clicks are on the button chain |
+| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knobs 1-3 for #744. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
-| Rightmost knob | `ENC_6` | Volume. Holding its click at boot enters test mode |
+| Rightmost knob | `ENC_6` | Volume (#865): turn 46 sends the system volume keys, click 34 toggles mute, LED 34 flashes on an ignored or failed volume key. Holding its click at boot enters test mode |
 | Far-left two-position switch | `SW_TOG` | Stays unmapped |
 
 Every key has its own CD4021 input, so there is no matrix, ghosting or
@@ -506,6 +506,29 @@ After the bridge with task pages is installed, with more than 15 open throwaway 
 5. Hold a Claude task's key on page 1, turn knob 4 to page 2 during the hold, press Loop, and confirm that the page-1
    task is the one released.
 6. Restart the bridge and confirm that every task keeps its key and page, and that the keys show page 1.
+
+## Installed checks for #865
+
+These belong to #745's batched installation. After the bridge with the Attention click on knob 4 and the volume knob is installed,
+with more than 15 open throwaway tasks:
+
+1. Turn the volume knob slowly both ways and confirm that the Windows volume moves one step (2 points) per count and
+   that the step size feels right. If not, set `volume.stepCounts` (and `volume.invert` if the direction is wrong) in
+   the profile and record the value.
+2. Click the volume knob twice and confirm that Windows mutes and then unmutes. With Codex and then Claude in front,
+   each with a draft in its composer, confirm that neither the turns nor the clicks change the draft, send, move focus
+   or trigger anything in the client. A volume key enters the foreground thread's input stream, so only this check
+   shows that the clients ignore it.
+3. Hold Record, turn and click the volume knob, and confirm that the volume does not change, the volume knob's LED
+   flashes red and dictation keeps going; release Record and confirm that Wispr still inserts the dictation.
+4. With no task waiting, click knob 4 and confirm that its LED flashes red, then shows the page color again, and that
+   nothing opens.
+5. Let a throwaway task on page 2 raise attention, then one on page 1. Confirm that knob 4's LED alternates with the
+   attention color and that no black key lights. With page 1 visible, click knob 4 and confirm that the page-2 task
+   opens and the keys show page 2. Click again within 4 s and confirm that the page-1 task opens and the keys show
+   page 1.
+6. Confirm that the attention stays on both tasks after they open (the click acknowledged nothing), and that knob 4's
+   LED shows the page color steadily once both are answered.
 
 ## Findings for dependent work
 
