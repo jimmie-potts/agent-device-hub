@@ -285,8 +285,9 @@ permission to replace an owner.
    job, so validate locally first. Build once, then run the affected `:built`
    checks before each push. Push only reviewed heads: the first after step 3's
    reviews, then one per later fix round after its re-review. Prove that a
-   check fails with a local negative control. Push a failing probe only when
-   the issue requires hosted failure evidence. Before review, check every
+   check fails with a local negative control. The one exception to pushing
+   only reviewed heads is a failing probe, pushed only when the issue requires
+   hosted failure evidence. Before review, check every
    acceptance item against its evidence, search the docs for each fact the
    change alters, and state limits and remaining uncertainty in the review brief
    and the PR body.
@@ -568,9 +569,9 @@ Package scripts copy some Markdown files into published archives, such as
 contract documents and package READMEs. Text edits to those files stay
 Markdown-only. The Workflow job fails if any of them is missing, so delete or
 rename one only together with its package script. That change runs every job.
-That guard checks only that the files exist. A test that reads a Markdown
-file's content must run in the Workflow job, which still runs for
-Markdown-only changes; no Checks job may read Markdown content.
+That guard checks only that the files exist. Package scripts may copy the
+guarded files, but no Checks test may depend on Markdown content. A test that
+does must run in the Workflow job, which still runs for Markdown-only changes.
 
 The `docs/work-guide/` and `**/*.md` filters combine. A revision that changes
 only guide files and other Markdown therefore skips Checks too, and it needs
