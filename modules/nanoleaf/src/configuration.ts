@@ -27,45 +27,57 @@ interface Reported {
   o: number;
 }
 
-/** Every reported position by panel ID, as the device listed them. */
-function reportedPoints(panelLayout: unknown): Map<unknown, unknown> {
+/** The reported positions in the order the device listed them, duplicates and connectors included. */
+function positionData(panelLayout: unknown): unknown[] {
   const layout = isObject(panelLayout) ? panelLayout.layout : undefined;
   const points = isObject(layout) ? layout.positionData : undefined;
   if (!Array.isArray(points)) throw new ValueError('Invalid Lines layout.');
-  return new Map(points.map(point => [isObject(point) ? point.panelId : undefined, point]));
+  return points;
 }
 
-/** A reported position with the fields pairing reads. */
-function reported(point: unknown): Reported {
+/** One field of a reported entry, which Python read by key; an entry that is not an object, or lacks the field, is refused. */
+function field(point: unknown, key: string): unknown {
   if (!isObject(point)) throw new ValueError('Invalid Lines position.');
-  const {panelId, x, y, o} = point;
-  if (typeof panelId !== 'number' || typeof x !== 'number' || typeof y !== 'number' || typeof o !== 'number') throw new ValueError('Invalid Lines position.');
-  return {panelId, x, y, o};
+  if (!Object.hasOwn(point, key)) throw new ValueError(`A reported Lines position has no ${key}.`);
+  return point[key];
 }
+
+function numberField(point: unknown, key: string): number {
+  const value = field(point, key);
+  if (typeof value !== 'number') throw new ValueError(`A reported Lines position has a non-numeric ${key}.`);
+  return value;
+}
+
+/** A reported zone with the fields pairing reads. */
+const reported = (point: unknown): Reported =>
+  ({panelId: numberField(point, 'panelId'), x: numberField(point, 'x'), y: numberField(point, 'y'), o: numberField(point, 'o')});
 
 /** Pair the two collinear light zones of each NL59 Line, excluding connectors, in the installed orientation's order. */
 export function pairLines(panelLayout: unknown): number[][] {
-  const zones = [...reportedPoints(panelLayout).values()].filter(point => isObject(point) && point.shapeType === LINE_ZONE).map(reported);
+  // Every entry is read in order, as Python's list filter did; the maps below only look zones up.
+  const points = positionData(panelLayout).filter(point => field(point, 'shapeType') === LINE_ZONE);
+  const zones = points.map(reported);
   const global = isObject(panelLayout) ? panelLayout.globalOrientation : undefined;
   const orientation = isObject(global) ? global.value : undefined;
   if (zones.length === 0 || zones.length % 2 !== 0) throw new ValueError('Expected two light zones per Line.');
   const nearest = new Map<number, number>();
   const byId = new Map(zones.map(zone => [zone.panelId, zone]));
-  for (const a of zones) {
+  zones.forEach((a, i) => {
     let best: [number, number] | null = null;
     const angle = radians(a.o);
-    for (const other of zones) {
-      if (sameValue(a, other) || pyMod(a.o - other.o, 180) !== 0) continue;
+    zones.forEach((other, j) => {
+      // Python compared the whole reported entries, so two identical entries are one zone to itself.
+      if (sameValue(points[i], points[j]) || pyMod(a.o - other.o, 180) !== 0) return;
       const dx = other.x - a.x;
       const dy = other.y - a.y;
       // Orientation zero follows the y axis in the controller's layout.
-      if (Math.abs(dx * Math.cos(angle) + dy * Math.sin(angle)) >= 3) continue;
+      if (Math.abs(dx * Math.cos(angle) + dy * Math.sin(angle)) >= 3) return;
       const candidate: [number, number] = [pyHypot(dx, dy), other.panelId];
       if (best === null || candidate[0] < best[0] || (candidate[0] === best[0] && candidate[1] < best[1])) best = candidate;
-    }
+    });
     if (best === null) throw new ValueError('Could not pair a Line zone.');
     nearest.set(a.panelId, best[1]);
-  }
+  });
   const pairs = new Map<string, [number, number]>();
   for (const [first, second] of nearest) {
     if (nearest.get(second) !== first) throw new ValueError('Line zone pairing is ambiguous.');
@@ -116,9 +128,14 @@ export async function loadConfig(directory: string, device: string = DEFAULT, re
       layout = readLayout(panelLayout);
     } else {
       const groups = layout !== null ? layout.elements.map(element => element.zones) : pairLines(panelLayout);
-      const points = reportedPoints(panelLayout);
-      const at = (id: number): Reported => reported(points.get(id));
-      const positions = groups.map(pair => [pySum(pair.map(id => at(id).x)) / 2, pySum(pair.map(id => at(id).y)) / 2]);
+      // Python looked positions up in a dict of every entry by panel ID, the last entry winning, and read only x and y.
+      const points = new Map<unknown, unknown>();
+      for (const point of positionData(panelLayout)) points.set(field(point, 'panelId'), point);
+      const at = (id: number, axis: 'x' | 'y'): number => {
+        if (!points.has(id)) throw new ValueError('A Line zone has no reported position.');
+        return numberField(points.get(id), axis);
+      };
+      const positions = groups.map(pair => [pySum(pair.map(id => at(id, 'x'))) / 2, pySum(pair.map(id => at(id, 'y'))) / 2]);
       layout = linesEntry(groups, positions, layout);
     }
     saveDeviceLayout(layoutFile, device, layout, writeJson);

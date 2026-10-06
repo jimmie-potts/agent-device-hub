@@ -61,7 +61,11 @@ export function palette(db: Db): Record<Role, string> {
   return result;
 }
 
-const hexRgb = (color: string): Rgb => [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+/** #RRGGBB as red, green and blue; anything else is a ValueError, as Python's int(..., 16) raised for most malformed text. */
+function hexRgb(color: string): Rgb {
+  if (!HEX.test(color)) throw new ValueError(`Invalid color ${JSON.stringify(color)}.`);
+  return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+}
 
 export function paletteRgb(value: Readonly<Record<Role, string>>): Record<Role, Rgb> {
   return {base: hexRgb(value.base), working: hexRgb(value.working), question: hexRgb(value.question), blocked: hexRgb(value.blocked),
