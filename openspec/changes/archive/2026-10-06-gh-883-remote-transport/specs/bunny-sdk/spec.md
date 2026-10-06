@@ -1,38 +1,4 @@
-# bunny-sdk Specification
-
-## Purpose
-Define the SDK's in-process bus under ADR 0012: publish and subscribe by routing key, request and respond with expiry and the shared error body, per-subscriber delivery with an overflow signal, participant close, injected clocks and schedulers, sync of a consumer's copy from its owner, W3C trace propagation, and an SSE/HTTP remote transport that carries the same calls to remote parts. It also holds the module API that the runtime implements. It is a source library that the runtime builds on, and it claims no running runtime, installed edge or device behavior.
-
-## Requirements
-
-### Requirement: Publish and subscribe by routing key
-
-The SDK SHALL give each participant `publish` and `subscribe` on routing keys `bunny.<state|event|cmd>.<family>.<id>`. Each token SHALL be lowercase letters and digits, with single hyphens inside it. A subscription pattern SHALL be a key in which `*` stands for any one of the last three tokens. Each message kind SHALL use its own key class:
-- state and removal messages use `bunny.state` keys;
-- occurrence and outcome messages use `bunny.event` keys;
-- commands use `bunny.cmd` keys, through request and respond only.
-
-The SDK SHALL build each envelope with the participant's `source`, a new `id`, the current `time` and the fixed profile attributes. It SHALL pass the message to subscribers as the same plain object, without copying, serializing or validating it. A malformed key, pattern or kind SHALL be refused with an `SdkError` that carries the shared error body with code `invalid-request`; `connect` SHALL throw that error at once for a malformed source.
-
-#### Scenario: Patterns select messages
-- **WHEN** subscriptions exist on `bunny.state.session.*`, `bunny.*.session.s1`, `bunny.*.*.*` and `bunny.state.mode.wall`, and state, occurrence and removal messages for sessions s1 and s2 are published
-- **THEN** each subscription receives exactly the messages whose keys match its pattern, in publish order, and the mode subscription receives none
-
-#### Scenario: A published message follows profile 2.0
-- **WHEN** a participant publishes a message
-- **THEN** the returned message validates against profile 2.0 with the participant's source, and subscribers receive that same object
-
-#### Scenario: A kind on the wrong key class
-- **WHEN** a state or removal message is published on a `bunny.event` key, an occurrence or outcome on a `bunny.state` key or any message, an outcome included, on a `bunny.cmd` key, a subscription names `bunny.cmd`, or a responder names another class
-- **THEN** the call is refused with `invalid-request`
-
-#### Scenario: Malformed keys, patterns and sources
-- **WHEN** a key has the wrong number of tokens, prefix, class, case or characters, a pattern uses a wildcard that is not a whole `*` token, or a source does not follow the profile
-- **THEN** the call is refused with `invalid-request`
-
-#### Scenario: A closed subscription
-- **WHEN** a subscription is closed
-- **THEN** it receives no later message
+## MODIFIED Requirements
 
 ### Requirement: Request and respond with expiry
 
@@ -82,74 +48,6 @@ At the deadline, the SDK SHALL take a command that is still waiting in the respo
 #### Scenario: One owner per key
 - **WHEN** a second responder registers a pattern that overlaps the first responder's
 - **THEN** it is refused with `invalid-state`, and it can register after the first responder closes
-
-### Requirement: Per-subscriber delivery
-
-Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. Each queue SHALL hold at most `maxQueued` waiting messages, 1024 by default; a `maxQueued` that is not a positive integer SHALL throw `RangeError`. When a subscription's queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. When a responder's queue is full, the requester SHALL get a `rejected` result with `capacity` instead. A subscription MAY pass `onOverflow`: after its full queue dropped one or more messages, the SDK SHALL call `onOverflow` with the number dropped since it was last told, and with no count when a remote connection was lost and restored, in the subscription's order and before the next message is delivered, and `onError` SHALL still receive each `capacity` report. The notice says that messages were dropped, not where: messages queued before the drop MAY be delivered after it. An `onOverflow` that throws SHALL be reported to `onError`, and delivery SHALL go on. A handler that throws SHALL be reported to `onError` and SHALL keep receiving. Without an `onError`, each report SHALL become a `BunnySdkWarning` process warning whose message names the source and pattern, with the original error as its `cause`. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes. Called from that handler's own async flow while it runs, it SHALL resolve without waiting for it. Called from any other flow, including another subscription's handler or a continuation that a finished delivery of the same subscription left behind, it SHALL wait for the running handler. Close detection thus follows the handler's async flow: a callback that an emitter created elsewhere invokes is not in that flow, and two handlers that await each other's close deadlock.
-
-#### Scenario: A slow subscriber delays only itself
-- **WHEN** one subscriber's handler stays blocked on its first message while five messages are published
-- **THEN** publishing resolves without waiting, another subscriber receives all five, a request is still answered, and the slow subscriber receives the rest in order once released
-
-#### Scenario: A slow responder delays only its own commands
-- **WHEN** a responder's handler is blocked
-- **THEN** subscribers still receive published messages, and the pending request resolves once the handler answers
-
-#### Scenario: A full queue
-- **WHEN** a blocked subscriber's queue already holds `maxQueued` waiting messages and more are published
-- **THEN** those messages are dropped for that subscriber only, `onError` receives `capacity` for each one with the subscriber's source and pattern, and other subscribers receive every message
-
-#### Scenario: A queue limit that is not a positive integer
-- **WHEN** a bus is created with a `maxQueued` of zero, a negative, fractional or non-finite number, or a number above the safe-integer range
-- **THEN** the constructor throws `RangeError`
-
-#### Scenario: A handler that throws
-- **WHEN** a subscriber's handler throws
-- **THEN** the error is reported to `onError`, or as a `BunnySdkWarning` naming the source and pattern with the error as its `cause` when no `onError` is given, and the subscriber receives the next message
-
-#### Scenario: Closing during a delivery
-- **WHEN** a subscription closes while its handler is running and another message waits
-- **THEN** the close resolves after the running handler finishes, and the waiting message is never delivered
-
-#### Scenario: Closing from inside the handler
-- **WHEN** a subscriber's handler, or a responder, closes its own subscription and waits for the close
-- **THEN** the close resolves, the handler finishes, no later message reaches it, and the responder's reply arrives as `accepted`
-
-#### Scenario: A subscriber told about dropped messages
-- **WHEN** a stalled subscription that passed `onOverflow` has messages dropped because its queue is full, and its handler is then released
-- **THEN** `onOverflow` receives the number dropped before the next message is delivered, even one queued before the drop, `onError` has received `capacity` for each one, other subscribers received every message, and a later message arrives without another notice until the next drop
-
-#### Scenario: Closing another subscription from a handler
-- **WHEN** one subscription's handler closes a second subscription whose handler is running
-- **THEN** the close resolves only after the second subscription's handler finishes
-
-#### Scenario: A continuation left by a finished delivery
-- **WHEN** a continuation that a finished delivery started closes the same subscription while a later delivery's handler runs
-- **THEN** the close resolves only after that later handler finishes
-
-#### Scenario: A gap with no count
-- **WHEN** a remote participant's stream is lost and the client reconnects
-- **THEN** each of its subscriptions receives `onOverflow` with no `dropped` count before its next message
-
-### Requirement: Trace context on every message
-
-Every message SHALL carry a W3C version-00 `traceparent`. A message sent with a `parent` SHALL keep the parent's trace ID, flags and `tracestate` and get a new span ID. A reply SHALL continue its command's trace in the same way. Without a parent, or with a malformed or all-zero one, the message SHALL start a new trace with the sampled flag set and no `tracestate`.
-
-#### Scenario: A new trace
-- **WHEN** messages are published without a parent
-- **THEN** each one starts its own trace with flags `01`, and subscribers receive the same `traceparent`
-
-#### Scenario: A continued trace
-- **WHEN** a handler publishes with the received message as its parent
-- **THEN** the new message has the parent's trace ID, flags and `tracestate` and a different span ID
-
-#### Scenario: A command and its reply
-- **WHEN** a request is sent with a parent
-- **THEN** the command and its reply carry the parent's trace ID with different span IDs, and an uncertain result names that trace ID
-
-#### Scenario: A parent that is not adopted
-- **WHEN** a parent has an all-zero trace or span ID, another version, uppercase hex digits or no valid shape
-- **THEN** the message starts a new trace and carries no `tracestate`
 
 ### Requirement: Sync a consumer's copy from its owner
 
@@ -263,89 +161,55 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 - **WHEN** a sync names no family, a repeated or malformed family, more than 32 families or more than 256 characters of them joined, or has a bad `timeoutMs` or `maxBuffered`
 - **THEN** it is refused with `invalid-request`
 
-### Requirement: Serve sync from the owner's current state
+### Requirement: Per-subscriber delivery
 
-The SDK SHALL give each participant `serveSync(families, provider)`. One owner SHALL serve each family; a `serveSync` naming a family that another owner serves SHALL be refused with `invalid-state`, and an empty, repeated or malformed family list with `invalid-request`. An owner MAY serve any number of families; the request caps apply only to one sync request. The owner SHALL handle one sync request at a time and SHALL ignore a request at or past its expiry. A request still waiting in the owner's queue at its deadline, or withdrawn, SHALL leave the queue, so the owner never serves it; one at its deadline SHALL still be refused with `unavailable`, never `expired`, because a sync changes nothing and asking again is safe. The provider SHALL receive the request and return `{revision, states}`, one state draft per entity, or an error body. The SDK SHALL send each state as a state message from the owner, then `sync.completed` with the `requestId`, the revision and the members. It SHALL send them straight to the requester, never to subscribers, continuing the request's trace.
+Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. Each queue SHALL hold at most `maxQueued` waiting messages, 1024 by default; a `maxQueued` that is not a positive integer SHALL throw `RangeError`. When a subscription's queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. When a responder's queue is full, the requester SHALL get a `rejected` result with `capacity` instead. A subscription MAY pass `onOverflow`: after its full queue dropped one or more messages, the SDK SHALL call `onOverflow` with the number dropped since it was last told, and with no count when a remote connection was lost and restored, in the subscription's order and before the next message is delivered, and `onError` SHALL still receive each `capacity` report. The notice says that messages were dropped, not where: messages queued before the drop MAY be delivered after it. An `onOverflow` that throws SHALL be reported to `onError`, and delivery SHALL go on. A handler that throws SHALL be reported to `onError` and SHALL keep receiving. Without an `onError`, each report SHALL become a `BunnySdkWarning` process warning whose message names the source and pattern, with the original error as its `cause`. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes. Called from that handler's own async flow while it runs, it SHALL resolve without waiting for it. Called from any other flow, including another subscription's handler or a continuation that a finished delivery of the same subscription left behind, it SHALL wait for the running handler. Close detection thus follows the handler's async flow: a callback that an emitter created elsewhere invokes is not in that flow, and two handlers that await each other's close deadlock.
 
-A sync request SHALL be refused in the shared error body, naming its `requestId` and trace ID, with no `sync.completed`:
-- with the provider's error body;
-- `internal` when the provider throws, or its snapshot holds a state outside the requested families, without an entity ID or above the snapshot's revision, has a revision that is not a whole number from 0, or holds more than 4096 states; the error SHALL also go to `onError`;
-- `unavailable` when no owner serves a family, the owner closed before serving it, no answer came by the deadline, or the transport failed to send it;
-- `cancelled` when the requester's copy or participant closed before the answer came;
-- `capacity` when the owner's queue already holds `maxQueued` waiting requests;
-- `invalid-request` when the families belong to more than one owner.
+#### Scenario: A slow subscriber delays only itself
+- **WHEN** one subscriber's handler stays blocked on its first message while five messages are published
+- **THEN** publishing resolves without waiting, another subscriber receives all five, a request is still answered, and the slow subscriber receives the rest in order once released
 
-#### Scenario: A sync nobody can serve
-- **WHEN** a sync names a family that no owner serves, or the owner's provider throws or returns a snapshot that does not fit the request
-- **THEN** it resolves as `rejected` with `unavailable` or `internal`, and each provider failure is reported to `onError` with the owner's source
+#### Scenario: A slow responder delays only its own commands
+- **WHEN** a responder's handler is blocked
+- **THEN** subscribers still receive published messages, and the pending request resolves once the handler answers
 
-#### Scenario: An owner closes or is full
-- **WHEN** an owner is serving one request, a second waits, a third arrives and the owner then closes
-- **THEN** the third is refused with `capacity`, the second with `unavailable`, and the first still gets its answer
+#### Scenario: A full queue
+- **WHEN** a blocked subscriber's queue already holds `maxQueued` waiting messages and more are published
+- **THEN** those messages are dropped for that subscriber only, `onError` receives `capacity` for each one with the subscriber's source and pattern, and other subscribers receive every message
 
-#### Scenario: A deadline and an expired request
-- **WHEN** the owner is busy past one request's deadline and then answers a request whose own deadline passed while it waited
-- **THEN** each request resolves as `unavailable` at its deadline, a late answer changes nothing, and the provider never receives the expired request
+#### Scenario: A queue limit that is not a positive integer
+- **WHEN** a bus is created with a `maxQueued` of zero, a negative, fractional or non-finite number, or a number above the safe-integer range
+- **THEN** the constructor throws `RangeError`
 
-#### Scenario: A copy closed while it subscribes
-- **WHEN** a copy of three families is closed while its transport is still making the first subscription
-- **THEN** it resolves as `rejected` with `cancelled`, asks for no other family and closes the subscription it was making
+#### Scenario: A handler that throws
+- **WHEN** a subscriber's handler throws
+- **THEN** the error is reported to `onError`, or as a `BunnySdkWarning` naming the source and pattern with the error as its `cause` when no `onError` is given, and the subscriber receives the next message
 
-#### Scenario: A sync request still queued at its deadline
-- **WHEN** a sync request waits behind another in an owner's queue of one until its deadline passes
-- **THEN** it resolves as `rejected` with the retryable `unavailable`, naming its `requestId` and trace ID, the next request queues in the room it left instead of being refused with `capacity`, and the provider never receives it
+#### Scenario: Closing during a delivery
+- **WHEN** a subscription closes while its handler is running and another message waits
+- **THEN** the close resolves after the running handler finishes, and the waiting message is never delivered
 
-#### Scenario: A restart is reported
-- **WHEN** a synced copy's delivery queue drops a message and the copy syncs again
-- **THEN** `onSyncRestart` receives the copy's source and `sync <families>` once, and the first sync was not reported
+#### Scenario: Closing from inside the handler
+- **WHEN** a subscriber's handler, or a responder, closes its own subscription and waits for the close
+- **THEN** the close resolves, the handler finishes, no later message reaches it, and the responder's reply arrives as `accepted`
 
-#### Scenario: One owner per family
-- **WHEN** a second owner serves a family that one owner already serves, a sync names families of two owners, or an owner serves 38 families
-- **THEN** the first is refused with `invalid-state` and the second resolves as `rejected` with `invalid-request`, while the owner of 38 families and a sync of one owner's families succeed
+#### Scenario: A subscriber told about dropped messages
+- **WHEN** a stalled subscription that passed `onOverflow` has messages dropped because its queue is full, and its handler is then released
+- **THEN** `onOverflow` receives the number dropped before the next message is delivered, even one queued before the drop, `onError` has received `capacity` for each one, other subscribers received every message, and a later message arrives without another notice until the next drop
 
-### Requirement: Participant close
+#### Scenario: Closing another subscription from a handler
+- **WHEN** one subscription's handler closes a second subscription whose handler is running
+- **THEN** the close resolves only after the second subscription's handler finishes
 
-`connect` SHALL return a participant whose `close` closes everything that participant opened. It SHALL first refuse every later call on the participant with `invalid-state`. It SHALL then settle each of the participant's requests that is still waiting for a result: a request whose command still waits in a responder's queue SHALL have that command taken out and resolve as `rejected` with `cancelled`, and a request whose command the responder's handler has SHALL resolve as `uncertain` with `uncertain-result`. Their deadlines SHALL be cancelled. It SHALL then close each subscription, responder, sync copy and sync owner the participant opened, as their own close does; a copy SHALL withdraw its outstanding sync request and cancel its deadline, and the participant SHALL refuse any subscription a copy still asks for. It SHALL resolve when the participant's running handlers have finished, and SHALL NOT wait for another participant's handler. Closing again SHALL return the same promise.
+#### Scenario: A continuation left by a finished delivery
+- **WHEN** a continuation that a finished delivery started closes the same subscription while a later delivery's handler runs
+- **THEN** the close resolves only after that later handler finishes
 
-#### Scenario: Subscriptions and responders close
-- **WHEN** a participant with subscriptions and a responder closes
-- **THEN** no later message reaches its subscriptions, a request to its key resolves as `rejected` with `unavailable`, and another participant can then respond to that key
+#### Scenario: A gap with no count
+- **WHEN** a remote participant's stream is lost and the client reconnects
+- **THEN** each of its subscriptions receives `onOverflow` with no `dropped` count before its next message
 
-#### Scenario: Pending requests settle and leave no deadline
-- **WHEN** a participant closes with one command being handled by another participant's responder and another command waiting behind it
-- **THEN** the waiting request resolves as `rejected` with `cancelled` and its command never reaches the responder, the handled request resolves as `uncertain` with `uncertain-result`, both carry their `requestId` and trace ID, and no deadline timer remains
-
-#### Scenario: Sync copies close and their requests are withdrawn
-- **WHEN** a participant closes with a synced copy, a copy whose first sync is being served and a copy whose first sync waits in the owner's queue
-- **THEN** both first syncs resolve as `rejected` with `cancelled`, no sync deadline remains on the scheduler, the synced copy follows nothing more, and the owner never receives the waiting request
-
-#### Scenario: A participant closed while its sync subscribes
-- **WHEN** a participant closes right after it begins a sync of four families, before the sync resolves
-- **THEN** the sync resolves as `rejected` with `cancelled`, and a burst on every family queues nothing for the closed participant
-
-#### Scenario: Sync owners close
-- **WHEN** a participant that serves sync closes while one request is being served and another waits
-- **THEN** the waiting request resolves as `rejected` with `unavailable` and "the owner closed", the one being served still syncs, another participant can then serve the family, and the closed participant's `sync` and `serveSync` are refused with `invalid-state`
-
-#### Scenario: Later calls are refused
-- **WHEN** a closed participant publishes, subscribes, requests or responds
-- **THEN** each call is refused with `invalid-state`, and closing it again resolves
-
-#### Scenario: The close waits only for the participant's own handlers
-- **WHEN** a participant closes while its own handler awaits a request to another participant whose responder is blocked
-- **THEN** that request resolves as `uncertain`, the handler finishes, and the close resolves while the other responder is still blocked; a participant whose own handler is blocked on something else closes only after that handler finishes
-
-#### Scenario: A handler closes its own participant
-- **WHEN** a participant's handler closes that participant and waits for the close
-- **THEN** the close resolves, the handler finishes, and no later message reaches it
-
-### Requirement: Injected clock and scheduler
-
-The bus SHALL take its clock from `now` and run request and sync deadlines through an injected `scheduler`, whose `after(delayMs, callback)` returns a function that cancels the callback. Without them it SHALL use `Date.now()` and the global `setTimeout`. A reply, a refusal or a participant's close SHALL cancel the request's deadline on that scheduler.
-
-#### Scenario: Deadlines follow the injected scheduler
-- **WHEN** a bus has an injected clock and scheduler and a request with a 1000 ms timeout is sent
-- **THEN** its `expiresat` is 1000 ms after the injected clock's time, its deadline waits on the injected scheduler, the request resolves as `uncertain` only when that scheduler reaches the deadline, and a later request's reply leaves no deadline on it
+## ADDED Requirements
 
 ### Requirement: Publish a prepared message
 

@@ -2,11 +2,12 @@
 
 Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. parts
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
-It holds the in-process bus (`publish`, `subscribe`, `request`, `respond`,
-`sync` and its owner side, `serveSync`) and the [module API](#modules) that the
-runtime (`apps/runtime`) hosts. A later story adds the SSE/HTTP remote transport
-(#883) without changing these calls, so a module never sees which transport
-carries its messages.
+It offers `publish`, `publishMessage`, `subscribe`, `request`, `respond`, `sync`
+and its owner side, `serveSync`, over two transports: the in-process bus, and an
+SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime.
+Both carry the same calls, so a module or remote part never sees which transport
+carries its messages. It also holds the [module API](#modules) that the runtime
+(`apps/runtime`) hosts.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -74,6 +75,7 @@ The `Sdk` calls:
 | Call | What it does |
 | --- | --- |
 | `publish(key, draft, {parent?})` | Queues a state, removal, occurrence or outcome message for every matching subscriber and resolves with the message. It never waits for a handler. |
+| `publishMessage(key, message)` | Publishes a message built earlier, unchanged: its `id`, `time` and trace stay. An outbox resends a stored message this way. A message from another source is refused with `forbidden`, and one that is not published with `invalid-request`. |
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}` or an error body from `errorBody`. |
@@ -122,7 +124,7 @@ straight back to the requester, never to subscribers.
 - The command's `type` must end in `.requested`; `request` refuses any other
   with `invalid-request`. The reply's type ends in `.replied` instead.
 - The command's `expiresat` is `timeoutMs` after its `time`. `timeoutMs` is an
-  integer from 1 to 2147483647.
+  integer from 1 to `MAX_TIMEOUT_MS`, 86400000 (one day), on every transport.
 - One responder owns each command key. A `respond` whose pattern overlaps
   another responder's is refused with `invalid-state`.
 - A responder handles one command at a time. A command whose expiry passes
@@ -162,12 +164,12 @@ the requester gets a `rejected` result with `capacity` instead.
 
 A subscriber that passes `onOverflow` to `subscribe` is also told about the gap.
 `onOverflow({dropped})` runs in the subscription's order, before the next message
-is delivered, with the number of messages dropped since it was last told. It
-says that messages were lost, not where: messages still waiting from before the
-drop may follow it. A
-subscriber that keeps a copy of state should sync again instead of continuing
-with a gap; `sync` does this itself. An `onOverflow` that throws is reported to
-`onError`, and delivery goes on.
+is delivered, with the number of messages dropped since it was last told. After
+a remote reconnect the count is unknown, and `dropped` is absent. The notice says
+that messages were lost, not where: messages still waiting from before the drop
+may follow it. A subscriber that keeps a copy of state should sync again instead
+of continuing with a gap; `sync` does this itself. An `onOverflow` that throws is
+reported to `onError`, and delivery goes on.
 
 Messages are shared, not copied. Treat a received message as read-only, and do
 not change a message or its `data` after publishing it.
@@ -345,8 +347,106 @@ new span ID. A reply continues its command's trace the same way. Without a
 parent, or with a malformed or all-zero one, the message starts a new trace with
 the sampled flag set.
 
+## Remote transport
+
+Remote parts, such as the CHOMPI bridge, the Wispr collector, agent hooks, the
+dashboard and MCP clients, make the same calls over SSE and HTTP (#883). The
+runtime mounts a `RemoteEdge` on its bus, and a remote part connects with
+`connectRemote`:
+
+```ts
+import {createServer} from 'node:http';
+import {InProcessBus, RemoteEdge, connectRemote} from '@jimmie-potts/sdk';
+
+const bus = new InProcessBus();
+const edge = new RemoteEdge({bus, validator, grants: [{source: 'bunny/bridge', token}], log: record => logger.info(record)});
+createServer(edge.handle).listen(port, '127.0.0.1');
+
+const bridge = await connectRemote({url: `http://127.0.0.1:${port}`, source: 'bunny/bridge', token});
+await bridge.subscribe('bunny.state.session.*', message => show(message.data));
+```
+
+The edge serves `GET /api/sdk/v1/stream`, one `text/event-stream` per
+connection, and one `POST /api/sdk/v1/<call>` per call. Every frame carries
+`schema: "sdk-remote/1.0"`, and every refusal is the shared error body, with the
+HTTP status that fits its code.
+
+- **Credentials.** Each source has a bearer token. The edge compares tokens in
+  constant time, and refuses at start a grant with a malformed source or a token
+  that two grants share. A call without a granted token is refused with
+  `unauthenticated`, and a message or connection of another source with
+  `forbidden`. Tokens appear only in the `authorization` header, never in a
+  message, log record or error body.
+- **Validation.** The client builds every message, so it keeps its own `id` and
+  `time`. The edge checks each one against profile 2.0, its registered payload
+  schema and the 256 KiB cap before it reaches the bus. A refused message gets
+  `invalid-message`, `too-large`, `unknown-schema` or `unsupported-version`. A
+  command or sync request already past its expiry gets `expired`, and a sync
+  request whose subject is not its families joined by commas gets
+  `invalid-message`. A call body over its limit is refused with `too-large`
+  without reading the rest.
+- **Remote refusals.** A remote responder's or owner's refusal is rebuilt at the
+  edge as the shared error body: its registered code, and at most 1024
+  characters of detail. Anything else it carried is dropped.
+- **Subscriptions.** `subscribe` resolves once the edge has registered the
+  subscription, so nothing published after it is missed. Messages come down the
+  stream in order.
+- **A slow consumer.** The edge waits for the socket to drain before it writes
+  the next message of a subscription. A remote part that stops reading fills
+  only its own subscriptions' bounded bus queues. Their drops go to `onError` as
+  `capacity`, and the remote part receives `onOverflow` with the count.
+- **Reconnects.** When the stream is lost, the client reconnects. It queues
+  `onOverflow({})`, with no count, for every subscription before any message of
+  the new stream. It registers its subscriptions, responders and sync owners
+  again, and only then delivers those notices, so a sync copy that syncs again
+  never asks before its subscriptions exist. Nothing missed in the gap is
+  replayed. A call that needs the stream and meets a lost one is refused with
+  the retryable `unavailable`.
+- **A dropped stream and forwarded calls.** A command already written to a
+  remote responder's stream is never answered as a refusal: its handler may be
+  running it. Its reply still counts when it comes on the reconnected stream,
+  matched by the command's own message id, so a retry that reuses a `requestId`
+  keeps its own reply. Otherwise its deadline, or the edge closing, makes it
+  `uncertain` with `uncertain-result`, and no reply message. A command whose
+  frame never reached the socket is refused as `unavailable`, and so is a
+  forwarded sync request, since a sync only reads.
+- **Sync answers.** A sync answer whose `sync.completed` or a state is over
+  256 KiB is refused at the edge with `too-large` and logged. A first sync
+  resolves `rejected` with that code, and a later one ends the copy with
+  `failed`. Paging is #782.
+
+The deadline answers are the same on both transports, as ADR 0012 states:
+
+| Case | Answer |
+| --- | --- |
+| A command its handler holds at the deadline | `uncertain-result` |
+| A command still queued at the deadline | `expired`: it never reached the handler |
+| A sync request with no answer by the deadline | `unavailable`, since a sync only reads |
+| A command or sync request that reaches the edge past its expiry | `expired`; through the client, a remote part's own sync request gets the retryable `unavailable` instead |
+
+Remotely, the edge answers as soon as its bus settles, at the deadline. The
+requester waits `REQUESTER_GRACE_MS` (1 s) longer on its own scheduler. If the
+edge cannot be heard by then, the requester settles a command as
+`uncertain-result`, because its fate is unknown, and a sync as `unavailable`. An
+edge `expired` refusal of a remote part's own sync request, as when its clock is
+behind the edge's, reaches it as the retryable `unavailable`. Every `timeoutMs`
+is at most `MAX_TIMEOUT_MS`, one day, on both transports, so no timer outgrows
+`setTimeout`. Both sides run their waits on a `scheduler` option, which defaults
+to `setTimeout`.
+
+A remote participant is a `Participant`, and closing it again returns the same
+promise. Its `close` first settles each request still waiting for the edge as
+`uncertain-result`, because the requester cannot know whether a handler already
+has it. It drops their calls, so the edge takes a still-queued command out, and
+cancels their deadlines and the reconnect backoff. It then closes its sync
+copies: a first sync still under way resolves `cancelled`, and its request is
+withdrawn from the owner's queue. Last it ends the stream, and every later call
+is refused with `invalid-state`.
+
 ## Checks
 
 From the repository root, with Node 24, run `npm run test:sdk`. It builds and
-runs the compiled tests in `dist/tests/`. See
+runs the compiled tests in `dist/tests/`. `conformance.test.ts` runs one suite
+against both transports, and `remote.test.ts` covers what only the remote
+transport has. Remote tests bind 127.0.0.1 on a free port. See
 [SDK checks](../../docs/development.md#sdk-checks).

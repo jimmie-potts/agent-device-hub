@@ -4,7 +4,7 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   InProcessBus, MODULE_API_VERSION, SdkError, childOf, type BunnyModule, type Cancel, type Clock, type CommandDraft, type Draft,
   type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
@@ -195,6 +195,7 @@ export class ModuleHost {
     const sdk: Sdk = {
       source: participant.source,
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
+      publishMessage: <T extends object>(key: string, message: Message<T>) => participant.publishMessage(key, message),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
         participant.subscribe<T>(pattern, message => inFlow(() => handler(message)), options === undefined ? undefined : {
           ...(options.onOverflow === undefined ? {} : {onOverflow: overflow => inFlow(() => options.onOverflow?.(overflow))}),

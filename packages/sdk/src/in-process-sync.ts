@@ -91,6 +91,15 @@ export class SyncOwners {
     const subject = families.join(',');
     const data = {requestId, families: [...families]};
     const request = envelope(source, 'sync-request', {type: 'org.bunny.sync.requested', subject, dataschema: SYNC_REQUEST, data}, trace, {sentAtMs, expiresAtMs});
+    return this.dispatch(request, expiresAtMs, timeoutMs, signal);
+  }
+
+  /**
+   * Hands a sync request to the one owner of its families, and settles at its answer or after `waitMs`. When `signal`
+   * aborts, the request is withdrawn as `request` describes.
+   */
+  dispatch(request: Message<SyncRequest>, expiresAtMs: number, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
+    const {families} = request.data;
     const owners = families.map(family => [...this.#owners].find(owner => owner.families.has(family)));
     const missing = families.find((_, index) => owners[index] === undefined);
     if (missing !== undefined) return Promise.resolve(refusal(request, 'unavailable', `no owner serves ${missing}`));
@@ -118,7 +127,9 @@ export class SyncOwners {
       signal.addEventListener('abort', withdraw);
       // At the deadline the requester stops waiting. A sync changes nothing, so it is unavailable, never expired, and
       // asking again is safe.
-      cancel = this.#dependencies.scheduler.after(timeoutMs, () => {
+      // The refusal names the request's own deadline, which a remote requester chose, not what was left of it here.
+      const timeoutMs = Math.round(expiresAtMs - Date.parse(request.time));
+      cancel = this.#dependencies.scheduler.after(waitMs, () => {
         owner.queue.remove(delivery);
         settle(refusal(request, 'unavailable', `no sync answer within ${timeoutMs} ms`));
       });

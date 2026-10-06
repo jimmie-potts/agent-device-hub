@@ -699,8 +699,9 @@ The mapping test imports the built `@jimmie-potts/agent-state` and
 
 ## SDK checks
 
-`packages/sdk` holds the SDK's in-process bus (publish, subscribe, request,
-respond and sync) from [ADR 0012](decisions/0012-bunny-event-platform.md). Its
+`packages/sdk` holds the SDK from [ADR 0012](decisions/0012-bunny-event-platform.md):
+publish, subscribe, request, respond and sync, on the in-process bus and over
+the SSE/HTTP remote transport. Its
 [README](../packages/sdk/README.md) documents the API. The package follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 
@@ -709,8 +710,10 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `test:sdk:built`: the compiled tests in `packages/sdk/dist/tests/`. The core CI
 job runs `npm run test:sdk:built` after its fresh build. The tests check every
 message they see against profile 2.0 with the event contracts' validator, and a
-test fails if one is invalid; the bus itself does not validate. They need no
-runtime, device or network.
+test fails if one is invalid; the bus itself does not validate. One conformance
+suite runs against both transports. The remote tests start an edge on
+127.0.0.1 at a free port with run-generated tokens; they need no runtime,
+device or other network.
 
 ## Runtime checks
 

@@ -280,10 +280,10 @@ function publisher(owner) {
     },
     sync(requestId) {
       const asOfMs = current().asOfMs;
-      return [{...message('sync-request', 'sync-request', 'org.bunny.sync.requested', 'core', {requestId, families: ['session']}, asOfMs),
+      return [{...message('sync-request', 'sync-request', 'org.bunny.sync.requested', 'session', {requestId, families: ['session']}, asOfMs),
         expiresat: new Date(asOfMs + 5000).toISOString()},
       ...[...published.values()].map(data => state(data, asOfMs)),
-      message('sync-completed', 'sync-completed', 'org.bunny.sync.completed', 'core',
+      message('sync-completed', 'sync-completed', 'org.bunny.sync.completed', 'session',
         {requestId, revision, members: [...published.keys()].map(id => ({family: 'session', id}))}, asOfMs)];
     },
     published,

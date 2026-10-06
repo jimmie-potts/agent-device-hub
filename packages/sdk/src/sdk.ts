@@ -3,6 +3,12 @@
 import type {ErrorBody, ErrorDetail, Message} from '@jimmie-potts/event-contracts/v2';
 import type {SyncHandler, SyncOptions, SyncProvider, SyncResult} from './sync.js';
 
+/**
+ * The longest deadline a request or sync may have, one day, on every transport. A remote requester waits a little past
+ * it, and no timer may outgrow setTimeout's limit of about 24.8 days.
+ */
+export const MAX_TIMEOUT_MS = 86_400_000;
+
 /** W3C trace context. A received message is a valid parent, because it carries both fields. */
 export type TraceContext = {traceparent: string; tracestate?: string};
 
@@ -44,13 +50,16 @@ export type RequestResult =
   | {status: 'uncertain'; requestId: string; error: ErrorBody};
 
 export type Handler<T> = (message: Message<T>) => void | Promise<void>;
+/** How many messages a gap lost, when that is known. After a remote reconnect it is not, and `dropped` is absent. */
+export type Overflow = {dropped?: number};
 export type SubscribeOptions = {
   /**
-   * Told that the subscription's full queue dropped messages, with how many since it was last told. It runs in the
-   * subscription's order, before the next message is delivered, and says that messages were lost, not where. A
-   * subscriber that keeps a copy should sync again instead of continuing with a gap.
+   * Told that the subscription lost messages: its full queue dropped them, with how many since it was last told, or a
+   * remote connection was lost and restored, with no count. It runs in the subscription's order, before the next
+   * message is delivered, and says that messages were lost, not where. A subscriber that keeps a copy should sync
+   * again instead of continuing with a gap.
    */
-  onOverflow?: (overflow: {dropped: number}) => void | Promise<void>;
+  onOverflow?: (overflow: Overflow) => void | Promise<void>;
 };
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 
@@ -83,6 +92,11 @@ export interface Sdk {
   readonly source: string;
   /** Sends a state, removal, occurrence or outcome message to every matching subscriber, without waiting for them. */
   publish<T extends object>(key: string, draft: Draft<T>, options?: SendOptions): Promise<Message<T>>;
+  /**
+   * Publishes a message prepared earlier, unchanged: its `id`, `time` and trace stay as they are. An outbox resends a
+   * stored message this way, and a remote edge injects a remote part's message. Its `source` must be the participant's.
+   */
+  publishMessage<T extends object>(key: string, message: Message<T>): Promise<Message<T>>;
   /** Receives messages whose routing keys match `pattern`, one at a time and in order, from this subscription's queue. */
   subscribe<T extends object = Record<string, unknown>>(pattern: string, handler: Handler<T>, options?: SubscribeOptions): Promise<Subscription>;
   /** Sends one command to the responder that owns `key` and waits for its reply until the deadline. Never retries. */

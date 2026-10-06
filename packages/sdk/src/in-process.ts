@@ -4,13 +4,13 @@ import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
-import {overlaps, parseKey, parsePattern, type Category, type Pattern} from './routing.js';
+import {overlaps, parseKey, parsePattern, type Category, type Pattern, type RoutingKey} from './routing.js';
 import {
-  SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
+  MAX_TIMEOUT_MS, SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
   type TraceContext,
 } from './sdk.js';
-import {startSync, type SyncHandler, type SyncOptions, type SyncProvider} from './sync.js';
+import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 /** Which participant and subscription a reported error belongs to. */
@@ -35,8 +35,6 @@ export type BusOptions = {
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const REPLY_SCHEMA = 'https://bunny.invalid/events/reply/2.0';
-// setTimeout's longest delay; a longer one would fire at once.
-const MAX_TIMEOUT_MS = 2_147_483_647;
 /** The shared error body, with `detail` cut to the length the error block allows, since it may quote a caller's key. */
 const body = (code: ErrorCode, detail: string, ids: {requestId?: string; traceId?: string} = {}): ErrorBody =>
   errorBody(code, {...ids, detail: detail.slice(0, MAX_DETAIL)});
@@ -57,6 +55,33 @@ function categoryOf(kind: PublishedKind): Category {
       return 'event';
   }
 }
+
+/**
+ * What a forwarding responder, such as a remote edge's, may return in place of a reply. `unanswered`: its handler had
+ * the command and gave no reply, so the request is `uncertain`, never a refusal. `undelivered`: the command never
+ * reached a handler, so it is refused as `unavailable`, with no reply message. Internal to the SDK; not exported.
+ */
+export const unanswered: unique symbol = Symbol('unanswered');
+export const undelivered: unique symbol = Symbol('undelivered');
+
+/** Whether a message of this kind travels through publish. */
+function isPublished(kind: MessageKind): kind is PublishedKind {
+  switch (kind) {
+    case 'state':
+    case 'removal':
+    case 'occurrence':
+    case 'outcome':
+      return true;
+    case 'command':
+    case 'reply':
+    case 'sync-request':
+    case 'sync-completed':
+      return false;
+  }
+}
+
+const foreign = (source: string, message: Message<unknown>): SdkError =>
+  new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
 
 const isReply = (value: unknown): value is Reply => typeof value === 'object' && value !== null
   && (('status' in value && value.status === 'accepted') || ('error' in value && typeof value.error === 'object' && value.error !== null));
@@ -127,6 +152,7 @@ export class InProcessBus {
       source,
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
         open(() => this.#publish(source, key, draft, options)),
+      publishMessage: <T extends object>(key: string, message: Message<T>) => open(() => this.#publishMessage(source, key, message)),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
         open(() => this.#subscribe(member, pattern, handler, options)),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) =>
@@ -178,19 +204,71 @@ export class InProcessBus {
     await Promise.all([...member.opened].map(subscription => subscription.close()));
   }
 
-  #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
+  /**
+   * Sends a command that a remote part prepared, unchanged, from `source`, and waits `waitMs` for its result. For a
+   * remote edge, which has validated the command, and which aborts `signal` when the remote part stops waiting: a
+   * command still queued is then taken out, so it never runs.
+   */
+  requestMessage(source: string, key: string, command: Command<object>, waitMs: number, signal?: AbortSignal): Promise<RequestResult> {
+    return attempt(() => {
+      const route = parseKey(key);
+      if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
+      if (command.source !== source) throw foreign(source, command);
+      if (command.kind !== 'command' || !command.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
+      const {requestId} = command.data as {requestId?: unknown};
+      if (typeof requestId !== 'string' || !ID.test(requestId)) throw invalid('requestId is not an identifier');
+      const expiresAtMs = Date.parse(command.expiresat ?? '');
+      if (Number.isNaN(expiresAtMs)) throw invalid('a command carries expiresat');
+      if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
+      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs, signal);
+    });
+  }
+
+  /**
+   * Sends a sync request that a remote part prepared, unchanged, and waits `waitMs` for its answer. For a remote edge,
+   * which aborts `signal` when the remote part stops waiting, so the request is withdrawn.
+   */
+  syncMessage(source: string, request: Message<SyncRequest>, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
+    return attempt(() => {
+      if (request.source !== source) throw foreign(source, request);
+      if (request.kind !== 'sync-request') throw invalid('a sync request has kind sync-request');
+      const expiresAtMs = Date.parse(request.expiresat ?? '');
+      if (Number.isNaN(expiresAtMs)) throw invalid('a sync request carries expiresat');
+      if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
+      return this.#sync.dispatch(request, expiresAtMs, waitMs, signal);
+    });
+  }
+
+  #route(key: string, kind: PublishedKind): RoutingKey {
     const route = parseKey(key);
     if (route === undefined) throw invalid(`routing key ${key}`);
     if (route.category === 'cmd') throw invalid('commands are sent with request');
-    if (categoryOf(draft.kind) !== route.category) throw invalid(`a ${String(draft.kind)} message cannot use a bunny.${route.category} key`);
+    if (categoryOf(kind) !== route.category) throw invalid(`a ${String(kind)} message cannot use a bunny.${route.category} key`);
+    return route;
+  }
+
+  #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
+    const route = this.#route(key, draft.kind);
     const message = this.#envelope(source, draft.kind, draft, childOf(options.parent));
+    this.#deliver(key, route, message);
+    return message;
+  }
+
+  /** A prepared message goes out as it is; only its own source may send it. */
+  #publishMessage<T extends object>(source: string, key: string, message: Message<T>): Message<T> {
+    if (message.source !== source) throw foreign(source, message);
+    if (!isPublished(message.kind)) throw invalid(`a ${message.kind} message is not published`);
+    this.#deliver(key, this.#route(key, message.kind), message);
+    return message;
+  }
+
+  #deliver(key: string, route: RoutingKey, message: Message<unknown>): void {
     for (const subscriber of this.#subscribers) {
       if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
         subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
-    return message;
   }
 
   #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
@@ -233,7 +311,20 @@ export class InProcessBus {
     const sentAtMs = this.#now(), expiresAtMs = sentAtMs + timeoutMs;
     const data = {...draft.data, requestId};
     const command = this.#envelope(member.source, 'command', {...draft, data}, childOf(options.parent), {sentAtMs, expiresAtMs});
+    return this.#dispatch(member, key, route, command, expiresAtMs, timeoutMs);
+  }
+
+  /**
+   * Hands a command to the responder that owns `route`, and settles at its reply or after `waitMs`. A participant's
+   * own requests settle when it closes; a remote edge's have no participant and settle by their wait.
+   */
+  #dispatch(
+    member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number, signal?: AbortSignal,
+  ): Promise<RequestResult> {
+    const {requestId} = command.data;
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+    // Refusals name the command's own deadline, which the remote requester chose, not what was left of it here.
+    const timeoutMs = Math.round(expiresAtMs - Date.parse(command.time));
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
       return Promise.resolve({status: 'rejected', requestId, error: body('unavailable', `no responder for ${key}`, ids)});
@@ -245,7 +336,8 @@ export class InProcessBus {
         if (settled) return;
         settled = true;
         cancel();
-        member.requests.delete(abandon);
+        member?.requests.delete(abandon);
+        signal?.removeEventListener('abort', abandon);
         resolve(result);
       };
       const delivery: Delivery = {command, expiresAtMs, settle};
@@ -256,11 +348,17 @@ export class InProcessBus {
         end({status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)},
           {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)});
       };
-      member.requests.add(abandon);
-      cancel = this.#scheduler.after(timeoutMs, () => {
+      member?.requests.add(abandon);
+      signal?.addEventListener('abort', abandon);
+      cancel = this.#scheduler.after(waitMs, () => {
         end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${timeoutMs} ms`, ids)},
           {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
       });
+      // A requester that stopped waiting before the command was queued: it never runs.
+      if (signal?.aborted === true) {
+        settle({status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)});
+        return;
+      }
       if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
       }
@@ -288,8 +386,19 @@ export class InProcessBus {
       }
       let answer: Reply;
       try {
-        answer = await responder(command as Command<T>);
-        if (!isReply(answer)) throw new TypeError('a responder returned something other than a reply');
+        const given: unknown = await responder(command as Command<T>);
+        const {requestId} = command.data;
+        const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+        if (given === unanswered) {
+          settle({status: 'uncertain', requestId, error: body('uncertain-result', 'the responder gave no reply', ids)});
+          return;
+        }
+        if (given === undelivered) {
+          settle({status: 'rejected', requestId, error: body('unavailable', 'the command never reached the responder', ids)});
+          return;
+        }
+        if (!isReply(given)) throw new TypeError('a responder returned something other than a reply');
+        answer = given;
       } catch (error) {
         this.#report(error, scope);
         answer = body('internal', 'the responder failed');
