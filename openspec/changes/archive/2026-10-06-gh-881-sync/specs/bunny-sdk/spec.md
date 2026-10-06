@@ -2,7 +2,7 @@
 
 ### Requirement: Per-subscriber delivery
 
-Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. Each queue SHALL hold at most `maxQueued` waiting messages, 1024 by default; a `maxQueued` that is not a positive integer SHALL throw `RangeError`. When a subscription's queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. When a responder's queue is full, the requester SHALL get a `rejected` result with `capacity` instead. A subscription MAY pass `onOverflow`: after its full queue dropped one or more messages, the SDK SHALL call `onOverflow` with the number dropped since it was last told, in the subscription's order and before the next message is delivered, and `onError` SHALL still receive each `capacity` report. An `onOverflow` that throws SHALL be reported to `onError`, and delivery SHALL go on. A handler that throws SHALL be reported to `onError` and SHALL keep receiving. Without an `onError`, each report SHALL become a `BunnySdkWarning` process warning whose message names the source and pattern, with the original error as its `cause`. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes. Called from inside that handler, it SHALL resolve without waiting for it.
+Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. Each queue SHALL hold at most `maxQueued` waiting messages, 1024 by default; a `maxQueued` that is not a positive integer SHALL throw `RangeError`. When a subscription's queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. When a responder's queue is full, the requester SHALL get a `rejected` result with `capacity` instead. A subscription MAY pass `onOverflow`: after its full queue dropped one or more messages, the SDK SHALL call `onOverflow` with the number dropped since it was last told, in the subscription's order and before the next message is delivered, and `onError` SHALL still receive each `capacity` report. The notice says that messages were dropped, not where: messages queued before the drop MAY be delivered after it. An `onOverflow` that throws SHALL be reported to `onError`, and delivery SHALL go on. A handler that throws SHALL be reported to `onError` and SHALL keep receiving. Without an `onError`, each report SHALL become a `BunnySdkWarning` process warning whose message names the source and pattern, with the original error as its `cause`. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes. Called from inside that handler, it SHALL resolve without waiting for it.
 
 #### Scenario: A slow subscriber delays only itself
 - **WHEN** one subscriber's handler stays blocked on its first message while five messages are published
@@ -30,7 +30,7 @@ Each subscription and each responder SHALL have its own queue, which delivers on
 
 #### Scenario: A subscriber told about dropped messages
 - **WHEN** a stalled subscription that passed `onOverflow` has messages dropped because its queue is full, and its handler is then released
-- **THEN** `onOverflow` receives the number dropped before the next message is delivered, `onError` has received `capacity` for each one, other subscribers received every message, and a later message arrives without another notice until the next drop
+- **THEN** `onOverflow` receives the number dropped before the next message is delivered, even one queued before the drop, `onError` has received `capacity` for each one, other subscribers received every message, and a later message arrives without another notice until the next drop
 
 ## ADDED Requirements
 
@@ -38,11 +38,13 @@ Each subscription and each responder SHALL have its own queue, which delivers on
 
 The SDK SHALL give each participant `sync(families, handler, {timeoutMs, maxBuffered, parent})`, which keeps a copy of one owner's families. It SHALL subscribe to `bunny.state.<family>.*` for each family before it sends a sync request of kind `sync-request` with a `requestId`, the families and `expiresat` set `timeoutMs` after its `time`. An entity SHALL be a state's schema family and `data.id`, or a removal's `data.entity`, at its `data.revision`.
 
-Until the owner answers, live messages SHALL wait in a buffer of at most `maxBuffered` messages, 1024 by default. On the answer, the copy SHALL first take the owner's states. It SHALL then drop each held entity that is not a member and is at or below the sync revision, and apply each buffered message above the revision in order. Only then SHALL the handler be told about each change in that order: `updated`, `removed` and `synced`. A change applied to the copy SHALL always be told.
+Until the owner answers, live messages SHALL wait in a buffer of at most `maxBuffered` messages, 1024 by default. On the answer, the copy SHALL first take the owner's states. It SHALL then drop each held entity that is not a member and is at or below the sync revision, and apply each buffered message above the revision in order. Only then SHALL the handler be told about each change in that order: `updated`, `removed` and `synced`, so that when `synced` is told the copy has applied the snapshot and every buffered message above its revision. A change applied to the copy SHALL always be told, unless the copy was closed first.
 
-After a sync, the copy SHALL apply live messages in order. It SHALL drop a duplicate, a revision older than the one it holds, anything at or below the sync revision, and a state at or below the revision of a removal it applied. A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL send a new sync request, and the answer to the replaced request SHALL be ignored.
+After a sync, the copy SHALL apply live messages in order, with the same buffer bound while its handler catches up. It SHALL drop a duplicate, a revision older than the one it holds, anything at or below the sync revision, and a state at or below the revision of a removal it applied. A live message that names no entity of the synced families SHALL be reported to `onError` and ignored.
 
-`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead, and the copy SHALL follow nothing. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
+A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and an answer to a request sent before the latest overflow SHALL NOT be applied. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
+
+`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`; each later request of the first sync SHALL get only the time left. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. A request that the transport fails to send SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
 
 #### Scenario: Current state, then live messages
 - **WHEN** an owner holds two sessions and a consumer syncs, and the owner later updates one
@@ -88,18 +90,58 @@ After a sync, the copy SHALL apply live messages in order. It SHALL drop a dupli
 - **WHEN** an owner published occurrences and removed a session before a consumer syncs, and publishes another occurrence during the sync
 - **THEN** the handler hears only the current state and `synced`
 
+#### Scenario: A stalled handler
+- **WHEN** a copy's handler stalls while 49 more messages arrive than its buffer of 3 holds
+- **THEN** the owner receives no more than one further sync request, and once the handler returns it hears the resync rather than each buffered message
+
+#### Scenario: A second consumer while another copy overflows
+- **WHEN** one copy's buffer overflows again and again while the owner serves its request, and a second consumer then syncs
+- **THEN** the second consumer is served next, and the first copy replaces its request once
+
+#### Scenario: A copy's own requests and the owner's queue
+- **WHEN** the owner's queue holds one waiting request and a copy overflows several times while its request is served
+- **THEN** the copy completes its sync, never refused with `capacity` by its own requests
+
+#### Scenario: A first sync that keeps overflowing
+- **WHEN** every answer to a copy's first sync arrives after more live messages than its buffer holds
+- **THEN** `sync` resolves as `rejected` with the retryable `unavailable` within `timeoutMs` of its first request
+
+#### Scenario: A refused copy stays stopped
+- **WHEN** an owner refuses a first sync, or a later sync fails, and more messages than the buffer holds then arrive while an owner serves
+- **THEN** no further sync request is sent and the handler hears nothing more
+
+#### Scenario: A snapshot older than the copy
+- **WHEN** a copy applied a@5 live and a later sync answers with a cached snapshot at revision 3 that lacks a
+- **THEN** the copy keeps a@5
+
+#### Scenario: Closing during a change
+- **WHEN** a copy is closed while its handler runs on the first of several changes from one answer
+- **THEN** the close resolves after that handler returns, and the remaining changes are not told
+
+#### Scenario: A message without an entity
+- **WHEN** a live message on a synced family's key has no schema identifier
+- **THEN** it is reported to `onError` with the copy's source and ignored, and later messages still apply
+
+#### Scenario: A transport that fails
+- **WHEN** the transport's sync request rejects
+- **THEN** the error is reported, and `sync` resolves as `rejected` with `unavailable` naming the request
+
+#### Scenario: Hub #842's reference scenarios
+- **WHEN** each of the eight sync, removal and expiry scenarios in `fixtures/v2/families.json` is fed to SDK copies as a transport would deliver it
+- **THEN** the copies hold exactly the entities the scenario expects
+
 #### Scenario: A malformed sync call
-- **WHEN** a sync names no family, a repeated or malformed family or more than 32, or has a bad `timeoutMs` or `maxBuffered`
+- **WHEN** a sync names no family, a repeated or malformed family, more than 32 families or more than 256 characters of them joined, or has a bad `timeoutMs` or `maxBuffered`
 - **THEN** it is refused with `invalid-request`
 
 ### Requirement: Serve sync from the owner's current state
 
-The SDK SHALL give each participant `serveSync(families, provider)`. One owner SHALL serve each family; a `serveSync` naming a family that another owner serves SHALL be refused with `invalid-state`, and malformed families with `invalid-request`. The owner SHALL handle one sync request at a time and SHALL ignore a request at or past its expiry. The provider SHALL receive the request and return `{revision, states}`, one state draft per entity, or an error body. The SDK SHALL send each state as a state message from the owner, then `sync.completed` with the `requestId`, the revision and the members. It SHALL send them straight to the requester, never to subscribers, continuing the request's trace.
+The SDK SHALL give each participant `serveSync(families, provider)`. One owner SHALL serve each family; a `serveSync` naming a family that another owner serves SHALL be refused with `invalid-state`, and an empty, repeated or malformed family list with `invalid-request`. An owner MAY serve any number of families; the request caps apply only to one sync request. The owner SHALL handle one sync request at a time and SHALL ignore a request at or past its expiry. The provider SHALL receive the request and return `{revision, states}`, one state draft per entity, or an error body. The SDK SHALL send each state as a state message from the owner, then `sync.completed` with the `requestId`, the revision and the members. It SHALL send them straight to the requester, never to subscribers, continuing the request's trace.
 
 A sync request SHALL be refused in the shared error body, naming its `requestId` and trace ID, with no `sync.completed`:
 - with the provider's error body;
 - `internal` when the provider throws, or its snapshot holds a state outside the requested families, without an entity ID or above the snapshot's revision, has a revision that is not a whole number from 0, or holds more than 4096 states; the error SHALL also go to `onError`;
-- `unavailable` when no owner serves a family, the owner closed before serving it, or no answer came by the deadline;
+- `unavailable` when no owner serves a family, the owner closed before serving it, no answer came by the deadline, or the transport failed to send it;
 - `capacity` when the owner's queue already holds `maxQueued` waiting requests;
 - `invalid-request` when the families belong to more than one owner.
 
@@ -116,5 +158,5 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 - **THEN** each request resolves as `unavailable` at its deadline, a late answer changes nothing, and the provider never receives the expired request
 
 #### Scenario: One owner per family
-- **WHEN** a second owner serves a family that one owner already serves, or a sync names families of two owners
-- **THEN** the first is refused with `invalid-state` and the second resolves as `rejected` with `invalid-request`, while a sync of one owner's families succeeds
+- **WHEN** a second owner serves a family that one owner already serves, a sync names families of two owners, or an owner serves 38 families
+- **THEN** the first is refused with `invalid-state` and the second resolves as `rejected` with `invalid-request`, while the owner of 38 families and a sync of one owner's families succeed

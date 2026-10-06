@@ -141,7 +141,9 @@ the requester gets a `rejected` result with `capacity` instead.
 
 A subscriber that passes `onOverflow` to `subscribe` is also told about the gap.
 `onOverflow({dropped})` runs in the subscription's order, before the next message
-is delivered, with the number of messages dropped since it was last told. A
+is delivered, with the number of messages dropped since it was last told. It
+says that messages were lost, not where: messages still waiting from before the
+drop may follow it. A
 subscriber that keeps a copy of state should sync again instead of continuing
 with a gap; `sync` does this itself. An `onOverflow` that throws is reported to
 `onError`, and delivery goes on.
@@ -157,7 +159,7 @@ the copy current:
 
 1. It subscribes to `bunny.state.<family>.*` for each family, then sends a sync
    request of kind `sync-request` with `expiresat` set `timeoutMs` after its
-   `time`.
+   `time`. A copy never has more than one request outstanding.
 2. The owner's `provider` gets that request and returns `{revision, states}`:
    its current state at `revision`, as one state draft per entity, without
    `kind`. Each state carries `data.id` and a `data.revision` no greater than
@@ -183,28 +185,38 @@ with every change.
 | --- | --- |
 | `updated` | An entity's new current record, with its state `message`. |
 | `removed` | An entity is gone, with its removal `message`, or with none when a sync dropped it. |
-| `synced` | `message` is the `sync.completed`; the copy now matches the owner at its revision. |
+| `synced` | `message` is the `sync.completed`. The copy has applied the snapshot and every buffered change above its revision; the handler hears those buffered changes next. |
 | `failed` | A later sync could not be served, with its `error` body. The copy stops following the owner but keeps its last records. |
 
 `sync` resolves with `{status: 'synced', copy, message}` after the first sync,
-or with `{status: 'rejected', requestId, error}` if that sync is refused. The
-copy's `get(entity)` and `states()` return current state messages, and
-`close()` stops it. A handler that throws is reported to `onError`.
+or with `{status: 'rejected', requestId, error}` if that sync is refused or does
+not complete within `timeoutMs` of its first request. The copy's `get(entity)`
+and `states()` return current state messages, and `close()` stops it; a copy
+closed while its handler runs hears no further change. A handler that throws is
+reported to `onError`, and so is a live message that names no entity of the
+synced families, which the copy ignores.
 
 If the buffer overflows, or a subscription's queue drops a message, the copy
-sends a new sync request and ignores the answer to the old one. It never
-combines partial state. The buffer also holds live messages while the handler
-catches up, so a handler that falls `maxBuffered` messages behind resyncs too.
+wants a new sync. It never combines partial state: an answer to a request sent
+before the overflow is not applied. The copy sends the next request only once
+no other is outstanding and its handler has returned, so however often a busy
+or stalled copy overflows, it asks the owner's shared queue for one sync at a
+time. The buffer also holds live messages while the handler catches up, so a
+handler that falls `maxBuffered` messages behind resyncs instead of hearing
+each one.
 
 One owner serves each family; a `serveSync` that names a served family is
-refused with `invalid-state`. A sync request is refused with the shared error
-body, naming its `requestId` and trace ID, and no `sync.completed` follows:
+refused with `invalid-state`. An owner may serve any number of families, but one
+sync names at most 32 of them, in at most 256 characters joined by commas,
+because the request's subject names them. A sync request is refused with the
+shared error body, naming its `requestId` and trace ID, and no `sync.completed`
+follows:
 
 | Code | When |
 | --- | --- |
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
-| `unavailable` | No owner serves a family, the owner closed before serving it, or no answer came by the deadline. |
+| `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport failed to send it (also reported to `onError`), or the first sync ran out of time. |
 | `capacity` | The owner's queue is full. |
 | `invalid-request` | The families belong to more than one owner. |
 

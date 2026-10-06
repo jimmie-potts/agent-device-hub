@@ -46,8 +46,8 @@ export type Handler<T> = (message: Message<T>) => void | Promise<void>;
 export type SubscribeOptions = {
   /**
    * Told that the subscription's full queue dropped messages, with how many since it was last told. It runs in the
-   * subscription's order, before the next message is delivered. A subscriber that keeps a copy should sync again
-   * instead of continuing with a gap.
+   * subscription's order, before the next message is delivered, and says that messages were lost, not where. A
+   * subscriber that keeps a copy should sync again instead of continuing with a gap.
    */
   onOverflow?: (overflow: {dropped: number}) => void | Promise<void>;
 };
