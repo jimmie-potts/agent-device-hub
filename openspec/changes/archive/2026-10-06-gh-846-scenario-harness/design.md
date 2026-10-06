@@ -12,7 +12,7 @@ See proposal.md for why. The runtime (#880) hosts modules on one in-process bus,
 
 **Non-Goals:**
 - Disposable runs, their edge mount and the `--simulate` launch option: #920.
-- The real session owner, history, inbox and tracker: #831 and #782. The stand-ins show only what the catalog needs.
+- The real session owner (#831), history and the tracker (#782), and the inbox items (#923). The stand-ins show only what the catalog needs. When #782's history read API lands, the `Harness` contract needs a history-read observation in place of the reader's `stand-in-history` sync copy.
 - Work mode scenarios: #924.
 
 ## Decisions
@@ -24,12 +24,14 @@ See proposal.md for why. The runtime (#880) hosts modules on one in-process bus,
 **Timing: a manual clock and scheduler, with real I/O between steps.** The bus, the host, the edge and every remote client run on one manual clock and scheduler, so a deadline fires only when the harness moves virtual time. `wait` moves it 10 ms at a time and lets real I/O, the loopback HTTP, run in between. A restart or reconnect under way finishes before time moves again, so a remote part never reconnects into a runtime that is still starting. The held and queued commands come from the simulated lamp holding its switches, not from timing. Each deadline is far longer than a loopback round trip in virtual steps, and a late edge answer ends the same way as the requester's own deadline would, except for a queued command, whose `expired` answer must arrive within the requester's 1 s grace: 100 steps.
 
 **Crash and restart.** A crash is armed, then fires in the lamp's outbox right after its commit and before its first publish, as #882's process test does with a real kill. At that point:
-- every connection to the edge ends at once, with the calls in flight, so a remote requester's command is `uncertain-result`;
-- in-process parts die with the runtime, so their requests count as `lost`, whatever the abandoned bus answers;
+- every connection to the edge ends at once, with the calls in flight. The remote client settles a call whose connection drops as `uncertain-result`, so a remote requester's command ends that way; the scenario allows it up to the command's deadline plus `REQUESTER_GRACE_MS`, the latest the client would settle;
+- in-process parts die with the runtime. The harness labels their requests `lost`, whatever the abandoned bus answers; that label describes the case and is not an SDK answer;
 - the lamp's work ends with a throw, and the old host is stopped only to release its files;
 - a new host starts on the same state directory, and a new edge takes the same port, behind one listener that holds requests until the new edge is ready.
 
 Simulated devices keep their state, as real ones would. Rejected: a child process per run, which #882 already covers for the kill itself, and which would make every scenario slow and the remote edge's port change.
+
+**A lost acknowledgment.** To show the core taking a duplicate outcome, the harness loses the core's next acknowledgment to the lamp on its way, as a dropped message would be, through the lamp's `onAcknowledgment` hook. The lamp keeps the outcome, reports it again at the next clean restart, and the core logs it as a duplicate, acknowledges it again and keeps one history entry. Rejected: a crash between the core's commit and its acknowledgment. The restarted core would then republish its stored acknowledgment while the restarted lamp republished its outcome, and which came first would decide whether the core saw a duplicate at all.
 
 **Disconnects.** Remotely the edge ends the part's stream, and the SDK client reconnects after its backoff, tells its copies of the gap and syncs them. In process the part's participant closes and connects again after the same delay, and its copies sync on connect. Either way, the scenario records the messages published while the part was away and checks that none reached it.
 
@@ -41,4 +43,4 @@ Simulated devices keep their state, as real ones would. Rejected: a child proces
 
 - [The in-memory crash is not a real process kill.] The old runtime's code is abandoned, not ended, so work it had already scheduled could still run on its own bus. Its bus and edge are cut off, and its host is stopped at once; #882's process test keeps covering the real kill.
 - [Virtual time races real I/O.] A remote answer that took longer than 100 virtual steps would end differently. The suite runs 20 times in sequence and 8 times at once without a failure before merge.
-- [Stand-ins drift from the real core.] The stand-in core keeps to the families and rows the catalog reads, and #831 and #782 replace it, keeping the scenarios.
+- [Stand-ins drift from the real core.] The stand-in core keeps to the families and rows the catalog reads, and #831, #782 and #923 replace its parts, keeping the scenarios.

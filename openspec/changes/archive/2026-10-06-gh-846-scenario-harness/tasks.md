@@ -27,3 +27,16 @@
 - [x] 5.2 Document the test layers and the catalog command in docs/development.md, the catalog and fixture modules in the runtime README, the factory convention in the SDK README, and point docs/sdlc.md's tier 2 step at #920.
 - [x] 5.3 Run the scenario suite 20 times in sequence and 8 times at once with no failure.
 - [x] 5.4 Validate this change with `--strict`, then sync and archive it; `npm run check:workflow`, `npm run test:workflow` and `openspec validate --specs --strict` exit zero.
+
+## 6. Review fixes (PR #937)
+
+- [x] 6.1 Write the failing steps first: a lost acknowledgment, through `Harness.loseAcknowledgment()` and the lamp's `onAcknowledgment` hook, and the core's duplicate and second acknowledgment at the next restart; a failed command whose inbox row the reader reads on both transports and which survives the crash; and a restart while an approval waits, after which the chime must not ring again. Only the chime step fails, on both transports (2 rings).
+- [x] 6.2 Keep what the chime rang in its own database; every scenario passes.
+- [x] 6.3 Name what fixes each deadline answer: rows 1 and 2 follow `bunny-sdk` "Request and respond with expiry", rows 2 and 3 "One conformance suite for every transport", and row 4 the remote client's handling of a dropped call, whose in-process cell is the harness's `lost` label. The remote crash answer may take up to the command's deadline plus `REQUESTER_GRACE_MS`.
+- [x] 6.4 Name each stand-in's owner: #831 the session owner, #782 history, #923 the inbox items. The `Harness` contract needs a history-read observation once #782's read API lands.
+- [x] 6.5 Negative controls, each restored:
+  - a core that treats every message as new fails the end-to-end scenario on both transports at the duplicate and second acknowledgment, whether its second insert throws (0 duplicates, 0 acknowledgments) or replaces the row (0 duplicates);
+  - a core that drops a duplicate outcome without acknowledging it fails there too (1 duplicate, 0 acknowledgments);
+  - a core that records no inbox row fails the end-to-end scenario's new inbox step and the tracked-outcome scenario, on both transports;
+  - a chime that remembers its rings only in memory fails the approval scenario on both transports (2 rings).
+- [x] 6.6 Run the scenario suite 10 times in sequence and 8 times at once with no failure; the gate passes.

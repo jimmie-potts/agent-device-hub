@@ -186,17 +186,20 @@ next one fail. The lamp passes the
 `lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
 `tests/fixtures/chime.ts` holds a consume-only module,
 `createChimeModule({transport})` with `SimulatedChime`. It follows the core's
-sessions and rings once for each approval prompt, and passes the kit as a
-module that only copies.
+sessions and rings once for each approval prompt. It records what it rang in
+its own SQLite file, so a restart with the prompt still waiting does not ring
+again. It passes the kit as a module that only copies.
 
-`tests/fixtures/core.ts` stands in for the core, as `createCoreModule()`,
-until Hub #831 and #782 replace it:
-- as the session owner, it commits each hook's `lifecycle` observation to the
-  session record;
-- as history and the inbox, it records each outcome as a `stand-in-history`
-  entry and each failed or uncertain one as an `inbox-item` operation, then
-  acknowledges the outcome with the kit's stand-in acknowledgment, which the
-  lamp follows;
+`tests/fixtures/core.ts` stands in for the core, as `createCoreModule()`.
+Each of its parts goes when its owner lands:
+- as the session owner, until Hub #831, it commits each hook's `lifecycle`
+  observation to the session record;
+- as history, until Hub #782, it records each outcome as a `stand-in-history`
+  entry, then acknowledges the outcome with the kit's stand-in acknowledgment,
+  which the lamp follows;
+- as the inbox, until Hub #923 turns failed and uncertain results into inbox
+  items, it records each failed or uncertain outcome as an `inbox-item`
+  operation;
 - it owns the mode.
 
 It takes every occurrence and outcome once by `(source, id)`, keeping what it
@@ -228,7 +231,9 @@ and a reader) first join the host's bus, then reach it through a `RemoteEdge`
 on 127.0.0.1 with a run-generated token each. A crash between the lamp's commit
 and its publish abandons the runtime and starts a new one on the same state
 directory behind the same port, as the service manager would restart it.
-Simulated devices keep their state across the crash.
+Simulated devices keep their state across the crash. The harness can also lose
+the core's next acknowledgment to the lamp on its way, so the lamp reports that
+outcome again at its next start.
 
 The catalog holds:
 - an approval prompt reaching every module;
@@ -238,11 +243,12 @@ The catalog holds:
 - the runtime starting with zero modules;
 - the early end-to-end path: a hook observation, the committed session, the
   simulated device's update, a command, its outcome, history and inbox rows,
-  then sync and read. It adds a duplicate command, the deadline answers, a
-  disconnect and a crash-restart.
+  then sync and read. It adds a duplicate command, a failed command whose inbox
+  row the reader reads, the deadline answers, a disconnect, a crash-restart and
+  a lost acknowledgment, which the core takes as a duplicate and acknowledges
+  again.
 
-The deadline answers follow the SDK's
-[transport conformance](../../packages/sdk/README.md#remote-transport):
+The deadline answers per transport:
 
 | Case | In process | Remote |
 | --- | --- | --- |
@@ -250,6 +256,16 @@ The deadline answers follow the SDK's
 | A command still queued at the deadline | `expired` | `expired` |
 | A requester that closes while its command is queued | `cancelled` | `uncertain-result` |
 | A requester whose command is in flight when the runtime crashes | dies with the runtime | `uncertain-result` |
+
+Rows 1 and 2 follow the SDK's "Request and respond with expiry" requirement,
+which the [remote transport](../../packages/sdk/README.md#remote-transport)
+keeps. The SDK's "One conformance suite for every transport" requirement fixes
+rows 2 and 3 per transport. Row 4's remote answer comes from the remote client:
+a call whose connection drops settles as `uncertain-result`, because the
+command's fate is unknown, by the command's deadline plus `REQUESTER_GRACE_MS`
+at the latest. Its in-process cell only describes what happens: the requester dies
+with the runtime, and the harness labels its request `lost`. That label is the
+harness's own, not an answer the SDK gives.
 
 The harness never listens on an installed service's port (8765, 8787, 8788,
 8791 or 41231). It keeps its state in a private directory under the system

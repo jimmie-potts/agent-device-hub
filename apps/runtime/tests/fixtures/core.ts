@@ -1,8 +1,10 @@
-// A stand-in for the core in runtime tests (Hub #882, #846), until #831 and #782 replace it. It plays the core's parts
-// that the scenario catalog needs:
-// - the session owner: it commits each hook's `lifecycle` observation to the session record in its own SQLite file;
-// - history and the inbox: it records every outcome as a `stand-in-history` entry, and a failed or uncertain one as an
-//   `inbox-item` operation, then acknowledges the outcome with the kit's stand-in acknowledgment;
+// A stand-in for the core in runtime tests (Hub #882, #846). It plays the core's parts that the scenario catalog needs,
+// each until its owner lands:
+// - the session owner, until #831: it commits each hook's `lifecycle` observation to the session record in its own
+//   SQLite file;
+// - history, until #782: it records every outcome as a `stand-in-history` entry, then acknowledges the outcome with the
+//   kit's stand-in acknowledgment;
+// - the inbox, until #923: it records a failed or uncertain outcome as an `inbox-item` operation;
 // - the mode's owner.
 // It takes every occurrence and outcome once by (source, id), across restarts. Its changes commit in one transaction
 // with what it took and go out through its outbox afterwards, and it serves all four families through sync. Each
