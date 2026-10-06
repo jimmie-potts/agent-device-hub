@@ -74,6 +74,19 @@ export function transaction<T>(db: Db, body: () => T, begin = 'BEGIN IMMEDIATE')
   }
 }
 
+/** transaction() around an asynchronous body, such as one that sends to a device while it holds the write lock. */
+export async function transactionAsync<T>(db: Db, body: () => Promise<T>, begin = 'BEGIN IMMEDIATE'): Promise<T> {
+  db.exec(begin);
+  try {
+    const result = await body();
+    if (db.isTransaction) db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 /** Python's `a == b` for two rows. */
 export function sameRow(left: Row | undefined, right: Row | undefined): boolean {
   if (left === undefined || right === undefined) return left === right;

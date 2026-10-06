@@ -167,6 +167,8 @@ interface JsonFormat {
   readonly itemSeparator: string;
   readonly keySeparator: string;
   readonly indent: number | null;
+  /** Python's allow_nan: write infinities and NaN as JavaScript literals instead of refusing them. */
+  readonly allowNan?: boolean;
 }
 
 const SHORT_ESCAPES: Record<string, string> = {'"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t'};
@@ -184,8 +186,11 @@ function quote(text: string, ensureAscii: boolean): string {
   return output + '"';
 }
 
-function encodeNumber(value: number): string {
-  if (!Number.isFinite(value)) throw new TypeError('Out of range float values are not JSON compliant.');
+function encodeNumber(value: number, allowNan = false): string {
+  if (!Number.isFinite(value)) {
+    if (!allowNan) throw new TypeError('Out of range float values are not JSON compliant.');
+    return Number.isNaN(value) ? 'NaN' : value > 0 ? 'Infinity' : '-Infinity';
+  }
   // JSON gives no int/float distinction; whole numbers are written as Python writes an int.
   return Number.isInteger(value) ? BigInt(value).toString() : floatText(value);
 }
@@ -194,7 +199,7 @@ function encode(value: unknown, format: JsonFormat, level: number): string {
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
-  if (typeof value === 'number') return encodeNumber(value);
+  if (typeof value === 'number') return encodeNumber(value, format.allowNan);
   if (typeof value === 'string') return quote(value, format.ensureAscii);
   const newline = format.indent === null ? '' : '\n' + ' '.repeat(format.indent * (level + 1));
   const closing = format.indent === null ? '' : '\n' + ' '.repeat(format.indent * level);
@@ -216,6 +221,14 @@ function encode(value: unknown, format: JsonFormat, level: number): string {
 /** Python's json.dumps(value) with its default separators and ASCII escapes. */
 export const pyJson = (value: unknown): string =>
   encode(value, {sortKeys: false, ensureAscii: true, itemSeparator: ', ', keySeparator: ': ', indent: null}, 0);
+
+/** Python's json.dumps(value) with its default allow_nan, for text only this module reads back. */
+export const pyJsonAllowNan = (value: unknown): string =>
+  encode(value, {sortKeys: false, ensureAscii: true, itemSeparator: ', ', keySeparator: ': ', indent: null, allowNan: true}, 0);
+
+/** Python's json.dumps(value, separators=(',', ':'), allow_nan=False), as rendering receipts are saved. */
+export const pyJsonCompact = (value: unknown): string =>
+  encode(value, {sortKeys: false, ensureAscii: true, itemSeparator: ',', keySeparator: ':', indent: null}, 0);
 
 /** Python's json.dumps(value, indent=2), as the private JSON files are written. */
 export const pyJsonIndented = (value: unknown): string =>
