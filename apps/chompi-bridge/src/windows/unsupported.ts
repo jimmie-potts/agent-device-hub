@@ -14,6 +14,7 @@ export function createUnsupportedAdapter(platform: NodeJS.Platform = process.pla
     foregroundWindow: async () => unknown,
     openUri: async () => { throw new OsAdapterNotImplementedError('openUri'); },
     sendKeys: async () => { throw new OsAdapterNotImplementedError('sendKeys'); },
+    sendVolumeKey: () => Promise.reject(new OsAdapterNotImplementedError('sendVolumeKey')),
     releaseAll: async () => undefined,
     releaseAllSync: () => undefined,
     warmUp: async () => undefined,

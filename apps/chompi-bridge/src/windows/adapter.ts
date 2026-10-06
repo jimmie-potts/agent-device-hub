@@ -1,7 +1,7 @@
 import { win32 as winPath } from 'node:path';
 import {
   OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow,
-  type KeyRequest, type Observation, type OsAdapter,
+  type KeyRequest, type Observation, type OsAdapter, type VolumeKey,
 } from '../os-adapter.js';
 import { claudeSessions, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
@@ -75,10 +75,10 @@ const validCardIndex = (index: unknown, count: unknown): boolean =>
 const CARD_ID = /^-?\d{1,10}(\.-?\d{1,10}){0,15}$/;
 
 /**
- * The Windows OS adapter (interface version 3). Keystrokes, foreground identity and deep links use Win32 through
- * koffi; UI checks go to a UI Automation helper scoped to the client's foreground top-level window, which changes UI
- * state only to focus or press one button of an open card (#821); the
- * Codex archive and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
+ * The Windows OS adapter (interface version 4). Keystrokes, the system volume keys (#865), foreground identity and
+ * deep links use Win32 through koffi; UI checks go to a UI Automation helper scoped to the client's foreground
+ * top-level window, which changes UI state only to focus or press one button of an open card (#821); the Codex archive
+ * and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
  * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. Nothing here logs.
  */
 export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
@@ -241,6 +241,14 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       const loaded = await win32();
       if (!loaded || !keyboard) throw new KeyboardError('win32-unavailable');
       keyboard.send(request);
+    },
+
+    async sendVolumeKey(key: VolumeKey, presses: number): Promise<void> {
+      if (closed) throw new KeyboardError('adapter-closed');
+      const loaded = await win32();
+      if (!loaded || !keyboard) throw new KeyboardError('win32-unavailable');
+      // The system handles volume keys, so no window is observed or required.
+      keyboard.tapVolume(key, presses);
     },
 
     async releaseAll(): Promise<void> {

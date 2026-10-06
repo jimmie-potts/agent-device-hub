@@ -1,4 +1,4 @@
-import type { KeyName, KeyRequest } from '../os-adapter.js';
+import { MAX_VOLUME_PRESSES, type KeyName, type KeyRequest, type VolumeKey } from '../os-adapter.js';
 import { HeldModifierError, KeyboardError } from './errors.js';
 
 /** One injected key transition. */
@@ -23,7 +23,13 @@ export const VIRTUAL_KEYS: ReadonlyMap<KeyName, number> = new Map<KeyName, numbe
   ...Array.from({ length: 10 }, (_, i) => [String(i), 0x30 + i] as const),
 ]);
 
-const NAMES = new Map([...VIRTUAL_KEYS].map(([name, vk]) => [vk, name]));
+/**
+ * The Windows volume keys (`VK_VOLUME_UP`, `VK_VOLUME_DOWN`, `VK_VOLUME_MUTE`), typed only by `tapVolume`. They are not
+ * in `VIRTUAL_KEYS`, so no profile shortcut can name them and `send` refuses them.
+ */
+export const VOLUME_KEYS: ReadonlyMap<VolumeKey, number> = new Map<VolumeKey, number>([['VolumeUp', 0xaf], ['VolumeDown', 0xae], ['VolumeMute', 0xad]]);
+
+const NAMES = new Map<number, KeyName>([...VIRTUAL_KEYS, ...VOLUME_KEYS].map(([name, vk]) => [vk, name]));
 
 export function virtualKeyCode(name: KeyName): number {
   const vk = typeof name === 'string' ? VIRTUAL_KEYS.get(name) : undefined;
@@ -48,7 +54,8 @@ const INPUT_KEYBOARD = 1;
 /** Size of a Win32 `INPUT` record on 64-bit Windows: type, padding, then the 32-byte union. */
 export const INPUT_SIZE = 40;
 
-const isExtended = (vk: number) => (vk >= 0x21 && vk <= 0x28) || vk === 0x2d || vk === 0x2e || vk === 0x5b || vk === 0x5c;
+/** Navigation keys, the Windows keys and the volume keys carry the `E0` scan-code prefix. */
+const isExtended = (vk: number) => (vk >= 0x21 && vk <= 0x28) || vk === 0x2d || vk === 0x2e || vk === 0x5b || vk === 0x5c || (vk >= 0xad && vk <= 0xaf);
 
 /** Encodes keyboard `INPUT` records for `SendInput` (64-bit layout; `KEYBDINPUT` starts at offset 8). */
 export function encodeKeyboardInputs(events: readonly KeyEvent[]): Buffer {
@@ -105,6 +112,19 @@ export class Keyboard {
     this.checkPhysical(codes);
     const downs = codes.map(vk => ({ vk, up: false }));
     this.dispatch(action === 'tap' ? [...downs, ...[...codes].reverse().map(vk => ({ vk, up: true }))] : downs);
+  }
+
+  /**
+   * Taps a volume key `presses` times in one batch of down/up pairs. Like a `tap`, it is refused while this adapter
+   * holds any key, so a volume key can never join the held dictation chord, and while the user holds a modifier.
+   */
+  tapVolume(key: VolumeKey, presses: number): void {
+    const vk = typeof key === 'string' ? VOLUME_KEYS.get(key) : undefined;
+    if (vk === undefined || !Number.isInteger(presses) || presses < 1 || presses > MAX_VOLUME_PRESSES) throw new KeyboardError('invalid-volume-request');
+    if (this.pending) throw new KeyboardError('release-pending');
+    if (this.down.length > 0) throw new KeyboardError('keys-held');
+    this.checkPhysical([vk]);
+    this.dispatch(Array.from({ length: presses }, () => [{ vk, up: false }, { vk, up: true }]).flat());
   }
 
   /** Releases every key this adapter holds. Never throws; returns whether nothing remains held. */
