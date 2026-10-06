@@ -181,7 +181,11 @@ configuration; only hosted event evidence verifies actual scheduling.
 Product CI jobs run `npm run build` once, then use the `:built` variants of the
 TypeScript and package test commands. These variants require output freshly
 built in that same job. The existing standalone commands still build first and
-stop if compilation fails. Python setup caches pip downloads by runtime,
+stop if compilation fails. Locally, a `:built` suite runs every compiled test
+file under its `dist/tests/`, and `tsc` never removes output whose source was
+deleted, renamed or exists only on another branch. After switching branches or
+rebasing, delete the affected package's `dist/` before building; a stale
+Nanoleaf test file once failed a local run that CI passed. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 

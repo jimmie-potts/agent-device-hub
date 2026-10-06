@@ -42,6 +42,13 @@ Reading it does not invoke either skill. If it is unavailable, report that and
 apply this section. Codex and Claude follow the same policy. A read-only request
 reports the assessment instead of editing the issue.
 
+A story split from an epic or another story is drafted too, so it carries its
+assessment when filed. The #830 split stories (#879-#883) had none, and the
+decisions they needed surfaced at PR time. When parallel stories share an
+interface or a file, the split names the interface and the one story that owns
+each shared file, such as `packages/sdk`, before work starts. Another story
+asks that owner for a change instead of editing the file.
+
 At every pickup, read the current issue and dependencies, current main, the
 accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
 relevant contracts/ADRs and reusable components, and related work added since
@@ -250,6 +257,10 @@ authority; narrower user scope prevails. The checkpoint grants no additional
 installation, device, publication, Project configuration or cross-repository
 policy-write authority.
 
+Keep stderr visible on every tracker write and read back its effect; an exit
+status or silence is not verification. A close of #877 failed unseen while its
+stderr was discarded.
+
 At authorized planning, implementation, review and closeout checkpoints, follow
 [Project maintenance](project-maintenance.md) for selected Project items. Run the
 native checkpoint before projecting its resulting state. Project synchronization
@@ -308,8 +319,10 @@ permission to replace an owner.
 3. Obtain independent read-only Standards and Specification reviews of the same
    fixed comparison through code-review. When the change has observable
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
-   of that comparison. Fix P0-P2 findings; record lower-priority
-   dispositions and reassess changed candidates. Self-review cannot authorize merge.
+   of that comparison. Fix P0-P2 findings. Also fix a P3 that affects
+   correctness, test coverage or a later story, such as a mutant the suite
+   lets survive; record the disposition of each remaining P3, which touches
+   only wording. Reassess changed candidates. Self-review cannot authorize merge.
    Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
    `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
    owns the issue, the OpenSpec specs and the contract documents. A later delta
@@ -335,8 +348,12 @@ permission to replace an owner.
    records the carry-over with the range-diff or the diff. The
    [Acceptance review](#acceptance-review) rules are unchanged.
    Reviewer briefs say that reviewers make no GitHub writes, including reruns,
-   merges and comments, and that a reviewer that needs a TMPDIR uses a short one
-   outside every checkout; an Acceptance reviewer keeps its own write limits.
+   merges and comments. Each brief names a short TMPDIR outside every checkout
+   that no other reviewer uses: two reviewers that chose the same name deleted
+   each other's copies. Reviewers read a shared worktree but never build or test
+   in it, because a build rewrites `dist/` under the coordinator and the other
+   reviewers; they build and test in a private `git archive` copy under their
+   TMPDIR. An Acceptance reviewer keeps its own write limits.
    Merge each story as soon as its gates pass, and start new work from merged
    main rather than from an unmerged branch.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
