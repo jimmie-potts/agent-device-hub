@@ -61,7 +61,8 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
   }
 }
 
-type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>};
+/** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
+type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
 type Delivery = {command: Command<object>; expiresAtMs: number; settle: (result: RequestResult) => void};
 type Owner = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
@@ -124,23 +125,31 @@ export class InProcessBus {
     const message = this.#envelope(source, draft.kind, draft, childOf(options.parent));
     for (const subscriber of this.#subscribers) {
       if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
+        subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
     return message;
   }
 
-  #subscribe<T extends object>(source: string, pattern: string, handler: Handler<T>, _options: SubscribeOptions = {}): Subscription {
+  #subscribe<T extends object>(source: string, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
     const parsed = parsePattern(pattern);
     if (parsed === undefined) throw invalid(`pattern ${pattern}`);
     if (parsed.category === 'cmd') throw invalid('commands go to their one responder; use respond');
     const scope = {source, pattern};
-    const subscriber: Subscriber = {pattern: parsed, scope, queue: new DeliveryQueue(this.#maxQueued, async message => {
+    const run = async (call: () => void | Promise<void>): Promise<void> => {
       try {
-        await handler(message as Message<T>);
+        await call();
       } catch (error) {
         this.#report(error, scope);
       }
+    };
+    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, queue: new DeliveryQueue(this.#maxQueued, async message => {
+      // A drop leaves a message waiting, so the subscriber hears of the gap before that message, in its own order.
+      const {dropped} = subscriber;
+      subscriber.dropped = 0;
+      if (dropped > 0 && onOverflow !== undefined) await run(() => onOverflow({dropped}));
+      await run(() => handler(message as Message<T>));
     })};
     this.#subscribers.add(subscriber);
     return {close: () => {
