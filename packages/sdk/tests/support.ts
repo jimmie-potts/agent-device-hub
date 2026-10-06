@@ -2,7 +2,7 @@
 // profile 2.0 instead (ADR 0012): participants come wrapped by `checked`, and `it` fails a test that saw an invalid one.
 import assert from 'node:assert/strict';
 import {test, type TestContext} from 'node:test';
-import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type Participant, type RequestOptions,
   type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
@@ -55,6 +55,11 @@ export function checked(sdk: Participant): Participant {
     publish: async <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => {
       const message = await sdk.publish(key, draft, options);
       check(message, `published on ${key}`);
+      return message;
+    },
+    publishMessage: async <T extends object>(key: string, prepared: Message<T>) => {
+      const message = await sdk.publishMessage(key, prepared);
+      check(message, `republished on ${key}`);
       return message;
     },
     subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, message => {

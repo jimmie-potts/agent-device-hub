@@ -83,6 +83,11 @@ export interface Sdk {
   readonly source: string;
   /** Sends a state, removal, occurrence or outcome message to every matching subscriber, without waiting for them. */
   publish<T extends object>(key: string, draft: Draft<T>, options?: SendOptions): Promise<Message<T>>;
+  /**
+   * Publishes a message prepared earlier, unchanged: its `id`, `time` and trace stay as they are. An outbox resends a
+   * stored message this way, and a remote edge injects a remote part's message. Its `source` must be the participant's.
+   */
+  publishMessage<T extends object>(key: string, message: Message<T>): Promise<Message<T>>;
   /** Receives messages whose routing keys match `pattern`, one at a time and in order, from this subscription's queue. */
   subscribe<T extends object = Record<string, unknown>>(pattern: string, handler: Handler<T>, options?: SubscribeOptions): Promise<Subscription>;
   /** Sends one command to the responder that owns `key` and waits for its reply until the deadline. Never retries. */

@@ -74,6 +74,7 @@ The `Sdk` calls:
 | Call | What it does |
 | --- | --- |
 | `publish(key, draft, {parent?})` | Queues a state, removal, occurrence or outcome message for every matching subscriber and resolves with the message. It never waits for a handler. |
+| `publishMessage(key, message)` | Publishes a message built earlier, unchanged: its `id`, `time` and trace stay. An outbox resends a stored message this way. A message from another source is refused with `forbidden`, and one that is not published with `invalid-request`. |
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}` or an error body from `errorBody`. |

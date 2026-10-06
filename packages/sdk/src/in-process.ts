@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
-import {overlaps, parseKey, parsePattern, type Category, type Pattern} from './routing.js';
+import {overlaps, parseKey, parsePattern, type Category, type Pattern, type RoutingKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
@@ -55,6 +55,22 @@ function categoryOf(kind: PublishedKind): Category {
     case 'occurrence':
     case 'outcome':
       return 'event';
+  }
+}
+
+/** Whether a message of this kind travels through publish. */
+function isPublished(kind: MessageKind): kind is PublishedKind {
+  switch (kind) {
+    case 'state':
+    case 'removal':
+    case 'occurrence':
+    case 'outcome':
+      return true;
+    case 'command':
+    case 'reply':
+    case 'sync-request':
+    case 'sync-completed':
+      return false;
   }
 }
 
@@ -127,6 +143,7 @@ export class InProcessBus {
       source,
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
         open(() => this.#publish(source, key, draft, options)),
+      publishMessage: <T extends object>(key: string, message: Message<T>) => open(() => this.#publishMessage(source, key, message)),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
         open(() => this.#subscribe(member, pattern, handler, options)),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) =>
@@ -178,19 +195,36 @@ export class InProcessBus {
     await Promise.all([...member.opened].map(subscription => subscription.close()));
   }
 
-  #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
+  #route(key: string, kind: PublishedKind): RoutingKey {
     const route = parseKey(key);
     if (route === undefined) throw invalid(`routing key ${key}`);
     if (route.category === 'cmd') throw invalid('commands are sent with request');
-    if (categoryOf(draft.kind) !== route.category) throw invalid(`a ${String(draft.kind)} message cannot use a bunny.${route.category} key`);
+    if (categoryOf(kind) !== route.category) throw invalid(`a ${String(kind)} message cannot use a bunny.${route.category} key`);
+    return route;
+  }
+
+  #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
+    const route = this.#route(key, draft.kind);
     const message = this.#envelope(source, draft.kind, draft, childOf(options.parent));
+    this.#deliver(key, route, message);
+    return message;
+  }
+
+  /** A prepared message goes out as it is; only its own source may send it. */
+  #publishMessage<T extends object>(source: string, key: string, message: Message<T>): Message<T> {
+    if (message.source !== source) throw new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
+    if (!isPublished(message.kind)) throw invalid(`a ${message.kind} message is not published`);
+    this.#deliver(key, this.#route(key, message.kind), message);
+    return message;
+  }
+
+  #deliver(key: string, route: RoutingKey, message: Message<unknown>): void {
     for (const subscriber of this.#subscribers) {
       if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
         subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
-    return message;
   }
 
   #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
