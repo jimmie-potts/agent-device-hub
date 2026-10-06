@@ -1,8 +1,8 @@
 // Values recorded from the Python bridge (recorded/values.json): keys, hashes, colors, titles, paths and number text
 // that the installed state and its migration depend on.
 import assert from 'node:assert/strict';
-import {dumps, floatText, isObject, parseFloatText, pyJson, pyRound} from '../src/compat.js';
-import {privateAddress} from '../src/enrollment.js';
+import {dumps, floatText, isObject, parseFloatText, pyDist, pyHypot, pyJson, pyMod, pyRound, pySum} from '../src/compat.js';
+import {privateAddress} from '../src/transport.js';
 import {defaultColor, fallbackTitle, normalize} from '../src/project-map.js';
 import {evictionToken, identityKey, type Identity, type SharedSession, type SharedState} from '../src/shared-input.js';
 import {fixtureJson, legacyPrompt, loadDump, query, recordedSetup, setMode, suite, temporary, test, write} from './support.js';
@@ -45,6 +45,19 @@ suite('values recorded from Python', () => {
 
   test('round sends halves to the even neighbour', () => {
     for (const [value, rounded] of cases('rounded')) assert.equal(pyRound(value as number), rounded, String(value));
+  });
+
+  test('lengths and float sums match math.hypot and sum() to the last bit', () => {
+    const numbers = fixtureJson('recorded/numbers.json') as {hypot: [number, number, number][]; sums: [number[], number][]};
+    for (const [a, b, length] of numbers.hypot) assert.equal(pyHypot(a, b), length, `hypot(${a}, ${b})`);
+    for (const [values, total] of numbers.sums) assert.equal(pySum(values), total, JSON.stringify(values));
+    assert.equal(pyHypot(Infinity, NaN), Infinity);
+    assert.ok(Number.isNaN(pyHypot(1, NaN)));
+    assert.equal(pyDist([1, 2], [4, 6]), 5);
+  });
+
+  test('float remainders take the divisor sign as Python does', () => {
+    for (const [value, divisor, result] of cases('pyMod')) assert.equal(pyMod(value as number, divisor as number), result, `${String(value)} % ${String(divisor)}`);
   });
 
   test('JSON text matches json.dumps and shared_input.dumps', () => {

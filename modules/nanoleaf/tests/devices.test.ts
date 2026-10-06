@@ -1,12 +1,14 @@
 // Translated from codex-nanoleaf tests/test_devices.py, the schema cases of tests/test_bridge.py and the geometry and
-// reservation cases of tests/test_panels.py (PORTING.md lists every case and where the rest went).
+// reservation cases of tests/test_panels.py (PORTING.md lists every case and where the rest went). Device configuration
+// loading is translated here and in configuration.test.ts.
 import assert from 'node:assert/strict';
-import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync} from 'node:fs';
+import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {withState} from '../src/database.js';
 import type {JsonObject} from '../src/compat.js';
-import {columns, DEFAULT, layoutDevices, legacyRow, projection, saveLayout, validateElements, type DeviceConfig} from '../src/devices.js';
+import {loadConfig} from '../src/configuration.js';
+import {columns, DEFAULT, layoutDevices, legacyRow, projection, registry, saveLayout, validateElements} from '../src/devices.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {readLayout} from '../src/panels.js';
@@ -14,7 +16,7 @@ import {allocate, owners, settings, type TaskRow} from '../src/project-map.js';
 import {BACKUP, dumpTables, restoreTables, type Backup} from '../src/shared-input.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {FIXTURES, fixtureJson, legacyPrompt, query, suite, temporary, test, write} from './support.js';
+import {FIXTURES, fixtureJson, legacyPrompt, query, refuse, suite, temporary, test, write} from './support.js';
 
 const LINUX_STATE = join(FIXTURES, 'linux-state-v4');
 
@@ -25,13 +27,6 @@ function writeTwoDevices(directory: string): void {
     wall: {kind: 'lines', elements: [{id: '5:6', number: 1, zones: [5, 6], position: [0, 0]}, {id: '7:8', number: 2, zones: [7, 8], position: [10, 0]}]},
     panels: {kind: 'panels', elements: [{id: '5', number: 1, zones: [5], position: [0, 0]}, {id: '6', number: 2, zones: [6], position: [10, 0]},
       {id: '7', number: 3, zones: [7], position: [20, 0]}]}}});
-}
-
-/** A device's configuration from its saved layout entry, as configuration.load_config builds it without a device read. */
-function savedConfig(directory: string, device: string): DeviceConfig & {line_groups: number[][]} {
-  const entry = layoutDevices(JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8'))).get(device);
-  assert.ok(entry !== undefined);
-  return {...projection(entry), device};
 }
 
 const MIGRATED_COLUMNS: Record<string, string> = {
@@ -58,6 +53,8 @@ function dumpAll(db: DatabaseSync): unknown[] {
 }
 
 function loadLinuxState(directory: string): void {
+  // The fixture copies carry a suffix so the private-state ignore rules do not hide them.
+  copyFileSync(join(LINUX_STATE, 'config-fixture.json'), join(directory, 'config.json'));
   copyFileSync(join(LINUX_STATE, 'layout-fixture.json'), join(directory, 'layout.json'));
   const db = new DatabaseSync(join(directory, 'status.sqlite'));
   db.exec(readFileSync(join(LINUX_STATE, 'status.sql'), 'utf8'));
@@ -65,8 +62,54 @@ function loadLinuxState(directory: string): void {
 }
 
 suite('DeviceTest', () => {
-  test('test_malformed_layout_is_rejected_and_last_valid_file_kept', context => {
-    // The final configuration load moves with configuration.load_config (slice 2).
+  // AC4 and AC6: layout shapes. Nothing here may reach a device: every load refuses at the request.
+  test('test_legacy_layout_loads_as_default_device_without_request', async context => {
+    const directory = temporary(context);
+    writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fake'});
+    const groups = Array.from({length: 15}, (_, i) => [100 + i * 2, 101 + i * 2]);
+    const positions = Array.from({length: 15}, (_, i) => [i * 10, 0]);
+    writeJson(join(directory, 'layout.json'), {line_groups: groups, line_positions: positions});
+    const disk = readFileSync(join(directory, 'layout.json'));
+    const config = await loadConfig(directory, DEFAULT, refuse);
+    assert.deepEqual([config.device, config.kind], ['wall', 'lines']);
+    assert.deepEqual(config.line_groups, groups);
+    assert.deepEqual(config.line_positions, positions);
+    assert.deepEqual(config.elements.map(e => e.number), Array.from({length: 15}, (_, i) => i + 1));
+    assert.deepEqual(config.elements[0], {id: '100:101', number: 1, zones: [100, 101], position: [0, 0]});
+    assert.deepEqual(readFileSync(join(directory, 'layout.json')), disk);
+    assert.deepEqual((await loadConfig(directory, 'wall', refuse)).elements, config.elements);
+    assert.ok(!JSON.stringify(config.elements).includes('devices'));
+  });
+
+  test('test_version_two_layout_with_lines_and_triangles', async context => {
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const lines = await loadConfig(directory, DEFAULT, refuse);
+    const panels = await loadConfig(directory, 'panels', refuse);
+    assert.deepEqual([lines.device, lines.ip, lines.token], ['wall', '192.0.2.1', 'fakeLines']);
+    assert.deepEqual([panels.device, panels.kind, panels.ip, panels.token], ['panels', 'panels', '192.0.2.2', 'fakePanels']);
+    assert.deepEqual(lines.line_groups, [[5, 6], [7, 8]]);
+    assert.deepEqual(panels.line_groups, [[5], [6], [7]]);
+    assert.deepEqual(panels.elements.map(e => e.id), ['5', '6', '7']);
+    assert.deepEqual([...registry(JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8'))).keys()].sort(), ['panels', 'wall']);
+    await assert.rejects(loadConfig(directory, 'unknown', refuse), {name: 'ValueError'});
+  });
+
+  test('test_registry_address_change_keeps_identity_and_preferences', async context => {
+    // The map edit is saved as its row.
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    write(directory, db => execute(db, "INSERT OR REPLACE INTO line_prefs (line_id,project,signature,device) VALUES ('5:6','kept',0,'wall')"));
+    const config = JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')) as {ip: string; devices: {wall: {ip: string}}};
+    config.ip = '192.0.2.99';
+    config.devices.wall.ip = '192.0.2.99';
+    writeJson(join(directory, 'config.json'), config);
+    const moved = await loadConfig(directory, DEFAULT, refuse);
+    assert.deepEqual([moved.device, moved.ip], ['wall', '192.0.2.99']);
+    assert.deepEqual(withState(directory, db => owners(db, moved)[0]), ['kept', 0]);
+  });
+
+  test('test_malformed_layout_is_rejected_and_last_valid_file_kept', async context => {
     const directory = temporary(context);
     writeTwoDevices(directory);
     const path = join(directory, 'layout.json');
@@ -87,13 +130,15 @@ suite('DeviceTest', () => {
       assert.throws(() => saveLayout(path, broken.devices as unknown as JsonObject), {name: 'ValueError'});
       assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), valid);
     }
+    writeFileSync(path, JSON.stringify({version: 2, devices: {wall: {kind: 'lines', elements: [{id: '5:6', number: 1, zones: [5, 5], position: [0, 0]}]}}}));
+    await assert.rejects(loadConfig(directory, DEFAULT, refuse), {name: 'ValueError'});
   });
 
-  test('test_one_task_one_placement_per_device_and_unique_slot_per_device', context => {
+  test('test_one_task_one_placement_per_device_and_unique_slot_per_device', async context => {
     const directory = temporary(context);
     writeTwoDevices(directory);
-    const lines = savedConfig(directory, 'wall');
-    const panels = savedConfig(directory, 'panels');
+    const lines = await loadConfig(directory, DEFAULT, refuse);
+    const panels = await loadConfig(directory, 'panels', refuse);
     // Two legacy prompts, saved as the legacy hook path saves them.
     write(directory, db => legacyPrompt(db, 'a', '1', 1000));
     write(directory, db => legacyPrompt(db, 'b', '1', 1001));
@@ -111,7 +156,7 @@ suite('DeviceTest', () => {
     assert.deepEqual(query(directory, "SELECT slot FROM slots WHERE session='c'"), [[2]]);
   });
 
-  test('test_pre_change_linux_database_migrates_and_repeats_without_change', context => {
+  test('test_pre_change_linux_database_migrates_and_repeats_without_change', async context => {
     // The controller credential, comet, pending edit, Locate and scene checks move with their slices (PORTING.md).
     const directory = temporary(context);
     loadLinuxState(directory);
@@ -134,8 +179,8 @@ suite('DeviceTest', () => {
     assert.deepEqual(before.line_prefs, [['100:101', 'project-a', 1], ['102:103', 'project-a', 0], ['104:105', 'project-b', 1]]);
     assert.deepEqual(before.map_settings, [['project', 'status', 90, 1, 0]]);
     assert.deepEqual(before.task_info?.[4]?.slice(3, 5), ['project-a', 'project-a']);
-    const config = savedConfig(directory, DEFAULT);
-    assert.equal(config.line_groups.length, 15);
+    const config = await loadConfig(directory, DEFAULT, refuse);
+    assert.deepEqual([config.device, config.line_groups.length], ['wall', 15]);
     withState(directory, db => {
       assert.deepEqual(controlState(db), {mode: 'work', revision: 2, applied: 2, wave_cutoff: 995, error: null});
       assert.deepEqual(owners(db, config).slice(0, 3), [['project-a', 1], ['project-a', 0], ['project-b', 1]]);

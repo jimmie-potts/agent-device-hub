@@ -27,6 +27,85 @@ export function compareText(left: string, right: string): number {
   return a.length - b.length;
 }
 
+/** Python's `value % divisor` for floats: the result takes the divisor's sign, where JavaScript's takes the dividend's. */
+export function pyMod(value: number, divisor: number): number {
+  const mod = value % divisor;
+  if (mod === 0) return divisor < 0 ? -0 : 0;
+  return (divisor < 0) !== (mod < 0) ? mod + divisor : mod;
+}
+
+/**
+ * Python's sum() of floats, which since 3.12 compensates rounding (Neumaier). A plain loop differs in the last bit for
+ * about half of all float lists. Python sums ints exactly, which this matches below 2 ** 53.
+ */
+export function pySum(values: readonly number[]): number {
+  let total = 0;
+  let compensation = 0;
+  for (const value of values) {
+    const next = total + value;
+    compensation += Math.abs(total) >= Math.abs(value) ? (total - next) + value : (value - next) + total;
+    total = next;
+  }
+  return compensation !== 0 && Number.isFinite(compensation) ? total + compensation : total;
+}
+
+const VELTKAMP = 134217729.0; // 2 ** 27 + 1
+const DBL_MIN = 2.2250738585072014e-308;
+
+/** x * x and its exact rounding error, as CPython's dl_mul(x, x) computes with fma, by Dekker's splitting. */
+function square(x: number): [number, number] {
+  const product = x * x;
+  const t = x * VELTKAMP;
+  const high = t - (t - x);
+  const low = x - high;
+  return [product, ((high * high - product) + high * low + low * high) + low * low];
+}
+
+/** The exponent frexp() gives: value = m * 2 ** e with 0.5 <= m < 1. */
+function frexpExponent(value: number): number {
+  let exponent = Math.floor(Math.log2(value)) + 1;
+  if (value * 2 ** -exponent >= 1) exponent += 1;
+  if (value * 2 ** -exponent < 0.5) exponent -= 1;
+  return exponent;
+}
+
+/** CPython's vector_norm: the correctly rounded length nearly always, where Math.hypot differs in the last bit. */
+function vectorNorm(vector: readonly number[], max: number): number {
+  if (max === Infinity) return max;
+  if (vector.some(Number.isNaN)) return Number.NaN;
+  if (max === 0 || vector.length <= 1) return max;
+  const exponent = frexpExponent(max);
+  if (exponent < -1023) return DBL_MIN * vectorNorm(vector.map(value => value / DBL_MIN), max / DBL_MIN);
+  const scale = 2 ** -exponent;
+  let sum = 1.0;
+  let fraction1 = 0.0;
+  let fraction2 = 0.0;
+  const add = ([high, low]: [number, number]): void => {
+    const next = sum + high;
+    fraction2 += (sum - next) + high;
+    sum = next;
+    fraction1 += low;
+  };
+  for (const value of vector) add(square(value * scale));
+  let length = Math.sqrt(sum - 1.0 + (fraction1 + fraction2));
+  const [high, low] = square(length);
+  add([-high, -low]);
+  length += (sum - 1.0 + (fraction1 + fraction2)) / (2.0 * length);
+  return length / scale;
+}
+
+/** Python's math.hypot. */
+export function pyHypot(...coordinates: readonly number[]): number {
+  const vector = coordinates.map(Math.abs);
+  return vectorNorm(vector, Math.max(0, ...vector.filter(value => !Number.isNaN(value))));
+}
+
+/** Python's math.dist. */
+export function pyDist(p: readonly number[], q: readonly number[]): number {
+  if (p.length !== q.length) throw new ValueError('both points must have the same number of dimensions');
+  return pyHypot(...p.map((value, index) => value - (q[index] ?? Number.NaN)));
+}
+
 /** Python's round() for a float: halves go to the even neighbour. */
 export function pyRound(value: number): number {
   const floor = Math.floor(value);

@@ -1,11 +1,15 @@
-// Project metadata, persistent wall preferences and task placement (the placement half of project_map.py).
-// Palette, geometry, rendering receipts, map edits and Locate stay with later slices (PORTING.md).
+// Project metadata, persistent wall preferences, task placement, the palette and the renderer's map settings
+// (project_map.py). Map geometry is in geometry.ts; palette writes, rendering receipts, map edits and Locate move with
+// the edits and worker slice (PORTING.md).
 import {statSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {compareText, isObject, normpath, own, parseJson, pyJson, pyRound, splitText, titleCase, type Json, type JsonObject} from './compat.js';
 import {create, DEFAULT, deviceOf, elementId, elements, type DeviceConfig} from './devices.js';
 import {ValueError} from './errors.js';
 import {readText} from './jsonfile.js';
+import type {Rgb} from './effects.js';
+import type {Indication} from './line-projection.js';
+import type {RenderConfig} from './renderer.js';
 import {execute, first, rows, sameRow, totalChanges, type Db, type Row, type SqlValue} from './sqlite.js';
 
 export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
@@ -13,6 +17,12 @@ export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
 export const STATUSES = ['working', 'question', 'blocked', 'unread'] as const;
 export type LineStatus = typeof STATUSES[number];
 export const isLineStatus = (value: unknown): value is LineStatus => STATUSES.some(status => status === value);
+// One task-light palette for every device. Only changed roles are stored.
+export const DEFAULT_PALETTE = Object.freeze({base: '#0a1866', working: '#00ff00', question: '#ffff00', blocked: '#ff0000', unread: '#9b30ff'});
+export type Role = keyof typeof DEFAULT_PALETTE;
+export const ROLES = Object.keys(DEFAULT_PALETTE) as Role[];
+export const isRole = (value: unknown): value is Role => ROLES.some(role => role === value);
+export const HEX = /^#[0-9a-fA-F]{6}$/;
 
 export interface MapSettings {
   style: SqlValue;
@@ -40,6 +50,26 @@ export function settings(db: Db, device: string = DEFAULT): MapSettings {
   const [style, coverage, rotation, flipX, flipY] = first(db, 'SELECT style,coverage,rotation,flip_x,flip_y FROM map_settings WHERE device=?', device)
     ?? DEFAULT_SETTINGS;
   return {style: style ?? null, coverage: coverage ?? null, rotation: rotation ?? null, flip_x: flipX ?? null, flip_y: flipY ?? null};
+}
+
+/** The effective palette; a damaged row falls back to that role's default. */
+export function palette(db: Db): Record<Role, string> {
+  const result: Record<Role, string> = {...DEFAULT_PALETTE};
+  for (const [role = null, color = null] of rows(db, 'SELECT role,color FROM palette')) {
+    if (isRole(role) && typeof color === 'string' && HEX.test(color)) result[role] = color.toLowerCase();
+  }
+  return result;
+}
+
+/** #RRGGBB as red, green and blue; anything else is a ValueError, as Python's int(..., 16) raised for most malformed text. */
+function hexRgb(color: string): Rgb {
+  if (!HEX.test(color)) throw new ValueError(`Invalid color ${JSON.stringify(color)}.`);
+  return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+}
+
+export function paletteRgb(value: Readonly<Record<Role, string>>): Record<Role, Rgb> {
+  return {base: hexRgb(value.base), working: hexRgb(value.working), question: hexRgb(value.question), blocked: hexRgb(value.blocked),
+    unread: hexRgb(value.unread)};
 }
 
 export const lineId = (pair: readonly number[]): string => elementId(pair);
@@ -289,4 +319,30 @@ export function allocate(db: Db, config: DeviceConfig, tasks: readonly TaskRow[]
     }
   }
   return assignments;
+}
+
+/** Add the device's map style, coverage, palette and per-element project halves to a worker pass's configuration. */
+export function renderConfig(db: Db, config: RenderConfig, snapshot: readonly Indication[]): void {
+  const device = deviceOf(config);
+  const prefs = owners(db, config);
+  const projects = taskProjects(db);
+  const colors = new Map(rows(db, 'SELECT id,color FROM projects').map(([id = null, color = null]) => {
+    if (typeof color !== 'string') throw new TypeError('A saved project color must be text.');
+    return [id, hexRgb(color)] as const;
+  }));
+  const active = new Map<number, SqlValue>();
+  for (const [session = null, slot = null] of rows(db, 'SELECT session,slot FROM slots WHERE device=?', device)) {
+    if (typeof slot === 'number' && slot >= 0 && slot < snapshot.length && snapshot[slot] !== null) active.set(slot, projects.get(session) ?? null);
+  }
+  const {style, coverage} = settings(db, device);
+  config._style = style;
+  config._coverage = coverage;
+  config._palette = paletteRgb(palette(db));
+  // Project/status halves are a Lines feature; a triangle always shows its status.
+  config._signatures = (config.kind ?? 'lines') === 'lines'
+    ? prefs.map(([owner, signature], i) => {
+      const project = active.get(i) ?? null;
+      return [colors.get(project !== null && project !== '' && project !== 0 ? project : owner) ?? null, signature] as const;
+    })
+    : [];
 }

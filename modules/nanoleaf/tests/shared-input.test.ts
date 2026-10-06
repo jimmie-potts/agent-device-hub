@@ -11,12 +11,13 @@ import {writeJson} from '../src/jsonfile.js';
 import {registeredDevices} from '../src/configuration.js';
 import {dashboard} from '../src/line-projection.js';
 import {Metadata} from '../src/project-map.js';
+import {BASELINE, COLORS, effectPayload, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
 import {BACKUP_TABLES, declared, dumpTables, identityKey, presented, restoreLegacyTasks, restoreTables, saveLegacyTasks, semanticStatus,
-  validateConfig, type Envelope, type Identity, type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
+  sharedRenderConfig, validateConfig, type Envelope, type Identity, type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
 import {selectSource} from '../src/shared-source.js';
 import {execute, rows, transaction, type Row} from '../src/sqlite.js';
-import {accept, clone, configure, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, generation, loadDump, query,
-  recordedSetup, selectionSetup, selectLegacy, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
+import {accept, clone, configure, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
+  loadDump, query, recordedSetup, selectionSetup, selectLegacy, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
   type WallTask} from './support.js';
 
 const KEY = identityKey(firstSession(envelope()).identity);
@@ -286,16 +287,31 @@ suite('RetirementTest', () => {
 
 const LINE_LAYOUT = {line_groups: [[100, 101]], line_positions: [[0, 0]]};
 
+/** RecoveryTest's rendered_colors: the first Line's frame colors after a projection pass with the shared render settings. */
+function renderedColors(path: string, layout: RenderConfig, instant: number): number[][] {
+  const snapshot = write(path, db => {
+    const projected = dashboard(db, layout, instant);
+    sharedRenderConfig(db, layout);
+    return projected;
+  });
+  const colors = framesOf(decode(effectPayload(layout, snapshot, instant, true)), 100).map(frame => frame.slice(0, 3));
+  assert.ok(colors.length > 0);
+  return colors;
+}
+const reddish = (colors: number[][]): boolean => colors.every(([red = 0, , blue = 0]) => red > blue);
+const bluish = (colors: number[][]): boolean => colors.every(([red = 0, , blue = 0]) => blue > red);
+
 suite('RecoveryTest', () => {
   test('test_owner_recovery_clears_stale_red_without_clearing_other_state', context => {
-    // The rendered colors this test also checks move with the renderer (slice 2).
     const {path} = selectionSetup(context);
+    const layout: RenderConfig = {...structuredClone(LINE_LAYOUT), _mode: 'work'};
     let value = envelope();
     let session = firstSession(value);
     session.attention = [{id: {status: 'unknown'}, kind: 'approval', turn: session.turn}];
     session.unavailable = [{kind: 'evidence.unavailable', dimension: 'attention', reason: 'ambiguous'}];
     selectShared(path, value);
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['blocked']]);
+    assert.ok(reddish(renderedColors(path, layout, 1000)));
     value = clone(value);
     value.snapshot.revision = 3;
     session = firstSession(value);
@@ -303,6 +319,7 @@ suite('RecoveryTest', () => {
     session.restartUncertain = true;
     accept(path, value, 1001);
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['blocked']]);
+    assert.ok(reddish(renderedColors(path, layout, 1001)));
     assert.equal(wallView(path, LINE_LAYOUT, 1001).tasks[0]?.statusEvidence, 'uncertain');
     value = clone(value);
     value.snapshot.revision = 4;
@@ -311,12 +328,12 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['unread']]);
     assert.equal(query(path, 'SELECT * FROM shared_stale').length, 1);
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
+    assert.ok(bluish(renderedColors(path, layout, 1002)));
     const snapshot = write(path, db => dashboard(db, LINE_LAYOUT, 1002));
     assert.equal(snapshot[0]?.[0], 'unread');
   });
 
   test('test_loss_freezes_colors_and_reconnect_preserves_epoch', context => {
-    // The frozen working color this test also checks moves with the renderer (slice 2).
     const {path} = selectionSetup(context);
     const value = envelope();
     firstSession(value).activity = 'active';
@@ -324,6 +341,8 @@ suite('RecoveryTest', () => {
     const epoch = query(path, 'SELECT started FROM activity');
     failed(path, generation(path));
     assert.deepEqual(query(path, 'SELECT session FROM shared_stale'), [[KEY]]);
+    const colors = renderedColors(path, {...structuredClone(LINE_LAYOUT), _mode: 'work'}, 1001);
+    assert.deepEqual(new Set(colors.map(color => JSON.stringify(color))), new Set([JSON.stringify(COLORS.working)]));
     accept(path, value, 1002, {resync: true});
     assert.deepEqual(query(path, 'SELECT started FROM activity'), epoch);
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
@@ -345,8 +364,35 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
   });
 
+  test('test_stale_peer_does_not_suppress_healthy_outward_wave', context => {
+    const {path} = selectionSetup(context);
+    let value = envelope();
+    const healthy = firstSession(value);
+    healthy.activity = 'active';
+    const stale = clone(healthy);
+    stale.identity.sessionId = 'stale';
+    stale.freshness = 'uncertain';
+    stale.restartUncertain = true;
+    value.snapshot.sessions.push(stale);
+    selectShared(path, value);
+    write(path, db => execute(db, 'INSERT INTO slots (session, slot) VALUES (?,1)', identityKey(stale.identity)));
+    value = clone(value);
+    value.snapshot.revision += 1;
+    firstSession(value).turn = {status: 'known', id: 'next'};
+    accept(path, value, 1001);
+    const layout: RenderConfig = {line_groups: [[100, 101], [102, 103], [104, 105]], line_positions: [[0, 0], [1, 0], [2, 0]], _mode: 'work'};
+    const snapshot = write(path, db => {
+      const projected = dashboard(db, layout, 1002);
+      sharedRenderConfig(db, layout);
+      return projected;
+    });
+    const delays = [0, 1, 2].map(source => travelDelays(layout, source));
+    const expected = pixelColor([snapshot[0] ?? null, null, null], 2, 1002, delays);
+    assert.notDeepEqual(expected, BASELINE);
+    assert.deepEqual(zoneColor(layout, snapshot, 2, 0, 1002, delays), expected);
+  });
+
   test('test_recovered_session_keeps_epoch_without_replaying_outward_wave', context => {
-    // The suppressed outward wave this test also checks moves with the renderer (slice 2); the saved suppression is checked here.
     const {path} = selectionSetup(context);
     let value = envelope();
     firstSession(value).activity = 'active';
@@ -362,10 +408,17 @@ suite('RecoveryTest', () => {
     session.freshness = 'current';
     session.restartUncertain = false;
     accept(path, value, 1001.2);
-    const layout = {line_groups: [[100, 101], [102, 103]], line_positions: [[0, 0], [1, 0]]};
-    write(path, db => dashboard(db, layout, 1002));
+    const layout: RenderConfig = {line_groups: [[100, 101], [102, 103]], line_positions: [[0, 0], [1, 0]], _mode: 'work'};
+    const snapshot = write(path, db => {
+      const projected = dashboard(db, layout, 1002);
+      sharedRenderConfig(db, layout);
+      return projected;
+    });
+    const delays = [0, 1].map(source => travelDelays(layout, source));
     assert.deepEqual(query(path, 'SELECT started FROM activity'), [[1001]]);
     assert.deepEqual(query(path, 'SELECT session,epoch FROM shared_suppressed_waves'), [[KEY, 1001]]);
+    assert.deepEqual(zoneColor(layout, snapshot, 1, 0, 1002, delays), BASELINE);
+    assert.deepEqual(zoneColor(layout, snapshot, 0, 0, 1002, delays), pixelColor(snapshot, 0, 1002, delays));
   });
 
   test('test_read_during_comet_retains_source_until_finish', context => {
@@ -567,13 +620,18 @@ const statusAndLine = (seen: Seen, key: string): unknown[] => seen[key]?.slice(0
 
 suite('ChildSessionTest', () => {
   test('test_read_task_keeps_row_and_line_until_owner_removes_it', context => {
-    // The steady base color this test also checks moves with the renderer (slice 2).
     const c = new Children(context);
     c.select();
     assert.deepEqual(statusAndLine(c.tasks(1000), c.key), ['unread', 100]);
     c.root.read = 'read';
     c.advance(1001);
     assert.deepEqual(statusAndLine(c.tasks(1001), c.key), ['idle', 100]);
+    write(c.path, db => {
+      const snap = dashboard(db, CHILD_LAYOUT, 1001);
+      const config: RenderConfig = {...structuredClone(CHILD_LAYOUT), _mode: 'work'};
+      sharedRenderConfig(db, config);
+      for (const instant of [1001.2, 1002.6]) assert.deepEqual(zoneColor(config, snap, 0, 0, instant, [[0, 1], [1, 0]]), BASELINE, String(instant));
+    });
     assert.deepEqual(query(c.path, 'SELECT session FROM comets'), []);
     c.value.snapshot.sessions = [];
     c.value.snapshot.revision += 1;
