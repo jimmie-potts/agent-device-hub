@@ -712,6 +712,24 @@ message they see against profile 2.0 with the event contracts' validator, and a
 test fails if one is invalid; the bus itself does not validate. They need no
 runtime, device or network.
 
+## Runtime checks
+
+`apps/runtime` is the runtime skeleton and module host from
+[ADR 0012](decisions/0012-bunny-event-platform.md); its
+[README](../apps/runtime/README.md) covers running it, health, state, failure
+isolation and the event-loop lag check. It follows the
+[strict profile](#strict-profile-for-new-code), tests included.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
+`test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The core
+CI job runs `npm run test:runtime:built` after its fresh build. The tests use
+in-test fixture modules, port 0 on loopback and private state directories under
+the system temporary directory, which must be outside every Git checkout. Some
+start the runtime in child processes, as the service manager would. They need no
+device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
+zero-module memory for #123; the README's Memory section says how.
+
 ## Agent lifecycle contract checks
 
 Hub #2 adds `packages/lifecycle-contracts`, a private versioned lifecycle schema

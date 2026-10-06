@@ -1,7 +1,7 @@
 // Per-subscriber delivery queues: a slow consumer lags only itself and cannot block the bus (ADR 0012).
 import assert from 'node:assert/strict';
 import {InProcessBus, SdkError} from '../src/index.js';
-import {bus, checked, deferred, flush, it, peek, session, setMode, settled} from './support.js';
+import {bus, checked, deferred, flush, it, peek, session, setMode, settled, turnEnded} from './support.js';
 
 it('a slow subscriber delays only itself, and catches up in order', async () => {
   const {core, wall} = bus();
@@ -128,4 +128,51 @@ it('a handler that closes its own subscription finishes, and nothing more reache
   await core.publish('bunny.state.session.s1', session('s1', 3));
   await flush();
   assert.deepEqual(started, [1]);
+});
+
+it('closing another subscription from inside a handler still waits for that subscription\'s running handler', async () => {
+  const {core, wall} = bus();
+  const gate = deferred<undefined>();
+  const other = await wall.subscribe('bunny.state.session.*', async () => { await gate.promise; });
+  let closing: Promise<void> | undefined;
+  await core.subscribe('bunny.event.session.*', () => { closing = other.close(); });
+  await core.publish('bunny.state.session.s1', session('s1', 1));
+  await flush();
+  await core.publish('bunny.event.session.s1', turnEnded('s1'));
+  await flush();
+  assert.ok(closing);
+  assert.equal(await settled(closing), false, 'only a handler closing its own subscription skips the wait');
+  gate.resolve(undefined);
+  await closing;
+});
+
+it('a callback left behind by a finished delivery waits for the running one like any outside caller', async () => {
+  const {core, wall} = bus();
+  const gate = deferred<undefined>();
+  const resume = deferred<undefined>();
+  let closing: Promise<void> | undefined;
+  const subscription = await wall.subscribe<{revision: number}>('bunny.state.session.*', async message => {
+    if (message.data.revision === 1) {
+      // This continuation keeps the first delivery's async context after that delivery has finished.
+      void resume.promise.then(() => { closing = subscription.close(); });
+      return;
+    }
+    await gate.promise;
+  });
+  await core.publish('bunny.state.session.s1', session('s1', 1));
+  await core.publish('bunny.state.session.s1', session('s1', 2));
+  await flush();
+  resume.resolve(undefined);
+  await flush();
+  assert.ok(closing);
+  assert.equal(await settled(closing), false, 'the second delivery is still running');
+  gate.resolve(undefined);
+  await closing;
+});
+
+it('maxQueued must be a positive integer', () => {
+  for (const maxQueued of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+    assert.throws(() => new InProcessBus({maxQueued}), RangeError, String(maxQueued));
+  }
+  assert.doesNotThrow(() => new InProcessBus({maxQueued: 1}));
 });

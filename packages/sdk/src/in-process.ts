@@ -7,7 +7,8 @@ import {DeliveryQueue} from './queue.js';
 import {overlaps, parseKey, parsePattern, type Category, type Pattern} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
-  type RequestResult, type Responder, type Sdk, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
+  type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
+  type TraceContext,
 } from './sdk.js';
 import {startSync, type SyncHandler, type SyncOptions, type SyncProvider} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
@@ -25,6 +26,10 @@ export type BusOptions = {
   maxQueued?: number;
   /** Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` process warning. */
   onError?: (error: unknown, scope: ErrorScope) => void;
+  /** Runs request deadlines. Defaults to the global `setTimeout`. The runtime passes the scheduler its modules use. */
+  scheduler?: Scheduler;
+  /** Hears of each overflow that restarts a copy's sync, with the copy's source and families. */
+  onSyncRestart?: (scope: ErrorScope) => void;
 };
 
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
@@ -36,6 +41,10 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 const body = (code: ErrorCode, detail: string, ids: {requestId?: string; traceId?: string} = {}): ErrorBody =>
   errorBody(code, {...ids, detail: detail.slice(0, MAX_DETAIL)});
 const invalid = (detail: string): SdkError => new SdkError(body('invalid-request', detail));
+const timers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
 
 /** State and removal events travel on `bunny.state` keys, occurrences and outcomes on `bunny.event` keys. */
 function categoryOf(kind: PublishedKind): Category {
@@ -65,6 +74,12 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
 type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
 type Delivery = {command: Command<object>; expiresAtMs: number; settle: (result: RequestResult) => void};
 type Owner = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
+/** What one participant opened, so that its close can undo all of it. */
+type Member = {
+  source: string; closed: boolean; closing: Promise<void> | undefined; opened: Set<Subscription>;
+  /** Abandons each request still waiting for its result. */
+  requests: Set<() => void>;
+};
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
 
 export class InProcessBus {
@@ -73,13 +88,16 @@ export class InProcessBus {
   readonly #now: () => number;
   readonly #maxQueued: number;
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
+  readonly #scheduler: Scheduler;
   readonly #sync: SyncOwners;
+  readonly #onSyncRestart: (scope: ErrorScope) => void;
 
   constructor(options: BusOptions = {}) {
     const maxQueued = options.maxQueued ?? 1024;
     if (!Number.isSafeInteger(maxQueued) || maxQueued < 1) throw new RangeError('maxQueued must be a positive integer');
     this.#now = options.now ?? (() => Date.now());
     this.#maxQueued = maxQueued;
+    this.#scheduler = options.scheduler ?? timers;
     this.#onError = options.onError ?? ((error, scope) => {
       // An Error warning prints its own name and message, so they carry the scope; the original is its cause.
       const reason = error instanceof Error ? error.message : 'a non-Error value was thrown';
@@ -87,35 +105,77 @@ export class InProcessBus {
       warning.name = 'BunnySdkWarning';
       process.emitWarning(warning);
     });
+    this.#onSyncRestart = options.onSyncRestart ?? (() => {});
     this.#sync = new SyncOwners({
-      now: this.#now, maxQueued, report: (error, scope) => { this.#report(error, scope); },
+      now: this.#now, scheduler: this.#scheduler, maxQueued, report: (error, scope) => { this.#report(error, scope); },
       envelope: (source, kind, draft, trace, deadline) => this.#envelope(source, kind, draft, trace, deadline),
     });
   }
 
   /**
    * A participant's connection. `source` is its CloudEvents source, such as `bunny/core` or `bunny/modules/pixoo`; a
-   * malformed one throws `SdkError` at once.
+   * malformed one throws `SdkError` at once. Its `close` closes everything the participant opened.
    */
-  connect(source: string): Sdk {
+  connect(source: string): Participant {
     if (!SOURCE.test(source) || source.length > 256) throw invalid(`source ${source}`);
+    const member: Member = {source, closed: false, closing: undefined, opened: new Set(), requests: new Set()};
+    const open = <T>(call: () => T | Promise<T>): Promise<T> => attempt(() => {
+      if (member.closed) throw new SdkError(body('invalid-state', `${source} is closed`));
+      return call();
+    });
     return {
       source,
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
-        attempt(() => this.#publish(source, key, draft, options)),
+        open(() => this.#publish(source, key, draft, options)),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
-        attempt(() => this.#subscribe(source, pattern, handler, options)),
+        open(() => this.#subscribe(member, pattern, handler, options)),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) =>
-        attempt(() => this.#request(source, key, draft, options)),
-      respond: <T extends object>(pattern: string, responder: Responder<T>) => attempt(() => this.#respond(source, pattern, responder)),
-      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => attempt(() => startSync({
-        now: this.#now,
-        subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(source, pattern, deliver, subscribeOptions)),
-        request: outgoing => this.#sync.request(source, outgoing),
-        report: error => { this.#report(error, {source, pattern: `sync ${families.join(',')}`}); },
-      }, families, handler, options)),
-      serveSync: (families: readonly string[], provider: SyncProvider) => attempt(() => this.#sync.serve(source, families, provider)),
+        open(() => this.#request(member, key, draft, options)),
+      respond: <T extends object>(pattern: string, responder: Responder<T>) => open(() => this.#respond(member, pattern, responder)),
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => open(() => {
+        const scope = {source, pattern: `sync ${families.join(',')}`};
+        return startSync({
+          now: this.#now,
+          // Like the participant's own calls, a copy's subscriptions are refused once the participant has closed.
+          subscribe: (pattern, deliver, subscribeOptions) => open(() => this.#subscribe(member, pattern, deliver, subscribeOptions)),
+          request: outgoing => this.#sync.request(source, outgoing),
+          report: error => { this.#report(error, scope); },
+          restarted: () => {
+            try {
+              this.#onSyncRestart(scope);
+            } catch {
+              // A failing listener must not stop the copy from syncing again.
+            }
+          },
+          track: copy => this.#track(member, copy),
+        }, families, handler, options);
+      }),
+      serveSync: (families: readonly string[], provider: SyncProvider) => open(() => {
+        const served = this.#sync.serve(source, families, provider);
+        let untrack = (): void => {};
+        const subscription: Subscription = {close: () => {
+          untrack();
+          return served.close();
+        }};
+        untrack = this.#track(member, subscription);
+        return subscription;
+      }),
+      close: () => member.closing ??= this.#close(member),
     };
+  }
+
+  /** Keeps what a participant opened, so that its close closes it; returns what forgets it again. */
+  #track(member: Member, opened: Subscription): () => void {
+    member.opened.add(opened);
+    return () => { member.opened.delete(opened); };
+  }
+
+  async #close(member: Member): Promise<void> {
+    member.closed = true;
+    // Settle the participant's own requests first. A handler of this participant that awaits one can then finish, so
+    // the close never waits for another participant's handler.
+    for (const abandon of [...member.requests]) abandon();
+    await Promise.all([...member.opened].map(subscription => subscription.close()));
   }
 
   #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
@@ -133,11 +193,11 @@ export class InProcessBus {
     return message;
   }
 
-  #subscribe<T extends object>(source: string, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
+  #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
     const parsed = parsePattern(pattern);
     if (parsed === undefined) throw invalid(`pattern ${pattern}`);
     if (parsed.category === 'cmd') throw invalid('commands go to their one responder; use respond');
-    const scope = {source, pattern};
+    const scope = {source: member.source, pattern};
     const run = async (call: () => void | Promise<void>): Promise<void> => {
       try {
         await call();
@@ -153,13 +213,16 @@ export class InProcessBus {
       await run(() => handler(message as Message<T>));
     })};
     this.#subscribers.add(subscriber);
-    return {close: () => {
+    const subscription: Subscription = {close: () => {
       this.#subscribers.delete(subscriber);
+      member.opened.delete(subscription);
       return subscriber.queue.close();
     }};
+    member.opened.add(subscription);
+    return subscription;
   }
 
-  #request<T extends object>(source: string, key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
+  #request<T extends object>(member: Member, key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
     const route = parseKey(key);
     if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
     if (!draft.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
@@ -169,7 +232,7 @@ export class InProcessBus {
     if (!ID.test(requestId)) throw invalid('requestId is not an identifier');
     const sentAtMs = this.#now(), expiresAtMs = sentAtMs + timeoutMs;
     const data = {...draft.data, requestId};
-    const command = this.#envelope(source, 'command', {...draft, data}, childOf(options.parent), {sentAtMs, expiresAtMs});
+    const command = this.#envelope(member.source, 'command', {...draft, data}, childOf(options.parent), {sentAtMs, expiresAtMs});
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
@@ -177,23 +240,34 @@ export class InProcessBus {
     }
     return new Promise(resolve => {
       let settled = false;
-      // At the deadline the result is uncertain: the command may have taken effect, and it is never sent again.
-      const timer = setTimeout(() => {
-        settle({status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
-      }, timeoutMs);
+      let cancel: Cancel = () => {};
       const settle = (result: RequestResult): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cancel();
+        member.requests.delete(abandon);
         resolve(result);
       };
-      if (!owner.queue.push({command, expiresAtMs, settle})) {
+      const delivery: Delivery = {command, expiresAtMs, settle};
+      // A command still waiting in the responder's queue never reached its handler, so it is taken out and nothing
+      // can have happened. One the handler has may have taken effect, and it is never sent again.
+      const end = (unsent: RequestResult, sent: RequestResult): void => { settle(owner.queue.remove(delivery) ? unsent : sent); };
+      const abandon = (): void => {
+        end({status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)},
+          {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)});
+      };
+      member.requests.add(abandon);
+      cancel = this.#scheduler.after(timeoutMs, () => {
+        end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${timeoutMs} ms`, ids)},
+          {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
+      });
+      if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
       }
     });
   }
 
-  #respond<T extends object>(source: string, pattern: string, responder: Responder<T>): Subscription {
+  #respond<T extends object>(member: Member, pattern: string, responder: Responder<T>): Subscription {
     const parsed = parsePattern(pattern);
     if (parsed?.category !== 'cmd') throw invalid('respond needs a bunny.cmd pattern');
     for (const other of this.#owners) {
@@ -201,10 +275,17 @@ export class InProcessBus {
         throw new SdkError(body('invalid-state', `${other.scope.source} already responds to ${other.scope.pattern}`));
       }
     }
+    const {source} = member;
     const scope = {source, pattern};
     const owner: Owner = {pattern: parsed, scope, queue: new DeliveryQueue(this.#maxQueued, async ({command, expiresAtMs, settle}) => {
-      // A command past its expiry is ignored: its requester already has an uncertain result, so nothing answers it.
-      if (expiresAtMs <= this.#now()) return;
+      // A command past its expiry is ignored and never answered. It did not reach the handler, so its requester learns
+      // that it expired, unless the deadline already settled the request.
+      if (expiresAtMs <= this.#now()) {
+        const {requestId} = command.data;
+        const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+        settle({status: 'rejected', requestId, error: body('expired', 'the command reached the responder after its expiry', ids)});
+        return;
+      }
       let answer: Reply;
       try {
         answer = await responder(command as Command<T>);
@@ -216,14 +297,17 @@ export class InProcessBus {
       settle(this.#reply(source, command, answer));
     })};
     this.#owners.add(owner);
-    return {close: () => {
+    const subscription: Subscription = {close: () => {
       this.#owners.delete(owner);
+      member.opened.delete(subscription);
       // Commands still waiting never reached the responder, so their requesters learn that at once.
       return owner.queue.close(({command, settle}) => {
         const {requestId} = command.data;
         settle({status: 'rejected', requestId, error: body('unavailable', 'the responder closed', {requestId, traceId: traceIdOf(command.traceparent)})});
       });
     }};
+    member.opened.add(subscription);
+    return subscription;
   }
 
   #reply(source: string, command: Command<object>, answer: Reply): RequestResult {

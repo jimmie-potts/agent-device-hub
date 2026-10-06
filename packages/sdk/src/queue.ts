@@ -27,6 +27,14 @@ export class DeliveryQueue<T extends object> {
     return true;
   }
 
+  /** Takes out an item that is still waiting. False once it is being delivered, was delivered or was dropped. */
+  remove(item: T): boolean {
+    const index = this.#items.indexOf(item);
+    if (index < 0) return false;
+    this.#items.splice(index, 1);
+    return true;
+  }
+
   /**
    * Drops waiting items, passing each to `dropped`, and accepts no more. Resolves when the item being delivered is
    * done, or at once when called from that delivery's own handler, which would otherwise wait for itself.

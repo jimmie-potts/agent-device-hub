@@ -89,9 +89,10 @@ their tests, policies and capability specifications.
 selects how every component will communicate, and supersedes ADR 0010's staged
 adoption. These parts exist as source: the message profile 2.0 contract
 (`@jimmie-potts/event-contracts/v2`), its core payload families
-(`@jimmie-potts/event-contracts/v2/families`) and the SDK's in-process bus with
-sync (`@jimmie-potts/sdk`). The 1.x field mapping is in
-[MAPPING.md](../packages/event-contracts/MAPPING.md).
+(`@jimmie-potts/event-contracts/v2/families`), the SDK's in-process bus with
+sync and the module API (`@jimmie-potts/sdk`), and the runtime skeleton with its
+module host (`apps/runtime`), which runs with zero modules. The 1.x field
+mapping is in [MAPPING.md](../packages/event-contracts/MAPPING.md).
 
 - **Runtime.** One TypeScript runtime, `apps/runtime`, will host the core and
   every device as a module from a fixed, shipped list. Modules talk through the

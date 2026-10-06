@@ -58,8 +58,11 @@ export type SyncAnswer =
   | {status: 'served'; requestId: string; states: Message[]; completed: Message<SyncCompleted>}
   | {status: 'rejected'; requestId: string; error: ErrorBody};
 
-/** One sync request as the copy sends it. The request message carries `trace` as its own trace context. */
-export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext};
+/**
+ * One sync request as the copy sends it. The request message carries `trace` as its own trace context. `signal` aborts
+ * when the copy closes, and the transport then withdraws the request.
+ */
+export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal};
 
 /** What sync needs from a transport. */
 export type SyncTransport = {
@@ -70,6 +73,10 @@ export type SyncTransport = {
   request: (request: OutgoingSync) => Promise<SyncAnswer>;
   /** Reports an error that no caller hears about, such as a handler that threw. */
   report: (error: unknown) => void;
+  /** Hears of each overflow that restarts the copy's sync. */
+  restarted?: () => void;
+  /** Hears of the copy as soon as it exists, so its participant can close it; returns what forgets it again. */
+  track?: (copy: Subscription) => () => void;
 };
 
 const FAMILY = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -190,6 +197,10 @@ class Copy<T extends object> implements SyncedCopy<T> {
   #firstDeadlineMs: number | undefined;
   /** Settles the `sync` call when the first sync completes or is refused. */
   #settle: ((result: SyncResult<T>) => void) | undefined;
+  /** Withdraws the outstanding request when the copy closes. */
+  #inflight: AbortController | undefined;
+  /** Forgets the copy at its participant. */
+  #untrack: () => void = () => {};
   // One worker sends requests, applies answers and live messages and calls the handler, one change at a time. A
   // queued item only wakes it, so one waiting item is enough.
   readonly #worker = new DeliveryQueue<object>(1, () => this.#work());
@@ -205,14 +216,23 @@ class Copy<T extends object> implements SyncedCopy<T> {
   async start(parent: TraceContext | undefined): Promise<SyncResult<T>> {
     const result = new Promise<SyncResult<T>>(resolve => { this.#settle = resolve; });
     this.#parent = parent;
+    this.#untrack = this.#transport.track?.(this) ?? this.#untrack;
     // Subscribe before asking, so that nothing published after the snapshot is missed.
     try {
       for (const family of this.#families) {
-        this.#subscriptions.push(await this.#transport.subscribe(`bunny.state.${family}.*`, message => { this.#arrive(message); }, {
+        const subscription = await this.#transport.subscribe(`bunny.state.${family}.*`, message => { this.#arrive(message); }, {
           onOverflow: () => { this.#overflow(); },
-        }));
+        });
+        // A close while this subscription was being made has settled the sync and closed the ones before it.
+        if (this.#closed()) {
+          await subscription.close();
+          return result;
+        }
+        this.#subscriptions.push(subscription);
       }
     } catch (error) {
+      // A closed copy's transport may refuse; the close has already settled the sync.
+      if (this.#closed()) return result;
       await this.#stop();
       throw error;
     }
@@ -220,6 +240,11 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#wanted = true;
     this.#wake();
     return result;
+  }
+
+  /** Whether the copy has closed; a method, so that a check after an `await` is not narrowed away. */
+  #closed(): boolean {
+    return this.#phase === 'closed';
   }
 
   get(entity: EntityRef): Message<T> | undefined {
@@ -230,8 +255,17 @@ class Copy<T extends object> implements SyncedCopy<T> {
     return [...this.#held.values()].map(entry => entry.message);
   }
 
+  /** Stops following the owner and withdraws an outstanding request. A first sync still under way is `cancelled`. */
   close(): Promise<void> {
-    return this.#stop();
+    const settle = this.#settle;
+    this.#settle = undefined;
+    const stopped = this.#stop();
+    if (settle !== undefined) {
+      const {requestId, traceId} = this.#lastSent ?? {requestId: randomUUID(), traceId: undefined};
+      const ids = traceId === undefined ? {requestId} : {requestId, traceId};
+      settle({status: 'rejected', requestId, error: errorBody('cancelled', {...ids, detail: 'the requester closed'})});
+    }
+    return stopped;
   }
 
   #arrive(message: Message): void {
@@ -251,6 +285,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
    */
   #overflow(): void {
     if (this.#phase === 'closed') return;
+    this.#transport.restarted?.();
     this.#phase = 'syncing';
     this.#pending = [];
     this.#generation += 1;
@@ -282,9 +317,11 @@ class Copy<T extends object> implements SyncedCopy<T> {
     }
     this.#outstanding = true;
     this.#lastSent = ids;
+    const inflight = new AbortController();
+    this.#inflight = inflight;
     let sent: Promise<SyncAnswer>;
     try {
-      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace});
+      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal});
     } catch (error) {
       // A transport that throws instead of rejecting takes the same path.
       sent = Promise.reject(error);
@@ -299,6 +336,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   #arrived(answered: Answered): void {
     this.#outstanding = false;
+    this.#inflight = undefined;
     if (this.#phase === 'closed') return;
     this.#answered = answered;
     this.#wake();
@@ -411,6 +449,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#phase = 'closed';
     this.#pending = [];
     this.#answered = undefined;
+    this.#inflight?.abort();
+    this.#untrack();
     const subscriptions = this.#subscriptions.splice(0);
     await Promise.all([...subscriptions.map(subscription => subscription.close()), this.#worker.close()]);
   }

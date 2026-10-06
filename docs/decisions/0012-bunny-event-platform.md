@@ -150,8 +150,10 @@ Existing formats move in one offline cutover:
 Device commands, moments, mode changes and inbox notices are tracked:
 - The core records each one as sent, then accepted when the reply arrives, then
   completed when the outcome arrives.
-- If its deadline passes first, the core records it as uncertain. Failed and
-  uncertain results go to the shared inbox.
+- If its deadline passes first, the core records it as uncertain. A command
+  still queued at its deadline never reached the owner, so the SDK answers it
+  `expired` instead; the core records only an unknown fate as uncertain. Failed
+  and uncertain results go to the shared inbox.
 - Every step is logged.
 - A timed-out command is never retried automatically.
 - The core claims a physical change only when the device reported an observation.
@@ -359,3 +361,9 @@ both. Each change and its trade-off:
   a lost answer.
 - **One offline cutover.** It replaces the dual-version period and the staged
   installs, because downtime is acceptable.
+
+**2026-10-06, `expired`.** A command that the bus knows never reached its owner,
+because it was still queued at its deadline, is answered `expired` rather than
+uncertain ([#880](https://github.com/jimmie-potts/agent-device-hub/issues/880)).
+Uncertain now means only an unknown fate, so fewer items need a person to
+decide.

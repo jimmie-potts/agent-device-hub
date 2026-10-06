@@ -2,11 +2,11 @@
 
 Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. parts
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
-This version holds the in-process bus: `publish`, `subscribe`, `request`,
-`respond`, `sync` and its owner side, `serveSync`. Nothing runs it yet. Later
-stories add the module host (#880) and the SSE/HTTP remote transport (#883)
-without changing these calls, so a module never sees which transport carries its
-messages.
+It holds the in-process bus (`publish`, `subscribe`, `request`, `respond`,
+`sync` and its owner side, `serveSync`) and the [module API](#modules) that the
+runtime (`apps/runtime`) hosts. A later story adds the SSE/HTTP remote transport
+(#883) without changing these calls, so a module never sees which transport
+carries its messages.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -52,8 +52,17 @@ if (synced.status === 'synced') render(synced.copy.states());
   deliveries. By default, each one becomes a `BunnySdkWarning` process warning
   whose message names the source and pattern, with the original error as its
   `cause`.
+- `scheduler`: runs request and sync deadlines through
+  `after(delayMs, callback)`, which returns a function that cancels the
+  callback. Defaults to the global `setTimeout`. The runtime passes the
+  scheduler and clock it gives its modules, so a module's deadlines follow the
+  module's clock.
+- `onSyncRestart({source, pattern})`: hears of each overflow that restarts a
+  copy's sync, with the copy's source and `sync <families>` as its pattern. The
+  runtime counts these per module in health, so a restart loop shows.
 
-`bus.connect(source)` returns an `Sdk` for one participant. `source` is its
+`bus.connect(source)` returns a `Participant`: the `Sdk` calls for one
+participant, plus [`close()`](#closing-a-participant). `source` is its
 CloudEvents source, such as `bunny/core`; a malformed source throws `SdkError`
 at once. Each message the participant sends gets that
 source, a new `id`, the current `time`, the fixed profile attributes and a
@@ -78,6 +87,13 @@ The `Sdk` calls:
 handler finishes. Called from inside its own handler, `close()` resolves at once
 instead of waiting for that handler, and a responder that closes itself still
 sends its reply.
+
+Close detection follows the handler's async flow, not the call stack. A callback
+that the handler awaits, but that an emitter created elsewhere invokes, runs
+outside that flow, so its `close()` would wait for the very handler that waits
+for it. Such a callback should call `void subscription.close()` instead of
+awaiting it. Two handlers that await each other's close deadlock in the same
+way.
 
 A malformed call, such as a bad routing key, rejects with `SdkError`. Its
 `body` is the shared error body, here with code `invalid-request`.
@@ -109,8 +125,11 @@ straight back to the requester, never to subscribers.
   integer from 1 to 2147483647.
 - One responder owns each command key. A `respond` whose pattern overlaps
   another responder's is refused with `invalid-state`.
-- A responder handles one command at a time. If a command's expiry passes while
-  it waits, the responder ignores it and nothing answers it.
+- A responder handles one command at a time. A command whose expiry passes
+  before its handler starts never reaches the handler: at the deadline the bus
+  takes it out of the responder's queue, and the requester gets `expired`. A
+  command that reaches the responder at or after its expiry is skipped the same
+  way.
 
 `request` resolves with one of these results:
 
@@ -121,7 +140,9 @@ straight back to the requester, never to subscribers.
 | `rejected` | The responder threw. The error also goes to `onError`. | `internal` |
 | `rejected` | No responder owns the key, or it closed before the command reached it. | `unavailable` |
 | `rejected` | The responder's queue is full. | `capacity` |
-| `uncertain` | The deadline passed first. The command may have taken effect. | `uncertain-result` |
+| `rejected` | The deadline passed before the responder's handler started the command. | `expired` |
+| `rejected` | The requester closed before the responder's handler started the command. | `cancelled` |
+| `uncertain` | The handler had the command when the deadline passed or the requester closed. It may have taken effect. | `uncertain-result` |
 
 The SDK never sends a command twice, and a reply that arrives after the
 deadline is ignored. Error bodies carry the `requestId` and the command's trace
@@ -221,11 +242,93 @@ follows:
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
 | `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
+| `cancelled` | The copy closed, or its participant closed, before the answer came. |
 | `capacity` | The owner's queue is full. |
 | `invalid-request` | The families belong to more than one owner. |
 
+A request still waiting in the owner's queue at its deadline leaves the queue,
+so the owner never serves it and its room is free for another. It is still
+`unavailable`, never `expired`: a sync changes nothing, so asking again is safe.
 An owner ignores a sync request past its expiry. A malformed call, such as an
 empty or repeated family list, rejects with `SdkError` and `invalid-request`.
+
+## Closing a participant
+
+`participant.close()` closes everything the participant opened, so a stopped
+module leaves nothing behind:
+1. Later calls on the participant are refused with `invalid-state`.
+2. Its requests still waiting for a result settle. A command still queued at its
+   responder is taken out and the request is `rejected` with `cancelled`. One
+   that the responder's handler has becomes `uncertain`. Their deadlines are
+   cleared, so no timer keeps the process alive.
+3. Its subscriptions, responders, sync copies and sync owners close as their
+   own `close()` does. A copy withdraws its outstanding sync request, which
+   leaves the owner's queue if it still waits there, and a first sync still
+   under way resolves as `rejected` with `cancelled`. A copy closed while it
+   is still subscribing to its families makes no further subscription, and the
+   participant refuses any. An owner refuses its waiting requests as
+   `unavailable`.
+
+It resolves when the participant's running handlers have finished. Because its
+own requests settle first, a handler that awaits another participant's reply can
+finish, and the close never waits for another participant's handler. Calling it
+again returns the same promise. The runtime closes a module's participant when
+it stops the module.
+
+## Modules
+
+A module imports only this SDK and the contracts packages, so the module API
+lives here; [`apps/runtime`](../../apps/runtime/README.md) implements it. A
+module is an object with a `manifest`, `start(context)` and `stop()`:
+
+```ts
+import type {BunnyModule} from '@jimmie-potts/sdk';
+
+export const lamp: BunnyModule = {
+  manifest: {name: 'lamp', apiVersion: '1.0'},
+  async start({sdk, log, database}) {
+    database().exec('CREATE TABLE IF NOT EXISTS scenes (id TEXT PRIMARY KEY)');
+    await sdk.respond('bunny.cmd.scene.lamp', command => {
+      log.info('scene.requested', {}, command);
+      return {status: 'accepted'};
+    });
+  },
+  stop() {},
+};
+```
+
+- **Manifest.** `name` is lowercase letters and digits with single hyphens, at
+  most 64 characters. It names the module's source (`bunny/modules/<name>`), its
+  SQLite file and its log records. `apiVersion` is the module API version the
+  module was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current
+  one, `1.0`. The runtime refuses a module with another major version or a newer
+  minor one. Write the version as a literal, so a later major version refuses
+  the module until it is updated.
+- **`start(context)`** subscribes, responds and opens devices. A throw, a
+  rejection or a start that outlasts the runtime's start deadline fails the
+  module.
+- **`stop()`** releases what the module holds. The runtime calls it once for
+  every module whose start it called, even when start failed or has not
+  finished. It runs after the module's participant has closed, which waits for
+  the module's running handlers up to the stop deadline; a handler that outlasts
+  that deadline may still be running.
+
+The context:
+
+| Member | What it gives |
+| --- | --- |
+| `sdk` | The module's own participant on the runtime's bus. |
+| `log` | `debug`, `info`, `warn` and `error(event, fields?, trace?)`. Records name the module, and `trace` adds its trace and span IDs. Never put a secret in a field or an error message. |
+| `trace.span(parent?)` | A new span: in the parent's trace when one is given, otherwise a new trace. Use it as the `parent` of messages the work sends and the `trace` of its log records. |
+| `clock.now()` | The runtime's clock, which the bus also uses for `time` and `expiresat`. |
+| `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
+| `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. |
+| `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. |
+| `signal` | Aborted when the module stops, so device calls given it end. |
+
+Once the module's stop begins, its `sdk`, `scheduler`, `workers` and
+`database()` refuse use with an `SdkError` carrying `invalid-state`. Its `log`,
+`trace`, `clock` and `signal` keep working, so `stop()` can still log.
 
 ## Trace context
 

@@ -33,9 +33,10 @@ export type RejectedReply = {requestId: string; error: ErrorDetail};
 export type Reply = {status: 'accepted'} | ErrorBody;
 
 /**
- * How a request ended. `rejected` carries the owner's refusal, or the bus's own when no responder took the command
- * (`unavailable`, `capacity`). `uncertain` means the deadline passed first (`uncertain-result`): the command may have
- * taken effect, and nothing retries it.
+ * How a request ended. `rejected` carries the owner's refusal, or the bus's own when the command never reached the
+ * responder's handler: `unavailable`, `capacity`, `expired` when its deadline passed while it waited, or `cancelled`
+ * when the requester closed. `uncertain` (`uncertain-result`) means the handler had the command when the deadline
+ * passed or the requester closed: it may have taken effect, and nothing retries it.
  */
 export type RequestResult =
   | {status: 'accepted'; requestId: string; reply: Message<AcceptedReply>}
@@ -54,8 +55,27 @@ export type SubscribeOptions = {
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 
 export interface Subscription {
-  /** Stops delivery and drops queued messages. Resolves when a handler that is still running has finished. */
+  /**
+   * Stops delivery and drops queued messages; a responder's waiting commands are refused as `unavailable`. Resolves
+   * when a handler that is still running has finished. Called from that handler's own async flow, it resolves at once
+   * instead of waiting for itself. A callback that an emitter created elsewhere invokes is not in that flow, so it
+   * should use `void subscription.close()`. Two handlers that await each other's close never finish.
+   */
   close(): Promise<void>;
+}
+
+/** Cancels a scheduled callback. It does nothing once the callback has run or was cancelled. */
+export type Cancel = () => void;
+
+/** The wall clock, in epoch milliseconds. */
+export interface Clock {
+  now(): number;
+}
+
+/** Runs delayed callbacks. The runtime gives the bus and every module the same one, so SDK deadlines follow it. */
+export interface Scheduler {
+  /** Runs `callback` once after `delayMs` milliseconds, and returns a function that cancels it. */
+  after(delayMs: number, callback: () => void): Cancel;
 }
 
 /** One participant's connection to the bus. Every message it sends carries its `source`. */
@@ -76,6 +96,19 @@ export interface Sdk {
   sync<T extends object = Record<string, unknown>>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions): Promise<SyncResult<T>>;
   /** Answers sync requests for `families` from the owner's current state. One owner serves each family. */
   serveSync(families: readonly string[], provider: SyncProvider): Promise<Subscription>;
+}
+
+/** A participant as the code that connected it holds it: the SDK calls, and `close`. */
+export interface Participant extends Sdk {
+  /**
+   * Closes everything the participant opened, so nothing of it is left behind. Its requests still waiting for a result
+   * settle first: one whose command is still queued is taken out and refused as `cancelled`, and one whose command the
+   * responder's handler has becomes `uncertain`. Their deadlines are cleared. Then its subscriptions, responders, sync
+   * copies and sync owners close as their own `close` does: a copy withdraws its outstanding sync request. It resolves
+   * when its running handlers have finished, and never waits for another participant's handler. Later calls are
+   * refused with `invalid-state`, and closing again returns the same promise.
+   */
+  close(): Promise<void>;
 }
 
 /** A refused SDK call, such as a malformed routing key, carrying the shared error body. */
