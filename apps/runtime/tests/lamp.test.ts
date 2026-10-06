@@ -1,16 +1,18 @@
-// The fixture module (Hub #882): the simulated lamp passes the module test kit, and runs under the real runtime with a
-// stand-in core that takes its outcomes.
+// The fixture modules (Hub #882, #846): the lamp and the chime pass the module test kit, and the lamp runs under the
+// real runtime with a stand-in core that takes its outcomes.
 import assert from 'node:assert/strict';
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
-import {core} from './fixtures/core.js';
-import {lamp, lampSpec, switchLamp} from './fixtures/lamp.js';
+import {chimeSpec} from './fixtures/chime.js';
+import {createCoreModule} from './fixtures/core.js';
+import {SimulatedLamps, createLampModule, lampSpec, switchLamp} from './fixtures/lamp.js';
 import {contextOf, fixture, it, run, waitFor} from './support.js';
 
 moduleConformance(lampSpec());
+moduleConformance(chimeSpec());
 
 it('under the runtime, the lamp switches on command and the core takes its outcome once', async context => {
   const requester = fixture('requester');
-  const {logs} = await run(context, {modules: [core(), lamp(), requester]});
+  const {logs} = await run(context, {modules: [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), requester]});
   const {key, draft} = switchLamp('lamp-1', 'on');
   const result = await contextOf(requester).sdk.request(key, draft, {timeoutMs: 5000});
   assert.equal(result.status, 'accepted');
@@ -21,7 +23,7 @@ it('under the runtime, the lamp switches on command and the core takes its outco
 
 it('under the runtime, the lamp copies the core\'s mode and stays off in quiet mode', async context => {
   const requester = fixture('requester');
-  await run(context, {modules: [core('quiet'), lamp(), requester]});
+  await run(context, {modules: [createCoreModule({mode: 'quiet'}), createLampModule({transport: new SimulatedLamps()}), requester]});
   const {key, draft} = switchLamp('lamp-1', 'on');
   const result = await contextOf(requester).sdk.request(key, draft, {timeoutMs: 5000});
   assert.equal(result.status, 'rejected');

@@ -317,6 +317,11 @@ export const lamp: BunnyModule = {
   finished. It runs after the module's participant has closed, which waits for
   the module's running handlers up to the stop deadline; a handler that outlasts
   that deadline may still be running.
+- **Factory.** A module that reaches a device is created by a factory that
+  takes the device's transport, `create<Name>Module({transport})`. Tests and
+  disposable runs pass a simulated transport, so no hardware is touched; there
+  is no manifest slot or registry for transports. The runtime's fixture lamp,
+  `createLampModule({transport})`, shows the convention (#846).
 
 The context:
 
@@ -403,10 +408,10 @@ so all modules behave the same. Its tests import it; the runtime never does.
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
 
 moduleConformance({
-  create: () => lamp(),
+  create: () => createLampModule({transport: new SimulatedLamps()}),
   schemas: lampSchemas,
   serves: ['lamp'],
-  copies: {families: ['mode'], snapshot: {revision: 1, states: [modeState('work')]}},
+  copies: {families: ['mode', 'session'], snapshot: {revision: 1, states: [modeState('work')]}},
   accepted: switchLamp('lamp-1', 'on'),
   refused: {...switchLamp('lamp-9', 'on'), code: 'not-found'},
 });

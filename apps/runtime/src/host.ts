@@ -126,6 +126,11 @@ export class ModuleHost {
     }
   }
 
+  /** The bus the modules share, so that a remote edge can mount on it (#846's harness, #920's launch option). */
+  get bus(): InProcessBus {
+    return this.#bus;
+  }
+
   /** Starts every module that was not refused, at once, and resolves when each start has finished, failed or timed out. */
   async start(): Promise<void> {
     await Promise.all(this.#slots.filter(slot => slot.state === 'starting').map(slot => this.#start(slot)));

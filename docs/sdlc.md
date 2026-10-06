@@ -420,7 +420,7 @@ Verification has three tiers.
       checkouts at their `compose.json` pins in the same place. Never write
       to the coordinator's worktree.
    2. From that worktree, start a disposable verification run with synthetic
-      data and simulated devices. Use the new runtime's adapter once #846
+      data and simulated devices. Use the new runtime's adapter once #920
       lands. Until then, use
       `fnm exec --using=.nvmrc -- npm run -s verify -- <operation>` or the
       `verify:compose` form in [app verification](app-verification.md), or

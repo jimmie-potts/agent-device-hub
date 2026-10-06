@@ -53,6 +53,7 @@ jobs:
       - run: npm run test:events:python
       - run: npm run test:sdk:built
       - run: npm run test:runtime:built
+      - run: npm run test:runtime:scenarios:built
       - run: npm run test:lifecycle:built
       - run: npm run test:lifecycle:python
       - run: npm run test:lifecycle:package:built
