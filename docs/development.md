@@ -188,8 +188,8 @@ No installed dependencies or compiled output are shared between jobs.
 Locally, `tsc` never removes output whose source was deleted, renamed or exists
 only on another branch. The suites that run compiled tests
 (`test:sdk:built`, `test:runtime:built` and `test:nanoleaf:built`) run every
-file under their `dist/tests/`, and the Hub package script copies all of
-`apps/hub/dist/`. After switching branches or rebasing, delete the affected `dist/`
+file under their `dist/tests/`, and the package scripts copy their package's
+whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
 Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one of them:
@@ -908,7 +908,10 @@ The hub and setup suites refuse a `TMPDIR` inside any Git checkout and fail
 with `store-in-checkout`, so a task-scoped `.local/scratch` folder does not
 work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such as
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
-`npm run test:setup`.
+`npm run test:setup`. Keep the `TMPDIR` path at most 48 bytes: a Hub test binds
+a Unix socket 59 bytes below it, and a socket path stops at 107 bytes, so a
+longer one fails with `listen EINVAL`. Keep the folder name short, such as
+`gh916t`.
 
 Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
 Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,

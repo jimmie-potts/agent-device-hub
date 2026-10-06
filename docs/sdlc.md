@@ -48,9 +48,9 @@ decisions they needed surfaced at PR time. When parallel stories change the
 same source module or interface, such as `packages/sdk/src`, each split story's
 issue names the interface and the one story that owns the module before work
 starts; another story asks that owner for a change instead of editing it.
-Shared documentation, specs, root manifests, the lockfile and CI stay under the
-coordinator rule in [Scope and implementation](#scope-and-implementation), and
-each story still adds its own checks and spec deltas.
+Root manifests, the lockfile and CI stay under the coordinator rule in
+[Scope and implementation](#scope-and-implementation), and each story still
+adds its own checks, documentation and spec deltas.
 
 At every pickup, read the current issue and dependencies, current main, the
 accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
@@ -350,9 +350,10 @@ permission to replace an owner.
    Reviewer briefs say that reviewers make no GitHub writes, including reruns,
    merges and comments. Each brief names a short TMPDIR outside every checkout
    that no other agent uses, including the coordinator, such as
-   `~/.cache/agent-device-hub/r<PR>-<axis>-<suffix>`: two reviewers that chose
-   the same name deleted each other's copies. The reviewer removes it at the
-   end. Standards and Specification reviewers read a shared worktree but never
+   `~/.cache/agent-device-hub/r917s` for PR #917's Standards reviewer, within
+   the [TMPDIR length limit](development.md#standalone-hub-checks): two
+   reviewers that chose the same name deleted each other's copies. The reviewer
+   removes it at the end. Standards and Specification reviewers read a shared worktree but never
    build or test in it, because a build rewrites `dist/` under the coordinator
    and the other reviewers. They build and test in a `git clone` of the
    repository under their TMPDIR, checked out detached at the head; a
@@ -381,7 +382,8 @@ permission to replace an owner.
 6. Read back the main merge revision and verify its CI evidence using the same
    rules, or record the guide-only exception evidence below. Close the delivered
    issue only after its acceptance is met, clear workflow labels and verify
-   closure. Apply [tracker reconciliation](#tracker-reconciliation) to affected
+   closure, with stderr visible as [tracker writes](tracker-reconciliation.md)
+   require. Apply [tracker reconciliation](#tracker-reconciliation) to affected
    related issues; each retains its own acceptance gate.
    Do not close future implementation or device acceptance issues with a bootstrap.
 7. Clean up this delivery's own worktree and scratch as described in
