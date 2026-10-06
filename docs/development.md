@@ -699,8 +699,8 @@ The mapping test imports the built `@jimmie-potts/agent-state` and
 
 ## SDK checks
 
-`packages/sdk` holds the SDK's in-process bus (publish, subscribe, request and
-respond) from [ADR 0012](decisions/0012-bunny-event-platform.md). Its
+`packages/sdk` holds the SDK's in-process bus (publish, subscribe, request,
+respond and sync) from [ADR 0012](decisions/0012-bunny-event-platform.md). Its
 [README](../packages/sdk/README.md) documents the API. The package follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 

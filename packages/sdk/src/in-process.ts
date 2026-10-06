@@ -2,12 +2,14 @@
 // never copied or serialized; schemas are checked in tests and at remote edges, not here (ADR 0012).
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
+import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
 import {overlaps, parseKey, parsePattern, type Category, type Pattern} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
-  type RequestResult, type Responder, type Sdk, type SendOptions, type Subscription, type TraceContext,
+  type RequestResult, type Responder, type Sdk, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
 } from './sdk.js';
+import {startSync, type SyncHandler, type SyncOptions, type SyncProvider} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 /** Which participant and subscription a reported error belongs to. */
@@ -59,7 +61,8 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
   }
 }
 
-type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>};
+/** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
+type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
 type Delivery = {command: Command<object>; expiresAtMs: number; settle: (result: RequestResult) => void};
 type Owner = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
@@ -70,6 +73,7 @@ export class InProcessBus {
   readonly #now: () => number;
   readonly #maxQueued: number;
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
+  readonly #sync: SyncOwners;
 
   constructor(options: BusOptions = {}) {
     const maxQueued = options.maxQueued ?? 1024;
@@ -83,6 +87,10 @@ export class InProcessBus {
       warning.name = 'BunnySdkWarning';
       process.emitWarning(warning);
     });
+    this.#sync = new SyncOwners({
+      now: this.#now, maxQueued, report: (error, scope) => { this.#report(error, scope); },
+      envelope: (source, kind, draft, trace, deadline) => this.#envelope(source, kind, draft, trace, deadline),
+    });
   }
 
   /**
@@ -95,10 +103,18 @@ export class InProcessBus {
       source,
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
         attempt(() => this.#publish(source, key, draft, options)),
-      subscribe: <T extends object>(pattern: string, handler: Handler<T>) => attempt(() => this.#subscribe(source, pattern, handler)),
+      subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
+        attempt(() => this.#subscribe(source, pattern, handler, options)),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) =>
         attempt(() => this.#request(source, key, draft, options)),
       respond: <T extends object>(pattern: string, responder: Responder<T>) => attempt(() => this.#respond(source, pattern, responder)),
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => attempt(() => startSync({
+        now: this.#now,
+        subscribe: (pattern, deliver, subscribeOptions) => attempt(() => this.#subscribe(source, pattern, deliver, subscribeOptions)),
+        request: outgoing => this.#sync.request(source, outgoing),
+        report: error => { this.#report(error, {source, pattern: `sync ${families.join(',')}`}); },
+      }, families, handler, options)),
+      serveSync: (families: readonly string[], provider: SyncProvider) => attempt(() => this.#sync.serve(source, families, provider)),
     };
   }
 
@@ -110,23 +126,31 @@ export class InProcessBus {
     const message = this.#envelope(source, draft.kind, draft, childOf(options.parent));
     for (const subscriber of this.#subscribers) {
       if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
+        subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
     return message;
   }
 
-  #subscribe<T extends object>(source: string, pattern: string, handler: Handler<T>): Subscription {
+  #subscribe<T extends object>(source: string, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
     const parsed = parsePattern(pattern);
     if (parsed === undefined) throw invalid(`pattern ${pattern}`);
     if (parsed.category === 'cmd') throw invalid('commands go to their one responder; use respond');
     const scope = {source, pattern};
-    const subscriber: Subscriber = {pattern: parsed, scope, queue: new DeliveryQueue(this.#maxQueued, async message => {
+    const run = async (call: () => void | Promise<void>): Promise<void> => {
       try {
-        await handler(message as Message<T>);
+        await call();
       } catch (error) {
         this.#report(error, scope);
       }
+    };
+    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, queue: new DeliveryQueue(this.#maxQueued, async message => {
+      // A drop leaves a message waiting, so the subscriber hears of the gap before that message, in its own order.
+      const {dropped} = subscriber;
+      subscriber.dropped = 0;
+      if (dropped > 0 && onOverflow !== undefined) await run(() => onOverflow({dropped}));
+      await run(() => handler(message as Message<T>));
     })};
     this.#subscribers.add(subscriber);
     return {close: () => {
