@@ -66,7 +66,10 @@ follows the strict profile for new code.
   `kind`. Commands and sync requests require `expiresat`; no other kind may
   carry it. The `type` suffix must match the kind, for example
   `org.bunny.<entity>.<verb>.requested` for a command. Only sync messages may use
-  `org.bunny.sync.requested` and `org.bunny.sync.completed`.
+  `org.bunny.sync.requested` and `org.bunny.sync.completed`. A sync request's
+  `subject` names its requested families joined by commas, such as
+  `session,inbox-item`, and its `sync.completed` carries the same subject; the
+  validator does not check this.
 - `schemas/v2/blocks.schema.json`: building blocks for payloads. These are
   identifiers, `<name>AtMs` instants, revisions, the `{epoch, sequence}`
   ticket, ordering, tagged unknown values, kebab-case enum values, entity

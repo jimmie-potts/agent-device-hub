@@ -2,11 +2,12 @@
 
 Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. parts
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
-It holds the in-process bus (`publish`, `subscribe`, `request`, `respond`,
-`sync` and its owner side, `serveSync`) and the [module API](#modules) that the
-runtime (`apps/runtime`) hosts. A later story adds the SSE/HTTP remote transport
-(#883) without changing these calls, so a module never sees which transport
-carries its messages.
+It offers `publish`, `publishMessage`, `subscribe`, `request`, `respond`, `sync`
+and its owner side, `serveSync`, over two transports: the in-process bus, and an
+SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime.
+Both carry the same calls, so a module or remote part never sees which transport
+carries its messages. It also holds the [module API](#modules) that the runtime
+(`apps/runtime`) hosts.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -163,12 +164,12 @@ the requester gets a `rejected` result with `capacity` instead.
 
 A subscriber that passes `onOverflow` to `subscribe` is also told about the gap.
 `onOverflow({dropped})` runs in the subscription's order, before the next message
-is delivered, with the number of messages dropped since it was last told. It
-says that messages were lost, not where: messages still waiting from before the
-drop may follow it. A
-subscriber that keeps a copy of state should sync again instead of continuing
-with a gap; `sync` does this itself. An `onOverflow` that throws is reported to
-`onError`, and delivery goes on.
+is delivered, with the number of messages dropped since it was last told. After
+a remote reconnect the count is unknown, and `dropped` is absent. The notice says
+that messages were lost, not where: messages still waiting from before the drop
+may follow it. A subscriber that keeps a copy of state should sync again instead
+of continuing with a gap; `sync` does this itself. An `onOverflow` that throws is
+reported to `onError`, and delivery goes on.
 
 Messages are shared, not copied. Treat a received message as read-only, and do
 not change a message or its `data` after publishing it.
@@ -346,8 +347,72 @@ new span ID. A reply continues its command's trace the same way. Without a
 parent, or with a malformed or all-zero one, the message starts a new trace with
 the sampled flag set.
 
+## Remote transport
+
+Remote parts, such as the CHOMPI bridge, the Wispr collector, agent hooks, the
+dashboard and MCP clients, make the same calls over SSE and HTTP (#883). The
+runtime mounts a `RemoteEdge` on its bus, and a remote part connects with
+`connectRemote`:
+
+```ts
+import {createServer} from 'node:http';
+import {InProcessBus, RemoteEdge, connectRemote} from '@jimmie-potts/sdk';
+
+const bus = new InProcessBus();
+const edge = new RemoteEdge({bus, validator, grants: [{source: 'bunny/bridge', token}], log: record => logger.info(record)});
+createServer(edge.handle).listen(port, '127.0.0.1');
+
+const bridge = await connectRemote({url: `http://127.0.0.1:${port}`, source: 'bunny/bridge', token});
+await bridge.subscribe('bunny.state.session.*', message => show(message.data));
+```
+
+The edge serves `GET /api/sdk/v1/stream`, one `text/event-stream` per
+connection, and one `POST /api/sdk/v1/<call>` per call. Every frame carries
+`schema: "sdk-remote/1.0"`, and every refusal is the shared error body, with the
+HTTP status that fits its code.
+
+- **Credentials.** Each source has a bearer token. The edge compares tokens in
+  constant time. A call without a granted token is refused with
+  `unauthenticated`, and a message or connection of another source with
+  `forbidden`. Tokens appear only in the `authorization` header, never in a
+  message, log record or error body.
+- **Validation.** The client builds every message, so it keeps its own `id` and
+  `time`. The edge checks each one against profile 2.0, its registered payload
+  schema and the 256 KiB cap before it reaches the bus. A refused message gets
+  `invalid-message`, `too-large`, `unknown-schema` or `unsupported-version`, and
+  a command or sync request already past its expiry gets `expired`.
+- **Subscriptions.** `subscribe` resolves once the edge has registered the
+  subscription, so nothing published after it is missed. Messages come down the
+  stream in order.
+- **A slow consumer.** The edge waits for the socket to drain before it writes
+  the next message of a subscription. A remote part that stops reading fills
+  only its own subscriptions' bounded bus queues. Their drops go to `onError` as
+  `capacity`, and the remote part receives `onOverflow` with the count.
+- **Reconnects.** When the stream is lost, the client reconnects, registers its
+  subscriptions, responders and sync owners again, and tells every subscription
+  `onOverflow({})`, with no count. A sync copy then syncs again. Nothing missed
+  in the gap is replayed.
+- **Sync answers.** A sync answer whose `sync.completed` or a state is over
+  256 KiB is refused at the edge with `too-large` and logged. A first sync
+  resolves `rejected` with that code, and a later one ends the copy with
+  `failed`. Paging is not built yet.
+
+The deadline answers per transport:
+
+| Case | In process | Remote |
+| --- | --- | --- |
+| A command its handler holds at the deadline | `uncertain-result` | `uncertain-result` |
+| A command still queued at the deadline | `uncertain-result` | `uncertain-result`: the requester cannot know whether the handler started |
+| A sync request with no answer by the deadline | `unavailable` | `unavailable` |
+| A command or sync request that reaches the edge past its expiry | not applicable | `expired`, which a requester that already gave up ignores |
+
+The remote requester's own deadline decides. The edge waits 1 s past the
+expiry before it gives up, so its late answer never reaches the requester first.
+
 ## Checks
 
 From the repository root, with Node 24, run `npm run test:sdk`. It builds and
-runs the compiled tests in `dist/tests/`. See
+runs the compiled tests in `dist/tests/`. `conformance.test.ts` runs one suite
+against both transports, and `remote.test.ts` covers what only the remote
+transport has. Remote tests bind 127.0.0.1 on a free port. See
 [SDK checks](../../docs/development.md#sdk-checks).

@@ -15,7 +15,7 @@ Profile 2.0 SHALL define one CloudEvents 1.0 structured JSON envelope for every 
 - an absolute `dataschema` URI;
 - a nonzero W3C `traceparent`.
 
-It SHALL refuse undeclared attributes and impossible dates. Commands and sync requests SHALL carry `expiresat`, and no other kind may carry it. The `type` suffix SHALL match the kind: a command's type names an entity and a verb before `.requested`, and only sync messages may use `org.bunny.sync.requested` and `org.bunny.sync.completed`. Replies, outcomes, removals and sync messages SHALL use the payload schemas the profile owns.
+It SHALL refuse undeclared attributes and impossible dates. Commands and sync requests SHALL carry `expiresat`, and no other kind may carry it. The `type` suffix SHALL match the kind: a command's type names an entity and a verb before `.requested`, and only sync messages may use `org.bunny.sync.requested` and `org.bunny.sync.completed`. A sync request's `subject` SHALL name its requested families joined by commas, in the order requested, and its `sync.completed` SHALL carry the same subject. Replies, outcomes, removals and sync messages SHALL use the payload schemas the profile owns.
 
 #### Scenario: A valid message of each kind
 - **WHEN** the shared fixtures' valid message for each of the eight kinds is validated
@@ -32,6 +32,10 @@ It SHALL refuse undeclared attributes and impossible dates. Commands and sync re
 #### Scenario: Unknown payload family
 - **WHEN** a message names a payload family that nobody registered
 - **THEN** it is refused with `unknown-schema`
+
+#### Scenario: Sync subjects
+- **WHEN** the shared fixtures' sync requests and `sync.completed` messages are read
+- **THEN** each subject is the requested families joined by commas, such as `session`
 
 ### Requirement: Size, expiry and retry identity
 
