@@ -50,6 +50,20 @@ Paths in the edit list are relative to this folder unless they say "the
 source's". Paths in the not-moved list are relative to the source repository.
 Every copied file not named in the edit list is byte-identical to its source.
 
+### Active work at the move
+
+Read on 2026-10-06 from divoom-app-upgrade:
+- **Branches, PRs and worktrees:**
+  - main is at the source commit, and no PR is open;
+  - every one of the 57 other remote branches belongs to a merged PR;
+  - the 11 local worktrees have no uncommitted changes, and each is on a merged PR's branch or at an ancestor of the source commit;
+  - one local-only branch, `claude/pr-116-status-307d29`, points at `9467f90`, which is already on main.
+- **In-progress label:** #115 (runtime upgrade) still has it, but its branch merged as #138. Its installer is what #840 replaces.
+- **Open issues, disposed at retirement ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)):**
+  - transfer to this repository: #13, #15, #16, #18, #52, #76, #83, #91, #92, #93, #94, #107, #108, #119 and #122;
+  - close as superseded: #14 (by Hub #751), #112, #115 and #126;
+  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decides at #839.
+
 ### Edits to the snapshot
 
 - The presentation files moved from the source's `apps/server/src/` to

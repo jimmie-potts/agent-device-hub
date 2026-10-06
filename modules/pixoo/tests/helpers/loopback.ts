@@ -21,7 +21,7 @@ export async function outsideInstalledPorts<T>(open:()=>Promise<T>,port:(opened:
  throw new Error('no ephemeral loopback port outside the installed ports');
 }
 
-/** Listen on an ephemeral 127.0.0.1 port outside the installed services' ports, as divoom-app-upgrade bace2fd did for its stand-in Hub. */
+/** Listen on an ephemeral 127.0.0.1 port outside the installed services' ports, as divoom-app-upgrade 1b4115c (#124) did for its stand-in Hub. */
 export async function listenLoopback(server:Server):Promise<number> {
  const port=()=>(server.address() as AddressInfo).port;
  await outsideInstalledPorts(

@@ -293,11 +293,13 @@ can cache presentation state; they do not become independent status authorities.
 Loss of the hub has a documented recovery/rollback path and never blocks agents
 or ordinary media use.
 
-Deferred [Pixoo source migration #25](https://github.com/jimmie-potts/agent-device-hub/issues/25)
-and [Nanoleaf source migration #26](https://github.com/jimmie-potts/agent-device-hub/issues/26)
-will settle provenance, active work, source ownership and package layout before
-moving code. Repository consolidation does not combine runtimes, install
-services, transfer private databases or switch the active state owner.
+[Pixoo source migration #25](https://github.com/jimmie-potts/agent-device-hub/issues/25)
+staged Pixoo's code under `modules/pixoo/`. That folder's README records the
+provenance, the active work at the move and every file not moved.
+[Nanoleaf source migration #26](https://github.com/jimmie-potts/agent-device-hub/issues/26)
+settles the same for Nanoleaf before moving code. Repository consolidation does
+not combine runtimes, install services, transfer private databases or switch the
+active state owner.
 
 ## Unified UI and additional devices
 

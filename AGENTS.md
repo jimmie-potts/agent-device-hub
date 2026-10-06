@@ -117,6 +117,8 @@ Source tests do not qualify a production storage adapter or installed provider.
 For controllers/tidbyt changes, read its README and run npm run test:tidbyt and
 npm run test:tidbyt:python plus the shared build/type, contract and workflow
 checks from the worktree root. All must exit zero.
+For modules/pixoo changes, read its README and run npm run test:pixoo plus the
+shared build/type/lint/workflow checks from the worktree root. All must exit zero.
 For apps/hub or apps/dashboard changes, read that app's README and its
 validation sections in docs/development.md (for the hub: Standalone hub,
 Standalone hub MCP and Shared monitoring setup checks; for the dashboard:
