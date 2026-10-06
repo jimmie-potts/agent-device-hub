@@ -183,7 +183,7 @@ State events and telemetry are not tracked.
 - Event types are named `org.bunny.<entity>.<past-tense verb>`. Command types
   are named `org.bunny.<entity>.<verb>.requested`. Replies, outcomes and
   removals end in `.replied`, `.completed` and `.removed`; state and occurrence
-  events may not use those suffixes. Sync uses `org.bunny.sync.requested` and
+  events may not use those suffixes or `.requested`. Sync uses `org.bunny.sync.requested` and
   `org.bunny.sync.completed`, and the whole `org.bunny.sync.` namespace belongs
   to sync messages.
 - SDK routing keys are named `bunny.<state|event|cmd>.<family>.<id>`:

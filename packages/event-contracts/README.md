@@ -135,5 +135,6 @@ Domain reasons such as `composer-unfocused` or `not-enabled` are not error
 codes. They go in `detail` or in the module's own payload fields.
 
 `invalid-message` covers a message whose envelope or payload fails its schema,
-including a command. `invalid-request` covers any other request, such as an
-HTTP or MCP body, that is malformed or whose values the owner does not accept.
+including a command. `invalid-request` covers a well-formed request whose values
+the owner does not accept, a command included, and a malformed request that is
+not a profile message, such as an HTTP or MCP body.
