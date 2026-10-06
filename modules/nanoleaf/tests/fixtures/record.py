@@ -148,7 +148,7 @@ def setups():
         prompt = root / 'prompt'; prompt.mkdir()
         b.handle_event(prompt, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
                        now=lambda: 1000.0)
-        recorded['legacyPrompt'] = dump(prompt)
+        recorded['taskRow'] = dump(prompt)
         selection = root / 'selection'; selection.mkdir()
         selection_setup(selection)
         recorded['selection'] = dump(selection)
@@ -530,9 +530,10 @@ def scripted_placement():
         def dashboard(device, instant):
             recorder.run({'op': 'dashboard', 'device': device, 'instant': instant})
 
-        # Before shared input is selected: an ended and an idle task hold two Lines.
-        sql("INSERT INTO sessions VALUES ('done','t','ended',990.0), ('idle','t','idle',991.0)")
-        sql("INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('idle',2,'wall')")
+        # Before shared input is selected: two ended tasks hold two Lines. Python showed only its legacy rules here,
+        # which hid idle tasks; the port applies shared input's rules, which show them, so no idle task is saved.
+        sql("INSERT INTO sessions VALUES ('done','t','ended',990.0), ('closed','t','ended',991.0)")
+        sql("INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('closed',2,'wall')")
         sql("INSERT INTO sessions VALUES ('new1','t','working',992.0), ('new2','t','question',993.0), ('new3','t','blocked',994.0)")
         dashboard('wall', 1000.0)
         sql("UPDATE activity SET turn='old' WHERE session='new3'")

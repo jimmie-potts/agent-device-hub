@@ -15,7 +15,7 @@ import {readLayout} from '../src/panels.js';
 import {allocate, owners, settings, type TaskRow} from '../src/project-map.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {FIXTURES, fixtureJson, legacyPrompt, query, refuse, suite, temporary, test, write} from './support.js';
+import {FIXTURES, fixtureJson, query, refuse, suite, taskRow, temporary, test, write} from './support.js';
 
 const LINUX_STATE = join(FIXTURES, 'linux-state-v4');
 
@@ -138,9 +138,9 @@ suite('DeviceTest', () => {
     writeTwoDevices(directory);
     const lines = await loadConfig(directory, DEFAULT, refuse);
     const panels = await loadConfig(directory, 'panels', refuse);
-    // Two legacy prompts, saved as the legacy hook path saves them.
-    write(directory, db => legacyPrompt(db, 'a', '1', 1000));
-    write(directory, db => legacyPrompt(db, 'b', '1', 1001));
+    // Two prompted tasks, saved as their rows.
+    write(directory, db => taskRow(db, 'a', '1', 1000));
+    write(directory, db => taskRow(db, 'b', '1', 1001));
     write(directory, db => {
       const first = dashboard(db, lines, 1002);
       const second = dashboard(db, panels, 1002);

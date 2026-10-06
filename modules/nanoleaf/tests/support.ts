@@ -168,8 +168,11 @@ export function changeMode(db: Db, mode: string, instant: number, device: string
 export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): void =>
   write(directory, db => changeMode(db, mode, instant, device));
 
-/** The rows a legacy UserPromptSubmit hook event saves for a new task (recorded/setups.json legacyPrompt checks it). */
-export function legacyPrompt(db: Db, session: string, turn: string, instant: number): void {
+/**
+ * A new working task saved as rows, for tests whose subject is not task input. They are the rows Python's prompt hook event
+ * saved (recorded/setups.json taskRow checks them).
+ */
+export function taskRow(db: Db, session: string, turn: string, instant: number): void {
   execute(db, 'INSERT INTO sessions VALUES (?, ?, ?, ?)', session, turn, 'working', instant);
   execute(db, 'INSERT INTO activity VALUES (?, ?, ?, ?)', session, turn, 'working', instant);
   execute(db, 'INSERT INTO task_info VALUES (?,?,?,?,?,?,?)', session, '', '', null, null, turn, instant);

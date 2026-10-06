@@ -97,7 +97,7 @@ legacy input; each such test says so in a comment. [Dropped assertions](#dropped
 
 | Python test file | Cases | Translated | Rest |
 | --- | --- | --- | --- |
-| `test_shared_input.py` | 74 | 50 (`shared-input.test.ts`): 49 in slice 1, and `test_stale_peer_does_not_suppress_healthy_outward_wave` in 2a. Partly: `test_generation_validation_preserves_closed_contract`, `test_eviction_http_requires_origin_token_and_current_task`, `test_skipped_sessions_take_no_part_in_grouping_or_acknowledgment`, `test_declared_subagent_of_an_undeclared_parent_follows_the_missing_parent_rule`, and the seven shared-input-only cases in [Shared input only](#shared-input-only). `test_released_owner_clears_only_nanoleaf_on_evidenced_new_turn` uses the recorded owner snapshot | Slice 3: `test_worker_polls_and_refreshes_metadata_in_free_without_legacy_unread_reads`. Not ported: `test_released_fixture_corpus`, `test_released_title_fixture_corpus_and_credentials` and four `TransportTest` cases (feed transport and schema check), `test_inspection_missing_state_does_not_create_files`, `CommandTest` (2, CLI and owner acknowledgment), `test_pinned_archive_and_extracted_files` (vendored copy), `StartupTest` (wall server start), and the twelve legacy-input cases in [Shared input only](#shared-input-only) |
+| `test_shared_input.py` | 74 | 51 (`shared-input.test.ts`): 50 in slice 1, and `test_stale_peer_does_not_suppress_healthy_outward_wave` in 2a. Partly: `test_generation_validation_preserves_closed_contract`, `test_eviction_http_requires_origin_token_and_current_task`, `test_skipped_sessions_take_no_part_in_grouping_or_acknowledgment`, `test_declared_subagent_of_an_undeclared_parent_follows_the_missing_parent_rule`, and the eight shared-input-only cases in [Shared input only](#shared-input-only). `test_released_owner_clears_only_nanoleaf_on_evidenced_new_turn` uses the recorded owner snapshot | Slice 3: `test_worker_polls_and_refreshes_metadata_in_free_without_legacy_unread_reads`. Not ported: `test_released_fixture_corpus`, `test_released_title_fixture_corpus_and_credentials` and four `TransportTest` cases (feed transport and schema check), `test_inspection_missing_state_does_not_create_files`, `CommandTest` (2, CLI and owner acknowledgment), `test_pinned_archive_and_extracted_files` (vendored copy), `StartupTest` (wall server start), and the eleven legacy-input cases in [Shared input only](#shared-input-only) |
 | `test_shared_metadata.py` | 10 | 9 (`shared-metadata.test.ts`). Partly: `test_shared_title_and_project_precede_local_metadata`, `test_poll_refreshes_same_revision_without_lifecycle_or_effect_changes`, and the five shared-input-only cases in [Shared input only](#shared-input-only) | Not ported: `test_source_switch_preserves_manual_preference` (shared input only) |
 | `test_enrollment.py` | 44 | 32 (`enrollment.test.ts`): 30 in slice 1, `test_saved_geometry_loads_while_the_device_is_unreachable` in 2a and `test_pair_posts_to_the_new_endpoint_without_a_proxy` in 2b. Partly: `test_files_are_owner_only_and_output_never_contains_the_credential`, `test_conflicts_are_refused_before_pairing_or_prompting`, `test_enrolled_device_stays_dark_until_activated`, `test_machine_credentials_are_unchanged`, `test_malformed_layout_is_refused_before_removal_writes`, `test_failure_after_the_registry_write_asks_for_a_rerun` | Slice 3: `test_activation_replays_no_comet_or_wave`. Not ported (CLI, prompt, installer): `test_http_failure_reports_only_the_status`, `test_hidden_prompt_supplies_the_credential`, `test_pairing_obtains_the_credential_from_the_device`, `test_installer_reads_its_token_file_through_the_shared_reader`, `test_output_names_activation_and_needs_no_restart`, `test_busy_state_is_reported_without_a_traceback`, `test_command_reports_removal`, both `AddressTest.test_command_*`, `DispatchTest` (2) |
 | `test_devices.py` | 15 | 6 (`devices.test.ts`): 3 in slice 1, and `test_legacy_layout_loads_as_default_device_without_request`, `test_version_two_layout_with_lines_and_triangles`, `test_registry_address_change_keeps_identity_and_preferences` in 2a. Partly: `test_pre_change_linux_database_migrates_and_repeats_without_change`, `test_registry_address_change_keeps_identity_and_preferences` | Slice 3: `test_equal_element_ids_on_two_devices_do_not_collide`, `test_literally_equal_element_ids_on_two_devices_keep_separate_state`, `test_modes_and_scene_files_are_independent_per_device`, `test_untargeted_callers_address_default_device`. Not ported: `test_installer_writes_per_device_layout_and_registry`, and the four task backup cases in [Shared input only](#shared-input-only) |
@@ -127,7 +127,8 @@ legacy input; each such test says so in a comment. [Dropped assertions](#dropped
 The port adds tests of its own:
 
 - `consumer envelope check` (the generation rule and revision floor), `shared input only` (a new
-  configuration while shared input is selected, a repeated selection and refused `bindings`) and `transaction helpers`, in
+  configuration while shared input is selected, a repeated selection, a paused idle task's Line and refused `bindings`)
+  and `transaction helpers`, in
   `shared-input.test.ts`;
 - `registry lock` (in-process turns), in `enrollment.test.ts`;
 - the recorded values in `compat.test.ts` and the replay in `trace.test.ts`;
@@ -266,8 +267,8 @@ Module parts:
 
 Tests:
 
-- `test_shared_input.py` (12): `test_rollback_preserves_mode_and_current_bound_assignment`,
-  `test_rollback_completion_can_be_read_and_release_its_line`, `test_delayed_poll_cannot_overwrite_rollback`,
+- `test_shared_input.py` (11): `test_rollback_preserves_mode_and_current_bound_assignment`,
+  `test_rollback_completion_can_be_read_and_release_its_line`,
   `test_switching_preserves_bound_placements_on_every_device`,
   `test_selecting_legacy_without_hooks_preserves_shared_source`,
   `test_selecting_legacy_with_partial_hooks_preserves_shared_source` and `TaskBackupTest` (6).
@@ -314,8 +315,13 @@ translations start from shared input alone and leave out what came from that tas
   carried over.
 - `test_eviction_unknown_turn_and_source_selection_do_not_replay`,
   `test_declaring_a_source_later_does_not_replay_comets_or_waves`: a new configuration, which pauses
-  shared input, takes the place of the switch to legacy input and back. The paused view shows no
-  task, where Python showed the legacy task without an eviction token.
+  shared input, takes the place of the switch to legacy input and back. The pause clears the
+  eviction, so the paused view shows the task again without an eviction token. Python's view at that
+  point followed its legacy rules, so it is not compared.
+- `test_delayed_poll_cannot_overwrite_rollback`: a new configuration and a second selection take the
+  place of the switch to legacy input. A poll and a failure report carrying the first selection's
+  generation change no saved row, where Python kept its restored legacy task; the poll carries a
+  newer revision that would change the task.
 - `test_local_title_and_project_enrich_shared_task`,
   `test_shared_metadata_updates_preserve_effects_and_project_preferences`: the manual project is
   chosen on the shared task, saved as a wall edit saves it, instead of carried over.
@@ -368,7 +374,7 @@ retires with codex-nanoleaf (#839). It writes:
 `shared_suppressed_waves`, `shared_evictions`, `projects`, `line_prefs`, `map_settings`, `meta`
 and `display_v3`. From `shared_input` it compares `source`, `generation`, `received`,
 `connection` and `error`, and the envelope by hash. The `palette`, `map_pending`,
-`locate` and `shared_ack` tables and `shared_input.config` are not compared.
+`locate` and `shared_ack` tables and `shared_input`'s `config` and `backup` are not compared.
 
 To re-record, run from the repository root with a codex-nanoleaf checkout at the provenance commit:
 
@@ -411,9 +417,11 @@ on a read-only export of that commit, since the Python tests import from their o
     must drop them before it is configured here.
   - `shared_input.source` keeps Python's stored `'legacy'` (`NOT_SELECTED`) for shared input not
     selected, so migrated state reads unchanged. The `backup` column stays in the schema, unused.
-  - While shared input is not selected, `visibleTasks` still shows saved working, question, blocked
-    and unread tasks, as Python's legacy view did. No port code writes tasks then; tests that save
-    task rows directly (the `legacyPrompt` helper and the recorded `enrollment` setup) use it.
+  - `visibleTasks` applies shared input's rules whether or not it is selected: idle tasks are shown
+    and the device's evictions are hidden. Python applied its legacy rules while legacy input was
+    selected (idle tasks hidden, evictions ignored). So a task held while shared input is paused
+    keeps its Line. Tests that save task rows directly (the `taskRow` helper and the recorded
+    `enrollment` setup) see the same rules.
 - `execute()` binds every JavaScript number as a SQLite REAL. A column with integer affinity stores
   a whole number as an integer, but a TEXT column stores `5` as `'5.0'` where Python stored `'5'`.
   Slice 1 writes `meta` values as text; slices 2 and 3 must do the same.

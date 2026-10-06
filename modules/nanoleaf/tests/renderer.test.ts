@@ -18,7 +18,7 @@ import {BASELINE, COLORS, cometColor, effectPayload, indicatorBrightness, MIN_BR
 import {execute, rows} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import type {LightRequest} from '../src/transport.js';
-import {Clock, decode, fixtureJson, framesOf, legacyPrompt, query, setMode, suite, temporary, test, write} from './support.js';
+import {Clock, decode, fixtureJson, framesOf, query, setMode, suite, taskRow, temporary, test, write} from './support.js';
 
 const LINES = Array.from({length: 15}, (_, i) => [100 + i * 2, 101 + i * 2]);
 const POSITIONS = Array.from({length: 15}, (_, i) => [i * 10, 0]);
@@ -316,7 +316,7 @@ suite('ModeTest', () => {
 });
 
 /**
- * ProjectTest.setUp with SceneTest's configuration: projects a and b, legacy tasks prompted at 1000, and the wall's
+ * ProjectTest.setUp with SceneTest's configuration: projects a and b, tasks prompted at 1000, and the wall's
  * settings, assignments and palette saved as their edits save them.
  */
 class Wall {
@@ -332,7 +332,7 @@ class Wall {
 
   task(session: string, project: string | null): void {
     write(this.directory, db => {
-      legacyPrompt(db, session, '1', 1000);
+      taskRow(db, session, '1', 1000);
       execute(db, 'UPDATE task_info SET project=? WHERE session=?', project, session);
     });
   }

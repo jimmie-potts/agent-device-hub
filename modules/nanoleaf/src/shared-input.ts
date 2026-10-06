@@ -212,12 +212,19 @@ export function declared(snapshot: Snapshot, config: Pick<SharedConfig, 'qualifi
 export const DEFAULT_DEVICE = DEFAULT;
 
 /**
- * The shared input row and its tables. A new database starts unselected, under Python's stored name for its other
- * input. The `backup` column held the legacy task backup, which is not ported; it stays for saved state's sake.
+ * The stored source before shared input is first selected, and while a new configuration waits for its selection.
+ * It is Python's name for its other input, kept so saved state and the recordings stay comparable; nothing reads tasks
+ * from it any more.
+ */
+export const NOT_SELECTED = 'legacy';
+
+/**
+ * The shared input row and its tables. A new database starts unselected. The `backup` column held the legacy task
+ * backup, which is not ported; it stays for saved state's sake.
  */
 export function initSharedInput(db: Db): void {
   db.exec('CREATE TABLE IF NOT EXISTS shared_input (id INTEGER PRIMARY KEY, source TEXT, generation INTEGER, config TEXT, envelope TEXT, received REAL, connection TEXT, error TEXT, backup TEXT)');
-  db.exec("INSERT OR IGNORE INTO shared_input VALUES (1,'legacy',0,NULL,NULL,NULL,'unavailable',NULL,NULL)");
+  execute(db, "INSERT OR IGNORE INTO shared_input VALUES (1,?,0,NULL,NULL,NULL,'unavailable',NULL,NULL)", NOT_SELECTED);
   db.exec('CREATE TABLE IF NOT EXISTS shared_stale (session TEXT PRIMARY KEY)');
   db.exec('CREATE TABLE IF NOT EXISTS shared_suppressed_waves (session TEXT PRIMARY KEY, epoch REAL)');
   db.exec('CREATE TABLE IF NOT EXISTS shared_ack (id INTEGER PRIMARY KEY, payload TEXT, result TEXT)');
@@ -239,14 +246,16 @@ export function selected(db: Db): boolean {
   return row?.[0] === 'shared';
 }
 
-/** The tasks a device shows, alerts first: shared input keeps idle tasks and hides the device's evictions. */
+/**
+ * The tasks a device shows, alerts first: idle tasks too, but not the device's evictions. These are the shared-input rules,
+ * applied whether or not shared input is selected, so a task held while shared input is paused keeps its Line. Python
+ * applied its legacy rules then (idle hidden, evictions ignored); the port has no legacy input (PORTING.md).
+ */
 export function visibleTasks(db: Db, device: string): TaskRow[] {
-  const shared = selected(db);
-  const statuses = shared ? "'working','question','blocked','unread','idle'" : "'working','question','blocked','unread'";
-  const excluded = shared ? 'AND NOT EXISTS (SELECT 1 FROM shared_evictions WHERE session=sessions.id AND device=?) ' : '';
-  const sql = 'SELECT id,turn,status FROM sessions WHERE status IN (' + statuses + ') ' + excluded
-    + "ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'question' THEN 1 ELSE 2 END, updated, id";
-  return (shared ? rows(db, sql, device) : rows(db, sql)).map(([id = null, turn = null, status = null]) => [String(id), turn, status]);
+  return rows(db, "SELECT id,turn,status FROM sessions WHERE status IN ('working','question','blocked','unread','idle') "
+    + 'AND NOT EXISTS (SELECT 1 FROM shared_evictions WHERE session=sessions.id AND device=?) '
+    + "ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'question' THEN 1 ELSE 2 END, updated, id", device)
+    .map(([id = null, turn = null, status = null]) => [String(id), turn, status]);
 }
 
 /** A stale-view guard, not an authentication credential or lifecycle event. */

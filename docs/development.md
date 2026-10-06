@@ -1634,8 +1634,9 @@ recorded Python sequences compares, after every step, the results and the rows o
 `sessions`, `activity`, `task_info`, `slots`, `comets`, `waits`, `receipts`,
 `shared_stale`, `shared_suppressed_waves`, `shared_evictions`, `projects`,
 `line_prefs`, `map_settings`, `meta` and `display_v3`, plus the `shared_input`
-row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
-`shared_ack` and `shared_input.config` are not compared.
+row's `source`, `generation`, `received`, `connection` and `error`, and its
+envelope by hash. `palette`, `map_pending`, `locate`, `shared_ack` and the
+`shared_input` row's `config` and `backup` are not compared.
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
 discovery and malformed Lines replies, color parsing, every effect pattern's

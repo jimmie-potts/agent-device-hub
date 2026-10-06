@@ -36,7 +36,6 @@ import shared_source  # noqa: E402
 NEED_LEGACY_TASK = {
     'test_rollback_preserves_mode_and_current_bound_assignment',
     'test_rollback_completion_can_be_read_and_release_its_line',
-    'test_delayed_poll_cannot_overwrite_rollback',
     'test_switching_preserves_bound_placements_on_every_device',
     'test_cutover_and_rollback_preserve_legacy_state_and_carry_bound_choices',
     'test_switch_operations_stay_inside_the_callers_transaction',
@@ -108,11 +107,25 @@ adjusted(t.ChildSessionTest, 'test_child_without_its_parent_shows_only_attention
     ("{self.key: ('idle', 100, 'current'), orphan_key: ('blocked', 102, 'current')}",
      "{self.key: ('idle', 102, 'current'), orphan_key: ('blocked', 100, 'current')}"),
     ("{self.key: ('idle', 100, 'current')})", "{self.key: ('idle', 102, 'current')})")])
-# The port's new configuration pauses shared input; Python's only route was legacy input, configure, shared input.
+# The port's new configuration pauses shared input; Python's only route was legacy input, configure, shared input. Python's
+# view then followed its legacy rules, which the port does not keep, so the paused view is not compared.
 adjusted(t.ChildSessionTest, 'test_eviction_unknown_turn_and_source_selection_do_not_replay', [
-    ("self.assertNotIn('evictionToken',app.state()['tasks'][0])", "self.assertEqual(app.state()['tasks'],[])"),
+    ("self.assertNotIn('evictionToken',app.state()['tasks'][0])", None),
     ("shared_source.select_source(self.path,'legacy',now=lambda:1003)",
      "shared_source.select_source(self.path,'legacy',now=lambda:1003); shared_source.configure(self.path,self.config)")])
+
+# A new configuration and a second selection take the place of the switch to legacy input; a late poll or failure
+# report from the first selection still changes nothing.
+SAVED = "[self.rows('SELECT * FROM '+table) for table in ('sessions','activity','task_info','slots','comets','shared_stale','shared_evictions','shared_input','meta')]"
+adjusted(t.RecoveryTest, 'test_delayed_poll_cannot_overwrite_rollback', [
+    ("shared_source.select_source(self.path,'legacy',now=lambda:1001)",
+     "shared_source.select_source(self.path,'legacy',now=lambda:1001); shared_source.configure(self.path,self.config); "
+     "self.select(); saved=" + SAVED + "; late=envelope(); late['snapshot']['revision']+=1; "
+     "late['snapshot']['sessions'][0]['activity']='active'"),
+    ("self.assertFalse(shared_source.accept(self.path,envelope(),generation=generation))",
+     "self.assertFalse(shared_source.accept(self.path,late,generation=generation))"),
+    ("self.assertEqual(self.rows('SELECT id FROM sessions'),[('legacy',)])", "self.assertEqual(" + SAVED + ",saved)"),
+    ("self.assertEqual(self.s.inspect(self.path)['source'],'legacy')", "self.assertEqual(self.s.inspect(self.path)['source'],'shared')")])
 
 # shared-metadata.test.ts: no manual project unless one is chosen on the shared task, as a wall edit saves it.
 MANUAL = ("\n    with contextlib.closing(database.connect_state(self.path)) as db,db: "

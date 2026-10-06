@@ -686,9 +686,9 @@
 "waits":{"columns":["session","turn","key","kind","tool"],"rows":[]}
 },
 "steps":[
-{"changed":{"sessions":[["done","t","ended",990.0],["idle","t","idle",991.0]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO sessions VALUES ('done','t','ended',990.0), ('idle','t','idle',991.0)"},"result":null},
-{"changed":{"slots":[["done",1,"wall"],["idle",2,"wall"]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('idle',2,'wall')"},"result":null},
-{"changed":{"sessions":[["done","t","ended",990.0],["idle","t","idle",991.0],["new1","t","working",992.0],["new2","t","question",993.0],["new3","t","blocked",994.0]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO sessions VALUES ('new1','t','working',992.0), ('new2','t','question',993.0), ('new3','t','blocked',994.0)"},"result":null},
+{"changed":{"sessions":[["done","t","ended",990.0],["closed","t","ended",991.0]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO sessions VALUES ('done','t','ended',990.0), ('closed','t','ended',991.0)"},"result":null},
+{"changed":{"slots":[["done",1,"wall"],["closed",2,"wall"]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('closed',2,'wall')"},"result":null},
+{"changed":{"sessions":[["done","t","ended",990.0],["closed","t","ended",991.0],["new1","t","working",992.0],["new2","t","question",993.0],["new3","t","blocked",994.0]]},"operation":{"op":"sql","params":[],"sql":"INSERT INTO sessions VALUES ('new1','t','working',992.0), ('new2','t','question',993.0), ('new3','t','blocked',994.0)"},"result":null},
 {"changed":{"activity":[["new3","t","blocked",1000.0],["new2","t","question",1000.0],["new1","t","working",1000.0]],"slots":[["new3",0,"wall"],["new2",1,"wall"],["new1",2,"wall"]]},"operation":{"device":"wall","instant":1000.0,"op":"dashboard"},"result":[["blocked",1000.0],["question",1000.0],["working",1000.0]]},
 {"changed":{"activity":[["new3","old","blocked",1000.0],["new2","t","question",1000.0],["new1","t","working",1000.0]]},"operation":{"op":"sql","params":[],"sql":"UPDATE activity SET turn='old' WHERE session='new3'"},"result":null},
 {"changed":{"activity":[["new2","t","question",1000.0],["new1","t","working",1000.0],["new3","t","blocked",1001.0]]},"operation":{"device":"wall","instant":1001.0,"op":"dashboard"},"result":[["blocked",1001.0],["question",1000.0],["working",1000.0]]},

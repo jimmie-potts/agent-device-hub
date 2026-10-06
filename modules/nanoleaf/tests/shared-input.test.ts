@@ -10,9 +10,8 @@ import {FeedError} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {BASELINE, COLORS, effectPayload, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
-import {declared, identityKey, presented, semanticStatus, sharedRenderConfig, validateConfig, type Envelope, type Identity, type SharedConfig,
-  type SharedSession, type Snapshot} from '../src/shared-input.js';
-import {NOT_SELECTED} from '../src/shared-source.js';
+import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRenderConfig, validateConfig, type Envelope, type Identity,
+  type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
 import {execute, rows, transaction, type Row} from '../src/sqlite.js';
 import {accept, clone, configure, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
   query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
@@ -435,6 +434,25 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
   });
 
+
+  test('test_delayed_poll_cannot_overwrite_rollback', context => {
+    // Partly, shared input only: a new configuration pauses shared input and a second selection resumes it, in place of
+    // Python's switch to legacy input (owner decision 2026-10-06). A poll or failure report carrying the first
+    // selection's generation still changes nothing. The poll carries a newer revision that would change the task.
+    const {path, config} = selectionSetup(context);
+    selectShared(path);
+    const before = generation(path);
+    configure(path, config);
+    selectShared(path, envelope(), 1002);
+    const saved = savedRows(path);
+    const late = envelope();
+    late.snapshot.revision += 1;
+    firstSession(late).activity = 'active';
+    assert.equal(accept(path, late, 1003, {generation: before}), false);
+    failed(path, before);
+    assert.deepEqual(savedRows(path), saved);
+    assert.equal(sharedState(path).source, 'shared');
+  });
 });
 
 suite('ReleaseTest', () => {
@@ -690,8 +708,10 @@ suite('ChildSessionTest', () => {
     c.advance(1002);
     assert.deepEqual(c.tasks(1002), {});
     configure(c.path, c.config);
-    // Python showed the legacy task without an eviction token; the paused view shows no task, as Python's does without it.
-    assert.deepEqual(c.wall(), []);
+    // The pause clears the eviction, so the paused view shows the task again, without an eviction token.
+    const paused = c.wall();
+    assert.equal(paused.length, 1);
+    assert.equal(paused[0]?.evictionToken, undefined);
     assert.throws(() => evictTask(c.path, 'wall', payload), {name: 'ValueError'});
     selectShared(c.path, c.value, 1004);
     assert.throws(() => evictTask(c.path, 'wall', payload), {name: 'ValueError'});
@@ -1345,6 +1365,31 @@ suite('shared input only', () => {
     firstSession(next).activity = 'active';
     selectShared(path, next, 1001);
     assert.deepEqual(savedRows(path), before);
+  });
+
+  test('a paused idle task keeps its Line', context => {
+    // Shared input's display rules apply while it is paused: an idle task stays visible, so a waiting task cannot take
+    // its Line, and it keeps that Line when shared input is selected again.
+    const one = {line_groups: [[100, 101]], line_positions: [[0, 0]]};
+    const c = new Children(context);
+    c.select();
+    c.root.read = 'read';
+    c.advance(1001);
+    const peer = clone(c.root);
+    peer.identity.sessionId = 'peer';
+    peer.activity = 'active';
+    c.value.snapshot.sessions.push(peer);
+    c.advance(1002);
+    const placed = (instant: number): Row[] => write(c.path, db => {
+      dashboard(db, one, instant);
+      return rows(db, "SELECT session,slot FROM slots WHERE device='wall'");
+    });
+    assert.deepEqual(query(c.path, 'SELECT id,status FROM sessions ORDER BY status'), [[c.key, 'idle'], [identityKey(peer.identity), 'working']]);
+    assert.deepEqual(placed(1002), [[c.key, 0]]);
+    configure(c.path, c.config);
+    assert.deepEqual(placed(1003), [[c.key, 0]]);
+    selectShared(c.path, c.value, 1004);
+    assert.deepEqual(placed(1004), [[c.key, 0]]);
   });
 
   test('a configuration with legacy bindings is refused', () => {

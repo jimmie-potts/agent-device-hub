@@ -5,16 +5,10 @@
 import {dumps} from './compat.js';
 import {FeedError} from './errors.js';
 import type {Metadata} from './project-map.js';
-import {checkEnvelope, projectEnvelope, selected, state, validateConfig, type Envelope, type SharedConfig, type SharedState} from './shared-input.js';
+import {checkEnvelope, NOT_SELECTED, projectEnvelope, selected, state, validateConfig, type Envelope, type SharedConfig,
+  type SharedState} from './shared-input.js';
 import {execute, first, type Db} from './sqlite.js';
 import {markDirty} from './store.js';
-
-/**
- * The stored source before shared input is first selected, and while a new configuration waits for its selection.
- * It is Python's name for its other input, kept so saved state and the recordings stay comparable; nothing reads tasks
- * from it any more.
- */
-export const NOT_SELECTED = 'legacy';
 
 const activeComet = (db: Db): boolean => first(db, 'SELECT 1 FROM comets WHERE started IS NOT NULL LIMIT 1') !== undefined;
 
@@ -85,6 +79,9 @@ export function selectShared(db: Db, selection: Selection): void {
   if (selection.generation !== undefined && before.generation !== selection.generation) throw new FeedError('selection-changed');
   if (activeComet(db)) throw new FeedError('active-comet');
   execute(db, "UPDATE shared_input SET source='shared',generation=generation+1,envelope=NULL,connection='unavailable' WHERE id=1");
+  // The stale delete and `resync: true` follow Python's statements, whose order the trace replay compares, but cannot
+  // change the outcome: with no stored envelope and an unavailable connection the projection resyncs anyway, and it
+  // clears or forgets every stale task.
   execute(db, 'DELETE FROM shared_stale');
   projectEnvelope(db, selection.envelope, before.config, selection.instant,
     {resync: true, targets: selection.targets, metadata: selection.metadata ?? null});
