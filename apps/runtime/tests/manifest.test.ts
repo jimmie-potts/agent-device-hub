@@ -15,15 +15,15 @@ it('refuses a module whose API version does not match, and starts the others', a
   assert.equal(status, 200, 'the runtime itself answers');
   assert.equal(body.status, 'degraded');
   const mismatch = (apiVersion: string) => ({
-    apiVersion, state: 'refused', healthy: false,
+    apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
     reason: {code: 'unsupported-version', detail: `module API ${apiVersion} does not match this runtime's 1.0`},
   });
   assert.deepEqual(body.modules, [
     {name: 'newer-major', ...mismatch('2.0')},
     {name: 'newer-minor', ...mismatch('1.1')},
     {name: 'older-major', ...mismatch('0.9')},
-    {name: 'malformed', apiVersion: 'one', state: 'refused', healthy: false, reason: {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'}},
-    {name: 'current', apiVersion: '1.0', state: 'running', healthy: true},
+    {name: 'malformed', apiVersion: 'one', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'}},
+    {name: 'current', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
   ]);
   assert.equal(modules.reduce((stops, module) => stops + module.stops, 0), 0, 'a refused module is never stopped, and the running one not yet');
   assert.equal(logs.filter(record => record.event_name === 'runtime.module.refused').length, 4);
@@ -49,7 +49,7 @@ it('refuses a malformed name and a second module with the same name', async cont
   assert.equal(second.context, undefined);
   const report = runtime.health();
   assert.deepEqual(report.modules[1], {
-    name: 'wall', apiVersion: '1.0', state: 'refused', healthy: false,
+    name: 'wall', apiVersion: '1.0', state: 'refused', healthy: false, syncRestarts: 0,
     reason: {code: 'invalid-request', detail: 'another module already has this name'},
   });
   assert.equal(entry(report, 'wall').state, 'running');

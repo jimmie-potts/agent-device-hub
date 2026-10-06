@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import type {Worker} from 'node:worker_threads';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import {startRuntime} from '../src/index.js';
-import {START, contextOf, deferred, fixture, flush, it, manualClock, peek, run, session, setMode, stateDir} from './support.js';
+import {START, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, setMode, stateDir} from './support.js';
 
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
@@ -148,4 +148,32 @@ it('each module has its own participant, named for the module, on one shared bus
   await flush();
   assert.equal(sent.source, 'bunny/modules/speaker');
   assert.deepEqual(received, ['bunny/modules/speaker']);
+});
+
+it('health counts each module\'s sync restarts, so a restart loop shows', async context => {
+  const gate = deferred<undefined>();
+  context.after(() => { gate.resolve(undefined); });
+  let revision = 0;
+  const state = (at: number) => ({
+    kind: 'state' as const, type: 'org.bunny.session.updated', subject: 's1', dataschema: 'https://bunny.invalid/events/test-session/2.0',
+    data: {id: 's1', revision: at},
+  });
+  const owner = fixture('owner', async ({sdk}) => {
+    await sdk.serveSync(['test-session'], () => ({revision, states: revision === 0 ? [] : [state(revision)]}));
+  });
+  const consumer = fixture('consumer', async ({sdk}) => {
+    // The handler stalls on the first update, so later updates overflow a buffer of one and restart the sync.
+    const result = await sdk.sync(['test-session'], async change => { if (change.type === 'updated') await gate.promise; }, {timeoutMs: 1000, maxBuffered: 1});
+    assert.equal(result.status, 'synced');
+  });
+  const {runtime} = await run(context, {modules: [owner, consumer]});
+  assert.equal(entry(runtime.health(), 'consumer').syncRestarts, 0);
+  for (const at of [1, 2, 3]) {
+    revision = at;
+    await contextOf(owner).sdk.publish('bunny.state.test-session.s1', state(at));
+  }
+  await flush();
+  assert.equal(entry(runtime.health(), 'consumer').syncRestarts, 1);
+  assert.equal(entry(runtime.health(), 'owner').syncRestarts, 0);
+  assert.equal(entry(runtime.health(), 'consumer').state, 'running', 'a restart is not a failure');
 });

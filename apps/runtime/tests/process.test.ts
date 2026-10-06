@@ -4,7 +4,6 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
-import {createInterface} from 'node:readline';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {LogRecord} from '../src/index.js';
@@ -13,22 +12,34 @@ import {entry, health, it, stateDir, waitFor} from './support.js';
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));
 
-type Launched = {child: ChildProcess; url: string; records: () => LogRecord[]; exited: Promise<{code: number | null; signal: NodeJS.Signals | null}>};
+type Exit = {code: number | null; signal: NodeJS.Signals | null};
+type Spawned = {child: ChildProcess; records: () => LogRecord[]; stdout: () => string; exited: Promise<Exit>};
+type Launched = Spawned & {url: string};
 
-/** Starts a runtime process and waits for its ready line. The process is killed after the test if it is still running. */
-async function launch(context: TestContext, script: string, args: readonly string[]): Promise<Launched> {
+/** Starts a runtime process. It is killed after the test if it is still running. */
+function spawnRuntime(context: TestContext, script: string, args: readonly string[]): Spawned {
   const child = spawn(process.execPath, [script, ...args], {stdio: ['ignore', 'pipe', 'pipe']});
   const exited = once(child, 'exit').then(([code, signal]) => ({code: code as number | null, signal: signal as NodeJS.Signals | null}));
   context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   let stderr = '';
+  let stdout = '';
   child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+  child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
   const records = (): LogRecord[] => stderr.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as LogRecord);
-  const lines = createInterface({input: child.stdout ?? process.stdin});
-  const line: unknown[] = await Promise.race([once(lines, 'line'), exited.then(exit => assert.fail(`exited before ready: ${JSON.stringify(exit)} ${stderr}`))]);
-  const ready = JSON.parse(String(line[0])) as {event: string; url: string};
-  assert.equal(ready.event, 'runtime.ready');
-  return {child, url: ready.url, records, exited};
+  return {child, records, stdout: () => stdout, exited};
 }
+
+/** Starts a runtime process and waits for its ready line. */
+async function launch(context: TestContext, script: string, args: readonly string[]): Promise<Launched> {
+  const spawned = spawnRuntime(context, script, args);
+  const exitedEarly = spawned.exited.then(exit => assert.fail(`exited before ready: ${JSON.stringify(exit)} ${JSON.stringify(spawned.records())}`));
+  await Promise.race([waitFor(() => spawned.stdout().includes('\n'), 15_000, 'the ready line'), exitedEarly]);
+  const ready = JSON.parse(spawned.stdout().split('\n')[0] ?? '') as {event: string; url: string};
+  assert.equal(ready.event, 'runtime.ready');
+  return {...spawned, url: ready.url};
+}
+
+const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
 
 it('the shipped runtime starts with zero modules, serves health and stops cleanly on SIGTERM', async context => {
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)]);
@@ -69,7 +80,46 @@ it('an error that no module raised exits with a failure, for the service manager
   assert.deepEqual(await runtime.exited, {code: 1, signal: null});
   const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
   assert.equal(fatal?.severity_text, 'FATAL');
-  assert.equal(fatal.attributes['error.message'], 'a bug outside every module');
+  assert.deepEqual(fatal.attributes, {'error.type': 'RangeError', 'error.code': 'EFIXTURE'}, 'the type and code, never the raw message');
+});
+
+it('an abort listener that throws or rejects stays with its own module, on a handler error, a failed start and the runtime\'s stop', async context => {
+  const runtime = await launch(context, FIXTURE, ['abort-listeners', '--port', '0', '--state-dir', await stateDir(context)]);
+  const failedAll = async (): Promise<boolean> => (await health(runtime.url)).body.modules.filter(module => module.state === 'failed').length === 4;
+  await waitFor(failedAll, 5000, 'the four failures');
+  await new Promise(resolve => { setTimeout(resolve, 200); });
+  const {body} = await health(runtime.url);
+  for (const name of ['handler-throws', 'handler-rejects']) assert.deepEqual(entry(body, name).reason, {code: 'internal', detail: 'a handler threw'}, name);
+  for (const name of ['start-throws', 'start-rejects']) assert.deepEqual(entry(body, name).reason, {code: 'internal', detail: 'start failed'}, name);
+  for (const name of ['publisher', 'stop-throws', 'stop-rejects', 'steady']) assert.equal(entry(body, name).state, 'running', `${name} is not blamed`);
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null}, 'abort listeners that fail during the runtime\'s stop do not fail the process');
+  assert.equal(recorded(runtime, 'runtime.failed'), false);
+});
+
+it('a signal during startup stops the runtime cleanly once the module starts settle', async context => {
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    const runtime = spawnRuntime(context, FIXTURE, ['slow-start', '--port', '0', '--state-dir', await stateDir(context)]);
+    await waitFor(() => recorded(runtime, 'runtime.started'), 5000, 'the health server');
+    runtime.child.kill(signal);
+    assert.deepEqual(await runtime.exited, {code: 0, signal: null}, signal);
+    assert.ok(recorded(runtime, 'fixture.stopped'), `${signal}: the slow module was stopped`);
+    assert.equal(runtime.stdout(), '', `${signal}: no ready line`);
+  }
+});
+
+it('a pause of the whole process longer than the lag limit does not restart the runtime', async context => {
+  // A 1000 ms limit checks every 250 ms; a 3 s pause, like a VM paused while its host sleeps, outlasts it threefold.
+  const runtime = await launch(context, FIXTURE, ['quiet', '--port', '0', '--state-dir', await stateDir(context), '--lag-limit-ms', '1000']);
+  runtime.child.kill('SIGSTOP');
+  await new Promise(resolve => { setTimeout(resolve, 3000); });
+  runtime.child.kill('SIGCONT');
+  await new Promise(resolve => { setTimeout(resolve, 1500); });
+  assert.equal((await health(runtime.url)).status, 200);
+  assert.equal(runtime.child.signalCode, null, 'a stopped and continued process is not stuck');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+  assert.equal(recorded(runtime, 'runtime.stuck'), false);
 });
 
 it('a stuck event loop is detected, and the process is killed for the service manager to restart', async context => {

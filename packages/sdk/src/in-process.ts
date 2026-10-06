@@ -28,6 +28,8 @@ export type BusOptions = {
   onError?: (error: unknown, scope: ErrorScope) => void;
   /** Runs request deadlines. Defaults to the global `setTimeout`. The runtime passes the scheduler its modules use. */
   scheduler?: Scheduler;
+  /** Hears of each overflow that restarts a copy's sync, with the copy's source and families. */
+  onSyncRestart?: (scope: ErrorScope) => void;
 };
 
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;

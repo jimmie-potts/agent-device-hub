@@ -83,6 +83,9 @@ it('a command that reaches the responder at its expiry is ignored, and its reque
   const result = await peek(pending);
   assert.equal(result?.status, 'rejected', 'settled when the responder skipped it, before the deadline timer');
   assert.equal(result.error.error.code, 'expired');
+  skew = 0;
+  assert.equal((await peek(core.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 1000})))?.status, 'accepted');
+  assert.equal(calls, 1, 'the responder handles the next command');
 });
 
 it('request deadlines run on the injected clock and scheduler', async () => {

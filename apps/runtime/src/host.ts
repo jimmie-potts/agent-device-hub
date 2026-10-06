@@ -8,7 +8,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {
   InProcessBus, MODULE_API_VERSION, SdkError, childOf, type BunnyModule, type Cancel, type Clock, type CommandDraft, type Draft,
   type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
-  type SendOptions,
+  type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
 import {errorFields, type LogWriter, type RuntimeLogger} from './log.js';
 import {openModuleDatabase} from './state.js';
@@ -16,7 +16,7 @@ import {openModuleDatabase} from './state.js';
 export type ModuleState = 'refused' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
 /** Why a module is refused or failed: a code from the 2.0 error registry and a fixed sentence. */
 export type Reason = {code: string; detail: string};
-export type ModuleHealth = {name: string; apiVersion: string; state: ModuleState; healthy: boolean; reason?: Reason};
+export type ModuleHealth = {name: string; apiVersion: string; state: ModuleState; healthy: boolean; syncRestarts: number; reason?: Reason};
 
 export type HostOptions = {
   clock: Clock;
@@ -141,7 +141,7 @@ export class ModuleHost {
 
   health(): ModuleHealth[] {
     return this.#slots.map(({name, apiVersion, state, reason}) =>
-      ({name, apiVersion, state, healthy: state === 'running', ...(reason === undefined ? {} : {reason})}));
+      ({name, apiVersion, state, healthy: state === 'running', syncRestarts: 0, ...(reason === undefined ? {} : {reason})}));
   }
 
   async #start(slot: Slot): Promise<void> {
@@ -176,11 +176,16 @@ export class ModuleHost {
     const sdk: Sdk = {
       source: participant.source,
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
-      subscribe: <T extends object>(pattern: string, handler: Handler<T>) =>
-        participant.subscribe<T>(pattern, message => inFlow(() => handler(message))),
+      subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
+        participant.subscribe<T>(pattern, message => inFlow(() => handler(message)), options === undefined ? undefined : {
+          ...(options.onOverflow === undefined ? {} : {onOverflow: overflow => inFlow(() => options.onOverflow?.(overflow))}),
+        }),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => participant.request(key, draft, options),
       respond: <T extends object>(pattern: string, responder: Responder<T>) =>
         participant.respond<T>(pattern, command => inFlow(() => responder(command))),
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) =>
+        participant.sync<T>(families, change => inFlow(() => handler(change)), options),
+      serveSync: (families: readonly string[], provider: SyncProvider) => participant.serveSync(families, request => inFlow(() => provider(request))),
     };
     return {
       sdk,

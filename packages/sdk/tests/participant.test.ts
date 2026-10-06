@@ -1,8 +1,10 @@
 // Participant close: one call closes everything a participant opened, so a stopped module leaves nothing behind.
 import assert from 'node:assert/strict';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Reply} from '../src/index.js';
-import {bus, checked, deferred, flush, it, manualClock, peek, session, setMode, settled, turnEnded, type Mode} from './support.js';
+import {SdkError, type Reply, type Snapshot, type SyncResult} from '../src/index.js';
+import {
+  SESSION_FAMILY, bus, checked, deferred, flush, it, manualClock, peek, session, setMode, settled, turnEnded, type Mode, type Session,
+} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
@@ -126,4 +128,57 @@ it('a handler that closes its own participant finishes, and nothing more reaches
   await flush();
   assert.deepEqual(started, [1]);
   assert.deepEqual(finished, [1], 'the close resolves inside the handler that called it');
+});
+
+const outcome = (result: SyncResult<object> | undefined): string | undefined => result?.status === 'rejected' ? result.error.error.code : result?.status;
+
+it('closing a participant closes its sync copies and withdraws its sync requests, leaving no deadline behind', async () => {
+  const clock = manualClock();
+  const {core, wall} = bus({now: clock.now, scheduler: clock.scheduler});
+  const gate = deferred<Snapshot>();
+  const served: string[] = [];
+  await core.serveSync([SESSION_FAMILY], request => {
+    served.push(request.data.requestId);
+    return served.length === 1 ? {revision: 1, states: [session('s1', 1)]} : gate.promise;
+  });
+  const changes: string[] = [];
+  const first = await wall.sync<Session>([SESSION_FAMILY], change => { changes.push(change.type); }, {timeoutMs: 1000});
+  assert.equal(first.status, 'synced');
+  const serving = wall.sync([SESSION_FAMILY], () => {}, {timeoutMs: 1000});
+  await flush();
+  const waiting = wall.sync([SESSION_FAMILY], () => {}, {timeoutMs: 1000});
+  await flush();
+  assert.equal(clock.pending(), 2, 'both sync deadlines wait on the injected scheduler');
+
+  await wall.close();
+  assert.equal(clock.pending(), 0, 'no sync deadline is left behind');
+  assert.equal(outcome(await peek(serving)), 'cancelled');
+  assert.equal(outcome(await peek(waiting)), 'cancelled');
+  await core.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 2));
+  await flush();
+  assert.deepEqual(changes, ['updated', 'synced'], 'the closed copy follows nothing more');
+  gate.resolve({revision: 2, states: []});
+  await flush();
+  assert.equal(served.length, 2, 'the withdrawn waiting request never reached the owner');
+});
+
+it('closing a participant closes the sync owners it serves, refusing their waiting requests, and frees their families', async () => {
+  const {bus: created, core, wall} = bus({maxQueued: 1});
+  const gate = deferred<Snapshot>();
+  await core.serveSync([SESSION_FAMILY], () => gate.promise);
+  const busy = wall.sync([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+  await flush();
+  const waiting = wall.sync([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+  await flush();
+  const closing = core.close();
+  const refusedOnClose = await peek(waiting);
+  assert.equal(outcome(refusedOnClose), 'unavailable');
+  assert.equal(refusedOnClose?.status === 'rejected' ? refusedOnClose.error.error.detail : undefined, 'the owner closed');
+  gate.resolve({revision: 0, states: []});
+  await closing;
+  assert.equal((await busy).status, 'synced', 'the request being served still gets its answer');
+  const next = checked(created.connect('bunny/next'));
+  await next.serveSync([SESSION_FAMILY], () => ({revision: 0, states: []}));
+  await assert.rejects(core.serveSync([SESSION_FAMILY], () => ({revision: 0, states: []})), refused('invalid-state'));
+  await assert.rejects(core.sync([SESSION_FAMILY], () => {}, {timeoutMs: 1000}), refused('invalid-state'));
 });

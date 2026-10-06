@@ -23,6 +23,8 @@ export type RuntimeHealth = {
   uptimeMs: number;
   /** The whole process's memory, from `process.memoryUsage()`. */
   memory: {rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number};
+  /** The event-loop lag check: `off` without one, `stopped` when its watchdog ended without being asked to. */
+  lagCheck: {status: 'off'} | {status: 'active' | 'stopped'; limitMs: number};
   modules: ModuleHealth[];
 };
 
@@ -45,6 +47,8 @@ export type RuntimeOptions = {
   startTimeoutMs?: number;
   /** How long a module's participant close and stop may take. Defaults to 5 s. */
   stopTimeoutMs?: number;
+  /** Runs the event-loop lag check with this limit. `worker` replaces the watchdog thread's file, for tests. */
+  lagCheck?: {limitMs: number; worker?: URL};
 };
 
 export interface Runtime {
@@ -100,6 +104,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       schema: 'runtime-health/1.0', status: modulesHealth.every(module => module.healthy) ? 'ok' : 'degraded',
       moduleApiVersion: MODULE_API_VERSION, startedAtMs, uptimeMs: Math.max(0, clock.now() - startedAtMs),
       memory: {rssBytes: rss, heapTotalBytes: heapTotal, heapUsedBytes: heapUsed, externalBytes: external},
+      lagCheck: {status: 'off'},
       modules: modulesHealth,
     };
   };

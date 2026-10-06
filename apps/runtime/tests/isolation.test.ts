@@ -39,13 +39,11 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   await failed(runtime, 'failing');
 
   assert.deepEqual(entry(runtime.health(), 'failing'), {
-    name: 'failing', apiVersion: '1.0', state: 'failed', healthy: false, reason: {code: 'internal', detail: 'a handler threw'},
+    name: 'failing', apiVersion: '1.0', state: 'failed', healthy: false, syncRestarts: 0, reason: {code: 'internal', detail: 'a handler threw'},
   });
   assert.equal(runtime.health().status, 'degraded');
   await waitFor(() => failing.stops === 1, 5000, 'the failed module\'s stop');
-  assert.deepEqual(failure(logs, 'failing')?.attributes, {
-    'bunny.module': 'failing', 'bunny.reason': 'a handler threw', 'error.type': 'Error', 'error.message': 'the device driver crashed',
-  });
+  assert.deepEqual(failure(logs, 'failing')?.attributes, {'bunny.module': 'failing', 'bunny.reason': 'a handler threw', 'error.type': 'Error'});
 
   await sdk.publish('bunny.state.session.s1', session(2));
   await flush();
@@ -57,14 +55,19 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   await stillWorks(probe);
 });
 
-it('a module whose responder throws refuses that request with internal and is stopped', async context => {
-  const failing = fixture('failing', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.failing', () => { throw new Error('bad command'); }); });
+it('a module whose responder throws refuses that request with internal and is stopped, and the log keeps no raw message', async context => {
+  const leak = Object.assign(new Error('GET http://192.0.2.7/api?token=secret-token refused'), {code: 'ECONNREFUSED'});
+  const failing = fixture('failing', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.failing', () => { throw leak; }); });
   const probe = fixture('probe');
-  const {runtime} = await run(context, {modules: [failing, steady(), probe]});
+  const {runtime, logs} = await run(context, {modules: [failing, steady(), probe]});
   const result = await contextOf(probe).sdk.request('bunny.cmd.mode.failing', setMode, {timeoutMs: 1000});
   assert.equal(result.status, 'rejected');
   assert.equal(result.error.error.code, 'internal');
   await failed(runtime, 'failing');
+  assert.deepEqual(failure(logs, 'failing')?.attributes, {
+    'bunny.module': 'failing', 'bunny.reason': 'a handler threw', 'error.type': 'Error', 'error.code': 'ECONNREFUSED',
+  });
+  assert.equal(JSON.stringify(logs).includes('secret-token'), false, 'the diagnostic contract keeps raw exception messages out');
   await stillWorks(probe);
 });
 
@@ -86,7 +89,8 @@ it('a module whose start outlasts the start deadline, as when its device never a
   const probe = fixture('probe');
   const {runtime} = await run(context, {modules: [silent, steady(), probe], startTimeoutMs: 50});
   assert.deepEqual(entry(runtime.health(), 'silent'), {
-    name: 'silent', apiVersion: '1.0', state: 'failed', healthy: false, reason: {code: 'unavailable', detail: 'start did not finish within 50 ms'},
+    name: 'silent', apiVersion: '1.0', state: 'failed', healthy: false, syncRestarts: 0,
+    reason: {code: 'unavailable', detail: 'start did not finish within 50 ms'},
   });
   await waitFor(() => silent.stops === 1, 5000, 'stop after a start timeout');
   await stillWorks(probe);
@@ -196,7 +200,7 @@ it('a stopped module leaves nothing behind', async context => {
   await waitFor(() => logs.some(record => record.event_name === 'runtime.module.stopped' && record.attributes['bunny.module'] === 'leaky'));
   assert.equal(leaky.stops, 1);
   await exited.promise;
-  const {sdk, signal, scheduler, workers, database: open} = contextOf(leaky);
+  const {sdk, signal, scheduler, workers, database: open, log, trace, clock: moduleClock} = contextOf(leaky);
   assert.equal(signal.aborted, true);
   assert.equal(clock.pending(), 0, 'its timer and the runtime\'s stop deadline are cancelled');
   clock.advance(60_000);
@@ -206,4 +210,36 @@ it('a stopped module leaves nothing behind', async context => {
   assert.throws(() => scheduler.after(1, () => {}), refused('invalid-state'));
   assert.throws(() => workers.start(new URL('idle-worker.js', WORKERS)), refused('invalid-state'));
   assert.throws(() => open(), refused('invalid-state'));
+  // The logger, tracing and clock keep working, so a module's stop can still log.
+  log.info('stopped.cleanly', {}, trace.span());
+  assert.ok(logs.some(record => record.event_name === 'stopped.cleanly' && record.trace_id !== undefined));
+  assert.equal(moduleClock.now(), clock.now());
+});
+
+it('dropped deliveries are logged once at once and then once per minute with a count, per subscription', async context => {
+  const clock = manualClock();
+  const gate = deferred<undefined>();
+  context.after(() => { gate.resolve(undefined); });
+  let delivered = 0;
+  const slow = fixture('slow', async ({sdk}) => {
+    await sdk.subscribe('bunny.state.session.*', async () => {
+      delivered += 1;
+      await gate.promise;
+    });
+  });
+  const probe = fixture('probe');
+  const {runtime, logs} = await run(context, {modules: [slow, probe], clock: {now: clock.now}, scheduler: clock.scheduler});
+  const sent = 1100;
+  for (let revision = 1; revision <= sent; revision += 1) await contextOf(probe).sdk.publish('bunny.state.session.s1', session(revision));
+  const drops = (): LogRecord[] => logs.filter(record => record.event_name === 'runtime.delivery.dropped');
+  assert.equal(drops().length, 1, 'the first drop is logged at once');
+  assert.deepEqual(drops()[0]?.attributes, {'bunny.source': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.dropped.count': 1});
+  clock.advance(60_000);
+  assert.equal(drops().length, 2, 'the rest of the minute is one record');
+  clock.advance(60_000);
+  assert.equal(drops().length, 2, 'a quiet minute writes nothing');
+  gate.resolve(undefined);
+  const counted = (): number => drops().reduce((total, record) => total + Number(record.attributes['bunny.dropped.count']), 0);
+  await waitFor(() => delivered + counted() === sent, 5000, 'every message delivered or counted as dropped');
+  assert.equal(stateOf(runtime, 'slow'), 'running', 'a slow subscriber lags; it is not failed');
 });

@@ -3,10 +3,11 @@
 // consumer scenarios and agent-state's stalled-consumer resync.
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Draft, type Removal, type Sdk, type Snapshot, type SyncChange, type SyncedCopy, type SyncRequest} from '../src/index.js';
+import {SdkError, type Draft, type ErrorScope, type Removal, type Sdk, type Snapshot, type SyncChange, type SyncedCopy, type SyncRequest} from '../src/index.js';
 import {startSync, type SyncAnswer, type SyncCompleted, type SyncTransport} from '../src/sync.js';
 import {
-  MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, peek, removed, session, trace, turnEnded, type Session,
+  MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, manualClock, peek, removed, session, trace, turnEnded,
+  type Session,
 } from './support.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -748,4 +749,44 @@ it('a copy sends no sync request until every family is subscribed, even after an
   slow.resolve(undefined);
   await flush();
   assert.deepEqual(sent, [2], 'one request, once both families are subscribed');
+});
+
+it('a sync request still queued at its deadline leaves the owner\'s queue and stays unavailable, so asking again is safe', async () => {
+  const clock = manualClock();
+  const {core, wall} = bus({now: clock.now, scheduler: clock.scheduler, maxQueued: 1});
+  const gate = deferred<Snapshot>();
+  let served = 0;
+  await core.serveSync([FAMILY], () => { served += 1; return gate.promise; });
+  const busy = wall.sync([FAMILY], () => {}, {timeoutMs: 5000});
+  await flush();
+  const queued = wall.sync([FAMILY], () => {}, {timeoutMs: 100, parent: PARENT});
+  await flush();
+  clock.advance(100);
+  const expired = await peek(queued);
+  assert.equal(expired?.status, 'rejected');
+  if (expired?.status !== 'rejected') return;
+  assert.deepEqual(expired.error, errorBody('unavailable', {requestId: expired.requestId, traceId: PARENT_TRACE, detail: 'no sync answer within 100 ms'}));
+  assert.equal(expired.error.error.retryable, true, 'a sync changes nothing, so it is never expired');
+  const next = wall.sync([FAMILY], () => {}, {timeoutMs: 5000});
+  await flush();
+  assert.equal(await peek(next), undefined, 'the next request waits in the room the expired one left, instead of capacity');
+  gate.resolve({revision: 0, states: []});
+  assert.equal((await busy).status, 'synced');
+  assert.equal((await next).status, 'synced');
+  assert.equal(served, 2, 'the expired request never reached the provider');
+});
+
+it('each overflow that restarts a copy\'s sync is reported to onSyncRestart with its source and families', async () => {
+  const restarts: ErrorScope[] = [];
+  const {core, wall} = bus({maxQueued: 1, onSyncRestart: scope => { restarts.push(scope); }});
+  const owner = sessionOwner(core);
+  await owner.update('s1', 1);
+  await core.serveSync([FAMILY], () => owner.snapshot());
+  const changes: string[] = [];
+  await synced(wall, changes);
+  assert.deepEqual(restarts, [], 'a first sync is not a restart');
+  void owner.update('s1', 2);
+  void owner.update('s1', 3);
+  await flush();
+  assert.deepEqual(restarts, [{source: 'bunny/wall', pattern: `sync ${FAMILY}`}]);
 });
