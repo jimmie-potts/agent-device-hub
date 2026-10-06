@@ -98,3 +98,14 @@ test('removal, expiry and sync leave the consumer holding exactly the owner enti
     assert.deepEqual(copy.held, expected, name);
   }
 });
+
+test('a sync request and its sync.completed carry the requested families, joined by commas, as their subject (Hub #883)', () => {
+  const messages = JSON.parse(readFileSync(new URL('../fixtures/v2/messages.json', import.meta.url), 'utf8'));
+  for (const set of [messages, fixtures]) {
+    const valid = Object.values(set.valid);
+    const families = new Map(valid.filter(message => message.kind === 'sync-request').map(message => [message.data.requestId, message.data.families]));
+    const sync = valid.filter(message => message.kind === 'sync-request' || message.kind === 'sync-completed');
+    assert.ok(sync.length > 0);
+    for (const message of sync) assert.equal(message.subject, families.get(message.data.requestId)?.join(','), message.id);
+  }
+});
