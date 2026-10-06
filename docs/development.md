@@ -283,7 +283,7 @@ defects:
 - `prefer-const` ignores a handle that signal handlers read before its single
   assignment.
 
-For a deliberate exception elsewhere, use
+For a deliberate exception elsewhere, outside the strict profile, use
 `// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
 
 ### Adoption baseline

@@ -1,4 +1,4 @@
-// The strict profile for new code (Hub #867): which files it covers, the local rules and the compiler base.
+// The strict profile for new code (Hub #867): which files it covers, the module boundary rule and the compiler base.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
@@ -48,6 +48,8 @@ test('an inline ESLint comment in covered code fails lint, even a blanket disabl
   }
   const [boundary] = await eslint.lintText(cases[2], {filePath: join(root, 'modules/example/src/a.mjs')});
   assert.ok(boundary.messages.some(message => message.ruleId === 'bunny/module-boundary'), 'the boundary still applies');
+  // ESLint reports an ignored inline comment as a warning, so the ban holds only while lint allows none.
+  assert.match(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts['lint:js'], /--max-warnings=0\b/);
 });
 
 test('the strict rules keep their intended options', async () => {
@@ -70,6 +72,12 @@ test('the strict rules keep their intended options', async () => {
 const directory = glob => glob.slice(0, glob.indexOf('*')).replace(/\/$/, '');
 const covered = strictGlobs.map(directory);
 const staged = stagedGlobs.map(directory);
+
+test('each profile glob names a plain directory, so the guards cannot silently check nothing', () => {
+  for (const [glob, dir] of [...strictGlobs, ...stagedGlobs].map(glob => [glob, directory(glob)])) {
+    assert.ok(glob.includes('*') && /^[\w.-]+(\/[\w.-]+)*$/.test(dir), `${glob} must start with a plain directory`);
+  }
+});
 function tsconfigs(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
