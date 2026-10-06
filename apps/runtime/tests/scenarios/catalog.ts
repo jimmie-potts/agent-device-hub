@@ -372,9 +372,9 @@ const endToEnd: Scenario = {
     expect('the reader\'s copy of the lamp shows it on', h => copied(h, 'on')),
 
     act('the operator sends req-1 again, a duplicate; the lamp accepts it', h => sendOnce(h, 'operator', 'again', switchLamp('lamp-1', 'on'), 'req-1')),
-    expect('the lamp knew it for a duplicate', h => logged(h, 'lamp.command.duplicate').length === 1 || `${logged(h, 'lamp.command.duplicate').length} duplicates`),
     holds('history keeps one outcome for req-1, and the device switched once', h =>
       historyOf(h, 'req-1').length === 1 && switches(h) === 1 ? true : `${historyOf(h, 'req-1').length} outcomes, ${switches(h)} switches`, 500),
+    expect('the lamp knew it for a duplicate', h => logged(h, 'lamp.command.duplicate').length === 1 || `${logged(h, 'lamp.command.duplicate').length} duplicates`),
 
     act('the lamp\'s device holds every switch until released', h => { h.simulate({device: 'lamp', action: 'hold'}); }),
     act('the operator switches lamp-1 off as req-held, with a 2 s deadline', h => { void h.send('operator', 'held', switchLamp('lamp-1', 'off'), {timeoutMs: 2000, requestId: 'req-held'}); }),
