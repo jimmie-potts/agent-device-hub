@@ -29,3 +29,10 @@ export function childOf(parent: TraceContext | undefined): TraceContext {
 
 /** The trace id of a traceparent built by `childOf`. */
 export const traceIdOf = (traceparent: string): string => traceparent.slice(3, 35);
+
+/** The trace ID, span ID and flags of a valid version-00 context, as log records carry them; undefined otherwise. */
+export function traceFields(context: TraceContext): {traceId: string; spanId: string; flags: string} | undefined {
+  const [, traceId, spanId, flags] = TRACEPARENT.exec(context.traceparent) ?? [];
+  if (traceId === undefined || spanId === undefined || flags === undefined || ZERO.test(traceId) || ZERO.test(spanId)) return undefined;
+  return {traceId, spanId, flags};
+}

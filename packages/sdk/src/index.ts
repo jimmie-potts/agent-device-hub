@@ -8,3 +8,8 @@ export type {
   Keyed, Removal, Snapshot, StateDraft, SyncChange, SyncCompleted, SyncedCopy, SyncHandler, SyncOptions, SyncProvider,
   SyncRequest, SyncResult,
 } from './sync.js';
+export {
+  MODULE_API_VERSION, type BunnyModule, type LogFields, type Logger, type ModuleContext, type ModuleManifest, type ModuleScheduler,
+  type Tracing, type Workers,
+} from './module.js';
+export {childOf, traceFields} from './trace.js';
