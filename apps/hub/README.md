@@ -381,7 +381,7 @@ For a separate synthetic API measurement, run `node scripts/measure-hub.mjs /abs
 
 This is an explicitly called local API, not an HTTP administration endpoint or an installer. It supports direct Node children it starts. Independently supervised services must first be stopped through their named owner and brought under this explicit supervision; an arbitrary PID, unreachable endpoint or operator confirmation string is not release proof. The launcher uses an absolute entrypoint, arguments and an explicit environment without a shell. Do not pass device-mode configuration unless that operation is separately authorized.
 
-1. Call `launchOwner` from `dist/migration.js` with kind `pixoo` or `hub`, the installed Node entrypoint, explicit arguments/environment and the source's private monitor credential. The launcher binds the returned URL to that child's successful startup. A failed launch terminates that exact child and verifies its exit.
+1. Call `launchOwner` from `dist/migration.js` with kind `pixoo` or `hub`, the installed Node entrypoint, explicit arguments/environment and the source's private monitor credential. The launcher binds the returned URL to that child's successful startup. Readiness must arrive within 5 s, or within an optional integer `startupTimeoutMs` from 1 to 60000. A failed launch terminates that exact child and verifies its exit.
 2. Call `quiesceAndStop(owner, newPrivateExportPath)`. It validates the versioned export, saves and synchronizes it in a new owner-only file, requests graceful shutdown and verifies exit. It mints one process-local `ReleasedState` capability. Neither exported JSON nor a copied capability can authorize another import.
 3. Call `startHub(options, {staged:true, released})` with an empty destination and matching owner ID and consumer policy. Import consumes the capability before asynchronous work. The persisted fence precedes import. Sessions remain readable; ingestion, labels and acknowledgments reject while staged.
 4. Use `routeDigest` and `stageProducer` from `dist/migration-routes.js` on each explicitly named private producer file. It preserves source identity, qualification and original enablement while selecting the new endpoint/token and disabling emission. Use `stagePixooSource` on Pixoo's monitor configuration, then restart the same supervised app so its facade loads the selected remote owner. Its media directory and presentation preferences remain owned by Pixoo.
@@ -626,7 +626,8 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.6.2 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.1 a full owner
+Hub 0.6.3 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.3 `launchOwner` accepts an optional
+`startupTimeoutMs` ([#584](https://github.com/jimmie-potts/agent-device-hub/issues/584)). In 0.6.1 a full owner
 lets a new root task displace a finished subagent subtree without attention
 ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Durable 2.1 is not readable
 by owners older than 0.4.0. Package publication is source delivery, not installation;

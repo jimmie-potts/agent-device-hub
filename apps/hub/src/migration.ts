@@ -12,8 +12,10 @@ const managed=new WeakMap<ManagedOwner,{child:ChildProcess;exit:Promise<number|n
 const releases=new WeakMap<ReleasedState,DurableState>();
 
 /** Explicit source tooling. It owns only children it starts; no PID guessing or shell. */
-export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;args:string[];environment:Record<string,string>;token:string}):Promise<ManagedOwner>{
- if(process.platform!=='linux'||resolve(input.entrypoint)!==input.entrypoint||!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(input.token))throw new Error('invalid-launch');
+export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;args:string[];environment:Record<string,string>;token:string;startupTimeoutMs?:number}):Promise<ManagedOwner>{
+ // Readiness stays bounded: 5 s unless the caller names another bound of at most 60 s.
+ const startupTimeoutMs=input.startupTimeoutMs??5000;
+ if(process.platform!=='linux'||resolve(input.entrypoint)!==input.entrypoint||!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(input.token)||!Number.isInteger(startupTimeoutMs)||startupTimeoutMs<1||startupTimeoutMs>60000)throw new Error('invalid-launch');
  let config:{path:string;digest:string}|undefined;
  if(input.kind==='pixoo'){
   const data=input.environment.PIXOO_DATA_DIR;if(!data||resolve(data)!==data)throw new Error('invalid-launch');
@@ -27,7 +29,7 @@ export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;ar
  let timer:ReturnType<typeof setTimeout>|undefined;
  try{
   const url=await Promise.race([new Promise<string>((resolve,reject)=>{
-   timer=setTimeout(()=>reject(new Error('owner-start-timeout')),5000);
+   timer=setTimeout(()=>reject(new Error('owner-start-timeout')),startupTimeoutMs);
    child.stdout.on('data',chunk=>{
     output+=chunk.toString();if(Buffer.byteLength(output)>8192){reject(new Error('owner-start-invalid'));return;}
     const lines=output.split('\n');output=lines.pop()!;

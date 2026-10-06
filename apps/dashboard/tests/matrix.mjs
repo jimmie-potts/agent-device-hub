@@ -3,7 +3,7 @@ import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
-import {isolateWallReads,independentWallRead} from './isolation.mjs';
+import {isolateWallReads,independentWallRead,deviceReads} from './isolation.mjs';
 import {validate} from '@jimmie-potts/device-contracts';
 import {requestBrowserLaunch} from '../../hub/dist/browser-launch.js';
 import {textOverlaps} from './layout.mjs';
@@ -116,9 +116,10 @@ try {
  });
  await scenario('a stale guard is a typed conflict whose ticket adopts no other client’s receipt; uncertain results never retry',async(f,page)=>{
   // Serve the last observed Pixoo snapshot while frozen so the browser's guards are deterministically stale. A poll still in flight when the context closes is abandoned instead of crashing the runner.
-  let frozen=null,freeze=false;await page.route(/\/api\/controllers\/v1\/pixel\/snapshot(\?apiVersion=1\.1)?$/,async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
+  // The other client's command waits for the page's own Pixoo reads: one in flight holds the hub's one slot, which answers the command with capacity (429).
+  let frozen=null,freeze=false;const pixelReads=await deviceReads(page,'pixel',async route=>{const snapshot=/\/api\/controllers\/v1\/pixel\/snapshot(\?apiVersion=1\.1)?$/.test(route.request().url());if(snapshot&&freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();if(!snapshot){await route.fulfill({response});return;}frozen=await response.json();await route.fulfill({response,json:frozen});});
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;
-  const external={apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...guard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
+  const external={apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...guard(f),command:{kind:'brightness.set',percent:70}};assert.equal(await pixelReads.exclusive(async()=>(await fetch(f.hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status),200);
   const before=f.writes.length;await visible(page,'button','Pause').click();await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.equal(f.writes.length,before+1);
   // The external client consumed the same ticket; the refreshed snapshot carries its sent receipt, which must never be shown as this rejected Pause's outcome.
   assert.equal(JSON.stringify(f.states.pixel.state.lastOutcome.receipt.requestId),JSON.stringify(general(f).at(-1).requestId));
@@ -276,7 +277,8 @@ try {
  },{panels:true});
  await scenario('a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry',async(f,page)=>{
   f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';
-  let frozen=null,freeze=false;await page.route(/\/api\/controllers\/v1\/wall\/snapshot(\?apiVersion=1\.1)?$/,async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
+  // As in the Pixoo stale-guard scenario, the other client's command waits for the page's own wall reads.
+  let frozen=null,freeze=false;const wallReads=await deviceReads(page,'wall',async route=>{const snapshot=/\/api\/controllers\/v1\/wall\/snapshot(\?apiVersion=1\.1)?$/.test(route.request().url());if(snapshot&&freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();if(!snapshot){await route.fulfill({response});return;}frozen=await response.json();await route.fulfill({response,json:frozen});});
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;const scene=page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true});
   // The controller left Free after the browser observed it: typed failure before any write, action stays available.
   f.states.wall.state.desired.mode={status:'known',value:'Work'};f.nano.mode='Work';
@@ -286,7 +288,7 @@ try {
   f.states.wall.state.pending=[{requestId:structuredClone(f.states.wall.nextRequestId),command:{kind:'mode.set',mode:'Free'},generation:structuredClone(f.states.wall.generation)}];await page.locator('section:visible').getByText('Unavailable: Nanoleaf is switching to Free; wait for the observed mode',{exact:true}).waitFor();assert.equal(await visible(page,'button','Switch to Free').count(),0);
   f.states.wall.state.pending=[];f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen.state.desired.mode.value==='Free');freeze=true;
   // Another client consumes the ticket: typed conflict, nothing repeated, action available after the refreshed snapshot.
-  const external={apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...wallGuard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
+  const external={apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...wallGuard(f),command:{kind:'brightness.set',percent:70}};assert.equal(await wallReads.exclusive(async()=>(await fetch(f.hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status),200);
   await scene.selectOption(f.sceneA);await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.deepEqual(f.scenes.activated,[]);
   freeze=false;await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Activate scene: (Queued|Sent)/}).count(),0,'a rejected ticket does not adopt another client\'s receipt');
   const submitted=f.writes.length;f.setUncertain(true);await scene.selectOption(f.sceneA);await page.locator('section:visible [role=status]').filter({hasText:'Activate scene: Result unknown: this may have reached the device'}).waitFor();await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted+1,'uncertain scene command is not retried');assert.equal(await scene.isDisabled(),true,'uncertain result stays locked');f.setUncertain(false);
