@@ -178,6 +178,10 @@ class Copy<T extends object> implements SyncedCopy<T> {
   #wanted = false;
   /** A request is outstanding. A copy never has two, so a busy copy cannot crowd the owner's shared queue. */
   #outstanding = false;
+  /** Every family is subscribed. No request goes out before, or a message published meanwhile could be missed. */
+  #subscribed = false;
+  /** The last request sent, which a first sync that runs out of time names. */
+  #lastSent: {requestId: string; traceId: string} | undefined;
   #phase: 'syncing' | 'live' | 'closed' = 'syncing';
   #subscriptions: Subscription[] = [];
   /** The trace the first request joins; later requests start their own. */
@@ -212,6 +216,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
       await this.#stop();
       throw error;
     }
+    this.#subscribed = true;
     this.#wanted = true;
     this.#wake();
     return result;
@@ -268,14 +273,23 @@ class Copy<T extends object> implements SyncedCopy<T> {
       this.#firstDeadlineMs ??= now + this.#timeoutMs;
       const left = this.#firstDeadlineMs - now;
       if (left <= 0) {
+        const last = this.#lastSent ?? ids;
         const detail = `the first sync did not complete within ${this.#timeoutMs} ms`;
-        this.#answered = {generation, answer: {status: 'rejected', requestId, error: errorBody('unavailable', {...ids, detail})}};
+        this.#answered = {generation, answer: {status: 'rejected', requestId: last.requestId, error: errorBody('unavailable', {...last, detail})}};
         return;
       }
       timeoutMs = Math.min(timeoutMs, left);
     }
     this.#outstanding = true;
-    void this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace}).then(answer => {
+    this.#lastSent = ids;
+    let sent: Promise<SyncAnswer>;
+    try {
+      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace});
+    } catch (error) {
+      // A transport that throws instead of rejecting takes the same path.
+      sent = Promise.reject(error);
+    }
+    void sent.then(answer => {
       this.#arrived({generation, answer});
     }, (error: unknown) => {
       this.#transport.report(error);
@@ -303,7 +317,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
         await this.#complete(answered);
         continue;
       }
-      if (this.#wanted && !this.#outstanding) {
+      if (this.#wanted && !this.#outstanding && this.#subscribed) {
         this.#send();
         continue;
       }
