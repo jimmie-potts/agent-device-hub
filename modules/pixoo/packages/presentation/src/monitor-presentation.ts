@@ -1,10 +1,10 @@
 import type {Player} from '@pixoo/playback';
 import {presentationConfiguration,type PresentationConfiguration,type PresentationStatus,type IntegrationAction,type NowPlayingMedia,type NowPlayingSetting,type NowPlayingState} from '@pixoo/core';
 import {DashboardService} from './dashboard-service.js';
-import type {MonitorView} from './monitor-source.js';
+import type {MonitorView} from './sources.js';
 import {renderNowPlaying,trackKey} from './now-playing.js';
-import type {PlaybackSourceStatus} from './now-playing-source.js';
-import {ApiError} from './security.js';
+import type {PlaybackSourceStatus} from './sources.js';
+import {ApiError} from './errors.js';
 export const defaultPresentation:PresentationConfiguration={version:1,mode:'media',filter:{},cadenceMs:1000};
 export const defaultNowPlaying:NowPlayingSetting={version:1,media:'off'};
 /** Everything the browser shows except whether a reader is configured, which the backend adds. */

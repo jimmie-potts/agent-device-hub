@@ -102,18 +102,20 @@ Read-only or explicitly source-only work does not authorize runtime effects.
 
 ## Related repositories
 
-- [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) retains its media,
-  persistence, playback and physical-device operation queue.
+- [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) runs the installed
+  Pixoo service with its media, persistence, playback and physical-device
+  operation queue. It takes only bug fixes now, each mirrored in
+  [`modules/pixoo`](modules/pixoo/README.md).
 - [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
 
 The shared core can run in Pixoo's existing backend or the standalone Linux hub.
 Its supervised handoff preserves one active state owner. Installed Nanoleaf
 shared-input migration remains a separate acceptance step.
-Later source moves into this monorepo have separate deferred issues,
-[Pixoo #25](https://github.com/jimmie-potts/agent-device-hub/issues/25) and
-[Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
-Their current repositories retain ownership until those migrations are delivered.
+Pixoo's domain packages and presentation are staged in `modules/pixoo` as a
+snapshot ([#25](https://github.com/jimmie-potts/agent-device-hub/issues/25)).
+The Nanoleaf port is [#26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
+Both current repositories keep running their installed services until the cutover.
 [ADR 0008](docs/decisions/0008-runtime-hosting.md) decides where the runtime
 runs: in the Ubuntu WSL distribution, with linger, an idle timeout and one
 Windows scheduled task still to be installed, until the dedicated Linux server

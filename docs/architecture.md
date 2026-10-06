@@ -220,8 +220,9 @@ source migration keep their existing owners and dependency paths.
 
 Use this repository as the monorepo for new controllers and shared packages,
 as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
-The existing Pixoo and Nanoleaf repositories retain ownership until separately
-delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX/PC
+The existing Pixoo and Nanoleaf repositories keep running their installed
+services until the cutover. Pixoo's domain packages and presentation are staged
+under modules/pixoo. Use TypeScript for new shared services, Tidbyt/LIFX/PC
 lighting controllers and the React dashboard; keep the Nanoleaf worker in Python.
 Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
@@ -233,8 +234,8 @@ and [provider matrix](provider-qualification.md) establish metadata and source e
 without claiming installed producer qualification. Provider normalizers and bounded
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
-The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
-migrations have separate deferred issues. controllers/tidbyt holds the
+The adapters/nanoleaf path remains a proposal, and its source migration has a
+separate issue. controllers/tidbyt holds the
 in-process cloud controller package; controllers/lifx holds the in-process LAN controller and controllers/pc-lighting
 currently contains documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs

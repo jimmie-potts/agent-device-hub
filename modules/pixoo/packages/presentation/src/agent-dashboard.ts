@@ -1,6 +1,6 @@
 import type {Identity, SessionSnapshot} from '@jimmie-potts/agent-state';
 import type {MonitorFilter} from '@pixoo/core';
-import type {MonitorView} from './monitor-source.js';
+import type {MonitorView} from './sources.js';
 
 export type DashboardFilter = MonitorFilter;
 export type DashboardRow = {

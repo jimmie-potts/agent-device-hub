@@ -1,12 +1,12 @@
 import {expect,it} from 'vitest';
 import {Player} from '@pixoo/playback';
 import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
-import {MonitorPresentation} from '../../apps/server/src/monitor-presentation.js';
-import {renderNowPlaying,type NowPlayingView} from '../../apps/server/src/now-playing.js';
-import type {PlaybackSourceStatus} from '../../apps/server/src/now-playing-source.js';
+import {MonitorPresentation} from '../../packages/presentation/src/monitor-presentation.js';
+import {renderNowPlaying,type NowPlayingView} from '../../packages/presentation/src/now-playing.js';
+import type {PlaybackSourceStatus} from '../../packages/presentation/src/sources.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
-import {syntheticDashboardViews} from '../../apps/server/src/dashboard-examples.js';
+import {syntheticDashboardViews} from '../../packages/presentation/src/dashboard-examples.js';
 
 type Media='off'|'popup'|'whole';
 const views=syntheticDashboardViews(),attentionView=views[0]!.view,quietView=views[3]!.view;

@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {cardLines,nowPlayingView,parsePlaybackSnapshot,renderNowPlaying,trackKey,NOW_PLAYING_COLORS,type PlaybackSnapshot} from '../../apps/server/src/now-playing.js';
+import {cardLines,nowPlayingView,parsePlaybackSnapshot,renderNowPlaying,trackKey,NOW_PLAYING_COLORS,type PlaybackSnapshot} from '../../packages/presentation/src/now-playing.js';
 
 const snapshot=(playback:Record<string,unknown>={},extra:Record<string,unknown>={}):PlaybackSnapshot=>({apiVersion:'1.0',sourceId:'ht-a9',availability:'available',observedAtMs:1_790_000_000_000,ageMs:800,
  playback:{status:'playing',title:'Harvest Moon',artist:'Neil Young',album:'Harvest Moon',controls:['pause','next','previous'],...playback},...extra} as PlaybackSnapshot);

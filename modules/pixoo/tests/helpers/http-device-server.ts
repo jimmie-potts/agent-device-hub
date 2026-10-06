@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { listenLoopback } from './loopback.js';
 
 export async function deviceServer(reply: (body: Record<string, unknown>, res: ServerResponse, req: IncomingMessage) => void) {
   const requests: Record<string, unknown>[] = [];
@@ -11,8 +11,8 @@ export async function deviceServer(reply: (body: Record<string, unknown>, res: S
       requests.push(parsed); reply(parsed, res, req);
     });
   });
-  await new Promise<void>(resolve => { server.listen(0, '127.0.0.1', resolve); });
-  return { port: (server.address() as AddressInfo).port, requests,
+  const port = await listenLoopback(server);
+  return { port, requests,
     close: () => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }),
   };
 }

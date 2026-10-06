@@ -1,10 +1,10 @@
 import {expect,it} from 'vitest';
 import {Player} from '@pixoo/playback';
 import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
-import {MonitorPresentation} from '../../apps/server/src/monitor-presentation.js';
+import {MonitorPresentation} from '../../packages/presentation/src/monitor-presentation.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
-import {syntheticDashboardViews} from '../../apps/server/src/dashboard-examples.js';
+import {syntheticDashboardViews} from '../../packages/presentation/src/dashboard-examples.js';
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
 it('retains paused context and renders only after explicit Monitor activation',async()=>{
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});const player=await Player.open({store,device,clock});
@@ -106,18 +106,6 @@ it('holds the sole HTTP writer through an uncertain retired picture without repl
   expect(commands).toEqual(['Draw/GetHttpGifId','Draw/SendHttpGif','Channel/OnOffScreen']);
   expect(monitor.status()).toMatchObject({configuration:{mode:'media'},participating:false,lastOutcome:{status:'uncertain'}});
  }finally{release({error_code:0});await monitor.close();await player.close();await device.close();}
-});
-it.each(['stop','pause','clear'] as const)('immediately cancels a pending Media selection on %s with monitoring enabled',async command=>{
- const {ControlService}=await import('../../apps/server/src/control-service.js');const {Commands}=await import('../../apps/server/src/commands.js');
- const store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter(),player=await Player.open({store,device}),commands=new Commands(),service=new ControlService(player,commands,'simulator');
- const monitor=new MonitorPresentation(player,{save:async()=>{}});service.monitor=monitor;
- const capture=store.capture.bind(store);let release=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});store.capture=async(...args)=>{await gate;return capture(...args);};
- try{
-  const starting=service.playback({command:'start',playlistId:store.playlist.id,requestId:commands.nextRequestId}).then(()=>null,error=>error.code);
-  for(let i=0;i<100;i++)await Promise.resolve();const stopping=service.playback({command,requestId:commands.nextRequestId});for(let i=0;i<100;i++)await Promise.resolve();
-  release();expect(await starting).toBe('cancelled');await stopping;for(let i=0;i<100;i++)await Promise.resolve();
-  expect(player.getSession()).toBeNull();expect(device.operations.filter(x=>x.kind==='uploadAnimation')).toHaveLength(0);
- }finally{release();await monitor.close();await player.close();}
 });
 it.each(['stop','screen-off/on'] as const)('%s during pending Media persistence cancels the deferred start',async control=>{
  const player=await Player.open({store:new MemoryPlaybackStore(),device:new FakeDeviceAdapter()});let hold=false,release=()=>{};

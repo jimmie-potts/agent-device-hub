@@ -1,6 +1,6 @@
 import {DashboardPager,type DashboardLayout,type DashboardFilter} from './agent-dashboard.js';
 import {DASHBOARD_FRAME_MS,renderDashboard} from './dashboard-pixels.js';
-import type {MonitorView} from './monitor-source.js';
+import type {MonitorView} from './sources.js';
 /** `frames` play in order at `frameDelayMs`; `rgb` is the first frame, for readers of a single picture. */
 export type DashboardRendition={version:1;generation:number;width:64;height:64;format:'rgb888';layout:DashboardLayout;rgb:number[];frames:number[][];frameDelayMs:number};
 export type DashboardOptions={clock?:()=>number;cadenceMs?:number;consumerId?:string;render?:(layout:DashboardLayout)=>Uint8Array[]|Promise<Uint8Array[]>};

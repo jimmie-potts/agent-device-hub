@@ -1,5 +1,5 @@
 import type {SessionSnapshot} from '@jimmie-potts/agent-state';
-import type {MonitorView} from './monitor-source.js';
+import type {MonitorView} from './sources.js';
 import {DashboardPager} from './agent-dashboard.js';
 import {DASHBOARD_FRAME_MS,renderDashboard} from './dashboard-pixels.js';
 import type {DashboardRendition} from './dashboard-service.js';

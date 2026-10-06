@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
-import type {MonitorView} from '../../apps/server/src/monitor-source.js';
-import {DashboardService} from '../../apps/server/src/dashboard-service.js';
+import type {MonitorView} from '../../packages/presentation/src/sources.js';
+import {DashboardService} from '../../packages/presentation/src/dashboard-service.js';
 const view=(revision:number):MonitorView=>({apiVersion:'1.0',ownerId:'o',connection:'current',admissionRejected:0,nextRequestId:null,snapshot:{apiVersion:'1.0',revision,asOfMs:1000,collector:'running',lossCount:0,sessions:[]}});
 const settle=async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();};
 it('holds one active and one newest pending render and cannot publish an obsolete completion',async()=>{
@@ -33,7 +33,7 @@ it('retires work on close, retries failure at cadence, isolates returned data an
 });
 it('resync replaces deleted rows and changes page independently of rendering cadence',async()=>{
  let now=0;const service=new DashboardService({clock:()=>now,cadenceMs:7000});
- const {syntheticDashboardViews}=await import('../../apps/server/src/dashboard-examples.js');
+ const {syntheticDashboardViews}=await import('../../packages/presentation/src/dashboard-examples.js');
  const state=syntheticDashboardViews()[0]!.view;
  service.submit(state);await settle();await settle();expect(service.status().rendition?.layout.page).toBe(0);
  now=10000;service.tick();await settle();await settle();expect(service.status().rendition?.layout.page).toBe(1);

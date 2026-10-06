@@ -1,5 +1,5 @@
 {
-  "name": "@pixoo/media",
+  "name": "@pixoo/presentation",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,10 +10,8 @@
     }
   },
   "dependencies": {
-    "gifenc": "1.0.3",
-    "gifuct-js": "2.1.2",
-    "sharp": "0.35.4",
-    "@jimmie-potts/bunny-observability": "1.1.0",
-    "@opentelemetry/api": "1.9.1"
+    "@jimmie-potts/agent-state": "3.6.0",
+    "@pixoo/core": "0.0.0",
+    "@pixoo/playback": "0.0.0"
   }
 }

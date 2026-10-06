@@ -3,9 +3,10 @@ import {startHostedFiles} from '../../packages/device/src/hosted-files.js';
 import {HttpDeviceAdapter} from '../../packages/device/src/http-adapter.js';
 import {encodeHostedGif} from '../../packages/media/src/hosted-gif.js';
 import {ManualClock} from '../helpers/manual-clock.js';
+import {outsideInstalledPorts} from '../helpers/loopback.js';
 const cleanup:(()=>Promise<void>)[]=[];
 afterEach(async()=>{for(const close of cleanup.splice(0).reverse())await close();});
-async function host(){const h=await startHostedFiles({bind:'127.0.0.1',port:0,origin:'http://127.0.0.1:0'});cleanup.push(()=>h.close());return h;}
+async function host(){const h=await outsideInstalledPorts(()=>startHostedFiles({bind:'127.0.0.1',port:0,origin:'http://127.0.0.1:0'}),opened=>opened.port,opened=>opened.close());cleanup.push(()=>h.close());return h;}
 const frames=[{rgb:Buffer.alloc(12288),delayMs:50},{rgb:Buffer.alloc(12288,17),delayMs:50}];
 const profile={name:'hosted-test',evidence:'observed' as const,maxFrames:500,minDelayMs:50,maxDelayMs:800,uniformTiming:true,readyDelayMs:1000};
 it('serves only prepared bytes and requires a complete GET, then revokes access',async()=>{

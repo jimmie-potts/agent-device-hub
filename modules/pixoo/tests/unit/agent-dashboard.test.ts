@@ -1,7 +1,7 @@
 import {expect,it} from 'vitest';
 import type {SessionSnapshot} from '@jimmie-potts/agent-state';
-import type {MonitorView} from '../../apps/server/src/monitor-source.js';
-import {DashboardPager,shortLabel,shortSessionId} from '../../apps/server/src/agent-dashboard.js';
+import type {MonitorView} from '../../packages/presentation/src/sources.js';
+import {DashboardPager,shortLabel,shortSessionId} from '../../packages/presentation/src/agent-dashboard.js';
 
 export function session(id:string,patch:Partial<SessionSnapshot>={}):SessionSnapshot {
  return {identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:id},turn:{status:'unknown'},parent:{status:'top-level'},activity:'active',attention:[],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},lastEvidenceAtMs:1000,observedAtMs:1000,observationAgeMs:0,freshness:'current',restartUncertain:false,children:{active:0,uncertain:0},...patch};
@@ -44,14 +44,14 @@ type Frame=Uint8Array;
 const lit=(frame:Frame,x0:number,y0:number,x1:number,y1:number)=>{const bits=[];for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)bits.push(frame[(y*64+x)*3]!|frame[(y*64+x)*3+1]!|frame[(y*64+x)*3+2]!?'1':'0');return bits.join('');};
 const differs=(a:Frame,b:Frame)=>{const out:Array<[number,number]>=[];for(let i=0;i<4096;i++)if(a[i*3]!==b[i*3]||a[i*3+1]!==b[i*3+1]||a[i*3+2]!==b[i*3+2])out.push([i%64,Math.floor(i/64)]);return out;};
 async function renderOne(patch:Partial<SessionSnapshot>={},change:(state:MonitorView)=>void=()=>{}){
- const {renderDashboard}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {renderDashboard}=await import('../../packages/presentation/src/dashboard-pixels.js');
  const state=view([session('a',{label:'Build',turn:{status:'known',id:'t'},ordering:{status:'known',epoch:'e',sequence:1},...patch})]);change(state);
  const layout=new DashboardPager().layout(state,0);
  return {layout,frames:renderDashboard(layout)};
 }
 const ask=(kind:'approval'|'input'|'question')=>({attention:[{kind,id:{status:'unknown'} as const,turn:{status:'unknown'} as const}]});
 it('renders exact RGB frames, independently of caller mutation',async()=>{
- const {renderDashboard}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {renderDashboard}=await import('../../packages/presentation/src/dashboard-pixels.js');
  const layout=new DashboardPager().layout(view([session('a')]),0);
  const frames=renderDashboard(layout);
  expect(frames).toHaveLength(1);expect(frames[0]).toHaveLength(12288);
@@ -84,7 +84,7 @@ it('pulses only a session that needs attention, dimming just its tile and chip i
  }
  for(const activity of ['active','idle','interrupted','ended','unknown'] as const)expect((await renderOne({activity})).frames).toHaveLength(1);
  // Attention elsewhere keeps the shown session and the steady total still.
- const {renderDashboard}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {renderDashboard}=await import('../../packages/presentation/src/dashboard-pixels.js');
  const pager=new DashboardPager(),state=view([session('a',ask('approval')),session('b')]);pager.layout(state,0);
  const layout=pager.layout(state,10000);
  expect(layout).toMatchObject({attentionTotal:1,rows:[{attention:'none'}]});
@@ -98,7 +98,7 @@ it('spells out uncertainty and dims the label instead of a trailing symbol',asyn
  expect(label(uncertain)).toBeLessThan(label(certain));
 });
 it('shows subagents, and keeps the summary and separate source and collector health on every page, including an empty one',async()=>{
- const {renderDashboard}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {renderDashboard}=await import('../../packages/presentation/src/dashboard-pixels.js');
  expect(lit((await renderOne()).frames[0]!,2,45,33,49)).not.toContain('1');
  expect(lit((await renderOne({children:{active:3,uncertain:0}})).frames[0]!,2,45,33,49)).toContain('1');
  const sources=new Set<string>(),collectors=new Set<string>();
@@ -118,7 +118,7 @@ it('shows subagents, and keeps the summary and separate source and collector hea
 });
 it('covers every legend state in the synthetic examples and matches their frame hashes',async()=>{
  const {createHash}=await import('node:crypto');
- const {syntheticDashboardRenditions}=await import('../../apps/server/src/dashboard-examples.js');
+ const {syntheticDashboardRenditions}=await import('../../packages/presentation/src/dashboard-examples.js');
  const cases=syntheticDashboardRenditions(),rows=cases.flatMap(c=>c.rendition.layout.rows),layouts=cases.map(c=>c.rendition.layout);
  expect(new Set(rows.map(row=>row.identity.provider))).toEqual(new Set(['codex','claude']));
  expect(new Set(rows.map(row=>row.activity))).toEqual(new Set(['active','idle','interrupted','ended','unknown']));
@@ -172,7 +172,7 @@ it('shows the distinguishing end of unlabeled session IDs and both ends of long 
  expect([shortLabel('a…b'),shortLabel('ab…cdefghijklmnopqrstu'),shortSessionId('x…y')]).toEqual(['A?B','AB?CDEFGHI…MNOPQRSTU','X?Y']);
 });
 it('wraps identifiers into two lines of ten at a separator when the rest fits, otherwise at ten',async()=>{
- const {identifierLines}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {identifierLines}=await import('../../packages/presentation/src/dashboard-pixels.js');
  expect(identifierLines('BUILD')).toEqual(['BUILD']);
  expect(identifierLines('PIXOO-LAYOUT-98')).toEqual(['PIXOO-','LAYOUT-98']);
  expect(identifierLines('FIX THE BUILD')).toEqual(['FIX THE','BUILD']);
@@ -181,8 +181,8 @@ it('wraps identifiers into two lines of ten at a separator when the rest fits, o
  expect(identifierLines('ABCDEFGHIJKLMNOP')).toEqual(['ABCDEFGHIJ','KLMNOP']);
 });
 it('draws labels in a 5x7 alphabet with its own truncation marker outside the label alphabet',async()=>{
- const {glyphs,markerGlyphs,largeGlyphs,largeMarkerGlyphs}=await import('../../apps/server/src/pixel-font.js');
- const {renderDashboard}=await import('../../apps/server/src/dashboard-pixels.js');
+ const {glyphs,markerGlyphs,largeGlyphs,largeMarkerGlyphs}=await import('../../packages/presentation/src/pixel-font.js');
+ const {renderDashboard}=await import('../../packages/presentation/src/dashboard-pixels.js');
  expect(Object.keys(markerGlyphs)).toEqual(['…']);
  expect(Object.hasOwn(glyphs,'…')).toBe(false);
  expect(Object.values(glyphs)).not.toContain(markerGlyphs['…']);
@@ -207,7 +207,7 @@ it('uses label then shared title then distinct ID tails, and folds accents befor
  expect(shortLabel('résumé-café')).toBe('RESUME-CAFE');
 });
 it('places project below the title and moves details above it without overlapping ink or changing pulse',async()=>{
- const {drawText}=await import('../../apps/server/src/pixel-font.js');
+ const {drawText}=await import('../../packages/presentation/src/pixel-font.js');
  const {frames}=await renderOne({title:{value:'Résumé monitor',source:'provider'},project:'DIVOOM-APP-UPGRADE',freshness:'uncertain',children:{active:2,uncertain:0},...ask('approval')});
  const expected=new Uint8Array(12288);drawText(expected,'DIVOOM-…UPGRADE',2,45,[70,170,220]);
  expect(lit(frames[0]!,0,45,63,49)).toBe(lit(expected,0,45,63,49));
@@ -251,7 +251,7 @@ it('keeps unknown ordering and optional read separate from unknown turn and othe
  for(const connection of ['stale','unavailable'] as const){const state=view([session('a',certain)]);state.connection=connection;expect(new DashboardPager().layout(state,0).rows[0]!.uncertain).toBe(true);}
 });
 it.each([undefined,'DIVOOM'])('keeps warning words and label dimming accurate with project %s',async(project)=>{
- const {drawText}=await import('../../apps/server/src/pixel-font.js');
+ const {drawText}=await import('../../packages/presentation/src/pixel-font.js');
  const patch={...(project?{project}:{}),ordering:{status:'unknown'} as const};
  const baseline=(await renderOne(patch)).frames[0]!;
  const routine=(await renderOne({...patch,unavailable:[{kind:'evidence.unavailable',dimension:'ordering',reason:'missing'},{kind:'evidence.unavailable',dimension:'read',reason:'unsupported'}]})).frames[0]!;

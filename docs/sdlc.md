@@ -196,7 +196,7 @@ instructions. Assign one writer per deliverable and a coordinator for changes
 to shared contracts, root manifests/lockfile and CI. Merge shared prerequisites
 before dependent work claims compatibility. A controller change validates its
 affected consumers; shared changes validate every affected controller.
-Existing Pixoo/Nanoleaf repository moves remain separate deferred issues.
+Pixoo's code is staged under `modules/pixoo` (#25); the Nanoleaf port is #26.
 
 Features/changed contracts need an exact issue-linked OpenSpec proposal,
 capability deltas and tasks. Timing, concurrency, migration, installation and
