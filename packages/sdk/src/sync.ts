@@ -182,8 +182,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
   #subscriptions: Subscription[] = [];
   /** The trace the first request joins; later requests start their own. */
   #parent: TraceContext | undefined;
-  /** When the first sync must have completed. */
-  #firstDeadlineMs = 0;
+  /** When the first sync must have completed: `timeoutMs` after its first request, which gets all of it. */
+  #firstDeadlineMs: number | undefined;
   /** Settles the `sync` call when the first sync completes or is refused. */
   #settle: ((result: SyncResult<T>) => void) | undefined;
   // One worker sends requests, applies answers and live messages and calls the handler, one change at a time. A
@@ -201,7 +201,6 @@ class Copy<T extends object> implements SyncedCopy<T> {
   async start(parent: TraceContext | undefined): Promise<SyncResult<T>> {
     const result = new Promise<SyncResult<T>>(resolve => { this.#settle = resolve; });
     this.#parent = parent;
-    this.#firstDeadlineMs = this.#transport.now() + this.#timeoutMs;
     // Subscribe before asking, so that nothing published after the snapshot is missed.
     try {
       for (const family of this.#families) {
@@ -265,7 +264,9 @@ class Copy<T extends object> implements SyncedCopy<T> {
     const ids = {requestId, traceId: traceIdOf(trace.traceparent)};
     let timeoutMs = this.#timeoutMs;
     if (this.#settle !== undefined) {
-      const left = this.#firstDeadlineMs - this.#transport.now();
+      const now = this.#transport.now();
+      this.#firstDeadlineMs ??= now + this.#timeoutMs;
+      const left = this.#firstDeadlineMs - now;
       if (left <= 0) {
         const detail = `the first sync did not complete within ${this.#timeoutMs} ms`;
         this.#answered = {generation, answer: {status: 'rejected', requestId, error: errorBody('unavailable', {...ids, detail})}};
