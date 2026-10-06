@@ -30,7 +30,7 @@ ADR 0012 ("Runtime and transport", "Portability") puts every module on one in-pr
 
    A sync copy restarts on any notice, so `SyncTransport` needed no other change. Nothing missed is replayed.
 4. **Snapshot size at the edge (decision 4).** If any message of a sync answer is over 256 KiB, the edge refuses it with `too-large` and logs `edge.refused`. Its `sync.completed` with long IDs reaches the cap long before the profile's 4096 members. A first sync then resolves `rejected` with that code, and a later one ends the copy with `failed`. Paging is deferred until any family's snapshot nears the cap; inbox items have no expiry, so that family can grow.
-5. **Deadlines per transport (decision 5).** The remote requester's own timer decides. A command still unanswered at its deadline is `uncertain-result`, whether queued or held, because a remote requester cannot know whether the handler started. A sync is `unavailable` on both transports. An edge that receives an already-expired command or sync request refuses it with `expired`, which a requester that already gave up ignores. The edge itself waits 1 s past the expiry, for both its bus request and the commands and sync requests it forwards, so its late answer never races the requester's deadline. The first version waited exactly to the expiry, and a forwarded command's late refusal sometimes beat the requester's own timer.
+5. **Deadlines per transport (decision 5).** The remote requester's own timer decides. A command still unanswered at its deadline is `uncertain-result`, whether queued or held, because a remote requester cannot know whether the handler started. In process, #880 takes a still-queued command out of the queue and answers `expired`. A sync is `unavailable` on both transports. An edge that receives an already-expired command or sync request refuses it with `expired`, which a requester that already gave up ignores. The edge itself waits 1 s past the expiry, for both its bus request and the commands and sync requests it forwards, so its late answer never races the requester's deadline. The first version waited exactly to the expiry, and a forwarded command's late refusal sometimes beat the requester's own timer.
 6. **The sync subject (decision 6).** A sync request's `subject` is the comma-joined family list, as #881 implemented, capped at 256 characters by the request rule. `sync.completed` carries the same subject. The profile docs and spec record it, and the fixtures follow it. The validator does not check it, because `sync.completed` does not carry the families.
 7. **Authentication (decision 7).** Each grant stores a SHA-256 digest of its token. A presented token is hashed and compared with every grant through `timingSafeEqual`, with no early exit, so timing reveals neither which grant matched nor the token's length.
    - `unauthenticated` (401): a call without a bearer token or with an ungranted one.
@@ -47,13 +47,15 @@ ADR 0012 ("Runtime and transport", "Portability") puts every module on one in-pr
 
 ## Risks / Trade-offs
 
-- **[#880's PR #899 changes the same files.]**
-  - It changes `in-process.ts`, `sdk.ts`, `queue.ts`, the README and the spec.
-  - After it merges, this branch rebases.
-  - The in-process expectation for a queued command at its deadline becomes `expired`.
-  - Remote sync requests honor `OutgoingSync.signal` by aborting the HTTP call.
-  - The suite gains a subscribe-through-a-closed-participant case.
-- **[The edge's own waits use `setTimeout`.]** → They move to #880's scheduler with the bus.
+- **[#880 (PR #899) changed the same files.]**
+  - This branch rebased onto it.
+  - A remote participant is a `Participant`, whose close closes its sync copies.
+  - `OutgoingSync.signal` drops the HTTP sync call, and the edge withdraws the request from the owner's queue through #880's sync dispatch.
+  - The client's and the edge's waits run on an injectable scheduler.
+  - The bus's prepared entry points sit on #880's dispatch.
+  - The suite covers a closed participant and a closing participant's withdrawn sync request.
+  - Requests the edge sends for a remote part have no participant to close; they settle by their wait.
+- **[#882's outbox needs the same entry point.]** → `publishMessage` is the branch's first commit, self-contained, so #882 can cherry-pick it and the second PR to merge drops the identical patch.
 - **[A sync answer is one HTTP response.]**
   - Each message is capped, but the whole answer is not.
   - Paging, deferred above, bounds it.

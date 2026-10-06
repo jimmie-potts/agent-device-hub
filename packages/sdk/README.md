@@ -402,12 +402,20 @@ The deadline answers per transport:
 | Case | In process | Remote |
 | --- | --- | --- |
 | A command its handler holds at the deadline | `uncertain-result` | `uncertain-result` |
-| A command still queued at the deadline | `uncertain-result` | `uncertain-result`: the requester cannot know whether the handler started |
+| A command still queued at the deadline | `expired`: the bus takes it out of the queue | `uncertain-result`: the requester cannot know whether the handler started |
 | A sync request with no answer by the deadline | `unavailable` | `unavailable` |
 | A command or sync request that reaches the edge past its expiry | not applicable | `expired`, which a requester that already gave up ignores |
 
 The remote requester's own deadline decides. The edge waits 1 s past the
 expiry before it gives up, so its late answer never reaches the requester first.
+Both sides run these waits on a `scheduler` option, which defaults to
+`setTimeout`.
+
+A remote participant is a `Participant`. Its `close` closes its sync copies
+first: a first sync still under way resolves `cancelled`, and its request is
+withdrawn. The client drops the HTTP call, and the edge takes the request out of
+the owner's queue, so the owner never serves it. Then it ends the stream, and
+every later call is refused with `invalid-state`.
 
 ## Checks
 

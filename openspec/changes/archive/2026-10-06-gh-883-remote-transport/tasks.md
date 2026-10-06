@@ -37,3 +37,16 @@
 
 - [x] 4.1 Document the remote transport, `publishMessage` and the optional `dropped` count in `packages/sdk/README.md`. Record the subject rule in `packages/event-contracts/README.md`, and update `docs/development.md` and `docs/architecture.md`.
 - [x] 4.2 Validate this change with `--strict`, then sync and archive it. `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:sdk:built` three times, `npm run test:events:built`, `npm run test:workflow`, `npm run check:workflow` and `npm run openspec -- validate --specs --strict` all exit zero.
+
+## 5. Rebase onto #880
+
+- [x] 5.1 Move `publishMessage` into a self-contained first commit on main after #880 (`tests/prepared.test.ts`), for #882's outbox. Its two tests pass, and removing the source check fails one of them.
+- [x] 5.2 Replay this change onto it. The bus's prepared entry points now sit on #880's dispatch, and the sync dispatch takes #880's abort signal.
+- [x] 5.3 Write the alignment tests first:
+  - the in-process queued-command expectation becomes `expired`;
+  - a closed participant refuses every call, on both transports;
+  - closing a participant cancels its first sync and withdraws its waiting request, on both transports;
+  - a remote requester's deadlines run on its injected scheduler.
+
+  The remote close case and the scheduler test fail.
+- [x] 5.4 Make the remote participant a `Participant` whose close closes its copies. Honor `OutgoingSync.signal` by dropping the HTTP call, and withdraw it at the edge. Run the client's and the edge's waits on an injectable scheduler. All 120 SDK tests pass.

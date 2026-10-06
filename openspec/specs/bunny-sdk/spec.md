@@ -369,6 +369,8 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **A slow consumer:** the edge SHALL wait for a connection's socket to drain before it writes the next message of a subscription, so a remote part that stops reading fills only its own subscriptions' bounded queues. Their drops SHALL be reported to `onError` as `capacity` and sent to the remote part as an overflow notice with the count.
 - **Reconnects:** a client whose stream is lost SHALL reconnect, register its subscriptions, responders and sync owners again, and then tell each subscription of the gap with no count. Nothing missed SHALL be replayed.
 - **Deadlines:** a remote requester's own deadline SHALL decide. A command still unanswered at its deadline SHALL be `uncertain-result`, and a sync request `unavailable`. The edge SHALL wait past the expiry before it gives up, so its late answer never reaches the requester first. A remote responder or owner SHALL ignore a command or sync request that reaches it past its expiry.
+- **Close:** a remote participant SHALL be a participant whose `close` closes its sync copies first, so a first sync still under way resolves `cancelled`. A copy's withdrawn request SHALL drop its HTTP call, and the edge SHALL then take the request out of the owner's queue, so the owner never serves it. Every later call SHALL be refused with `invalid-state`.
+- **Schedulers:** the client's deadlines and reconnect delays and the edge's waits SHALL run on an injectable scheduler, which defaults to `setTimeout`.
 - **Sync answers:** the edge SHALL refuse a sync answer that has a state or `sync.completed` over 256 KiB with `too-large` and log it, so a first sync resolves `rejected` with that code and a later one ends the copy with `failed`.
 
 #### Scenario: Credentials
@@ -391,6 +393,10 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **WHEN** a remote part stops reading its stream while 150 messages of 100 KB are published
 - **THEN** another subscriber receives all 150, drops for the slow subscription go to `onError`, and once it reads again it receives an overflow notice with the count
 
+#### Scenario: Deadlines on an injected scheduler
+- **WHEN** a remote requester whose scheduler holds its callbacks sends a command with a one-minute deadline that nobody answers, and the test runs the scheduled deadline
+- **THEN** the request resolves as `uncertain` at once
+
 #### Scenario: A sync answer over the cap
 - **WHEN** an owner's snapshot makes `sync.completed` larger than 256 KiB
 - **THEN** a remote copy that syncs again ends with `failed` and `too-large`, a first sync resolves `rejected` with `too-large`, and the edge logs the refusal
@@ -398,8 +404,8 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 ### Requirement: One conformance suite for every transport
 
 One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. Where a transport must answer differently, it SHALL state its own expectation:
-- a command still queued at its deadline is `uncertain-result` on the remote transport, because the requester cannot know whether the handler started;
-- in process, it is the bus's own answer.
+- a command still queued at its deadline is `expired` in process, where the bus takes it out of the queue;
+- it is `uncertain-result` on the remote transport, because the requester cannot know whether the handler started.
 
 #### Scenario: Both transports
 - **WHEN** the suite runs against each transport
@@ -411,4 +417,6 @@ One conformance suite SHALL run the same SDK calls against the in-process bus an
   - no responder, and both deadline cases;
   - sync, with an owner's refusal and the `unavailable` deadline;
   - an overflow count;
-  - malformed calls.
+  - malformed calls;
+  - a closed participant refusing every call with `invalid-state`;
+  - a closing participant's first sync resolving `cancelled`, with its waiting request never reaching the owner.
