@@ -694,8 +694,9 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:sdk` from the worktree root. `test:sdk` builds, then runs
 `test:sdk:built`: the compiled tests in `packages/sdk/dist/tests/`. The core CI
 job runs `npm run test:sdk:built` after its fresh build. The tests check every
-message they see against profile 2.0 with the event contracts' validator; the
-bus itself does not validate. They need no runtime, device or network.
+message they see against profile 2.0 with the event contracts' validator, and a
+test fails if one is invalid; the bus itself does not validate. They need no
+runtime, device or network.
 
 ## Agent lifecycle contract checks
 

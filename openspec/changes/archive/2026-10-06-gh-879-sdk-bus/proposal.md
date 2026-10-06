@@ -12,6 +12,14 @@
 - **Plain objects.** The bus does not copy, serialize or validate messages. The tests check every message they see against profile 2.0.
 - **Wiring.** The workspace joins `build` and `typecheck`, adds `test:sdk` and `test:sdk:built`, and the core CI job runs `test:sdk:built`.
 
+## Decisions
+
+Review accepted these four decisions on 2026-10-06:
+- **Kind to key class.** State and removal messages use `bunny.state` keys, occurrences and outcomes use `bunny.event` keys, and commands use `bunny.cmd` keys through request and respond only. ADR 0012 names the three key classes. A consumer of an entity's state also sees its removal, an outcome reports what happened to a command, and a command has one owner, so it never goes through broadcast publish.
+- **One responder per key.** A `respond` whose pattern overlaps another responder's is refused with `invalid-state`. ADR 0012 addresses each command to the one owner of what it changes, so a second owner is an error at registration instead of a race at delivery.
+- **`requestId` in the command payload.** `request` writes `requestId` into the payload, and a caller may choose it, for example to record the request before sending. ADR 0012 says requests carry a `requestId`, and the profile's reply and outcome payloads name it.
+- **Bounded queues, with the overflow signal deferred to #881.** The scope defaults require bounded queued work. A full subscription queue drops the message for that subscriber and reports `capacity` to `onError`, and a full responder queue refuses the request with `capacity`. The subscriber itself is not told about a dropped message. Until #881 adds an overflow signal that restarts sync, a subscriber can hold a silent gap in its copy; only `onError` sees it.
+
 ## Capabilities
 
 ### New Capabilities
@@ -26,7 +34,8 @@ None. The bus uses `bunny-message-profile` (`@jimmie-potts/event-contracts/v2`) 
 - **Shared files:**
   - the root `package.json` and `package-lock.json`, for the workspace and scripts;
   - `.github/workflows/checks.yml` and `tests/workflow_checks.cjs`, for one core-job step;
-  - `docs/development.md`, for the SDK checks.
+  - `docs/development.md`, for the SDK checks, and its specification inventory paragraph, which now points at `openspec/specs/` instead of keeping a stale list;
+  - `docs/architecture.md`, which notes that the SDK's in-process bus exists as source.
 - **Nothing else:** nothing runs the bus yet. There is no runtime, Hub, controller, contract or device change. Delivery target: source-only.
 
-**No design.md.** ADR 0012 is the design record for the SDK. It states the in-process bus and its calls, routing keys, command expiry, no replay, the slow-consumer rule, trace context and portability, with their trade-offs and rejected alternatives. This change adds a library with no runtime, storage, migration or privacy behavior.
+**No design.md.** ADR 0012 is the design record for the SDK. It states the in-process bus and its calls, routing keys, command expiry, no replay, the slow-consumer rule, trace context and portability, with their trade-offs and rejected alternatives. The omission also covers the four decisions above: each applies one of those ADR rules, and this proposal records its rationale. This change adds a library with no runtime, storage, migration or privacy behavior.

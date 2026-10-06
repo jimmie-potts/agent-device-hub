@@ -15,3 +15,11 @@
 - [x] 3.1 Add the workspace to `build` and `typecheck`, add `test:sdk` and `test:sdk:built`, and add one core CI step with its `tests/workflow_checks.cjs` entry; `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:workflow`, `npm run check:workflow`, `npm run test:sdk:built` (27 tests) and `npm run test:events:built` all exit zero.
 - [x] 3.2 Document the API in `packages/sdk/README.md` and add "SDK checks" to `docs/development.md`.
 - [x] 3.3 Validate this change with `--strict`, then sync and archive it; `npm run check:workflow` and `npm run test:workflow` exit zero.
+
+## 4. Review fixes
+
+- [x] 4.1 Run each delivery in an AsyncLocalStorage context, so `close()` called from its own handler resolves at once; the subscriber and responder self-close tests fail without it and pass with it.
+- [x] 4.2 Make the default `onError` emit a `BunnySdkWarning` naming the source and pattern, with the original error as its `cause`, and refuse a command type that does not end in `.requested`; both tests fail before the change.
+- [x] 4.3 Pin the responder-queue `capacity` result, the `unavailable` trace ID on close, the outcome key class and the cleared deadline timer; rewriting `capacity` as `unavailable` without IDs, dropping that `traceId` or skipping `clearTimeout` each fails one test.
+- [x] 4.4 Check every message each test sees against profile 2.0 through the `checked` test wrapper; an invalid reply type fails 12 tests.
+- [x] 4.5 Record the accepted decisions here, update the README, this spec and `docs/architecture.md`; `npm run openspec -- validate --specs --strict`, `npm run check:workflow` and `npm run test:workflow` exit zero.

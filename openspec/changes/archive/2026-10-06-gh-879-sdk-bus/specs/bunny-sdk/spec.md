@@ -7,7 +7,7 @@ The SDK SHALL give each participant `publish` and `subscribe` on routing keys `b
 - occurrence and outcome messages use `bunny.event` keys;
 - commands use `bunny.cmd` keys, through request and respond only.
 
-The SDK SHALL build each envelope with the participant's `source`, a new `id`, the current `time` and the fixed profile attributes. It SHALL pass the message to subscribers as the same plain object, without copying, serializing or validating it. A malformed key, pattern, kind or source SHALL be refused with an `SdkError` that carries the shared error body with code `invalid-request`.
+The SDK SHALL build each envelope with the participant's `source`, a new `id`, the current `time` and the fixed profile attributes. It SHALL pass the message to subscribers as the same plain object, without copying, serializing or validating it. A malformed key, pattern or kind SHALL be refused with an `SdkError` that carries the shared error body with code `invalid-request`; `connect` SHALL throw that error at once for a malformed source.
 
 #### Scenario: Patterns select messages
 - **WHEN** subscriptions exist on `bunny.state.session.*`, `bunny.*.session.s1`, `bunny.*.*.*` and `bunny.state.mode.wall`, and state, occurrence and removal messages for sessions s1 and s2 are published
@@ -18,7 +18,7 @@ The SDK SHALL build each envelope with the participant's `source`, a new `id`, t
 - **THEN** the returned message validates against profile 2.0 with the participant's source, and subscribers receive that same object
 
 #### Scenario: A kind on the wrong key class
-- **WHEN** a state or removal message is published on a `bunny.event` key, an occurrence on a `bunny.state` key or any message on a `bunny.cmd` key, a subscription names `bunny.cmd`, or a responder names another class
+- **WHEN** a state or removal message is published on a `bunny.event` key, an occurrence or outcome on a `bunny.state` key or any message, an outcome included, on a `bunny.cmd` key, a subscription names `bunny.cmd`, or a responder names another class
 - **THEN** the call is refused with `invalid-request`
 
 #### Scenario: Malformed keys, patterns and sources
@@ -31,7 +31,7 @@ The SDK SHALL build each envelope with the participant's `source`, a new `id`, t
 
 ### Requirement: Request and respond with expiry
 
-One responder SHALL own each command key. A `respond` whose pattern overlaps another responder's SHALL be refused with `invalid-state`. `request` SHALL send one command with a `requestId` in its payload and `expiresat` set `timeoutMs` after its `time`. It SHALL resolve with exactly one result:
+One responder SHALL own each command key. A `respond` whose pattern overlaps another responder's SHALL be refused with `invalid-state`. `request` SHALL refuse with `invalid-request` a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is not an integer from 1 to 2147483647 and a `requestId` that is not an identifier. It SHALL send one command with a `requestId` in its payload and `expiresat` set `timeoutMs` after its `time`, and SHALL resolve with exactly one result, the reply or a result in its place; the command's outcome is a separate published message:
 - `accepted`, with the reply message;
 - `rejected`, with the shared error body: the responder's refusal, `internal` when the responder throws, `unavailable` when no responder owns the key or it closed before the command reached it, or `capacity` when its queue is full;
 - `uncertain`, with `uncertain-result`, when the deadline passes first.
@@ -50,6 +50,18 @@ The SDK SHALL never send a command again and SHALL ignore a reply that arrives a
 - **WHEN** a request names a key that no responder owns
 - **THEN** it resolves at once as `rejected` with the retryable code `unavailable`
 
+#### Scenario: A full responder queue
+- **WHEN** a request reaches a responder whose queue already holds `maxQueued` waiting commands
+- **THEN** it resolves at once as `rejected` with the retryable code `capacity`, carrying its `requestId` and trace ID
+
+#### Scenario: A responder closes with commands waiting
+- **WHEN** a responder closes while one command is being handled and another waits
+- **THEN** the waiting request resolves as `rejected` with `unavailable`, carrying its `requestId` and trace ID, and the command being handled still gets its reply
+
+#### Scenario: A malformed request
+- **WHEN** a request uses a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is zero, negative, fractional, not finite or above 2147483647, or a `requestId` that is not an identifier
+- **THEN** it is refused with `invalid-request`
+
 #### Scenario: A deadline recorded as uncertain
 - **WHEN** no reply arrives before the deadline
 - **THEN** the request stays pending until the deadline, then resolves as `uncertain` with `uncertain-result`, which is not retryable; a later reply changes nothing, and the responder receives the command only once
@@ -64,7 +76,7 @@ The SDK SHALL never send a command again and SHALL ignore a reply that arrives a
 
 ### Requirement: Per-subscriber delivery
 
-Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. A queue SHALL hold at most `maxQueued` waiting messages, 1024 by default. When the queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. A handler that throws SHALL be reported to `onError`, or as a process warning when no `onError` is given, and SHALL keep receiving. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes.
+Each subscription and each responder SHALL have its own queue, which delivers one message at a time in publish order. A slow handler SHALL delay only its own queue, never the sender, other subscribers or requests. `publish` SHALL NOT wait for any handler, and no handler SHALL run inside the sender's call. Each queue SHALL hold at most `maxQueued` waiting messages, 1024 by default; a `maxQueued` that is not a positive integer SHALL throw `RangeError`. When a subscription's queue is full, a new message SHALL be dropped for that subscription only, and `onError` SHALL receive an `SdkError` with code `capacity`. When a responder's queue is full, the requester SHALL get a `rejected` result with `capacity` instead. A handler that throws SHALL be reported to `onError` and SHALL keep receiving. Without an `onError`, each report SHALL become a `BunnySdkWarning` process warning whose message names the source and pattern, with the original error as its `cause`. Closing a subscription SHALL drop its waiting messages and resolve when its running handler finishes. Called from inside that handler, it SHALL resolve without waiting for it.
 
 #### Scenario: A slow subscriber delays only itself
 - **WHEN** one subscriber's handler stays blocked on its first message while five messages are published
@@ -80,11 +92,15 @@ Each subscription and each responder SHALL have its own queue, which delivers on
 
 #### Scenario: A handler that throws
 - **WHEN** a subscriber's handler throws
-- **THEN** the error is reported, as a process warning when no `onError` is given, and the subscriber receives the next message
+- **THEN** the error is reported to `onError`, or as a `BunnySdkWarning` naming the source and pattern with the error as its `cause` when no `onError` is given, and the subscriber receives the next message
 
 #### Scenario: Closing during a delivery
 - **WHEN** a subscription closes while its handler is running and another message waits
 - **THEN** the close resolves after the running handler finishes, and the waiting message is never delivered
+
+#### Scenario: Closing from inside the handler
+- **WHEN** a subscriber's handler, or a responder, closes its own subscription and waits for the close
+- **THEN** the close resolves, the handler finishes, no later message reaches it, and the responder's reply arrives as `accepted`
 
 ### Requirement: Trace context on every message
 

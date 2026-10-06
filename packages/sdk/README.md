@@ -40,13 +40,17 @@ const result = await core.request('bunny.cmd.mode.wall', {
 `new InProcessBus(options)` creates a bus. All options are optional:
 - `now()`: the clock, in epoch milliseconds, for `time`, `expiresat` and expiry
   checks. Defaults to `Date.now()`.
-- `maxQueued`: how many messages may wait in one subscription's queue. Defaults
-  to 1024.
+- `maxQueued`: how many messages may wait in one subscription's or responder's
+  queue. Defaults to 1024. A value that is not a positive integer throws
+  `RangeError`.
 - `onError(error, {source, pattern})`: receives handler errors and dropped
-  deliveries. Defaults to a process warning.
+  deliveries. By default, each one becomes a `BunnySdkWarning` process warning
+  whose message names the source and pattern, with the original error as its
+  `cause`.
 
 `bus.connect(source)` returns an `Sdk` for one participant. `source` is its
-CloudEvents source, such as `bunny/core`. Each message it sends gets that
+CloudEvents source, such as `bunny/core`; a malformed source throws `SdkError`
+at once. Each message the participant sends gets that
 source, a new `id`, the current `time`, the fixed profile attributes and a
 `traceparent`. Callers supply only `kind`, `type`, `subject`, `dataschema` and
 `data`.
@@ -57,11 +61,14 @@ The `Sdk` calls:
 | --- | --- |
 | `publish(key, draft, {parent?})` | Queues a state, removal, occurrence or outcome message for every matching subscriber and resolves with the message. It never waits for a handler. |
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
-| `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its outcome. |
+| `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}` or an error body from `errorBody`. |
 
 `subscribe` and `respond` resolve with a subscription. Its `close()` stops
 delivery, drops queued messages and resolves when a running handler finishes.
+Called from inside its own handler, `close()` resolves at once instead of
+waiting for that handler, and a responder that closes itself still sends its
+reply.
 
 A malformed call, such as a bad routing key, rejects with `SdkError`. Its
 `body` is the shared error body, here with code `invalid-request`.
@@ -86,6 +93,8 @@ Replies go straight back to their requester. Sync messages are left to sync
 - `request` adds `requestId` to the command's payload, so command payload
   schemas include it. Pass `requestId` to choose it, for example after recording
   the request; otherwise one is generated.
+- The command's `type` must end in `.requested`; `request` refuses any other
+  with `invalid-request`. The reply's type ends in `.replied` instead.
 - The command's `expiresat` is `timeoutMs` after its `time`. `timeoutMs` is an
   integer from 1 to 2147483647.
 - One responder owns each command key. A `respond` whose pattern overlaps
@@ -115,9 +124,10 @@ only its own queue, never the sender, other subscribers or requests. Handlers
 never run inside the sender's call. A handler that throws is reported to
 `onError` and keeps receiving.
 
-A queue holds at most `maxQueued` waiting messages. When it is full, a new
-message is dropped for that subscription only, and `onError` receives an
-`SdkError` with code `capacity`.
+A queue holds at most `maxQueued` waiting messages. When a subscription's queue
+is full, a new message is dropped for that subscription only, and `onError`
+receives an `SdkError` with code `capacity`. When a responder's queue is full,
+the requester gets a `rejected` result with `capacity` instead.
 
 Messages are shared, not copied. Treat a received message as read-only, and do
 not change a message or its `data` after publishing it.
