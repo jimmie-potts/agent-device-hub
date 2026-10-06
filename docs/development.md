@@ -1642,10 +1642,15 @@ The port is split into slices by area:
   the renderer, with the display encoder it shares with effects.
 - **Slice 2b:** effects, saved animation favorites and the Nanoleaf HTTP
   client, including device pairing (`pair`).
-- **Slice 3:** removing the legacy input slice 1 ported (3a; the port keeps
-  shared input only, owner decision 2026-10-06), then the worker, modes,
-  scenes, comets, edits and the control execution half of
-  `controller_state.py`.
+- **Slice 3a:** removing the legacy input slice 1 ported; the port keeps shared
+  input only (owner decision 2026-10-06).
+- **Slice 3b:** map edits, the pending wall edit, Locate, mode commands,
+  starting and pruning comets, and the rendering receipt.
+- **Slice 3c:** the display worker with scene restore.
+- **Slice 3d:** controls, a minimal journal for holds and uncertain attempts,
+  and animation play.
+- **Slice 3e:** the remaining multi-device worker cases of
+  `test_device_worker.py`.
 
 The translated Python tests keep their class and method names. A replay of
 recorded Python sequences compares, after every step, the results and the rows of
@@ -1658,8 +1663,9 @@ envelope by hash. `palette`, `map_pending`, `locate`, `shared_ack` and the
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
 discovery and malformed Lines replies, color parsing, every effect pattern's
-payload, and zone colors and effect payloads on random renderer states. The
-colors, payloads, effects and pairing match exactly. A map geometry number may
+payload, zone colors and effect payloads on random renderer states, and map
+edits, mode commands, Locate, comets and rendering receipts with the rows they
+leave. The colors, payloads, effects, pairing and edits match exactly. A map geometry number may
 differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1, because
 `Math.sin`, `Math.cos` and `Math.atan2` can differ from the C library's in the
 last bit.

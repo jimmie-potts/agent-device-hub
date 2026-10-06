@@ -1,8 +1,7 @@
 // Translated renderer cases: tests/test_bridge.py (render, pulse and wave colors), test_panels.py (PayloadTest and the
 // render configuration), test_comets.py and test_modes.py (their frame cases), test_palette.py (frames and the saved
 // palette) and test_project_map.py (project halves). Frames recorded from Python follow. Map edits, palette writes and
-// mode commands are ported with the edits and worker slice, so these tests save each edit's rows as the edit would
-// (PORTING.md lists every case and where the rest went).
+// mode commands run as the wall's actions ran them (PORTING.md lists every case and where the rest went).
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import type {TestContext} from 'node:test';
@@ -12,10 +11,11 @@ import {projection} from '../src/devices.js';
 import type {Display, Rgb} from '../src/effects.js';
 import {dashboard, type Indication} from '../src/line-projection.js';
 import {readLayout} from '../src/panels.js';
-import {DEFAULT_PALETTE, lineId, palette, paletteRgb, renderConfig, type Role} from '../src/project-map.js';
+import * as edits from '../src/edits.js';
+import {DEFAULT_PALETTE, lineId, palette, paletteRgb, renderConfig, requestPatch, settings as settingsOf, type Role} from '../src/project-map.js';
 import {BASELINE, COLORS, cometColor, effectPayload, indicatorBrightness, MIN_BRIGHTNESS, PULSE_TICKS, pixelColor, render, travelDelays, zoneColor,
   type Delays, type RenderConfig} from '../src/renderer.js';
-import {execute, rows} from '../src/sqlite.js';
+import {execute} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import type {LightRequest} from '../src/transport.js';
 import {Clock, decode, fixtureJson, framesOf, query, setMode, suite, taskRow, temporary, test, write} from './support.js';
@@ -244,14 +244,11 @@ suite('PayloadTest', () => {
 
 suite('ReservationTest', () => {
   test('test_render_config_gives_triangles_no_signature', context => {
-    // The project-layout edit is saved as its rows.
     const directory = temporary(context);
     const config: RenderConfig = {...projection(readLayout(NL22)), device: 'panels'};
     write(directory, db => {
       execute(db, "INSERT INTO projects VALUES ('p','P','#00ff00','[]')");
-      execute(db, "INSERT OR IGNORE INTO map_settings (style,coverage,rotation,flip_x,flip_y,device) VALUES ('classic','whole',0,0,0,'panels')");
-      execute(db, "UPDATE map_settings SET style='project' WHERE device='panels'");
-      execute(db, "INSERT INTO line_prefs (line_id,project,signature,device) VALUES (?,'p',0,'panels')", config.elements?.[0]?.id ?? '');
+      requestPatch(db, {settings: {style: 'project'}, lines: {[config.elements?.[0]?.id ?? '']: {project: 'p'}}}, config);
       renderConfig(db, config, snapshotOf(config.line_groups.length));
     });
     assert.equal(config._style, 'project');
@@ -315,10 +312,7 @@ suite('ModeTest', () => {
   });
 });
 
-/**
- * ProjectTest.setUp with SceneTest's configuration: projects a and b, tasks prompted at 1000, and the wall's
- * settings, assignments and palette saved as their edits save them.
- */
+/** ProjectTest.setUp with SceneTest's configuration: projects a and b, tasks prompted at 1000, and the wall's actions. */
 class Wall {
   readonly directory: string;
 
@@ -337,29 +331,24 @@ class Wall {
     });
   }
 
-  settings(changes: Record<string, string | number>): void {
-    write(this.directory, db => {
-      for (const [key, value] of Object.entries(changes)) execute(db, `UPDATE map_settings SET ${key}=? WHERE device='wall'`, value);
-    });
+  /** The wall's settings action. */
+  settings(changes: unknown): void {
+    write(this.directory, db => edits.settings(db, SCENE, changes));
   }
 
-  /** The saved result of the wall's assign edit: each Line keeps the fields the edit leaves out. */
+  /** The wall's assign action: the same value on each of these Lines. */
   assign(slots: Iterable<number>, value: {project?: string | null; signature?: number}): void {
-    write(this.directory, db => {
-      for (const slot of slots) {
-        const id = lineId(LINES[slot] ?? []);
-        const [project = null, signature = 0] = rows(db, "SELECT project,signature FROM line_prefs WHERE line_id=? AND device='wall'", id)[0] ?? [];
-        execute(db, "INSERT OR REPLACE INTO line_prefs (line_id,project,signature,device) VALUES (?,?,?,'wall')", id,
-          value.project === undefined ? project : value.project, value.signature ?? signature);
-      }
-    });
+    write(this.directory, db => edits.assign(db, SCENE, Object.fromEntries([...slots].map(slot => [lineId(LINES[slot] ?? []), value]))));
   }
 
-  /** The saved result of a palette setting: one lowercase row per changed role. */
-  palette(roles: Partial<Record<Role, string>>): void {
-    write(this.directory, db => {
-      for (const [role, color] of Object.entries(roles)) execute(db, 'INSERT OR REPLACE INTO palette VALUES (?,?)', role, color.toLowerCase());
-    });
+  /** The wall's project color action. */
+  color(project: string, color: string): void {
+    write(this.directory, db => edits.projectColor(db, project, color));
+  }
+
+  /** The wall's settings action with a palette. */
+  palette(roles: unknown): void {
+    this.settings({palette: roles});
   }
 
   /** ProjectTest.prepare: the worker's placement pass at 1000 and a copy of the configuration with the map's render settings. */
@@ -441,10 +430,10 @@ suite('PaletteStateTest', () => {
   // AC11: an upgraded database keeps its preferences and starts with the new defaults.
   test('test_upgrade_keeps_preferences_and_adopts_defaults', context => {
     // Partly: the wall view moves with #844, so its palette and mode are read from the saved state, and its check that
-    // opening the view leaves the scene file unchanged is not translated. The map edits are saved as their rows.
+    // opening the view leaves the scene file unchanged is not translated.
     const wall = new Wall(context);
     wall.assign([2], {project: 'a'});
-    write(wall.directory, db => execute(db, "UPDATE projects SET color='#113355' WHERE id='a'"));
+    wall.color('a', '#113355');
     wall.settings({style: 'project', coverage: 'status', rotation: 90});
     setMode(wall.directory, 'quiet');
     // The state an earlier version left behind.
@@ -454,6 +443,33 @@ suite('PaletteStateTest', () => {
     assert.deepEqual(wall.saved(), DEFAULTS);
     assert.equal(withState(wall.directory, db => controlState(db).mode), 'quiet');
     assert.deepEqual(tables(), before);
+  });
+
+  // AC1 and AC11: defaults, partial updates, reset and persistence.
+  test('test_defaults_partial_update_reset_and_restart', context => {
+    // The wall view's palette and project colors are read from the saved state; each read opens the database again.
+    const wall = new Wall(context);
+    assert.deepEqual(wall.saved(), DEFAULTS);
+    wall.palette({unread: '#FF00C0', base: '#000000'});
+    wall.color('a', '#113355');
+    assert.deepEqual(wall.saved(), {...DEFAULTS, unread: '#ff00c0', base: '#000000'});
+    wall.palette('default');
+    assert.deepEqual(wall.saved(), DEFAULTS);
+    assert.deepEqual(query(wall.directory, "SELECT color FROM projects WHERE id='a'"), [['#113355']]);
+  });
+
+  // AC10: invalid requests change nothing.
+  test('test_invalid_palette_requests_apply_nothing', context => {
+    const wall = new Wall(context);
+    wall.palette({working: '#00e5ff'});
+    const before = wall.saved();
+    for (const payload of [{palette: {unread: '#ff00c0', base: '#12345'}}, {palette: {unread: '#ff00c0', comet: '#ffffff'}},
+      {palette: {unread: 'red'}}, {palette: {unread: null}}, {palette: {}}, {palette: 'reset'}, {palette: ['#ff00c0']},
+      {palette: {unread: '#ff00c0'}, style: 'bad'}, {rotation: 90, palette: {unread: '#12345'}}]) {
+      assert.throws(() => wall.settings(payload), {name: 'ValueError'}, JSON.stringify(payload));
+      assert.deepEqual(wall.saved(), before);
+      assert.equal(withState(wall.directory, db => settingsOf(db).rotation), 0);
+    }
   });
 
   test('test_damaged_rows_fall_back_to_defaults', context => {

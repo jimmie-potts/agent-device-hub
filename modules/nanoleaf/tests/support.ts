@@ -5,14 +5,16 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {describe, test as nodeTest, type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {copyJson, floatText, isObject, type Json, type JsonObject} from '../src/compat.js';
+import {copyJson, isObject, sha256Hex, type Json, type JsonObject} from '../src/compat.js';
 import {registeredDevices} from '../src/configuration.js';
 import {withState} from '../src/database.js';
-import {columns, DEFAULT, deviceOf, elements, metaKey, type DeviceConfig} from '../src/devices.js';
+import {columns, DEFAULT, deviceOf, elements, type DeviceConfig} from '../src/devices.js';
+import * as edits from '../src/edits.js';
 import {readJson} from '../src/jsonfile.js';
-import {fallbackTitle, Metadata, owners, taskProjects} from '../src/project-map.js';
-import {evict, evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession,
-  type SharedState, type Snapshot} from '../src/shared-input.js';
+import {setMode as commandMode} from '../src/modes.js';
+import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
+import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
+  type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
 import {execute, rows, transaction, type Db, type Row, type SqlValue} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
@@ -149,24 +151,81 @@ export function selectionSetup(context: TestContext): {path: string; config: Jso
 
 export const exists = existsSync;
 
+export type FeedChange = 'prompt' | 'stop' | 'read' | 'question' | 'permission' | 'resolve' | 'interrupt' | 'end' | 'touch';
+
 /**
- * Stands in for modes.change_mode (ported with the worker slice) on a device without a controller ledger: an explicit mode
- * command's saved effects. compat.test.ts checks it against the meta rows recorded from Python.
+ * The owner's shared sessions for scripted tests, all from the qualified Codex source (record.Feed). Each change publishes
+ * the next revision and the caller accepts it. A completion adds a fresh notice; `end` removes the session, as the owner
+ * does when it retires one.
  */
-export function changeMode(db: Db, mode: string, instant: number, device: string = DEFAULT): void {
-  const current = controlState(db, device);
-  if (current.mode === mode) return;
-  execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey('mode', device), mode);
-  execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey('mode_revision', device), String(current.revision + 1));
-  if (mode === 'work') execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey('wave_cutoff', device), floatText(instant));
-  execute(db, 'DELETE FROM meta WHERE key=?', metaKey('preview', device));
-  execute(db, 'DELETE FROM comets WHERE device=?', device);
-  execute(db, 'DELETE FROM locate WHERE device=?', device);
-  markDirty(db);
+export class Feed {
+  readonly sessions = new Map<string, SharedSession>();
+  revision = 1;
+
+  envelope(): Envelope {
+    return {apiVersion: '1.0', ownerId: 'owner', connection: 'current', admissionRejected: 0, nextRequestId: `request-${String(this.revision)}`,
+      snapshot: {apiVersion: '1.2', revision: this.revision, asOfMs: 1000, collector: 'running', lossCount: 0,
+        sessions: [...this.sessions.values()].map(session => clone(session))}};
+  }
+
+  change(op: FeedChange, name = ''): void {
+    let session = this.sessions.get(name);
+    const known = (): SharedSession => {
+      if (session === undefined) throw new Error(`No shared session ${name}.`);
+      return session;
+    };
+    switch (op) {
+      case 'prompt':
+        if (session === undefined) {
+          session = {identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source', sessionId: name},
+            turn: {status: 'known', id: 't1'}, parent: {status: 'unknown'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
+            unavailable: [], ordering: {status: 'unknown'}, lastEvidenceAtMs: 1000, observedAtMs: 1000, observationAgeMs: 0,
+            freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, generation: 0};
+          this.sessions.set(name, session);
+        } else {
+          const turn = session.turn.status === 'known' ? Number(session.turn.id.slice(1)) : 0;
+          session.turn = {status: 'known', id: `t${String(turn + 1)}`};
+        }
+        Object.assign(session, {activity: 'active', attention: [], read: 'unknown'});
+        break;
+      case 'stop': {
+        const current = known();
+        const id = sha256Hex(name + ':' + (current.turn.status === 'known' ? current.turn.id : ''));
+        const notices = [...current.notices, {id, kind: 'turn-ended' as const, turn: clone(current.turn), acknowledgedBy: []}].slice(-3);
+        Object.assign(current, {activity: 'idle', attention: [], notices, read: 'unread'});
+        break;
+      }
+      case 'read': known().read = 'read'; break;
+      case 'question':
+      case 'permission': {
+        const current = known();
+        current.attention = [{id: {status: 'known', id: 'ask'}, kind: op === 'question' ? 'question' : 'approval', turn: clone(current.turn)}];
+        break;
+      }
+      case 'resolve': known().attention = []; break;
+      case 'interrupt': Object.assign(known(), {activity: 'interrupted', attention: []}); break;
+      case 'end': this.sessions.delete(name); break;
+      case 'touch': break;
+    }
+    this.revision += 1;
+  }
+
+  /** Change the feed and accept the owner's next revision at `instant`. */
+  publish(directory: string, op: FeedChange, name: string, instant: number): boolean {
+    this.change(op, name);
+    return accept(directory, this.envelope(), instant);
+  }
+
+  /** Configure shared input and select it with the feed's current envelope (record.select_feed). */
+  select(directory: string, instant: number): void {
+    configure(directory, selectionConfig(directory));
+    selectShared(directory, this.envelope(), instant);
+  }
 }
 
-export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): void =>
-  write(directory, db => changeMode(db, mode, instant, device));
+/** modes.set_mode: an explicit mode command for one device, without the worker launch. */
+export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): boolean =>
+  write(directory, db => commandMode(db, mode, instant, device));
 
 /**
  * A new working task saved as rows, for tests whose subject is not task input. They are the rows Python's prompt hook event
@@ -176,6 +235,24 @@ export function taskRow(db: Db, session: string, turn: string, instant: number):
   execute(db, 'INSERT INTO sessions VALUES (?, ?, ?, ?)', session, turn, 'working', instant);
   execute(db, 'INSERT INTO activity VALUES (?, ?, ?, ?)', session, turn, 'working', instant);
   execute(db, 'INSERT INTO task_info VALUES (?,?,?,?,?,?,?)', session, '', '', null, null, turn, instant);
+  markDirty(db);
+}
+
+/**
+ * A task's completion saved as rows, for tests whose subject is not task input: the task unread, its completion receipt, a
+ * queued comet on each target device in Work, and its unread epoch. They are the rows Python's Stop hook event saved for
+ * a working task with nothing waiting (recorded/setups.json completion checks them).
+ */
+export function completion(db: Db, session: string, turn: string, instant: number, targets: readonly string[] = [DEFAULT]): void {
+  execute(db, 'INSERT OR REPLACE INTO receipts VALUES (?, ?, ?, 0)', session, turn, instant);
+  execute(db, 'INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?)', session, turn, 'unread', instant);
+  for (const device of targets) {
+    if (controlState(db, device).mode === 'work') {
+      execute(db, 'INSERT OR IGNORE INTO comets (session, turn, queued, source, started, device) VALUES (?, ?, ?, NULL, NULL, ?)',
+        session, turn, instant, device);
+    }
+  }
+  execute(db, 'INSERT OR REPLACE INTO activity VALUES (?, ?, ?, ?)', session, turn, 'unread', instant);
   markDirty(db);
 }
 
@@ -200,11 +277,21 @@ export interface WallProject {
   waiting: number;
 }
 
+export interface WallView {
+  tasks: WallTask[];
+  projects: WallProject[];
+  settings: MapSettings;
+  palette: Record<Role, string>;
+  mode: string;
+  pending: Patch | null;
+}
+
 /**
- * The wall map's task and project rows (wall_server.App.state), read from the ported state. The wall pages and their
- * view move with the Nanoleaf module (Hub #844); the translated tests observe the projection through the same rows.
+ * The wall map's state (wall_server.App.state) read from the ported state: its tasks, projects, map settings, palette,
+ * mode and pending wall edit. The wall pages and their view move with the Nanoleaf module (Hub #844); the translated
+ * tests observe the projection through the same rows.
  */
-export function wallView(directory: string, config: DeviceConfig, now: number): {tasks: WallTask[]; projects: WallProject[]} {
+export function wallView(directory: string, config: DeviceConfig, now: number): WallView {
   return withState(directory, db => transaction(db, () => {
     const shared = selected(db);
     if (!shared) {
@@ -246,16 +333,14 @@ export function wallView(directory: string, config: DeviceConfig, now: number): 
       return {id, name, color, assigned: prefs.filter(owner => owner[0] === id).length, active: members.length,
         waiting: members.filter(task => task.line === null).length};
     });
-    return {tasks, projects};
+    return {tasks, projects, settings: settings(db, device), palette: palette(db), mode: controlState(db, device).mode,
+      pending: pending(db, device)};
   }, 'BEGIN'));
 }
 
-/** edits.evict through the wall's evict action: the shared-input eviction and one display wake-up. */
+/** The wall's evict action on one device: edits.evict in its own transaction. */
 export const evictTask = (directory: string, device: string, payload: unknown): void =>
-  write(directory, db => {
-    evict(db, device, payload);
-    markDirty(db);
-  });
+  write(directory, db => edits.evict(db, {device}, payload));
 
 /** test_bridge.decode: each panel's frames ([r, g, b, w, transition]) from a display payload's animData. */
 export function decode(payload: {write: {animData: string}}): Map<number, number[][]> {

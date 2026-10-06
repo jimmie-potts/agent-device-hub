@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import type {JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
+import * as edits from '../src/edits.js';
 import {allocate, fallbackTitle, lineId, taskProjects} from '../src/project-map.js';
 import {identityKey, SOURCE, type Envelope, type SharedSession} from '../src/shared-input.js';
 import {execute, type Row} from '../src/sqlite.js';
@@ -53,9 +54,9 @@ class Metadata {
     selectShared(this.path, this.value);
   }
 
-  /** Choose the manual project on the shared task, saved as the wall edit saves it. */
+  /** Choose the manual project on the shared task with the wall's task project action. */
   chooseProject(): void {
-    write(this.path, db => execute(db, "UPDATE task_info SET manual_project='project' WHERE session=?", this.key));
+    write(this.path, db => edits.taskProject(db, {}, this.key, 'project'));
   }
 }
 

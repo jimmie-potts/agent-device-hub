@@ -5,17 +5,19 @@ import assert from 'node:assert/strict';
 import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {withState} from '../src/database.js';
+import {currentComet} from '../src/comets.js';
 import type {JsonObject} from '../src/compat.js';
+import {withState} from '../src/database.js';
 import {loadConfig} from '../src/configuration.js';
 import {columns, DEFAULT, layoutDevices, projection, registry, saveLayout, validateElements} from '../src/devices.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
+import {modeStatus} from '../src/modes.js';
 import {readLayout} from '../src/panels.js';
-import {allocate, owners, settings, type TaskRow} from '../src/project-map.js';
+import {allocate, applyPatch, locateState, owners, pending, requestPatch, settings, type TaskRow} from '../src/project-map.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {FIXTURES, fixtureJson, query, refuse, suite, taskRow, temporary, test, write} from './support.js';
+import {FIXTURES, fixtureJson, query, refuse, setMode, suite, taskRow, temporary, test, write} from './support.js';
 
 const LINUX_STATE = join(FIXTURES, 'linux-state-v4');
 
@@ -95,10 +97,9 @@ suite('DeviceTest', () => {
   });
 
   test('test_registry_address_change_keeps_identity_and_preferences', async context => {
-    // The map edit is saved as its row.
     const directory = temporary(context);
     writeTwoDevices(directory);
-    write(directory, db => execute(db, "INSERT OR REPLACE INTO line_prefs (line_id,project,signature,device) VALUES ('5:6','kept',0,'wall')"));
+    write(directory, db => applyPatch(db, {lines: {'5:6': {project: 'kept'}}}));
     const config = JSON.parse(readFileSync(join(directory, 'config.json'), 'utf8')) as {ip: string; devices: {wall: {ip: string}}};
     config.ip = '192.0.2.99';
     config.devices.wall.ip = '192.0.2.99';
@@ -156,7 +157,7 @@ suite('DeviceTest', () => {
   });
 
   test('test_pre_change_linux_database_migrates_and_repeats_without_change', async context => {
-    // The controller credential, comet, pending edit, Locate and scene checks move with their slices (PORTING.md).
+    // Partly: the controller credential table is not ported, and the saved scene's check moves with the scenes slice.
     const directory = temporary(context);
     loadLinuxState(directory);
     const raw = new DatabaseSync(join(directory, 'status.sqlite'));
@@ -182,7 +183,12 @@ suite('DeviceTest', () => {
     assert.deepEqual([config.device, config.line_groups.length], ['wall', 15]);
     withState(directory, db => {
       assert.deepEqual(controlState(db), {mode: 'work', revision: 2, applied: 2, wave_cutoff: 995, error: null});
+      // linux-state-v4/fixture.json: the migrated comet and its source Line.
+      assert.deepEqual(currentComet(db, 1011), {source: 4, started: 1010});
+      assert.deepEqual(pending(db)?.lines, {'108:109': {project: 'project-b'}});
       assert.deepEqual(owners(db, config).slice(0, 3), [['project-a', 1], ['project-a', 0], ['project-b', 1]]);
+      // An active comet defers Locate.
+      assert.equal(locateState(db, config, 1011, 'work'), null);
       assert.deepEqual(rows(db, 'SELECT session, slot FROM slots ORDER BY slot'),
         [['task-working', 0], ['task-blocked', 2], ['task-question', 3], ['task-unread', 4], ['task-unread-2', 5]]);
       assert.deepEqual(rows(db, "SELECT COUNT(*) FROM controller_requests WHERE phase='done'"), [[1]]);
@@ -190,6 +196,85 @@ suite('DeviceTest', () => {
     });
   });
 
+  test('test_equal_element_ids_on_two_devices_do_not_collide', async context => {
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const lines = await loadConfig(directory, DEFAULT, refuse);
+    const panels = await loadConfig(directory, 'panels', refuse);
+    write(directory, db => {
+      execute(db, "INSERT INTO projects VALUES ('a', 'A', '#111111', '[]'), ('b', 'B', '#222222', '[]')");
+      requestPatch(db, {lines: {'5:6': {project: 'a', signature: 1}}}, lines);
+      requestPatch(db, {lines: {5: {project: 'b'}}, settings: {style: 'project'}}, panels);
+      assert.deepEqual(owners(db, lines)[0], ['a', 1]);
+      assert.deepEqual(owners(db, panels)[0], ['b', 0]);
+      assert.equal(settings(db).style, 'classic');
+      assert.equal(settings(db, 'panels').style, 'project');
+      execute(db, "INSERT INTO comets (session, turn, queued, source, started, device) VALUES ('t','1',1,0,1,'panels')");
+      assert.equal(requestPatch(db, {lines: {5: {project: null}}}, panels), true);
+      assert.equal(requestPatch(db, {lines: {'5:6': {project: null}}}, lines), false);
+      assert.equal(pending(db), null);
+      assert.deepEqual(pending(db, 'panels')?.lines, {5: {project: null}});
+      assert.deepEqual(owners(db, lines)[0], [null, 1]);
+      assert.deepEqual(owners(db, panels)[0], ['b', 0]);
+    });
+  });
+
+  test('test_literally_equal_element_ids_on_two_devices_keep_separate_state', async context => {
+    const directory = temporary(context);
+    writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fakeLines', secondToken: 'fakeSecond',
+      devices: {wall: {kind: 'lines', ip: '192.0.2.1', token_ref: 'token'}, second: {kind: 'lines', ip: '192.0.2.3', token_ref: 'secondToken'}}});
+    const element = {id: '5:6', number: 1, zones: [5, 6], position: [0, 0]};
+    writeJson(join(directory, 'layout.json'), {version: 2, devices: {wall: {kind: 'lines', elements: [element]}, second: {kind: 'lines', elements: [element]}}});
+    const first = await loadConfig(directory, DEFAULT, refuse);
+    const second = await loadConfig(directory, 'second', refuse);
+    assert.deepEqual(first.elements.map(e => e.id), second.elements.map(e => e.id));
+    write(directory, db => {
+      execute(db, "INSERT INTO projects VALUES ('a', 'A', '#111111', '[]'), ('b', 'B', '#222222', '[]')");
+      applyPatch(db, {lines: {'5:6': {project: 'a', signature: 1}}}, 'wall');
+      applyPatch(db, {lines: {'5:6': {project: 'b'}}}, 'second');
+      assert.deepEqual(owners(db, first), [['a', 1]]);
+      assert.deepEqual(owners(db, second), [['b', 0]]);
+      assert.deepEqual(rows(db, "SELECT device, project FROM line_prefs WHERE line_id='5:6' ORDER BY device"), [['second', 'b'], ['wall', 'a']]);
+      assert.throws(() => execute(db, "INSERT INTO line_prefs (line_id, project, signature, device) VALUES ('5:6', 'c', 0, 'wall')"),
+        /UNIQUE constraint failed/);
+      execute(db, "INSERT OR REPLACE INTO locate (line_id, started, device) VALUES ('5:6', NULL, 'second')");
+      assert.equal(locateState(db, first, 1000, 'work'), null);
+      assert.deepEqual(locateState(db, second, 1000, 'work'), {source: 0, started: 1000});
+    });
+  });
+
+  // AC3: device-scoped placements, modes and scenes.
+  test('test_modes_and_scene_files_are_independent_per_device', context => {
+    // Partly: the scene files move with the scenes slice.
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    setMode(directory, 'quiet', 1000, 'panels');
+    withState(directory, db => {
+      assert.equal(modeStatus(db).mode, 'work');
+      assert.equal(modeStatus(db, 'panels').mode, 'quiet');
+      assert.deepEqual(controlState(db), controlState(db, 'wall'));
+      assert.equal(controlState(db, 'panels').mode, 'quiet');
+      assert.equal(controlState(db).revision, 0);
+    });
+  });
+
+  test('test_untargeted_callers_address_default_device', async context => {
+    const directory = temporary(context);
+    writeTwoDevices(directory);
+    const lines = await loadConfig(directory, DEFAULT, refuse);
+    const panels = await loadConfig(directory, 'panels', refuse);
+    write(directory, db => {
+      assert.deepEqual(settings(db), settings(db, DEFAULT));
+      assert.equal(DEFAULT, 'wall');
+      applyPatch(db, {settings: {style: 'project'}});
+      assert.equal(settings(db, 'wall').style, 'project');
+      assert.equal(settings(db, 'panels').style, 'classic');
+      execute(db, "INSERT OR REPLACE INTO locate (line_id, started, device) VALUES ('5:6', NULL, 'wall')");
+      assert.deepEqual(locateState(db, lines, 1000, 'work'), {source: 0, started: 1000});
+      assert.equal(locateState(db, panels, 1000, 'work'), null);
+      assert.deepEqual(modeStatus(db), modeStatus(db, 'wall'));
+    });
+  });
 });
 
 /** Open handles to a file in this process (Linux /proc), or null where /proc is unavailable. */
@@ -342,15 +427,13 @@ suite('GeometryTest', () => {
 
 suite('ReservationTest', () => {
   test('test_six_triangle_reservation_and_shared_overflow', context => {
-    // The map edit that reserves the region is saved as its rows; whether an edit is deferred is the edits slice's.
     const directory = temporary(context);
     const config = {...projection(readLayout(panelLayout())), device: 'panels'};
     const ids = config.elements.map(e => e.id);
     const assigned = write(directory, db => {
       execute(db, "INSERT INTO projects VALUES ('p','P','#00ff00','[]'), ('q','Q','#ff00ff','[]')");
-      execute(db, "INSERT OR IGNORE INTO map_settings (style,coverage,rotation,flip_x,flip_y,device) VALUES ('classic','whole',0,0,0,'panels')");
-      execute(db, "UPDATE map_settings SET style='project' WHERE device='panels'");
-      for (const id of ids.slice(0, 6)) execute(db, "INSERT INTO line_prefs (line_id,project,signature,device) VALUES (?,'p',0,'panels')", id);
+      const deferred = requestPatch(db, {settings: {style: 'project'}, lines: Object.fromEntries(ids.slice(0, 6).map(id => [id, {project: 'p'}]))}, config);
+      assert.equal(deferred, false);
       const tasks: TaskRow[] = [];
       for (let n = 0; n < 20; n += 1) {
         const session = `s${String(n).padStart(2, '0')}`;
