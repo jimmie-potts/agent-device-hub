@@ -498,3 +498,60 @@ it('after a reconnect, a subscription hears of the gap before any message of the
     assert.deepEqual(seen, ['gap', 'message s1']);
   });
 });
+
+// Coverage for two paths the earlier tests left open (PR #909 Standards confirmation).
+
+it('after a reconnect, a sync copy asks for no sync until every family is registered again', () => {
+  const held = deferred<undefined>();
+  // The copy's second family registers again in the fourth subscribe call; hold it.
+  return withEdge({before: (route, nth) => route === 'subscribe' && nth === 4 ? held.promise : undefined}, async edge => {
+    await checked(edge.bus.connect('bunny/core')).serveSync([FAMILY, 'test-blob'], () => ({revision: 1, states: [session('s1', 1)]}));
+    const consumer = checked(await edge.connect('bunny/wall'));
+    const result = await consumer.sync<Session>([FAMILY, 'test-blob'], () => {}, {timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    const before = edge.received('sync');
+    try {
+      edge.edge.disconnect('bunny/wall');
+      await until(() => edge.received('subscribe') === 3, 'the first family registered again');
+      // The gap is queued, but held back: a sync request now could miss a message for the second family for good.
+      await delay(300);
+      assert.equal(edge.received('sync'), before, 'no sync request while a family is still being registered');
+    } finally {
+      held.resolve(undefined);
+    }
+    await until(() => edge.received('sync') === before + 1, 'the resync once every family is registered');
+  });
+});
+
+it('a command forwarded again while its first forward still waits never reaches the responder, and is unavailable with no reply', () => withEdge({}, async edge => {
+  const responder = checked(await edge.connect('bunny/wall'));
+  const holding = deferred<Reply>();
+  const got: string[] = [];
+  await responder.respond<Mode>('bunny.cmd.mode.*', command => { got.push(command.data.mode); return holding.promise; });
+  const sentAtMs = Date.now();
+  const command = buildMessage<Mode & {requestId: string}>('bunny/core', 'command', {
+    type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: MODE_SCHEMA, data: {mode: 'work', requestId: 'req-twice'},
+  }, TRACE, sentAtMs, sentAtMs + 10_000) as Command<Mode>;
+  const send = (): Promise<{status: number; body: unknown}> =>
+    call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command}, tokenOf(edge, 'bunny/core'));
+  const first = send();
+  try {
+    await until(() => got.length === 1, 'the first forward at the remote handler');
+    // The stream drops; the first forward keeps waiting for a reply. The responder registers again.
+    edge.edge.disconnect('bunny/wall');
+    await until(() => reconnects(edge, 'bunny/wall') === 2, 'the reconnect');
+    await until(() => edge.received('respond') === 2, 'the responder registered again');
+    // The same command message again: its forward is still live, so the edge does not send it.
+    const again = await send();
+    assert.equal(again.status, 200);
+    const result = (again.body as {result: {status: string; error: ErrorBody; reply?: unknown}}).result;
+    assert.equal(result.status, 'rejected');
+    assert.equal(result.error.error.code, 'unavailable');
+    assert.equal(result.error.error.retryable, true);
+    assert.equal(result.reply, undefined, 'no reply message the responder never sent');
+    assert.deepEqual(got, ['work'], 'the responder saw the command once');
+  } finally {
+    holding.resolve({status: 'accepted'});
+  }
+  await first;
+}));
