@@ -177,3 +177,22 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(result.run.directory, "SELECT value FROM meta WHERE key='mode'"), [['free']]);
   });
 });
+
+suite('worker checks the port adds', () => {
+  test('a preview ends with the tasks shown again', async context => {
+    // After a preview the worker forgets the display it last sent, so the next pass shows the task again.
+    const {run} = await replay(context, 'a preview ends with the tasks shown again');
+    const writes = run.device.calls.filter(([, method, endpoint]) => method === 'PUT' && endpoint === '/effects').map(([at]) => at);
+    assert.ok(writes.includes(1003));
+    assert.ok(writes.some(at => at > 1003 && at <= 1005.5));
+  });
+
+  test('the worker applies a wall edit the comet deferred, once the comet ends', async context => {
+    const result = await replay(context, 'the worker applies a wall edit the comet deferred');
+    const [, pendingDuring, styleDuring, pendingAfter, styleAfter] = scheduledOf(result);
+    assert.equal((pendingDuring as unknown[]).length, 1);
+    assert.deepEqual(styleDuring, [['classic']]);
+    assert.deepEqual(pendingAfter, []);
+    assert.deepEqual(styleAfter, [['project']]);
+  });
+});

@@ -1476,6 +1476,12 @@ def worker_cases():
                                                ('run', 1012.0, [(1007.0, feed('interrupt', 'a')), (1008.0, feed('end', 'a'))])]),
         # The port's own: the indicators' ownership invalidates an unchanged idle display.
         case('an owned scene returns after a restart', [('run', 1002.0), ('takeover',), ('scene',), ('run', 1004.0)]),
+        case('a preview ends with the tasks shown again', [feed('prompt', 'a'), ('run', 1008.0, [
+            (1003.0, ('sql', "INSERT OR REPLACE INTO meta VALUES ('preview','comet')"))])]),
+        case('the worker applies a wall edit the comet deferred', complete('a') + [('run', 1006.0, [
+            (1000.5, ('edit', 'settings', {'style': 'project'})), (1001.0, ('query', 'SELECT payload FROM map_pending')),
+            (1001.0, ('query', 'SELECT style FROM map_settings')), (1004.0, ('query', 'SELECT payload FROM map_pending')),
+            (1004.0, ('query', 'SELECT style FROM map_settings'))])]),
         # PaletteWorkerTest.
         case('palette change mid pulse and comet', [projects, feed('prompt', 'w'), feed('prompt', 'u'), ('run', 1012.0, [
             (1001.0, feed('stop', 'u')),
