@@ -295,8 +295,8 @@ it('a token acts only on its own source\'s connection: close, reply and answer o
   try {
     const calls: [string, object][] = [
       ['close', {id: 'any'}],
-      ['reply', {responder: 'any', requestId: 'req-1', reply: {status: 'accepted'}}],
-      ['answer', {server: 'any', requestId: 'req-1', answer: {revision: 0, states: []}}],
+      ['reply', {responder: 'any', command: 'msg-1', requestId: 'req-1', reply: {status: 'accepted'}}],
+      ['answer', {server: 'any', request: 'msg-1', requestId: 'req-1', answer: {revision: 0, states: []}}],
     ];
     for (const [call, body] of calls) {
       const answer = await (async () => {

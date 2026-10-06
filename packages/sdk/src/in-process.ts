@@ -56,6 +56,14 @@ function categoryOf(kind: PublishedKind): Category {
   }
 }
 
+/**
+ * What a forwarding responder, such as a remote edge's, may return in place of a reply. `unanswered`: its handler had
+ * the command and gave no reply, so the request is `uncertain`, never a refusal. `undelivered`: the command never
+ * reached a handler, so it is refused as `unavailable`, with no reply message. Internal to the SDK; not exported.
+ */
+export const unanswered: unique symbol = Symbol('unanswered');
+export const undelivered: unique symbol = Symbol('undelivered');
+
 /** Whether a message of this kind travels through publish. */
 function isPublished(kind: MessageKind): kind is PublishedKind {
   switch (kind) {
@@ -346,7 +354,11 @@ export class InProcessBus {
         end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${timeoutMs} ms`, ids)},
           {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
       });
-      if (signal?.aborted === true) abandon();
+      // A requester that stopped waiting before the command was queued: it never runs.
+      if (signal?.aborted === true) {
+        settle({status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)});
+        return;
+      }
       if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
       }
@@ -374,8 +386,19 @@ export class InProcessBus {
       }
       let answer: Reply;
       try {
-        answer = await responder(command as Command<T>);
-        if (!isReply(answer)) throw new TypeError('a responder returned something other than a reply');
+        const given: unknown = await responder(command as Command<T>);
+        const {requestId} = command.data;
+        const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+        if (given === unanswered) {
+          settle({status: 'uncertain', requestId, error: body('uncertain-result', 'the responder gave no reply', ids)});
+          return;
+        }
+        if (given === undelivered) {
+          settle({status: 'rejected', requestId, error: body('unavailable', 'the command never reached the responder', ids)});
+          return;
+        }
+        if (!isReply(given)) throw new TypeError('a responder returned something other than a reply');
+        answer = given;
       } catch (error) {
         this.#report(error, scope);
         answer = body('internal', 'the responder failed');

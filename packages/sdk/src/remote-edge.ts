@@ -7,7 +7,7 @@ import {
   MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, errorCodes, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
 import {buildMessage, type Content} from './envelope.js';
-import type {InProcessBus} from './in-process.js';
+import {unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
@@ -80,8 +80,13 @@ function rebuilt(value: unknown): ErrorBody | undefined {
   return errorBody(code, detail === undefined ? {} : {detail});
 }
 
+/**
+ * What a forward settles with: the remote part's reply or snapshot, a refusal, or for a command one of the bus's
+ * markers, so that a command is never answered as a refusal the remote responder did not give.
+ */
+type Forwarded = Reply | Snapshot | ErrorBody | typeof unanswered | typeof undelivered;
 /** A forwarded command or sync request, waiting for the remote part's answer. */
-type Waiting = {kind: 'command' | 'sync'; connection: string; finish: (answer: Reply | Snapshot | ErrorBody) => void};
+type Waiting = {kind: 'command' | 'sync'; connection: string; finish: (answer: Forwarded) => void};
 
 type Connection = {
   id: string;
@@ -106,8 +111,9 @@ export class RemoteEdge {
   readonly #scheduler: Scheduler;
   readonly #connections = new Map<string, Connection>();
   /**
-   * Forwarded commands and sync requests waiting for an answer, by source, responder or owner id and request id. They
-   * outlive a connection, so a reply that comes on the reconnected stream still reaches the requester.
+   * Forwarded commands and sync requests waiting for an answer, by source, responder or owner id and the forwarded
+   * message's own id, so a retry that reuses a requestId has its own entry. They outlive a connection, so a reply that
+   * comes on the reconnected stream still reaches the requester.
    */
   readonly #waiting = new Map<string, Waiting>();
   /** One participant per source, for calls that need no connection. */
@@ -154,13 +160,13 @@ export class RemoteEdge {
   }
 
   /**
-   * Ends every stream and closes what the remote parts opened. Forwarded commands still waiting become uncertain, and
-   * forwarded sync requests unavailable.
+   * Ends every stream and closes what the remote parts opened. A forwarded command still waiting can get no reply any
+   * more, so its request is `uncertain`, as the deadline would make it; a forwarded sync request is unavailable.
    */
   close(): Promise<void> {
     this.disconnect();
     for (const waiting of [...this.#waiting.values()]) {
-      waiting.finish(waiting.kind === 'command' ? errorBody('uncertain-result', {detail: 'the edge closed'}) : errorBody('unavailable', {detail: 'the edge closed'}));
+      waiting.finish(waiting.kind === 'command' ? unanswered : errorBody('unavailable', {detail: 'the edge closed'}));
     }
     return Promise.resolve();
   }
@@ -268,8 +274,10 @@ export class RemoteEdge {
       case 'respond': {
         const connection = this.#connection(source, body);
         const id = this.#fresh(connection, body);
+        // The forward settles a command with a reply or one of the bus's markers, which the bus reads in place of a
+        // reply; the participant's types know only replies.
         connection.opened.set(id, await connection.participant.respond(text(body, 'pattern'), command =>
-          this.#forward<Reply>(connection, 'command', id, command, 'command', {responder: id, command})));
+          this.#forward(connection, 'command', id, command, 'command', {responder: id, command}) as Promise<Reply>));
         return {status: 'responding'};
       }
       case 'serve': {
@@ -279,20 +287,20 @@ export class RemoteEdge {
         const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every(family => typeof family === 'string');
         if (!isNames(families)) throw refuse('invalid-request', 'families is not a list of names');
         connection.opened.set(id, await connection.participant.serveSync(families, request =>
-          this.#forward<Snapshot | ErrorBody>(connection, 'sync', id, request, 'sync-request', {server: id, request})));
+          this.#forward(connection, 'sync', id, request, 'sync-request', {server: id, request}) as Promise<Snapshot | ErrorBody>));
         return {status: 'serving'};
       }
       case 'reply': {
         this.#connection(source, body);
         const requestId = identifier(body, 'requestId');
         const reply = this.#reply(source, requestId, body.reply);
-        this.#waiting.get(this.#key(source, identifier(body, 'responder'), requestId))?.finish(reply);
+        this.#waiting.get(this.#key(source, identifier(body, 'responder'), identifier(body, 'command')))?.finish(reply);
         return {status: 'received'};
       }
       case 'answer': {
         this.#connection(source, body);
         const answer = rebuilt(body.answer) ?? this.#snapshot(source, body.answer);
-        this.#waiting.get(this.#key(source, identifier(body, 'server'), identifier(body, 'requestId')))?.finish(answer);
+        this.#waiting.get(this.#key(source, identifier(body, 'server'), identifier(body, 'request')))?.finish(answer);
         return {status: 'received'};
       }
       case 'close': {
@@ -380,8 +388,8 @@ export class RemoteEdge {
     return id;
   }
 
-  #key(source: string, id: string, requestId: string): string {
-    return `${source}\n${id}\n${requestId}`;
+  #key(source: string, id: string, messageId: string): string {
+    return `${source}\n${id}\n${messageId}`;
   }
 
   #open(source: string, response: ServerResponse): void {
@@ -441,26 +449,31 @@ export class RemoteEdge {
 
   /**
    * Sends a command or sync request down the stream and waits for the remote part's answer, past its expiry by a
-   * margin; the bus settles the requester at the expiry itself. A frame that never reached the socket is unavailable.
+   * margin; the bus settles the requester at the expiry itself. A command that outlasts that wait is `unanswered`,
+   * which the bus settles as `uncertain`, never as a refusal, whatever scheduler fired first. A frame that never reached
+   * the socket is `undelivered` for a command, and unavailable for a sync request.
    */
-  #forward<T extends Reply | Snapshot | ErrorBody>(
+  #forward(
     connection: Connection, kind: Waiting['kind'], id: string, message: Message<{requestId: string}>, event: StreamEventName, data: object,
-  ): Promise<T> {
-    const key = this.#key(connection.source, id, message.data.requestId);
-    const late = kind === 'command'
-      ? errorBody('uncertain-result', {detail: 'the remote responder did not answer in time'})
-      : errorBody('unavailable', {detail: 'the remote owner did not answer in time'});
-    return new Promise<T>(resolve => {
+  ): Promise<Forwarded> {
+    const key = this.#key(connection.source, id, message.id);
+    const command = kind === 'command';
+    const late: Forwarded = command ? unanswered : errorBody('unavailable', {detail: 'the remote owner did not answer in time'});
+    const lost: Forwarded = command ? undelivered : errorBody('unavailable', {detail: 'the remote owner was not connected'});
+    // Message ids are unique per sender, so a second live forward of the same message is a duplicate: it is not sent.
+    if (this.#waiting.has(key)) return Promise.resolve(lost);
+    return new Promise<Forwarded>(resolve => {
       let cancel: Cancel = () => {};
-      const finish = (answer: Reply | Snapshot | ErrorBody): void => {
+      const entry: Waiting = {kind, connection: connection.id, finish: answer => {
         cancel();
-        this.#waiting.delete(key);
-        resolve(answer as T);
-      };
-      cancel = this.#scheduler.after(Math.max(0, Date.parse(message.expiresat ?? '') - this.#now()) + FORWARD_MARGIN_MS, () => { finish(late); });
-      this.#waiting.set(key, {kind, connection: connection.id, finish});
+        // Only this forward's own entry leaves the map.
+        if (this.#waiting.get(key) === entry) this.#waiting.delete(key);
+        resolve(answer);
+      }};
+      cancel = this.#scheduler.after(Math.max(0, Date.parse(message.expiresat ?? '') - this.#now()) + FORWARD_MARGIN_MS, () => { entry.finish(late); });
+      this.#waiting.set(key, entry);
       void this.#push(connection, event, data).then(written => {
-        if (!written) finish(errorBody('unavailable', {detail: 'the remote part was not connected'}));
+        if (!written) entry.finish(lost);
       });
     });
   }

@@ -352,7 +352,7 @@ class RemoteClient {
       this.#report(error, `respond ${command.type}`);
       reply = body('internal', 'the responder failed');
     }
-    await this.#post('reply', {connection: await this.#connected, responder: id, requestId: command.data.requestId, reply});
+    await this.#post('reply', {connection: await this.#connected, responder: id, command: command.id, requestId: command.data.requestId, reply});
   }
 
   async #serve(request: Message<SyncRequest>, provider: SyncProvider, id: string): Promise<void> {
@@ -363,7 +363,7 @@ class RemoteClient {
       this.#report(error, `sync ${request.subject}`);
       answer = body('internal', 'the owner could not serve the sync');
     }
-    await this.#post('answer', {connection: await this.#connected, server: id, requestId: request.data.requestId, answer});
+    await this.#post('answer', {connection: await this.#connected, server: id, request: request.id, requestId: request.data.requestId, answer});
   }
 
   async #request<T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
