@@ -375,6 +375,9 @@ python3 docs/skins/check_tokens.py
 `work/test_maintenance.py` and `docs/system-design/check.py` run the same check.
 Both browser checks run `docs/skins/check_skin.cjs` for the theme control, the
 5-second one-shot motion limit, reduced motion, print and decoration placement.
+They take page screenshots through `docs/skins/screenshot.cjs`, which waits for
+two animation frames first: a capture right after a navigation or a viewport
+change can otherwise fail before Chromium has rendered a frame.
 
 The nine Archify viewers and the atlas's API and database reference
 (`docs/system-design/reference/`, with its bundled Scalar and SchemaSpy output)

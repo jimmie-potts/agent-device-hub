@@ -38,6 +38,7 @@ const pageDrivers = [
   'apps/dashboard/tests/**',
   'apps/hub/verify/**',
   'docs/skins/check_*.cjs',
+  'docs/skins/screenshot.cjs',
   'docs/system-design/check.cjs',
   'docs/system-design/reference/check_reference.cjs',
   'docs/work-guide/browser/tests/**',
