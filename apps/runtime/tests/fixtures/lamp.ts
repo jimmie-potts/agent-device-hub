@@ -104,6 +104,11 @@ export type LampOptions = {
   lamps?: readonly string[];
   /** Runs just before each message leaves the outbox. A crash test ends the runtime here, after the commit. */
   beforePublish?: () => void;
+  /**
+   * Hears each acknowledgment from the core before the outbox applies it. `lose` drops it, as a message lost on its way
+   * would be, so the lamp keeps the outcome and reports it again at its next start.
+   */
+  onAcknowledgment?: () => 'apply' | 'lose';
 };
 
 /** A command that switches one lamp. */
@@ -116,7 +121,7 @@ const lampState = ({id, revision, power: on}: Lamp): StateDraft<Lamp> =>
   ({type: 'org.bunny.lamp.updated', subject: id, dataschema: LAMP_SCHEMA, data: {id, revision, power: on}});
 type Outcome = {requestId: string; result: 'succeeded' | 'failed'; evidence: 'observed' | 'none'; error?: ErrorDetail};
 
-export function createLampModule({transport, lamps: served = ['lamp-1'], beforePublish}: LampOptions): BunnyModule {
+export function createLampModule({transport, lamps: served = ['lamp-1'], beforePublish, onAcknowledgment}: LampOptions): BunnyModule {
   return {
     manifest: {name: 'lamp', apiVersion: '1.0'},
     async start({sdk, database, clock, log}) {
@@ -138,7 +143,8 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
         database: db, clock,
       });
       // Until Hub #782 defines the core's acknowledgment, the stand-in core's lets the outbox forget a recorded outcome.
-      await followStandInAcks(sdk, outbox, id => { log.info('lamp.outcome.acknowledged', {id}); });
+      const acknowledgments = {acknowledge: (id: string): boolean => onAcknowledgment?.() !== 'lose' && outbox.acknowledge(id)};
+      await followStandInAcks(sdk, acknowledgments, id => { log.info('lamp.outcome.acknowledged', {id}); });
       // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.
       const count = await outbox.republish();
       log.info('lamp.outbox.republished', {count});

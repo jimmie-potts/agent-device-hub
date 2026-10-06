@@ -88,6 +88,11 @@ export interface Harness {
    * again on the same state directory, as the service manager restarts it.
    */
   armCrash(): void;
+  /**
+   * Loses the core's next acknowledgment to the lamp on its way, as a dropped message would be. The lamp keeps that
+   * outcome and reports it again at its next start, and the core must take it as a duplicate and acknowledge it again.
+   */
+  loseAcknowledgment(): void;
   /** Stops the runtime cleanly and starts it again on the same state directory. */
   restart(): Promise<void>;
 }
@@ -168,8 +173,13 @@ export async function runScenario(scenario: Scenario, h: Harness, onStep?: (resu
 // Observations the scenarios share
 
 const show = (value: unknown): string => JSON.stringify(value);
-/** The answer a transport's contract fixes for a case, from the `bunny-sdk` conformance requirement (#883). */
+/** The expectation for the harness's transport, where the two transports end a case differently. */
 const byTransport = (h: Harness, answers: Readonly<Record<TransportName, string>>): string => answers[h.transport];
+/**
+ * How long past its deadline a remote requester waits for the edge before it settles a command itself: the SDK's
+ * `REQUESTER_GRACE_MS`, which the package does not export.
+ */
+const REQUESTER_GRACE_MS = 1000;
 const answered = (h: Harness, label: string, expected: string): Outcome => h.answer(label) === expected || `${label} is ${h.answer(label)}`;
 const sendOnce = async (h: Harness, role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<void> => {
   const answer = await h.send(role, label, command, {timeoutMs: 5000, requestId});
@@ -202,6 +212,12 @@ const recorded = (h: Harness, requestId: string, result: HistoryEntry['result'],
 };
 const inboxOf = (h: Harness, requestId: string): InboxItem['item'][] =>
   h.reader.states<InboxItem>('inbox-item').map(state => state.data.item).filter(item => item.kind === 'operation' && item.requestId === requestId);
+/** The inbox holds the request as one failed operation, with the `unavailable` error. */
+const failedOperation = (h: Harness, requestId: string): Outcome => {
+  const items = inboxOf(h, requestId);
+  const item = items[0];
+  return (items.length === 1 && item?.kind === 'operation' && item.result === 'failed' && item.error?.code === 'unavailable') || `inbox ${show(items)}`;
+};
 const switches = (h: Harness): number => h.devices().lamp.calls.length;
 const logged = (h: Harness, event: string, from = 1): Generational<{record: LogRecord}>[] =>
   h.logs().filter(entry => entry.generation >= from && entry.record.event_name === event);
@@ -258,6 +274,10 @@ const approvalReachesEveryModule: Scenario = {
     expect('the chime rang once for the approval', h => show(h.devices().chime.rings) === show([{session: SESSION_ID, attention: 'approval-1'}]) ||
       `rings ${show(h.devices().chime.rings)}`),
     expect('every module is running', h => running(h, ['core', 'lamp', 'chime'])),
+    act('the runtime restarts cleanly while the approval still waits', h => h.restart()),
+    expect('every module is running again, and the reader still holds the waiting session', async h =>
+      waiting(h, ['approval-1']) === true ? running(h, ['core', 'lamp', 'chime']) : waiting(h, ['approval-1'])),
+    holds('the chime does not ring again for the same approval', h => h.devices().chime.rings.length === 1 || `${h.devices().chime.rings.length} rings`, 500),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the reader\'s session no longer waits', h => waiting(h, [])),
     expect('the lamp shows idle again', h => indicator(h, 'idle')),
@@ -279,11 +299,7 @@ const commandWithTrackedOutcome: Scenario = {
     act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-off; the lamp accepts it', h => sendOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-off')),
     expect('history holds a failed outcome for req-off, with no evidence it reached the device', h => recorded(h, 'req-off', 'failed', 'none')),
-    expect('the inbox holds the failed operation', h => {
-      const items = inboxOf(h, 'req-off');
-      const item = items[0];
-      return (items.length === 1 && item?.kind === 'operation' && item.result === 'failed' && item.error?.code === 'unavailable') || `inbox ${show(items)}`;
-    }),
+    expect('the inbox holds the failed operation', h => failedOperation(h, 'req-off')),
     holds('the lamp stays on, and a succeeded operation never enters the inbox', h =>
       (lampPower(h, 'on') === true && inboxOf(h, 'req-on').length === 0) || `lamp-1 ${String(h.devices().lamp.power['lamp-1'])}`, 500),
   ],
@@ -357,8 +373,8 @@ const zeroModules: Scenario = {
 /**
  * The early end-to-end path (#827's plan): a hook observation, the committed session, the simulated device's update, a
  * command, its outcome, history and inbox rows, then sync and read, with a duplicate command, the deadline answers, a
- * disconnect and a crash-restart on the same state directory. Stand-ins play the session owner, history and inbox
- * until #831 and #782 replace them.
+ * disconnect, a crash-restart on the same state directory, a failed command and a lost acknowledgment. Stand-ins play
+ * the session owner until #831, history until #782 and the inbox items until #923.
  */
 const endToEnd: Scenario = {
   id: 'end-to-end',
@@ -376,14 +392,22 @@ const endToEnd: Scenario = {
       historyOf(h, 'req-1').length === 1 && switches(h) === 1 ? true : `${historyOf(h, 'req-1').length} outcomes, ${switches(h)} switches`, 500),
     expect('the lamp knew it for a duplicate', h => logged(h, 'lamp.command.duplicate').length === 1 || `${logged(h, 'lamp.command.duplicate').length} duplicates`),
 
+    act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
+    act('the operator switches lamp-1 off as req-fail; the lamp accepts it', h => sendOnce(h, 'operator', 'fail', switchLamp('lamp-1', 'off'), 'req-fail')),
+    expect('history holds a failed outcome for req-fail, with no evidence it reached the device', h => recorded(h, 'req-fail', 'failed', 'none')),
+    expect('the inbox holds req-fail as a failed operation, and the reader reads it', h => failedOperation(h, 'req-fail')),
+    holds('lamp-1 stays on, and the device got no switch for req-fail', h => (lampPower(h, 'on') === true && switches(h) === 1) || `${switches(h)} switches`, 300),
+
     act('the lamp\'s device holds every switch until released', h => { h.simulate({device: 'lamp', action: 'hold'}); }),
     act('the operator switches lamp-1 off as req-held, with a 2 s deadline', h => { void h.send('operator', 'held', switchLamp('lamp-1', 'off'), {timeoutMs: 2000, requestId: 'req-held'}); }),
     expect('the device has req-held and holds it', h => (h.devices().lamp.held && switches(h) === 2) || `held ${String(h.devices().lamp.held)}, ${switches(h)} switches`),
     act('the operator sends req-queued behind it, with a 500 ms deadline', h => { void h.send('operator', 'queued', switchLamp('lamp-1', 'on'), {timeoutMs: 500, requestId: 'req-queued'}); }),
     act('the panel sends req-closed behind both, with a 5 s deadline', h => { void h.send('panel', 'closed', switchLamp('lamp-1', 'on'), {timeoutMs: 5000, requestId: 'req-closed'}); }),
     act('the panel gives up and closes', h => h.closePart('panel')),
+    // `bunny-sdk` "One conformance suite for every transport" fixes this case per transport.
     expect('req-closed ends as the transport says: cancelled in process, uncertain-result remotely',
       h => answered(h, 'closed', byTransport(h, {'in-process': 'cancelled', remote: 'uncertain-result'}))),
+    // `bunny-sdk` "Request and respond with expiry", which the remote transport keeps ("Deadlines").
     expect('req-queued is expired at its deadline, on both transports: it never reached the lamp', h => answered(h, 'queued', 'expired'), 1500),
     expect('req-held is uncertain-result at its deadline, on both transports: the lamp had it', h => answered(h, 'held', 'uncertain-result'), 3000),
     act('the device answers', h => { h.simulate({device: 'lamp', action: 'release'}); }),
@@ -406,8 +430,11 @@ const endToEnd: Scenario = {
     act('the runtime will crash between the lamp\'s next commit and its publish', h => { h.armCrash(); }),
     act('the operator switches lamp-1 off as req-crash', h => { void h.send('operator', 'crash', switchLamp('lamp-1', 'off'), {timeoutMs: 5000, requestId: 'req-crash'}); }),
     expect('the runtime crashed and started again on the same state directory', h => h.generation() === 2 || `generation ${h.generation()}`),
+    // A remote requester survives the crash: the remote client settles a call whose connection dropped as
+    // uncertain-result, at the latest at the command's deadline plus its grace. An in-process requester dies with the
+    // runtime; `lost` is the harness's label for that, not an answer the SDK gives.
     expect('req-crash ends as the transport allows: its in-process requester died with the runtime, a remote one is uncertain-result',
-      h => answered(h, 'crash', byTransport(h, {'in-process': 'lost', remote: 'uncertain-result'}))),
+      h => answered(h, 'crash', byTransport(h, {'in-process': 'lost', remote: 'uncertain-result'})), 5000 + REQUESTER_GRACE_MS),
     expect('at the restart the lamp republished its state, occurrence and outcome, once', h => {
       const counts = logged(h, 'lamp.outbox.republished', 2).map(entry => entry.record.attributes.count);
       return show(counts) === show([3]) || `republished ${show(counts)}`;
@@ -415,19 +442,33 @@ const endToEnd: Scenario = {
     expect('history holds one outcome for req-crash, and the reader resynced to see lamp-1 off', h =>
       recorded(h, 'req-crash', 'succeeded', 'observed') === true ? copied(h, 'off') : recorded(h, 'req-crash', 'succeeded', 'observed')),
     expect('the session still waits for approval, and the lamp shows attention again', h => waiting(h, ['approval-1']) === true ? indicator(h, 'attention') : waiting(h, ['approval-1'])),
+    expect('the inbox still holds req-fail after the restart', h => failedOperation(h, 'req-fail')),
     holds('no command was sent again: the lamp received none after the restart, and switched lamp-1 off once for req-crash', h =>
       (logged(h, 'lamp.command.received', 2).length === 0 && received(h, 'req-crash') === 1 && switches(h) === 4 && lampPower(h, 'off') === true) ||
       `${logged(h, 'lamp.command.received', 2).length} commands after the restart, ${switches(h)} switches`, 500),
     holds('the reader never heard a message twice', h => heardOnce(h), 100),
 
+    act('the core\'s next acknowledgment to the lamp is lost on its way', h => { h.loseAcknowledgment(); }),
+    act('the operator switches lamp-1 on as req-lost; the lamp accepts it', h => sendOnce(h, 'operator', 'lost', switchLamp('lamp-1', 'on'), 'req-lost')),
+    expect('history holds req-lost\'s outcome', h => recorded(h, 'req-lost', 'succeeded', 'observed')),
     act('the runtime restarts cleanly', h => h.restart()),
-    expect('the lamp republished nothing, since the core acknowledged the outcome', h => {
+    expect('at the restart the lamp reported req-lost\'s outcome again, and nothing else', h => {
       const counts = logged(h, 'lamp.outbox.republished', 3).map(entry => entry.record.attributes.count);
+      return show(counts) === show([1]) || `republished ${show(counts)}`;
+    }),
+    expect('the core took it as a duplicate and acknowledged it again, so the lamp forgot it', h => {
+      const duplicates = logged(h, 'core.message.duplicate', 3).filter(entry => entry.record.attributes.requestId === 'req-lost').length;
+      const acknowledged = logged(h, 'lamp.outcome.acknowledged', 3).length;
+      return (duplicates === 1 && acknowledged === 1) || `${duplicates} duplicates, ${acknowledged} acknowledgments`;
+    }),
+    holds('history keeps one outcome each for req-crash and req-lost, and no command was sent again', h =>
+      (historyOf(h, 'req-crash').length === 1 && historyOf(h, 'req-lost').length === 1 && logged(h, 'lamp.command.received', 3).length === 0 && switches(h) === 5) ||
+      `${historyOf(h, 'req-crash').length} and ${historyOf(h, 'req-lost').length} outcomes, ${switches(h)} switches`, 500),
+    act('the runtime restarts cleanly again', h => h.restart()),
+    expect('the lamp republished nothing, since the core acknowledged every outcome', h => {
+      const counts = logged(h, 'lamp.outbox.republished', 4).map(entry => entry.record.attributes.count);
       return show(counts) === show([0]) || `republished ${show(counts)}`;
     }),
-    holds('history still holds one outcome for req-crash, and no command was sent again', h =>
-      (historyOf(h, 'req-crash').length === 1 && logged(h, 'lamp.command.received', 2).length === 0 && switches(h) === 4) ||
-      `${historyOf(h, 'req-crash').length} outcomes, ${switches(h)} switches`, 500),
   ],
 };
 

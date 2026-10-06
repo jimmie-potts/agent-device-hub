@@ -130,6 +130,7 @@ class Memory implements MemoryHarness {
   #edge: Promise<RemoteEdge>;
   #edgeReady: (edge: RemoteEdge) => void = () => {};
   #armed = false;
+  #loseAcknowledgment = false;
   #closing: Promise<void> | undefined;
 
   constructor(seed: Seed, transport: TransportName, stateDir: string) {
@@ -270,6 +271,10 @@ class Memory implements MemoryHarness {
     this.#armed = true;
   }
 
+  loseAcknowledgment(): void {
+    this.#loseAcknowledgment = true;
+  }
+
   async restart(): Promise<void> {
     await this.#settled();
     const old = this.#current();
@@ -332,7 +337,11 @@ class Memory implements MemoryHarness {
       case 'core':
         return createCoreModule();
       case 'lamp':
-        return createLampModule({transport: this.#lamps, beforePublish: () => { this.#crashPoint(); }});
+        return createLampModule({transport: this.#lamps, beforePublish: () => { this.#crashPoint(); }, onAcknowledgment: () => {
+          if (!this.#loseAcknowledgment) return 'apply';
+          this.#loseAcknowledgment = false;
+          return 'lose';
+        }});
       case 'chime':
         return createChimeModule({transport: this.#chime});
     }

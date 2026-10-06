@@ -55,7 +55,7 @@ it('an act that throws and a hold that breaks both fail', async () => {
 });
 
 it('a catalog scenario fails at the step whose behavior breaks', async () => {
-  // The lamp's device fails every switch, so the first command's outcome is failed rather than succeeded.
+  // The lamp's device fails its next switch, so the first command's outcome is failed rather than succeeded.
   const h = await startMemoryHarness(named('command-tracked-outcome').seed, 'in-process');
   try {
     h.simulate({device: 'lamp', action: 'fail-next'});
