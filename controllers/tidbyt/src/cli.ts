@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  runner = startStatusRunner(loadRunnerConfig(process.argv[2]!));
+  runner = startStatusRunner(loadRunnerConfig(process.argv[2]));
   console.log('tidbyt-status-started');
   if (requested) stop();
 }

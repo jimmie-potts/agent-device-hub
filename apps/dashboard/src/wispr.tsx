@@ -37,6 +37,7 @@ function useWispr(api:Api,sourceId:string,selection:Selection,language:boolean,o
   };
   void poll();const timer=setInterval(()=>void poll(),5000);
   return()=>{stop.abort();clearInterval(timer);};
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the content key of the source, selection and language
  },[api,key]);
  return state.key===key&&state.api===api?state:{api,key};
 }

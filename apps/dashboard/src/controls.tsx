@@ -54,6 +54,7 @@ export function useCommandLifecycle(source:unknown,options:ResultOptions,key?:st
  const running=useRef(false);
  const isRunning=()=>shared?shared.running:running.current,setRunning=(value:boolean)=>{if(shared)shared.running=value;else running.current=value;};
  const keepFocus=useRestoredFocus(state.busy);
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- re-observe only when the source or the option fields that matter change
  useEffect(()=>dispatch({type:'observed',source,options}),[source,state.watching,options.device,options.sameMode]);
  async function run(attempt:Omit<Attempt,'options'>){
   if(isRunning()||(shared?shared.state.locked:state.locked))return;

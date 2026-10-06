@@ -9,5 +9,5 @@ export function acquireLease(directory: string, filename: 'lease.sqlite' | 'work
     db.exec('PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE');
   }catch{db?.close();throw new Error('collector-busy');}
   let released=false;
-  return {release(){if(released)return;released=true;try{db!.exec('ROLLBACK');}finally{db!.close();}}};
+  return {release(){if(released)return;released=true;try{db.exec('ROLLBACK');}finally{db.close();}}};
 }

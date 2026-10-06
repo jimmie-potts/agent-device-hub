@@ -52,7 +52,7 @@ export function referencedDefinitions(value: JsonSchema): JsonSchema {
   visit(value, true);
   if (unclassified) return value;
   const { $defs: _unused, ...rest } = value;
-  return kept.size ? { ...rest, $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => kept.has(name))) } as JsonSchema : rest as JsonSchema;
+  return kept.size ? { ...rest, $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => kept.has(name))) } : rest;
 }
 
 const verifiedSchemas = new Set<string>();

@@ -38,7 +38,7 @@ export function createHubMcp(options:Options):McpHandler {
      const action=()=>invoke(args,principal);
      const value=options.diagnostics?await options.diagnostics.run({scope:'bunny.mcp',operation:write?'verification':'status',root:true,outcome:value=>object(value)&&typeof value.outcome==='string'?({queued:'queued',sent:'transport-acknowledged',failed:'rejected',cancelled:'cancelled',uncertain:'uncertain','partially-applied':'partial'} as Record<string,string>)[value.outcome]??'succeeded':object(value)&&value.ok===false?'rejected':'succeeded'},action):await action();
      const failed=object(value)&&(value.ok===false||value.outcome==='failed'||value.outcome==='cancelled'||value.outcome==='uncertain'||value.outcome==='partially-applied');
-     return {data:{result:value as Record<string,unknown>},isError:failed};
+     return {data:{result:value},isError:failed};
     }catch(error){
      const known=error instanceof HttpError && rejected.has(error.code);
      const code=known?error.code:write?'uncertain-result':'transport-failure';

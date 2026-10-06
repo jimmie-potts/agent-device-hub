@@ -34,6 +34,7 @@ export async function prepare(argv) {
   if (!Object.hasOwn(APPS, app)) throw new Error('unsupported application');
   const args = argv.slice(separator + 1);
   if (!(app === 'compose' ? COMPOSE : SINGLE).includes(args[0])) throw new Error('unsupported operation');
+  // eslint-disable-next-line no-control-regex -- rejects control characters
   if (args.some(arg => /[\x00-\x1f\x7f]/.test(arg)) || args.join('').length > 32768) throw new Error('invalid adapter arguments');
   const seconds = options['--timeout-seconds'] ?? '900';
   if (!/^\d+$/.test(seconds) || Number(seconds) < 30 || Number(seconds) > 1800) throw new Error('command timeout must be 30..1800 seconds');
@@ -51,6 +52,7 @@ export async function prepare(argv) {
   const node = await realpath(process.execPath);
   // Preserve a venv executable path: realpath would discard Python's venv identity.
   for (const key of ['--python', '--fnm']) if (options[key]) {
+    // eslint-disable-next-line no-control-regex -- rejects control characters
     if (!isAbsolute(options[key]) || /[\x00-\x1f\x7f]/.test(options[key])) throw new Error(`${key} must be an absolute executable path`);
     await access(options[key], constants.X_OK);
   }
@@ -78,6 +80,7 @@ function clientGitEnv(home) { return {HOME: home, PATH: '/usr/bin:/bin', LANG: '
 // ExecStopPost uses systemd's command grammar: ':' disables environment
 // expansion. Transient properties transmit literal '%' through D-Bus; only
 // unit-file text doubles specifiers. This is never a shell.
+// eslint-disable-next-line no-control-regex -- rejects control characters
 export function unitWord(value) { if (/[\x00-\x1f\x7f]/.test(value)) throw new Error('invalid systemd word'); return '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"') + '"'; }
 
 // execFile never invokes a shell. Killing this directly owned client is not

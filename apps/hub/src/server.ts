@@ -219,7 +219,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   // Host is one of the loopback names and any Origin names that same host, so a rebinding page, or a page on the other loopback name, is refused.
   const sameOrigin=(req:IncomingMessage,{requireOrigin=false,sites=[undefined,'none','same-origin']}:{requireOrigin?:boolean;sites?:(string|undefined)[]}={})=>
     hosts.includes(req.headers.host ?? '') && (req.headers.origin === undefined ? !requireOrigin : req.headers.origin === 'http://' + req.headers.host) &&
-    sites.includes(req.headers['sec-fetch-site'] as string | undefined);
+    sites.includes(req.headers['sec-fetch-site']);
   // Hub #561: a link from another loopback app, such as the wall's B.U.N.N.Y. link, is a same-site top-level navigation.
   // It is admitted for the page at `/` only. Any local program can already open this page through the system browser; the
   // page signs in only through its own same-origin session or launch POST with X-Pixoo-Request; its assets and every API
@@ -574,7 +574,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrows the caught close failure
         if(launchFailure)throw launchFailure;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrows the caught close failure
         if(playbackFailure)throw playbackFailure;
       })();
     }

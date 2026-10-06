@@ -8,7 +8,7 @@ export async function runProcess(executable:string,args:string[],options:Process
   if(options.deadline<=Date.now())throw new Error('process-deadline');
   return new Promise((resolve,reject)=>{
     const child=spawn(executable,args,{cwd:options.cwd,env:options.env,stdio:['pipe','pipe','pipe'],detached:false});
-    let size=0,reason='',output:Buffer[]=[],subscriptionAuthenticated=false;
+    const output:Buffer[]=[];let size=0,reason='',subscriptionAuthenticated=false;
     let escalation:NodeJS.Timeout|undefined;
     const stop=(why:string)=>{
       if(reason)return;

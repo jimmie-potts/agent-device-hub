@@ -33,7 +33,7 @@ export function validate(definition: string, value: unknown): boolean {
     validator = ajv.compile({ $ref: `${schema.$id}#/$defs/${definition}` });
     validators.set(definition, validator);
   }
-  return isJson(value) && validator(value) as boolean;
+  return isJson(value) && validator(value);
 }
 
 function isJson(value: unknown): boolean {

@@ -30,7 +30,7 @@ test('manual span metadata and canonical terminal updates survive a streaming ex
     resource, scope: { name: 'bunny.http', version: '1.0.0' }, trace_id: id.traceId, span_id: id.spanId, trace_flags: '01',
     attributes: { ...attributes, 'bunny.outcome': 'queued' } }).value;
   assert.equal(pipeline.observe(record), true);
-  Object.defineProperty(span, 'attributes', { get() { assert.fail('raw SDK attributes read'); } });
+  Object.defineProperty(span, 'attributes', { get() { return assert.fail('raw SDK attributes read'); } });
   span.end(); await pipeline.processor.forceFlush();
   assert.equal(output.length, 1);
   assert.deepEqual(output[0].resourceSpans[0].scopeSpans[0].spans[0].attributes.find(value => value.key === 'bunny.outcome').value, { stringValue: 'queued' });

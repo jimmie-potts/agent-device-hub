@@ -224,7 +224,7 @@ function parsed(v: unknown): v is AnyRequest {
     validate("request", {
       ...rest,
       command: { kind: "power.set", on: true },
-    }) && (profileRequest(v) as boolean)
+    }) && (profileRequest(v))
   );
 }
 function normalized(r: AnyRequest): Request {

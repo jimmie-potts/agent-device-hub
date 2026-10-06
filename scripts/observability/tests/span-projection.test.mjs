@@ -35,9 +35,9 @@ test('span export uses canonical typed metadata, exact nanosecond times and regi
 test('projection never reads SDK content, resource attributes, events, links or status messages', () => {
   const value = span();
   for (const key of ['name', 'attributes', 'events', 'resource', 'links', 'instrumentationScope']) {
-    Object.defineProperty(value, key, { get() { assert.fail(`read unapproved SDK field: ${key}`); } });
+    Object.defineProperty(value, key, { get() { return assert.fail(`read unapproved SDK field: ${key}`); } });
   }
-  Object.defineProperty(value.status, 'message', { get() { assert.fail('read exception text'); } });
+  Object.defineProperty(value.status, 'message', { get() { return assert.fail('read exception text'); } });
   assert.ok(projectSpan(value, metadata(), 'bunny.command.request'));
 });
 
@@ -55,7 +55,7 @@ test('invalid canonical metadata, IDs, time ranges and names cannot be exported'
 
 test('only separately approved causal link identities reach export, never SDK link attributes', () => {
   const source = span();
-  Object.defineProperty(source, 'links', { get() { assert.fail('raw SDK links must not be read'); } });
+  Object.defineProperty(source, 'links', { get() { return assert.fail('raw SDK links must not be read'); } });
   const approved = [{ traceId: '4'.repeat(32), spanId: '5'.repeat(16), traceFlags: 1 }];
   const output = projectSpan(source, metadata(), 'bunny.command.execute', approved);
   assert.deepEqual(output.resourceSpans[0].scopeSpans[0].spans[0].links,

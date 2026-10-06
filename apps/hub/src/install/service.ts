@@ -119,6 +119,7 @@ export async function inspectPausedOwner<T>(pause:PauseControl,read:()=>Promise<
   await pause.freeze();if(!await pause.isFrozen())throw new Error('install-owner-pause-unverified');
   return await read();
  }finally{
+  // eslint-disable-next-line no-unsafe-finally -- an unverified resume fails the inspection even when the read also failed
   await pause.thaw();if(await pause.isFrozen())throw new Error('install-owner-resume-unverified');
  }
 }

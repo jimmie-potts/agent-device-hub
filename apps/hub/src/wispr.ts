@@ -13,6 +13,7 @@ export function wisprConfiguration(value:unknown,aliases:string[]):WisprConfig {
     !id(value.sourceId)||isIPv4(value.sourceId)||value.sourceId==='hub-service'||aliases.includes(value.sourceId))throw new Error('invalid-wispr');
   for(const key of ['aggregatePath','diagnosticsPath']){
     const path=value[key];
+    // eslint-disable-next-line no-control-regex -- rejects control characters
     if(typeof path!=='string'||!isAbsolute(path)||normalize(path)!==path||!path.endsWith('.json')||path.length>4096||/[\x00-\x1f\\]/.test(path)||/(?:^|\/)(?:\.git|onedrive[^/]*|dropbox|google drive|icloud ?drive)(?:\/|$)/i.test(path))throw new Error('invalid-wispr');
   }
   if(value.aggregatePath===value.diagnosticsPath||['exposeToDashboard','shareTextAggregates'].some(k=>value[k]!==undefined&&typeof value[k]!=='boolean')||

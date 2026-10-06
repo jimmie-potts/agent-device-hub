@@ -247,12 +247,12 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('Depot CI runs eight Linux jobs and retains every suite', () => {
+test('Depot CI runs nine Linux jobs and retains every suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/ci.yml'), 'utf8'));
   const guide = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 8, 'normal CI must run exactly eight jobs');
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 9, 'normal CI must run exactly nine jobs');
   assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -266,6 +266,7 @@ test('Depot CI runs eight Linux jobs and retains every suite', () => {
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
+    lint: ['npm ci', 'npm run build', 'npm run lint:js'],
     'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser'],
   };
   const names = {
@@ -275,6 +276,7 @@ test('Depot CI runs eight Linux jobs and retains every suite', () => {
     firmware: 'Firmware host tests and ARM build on ${{ matrix.os }}',
     mcp: 'MCP on ${{ matrix.os }}',
     'app-verify': 'App verification on ${{ matrix.os }}',
+    lint: 'Static analysis on ${{ matrix.os }}',
   };
   assert.deepEqual(ci.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
@@ -316,7 +318,7 @@ test('Depot CI runs eight Linux jobs and retains every suite', () => {
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 5);
+  assert.equal(builds, 6);
 });
 
 const builtPayloads = {

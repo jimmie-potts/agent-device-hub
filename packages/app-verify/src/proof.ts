@@ -96,7 +96,7 @@ async function frozenFile(root: FileHandle, runId: string, path: string): Promis
     if (frozen?.frozenAt !== live.proof.frozenAt || frozen?.manifest !== `sha256:${hex256(manifest)}`) throw new Error('unavailable');
     const sums = new Map<string, string>();
     for (const line of manifest.toString('utf8').trimEnd().split('\n')) {
-      const match = /^([a-f0-9]{64})  (.+)$/.exec(line);
+      const match = /^([a-f0-9]{64}) {2}(.+)$/.exec(line);
       if (!match || sums.has(match[2])) throw new Error('unavailable');
       sums.set(match[2], match[1]);
     }

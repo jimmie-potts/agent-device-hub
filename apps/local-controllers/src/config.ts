@@ -37,7 +37,7 @@ function lifxBulbStatusConfig(value: unknown): LifxBulbStatusConfig {
   if (!plain(value) || !keysAre(value, [], ['brightnessCapPercent', 'quietCapPercent'])
       || (value.brightnessCapPercent !== undefined && !integer(value.brightnessCapPercent, 1, 100))
       || (value.quietCapPercent !== undefined && !integer(value.quietCapPercent, 1, 100))) return fail();
-  return structuredClone(value) as LifxBulbStatusConfig;
+  return structuredClone(value);
 }
 
 /** Validates the feed shape without a network call, mirroring `loadRunnerConfig`'s status feed check. */
@@ -104,6 +104,6 @@ export function loadHostConfig(path: string): HostConfig {
     const lifx = value.lifx === undefined ? undefined : lifxConfig(value.lifx);
     const devices = [...(tidbyt ? [TIDBYT_DEVICE_ID] : []), ...(lifx?.bulbs.map(b => b.deviceId) ?? [])];
     if (!unique(devices)) return fail();
-    return { port: value.port as number, credentials: credentialsConfig(value.credentials, devices), ...(tidbyt ? { tidbyt } : {}), ...(lifx ? { lifx } : {}) };
+    return { port: value.port, credentials: credentialsConfig(value.credentials, devices), ...(tidbyt ? { tidbyt } : {}), ...(lifx ? { lifx } : {}) };
   } catch { return fail(); }
 }
