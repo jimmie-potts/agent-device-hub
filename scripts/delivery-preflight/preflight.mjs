@@ -45,8 +45,8 @@ export async function runPreflight({ github, declaration, now = () => new Date()
   const readFailures = [];
   const gates = {
     identity: new Gate('identity', 'Source identity', `${SDLC}#review-and-merge`),
-    ciPr: new Gate('ci-pr', 'Depot CI on the PR head', `${SDLC}#depot-ci-evidence`),
-    ciMain: new Gate('ci-main', 'Depot CI on the merged main revision', `${SDLC}#depot-ci-evidence`),
+    ciPr: new Gate('ci-pr', 'CI on the PR head', `${SDLC}#ci-evidence`),
+    ciMain: new Gate('ci-main', 'CI on the merged main revision', `${SDLC}#ci-evidence`),
     review: new Gate('review', 'Independent Standards and Specification review', `${SDLC}#review-and-merge`),
     feedback: new Gate('feedback', 'Published review feedback', `${SDLC}#review-and-merge`),
     ui: new Gate('ui-approval', 'UI approval', `${SDLC}#ui-approval-scope`),

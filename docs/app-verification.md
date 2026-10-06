@@ -531,7 +531,8 @@ Pending host behavior, left explicit rather than inferred:
   Hub's scope-stop test, but today the manager is wanted by the WSL
   distribution's implicit login session. So the distribution's lifetime with no
   terminal open bounds every lease (ADR 0008 trial pending).
-- CI: Depot's Ubuntu runner is not booted with systemd (PR #552). CI runs
+- CI: the CI runner has no systemd user manager (Depot's runner, used until
+  #870, was not booted with systemd; PR #552). CI runs
   the core's receipt, supervisor-refusal, lock and unsupervised capture tests
   (through `runCaptureStep`), and the Hub's `steps.test.mjs` (its seven
   fixture reference steps, including the three Hub #336 moment steps, under
@@ -548,7 +549,7 @@ The shared core's suite (`packages/app-verify/tests`) proves the
 application-independent part of each clause once, against real transient
 units and a fixture application: the **core** column. Those lifecycle tests
 need a user manager, so they run on a systemd host such as the owner's WSL
-PC, and the delivery evidence records them. Depot's runner has no systemd,
+PC, and the delivery evidence records them. The CI runner has no user manager,
 so the Hub's App verification CI job runs only the parts that need none:
 
 - receipt validation, including the optional 1.1 fields;

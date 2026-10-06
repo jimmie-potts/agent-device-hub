@@ -84,7 +84,7 @@ limited authority in [Acceptance review](docs/sdlc.md#acceptance-review), which
 also defines observable behavior. Missing review,
 blocking findings or any missing/unsuccessful applicable CI job prevents
 automatic merge.
-Use the Depot evidence rules in docs/sdlc.md for routine check-run verification
+Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
 Only changes entirely under docs/work-guide/ may use the intentional CI-filter
 exception in docs/sdlc.md; read its evidence requirements before merge or closure.

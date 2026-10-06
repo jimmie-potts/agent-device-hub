@@ -222,7 +222,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   - a hub that refuses to start;
   - a run that keeps serving after the scope that started it is stopped.
 
-  Without a user manager, as on Depot's runner, it skips with the printed
+  Without a user manager, as on the CI runner, it skips with the printed
   reason.
 - `compose.test.mjs` drives `compose.mjs` against real user units with
   this checkout's Hub and two stand-in consumer adapters

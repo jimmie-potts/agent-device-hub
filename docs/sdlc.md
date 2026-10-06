@@ -281,7 +281,7 @@ permission to replace an owner.
    Obtain successful current sync/archive lookups; synchronize every affected spec
    and archive on the delivery branch before final review. Incomplete tasks,
    missing acceptance or failed lookups prevent archive.
-   Depot CI minutes are limited and every pushed revision runs every applicable
+   CI minutes are limited and every pushed revision runs every applicable
    job, so validate locally first. Build once, then run the affected `:built`
    checks before each push. Push only reviewed heads: the first after step 3's
    reviews, then one per later fix round after its re-review. Prove that a
@@ -310,7 +310,7 @@ permission to replace an owner.
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-4. Read all GitHub reviews/threads and verify the [Depot evidence](#depot-ci-evidence)
+4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
    prevent merge except for the verified guide-only filtering described below.
@@ -326,7 +326,7 @@ permission to replace an owner.
    When main advances during review and a spec file conflicts, keep both sides
    but reconcile a requirement that both changed into one paragraph; a stacked
    resolution was a P2 finding on PR #421.
-6. Read back the main merge revision and verify its Depot evidence using the same
+6. Read back the main merge revision and verify its CI evidence using the same
    rules, or record the guide-only exception evidence below. Close the delivered
    issue only after its acceptance is met, clear workflow labels and verify
    closure. Apply [tracker reconciliation](#tracker-reconciliation) to affected
@@ -420,7 +420,7 @@ Verification has three tiers.
 
 ### Cleanup after delivery
 
-Start once step 6 has confirmed that the merged revision's Depot jobs succeeded,
+Start once step 6 has confirmed that the merged revision's CI jobs succeeded,
 or recorded its guide-only exception evidence, and read back the issue state.
 Cleanup does not wait for installation or physical acceptance unless that work
 still uses the worktree. Clean up only what this delivery created:
@@ -462,39 +462,45 @@ to make a worktree removable. If main CI fails, or the work failed or was
 abandoned, ask the user whether to keep or remove it and keep it until they
 decide. Leave other sessions' worktrees, branches and scratch alone.
 
-### Depot CI evidence
+<a id="depot-ci-evidence"></a>
 
-For routine merges and merged-main verification, successful GitHub check-run
-records from Depot are sufficient; opening every successful job page is not
-required. Enumerate expected jobs from the candidate's `.depot/workflows/`
-configuration, including matrix expansions and applicable branch/ruleset
-requirements. An overall green PR indicator or an empty protection list does
-not establish that the expected jobs ran.
+### CI evidence
+
+GitHub Actions runs Hub CI on GitHub-hosted runners. Depot CI ran it until
+[#870](https://github.com/jimmie-potts/agent-device-hub/issues/870). For routine
+merges and merged-main verification, successful GitHub check-run records are
+sufficient; opening every successful job page is not required. Enumerate
+expected jobs from the candidate's workflow configuration, including matrix
+expansions and applicable branch/ruleset requirements:
+- `.github/workflows/`, whose check runs are named after each job;
+- for a revision that still has `.depot/workflows/`, that directory instead,
+  whose check runs Depot named `<workflow> / <job>`.
+
+An overall green PR indicator or an empty protection list does not establish
+that the expected jobs ran.
 
 Read all pages of check runs and relevant annotations. Verify each required
 result is `completed` with conclusion `success`, has the exact candidate or
 merged-main SHA, belongs to this repository and the expected PR or main event,
-and comes from the expected Depot GitHub App (`depot-code-access`). Retain job
-names, check IDs, revision and details URLs in delivery evidence. Resolve
-superseded attempts and contradictory results before accepting a successful
-rerun. Historical GitHub Actions runs and checks from another app or revision
-do not qualify.
+and comes from the revision's CI app: `github-actions`, or `depot-code-access`
+for a Depot-era revision. Retain job names, check IDs, revision and details URLs
+in delivery evidence. Resolve superseded attempts and contradictory results
+before accepting a successful rerun. Checks from another app or revision do not
+qualify. Runs from the other provider on the same revision do not count, and
+they waste minutes; rebase a branch that still has `.depot/workflows/`.
 
-Inspect relevant Depot job details, logs or artifacts when a job fails, results
+Inspect relevant job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.
-Use the [diagnostic access procedure](development.md#depot-diagnostic-access).
+Use the [diagnostic access procedure](development.md#ci-diagnostic-access).
 A rerun of one failed job on the same reviewed head needs the delivery's
 authorization; the commands are in the
-[diagnostic access procedure](development.md#depot-diagnostic-access). Record
+[diagnostic access procedure](development.md#ci-diagnostic-access). Record
 the first attempt's failure and the retry in the PR evidence instead of pushing
-an empty commit, which would change the reviewed head. GitHub's check-run
-rerequest endpoint is not a route: it returns 404 for the Depot app.
+an empty commit, which would change the reviewed head.
 If required diagnostic evidence is unavailable, report that gap and keep the
-merge or completion gate pending. A dashboard sign-in requirement alone does
-not block routine delivery whose check-run evidence is complete. Preserve the
-separate guide-only exception, independent reviews, head guard and post-merge
-verification.
+merge or completion gate pending. Preserve the separate guide-only exception,
+independent reviews, head guard and post-merge verification.
 
 ### UI approval scope
 
@@ -519,7 +525,7 @@ The heading retains its existing anchor for links from older records.
 
 ### Guide-only CI exception
 
-All Depot workflows exclude changes entirely under `docs/work-guide/`. This includes
+All CI workflows exclude changes entirely under `docs/work-guide/`. This includes
 its generators and tests. For a guide-only PR and its main merge, the coordinator
 may accept intentionally absent runs only after recording all of the following:
 
@@ -531,7 +537,7 @@ may accept intentionally absent runs only after recording all of the following:
   tests and browser checks from the exact candidate using the guide procedure,
   plus a zero exit from `npx eslint docs/work-guide`. Retain the HTML hash,
   screenshots, print check and verification receipt outside Git. Validate the merged tree and repeat checks if its guide content differs.
-- Depot event/head associations and GitHub check readbacks consistent with those
+- CI event/head associations and GitHub check readbacks consistent with those
   filters, plus the current protection and merge-state inspection. Missing runs
   alone, failed API reads or a cancelled run do not establish intentional filtering.
 

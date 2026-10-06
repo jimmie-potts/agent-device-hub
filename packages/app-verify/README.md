@@ -284,9 +284,8 @@ inside a checkout.
   remain. Test leases are at most ten minutes, so even a killed run leaves
   nothing past that.
   These tests skip, each with the reason, when no user manager exists, and
-  fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. Depot's Ubuntu runner is
-  not booted with systemd, so they run on a systemd host such as the owner's
-  WSL PC.
+  fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. The CI runner has no user
+  manager, so they run on a systemd host such as the owner's WSL PC.
 
 `npm run test:app-verify:package` packs the archive and runs the packaged
 suite from an isolated consumer.

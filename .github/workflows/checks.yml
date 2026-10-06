@@ -1,9 +1,5 @@
-# Depot CI Migration
-# Source: .github/workflows/ci.yml
-#
-# No changes were necessary.
-#
 # Markdown-only changes skip this workflow; the Workflow and Work guide workflows still run (#861).
+# GitHub-hosted runners replaced Depot CI in #870.
 
 name: Checks
 on:
@@ -128,7 +124,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      # Depot's runner is not booted with systemd (PR #552): lifecycle tests skip with a printed reason; unsupervised capture tests, including the Hub's steps, run.
+      # Without a systemd user manager on the runner (PR #552), lifecycle tests skip with a printed reason; unsupervised capture tests, including the Hub's steps, run.
       - run: npm run test:app-verify:built
       - run: npm run test:app-verify:package:built
       - run: npm run test:hub:verify:built

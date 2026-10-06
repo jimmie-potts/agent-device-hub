@@ -165,7 +165,7 @@ test('initialization preserves personal Codex prompts with current integrations 
   }
 });
 
-// Parse the Depot workflows so formatting changes do not alter scheduling checks.
+// Parse the GitHub Actions workflows so formatting changes do not alter scheduling checks.
 const YAML = require('yaml');
 
 const storyHeadings = [
@@ -230,20 +230,20 @@ test('every workflow skips guide-only changes and Checks also skips Markdown-onl
     ['source', ['docs/work-guide/work/backlogs/snapshot.json', 'packages/mcp/src/server.ts'], false, false],
     ['root documentation', ['docs/work-guide/work/backlogs/snapshot.json', 'docs/development.md'], false, true],
     ['dependency', ['docs/work-guide/work/backlogs/snapshot.json', 'package-lock.json'], false, false],
-    ['workflow', ['docs/work-guide/README.md', '.depot/workflows/ci.yml'], false, false],
+    ['workflow', ['docs/work-guide/README.md', '.github/workflows/checks.yml'], false, false],
     ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false, false],
     ['similarly named folder', ['docs/work-guides/new.md'], false, true],
     ['Markdown only', ['README.md', 'AGENTS.md', 'docs/sdlc.md', 'apps/hub/README.md', 'openspec/specs/unified-dashboard/spec.md'], false, true],
     ['Markdown with source', ['docs/development.md', 'apps/hub/src/server.ts'], false, false],
     ['Markdown-like name', ['docs/notes.md.txt'], false, false],
   ];
-  for (const [file, triggers, checks] of [['ci.yml', expectedTriggers, true], ['workflow.yml', guideTriggers, false], ['work-guide.yml', guideTriggers, false]]) {
-    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'));
+  for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', guideTriggers, false], ['guide.yml', guideTriggers, false]]) {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
     assert.deepEqual(workflow.on, triggers, file);
     for (const event of ['push', 'pull_request']) {
       const patterns = workflow.on[event]['paths-ignore'];
       // Exercise the configured simple glob against bounded path sets, not
-      // Depot's hosted event scheduler or diff selection.
+      // GitHub's hosted event scheduler or diff selection.
       for (const [name, paths, guideSkip, checksSkip] of cases) {
         assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), checks ? checksSkip : guideSkip, `${file} ${event}: ${name}`);
       }
@@ -256,10 +256,13 @@ test('every workflow skips guide-only changes and Checks also skips Markdown-onl
   }
 });
 
-test('Depot CI runs six Linux jobs and retains every suite once', () => {
-  const read = file => YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'));
-  const checks = read('ci.yml'), guide = read('work-guide.yml'), workflowChecks = read('workflow.yml');
-  assert.deepEqual(fs.readdirSync(path.join(root, '.depot/workflows')).sort(), ['ci.yml', 'work-guide.yml', 'workflow.yml']);
+test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => {
+  const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
+  const checks = read('checks.yml'), guide = read('guide.yml'), workflowChecks = read('workflow.yml');
+  // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
+  // manually disabled state of the retired ci.yml and work-guide.yml copies.
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'guide.yml', 'workflow.yml']);
+  assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
   assert.deepEqual(Object.keys(workflowChecks.jobs), ['workflow']);
@@ -324,7 +327,7 @@ test('Depot CI runs six Linux jobs and retains every suite once', () => {
       if: "runner.os == 'Linux'",
       run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
     }] : []);
-    // Hub #494: Depot's runner has no systemd, so no job may claim to provide or require a user manager.
+    // Hub #494: the CI runner provides no systemd user manager, so no job may claim to provide or require one.
     assert.equal(job.env, undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
@@ -431,10 +434,10 @@ test('the standalone wrapper runs its payload only after a successful build', (t
 
 // Keep guide build, browser and retained review evidence under regression coverage.
 test('guide CI retains its validation and review artifacts', () => {
-  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide.yml'), 'utf8'));
   assert.deepEqual(workflow.jobs, { guide:
      { name: 'Work guide build and browser checks',
-       'runs-on': 'depot-ubuntu-latest',
+       'runs-on': 'ubuntu-latest',
        'timeout-minutes': 10,
        steps:
         [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },

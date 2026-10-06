@@ -1,8 +1,4 @@
-# Depot CI Migration
-# Source: .github/workflows/work-guide.yml
-#
-# Changes made:
-# - Changed GitHub runs-on labels to their Depot equivalents
+# Guide-only changes skip every workflow and use the guide-only CI exception (docs/sdlc.md).
 
 name: Work guide
 on:
@@ -19,7 +15,7 @@ permissions:
 jobs:
   guide:
     name: Work guide build and browser checks
-    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

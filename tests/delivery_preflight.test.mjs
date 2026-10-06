@@ -16,7 +16,7 @@ import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
 import {
-  BASE, EXPECTED_JOBS, GUIDE_HTML, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO,
+  ACTIONS, BASE, DEPOT, EXPECTED_JOBS, GUIDE_HTML, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
   checkRun, cleanWorld, comment, declaration, fakeTransport, guideRecordBody, job, mergeWorld, reviewReport, sha256, suite,
   writeGuideEvidence, writeProof,
 } from './delivery-preflight/world.mjs';
@@ -87,10 +87,22 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.match(report.notice, new RegExp(HEAD));
 });
 
-test('the real Depot configuration enumerates the six expected jobs and filters guide-only and Markdown-only changes', () => {
-  const workflows = ['ci.yml', 'work-guide.yml', 'workflow.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
-  const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true });
+test('the real GitHub Actions configuration enumerates the six expected jobs and filters guide-only and Markdown-only changes', () => {
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'guide.yml', 'workflow.yml']);
+  assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
+  const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
+  const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
+  // GitHub Actions names each check run after its job alone.
   assert.deepEqual(source.jobs.map(item => item.name).sort(), [
+    'App verification on ubuntu-latest',
+    'Build, lint and core tests on ubuntu-latest',
+    'Dashboard browser and contracts on ubuntu-latest',
+    'Firmware host tests and ARM build on ubuntu-latest',
+    'Work guide build and browser checks',
+    'Workflow checks on ubuntu-latest',
+  ]);
+  // The keys match the check names Depot reported, so coverage compares across the move.
+  assert.deepEqual(source.jobs.map(item => item.key).sort(), [
     'Checks / App verification on ubuntu-latest',
     'Checks / Build, lint and core tests on ubuntu-latest',
     'Checks / Dashboard browser and contracts on ubuntu-latest',
@@ -99,29 +111,37 @@ test('the real Depot configuration enumerates the six expected jobs and filters 
     'Workflow / Workflow checks on ubuntu-latest',
   ]);
   assert.deepEqual(source.uncertain, []);
-  const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true });
+  const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
   // Hub #861: a Markdown-only change skips Checks but still runs the workflow and Guide jobs.
-  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Work guide / Work guide build and browser checks', 'Workflow / Workflow checks on ubuntu-latest']);
-  const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true });
+  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Work guide build and browser checks', 'Workflow checks on ubuntu-latest']);
+  const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
   assert.equal(mixed.jobs.length, 6, 'one non-Markdown path keeps every job expected');
-  const guide = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/outputs/agent-device-work-guides.html'], filesComplete: true });
+  const guide = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/outputs/agent-device-work-guides.html'], filesComplete: true }, ACTIONS);
   assert.deepEqual(guide.jobs, []);
   assert.equal(guide.filtered.length, 3);
-  const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false });
+  const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
   assert.equal(incomplete.jobs.length, 6, 'an incomplete file list keeps every job expected');
-  const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true });
+  const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true }, ACTIONS);
   assert.deepEqual(branchPush.jobs, []);
 });
 
 test('workflow shapes the preflight cannot evaluate are reported, not guessed', () => {
   const unnamed = parseWorkflow('x.yml', 'on: pull_request\njobs:\n  a:\n    runs-on: x\n    steps: [{run: "true"}]\n');
-  assert.match(expectedJobs([unnamed], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }).uncertain.join(), /no name/);
+  assert.match(expectedJobs([unnamed], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).uncertain.join(), /no name/);
   const dynamic = parseWorkflow('y.yml', 'name: Y\non: pull_request\njobs:\n  a:\n    name: A ${{ github.ref }}\n    runs-on: x\n    steps: [{run: "true"}]\n');
-  assert.match(expectedJobs([dynamic], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }).uncertain.join(), /cannot expand/);
+  assert.match(expectedJobs([dynamic], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).uncertain.join(), /cannot expand/);
   const include = parseWorkflow('z.yml', 'name: Z\non: pull_request\njobs:\n  a:\n    strategy:\n      matrix:\n        os: [a]\n        include: [{os: b}]\n    runs-on: x\n    steps: [{run: "true"}]\n');
-  assert.match(expectedJobs([include], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }).uncertain.join(), /include/);
+  assert.match(expectedJobs([include], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).uncertain.join(), /include/);
   const plain = parseWorkflow('p.yml', 'name: P\non: [push, pull_request]\njobs:\n  test:\n    strategy:\n      matrix:\n        os: [a, b]\n        exclude: [{os: b}]\n    runs-on: x\n    steps: [{run: "true"}]\n');
-  assert.deepEqual(expectedJobs([plain], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }).jobs.map(j => j.name), ['P / test (a)']);
+  assert.deepEqual(expectedJobs([plain], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).jobs.map(j => j.name), ['test (a)']);
+  assert.deepEqual(expectedJobs([plain], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, DEPOT).jobs.map(j => j.name), ['P / test (a)']);
+  // GitHub Actions appends matrix values to a name that has none; that form is not evaluated.
+  const suffixed = parseWorkflow('s.yml', 'name: S\non: pull_request\njobs:\n  a:\n    name: Tests\n    strategy:\n      matrix:\n        os: [a]\n    runs-on: x\n    steps: [{run: "true"}]\n');
+  assert.match(expectedJobs([suffixed], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).uncertain.join(), /no matrix value/);
+  // Job names alone cannot tell two workflows' jobs apart.
+  const twin = name => parseWorkflow(`${name}.yml`, `name: ${name}\non: pull_request\njobs:\n  a:\n    name: Tests\n    runs-on: x\n    steps: [{run: "true"}]\n`);
+  assert.match(expectedJobs([twin('One'), twin('Two')], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS).uncertain.join(), /"Tests" belongs to 2 jobs/);
+  assert.deepEqual(expectedJobs([twin('One'), twin('Two')], { event: 'pull_request', branch: 'main', files: ['a'], filesComplete: true }, DEPOT).uncertain, []);
 });
 
 // ---- CI evidence ----
@@ -132,7 +152,7 @@ const ciCases = [
   ['a failed job', world => { world.checkRuns[HEAD][1].conclusion = 'failure'; }, /failure/],
   ['a skipped job', world => { world.checkRuns[HEAD][2].conclusion = 'skipped'; }, /skipped/],
   ['a cancelled job', world => { world.checkRuns[HEAD][2].conclusion = 'cancelled'; }, /cancelled/],
-  ['a job from another app', world => { world.checkRuns[HEAD][4].app = { slug: 'github-actions' }; }, /missing/],
+  ['a job from another app', world => { world.checkRuns[HEAD][4].app = { slug: DEPOT.app }; }, /missing/],
   ['a job for another revision', world => { world.checkRuns[HEAD][4].head_sha = OLD_HEAD; }, /missing/],
   ['a job from the push event instead of the PR', world => {
     world.checkRuns[HEAD][5].check_suite = { id: 9100 };
@@ -182,31 +202,84 @@ test('CI: a branch rule requiring a check adds it to the expected set', async ()
   assertUnresolved(await preflight(world), 'ci-pr', /Security scan: missing/);
 });
 
+const withoutFirmware = text => text.replace(/\n {2}firmware:\n[\s\S]*?(?=\n {2}dashboard:)/, '');
+
 test('CI: a candidate that edits its workflows cannot drop an expected job unnoticed', async () => {
   const world = cleanWorld();
-  const ci = world.workflows[HEAD]['ci.yml'];
-  world.workflows[BASE] = { ...world.workflows[HEAD] };
-  world.workflows[HEAD] = { ...world.workflows[HEAD], 'ci.yml': ci.replace(/\n {2}firmware:\n[\s\S]*?(?=\n {2}dashboard:)/, '') };
-  world.files.push({ filename: '.depot/workflows/ci.yml', status: 'modified' });
+  world.workflows[BASE] = { [ACTIONS.directory]: { ...WORKFLOW_FILES } };
+  world.workflows[HEAD] = { [ACTIONS.directory]: { ...WORKFLOW_FILES, 'checks.yml': withoutFirmware(WORKFLOW_FILES['checks.yml']) } };
+  world.files.push({ filename: '.github/workflows/checks.yml', status: 'modified' });
   world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/Firmware/));
-  assertUnresolved(await preflight(world), 'ci-pr', /Firmware host tests and ARM build on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
+  assertUnresolved(await preflight(world), 'ci-pr', /Checks \/ Firmware host tests and ARM build on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
 
   const added = cleanWorld();
-  added.workflows[BASE] = { ...added.workflows[HEAD] };
-  const checks = added.workflows[HEAD]['workflow.yml'];
+  added.workflows[BASE] = { [ACTIONS.directory]: { ...WORKFLOW_FILES } };
+  const checks = WORKFLOW_FILES['workflow.yml'];
   assert.ok(checks.includes('      - run: npm run test:workflow\n'));
-  added.workflows[HEAD] = { ...added.workflows[HEAD], 'workflow.yml': checks.replace('      - run: npm run test:workflow\n', '      - run: npm run test:workflow\n      - run: npm run test:preflight\n') };
-  added.files.push({ filename: '.depot/workflows/workflow.yml', status: 'modified' });
+  added.workflows[HEAD] = { [ACTIONS.directory]: { ...WORKFLOW_FILES, 'workflow.yml': checks.replace('      - run: npm run test:workflow\n', '      - run: npm run test:workflow\n      - run: npm run test:preflight\n') } };
+  added.files.push({ filename: '.github/workflows/workflow.yml', status: 'modified' });
   const report = await preflight(added);
   assert.equal(gate(report, 'ci-pr').status, 'satisfied');
   assert.match(gate(report, 'ci-pr').reasons.join(), /no job expected at [0-9a-f]{12} is dropped/);
 });
 
+// Hub #870: Depot-era revisions keep Depot's workflows and check names; the move compares coverage by job key.
+const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'work-guide.yml': WORKFLOW_FILES['guide.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
+const moveWorld = () => {
+  const world = cleanWorld();
+  // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.
+  world.workflows[BASE] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
+  world.files.push(
+    ...Object.keys(depotEra).map(file => ({ filename: `${DEPOT.directory}/${file}`, status: 'removed' })),
+    ...Object.keys(WORKFLOW_FILES).map(file => ({ filename: `${ACTIONS.directory}/${file}`, status: 'added' })),
+  );
+  return world;
+};
+
+test('CI: moving from Depot to GitHub Actions keeps every job and is gated on GitHub Actions runs', async () => {
+  const report = await preflight(moveWorld());
+  const ci = gate(report, 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  assert.equal(ci.evidence.provider, 'github-actions');
+  assert.match(ci.reasons.join(), /moves CI from Depot CI to GitHub Actions; no job expected at [0-9a-f]{12} is dropped/);
+
+  const dropped = moveWorld();
+  dropped.workflows[HEAD][ACTIONS.directory]['checks.yml'] = withoutFirmware(WORKFLOW_FILES['checks.yml']);
+  dropped.checkRuns[HEAD] = dropped.checkRuns[HEAD].filter(run => run.name !== job(/Firmware/));
+  assertUnresolved(await preflight(dropped), 'ci-pr', /Checks \/ Firmware host tests and ARM build on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
+
+  // Depot runs on a GitHub Actions revision count for nothing, and the report says they exist.
+  const duplicated = moveWorld();
+  duplicated.checkRuns[HEAD].push(...EXPECTED_JOBS.map(name => checkRun(name, HEAD, 9300, { app: { slug: DEPOT.app } })));
+  const noted = gate(await preflight(duplicated), 'ci-pr');
+  assert.equal(noted.status, 'satisfied', noted.reasons.join('; '));
+  assert.match(noted.reasons.join(), /6 Depot CI check runs also exist/);
+});
+
+test('CI: a Depot-era revision expects Depot check runs under "<workflow> / <job>" names', async () => {
+  const world = cleanWorld();
+  world.workflows[HEAD] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
+  world.checkSuites[HEAD] = [suite(9400, HEAD, 'claude/gh-700-example', { app: { slug: DEPOT.app } })];
+  const depotNames = EXPECTED_JOBS.map(name => (name.startsWith('Workflow checks') ? `Workflow / ${name}` : name.startsWith('Work guide') ? `Work guide / ${name}` : `Checks / ${name}`));
+  world.checkRuns[HEAD] = depotNames.map(name => checkRun(name, HEAD, 9400, { app: { slug: DEPOT.app } }));
+  const ci = gate(await preflight(world), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  assert.equal(ci.evidence.provider, 'depot');
+  assert.deepEqual([...ci.evidence.expected].sort(), [...depotNames].sort());
+  world.checkRuns[HEAD] = EXPECTED_JOBS.map(name => checkRun(name, HEAD, 9400));
+  assertUnresolved(await preflight(world), 'ci-pr', /Checks \/ Build, lint and core tests on ubuntu-latest: missing/);
+});
+
+test('CI: a revision without any workflow directory is unresolved', async () => {
+  const world = cleanWorld();
+  world.workflows[HEAD] = {};
+  assertUnresolved(await preflight(world), 'ci-pr', /has no workflow in \.depot\/workflows or \.github\/workflows/);
+});
+
 test('CI: filters that skip non-guide paths leave the change without CI, never under the guide exception', async t => {
   const world = cleanWorld();
-  for (const file of ['ci.yml', 'work-guide.yml', 'workflow.yml']) {
-    world.workflows[HEAD][file] = world.workflows[HEAD][file].replaceAll(/paths-ignore: \[[^\]]*\]/g, "paths-ignore: ['docs/**']");
-  }
+  const files = world.workflows[HEAD][ACTIONS.directory];
+  for (const file of Object.keys(files)) files[file] = files[file].replaceAll(/paths-ignore: \[[^\]]*\]/g, "paths-ignore: ['docs/**']");
   world.files = [{ filename: 'docs/sdlc.md', status: 'modified' }];
   world.compares[`${BASE}...${HEAD}`].files = world.files;
   world.checkRuns[HEAD] = [];
@@ -220,7 +293,7 @@ test('CI: a Markdown-only change needs only the workflow and Guide jobs (Hub #86
   const world = cleanWorld();
   world.files = [{ filename: 'docs/development.md', status: 'modified' }, { filename: 'README.md', status: 'modified' }];
   world.compares[`${BASE}...${HEAD}`].files = world.files;
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow|Work guide) \//.test(run.name));
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow checks|Work guide build) /.test(run.name));
   assert.equal(world.checkRuns[HEAD].length, 2);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
@@ -728,7 +801,7 @@ test('an incomplete changed-file list keeps path-filtered jobs expected', async 
   world.pr.changed_files = world.files.length + 1;
   const report = await preflight(world);
   assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
-  assertUnresolved(report, 'ci-pr', /Workflow \/ Workflow checks on ubuntu-latest: missing/);
+  assertUnresolved(report, 'ci-pr', /(?<!\/ )Workflow checks on ubuntu-latest: missing/);
   assert.match(gate(report, 'ci-pr').reasons.join(), /path filters are not applied and every job stays expected/);
 });
 
@@ -861,13 +934,13 @@ test('guide files with other Markdown skip Checks and need the guide evidence (H
     const world = guideOnlyWorld();
     world.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
     world.compares[`${BASE}...${HEAD}`].files = world.files;
-    world.checkRuns[HEAD] = cleanWorld().checkRuns[HEAD].filter(run => /^(Workflow|Work guide) \//.test(run.name));
+    world.checkRuns[HEAD] = cleanWorld().checkRuns[HEAD].filter(run => /^(Workflow checks|Work guide build) /.test(run.name));
     world.checkSuites[HEAD] = cleanWorld().checkSuites[HEAD];
     return world;
   };
   const missing = await preflight(mixed());
   assertUnresolved(missing, 'ci-pr', /needs the guide verification receipt/);
-  assert.match(gate(missing, 'ci-pr').reasons.join(), /skip ci\.yml; docs\/sdlc\.md#markdown-only-ci-routing requires the guide evidence/);
+  assert.match(gate(missing, 'ci-pr').reasons.join(), /skip checks\.yml; docs\/sdlc\.md#markdown-only-ci-routing requires the guide evidence/);
   const world = mixed();
   const receipt = writeGuideEvidence(scratch(t));
   const ci = gate(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] }), 'ci-pr');
@@ -889,7 +962,7 @@ test('guide-only: mixed changes, renames out of the folder and inconsistent runs
   const ran = guideOnlyWorld();
   ran.checkRuns[HEAD] = [checkRun(job(/Workflow checks/), HEAD, 9001)];
   ran.checkSuites[HEAD] = [suite(9001, HEAD, 'claude/gh-700-example')];
-  assertUnresolved(await preflight(ran, { guideReceipts: [receipt], guideRecords: [guideRecord(ran)] }), 'ci-pr', /Depot runs exist/);
+  assertUnresolved(await preflight(ran, { guideReceipts: [receipt], guideRecords: [guideRecord(ran)] }), 'ci-pr', /GitHub Actions runs exist/);
 });
 
 test('guide-only: a receipt for other HTML, a failed check or missing retained files are unresolved', async t => {
@@ -985,25 +1058,25 @@ test('guide-only: a branch-rule check keeps normal CI and the note says why', as
 });
 
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
-  const workflows = ['ci.yml', 'work-guide.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
-  const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true });
+  const workflows = ['checks.yml', 'guide.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
+  const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
   assert.deepEqual(dotfile.jobs, []);
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
   ]) assert.equal(filterPattern(pattern).test(file), expected, `${pattern} ${file}`);
   const classes = parseWorkflow('c.yml', "name: C\non:\n  pull_request:\n    paths-ignore: ['docs/[a-z]*/**']\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n");
-  const kept = expectedJobs([classes], { event: 'pull_request', branch: 'main', files: ['docs/x/y.md'], filesComplete: true });
-  assert.deepEqual(kept.jobs.map(item => item.name), ['C / a']);
+  const kept = expectedJobs([classes], { event: 'pull_request', branch: 'main', files: ['docs/x/y.md'], filesComplete: true }, ACTIONS);
+  assert.deepEqual(kept.jobs.map(item => item.key), ['C / a']);
   assert.match(kept.notes.join(), /not evaluated; every job stays expected/);
   const optional = parseWorkflow('q.yml', "name: Q\non:\n  pull_request:\n    paths-ignore: ['docs/a?.md']\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n");
-  const question = expectedJobs([optional], { event: 'pull_request', branch: 'main', files: ['docs/ab.md'], filesComplete: true });
-  assert.deepEqual(question.jobs.map(item => item.name), ['Q / a'], '? is zero-or-one in GitHub patterns, so it is not evaluated');
+  const question = expectedJobs([optional], { event: 'pull_request', branch: 'main', files: ['docs/ab.md'], filesComplete: true }, ACTIONS);
+  assert.deepEqual(question.jobs.map(item => item.key), ['Q / a'], '? is zero-or-one in GitHub patterns, so it is not evaluated');
   assert.match(question.notes.join(), /negation, \?, \+ or \[\]/);
   for (const branches of ["['!main']", "['release/v?']", "['release/[0-9]']"]) {
     const pushes = parseWorkflow('b.yml', `name: B\non:\n  push:\n    branches: ${branches}\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n`);
-    const result = expectedJobs([pushes], { event: 'push', branch: 'main', files: ['a'], filesComplete: true });
-    assert.deepEqual(result.jobs.map(item => item.name), ['B / a'], branches);
+    const result = expectedJobs([pushes], { event: 'push', branch: 'main', files: ['a'], filesComplete: true }, ACTIONS);
+    assert.deepEqual(result.jobs.map(item => item.key), ['B / a'], branches);
     assert.match(result.notes.join(), /branch patterns .* are not evaluated/);
   }
 });
@@ -1201,7 +1274,7 @@ test('the text report is concise, names full revisions and hides credentials', a
   const text = renderText(report);
   assert.match(text, new RegExp(`head ${HEAD}`));
   assert.match(text, /UNRESOLVED/);
-  assert.match(text, /Workflow \/ Workflow checks on ubuntu-latest: missing/);
+  assert.match(text, /(?<!\/ )Workflow checks on ubuntu-latest: missing/);
   assert.match(text, /not authorization/);
   assert.ok(text.split('\n').length < 60, text);
   assert.doesNotMatch(text, /Verdict: satisfied/, 'reviewer text stays in the linked report, not the preflight output');

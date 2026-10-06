@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CI_PROVIDERS } from '../../scripts/delivery-preflight/context.mjs';
 import { expectedJobs, parseWorkflow } from '../../scripts/delivery-preflight/workflows.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -24,14 +25,18 @@ export const POLICY = fakeSha('policy-sources');
 export const GUIDE_HTML = Buffer.from('<!doctype html><title>Guide</title>\n');
 export const sha256 = data => createHash('sha256').update(data).digest('hex');
 
-const workflowFiles = Object.fromEntries(fs.readdirSync(path.join(root, '.depot/workflows'))
+// world.workflows[revision] maps a workflow directory to its {file: text}.
+export const DEPOT = CI_PROVIDERS.find(provider => provider.id === 'depot');
+export const ACTIONS = CI_PROVIDERS.find(provider => provider.id === 'github-actions');
+export const WORKFLOW_FILES = Object.freeze(Object.fromEntries(fs.readdirSync(path.join(root, ACTIONS.directory))
   .filter(file => /\.ya?ml$/.test(file))
-  .map(file => [file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')]));
+  .map(file => [file, fs.readFileSync(path.join(root, ACTIONS.directory, file), 'utf8')])));
 
 // The jobs the real configuration expects for an ordinary source change.
 export const EXPECTED_JOBS = expectedJobs(
-  Object.entries(workflowFiles).map(([file, text]) => parseWorkflow(file, text)),
+  Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text)),
   { event: 'pull_request', branch: 'main', files: ['scripts/delivery-preflight.mjs'], filesComplete: true },
+  ACTIONS,
 ).jobs.map(job => job.name);
 export const job = pattern => {
   const name = EXPECTED_JOBS.find(candidate => pattern.test(candidate));
@@ -51,9 +56,9 @@ export function checkRun(name, sha, suite, overrides = {}) {
     conclusion: 'success',
     started_at: '2026-09-27T07:00:00Z',
     completed_at: '2026-09-27T07:05:00Z',
-    details_url: `https://depot.dev/orgs/example/workflows/run?job=${name.length}`,
+    details_url: `https://github.com/${REPO}/actions/runs/1/job/${nextId}`,
     html_url: `https://github.com/${REPO}/runs/${nextId}`,
-    app: { slug: 'depot-code-access' },
+    app: { slug: ACTIONS.app },
     check_suite: { id: suite },
     output: { annotations_count: 0 },
     ...overrides,
@@ -65,7 +70,7 @@ export function suite(suiteId, sha, branch, overrides = {}) {
     id: suiteId,
     head_sha: sha,
     head_branch: branch,
-    app: { slug: 'depot-code-access' },
+    app: { slug: ACTIONS.app },
     repository: { full_name: REPO },
     ...overrides,
   };
@@ -183,7 +188,7 @@ export function cleanWorld() {
     ],
     prCommits: [OLD_HEAD, HEAD],
     compares: {},
-    workflows: { [HEAD]: { ...workflowFiles }, [MERGE]: { ...workflowFiles } },
+    workflows: { [HEAD]: { [ACTIONS.directory]: { ...WORKFLOW_FILES } }, [MERGE]: { [ACTIONS.directory]: { ...WORKFLOW_FILES } } },
     blobs: {},
     checkRuns: { [HEAD]: EXPECTED_JOBS.map(name => checkRun(name, HEAD, prSuite)) },
     checkSuites: { [HEAD]: [suite(prSuite, HEAD, 'claude/gh-700-example')] },
@@ -284,13 +289,13 @@ export function fakeTransport(world) {
       const found = world.compares[`${m[1]}...${m[2]}`];
       return found ? { status: 200, json: found } : { status: 404, json: { message: 'Not Found' } };
     }
-    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/contents\/\.depot\/workflows$/))) {
-      const files = world.workflows[params.get('ref')];
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/contents\/(\.depot\/workflows|\.github\/workflows)$/))) {
+      const files = world.workflows[params.get('ref')]?.[m[1]];
       if (!files) return { status: 404, json: { message: 'Not Found' } };
-      return { status: 200, json: Object.keys(files).map(name => ({ type: 'file', name, path: `.depot/workflows/${name}` })) };
+      return { status: 200, json: Object.keys(files).map(name => ({ type: 'file', name, path: `${m[1]}/${name}` })) };
     }
-    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/contents\/\.depot\/workflows\/(.+)$/))) {
-      const text = world.workflows[params.get('ref')]?.[m[1]];
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/contents\/(\.depot\/workflows|\.github\/workflows)\/(.+)$/))) {
+      const text = world.workflows[params.get('ref')]?.[m[1]]?.[m[2]];
       if (text === undefined) return { status: 404, json: { message: 'Not Found' } };
       return { status: 200, json: { type: 'file', encoding: 'base64', content: Buffer.from(text).toString('base64') } };
     }
