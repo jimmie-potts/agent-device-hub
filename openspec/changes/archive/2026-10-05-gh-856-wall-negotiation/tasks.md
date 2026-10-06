@@ -11,4 +11,4 @@
 ## 3. Docs and delivery
 
 - [x] 3.1 Update the Hub README, the app verification doc and the controller contract note.
-- [ ] 3.2 Run the build, typecheck, hub, controller, MCP, workflow and verify suites, then sync and archive this change.
+- [x] 3.2 Run the build, typecheck, hub, controller, MCP, workflow and verify suites, then sync and archive this change.
