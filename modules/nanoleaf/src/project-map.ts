@@ -1,11 +1,15 @@
-// Project metadata, persistent wall preferences and task placement (the placement half of project_map.py).
-// Palette, geometry, rendering receipts, map edits and Locate stay with later slices (PORTING.md).
+// Project metadata, persistent wall preferences, task placement, the palette and the renderer's map settings
+// (project_map.py). Map geometry is in geometry.ts; palette writes, rendering receipts, map edits and Locate move with
+// the edits and worker slice (PORTING.md).
 import {statSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {compareText, isObject, normpath, own, parseJson, pyJson, pyRound, splitText, titleCase, type Json, type JsonObject} from './compat.js';
 import {create, DEFAULT, deviceOf, elementId, elements, type DeviceConfig} from './devices.js';
 import {ValueError} from './errors.js';
 import {readText} from './jsonfile.js';
+import type {Rgb} from './effects.js';
+import type {Indication} from './line-projection.js';
+import type {RenderConfig} from './renderer.js';
 import {execute, first, rows, sameRow, totalChanges, type Db, type Row, type SqlValue} from './sqlite.js';
 
 export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
@@ -13,6 +17,12 @@ export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
 export const STATUSES = ['working', 'question', 'blocked', 'unread'] as const;
 export type LineStatus = typeof STATUSES[number];
 export const isLineStatus = (value: unknown): value is LineStatus => STATUSES.some(status => status === value);
+// One task-light palette for every device. Only changed roles are stored.
+export const DEFAULT_PALETTE = Object.freeze({base: '#0a1866', working: '#00ff00', question: '#ffff00', blocked: '#ff0000', unread: '#9b30ff'});
+export type Role = keyof typeof DEFAULT_PALETTE;
+export const ROLES = Object.keys(DEFAULT_PALETTE) as Role[];
+export const isRole = (value: unknown): value is Role => ROLES.some(role => role === value);
+export const HEX = /^#[0-9a-fA-F]{6}$/;
 
 export interface MapSettings {
   style: SqlValue;
@@ -40,6 +50,17 @@ export function settings(db: Db, device: string = DEFAULT): MapSettings {
   const [style, coverage, rotation, flipX, flipY] = first(db, 'SELECT style,coverage,rotation,flip_x,flip_y FROM map_settings WHERE device=?', device)
     ?? DEFAULT_SETTINGS;
   return {style: style ?? null, coverage: coverage ?? null, rotation: rotation ?? null, flip_x: flipX ?? null, flip_y: flipY ?? null};
+}
+
+/** The effective palette; a damaged row falls back to that role's default. */
+export function palette(_db: Db): Record<Role, string> {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
+}
+
+export function paletteRgb(value: Readonly<Record<Role, string>>): Record<Role, Rgb> {
+  const channels = (color: string): Rgb => [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16)) as unknown as Rgb;
+  return {base: channels(value.base), working: channels(value.working), question: channels(value.question), blocked: channels(value.blocked),
+    unread: channels(value.unread)};
 }
 
 export const lineId = (pair: readonly number[]): string => elementId(pair);
@@ -289,4 +310,9 @@ export function allocate(db: Db, config: DeviceConfig, tasks: readonly TaskRow[]
     }
   }
   return assignments;
+}
+
+/** Add the device's map style, coverage, palette and per-element project halves to a worker pass's configuration. */
+export function renderConfig(_db: Db, _config: RenderConfig, _snapshot: readonly Indication[]): void {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
 }

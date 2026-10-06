@@ -27,6 +27,31 @@ export function compareText(left: string, right: string): number {
   return a.length - b.length;
 }
 
+/** Python's `value % divisor` for floats: the result takes the divisor's sign, where JavaScript's takes the dividend's. */
+export function pyMod(value: number, divisor: number): number {
+  const mod = value % divisor;
+  if (mod === 0) return divisor < 0 ? -0 : 0;
+  return (divisor < 0) !== (mod < 0) ? mod + divisor : mod;
+}
+
+/**
+ * Python's sum() of floats, which since 3.12 compensates rounding (Neumaier). A plain loop differs in the last bit for
+ * about half of all float lists. Python sums ints exactly, which this matches below 2 ** 53.
+ */
+export function pySum(_values: readonly number[]): number {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
+}
+
+/** Python's math.hypot. */
+export function pyHypot(..._coordinates: readonly number[]): number {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
+}
+
+/** Python's math.dist. */
+export function pyDist(_p: readonly number[], _q: readonly number[]): number {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
+}
+
 /** Python's round() for a float: halves go to the even neighbour. */
 export function pyRound(value: number): number {
   const floor = Math.floor(value);

@@ -11,8 +11,9 @@ import {writeJson} from '../src/jsonfile.js';
 import {registeredDevices} from '../src/configuration.js';
 import {dashboard} from '../src/line-projection.js';
 import {Metadata} from '../src/project-map.js';
+import {BASELINE, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
 import {BACKUP_TABLES, declared, dumpTables, identityKey, presented, restoreLegacyTasks, restoreTables, saveLegacyTasks, semanticStatus,
-  validateConfig, type Envelope, type Identity, type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
+  sharedRenderConfig, validateConfig, type Envelope, type Identity, type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
 import {selectSource} from '../src/shared-source.js';
 import {execute, rows, transaction, type Row} from '../src/sqlite.js';
 import {accept, clone, configure, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, generation, loadDump, query,
@@ -343,6 +344,34 @@ suite('RecoveryTest', () => {
     accept(path, value, 1001);
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
+  });
+
+  test('test_stale_peer_does_not_suppress_healthy_outward_wave', context => {
+    const {path} = selectionSetup(context);
+    let value = envelope();
+    const healthy = firstSession(value);
+    healthy.activity = 'active';
+    const stale = clone(healthy);
+    stale.identity.sessionId = 'stale';
+    stale.freshness = 'uncertain';
+    stale.restartUncertain = true;
+    value.snapshot.sessions.push(stale);
+    selectShared(path, value);
+    write(path, db => execute(db, 'INSERT INTO slots (session, slot) VALUES (?,1)', identityKey(stale.identity)));
+    value = clone(value);
+    value.snapshot.revision += 1;
+    firstSession(value).turn = {status: 'known', id: 'next'};
+    accept(path, value, 1001);
+    const layout: RenderConfig = {line_groups: [[100, 101], [102, 103], [104, 105]], line_positions: [[0, 0], [1, 0], [2, 0]], _mode: 'work'};
+    const snapshot = write(path, db => {
+      const projected = dashboard(db, layout, 1002);
+      sharedRenderConfig(db, layout);
+      return projected;
+    });
+    const delays = [0, 1, 2].map(source => travelDelays(layout, source));
+    const expected = pixelColor([snapshot[0] ?? null, null, null], 2, 1002, delays);
+    assert.notDeepEqual(expected, BASELINE);
+    assert.deepEqual(zoneColor(layout, snapshot, 2, 0, 1002, delays), expected);
   });
 
   test('test_recovered_session_keeps_epoch_without_replaying_outward_wave', context => {

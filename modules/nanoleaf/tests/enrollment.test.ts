@@ -8,6 +8,7 @@ import type {TestContext} from 'node:test';
 import {isObject, type JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import {linesEntry, lockFile, sceneFile, saveLayout} from '../src/devices.js';
+import {loadConfig} from '../src/configuration.js';
 import {changeAddress, check, enroll, remove, type Enrollment} from '../src/enrollment.js';
 import {Partial as PartialChange} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
@@ -230,6 +231,15 @@ suite('EnrollTest', () => {
     const credentials = readFileSync(join(e.directory, 'mcp-credentials.json'));
     await e.enroll();
     assert.deepEqual(readFileSync(join(e.directory, 'mcp-credentials.json')), credentials);
+  });
+
+  test('test_saved_geometry_loads_while_the_device_is_unreachable', async context => {
+    const e = new Enrolling(context);
+    await e.enroll();
+    e.fake.unreachable.add(PANELS_IP);
+    const config = await loadConfig(e.directory, 'panels', e.fake.request);
+    assert.equal(config.elements.length, 18);
+    assert.equal(config.token, PANELS_TOKEN);
   });
 });
 

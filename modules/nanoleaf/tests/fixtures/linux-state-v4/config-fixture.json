@@ -1,0 +1,7 @@
+{
+  "ip": "192.0.2.41",
+  "token": "fixtureToken",
+  "wall_port": 8765,
+  "controller_port": 41231,
+  "mcp_port": 41230
+}

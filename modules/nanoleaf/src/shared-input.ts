@@ -6,6 +6,7 @@ import {compareText, dumps, floatText, isObject, parseJson, sameValue, sha256Hex
 import {DEFAULT, ID, legacyRow} from './devices.js';
 import {FeedError, ValueError} from './errors.js';
 import {defaultColor, fallbackTitle, isLineStatus, type Metadata, type TaskRow} from './project-map.js';
+import type {RenderConfig} from './renderer.js';
 import {execute, first, rows, sameRow, type Db, type Row, type SqlValue} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
 
@@ -635,3 +636,11 @@ function firstText(...values: readonly (SqlValue | undefined)[]): string | null 
   return null;
 }
 
+
+/**
+ * shared_input.render_config: hold idle and stale tasks' Lines steady, suppress outward waves a recovered task must not
+ * replay, and apply the shared wave cutoff, for one worker pass.
+ */
+export function sharedRenderConfig(_db: Db, _config: RenderConfig): void {
+  throw new Error('Not ported yet (Hub #26, slice 2).');
+}

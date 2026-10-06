@@ -255,3 +255,40 @@ export const evictTask = (directory: string, device: string, payload: unknown): 
     evict(db, device, payload);
     markDirty(db);
   });
+
+/** test_bridge.decode: each panel's frames ([r, g, b, w, transition]) from a display payload's animData. */
+export function decode(payload: {write: {animData: string}}): Map<number, number[][]> {
+  const values = payload.write.animData.split(/\s+/).filter(text => text !== '').map(Number);
+  const panels = new Map<number, number[][]>();
+  let offset = 1;
+  for (let count = values[0] ?? 0; count > 0; count -= 1) {
+    const [panel = -1, frames = 0] = values.slice(offset, offset + 2);
+    offset += 2;
+    panels.set(panel, Array.from({length: frames}, (_, i) => values.slice(offset + i * 5, offset + i * 5 + 5)));
+    offset += frames * 5;
+  }
+  if (offset !== values.length) throw new Error('Malformed animData.');
+  return panels;
+}
+
+/** One panel's frames from a decoded payload; a missing panel fails the test. */
+export function framesOf(panels: ReadonlyMap<number, number[][]>, panel: number | undefined): number[][] {
+  const frames = panel === undefined ? undefined : panels.get(panel);
+  if (frames === undefined) throw new Error(`No frames for panel ${String(panel)}.`);
+  return frames;
+}
+
+/** A light request that fails the test: nothing here may reach a device (test_devices.refuse). */
+export const refuse = (): Promise<never> => Promise.reject(new Error('The device must not be contacted.'));
+
+/** test_bridge.Clock: a test clock that starts at 1000 and only moves when slept. */
+export class Clock {
+  value = 1000.0;
+  now = (): number => this.value;
+  sleep = (seconds: number): void => {
+    this.value += seconds;
+  };
+}
+
+/** A copy of a list of rows as plain arrays, for comparing tuples with lists. */
+export const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;

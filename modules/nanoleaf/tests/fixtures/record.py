@@ -12,6 +12,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -115,6 +116,8 @@ def values():
         'normalized': [[path, wall.normalize(path)] for path in paths],
         'floatText': [[value, str(value)] for value in floats],
         'rounded': [[value, round(value)] for value in rounding],
+        'pyMod': [[a, m, a % m] for a, m in ((-0.25, 1.0), (-1e-20, 1.0), (5.5, -2.0), (-0.0, 1.0), (3.0, 1.0), (-3.0, 1.0),
+                                             (725.5, 360.0), (-90.0, 360.0), (-179.99999999999997, 360.0), (0.0, -1.0), (7, 3), (-7, 3))],
         'pyJson': [[value, json.dumps(value)] for value in roots],
         'dumps': [[value, shared_input.dumps(value)] for value in roots + [{'b': 1, 'a': [True, None, 'é']}]],
         'privateAddress': [[ip, ok] for ip, ok in ((ip, private(ip)) for ip in
@@ -641,8 +644,163 @@ def apply(path, operation):
     raise AssertionError(op)
 
 
+# Slice 2: Line pairing, map geometry and the renderer's frames on synthetic layouts.
+
+def fixture_json(name):
+    return json.loads((SOURCE / 'tests/fixtures' / name).read_text())
+
+
+def oriented(layout, orientation):
+    value = copy.deepcopy(layout)
+    value['globalOrientation']['value'] = orientation
+    return value
+
+
+def midpoints(layout, groups):
+    zones = {p['panelId']: p for p in layout['layout']['positionData']}
+    return [[sum(zones[p]['x'] for p in pair) / 2, sum(zones[p]['y'] for p in pair) / 2] for pair in groups]
+
+
+def render_layouts():
+    """The layouts the frame recordings use, by name."""
+    import configuration
+    import panels
+    lines = fixture_json('lines-layout.json')
+    groups = configuration.pair_lines(lines)
+    triangles = devices.projection(panels.read_layout(fixture_json('nl22-panels-fixture.json')['panelLayout']))
+    rng = random.Random(2602)
+    return {
+        'straight': {'line_groups': [[100 + i * 2, 101 + i * 2] for i in range(15)], 'line_positions': [[i * 10, 0] for i in range(15)]},
+        'real': {'line_groups': groups, 'line_positions': midpoints(lines, groups)},
+        'small': {'line_groups': [[100, 101], [102, 103], [104, 105]], 'line_positions': [[0, 0], [1, 0], [2, 0]]},
+        'irregular': {'line_groups': [[200 + i * 2, 201 + i * 2] for i in range(7)],
+                      'line_positions': [[round(rng.uniform(-300, 300), 3), round(rng.uniform(-300, 300), 3)] for _ in range(7)]},
+        'triangles': {'kind': 'panels', 'line_groups': triangles['line_groups'], 'line_positions': triangles['line_positions']},
+    }
+
+
+def geometry_values():
+    import configuration
+    import panels
+    lines = fixture_json('lines-layout.json')
+    nl22 = fixture_json('nl22-panels-fixture.json')['panelLayout']
+    groups = configuration.pair_lines(lines)
+    result = {'pairLines': [], 'lines': [], 'triangles': [], 'connectors': []}
+    for orientation in (0, 45, 90, 180, 270, 333):
+        value = oriented(lines, orientation)
+        pairs = configuration.pair_lines(value)
+        result['pairLines'].append({'orientation': orientation, 'groups': pairs, 'positions': midpoints(value, pairs)})
+        zone_geometry = {'positionData': value['layout']['positionData'], 'orientation': orientation}
+        config = {'line_groups': groups, 'zone_geometry': zone_geometry}
+        result['lines'].append({'orientation': orientation, 'segments': wall.geometry(config)})
+        cache, graph = wall.validated_connector_geometry(zone_geometry, groups)
+        result['connectors'].append({'orientation': orientation, 'cache': cache, 'graph': graph,
+                                     'layout': wall.connector_layout(config)})
+    for orientation in (0, 30, 90, 240):
+        config = devices.projection(panels.read_layout(oriented(nl22, orientation)))
+        result['triangles'].append({'orientation': orientation, 'polygons': wall.triangle_geometry(config)})
+    return result
+
+
+def discovery_values():
+    """load_config's discovery of the real Lines layout, with no saved layout."""
+    import configuration
+    lines = fixture_json('lines-layout.json')
+    with tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        jsonfile.write_json(directory / 'config.json', {'ip': '192.0.2.1', 'token': 'fake'})
+        config = configuration.load_config(directory, request=lambda address, method, *_: {'panelLayout': copy.deepcopy(lines)})
+        return {'config': {key: config[key] for key in ('device', 'kind', 'elements', 'line_groups', 'line_positions')},
+                'layout': json.loads((directory / 'layout.json').read_text())}
+
+
+def frame_values():
+    """Zone colors sampled from random renderer states, and the effect payload of each state."""
+    rng = random.Random(2604)
+    layouts = render_layouts()
+    statuses = ('working', 'question', 'blocked', 'unread', 'idle')
+    scenarios = []
+    for index in range(90):
+        name = ('straight', 'real', 'small', 'irregular', 'triangles')[index % 5]
+        layout = layouts[name]
+        count = len(layout['line_groups'])
+        instant = round(1000 + rng.uniform(0, 20), 3)
+        config = copy.deepcopy(layout)
+        mode = rng.choice((None, 'work', 'work', 'quiet'))
+        if mode is not None:
+            config['_mode'] = mode
+        if rng.random() < 0.35:
+            config['_comet'] = {'source': rng.randrange(count), 'started': round(instant + rng.uniform(-1.5, 1.5), 3)}
+        if rng.random() < 0.15:
+            config['_locate'] = {'source': rng.randrange(count), 'started': round(instant + rng.uniform(-1, 1), 3)}
+        if rng.random() < 0.3:
+            config['_wave_cutoff'] = round(instant + rng.uniform(-6, 1), 3)
+        if rng.random() < 0.2:
+            config['_steady_slots'] = sorted(rng.sample(range(count), rng.randint(1, min(3, count))))
+        if rng.random() < 0.2:
+            config['_wave_suppressed_slots'] = sorted(rng.sample(range(count), rng.randint(1, min(3, count))))
+        if rng.random() < 0.45:
+            config['_style'] = 'project'
+            config['_coverage'] = rng.choice(('whole', 'status'))
+            config['_signatures'] = [[None if rng.random() < 0.3 else [rng.randrange(256) for _ in range(3)], rng.randrange(2)]
+                                     for _ in range(count)]
+        if rng.random() < 0.3:
+            config['_palette'] = {role: [rng.randrange(256) for _ in range(3)] for role in wall.DEFAULT_PALETTE}
+        snapshot = [None if rng.random() < 0.55 else [rng.choice(statuses), round(instant + rng.uniform(-6, 2), 3)]
+                    for _ in range(count)]
+        loop = rng.random() < 0.5
+        python = copy.deepcopy(config)
+        if '_palette' in python:
+            python['_palette'] = {role: tuple(color) for role, color in python['_palette'].items()}
+        python_snapshot = [tuple(item) if item else None for item in snapshot]
+        delays = [b.travel_delays(python, source) for source in range(count)]
+        samples = []
+        for _ in range(30):
+            target = rng.randrange(count)
+            half = rng.randrange(len(layout['line_groups'][target]))
+            at = round(instant + rng.uniform(-0.2, 2.4), 3)
+            samples.append([target, half, at, list(b.zone_color(python, python_snapshot, target, half, at, delays))])
+        payload = b.effect_payload(python, python_snapshot, instant, loop)
+        scenarios.append({'layout': name, 'config': {k: v for k, v in config.items() if k.startswith('_')}, 'snapshot': snapshot,
+                          'instant': instant, 'loop': loop, 'samples': samples,
+                          'payload': hashlib.sha256(json.dumps(payload).encode()).hexdigest()})
+    return {'layouts': layouts, 'scenarios': scenarios}
+
+
+def write_nested(name, value, depth):
+    """JSON with one line per member down to `depth`, so a re-recording diffs line by line at a modest size."""
+    def text(item, level):
+        if level >= depth or not isinstance(item, (dict, list)) or not item:
+            return json.dumps(item, sort_keys=True, separators=(',', ':'))
+        pad = ' ' * (level + 1)
+        if isinstance(item, dict):
+            members = [pad + json.dumps(key) + ':' + text(item[key], level + 1) for key in sorted(item)]
+            return '{\n' + ',\n'.join(members) + '\n' + ' ' * level + '}'
+        return '[\n' + ',\n'.join(pad + text(member, level + 1) for member in item) + '\n' + ' ' * level + ']'
+    OUTPUT.mkdir(exist_ok=True)
+    (OUTPUT / name).write_text(text(value, 0) + '\n')
+
+
+def numbers():
+    """math.hypot and sum() on random floats, one case per line (compat.test.ts)."""
+    spread = random.Random(2605)
+    write_nested('numbers.json', {
+        'hypot': [[a, b, math.hypot(a, b)] for a, b in [(3, 4), (0, 0), (-0.0, 5e-324), (1e308, 1e308)]
+                  + [(round(spread.uniform(-900, 900), digits), round(spread.uniform(-900, 900), digits))
+                     for digits in (0, 1, 3, 17) for _ in range(60)]],
+        'sums': [[values, sum(values)] for values in [[1, 2, 3], [0.1] * 10, [1e16, 1.0, -1e16], []]
+                 + [[round(spread.uniform(-1000, 1000), 3) for _ in range(spread.randint(2, 15))] for _ in range(80)]],
+    }, 2)
+
+
+def rendering():
+    write_nested('rendering.json', {'geometry': geometry_values(), 'discovery': discovery_values(), 'frames': frame_values()}, 4)
+
+
 if __name__ == '__main__':
     values()
     setups()
     owner_snapshot()
     write_trace([trace(seed, 110) for seed in (1, 2, 3)] + [scripted(), scripted_placement()])
+    numbers()
+    rendering()
