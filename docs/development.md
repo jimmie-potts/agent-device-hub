@@ -310,11 +310,11 @@ code instead.
 
 New code for the runtime follows a stricter profile from its first commit
 ([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
-`apps/runtime/`, `packages/sdk/` and `modules/`, and starts with no baseline
-entries. Staged imported code, currently `modules/pixoo/`, keeps the shared
-rules until its module story converts it. To cover another path, such as the
-2.0 contract sources, add its glob to `strict` in `eslint.config.mjs`; the
-guard tests read that list.
+`apps/runtime/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
+`packages/event-contracts/src/v2/`, and starts with no baseline entries. Staged
+imported code, currently `modules/pixoo/`, keeps the shared rules until its
+module story converts it. To cover another path, add its glob to `strict` in
+`eslint.config.mjs`; the guard tests read that list.
 
 - **Lint (`bunny/strict`):**
   - switches over a union must handle every member, and a catch-all `default`
@@ -673,6 +673,13 @@ source-contract/reference checks. They do not qualify a production transport,
 store, producer, installed client or device. Existing lifecycle/controller
 TypeScript/Python/package and affected consumer checks remain required for
 compatibility. See [the event profile](event-contract.md).
+
+Profile 2.0 lives in the same package under `schemas/v2/`, `src/v2/` and
+`fixtures/v2/`. `test:events:built` also runs `tests/v2.test.mjs`, which
+covers every message kind and building block, the size cap, expiry, retry
+identity, module schema registration and the error code registry. Profile 2.0
+has no Python mirror; `test:events:python` checks profile 1.0 only. Its
+sources follow the [strict profile](#strict-profile-for-new-code).
 
 ## Agent lifecycle contract checks
 
