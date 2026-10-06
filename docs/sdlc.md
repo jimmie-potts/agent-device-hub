@@ -310,20 +310,25 @@ permission to replace an owner.
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-   A later delta goes back to both reviewers, with three exceptions that one
-   reviewer confirms:
+   Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
+   `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
+   owns the issue, the OpenSpec specs and the contract documents. A later delta
+   goes back to both reviewers, with three exceptions that one reviewer
+   confirms:
    - **Pure rebase:** the range-diff shows every commit identical. Either
-     reviewer confirms it, unless the new base changed an axis's review sources
-     (`AGENTS.md`, `CLAUDE.md`, `docs/sdlc.md`, `docs/development.md`, the issue
-     or the affected OpenSpec specs); then that axis confirms too.
-   - **Documentation only:** the delta changes only Markdown documentation. The
-     Specification reviewer confirms it, because its axis covers the
-     requirements, contracts and commands that documentation states.
+     reviewer confirms it. If the new base changed one axis's sources, or the
+     issue changed since the review, that axis confirms it. If both axes'
+     sources changed, both confirm.
+   - **Documentation only:** the delta changes only Markdown documentation that
+     no tool reads. The axis that owns the changed files confirms it; files
+     that neither axis owns may be confirmed by either. If it changes files that
+     both axes own, both confirm.
    - **Code comments only:** the delta changes only comments that direct no
      tool. The Standards reviewer confirms it.
 
-   These still go back to both: policy files (`AGENTS.md`, `CLAUDE.md` and this
-   file), directive comments such as `@ts-expect-error`, a delta that mixes
+   These still go back to both: any change to an `AGENTS.md`, a `CLAUDE.md` or
+   this file, directive comments such as `@ts-expect-error`, Markdown that a
+   tool reads (such as issue templates or fixtures), a delta that mixes
    documentation and code comments, and any change to code, schemas, tests or
    configuration. The confirming reviewer's return names the new head. The
    other axis's earlier verdict carries over to that head, and the PR body
