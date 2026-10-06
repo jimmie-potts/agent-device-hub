@@ -1412,7 +1412,8 @@ suite('transaction helpers', () => {
 
   test('asynchronous work is refused and rolled back', async context => {
     // The types refuse an async body, which would commit before its awaited work ran. One passed anyway is refused at
-    // run time and its promise left handled, as the SDK's outbox does; the runtime's transact refuses it too.
+    // run time and its promise left handled, as the SDK's outbox does; the runtime's transact refuses it too. The
+    // rollback covers the write before the body's first await, which is all this body does inside the transaction.
     const path = temporary(context);
     const work = async (db: Db): Promise<void> => {
       execute(db, "INSERT INTO meta VALUES ('x','1')");

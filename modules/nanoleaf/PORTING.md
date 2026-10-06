@@ -152,7 +152,8 @@ The port adds tests of its own:
 - `control checks the port adds`, in `controls.test.ts`. Every control replay also checks each
   outcome against the profile's outcome rules. The checks:
   - recorded from Python: a requested animation plays only on the Lines, with a Panels device in
-    Free; an animation in flight refuses another in any mode;
+    Free; a saved layout too large refuses an animation before the Free gate; an animation in flight
+    refuses another in any mode;
   - a mode command that needs no device write succeeds with observed evidence;
   - commands that commit while a write is out: a command retired during its write ends uncertain and
     is not written again; a mode command committed during a control's write stops that pass's display
@@ -499,7 +500,7 @@ retires with codex-nanoleaf (#839). It writes:
   recording holds each step's outcome, every device request with its time and payload, each send a
   run captured, and the rows (`display_v3` parsed), scene file, device state and clock at the end.
   The port must match all of it exactly.
-- `controls.json`, one member per line to a fixed depth (`control-support.ts`): 45 control cases on
+- `controls.json`, one member per line to a fixed depth (`control-support.ts`): 46 control cases on
   the worker cases' Lines and fake device, one or more per translated controls, controller worker,
   animation worker and animation admission test, and one with a Panels device registered for the
   Lines-only rule. Python's controller is configured, and its admission, integration extension
@@ -508,11 +509,12 @@ retires with codex-nanoleaf (#839). It writes:
   saved layouts, a registered Panels device, and hooks that run a step as a request reaches the
   device or as an execution completes, as Python's tests patched them in. The port admits each command through `admitCommand`, with an expiry 30
   seconds after admission, Python's for both kinds. The recording holds each step's outcome, each
-  hook's, every device request, the rows, scene file, device state and clock, and each command's
-  final receipt. Each step and row must match exactly. A command's receipt becomes its reply, and its
-  final receipt goes through MAPPING.md's controller receipt rule to the outcome the port must have
-  reported last, with the two differences [Known differences](#known-differences) lists under
-  Controls. Each command ends at most once, and each outcome follows the profile's outcome rules.
+  hook's, every device request, the rows, scene file, device state and clock, and each admitted
+  command's final receipt; a refused request has none. Each step and row must match exactly. A
+  command's admission receipt becomes its reply, and its final receipt goes through MAPPING.md's
+  controller receipt rule to the outcome the port must have reported last, with the two differences
+  [Known differences](#known-differences) lists under Controls. Each command ends at most once, and
+  each outcome follows the profile's outcome rules.
 - `rendering.json`, one member per line to a fixed depth:
   - Line pairing of the real Lines layout in six orientations, and of two zones moved just inside,
     onto and just beyond the 3-unit collinearity threshold in eight orientations (`geometry.test.ts`);
@@ -728,7 +730,9 @@ on a read-only export of that commit, since the Python tests import from their o
     - `playAnimation`'s `phase='queued'` condition: a retired or expired row is deleted, and only
       `playAnimation` moves a row to attempting.
   - `transaction()` and the worker's `Transact` refuse asynchronous work by type, as the SDK's
-    `Outbox.transaction` does, and a body that returns a promise anyway rolls back with a `TypeError`.
+    `Outbox.transaction` does, so a TypeScript caller cannot pass one. A body that returns a promise
+    anyway is refused with a `TypeError`, but the rollback covers only the work done before its first
+    `await`: writes after the `await` run outside the transaction and stay.
   - Scene IDs use Python's formula, keyed by a secret in the module's own table. `discovered`
     reports a changed list (`{type: 'scenes'}`) for #844 to publish the device's state;
     `sceneList` shows names up to 80 characters, as the extension snapshot did.

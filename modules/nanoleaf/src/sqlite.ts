@@ -69,8 +69,9 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
 
 /**
  * Python's `with db:` around an explicit BEGIN: commit on success, roll back on any error. The body is synchronous: no
- * transaction stays open across a wait or a device request. Its type refuses a promise, and one returned anyway rolls
- * the work back with a `TypeError`.
+ * transaction stays open across a wait or a device request. Its type refuses a promise. One returned anyway is refused
+ * with a `TypeError`, which rolls back only the work done before the body's first await; writes after it run outside
+ * the transaction.
  */
 export function transaction<T>(db: Db, body: () => Synchronous<T>, begin = 'BEGIN IMMEDIATE'): T {
   db.exec(begin);
