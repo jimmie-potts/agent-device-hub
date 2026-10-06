@@ -201,7 +201,9 @@ Not ported (the layer that held them is replaced):
   commands, #844), and the worker's play (slice 3). The tests run each edit as admission and the
   worker did: checked, then checked again and applied in its own transaction. Refusals are checked
   by their failure codes. Python patched the byte bound to 100; the port checks it on a wall too
-  large for the recipe.
+  large for the recipe. #844 keeps two rules these cases checked through the integration API: the
+  read-scope snapshot never contains favorites or preset names, and reads never write the status
+  store.
 
 ### test_bridge.py
 

@@ -1,14 +1,19 @@
 // The port's own tests of the Nanoleaf HTTP client (transport.py has no test file of its own). lightRequest is checked
-// with a fake transport; nodeTransport against stub HTTP servers on the loopback interface. No light is contacted.
+// with a fake transport; nodeTransport against stub HTTP servers on the loopback interface; and render and loadConfig
+// reach lightRequest by default. No light is contacted.
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
+import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {promisify} from 'node:util';
 import {pyJson} from '../src/compat.js';
+import {loadConfig} from '../src/configuration.js';
+import {writeJson} from '../src/jsonfile.js';
+import {render, type RenderConfig} from '../src/renderer.js';
 import {HttpError, LIGHT_TIMEOUT_SECONDS, lightRequest, nodeTransport, type HttpRequest, type HttpResponse} from '../src/transport.js';
-import {suite, test} from './support.js';
+import {suite, temporary, test} from './support.js';
 
 /** A fake transport that records each request and answers with `reply`. */
 function fake(reply: HttpResponse = {status: 200, body: ''}): {sent: HttpRequest[]; transport: (request: HttpRequest) => Promise<HttpResponse>} {
@@ -74,6 +79,20 @@ async function stub(context: TestContext, handle: (request: IncomingMessage, bod
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
+suite('default device request', () => {
+  // '::1' is refused by the address check before any request; even a broken check could only reach this host.
+  test('render without a request of its own sends through lightRequest', async () => {
+    const config: RenderConfig = {line_groups: [[100, 101]], line_positions: [[0, 0]], ip: '::1', token: 'abc', _now: () => 1000};
+    await assert.rejects(render(config, [['working', 1000]], 1000, true), {name: 'ValueError', message: 'Use a private IPv4 address for the lights.'});
+  });
+
+  test('loadConfig without a request reads the device through lightRequest', async context => {
+    const directory = temporary(context);
+    writeJson(join(directory, 'config.json'), {ip: '::1', token: 'abc'});
+    await assert.rejects(loadConfig(directory), {name: 'ValueError', message: 'Use a private IPv4 address for the lights.'});
+  });
+});
+
 suite('nodeTransport', () => {
   test('the device reply comes back with its status', async context => {
     const seen: [string | undefined, string | undefined, string][] = [];
@@ -90,10 +109,15 @@ suite('nodeTransport', () => {
   test('a device that never answers fails within the timeout', async context => {
     const url = await stub(context, () => undefined);
     const started = performance.now();
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const outcome = await Promise.race([
       nodeTransport({url, method: 'GET', headers: {}, body: null, timeoutSeconds: 0.2}).then(() => 'answered', (error: unknown) => error),
-      new Promise(resolve => setTimeout(() => resolve('still waiting'), 3000)),
+      new Promise(resolve => {
+        watchdog = setTimeout(() => resolve('still waiting'), 3000);
+      }),
     ]);
+    // The watchdog only bounds a broken timeout; it must not keep the test file running.
+    clearTimeout(watchdog);
     const elapsed = (performance.now() - started) / 1000;
     assert.ok(outcome instanceof Error && 'code' in outcome && outcome.code === 'ETIMEDOUT', String(outcome));
     assert.ok(elapsed >= 0.19 && elapsed < 1.5, `gave up after ${elapsed} seconds`);
@@ -115,8 +139,11 @@ suite('nodeTransport', () => {
     const script = `const {nodeTransport} = await import(${JSON.stringify(transport)});
 const reply = await nodeTransport({url: ${JSON.stringify(url + '/api/v1/new')}, method: 'POST', headers: {}, body: null, timeoutSeconds: 2});
 process.stdout.write(JSON.stringify(reply));`;
+    // Proxy settings inherited from the parent would decide the outcome (Node prefers a lowercase no_proxy), so the child
+    // gets only the proxy set here.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(no|https?|all)_proxy$/i.test(name)));
     const run = promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 10_000,
-      env: {...process.env, NODE_USE_ENV_PROXY: '1', HTTP_PROXY: proxy, http_proxy: proxy, NO_PROXY: ''}});
+      env: {...env, NODE_USE_ENV_PROXY: '1', HTTP_PROXY: proxy, http_proxy: proxy}});
     // The child exits by itself; this stops it if the test fails before it does.
     context.after(() => {
       if (run.child.exitCode === null) run.child.kill();

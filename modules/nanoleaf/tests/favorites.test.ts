@@ -102,7 +102,7 @@ suite('FavoriteTest', () => {
     // Partly: admission's Free-only rule and request IDs are not ported. The byte bound is checked on a wall too large
     // for the recipe, since the port's MAX_BYTES cannot be patched.
     const f = new Favorites(context);
-    for (const name of ['', ' ', '\n', 'a\x00b', 'x'.repeat(81), 'a​b', 17]) {
+    for (const name of ['', ' ', '\n', 'a\x00b', 'x'.repeat(81), 'a\u200bb', 17]) {
       for (const command of [{kind: 'animation.save', name, animation: {preset: 'cozy'}}, {kind: 'animation.rename', name: 'old', newName: name},
         {kind: 'animation.forget', name}]) {
         assert.equal(validFavoriteEdit(command), false, JSON.stringify(command));
