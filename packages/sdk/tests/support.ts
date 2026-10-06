@@ -5,9 +5,12 @@ import {test, type TestContext} from 'node:test';
 import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Sdk} from '../src/index.js';
 
-/** node:test's test(), whose returned promise the runner awaits itself. */
+/**
+ * node:test's test(), whose returned promise the runner awaits itself. The timeout makes a delivery that never comes
+ * fail the test instead of hanging the run, because the runner's child process never sees an empty event loop.
+ */
 export function it(name: string, body: (context: TestContext) => void | Promise<void>): void {
-  void test(name, body);
+  void test(name, {timeout: 10_000}, body);
 }
 
 const BASE = 'https://bunny.invalid/events/';
