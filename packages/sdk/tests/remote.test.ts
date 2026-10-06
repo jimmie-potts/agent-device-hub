@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
-import {REMOTE_PATH, REMOTE_SCHEMA, SdkError, type Overflow, type SyncChange} from '../src/index.js';
-import {SESSION_FAMILY, blob, checked, flush, it, session, turnEnded, until, type Session} from './support.js';
+import {REMOTE_PATH, REMOTE_SCHEMA, SdkError, type Overflow, type Reply, type SyncChange} from '../src/index.js';
+import {SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, type Session} from './support.js';
 import {startEdge, type Edge} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -180,4 +180,26 @@ it('a sync answer over 256 KiB is refused at the edge as too-large, and the copy
   assert.ok(edge.logs.some(record => record.route === 'sync' && record.code === 'too-large'), 'the edge logs it');
   const first = await consumer.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000});
   assert.equal(first.status === 'rejected' ? first.error.error.code : first.status, 'too-large', 'a first sync is refused the same way');
+}));
+
+it('a remote requester\'s deadlines run on its injected scheduler', () => withEdge({}, async edge => {
+  const pending: {delayMs: number; run: () => void}[] = [];
+  const scheduler = {after: (delayMs: number, run: () => void) => {
+    const entry = {delayMs, run};
+    pending.push(entry);
+    return () => { pending.splice(pending.indexOf(entry), 1); };
+  }};
+  const requester = await edge.connect('bunny/core', {scheduler});
+  const responder = await edge.connect('bunny/wall');
+  const answer = deferred<Reply>();
+  await responder.respond('bunny.cmd.mode.*', () => answer.promise);
+  try {
+    const result = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});
+    await until(() => pending.some(entry => entry.delayMs === 60_000), 'the deadline on the scheduler');
+    // The deadline fires when the scheduler says so, not after a minute.
+    for (const entry of [...pending]) if (entry.delayMs === 60_000) entry.run();
+    assert.equal((await result).status, 'uncertain');
+  } finally {
+    answer.resolve({status: 'accepted'});
+  }
 }));

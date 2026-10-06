@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
-  InProcessBus, RemoteEdge, connectRemote, type EdgeLogRecord, type ErrorScope, type RemoteParticipant, type Sdk,
+  InProcessBus, RemoteEdge, connectRemote, type EdgeLogRecord, type ErrorScope, type Participant, type RemoteParticipant, type Scheduler,
 } from '../src/index.js';
 import {checked, validator} from './support.js';
 
@@ -18,9 +18,9 @@ export type World = {
   /** Errors the bus and every remote participant reported. */
   errors: {error: unknown; scope: ErrorScope}[];
   /** A participant over the transport under test. */
-  connect(source: Source): Promise<Sdk>;
+  connect(source: Source): Promise<Participant>;
   /** A participant on the bus itself, whatever the transport. */
-  local(source: Source): Sdk;
+  local(source: Source): Participant;
   close(): Promise<void>;
 };
 
@@ -33,12 +33,12 @@ export type Transport = {
 
 export const inProcess: Transport = {
   name: 'in-process',
-  // Main's bus answers uncertain-result here; #880 makes it expired once it merges.
-  queuedCommandAtDeadline: 'uncertain-result',
+  // The bus knows the command never reached the handler: it takes it out of the queue at the deadline.
+  queuedCommandAtDeadline: 'expired',
   start: ({maxQueued} = {}) => {
     const errors: World['errors'] = [];
     const bus = new InProcessBus({onError: (error, scope) => { errors.push({error, scope}); }, ...(maxQueued === undefined ? {} : {maxQueued})});
-    const local = (source: Source): Sdk => checked(bus.connect(source));
+    const local = (source: Source): Participant => checked(bus.connect(source));
     return Promise.resolve({bus, errors, local, connect: source => Promise.resolve(local(source)), close: () => Promise.resolve()});
   },
 };
@@ -51,7 +51,7 @@ export type Edge = {
   logs: EdgeLogRecord[];
   errors: World['errors'];
   /** A remote participant, not wrapped by `checked`, for tests that send what the profile refuses. */
-  connect(source: Source, options?: {maxQueued?: number}): Promise<RemoteParticipant>;
+  connect(source: Source, options?: {maxQueued?: number; scheduler?: Scheduler}): Promise<RemoteParticipant>;
   close(): Promise<void>;
 };
 
@@ -74,6 +74,7 @@ export async function startEdge({maxQueued}: {maxQueued?: number} = {}): Promise
       const remote = await connectRemote({
         url, source, token: tokens.get(source) ?? '', onError: report, reconnectDelayMs: 20,
         ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
+        ...(options.scheduler === undefined ? {} : {scheduler: options.scheduler}),
       });
       opened.push(remote);
       return remote;

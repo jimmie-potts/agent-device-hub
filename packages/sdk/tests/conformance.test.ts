@@ -133,9 +133,6 @@ function suite(transport: Transport): void {
     try {
       await until(() => handled.length === 1, 'the first command');
       late = await requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 300});
-      // Main's bus runs its deadline on setTimeout and checks expiry with Date.now(), which can trail it by a
-      // millisecond; past that, the waiting command is expired for certain. #880 removes it at the deadline instead.
-      await delay(5);
     } finally {
       // Released before any check, so a failed check cannot leave the handler waiting at close.
       busy.resolve({status: 'accepted'});
@@ -212,6 +209,48 @@ function suite(transport: Transport): void {
     for (const {error} of world.errors) assert.ok(refused('capacity')(error));
     await until(() => seen.length === 4, 'the rest');
     assert.deepEqual(seen, ['s1@1', 'dropped 3', 's1@2', 's1@3']);
+  }));
+
+  it(name('a closed participant refuses every call with invalid-state'), () => using(transport, {}, async world => {
+    const participant = await world.connect('bunny/wall');
+    await participant.close();
+    const closed = refused('invalid-state');
+    await assert.rejects(participant.subscribe(`bunny.state.${FAMILY}.*`, () => {}), closed, 'subscribe');
+    await assert.rejects(participant.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1)), closed, 'publish');
+    await assert.rejects(participant.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000}), closed, 'request');
+    await assert.rejects(participant.respond('bunny.cmd.mode.*', () => ({status: 'accepted'})), closed, 'respond');
+    await assert.rejects(participant.sync([FAMILY], () => {}, {timeoutMs: 5000}), closed, 'sync');
+    await assert.rejects(participant.serveSync([FAMILY], () => ({revision: 0, states: []})), closed, 'serveSync');
+  }));
+
+  it(name('closing a participant cancels its first sync and withdraws the request waiting at the owner'), () => using(transport, {}, async world => {
+    const owner = await world.connect('bunny/core');
+    const other = await world.connect('bunny/second');
+    const consumer = await world.connect('bunny/wall');
+    const gate = deferred<Snapshot>();
+    const served: string[] = [];
+    await owner.serveSync([FAMILY], request => {
+      served.push(request.source);
+      return served.length === 1 ? gate.promise : {revision: 0, states: []};
+    });
+    let waiting;
+    try {
+      const busy = other.sync([FAMILY], () => {}, {timeoutMs: 10_000});
+      await until(() => served.length === 1, 'the first request');
+      // The consumer's request waits behind it in the owner's queue.
+      waiting = consumer.sync([FAMILY], () => {}, {timeoutMs: 10_000});
+      await delay(100);
+      await consumer.close();
+      const cancelled = await waiting;
+      assert.equal(cancelled.status === 'rejected' ? cancelled.error.error.code : cancelled.status, 'cancelled');
+      gate.resolve({revision: 0, states: []});
+      assert.equal((await busy).status, 'synced');
+    } finally {
+      gate.resolve({revision: 0, states: []});
+    }
+    // A later request from another participant shows what the owner served in between.
+    assert.equal((await other.sync([FAMILY], () => {}, {timeoutMs: 10_000})).status, 'synced');
+    assert.deepEqual(served, ['bunny/second', 'bunny/second'], 'the withdrawn request never reached the owner');
   }));
 
   it(name('malformed calls are refused with invalid-request'), () => using(transport, {}, async world => {
