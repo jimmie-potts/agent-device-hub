@@ -13,7 +13,7 @@ A run is the real bridge CLI from the checkout, `chompi-bridge run --simulate --
 | Bridge | actual | The CLI with its routing core, slot store, lights, profile watcher and feed client |
 | Control page | actual (test tool) | The loopback page and its harness API on the run's port |
 | Controller | simulated | `ChompiSimulator`, speaking HID protocol v1 to the bridge |
-| Desktop | simulated | `SimulatedDesktop` behind OS adapter interface version 3: Codex, Claude and another app |
+| Desktop | simulated | `SimulatedDesktop` behind OS adapter interface version 4: Codex, Claude, another app and a synthetic system volume |
 | Hub feed | simulated | `SyntheticHub`, serving the sessions snapshot 1.3 and change stream with a run-generated token |
 
 One loopback listener serves the page, its API (`/api/harness/...`) and the synthetic feed (`/api/monitor/v1/...`).
@@ -87,17 +87,20 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   carry their LED color and a name for it, for example "Slot 2, light idle". The run names each light by what its
   role can show (a slot state, Record's record color, the wheel's error flash, knob 4's task page), so a held Record
   reads "light record" even though the record and error colors are the same red, and knob 4's LED reads "page 2", or
-  "attention" while it alternates for a task on a hidden page. A key goes down while the mouse
-  button, Space or Enter is held, and comes up on release. **Latch keys** makes each activation toggle a key, for
+  "attention" while it alternates for a task on a hidden page. Black key 1 is the Attention key (#865): its light
+  reads "attention" while a task waits, "error" after a refused press and "off" otherwise. A key goes down while
+  the mouse button, Space or Enter is held, and comes up on release. **Latch keys** makes each activation toggle a key, for
   holds such as Record or the release gesture. Knobs 1-4, the big wheel and volume each turn left or right by their
   "Counts per turn" and click. The wheel starts at one card step and knob 4 at one page step (6 counts each in the
-  shipped profile), so one knob 4 turn shows the next or previous task page; its click stays unassigned. The slot
-  keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
+  shipped profile), so one knob 4 turn shows the next or previous task page; its click stays unassigned. The volume
+  knob starts at one volume key per turn, and its click toggles mute. The slot keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
   **Unplug controller** unplugs and replugs the simulator. All of these inject protocol input through
   `ChompiSimulator`, so the bridge sees real reports.
 - **Simulated desktop.** For each window: whether it is in front, the selected task, the composer's focus and text,
-  the last submitted text, and an open card with its stops and focused stop. Controls bring a window to the front,
-  type into or clear a composer, change its focus, open an approval or question card, close a card and select a task.
+  the last submitted text, and an open card with its stops and focused stop. It also shows the synthetic system
+  volume and mute state that the volume knob changes; no window receives volume keys. Controls bring a window to the
+  front, type into or clear a composer, change its focus, open an approval or question card, close a card and select
+  a task.
 - **Synthetic Hub.** The sessions with their slots. Controls set activity or attention, end a turn (an
   unacknowledged completion notice), add a Codex or Claude task, restart the event stream and save a profile with
   another idle color or with the shipped colors.
@@ -106,7 +109,7 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   connected, the feed is current, every seeded task holds a slot and the visible page's tasks have lit keys. The run
   also waits for that before the first step. If the run never gets ready, it records a failed readiness step with
   what it saw.
-- **Logs.** The desktop's key, link, card and dictation log, and the bridge's JSON log lines.
+- **Logs.** The desktop's key, link, card, dictation and system volume key log, and the bridge's JSON log lines.
 
 The page has no external requests. Its API accepts JSON from its own origin and host only, and every value is
 checked. [`tests/page.browser.mjs`](tests/page.browser.mjs) checks keyboard operation, focus kept across refreshes
@@ -124,10 +127,16 @@ and axe (WCAG 2.1 A and AA) at 1440 px and phone width.
 The catalog is in [`src/sim/scenarios.ts`](../src/sim/scenarios.ts). Each scenario is a seed plus steps, each step
 an action, an expectation within a time bound, or an observation that must hold for a while:
 `send-front-window`, `record-dictation`, `claude-question-wheel`, `codex-card-structure`, `reconnect-no-replay`,
-`profile-reload` and `task-pages`. `task-pages` seeds 18 tasks across two pages (#822): knob 4 pages only on a
-deliberate turn, a page-2 task opens with its key, a hidden page's attention shows on knob 4's LED without switching
-pages, a held key's release gesture acts on the slot it showed when pressed though the page changed, and paging sends
-no input and keeps the window in front. Tier 1 runs the same steps in memory on a manual clock:
+`profile-reload`, `task-pages`, `attention-key` and `volume-knob`. `task-pages` seeds 18 tasks across two pages
+(#822): knob 4 pages only on a deliberate turn, a page-2 task opens with its key, a hidden page's attention shows on
+knob 4's LED without switching pages, a held key's release gesture acts on the slot it showed when pressed though the
+page changed, and paging sends no input and keeps the window in front. `attention-key` (#865) uses the same 18 tasks:
+with nothing waiting the Attention key refuses with a red flash and no input; with a page-2 task and then a page-1
+task waiting, it opens the page-2 task first and shows page 2, a repeat press opens the page-1 task, and after the
+repeat window the earliest opens again; every Hub request stays a read and both tasks keep their attention.
+`volume-knob` (#865) turns and clicks the volume knob with Codex in front and a draft in its composer: the synthetic
+system volume steps and mutes, no client receives input, and while Record holds the chord the knob is ignored with
+a red volume LED and the chord stays exactly the dictation chord. Tier 1 runs the same steps in memory on a manual clock:
 
 ```bash
 npm run -s test:chompi-bridge:scenarios                    # all

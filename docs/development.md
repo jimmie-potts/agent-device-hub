@@ -1045,7 +1045,8 @@ exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
 Automation helper, the composer, Codex selected-thread, approval-card and
 card-button observations and the installed client versions. Its Win32 surface replaces `SendInput` and
-`ShellExecute` with throwing guards, so it types nothing and opens no link. It
+`ShellExecute` with throwing guards, so it types nothing and opens no link. It checks the volume key table and
+that malformed volume requests are refused before any attempt, without sending a volume key. It
 reads card buttons only; it never focuses or presses one.
 It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
@@ -1061,7 +1062,9 @@ refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
 token-file privacy), slot assignment, release and persistence across task pages (#822: the version 1 to 2
 file migration, interrupted writes, corrupt files and rollback), knob-4 paging, state lights and the page LED,
 each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
-answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), loss handling,
+answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), the
+Attention key and volume knob (#865: first-seen order across pages, repeat cycling, refusal, volume detents, mute and
+Record), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or
