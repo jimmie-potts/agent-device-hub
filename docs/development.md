@@ -906,12 +906,11 @@ interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
 The hub and setup suites refuse a `TMPDIR` inside any Git checkout and fail
 with `store-in-checkout`, so a task-scoped `.local/scratch` folder does not
-work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such as
-`~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
-`npm run test:setup`. Keep the `TMPDIR` path at most 48 bytes: a Hub test binds
-a Unix socket 59 bytes below it, and a socket path stops at 107 bytes, so a
-longer one fails with `listen EINVAL`. Keep the folder name short, such as
-`gh916t`.
+work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/` with a
+short name, such as `~/.cache/agent-device-hub/gh916t`, before `npm run test:hub`
+or `npm run test:setup`. Keep the `TMPDIR` path at most 48 bytes: a Hub test
+binds a Unix socket 59 bytes below it, and a socket path stops at 107 bytes, so
+a longer one fails with `listen EINVAL`.
 
 Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
 Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,
