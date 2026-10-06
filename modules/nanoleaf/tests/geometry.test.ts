@@ -1,14 +1,16 @@
 // Translated from codex-nanoleaf tests/test_connector_geometry.py: the connector graph from cached geometry. The wall
 // server's enrichment and its state are not ported (#844). Line pairing and map geometry recorded from Python follow.
 import assert from 'node:assert/strict';
+import {join} from 'node:path';
 import type {Json} from '../src/compat.js';
-import {pairLines} from '../src/configuration.js';
+import {loadConfig, pairLines} from '../src/configuration.js';
 import {projection} from '../src/devices.js';
 import {ValueError} from '../src/errors.js';
 import {connectorLayout, geometry, triangleGeometry, validatedConnectorGeometry, type GeometryConfig} from '../src/geometry.js';
+import {writeJson} from '../src/jsonfile.js';
 import {readLayout} from '../src/panels.js';
 import {lineId} from '../src/project-map.js';
-import {fixtureJson, suite, test} from './support.js';
+import {fixtureJson, suite, temporary, test} from './support.js';
 
 interface Point {
   panelId: number;
@@ -135,11 +137,12 @@ const RECORDED = (fixtureJson('recorded/rendering.json') as {geometry: RecordedG
 
 /**
  * Deep equality where numbers may differ in the last bits: Math.sin, Math.cos and Math.atan2 are not the C library's
- * functions Python calls, so rotated coordinates can differ by an ulp (PORTING.md, Known differences).
+ * functions Python calls, so rotated coordinates can differ by an ulp (PORTING.md, Known differences). A number may
+ * differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1; the largest difference recorded is 1.4e-14.
  */
 function assertClose(actual: unknown, expected: unknown, label: string): void {
   if (typeof expected === 'number' && typeof actual === 'number') {
-    assert.ok(Math.abs(actual - expected) <= 1e-9 * Math.max(1, Math.abs(expected)), `${label}: ${actual} is not ${expected}`);
+    assert.ok(Math.abs(actual - expected) <= 1e-12 * Math.max(1, Math.abs(expected)), `${label}: ${actual} is not ${expected}`);
   } else if (Array.isArray(expected) && Array.isArray(actual)) {
     assert.equal(actual.length, expected.length, label);
     expected.forEach((item: unknown, index) => assertClose(actual[index], item, `${label}[${index}]`));
@@ -152,16 +155,18 @@ function assertClose(actual: unknown, expected: unknown, label: string): void {
 }
 
 suite('geometry recorded from Python', () => {
-  test('Lines pair and order the same way in every orientation', () => {
+  test('Lines pair, order and take their positions the same way in every orientation', async context => {
     const raw = lines();
-    const groups = pairLines(raw);
-    const zones = new Map(raw.layout.positionData.map(point => [point.panelId, point]));
     for (const {orientation, groups: expected, positions} of RECORDED.pairLines) {
-      const pairs = pairLines(withOrientation(raw, orientation));
-      assert.deepEqual(pairs, expected, String(orientation));
-      assert.deepEqual(pairs.map(pair => ['x', 'y'].map(axis => pair.reduce((sum, id) => sum + Number(zones.get(id)?.[axis]), 0) / 2)), positions);
+      const reported = withOrientation(raw, orientation);
+      assert.deepEqual(pairLines(reported), expected, String(orientation));
+      // The port's own discovery, with no saved layout, pairs the Lines and places each at its zones' midpoint.
+      const directory = temporary(context);
+      writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fake'});
+      const config = await loadConfig(directory, 'wall', () => Promise.resolve({panelLayout: structuredClone(reported)}));
+      assert.deepEqual([config.line_groups, config.line_positions], [expected, positions], String(orientation));
     }
-    assert.equal(groups.length, 15);
+    assert.equal(RECORDED.pairLines.length, 6);
   });
 
   test('a zone just inside the pairing threshold pairs and one at or beyond it does not', () => {

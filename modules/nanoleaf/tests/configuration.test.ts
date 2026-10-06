@@ -1,14 +1,16 @@
-// Translated configuration loading cases: Line pairing from tests/test_bridge.py, DiscoveryTest from tests/test_panels.py
-// and following a registry change from tests/test_device_worker.py. The DeviceTest loading cases are in devices.test.ts.
-// Discovery recorded from Python follows.
+// Translated configuration loading cases: Line pairing from tests/test_bridge.py, DiscoveryTest from tests/test_panels.py,
+// and following a registry change, the untargeted device and the per-device layout save from tests/test_device_worker.py.
+// The DeviceTest loading cases are in devices.test.ts. Replies and discovery recorded from Python follow.
 import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {followRegistry, loadConfig, pairLines} from '../src/configuration.js';
-import {writeJson} from '../src/jsonfile.js';
+import {layoutDevices, linesEntry, saveDeviceLayout, saveLayout} from '../src/devices.js';
+import {readJson, writeJson} from '../src/jsonfile.js';
+import {readLayout} from '../src/panels.js';
 import type {LightAddress, LightRequest} from '../src/transport.js';
-import {fixtureJson, suite, temporary, test} from './support.js';
+import {fixtureJson, refuse, suite, temporary, test} from './support.js';
 
 interface Reported {
   layout: {positionData: {panelId: number; shapeType: number}[]};
@@ -68,6 +70,49 @@ suite('DiscoveryTest', () => {
     const broken = (): Promise<unknown> => Promise.resolve({panelLayout: panelLayout(points => Object.assign(points[0] ?? {}, {shapeType: 17}))});
     await assert.rejects(loadConfig(directory, 'panels', broken), {name: 'ValueError'});
     assert.deepEqual(readFileSync(join(directory, 'layout.json')), disk);
+  });
+});
+
+const [LINES_IP, PANELS_IP] = ['192.0.2.1', '192.0.2.2'];
+type Points = {x: number; y: number}[];
+
+/** test_device_worker.triangles: the first `count` reported triangles by position, read as a Panels layout entry. */
+function triangles(count: number): ReturnType<typeof readLayout> {
+  const reported = structuredClone(NL22) as unknown as {layout: {positionData: Points}};
+  reported.layout.positionData = [...reported.layout.positionData].sort((a, b) => (a.x !== b.x ? a.x - b.x : a.y - b.y)).slice(0, count);
+  return readLayout(reported);
+}
+
+/** DeviceWorkerTest.setUp: registered Lines and Panels, in `order`, with both saved layouts. */
+function deviceWorker(context: TestContext, order: readonly ('wall' | 'panels')[] = ['wall', 'panels']): string {
+  const directory = temporary(context);
+  const entries = {wall: {kind: 'lines', ip: LINES_IP, token_ref: 'token'}, panels: {kind: 'panels', ip: PANELS_IP, token_ref: 'panelsToken'}};
+  writeJson(join(directory, 'config.json'), {ip: LINES_IP, token: 'fakeLines', panelsToken: 'fakePanels',
+    devices: Object.fromEntries(order.map(name => [name, entries[name]]))});
+  const lines = linesEntry(LINE_GROUPS, Array.from({length: 15}, (_, i) => [i * 10, 0]));
+  saveLayout(join(directory, 'layout.json'), new Map([['wall', lines], ['panels', triangles(18)]]));
+  return directory;
+}
+
+suite('UntargetedOrderTest', () => {
+  test('test_untargeted_calls_address_lines_whatever_the_registry_order', async context => {
+    // Partly: the untargeted mode command through the command line moves with the worker slice.
+    const directory = deviceWorker(context, ['panels', 'wall']);
+    assert.equal((await loadConfig(directory, undefined, refuse)).device, 'wall');
+  });
+});
+
+suite('MirroredTest', () => {
+  test('test_layout_save_keeps_the_other_devices_entry', context => {
+    const path = join(deviceWorker(context), 'layout.json');
+    const stale = layoutDevices(readJson(path));
+    stale.delete('panels');
+    const lines = stale.get('wall');
+    assert.ok(lines !== undefined);
+    saveDeviceLayout(path, 'wall', lines);
+    const saved = layoutDevices(readJson(path));
+    assert.deepEqual([...saved.keys()].sort(), ['panels', 'wall']);
+    assert.equal(saved.get('panels')?.elements.length, 18);
   });
 });
 

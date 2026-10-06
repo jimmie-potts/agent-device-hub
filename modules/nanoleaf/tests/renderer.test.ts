@@ -5,8 +5,6 @@
 // (PORTING.md lists every case and where the rest went).
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {writeFileSync} from 'node:fs';
-import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {pyJson, pyRound} from '../src/compat.js';
 import {withState} from '../src/database.js';
@@ -442,14 +440,13 @@ const DEFAULTS: Record<Role, string> = {...DEFAULT_PALETTE};
 suite('PaletteStateTest', () => {
   // AC11: an upgraded database keeps its preferences and starts with the new defaults.
   test('test_upgrade_keeps_preferences_and_adopts_defaults', context => {
-    // The wall view's palette and mode are read from the saved state; the scene file is only compared.
+    // Partly: the wall view moves with #844, so its palette and mode are read from the saved state, and its check that
+    // opening the view leaves the scene file unchanged is not translated. The map edits are saved as their rows.
     const wall = new Wall(context);
     wall.assign([2], {project: 'a'});
     write(wall.directory, db => execute(db, "UPDATE projects SET color='#113355' WHERE id='a'"));
     wall.settings({style: 'project', coverage: 'status', rotation: 90});
     setMode(wall.directory, 'quiet');
-    const scene = join(wall.directory, 'scene-state.json');
-    writeFileSync(scene, JSON.stringify({version: 1, scene: {name: 'Beach Waves', brightness: 43}, owned: false}));
     // The state an earlier version left behind.
     write(wall.directory, db => db.exec('DROP TABLE palette'));
     const tables = (): unknown[] => ['projects', 'line_prefs', 'map_settings'].map(table => query(wall.directory, `SELECT * FROM ${table}`));

@@ -258,11 +258,16 @@ export const evictTask = (directory: string, device: string, payload: unknown): 
 
 /** test_bridge.decode: each panel's frames ([r, g, b, w, transition]) from a display payload's animData. */
 export function decode(payload: {write: {animData: string}}): Map<number, number[][]> {
-  const values = payload.write.animData.split(/\s+/).filter(text => text !== '').map(Number);
+  // Python's int() of each token: anything but an optionally signed run of decimal digits fails.
+  const values = payload.write.animData.split(/\s+/).filter(text => text !== '').map(token => {
+    if (!/^[+-]?[0-9]+$/.test(token)) throw new Error(`animData token ${JSON.stringify(token)} is not an integer.`);
+    return Number(token);
+  });
   const panels = new Map<number, number[][]>();
   let offset = 1;
   for (let count = values[0] ?? 0; count > 0; count -= 1) {
-    const [panel = -1, frames = 0] = values.slice(offset, offset + 2);
+    const [panel, frames] = values.slice(offset, offset + 2);
+    if (panel === undefined || frames === undefined) throw new Error('Malformed animData.');
     offset += 2;
     panels.set(panel, Array.from({length: frames}, (_, i) => values.slice(offset + i * 5, offset + i * 5 + 5)));
     offset += frames * 5;
