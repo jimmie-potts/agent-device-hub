@@ -264,8 +264,10 @@ module leaves nothing behind:
 3. Its subscriptions, responders, sync copies and sync owners close as their
    own `close()` does. A copy withdraws its outstanding sync request, which
    leaves the owner's queue if it still waits there, and a first sync still
-   under way resolves as `rejected` with `cancelled`. An owner refuses its
-   waiting requests as `unavailable`.
+   under way resolves as `rejected` with `cancelled`. A copy closed while it
+   is still subscribing to its families makes no further subscription, and the
+   participant refuses any. An owner refuses its waiting requests as
+   `unavailable`.
 
 It resolves when the participant's running handlers have finished. Because its
 own requests settle first, a handler that awaits another participant's reply can

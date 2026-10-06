@@ -157,7 +157,7 @@ After a sync, the copy SHALL apply live messages in order, with the same buffer 
 
 A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and a served answer to a request sent before the latest overflow SHALL NOT be applied; a refusal still ends the first sync or the copy. Each such overflow SHALL be reported to the bus's `onSyncRestart` with the copy's source and `sync <families>` as its pattern. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
 
-`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
+`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A copy closed while it is still subscribing to its families SHALL make no further subscription and SHALL close the one it was making. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
 
 #### Scenario: Current state, then live messages
 - **WHEN** an owner holds two sessions and a consumer syncs, and the owner later updates one
@@ -283,6 +283,10 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 - **WHEN** the owner is busy past one request's deadline and then answers a request whose own deadline passed while it waited
 - **THEN** each request resolves as `unavailable` at its deadline, a late answer changes nothing, and the provider never receives the expired request
 
+#### Scenario: A copy closed while it subscribes
+- **WHEN** a copy of three families is closed while its transport is still making the first subscription
+- **THEN** it resolves as `rejected` with `cancelled`, asks for no other family and closes the subscription it was making
+
 #### Scenario: A sync request still queued at its deadline
 - **WHEN** a sync request waits behind another in an owner's queue of one until its deadline passes
 - **THEN** it resolves as `rejected` with the retryable `unavailable`, naming its `requestId` and trace ID, the next request queues in the room it left instead of being refused with `capacity`, and the provider never receives it
@@ -297,7 +301,7 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 
 ### Requirement: Participant close
 
-`connect` SHALL return a participant whose `close` closes everything that participant opened. It SHALL first refuse every later call on the participant with `invalid-state`. It SHALL then settle each of the participant's requests that is still waiting for a result: a request whose command still waits in a responder's queue SHALL have that command taken out and resolve as `rejected` with `cancelled`, and a request whose command the responder's handler has SHALL resolve as `uncertain` with `uncertain-result`. Their deadlines SHALL be cancelled. It SHALL then close each subscription, responder, sync copy and sync owner the participant opened, as their own close does; a copy SHALL withdraw its outstanding sync request and cancel its deadline. It SHALL resolve when the participant's running handlers have finished, and SHALL NOT wait for another participant's handler. Closing again SHALL return the same promise.
+`connect` SHALL return a participant whose `close` closes everything that participant opened. It SHALL first refuse every later call on the participant with `invalid-state`. It SHALL then settle each of the participant's requests that is still waiting for a result: a request whose command still waits in a responder's queue SHALL have that command taken out and resolve as `rejected` with `cancelled`, and a request whose command the responder's handler has SHALL resolve as `uncertain` with `uncertain-result`. Their deadlines SHALL be cancelled. It SHALL then close each subscription, responder, sync copy and sync owner the participant opened, as their own close does; a copy SHALL withdraw its outstanding sync request and cancel its deadline, and the participant SHALL refuse any subscription a copy still asks for. It SHALL resolve when the participant's running handlers have finished, and SHALL NOT wait for another participant's handler. Closing again SHALL return the same promise.
 
 #### Scenario: Subscriptions and responders close
 - **WHEN** a participant with subscriptions and a responder closes
@@ -310,6 +314,10 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 #### Scenario: Sync copies close and their requests are withdrawn
 - **WHEN** a participant closes with a synced copy, a copy whose first sync is being served and a copy whose first sync waits in the owner's queue
 - **THEN** both first syncs resolve as `rejected` with `cancelled`, no sync deadline remains on the scheduler, the synced copy follows nothing more, and the owner never receives the waiting request
+
+#### Scenario: A participant closed while its sync subscribes
+- **WHEN** a participant closes right after it begins a sync of four families, before the sync resolves
+- **THEN** the sync resolves as `rejected` with `cancelled`, and a burst on every family queues nothing for the closed participant
 
 #### Scenario: Sync owners close
 - **WHEN** a participant that serves sync closes while one request is being served and another waits

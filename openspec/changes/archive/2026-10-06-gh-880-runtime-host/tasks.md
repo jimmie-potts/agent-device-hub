@@ -38,3 +38,13 @@
 - [x] 5.9 Amend ADR 0012 for `expired`, make the two-handler deadlock explicit in `bunny-sdk`, and send a later command in the at-expiry test.
 - [x] 5.10 Add `apps/runtime/scripts/measure-memory.mjs` and record the zero-module baseline for #123.
 - [x] 5.11 Keep this change's deltas identical to the synced `bunny-runtime` and `bunny-sdk` specs; `npm run openspec -- validate --specs --strict`, `npm run check:workflow` and `npm run test:workflow` exit zero.
+
+## 6. Review round 3 (PR #899)
+
+- [x] 6.1 Write failing tests: 2 SDK tests for a copy closed while it subscribes, and 5 runtime tests for a sync begun in a failed start, rolling drop windows, Host letter case, refusal codes in the process's `runtime.failed` record and a signal while the runtime loads.
+- [x] 6.2 Stop a copy's subscribing once it closes, and refuse a closed participant's sync subscriptions. Reverting both, or the copy's check alone, fails 2 SDK tests and 1 runtime test; the transport's refusal alone is defense in depth, which the fixed copy never reaches.
+- [x] 6.3 Give runtime refusals a stable `error.code` in a `RuntimeError`; dropping the link code fails the journal test.
+- [x] 6.4 Load the runtime through a launcher that catches signals first and yields one loop turn after loading; without the handlers or the loop turn, the loading-signal test fails.
+- [x] 6.5 Compare Host without letter case, and roll dropped-delivery windows; reverting either fails its test.
+- [x] 6.6 Make design.md say 13 MiB, describe the launcher and the codes, and keep this change's deltas identical to the synced specs.
+

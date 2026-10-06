@@ -28,9 +28,13 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 
 Malformed arguments exit with status 2 and a usage line. Once the modules have
 started, the process writes one line to stdout, `{"event":"runtime.ready","url":...}`.
-SIGTERM or SIGINT stops every module and exits 0. A signal that arrives while
-the modules start is remembered: once their starts settle, the runtime stops
-them all and exits 0, without a ready line.
+SIGTERM or SIGINT stops every module and exits 0. The entry point imports only
+a small launcher that catches both signals before the rest of the runtime
+loads. A signal that arrives while it loads exits 0 before anything is created.
+One that arrives while the modules start is remembered: once their starts
+settle, the runtime stops them all and exits 0, without a ready line. Only a
+signal in Node's own startup, before the entry point runs (about the first
+20 ms), takes Node's default action.
 
 ## Health
 
@@ -45,8 +49,8 @@ with its `limitMs`. `memory` reports the whole process from
 `process.memoryUsage()`.
 
 A request must name the listener as its host (`127.0.0.1:<port>` or
-`localhost:<port>`) and carry no `Origin` and no `Sec-Fetch-Site` other than
-`none`, as the Hub and local controllers require, so a page on a rebinding name
+`localhost:<port>`, in any letter case, with the exact port) and carry no
+`Origin` and no `Sec-Fetch-Site` other than `none`, as the Hub and local controllers require, so a page on a rebinding name
 cannot read module state. Any other request answers 403 with the shared error
 body and `forbidden`. Every other route answers 404 with `not-found`.
 
@@ -84,7 +88,23 @@ therefore stays with that module; it never fails the module that published the
 message, nor the runtime's stop.
 
 An error that escapes to the process from code outside every module is the
-runtime's own failure: it writes a `runtime.failed` record and exits 1.
+runtime's own failure: it writes a `runtime.failed` record and exits 1. So does
+a failed start. A refusal the runtime makes itself names its reason in
+`error.code`, so the journal says why a restart keeps failing:
+
+| `error.code` | Refusal |
+| --- | --- |
+| `state-dir-relative` | The state directory is not an absolute path. |
+| `state-dir-mount` | It is `/mnt` or under it. |
+| `state-dir-checkout` | It is inside a Git checkout. |
+| `state-dir-link` | A link, even a dangling one, is anywhere along it. |
+| `state-dir-not-directory` | It, or a part of it, is a file. |
+| `state-dir-not-private` | Others can open it. |
+| `posix-host-required` | The host has no POSIX user IDs. |
+| `module-db-not-private` | A module's SQLite file is not a private file with one link. |
+| `port-invalid` | The port is not an integer from 0 to 65535. |
+
+A Node error keeps its own code, such as `EADDRINUSE` for a health port in use.
 
 ## Event-loop lag check
 
@@ -125,8 +145,9 @@ These are not yet diagnostic-contract records. They lack `schema_version`,
 catalog does not register the runtime's service, scopes, events or attributes.
 
 A subscription whose full queue drops deliveries gets one
-`runtime.delivery.dropped` warning at once, then at most one more per minute
-with the count of later drops, so a burst cannot flood the journal.
+`runtime.delivery.dropped` warning at once. While drops go on, one more
+warning a minute carries their count, so a storm cannot flood the journal. A
+minute without drops ends that, and the next drop is logged at once again.
 
 ## Memory
 
