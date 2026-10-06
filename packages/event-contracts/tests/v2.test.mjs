@@ -118,3 +118,13 @@ test('the error block lists exactly the registry codes and retryable flags, so r
   assert.deepEqual(schemas.blocks.$defs.errorCode.enum, Object.keys(errorCodes));
   assert.deepEqual(error.allOf[0].if.properties.code.enum, Object.entries(errorCodes).filter(([, entry]) => entry.retryable).map(([code]) => code));
 });
+
+test('a failed oneOf names the outermost oneOf, not one nested in a branch', () => {
+  const v = new MessageValidator();
+  v.register('https://bunny.invalid/events/nested/1.0', {oneOf: [
+    {type: 'object', required: ['a'], properties: {a: {oneOf: [{type: 'integer'}, {type: 'boolean'}]}}},
+    {type: 'object', required: ['b'], additionalProperties: false, properties: {b: {type: 'string'}}},
+  ]});
+  const message = {...structuredClone(fixtures.valid.state), dataschema: 'https://bunny.invalid/events/nested/1.0', data: {a: 'text'}};
+  assert.equal(v.validate(message).error.detail, 'payload / oneOf');
+});

@@ -85,7 +85,8 @@ const realInstant = (value: string): boolean => {
 // Names the failing location, for example `envelope /traceparent pattern` or `payload / required expiresat`. When a
 // oneOf failed, its own location is named, because the first error then comes from an arbitrary branch.
 const describe = (scope: string, errors: ErrorObject[] | null | undefined): string => {
-  const first = errors?.find(error => error.keyword === 'oneOf') ?? errors?.[0];
+  // Ajv lists an outer oneOf after the errors of its branches, so the last oneOf is the outermost.
+  const first = [...(errors ?? [])].reverse().find(error => error.keyword === 'oneOf') ?? errors?.[0];
   if (first === undefined) return scope;
   const missing = first.keyword === 'required' ? ` ${String((first.params as {missingProperty?: unknown}).missingProperty)}` : '';
   const extra = first.keyword === 'additionalProperties' ? ` ${String((first.params as {additionalProperty?: unknown}).additionalProperty)}` : '';
@@ -128,7 +129,7 @@ export class MessageValidator {
   validate<T = Record<string, unknown>>(input: unknown, options: {nowMs?: number} = {}): Validation<T> {
     let encoded: string;
     try {
-      if (!plain(input)) return fail('invalid-message', `not plain JSON data within ${MAX_DEPTH} levels`);
+      if (!plain(input)) return fail('invalid-message', `not plain JSON data, or nested more than ${MAX_DEPTH} levels`);
       encoded = JSON.stringify(input);
     } catch {
       return fail('invalid-message', 'not serializable');

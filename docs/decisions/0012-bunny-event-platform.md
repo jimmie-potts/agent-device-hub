@@ -128,7 +128,9 @@ Existing formats move in one offline cutover:
 - A consumer syncs from the owner when it connects or restarts. The owner sends
   its current state at a revision. Live messages that arrive meanwhile wait in
   a bounded buffer, and those above the revision apply in order afterwards. An
-  overflow restarts the sync instead of combining partial state.
+  overflow restarts the sync instead of combining partial state. An owner that
+  cannot serve a sync refuses it with the shared error body, returned by the SDK
+  call that sent the request, and sends no `sync.completed`.
 - A consumer then follows live events. It drops duplicates and stale revisions,
   and ignores commands and sync requests past their expiry.
 - This delivery has no replay. Here, replay means redelivering past
@@ -180,9 +182,10 @@ State events and telemetry are not tracked.
   in its owner's store, and the message carries its ID, size and hash.
 - Event types are named `org.bunny.<entity>.<past-tense verb>`. Command types
   are named `org.bunny.<entity>.<verb>.requested`. Replies, outcomes and
-  removals end in `.replied`, `.completed` and `.removed`, and these suffixes
-  belong to those kinds alone. Sync uses `org.bunny.sync.requested` and
-  `org.bunny.sync.completed`, which no other kind may use.
+  removals end in `.replied`, `.completed` and `.removed`; state and occurrence
+  events may not use those suffixes. Sync uses `org.bunny.sync.requested` and
+  `org.bunny.sync.completed`, and the whole `org.bunny.sync.` namespace belongs
+  to sync messages.
 - SDK routing keys are named `bunny.<state|event|cmd>.<family>.<id>`:
   lowercase, shallow, with hyphens inside tokens. "Routing key" means the SDK's
   key; "event subject" means the CloudEvents `subject` attribute.

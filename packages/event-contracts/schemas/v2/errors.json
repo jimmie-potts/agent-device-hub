@@ -1,7 +1,7 @@
 {
   "description": "The profile 2.0 error code registry (ADR 0012). Today's synonyms merge into one code each; 1.x codes are not mapped. blocks.schema.json lists the same codes and retryable flags, and a test keeps the two equal.",
   "codes": {
-    "invalid-request": {"retryable": false, "meaning": "A request is well formed but its values are not acceptable to the owner, for example an unknown option."},
+    "invalid-request": {"retryable": false, "meaning": "A request that is not a profile message, such as an HTTP or MCP body, is malformed, or its values are not acceptable to the owner."},
     "invalid-message": {"retryable": false, "meaning": "A message fails the profile or its payload schema, including a command whose payload fails its schema."},
     "too-large": {"retryable": false, "meaning": "A message exceeds the 256 KiB cap."},
     "unsupported-version": {"retryable": false, "meaning": "The schema family is known but not at this version."},
