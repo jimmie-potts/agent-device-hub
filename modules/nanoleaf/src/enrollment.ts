@@ -121,36 +121,64 @@ export function deviceId(device: string): string {
   return device;
 }
 
-/** Hold an exclusive SQLite lock on `path` while `body` runs. Inside one process a waiting lock blocks the event loop. */
-async function exclusive<T>(path: string, body: () => Promise<T>, timeout = 5): Promise<T> {
-  const lock = new DatabaseSync(path, {timeout: timeout * 1000});
-  try {
-    lock.exec('BEGIN EXCLUSIVE');
-    return await body();
-  } finally {
-    if (lock.isTransaction) lock.exec('ROLLBACK');
-    lock.close();
-  }
-}
-
 const SQLITE_BUSY = 5;
-const isBusy = (error: unknown): boolean => error instanceof Error && 'errcode' in error && error.errcode === SQLITE_BUSY;
+const isBusy = (error: unknown): error is Error => error instanceof Error && 'errcode' in error && error.errcode === SQLITE_BUSY;
+/** Seconds a registry operation waits for another to finish, as Python's sqlite3 timeout=5 did. */
+export const REGISTRY_WAIT_SECONDS = 5;
 
-/** Hold the device's worker lock, so no instance for it runs; null if one is still running after `seconds`. */
-export async function workerLock(directory: string, device: string, seconds = 0, sleep: (seconds: number) => Promise<void> = pause): Promise<DatabaseSync | null> {
+/**
+ * Take an exclusive SQLite lock on `path` without blocking the event loop: a busy lock is retried every 0.1 seconds
+ * until `seconds` pass. Returns the lock, or the last busy error.
+ */
+async function takeLock(path: string, seconds: number, sleep: (seconds: number) => Promise<void>): Promise<DatabaseSync | Error> {
   const deadline = performance.now() + seconds * 1000;
   for (;;) {
-    const lock = new DatabaseSync(join(directory, lockFile(device)), {timeout: 0});
+    const lock = new DatabaseSync(path, {timeout: 0});
     try {
       lock.exec('BEGIN EXCLUSIVE');
       return lock;
     } catch (error) {
       lock.close();
       if (!isBusy(error)) throw error;
+      if (performance.now() >= deadline) return error;
     }
-    if (performance.now() >= deadline) return null;
     await sleep(0.1);
   }
+}
+
+// Registry operations in this process, by lock path: each starts after the previous one settles, so they take turns
+// instead of finding the lock busy. The SQLite lock still excludes other processes.
+const registryTurns = new Map<string, Promise<unknown>>();
+
+function inTurn<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = registryTurns.get(key) ?? Promise.resolve();
+  const result = previous.then(task, task);
+  const settled = result.then(() => undefined, () => undefined);
+  registryTurns.set(key, settled);
+  void settled.then(() => {
+    if (registryTurns.get(key) === settled) registryTurns.delete(key);
+  });
+  return result;
+}
+
+/** Hold the registry's exclusive lock on `path` while `body` runs; a busy lock fails after REGISTRY_WAIT_SECONDS. */
+function exclusive<T>(path: string, body: () => Promise<T>): Promise<T> {
+  return inTurn(path, async () => {
+    const lock = await takeLock(path, REGISTRY_WAIT_SECONDS, pause);
+    if (lock instanceof Error) throw lock;
+    try {
+      return await body();
+    } finally {
+      if (lock.isTransaction) lock.exec('ROLLBACK');
+      lock.close();
+    }
+  });
+}
+
+/** Hold the device's worker lock, so no instance for it runs; null if one is still running after `seconds`. */
+export async function workerLock(directory: string, device: string, seconds = 0, sleep: (seconds: number) => Promise<void> = pause): Promise<DatabaseSync | null> {
+  const lock = await takeLock(join(directory, lockFile(device)), seconds, sleep);
+  return lock instanceof Error ? null : lock;
 }
 
 async function pause(seconds: number): Promise<void> {

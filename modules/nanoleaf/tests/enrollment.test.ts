@@ -418,6 +418,66 @@ suite('RemoveTest', () => {
   });
 });
 
+/** A promise and the function that settles it. */
+function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void} {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>(settle => { resolve = settle; });
+  return {promise, resolve};
+}
+
+/** Whether `promise` settled within one turn of the timers. */
+async function settledSoon(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  promise.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  return settled;
+}
+
+suite('registry lock', () => {
+  // Not in the Python suite: the CLI ran each operation in its own process. In one process, a waiting operation must
+  // leave the event loop running and take its turn when the operation holding the lock finishes.
+  test('a second operation waits without blocking timers and proceeds after the first', async context => {
+    const e = new Enrolling(context);
+    const reading = deferred<undefined>();
+    const answer = deferred<unknown>();
+    const slow = (address: {ip: string; token: string}, method: string, endpoint = ''): Promise<unknown> => {
+      reading.resolve(undefined);
+      return answer.promise.then(() => e.fake.request(address, method, endpoint));
+    };
+    const finished: string[] = [];
+    const first = e.enroll({request: slow}).then(result => { finished.push('enroll'); return result; });
+    await reading.promise; // The enrollment holds the registry lock across its device read.
+    const second = check(e.directory, 'other', OTHER_IP).then(() => { finished.push('check'); });
+    const started = performance.now();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(performance.now() - started < 1000, 'a timer fires while the second operation waits');
+    assert.equal(await settledSoon(second), false);
+    answer.resolve(undefined);
+    assert.equal((await first).device, 'panels');
+    await second;
+    assert.deepEqual(finished, ['enroll', 'check']);
+  });
+
+  test('a lock held by another process is waited for without blocking timers', async context => {
+    const e = new Enrolling(context);
+    const holder = new DatabaseSync(join(e.directory, 'registry-lock.sqlite'), {timeout: 0});
+    holder.exec('BEGIN EXCLUSIVE');
+    let done = false;
+    const waiting = check(e.directory, 'other', OTHER_IP).then(() => { done = true; });
+    try {
+      const started = performance.now();
+      await new Promise(resolve => setTimeout(resolve, 300));
+      assert.ok(performance.now() - started < 1500, 'a timer fires while the operation waits');
+      assert.equal(done, false);
+    } finally {
+      holder.exec('ROLLBACK');
+      holder.close();
+    }
+    await waiting;
+    assert.equal(done, true);
+  });
+});
+
 /** AddressTest.setUp: enrolled Panels in Quiet with a reservation, a placed task and a saved scene. */
 async function addressed(context: TestContext): Promise<Enrolling> {
   const e = await enrolled(context);
