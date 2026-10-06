@@ -38,6 +38,14 @@ Until the cutover, a component may extend its released 1.x contract
 additively. This includes the owner's CHOMPI work. It adds no new message
 format, error shape or new path that polls the Hub for state.
 
+The platform is a rebuild, not an in-place evolution of the Hub:
+- `apps/runtime` starts as a new skeleton, built test-first, and the core runs
+  with zero modules.
+- Proven code moves in with its tests rather than being rewritten: Pixoo's
+  packages are copied as a staged snapshot, and Nanoleaf is ported from Python
+  with its behavior tests. Staged code keeps its baseline until its module
+  story converts it.
+
 Existing formats move in one offline cutover:
 - Each contract gets a 2.0 version that follows these conventions.
 - The new runtime and its modules are built and tested in disposable runs with
@@ -72,7 +80,8 @@ Existing formats move in one offline cutover:
   timeouts stop only that module, which shows as unhealthy. A blocked event loop
   or memory exhaustion affects the whole process, so the service manager
   restarts the runtime.
-- Everything is TypeScript. Nanoleaf is ported from Python.
+- Everything is TypeScript. Nanoleaf is ported from Python, and the Python
+  contract mirrors retire with it.
 
 ### Message kinds
 
@@ -82,14 +91,17 @@ Existing formats move in one offline cutover:
 - **Removal events** say an entity is gone, for example an expired session, a
   retired subtree or a deleted record, so a consumer never keeps a stale copy.
 - **Occurrence events** say what happened, such as `attention.raised`,
-  `attention.cleared`, `turn.ended` or a controller outcome. They matter even
-  when the state later looks the same.
-- **Commands** are live-only requests to one owner on its command subject. They
-  carry an expiry, are never stored and never replay after a restart.
+  `attention.cleared` or `turn.ended`. They matter even when the state later
+  looks the same.
+- **Commands** are live-only requests addressed to the one owner of what they
+  change. They carry an expiry, are never stored and never replay after a
+  restart.
 - **Replies** answer a command immediately with `accepted` or with a rejection
   in the shared error body.
-- **Outcomes** are occurrence events that complete a command: `succeeded`,
-  `failed` or `uncertain`, with evidence `transmitted` or `observed`.
+- **Outcomes** complete a command: `succeeded`, `failed` or `uncertain`, with
+  evidence `transmitted`, `observed` or `none`. `none` means nothing reached the
+  device, for example a failure before sending; a succeeded outcome always has
+  `transmitted` or `observed` evidence, and a failed one carries an error.
 - **Sync** messages bring a consumer up to date: a sync request to an owner,
   answered with the owner's current state at a revision and then
   `sync.completed`. A sync replaces the consumer's full membership, so entities
@@ -118,7 +130,7 @@ Existing formats move in one offline cutover:
   a bounded buffer, and those above the revision apply in order afterwards. An
   overflow restarts the sync instead of combining partial state.
 - A consumer then follows live events. It drops duplicates and stale revisions,
-  and ignores commands or effects past their expiry.
+  and ignores commands and sync requests past their expiry.
 - This delivery has no replay. Here, replay means redelivering past
   occurrences or effects to views or devices. That rules out:
   - rebuilding views from the log;
@@ -158,23 +170,28 @@ State events and telemetry are not tracked.
 ### Envelope and conventions
 
 - Every message is CloudEvents 1.0 structured JSON under B.U.N.N.Y. profile 2.0.
-  It adds `kind` (the message kind), `subject` (the event subject),
-  `traceparent` and, for commands and sync requests only, `expiresat` to the
-  profile 1.0 attributes.
-- Messages are capped at 256 KiB, enforced by the SDK and the validators.
-  Larger content stays in its owner's store, and the message carries its ID,
-  size and hash.
+  Its attributes are `specversion`, `bunnyprofile`, `id`, `source`, `type`,
+  `subject` (the event subject), `time`, `kind` (the message kind),
+  `datacontenttype`, `dataschema` and `traceparent`, with optional
+  `tracestate`. Commands and sync requests also carry `expiresat`, and no other
+  kind may. Profile 1.0's `deliveryclass` is gone: `kind` replaces it.
+- Messages are capped at 256 KiB. The validators enforce the cap at remote
+  edges and in tests; in-process messages pass as objects. Larger content stays
+  in its owner's store, and the message carries its ID, size and hash.
 - Event types are named `org.bunny.<entity>.<past-tense verb>`. Command types
   are named `org.bunny.<entity>.<verb>.requested`. Replies, outcomes and
-  removals end in `.replied`, `.completed` and `.removed`, and a sync ends with
-  `org.bunny.sync.completed`.
+  removals end in `.replied`, `.completed` and `.removed`, and these suffixes
+  belong to those kinds alone. Sync uses `org.bunny.sync.requested` and
+  `org.bunny.sync.completed`, which no other kind may use.
 - SDK routing keys are named `bunny.<state|event|cmd>.<family>.<id>`:
   lowercase, shallow, with hyphens inside tokens. "Routing key" means the SDK's
   key; "event subject" means the CloudEvents `subject` attribute.
 - One error body serves HTTP responses, MCP tool results, command replies and
   validators:
   `{"error": {"code", "retryable", "requestId", "traceId", "detail"}}`.
-  - Codes are kebab-case and come from one registry in the contracts package.
+  - Codes are kebab-case and come from one registry in the contracts package,
+    which also fixes each code's `retryable`. Validators refuse any other code
+    or flag.
   - `detail` is optional; `requestId` and `traceId` appear when known.
   - MCP protocol errors keep the MCP specification.
 - Each document carries one schema identifier, `<family>/<major>.<minor>`:
@@ -192,6 +209,11 @@ State events and telemetry are not tracked.
   keep OpenTelemetry field names.
 - Envelope `time` is RFC 3339 UTC with milliseconds. Payload instants are
   integer `<name>AtMs`.
+- Payloads share building blocks from the contracts package: identifiers,
+  instants, revisions, the `{epoch, sequence}` ticket, ordering that is either
+  unknown or names its authority, epoch and sequence, tagged unknown values
+  (`{"status": "unknown"}`), kebab-case enum values, entity references and the
+  error body.
 
 ### Observability
 
@@ -250,6 +272,11 @@ These alternatives were rejected:
 - **One shared database with module-owned tables.** It would make cross-module
   updates atomic, but modules would lose their own files. The per-module outbox
   gives the needed guarantee: no outcome is lost.
+- **Evolving the installed Hub in place.** Every step would have to keep 1.x
+  contracts, polling paths and error shapes working while replacing them. A new
+  skeleton with proven code moved in keeps the tested behavior and drops the
+  rest. The cost is two codebases until the cutover, with moved code under its
+  old lint baseline until its module story converts it.
 - **Staged installs with the old and new systems running side by side.**
   Downtime is acceptable (owner decision, 2026-10-06), so one offline cutover
   avoids shadow runtimes and compatibility feeds.
@@ -261,8 +288,8 @@ These alternatives were rejected:
   core's state logic.
 - **A whole snapshot in every event.** It would exceed the size cap.
 - **AWS SNS and SQS now.** They would add an internet round trip and an internet
-  dependency to every device reaction. They also lack latest-value and
-  request/reply primitives.
+  dependency to every device reaction, and they lack request/reply
+  primitives.
 - **Event sourcing.** Deferred to a later deliberate decision.
 
 The consequences:
@@ -315,6 +342,15 @@ both. Each change and its trade-off:
 - **Failure isolation.** It is stated honestly: a module's errors are
   contained, but process-wide failures restart the runtime.
 - **TypeScript only.** The Python client library and contract mirrors are not
-  needed for 2.0.
+  needed for 2.0. The cost is porting Nanoleaf's Python worker, with its
+  behavior tests, before the cutover.
+- **Rebuild.** A new skeleton, built test-first, runs the core with zero
+  modules; proven code moves in with its tests. Evolving the Hub in place was
+  rejected; see Alternatives.
+- **Envelope.** Profile 2.0 adds `kind`, which replaces `deliveryclass`,
+  limits `expiresat` to commands and sync requests, reserves the reply,
+  outcome, removal and sync type names for their kinds, and fixes each error
+  code's `retryable` in one registry. Outcome evidence may be `none` when
+  nothing reached the device.
 - **One offline cutover.** It replaces the dual-version period and the staged
   installs, because downtime is acceptable.

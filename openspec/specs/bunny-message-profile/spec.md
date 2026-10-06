@@ -15,14 +15,14 @@ Profile 2.0 SHALL define one CloudEvents 1.0 structured JSON envelope for every 
 - an absolute `dataschema` URI;
 - a nonzero W3C `traceparent`.
 
-It SHALL refuse undeclared attributes. Commands and sync requests SHALL carry `expiresat`, and no other kind may carry it. The `type` suffix SHALL match the kind. Replies, outcomes, removals and sync messages SHALL use the payload schemas the profile owns.
+It SHALL refuse undeclared attributes and impossible dates. Commands and sync requests SHALL carry `expiresat`, and no other kind may carry it. The `type` suffix SHALL match the kind: a command's type names an entity and a verb before `.requested`, and only sync messages may use `org.bunny.sync.requested` and `org.bunny.sync.completed`. Replies, outcomes, removals and sync messages SHALL use the payload schemas the profile owns.
 
 #### Scenario: A valid message of each kind
 - **WHEN** the shared fixtures' valid message for each of the eight kinds is validated
 - **THEN** each is accepted
 
 #### Scenario: Envelope violations
-- **WHEN** a message lacks `traceparent`, has an all-zero trace ID, uses a non-URI `dataschema`, adds an undeclared attribute, omits milliseconds from `time`, carries `expiresat` on a state event, omits `expiresat` from a command or uses a `type` suffix that does not match its kind
+- **WHEN** a message lacks `traceparent`, has an all-zero trace or parent ID, uses a non-URI `dataschema`, adds an undeclared attribute, omits milliseconds from `time` or names an impossible date, carries `expiresat` on a state event, omits `expiresat` from a command, uses a `type` suffix that does not match its kind, or uses a sync type for another kind
 - **THEN** it is refused with `invalid-message` and a detail naming where the check failed
 
 #### Scenario: Unsupported profile or payload version
@@ -35,7 +35,7 @@ It SHALL refuse undeclared attributes. Commands and sync requests SHALL carry `e
 
 ### Requirement: Size, expiry and retry identity
 
-A message SHALL be at most 256 KiB as UTF-8 JSON, checked before any schema check. Input that is not plain JSON data SHALL be refused without throwing. When the reader passes its clock, a command or sync request at or past `expiresat` SHALL be refused. Retry identity SHALL be `(source, id)`: the same identity with the same content is a duplicate, and with different content a conflict.
+A message SHALL be at most 256 KiB as UTF-8 JSON, checked before any schema check. Input that is not a plain JSON object, including `null`, SHALL be refused with `invalid-message` without throwing. When the reader passes its clock, a command or sync request at or past `expiresat` SHALL be refused. Retry identity SHALL be `(source, id)`: the same identity with the same content is a duplicate, and with different content a conflict.
 
 #### Scenario: Oversized message
 - **WHEN** a message is over 256 KiB
@@ -75,11 +75,15 @@ A reply SHALL either accept a request or carry an error body. A completed outcom
 
 ### Requirement: One error body and code registry
 
-Every boundary SHALL report errors as `{"error":{"code","retryable","requestId"?,"traceId"?,"detail"?}}`. Codes SHALL come from one registry, which sets `retryable` for each code. Building an error body with an unregistered code SHALL fail.
+Every boundary SHALL report errors as `{"error":{"code","retryable","requestId"?,"traceId"?,"detail"?}}`. Codes SHALL come from one registry, which sets `retryable` for each code. Building an error body with an unregistered code SHALL fail, and a received message whose error body has an unregistered code or a `retryable` flag that disagrees with the registry SHALL be refused with `invalid-message`.
 
 #### Scenario: Error body from the registry
 - **WHEN** an error body is built for `capacity` and for `uncertain-result`
 - **THEN** `retryable` is true for `capacity` and false for `uncertain-result`, and an unregistered code throws
+
+#### Scenario: Received error body outside the registry
+- **WHEN** a reply carries an unregistered code, or an outcome marks `capacity` as not retryable
+- **THEN** the message is refused with `invalid-message`
 
 ### Requirement: Module payload schemas
 

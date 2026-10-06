@@ -27,4 +27,4 @@ None. Profile 1.0 (`shared-event-contract`) stays unchanged until the retirement
 - **Docs:** ADR 0012, the package README and `docs/development.md`.
 - **Nothing else:** no runtime, Hub, controller or device change. Delivery target: source-only.
 
-**No design.md.** ADR 0012, amended in this change, records the design decisions and trade-offs. The change adds schemas and a pure validator with no runtime, storage, migration, timing or privacy behavior.
+**No design.md.** The change is cross-cutting and defines a data model, but ADR 0012, amended in this change, is its design record: it states each decision, trade-off and rejected alternative, and a design.md would repeat it. The change adds schemas and a pure validator with no runtime, storage, migration, timing or privacy behavior.

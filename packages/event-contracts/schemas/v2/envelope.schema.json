@@ -22,7 +22,10 @@
     "data": {"type": "object"}
   },
   "allOf": [
-    {"if": {"properties": {"kind": {"enum": ["command", "sync-request"]}}}, "then": {"required": ["expiresat"], "properties": {"expiresat": true, "type": {"type": "string", "pattern": "\\.requested$"}}}, "else": {"properties": {"expiresat": false}}},
+    {"if": {"properties": {"kind": {"enum": ["command", "sync-request"]}}}, "then": {"required": ["expiresat"], "properties": {"expiresat": true}}, "else": {"properties": {"expiresat": false}}},
+    {"if": {"properties": {"kind": {"const": "command"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,3}\\.requested$"}}}},
+    {"if": {"properties": {"kind": {"const": "sync-request"}}}, "then": {"properties": {"type": {"const": "org.bunny.sync.requested"}}}},
+    {"if": {"properties": {"kind": {"not": {"enum": ["sync-request", "sync-completed"]}}}}, "then": {"properties": {"type": {"type": "string", "not": {"pattern": "^org\\.bunny\\.sync\\."}}}}},
     {"if": {"properties": {"kind": {"const": "reply"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.replied$"}}}},
     {"if": {"properties": {"kind": {"const": "outcome"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.completed$"}}}},
     {"if": {"properties": {"kind": {"const": "removal"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.removed$"}}}},

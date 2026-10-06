@@ -33,10 +33,20 @@ export type Message<T = Record<string, unknown>> = {
   expiresat?: string; data: T;
 };
 
-/** The error body every boundary returns. `retryable` comes from the registry, so callers cannot disagree with it. */
+const ID = /^[A-Za-z0-9_.-]{1,128}$/;
+const TRACE_ID = /^[0-9a-f]{32}$/;
+export const MAX_DETAIL = 1024;
+
+/**
+ * The error body every boundary returns. `retryable` comes from the registry, and the validator refuses received
+ * bodies whose code or flag disagrees with it. Extras that the error block would refuse throw here.
+ */
 export function errorBody(code: ErrorCode, extra: {requestId?: string; traceId?: string; detail?: string} = {}): ErrorBody {
   const entry = errorCodes[code];
   if (entry === undefined) throw new Error(`unregistered error code: ${code}`);
+  if (extra.requestId !== undefined && !ID.test(extra.requestId)) throw new Error('requestId is not an identifier');
+  if (extra.traceId !== undefined && !TRACE_ID.test(extra.traceId)) throw new Error('traceId is not 32 lowercase hex digits');
+  if (extra.detail !== undefined && (extra.detail.length === 0 || extra.detail.length > MAX_DETAIL)) throw new Error(`detail must have 1 to ${MAX_DETAIL} characters`);
   return {error: {code, retryable: entry.retryable, ...extra}};
 }
 
@@ -53,7 +63,7 @@ const builtIn: Partial<Record<MessageKind, string>> = {
   reply: 'reply', outcome: 'outcome', removal: 'removal', 'sync-request': 'sync-request', 'sync-completed': 'sync-completed',
 };
 
-// Plain JSON only: no prototypes other than Object and Array, no accessors, bounded depth.
+// Plain JSON only: no prototypes other than Object and Array, no accessors, at most MAX_DEPTH levels of nesting.
 function plain(value: unknown, depth = 0): boolean {
   if (depth > MAX_DEPTH) return false;
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -67,15 +77,21 @@ function plain(value: unknown, depth = 0): boolean {
 }
 
 const zeroTrace = /^00-0{32}-|-0{16}-[0-9a-f]{2}$/;
-// Names the first failing location, for example `envelope /traceparent pattern` or `payload / required expiresat`.
+// The schema fixes the shape `YYYY-MM-DDTHH:MM:SS.mmmZ`; a real instant prints back the same, so 2026-02-30 is refused.
+const realInstant = (value: string): boolean => {
+  const ms = Date.parse(value);
+  return !Number.isNaN(ms) && new Date(ms).toISOString() === value;
+};
+// Names the failing location, for example `envelope /traceparent pattern` or `payload / required expiresat`. When a
+// oneOf failed, its own location is named, because the first error then comes from an arbitrary branch.
 const describe = (scope: string, errors: ErrorObject[] | null | undefined): string => {
-  const first = errors?.[0];
+  const first = errors?.find(error => error.keyword === 'oneOf') ?? errors?.[0];
   if (first === undefined) return scope;
   const missing = first.keyword === 'required' ? ` ${String((first.params as {missingProperty?: unknown}).missingProperty)}` : '';
   const extra = first.keyword === 'additionalProperties' ? ` ${String((first.params as {additionalProperty?: unknown}).additionalProperty)}` : '';
   return `${scope} ${first.instancePath === '' ? '/' : first.instancePath} ${first.keyword}${missing}${extra}`;
 };
-const fail = (code: ErrorCode, detail: string): {ok: false; error: ErrorDetail} => ({ok: false, error: errorBody(code, {detail}).error});
+const fail = (code: ErrorCode, detail: string): {ok: false; error: ErrorDetail} => ({ok: false, error: errorBody(code, {detail: detail.slice(0, MAX_DETAIL)}).error});
 
 /**
  * Validates messages against profile 2.0 and the payload schemas registered for their `dataschema`. Modules register
@@ -112,18 +128,19 @@ export class MessageValidator {
   validate<T = Record<string, unknown>>(input: unknown, options: {nowMs?: number} = {}): Validation<T> {
     let encoded: string;
     try {
-      if (!plain(input)) return fail('invalid-message', 'not plain JSON data');
+      if (!plain(input)) return fail('invalid-message', `not plain JSON data within ${MAX_DEPTH} levels`);
       encoded = JSON.stringify(input);
     } catch {
       return fail('invalid-message', 'not serializable');
     }
     if (Buffer.byteLength(encoded, 'utf8') > MAX_MESSAGE_BYTES) return fail('too-large', `over ${MAX_MESSAGE_BYTES} bytes`);
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) return fail('invalid-message', 'not a JSON object');
     const profile = (input as {bunnyprofile?: unknown}).bunnyprofile;
-    if (profile !== undefined && profile !== PROFILE_VERSION) return fail('unsupported-version', `bunnyprofile ${typeof profile === 'string' ? profile.slice(0, 32) : typeof profile}`);
+    if (typeof profile === 'string' && profile !== PROFILE_VERSION) return fail('unsupported-version', `bunnyprofile ${profile.slice(0, 32)}`);
     if (!this.#envelope(input)) return fail('invalid-message', describe('envelope', this.#envelope.errors));
     const message = input as Message<T>;
     if (zeroTrace.test(message.traceparent)) return fail('invalid-message', 'trace context');
-    if (Number.isNaN(Date.parse(message.time))) return fail('invalid-message', 'time');
+    if (!realInstant(message.time)) return fail('invalid-message', 'time');
     const id = parseSchemaId(message.dataschema);
     if (id === undefined) return fail('invalid-message', 'dataschema');
     const expected = builtIn[message.kind];
@@ -136,9 +153,8 @@ export class MessageValidator {
     }
     if (!validatePayload(message.data)) return fail('invalid-message', describe('payload', validatePayload.errors));
     if (message.expiresat !== undefined) {
-      const expires = Date.parse(message.expiresat);
-      if (Number.isNaN(expires)) return fail('invalid-message', 'expiresat');
-      if (options.nowMs !== undefined && expires <= options.nowMs) return fail('expired', message.expiresat);
+      if (!realInstant(message.expiresat)) return fail('invalid-message', 'expiresat');
+      if (options.nowMs !== undefined && Date.parse(message.expiresat) <= options.nowMs) return fail('expired', message.expiresat);
     }
     return {ok: true, value: message};
   }

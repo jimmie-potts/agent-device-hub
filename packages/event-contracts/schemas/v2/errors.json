@@ -1,8 +1,8 @@
 {
-  "description": "The profile 2.0 error code registry (ADR 0012). Today's synonyms merge into one code each; 1.x codes are not mapped.",
+  "description": "The profile 2.0 error code registry (ADR 0012). Today's synonyms merge into one code each; 1.x codes are not mapped. blocks.schema.json lists the same codes and retryable flags, and a test keeps the two equal.",
   "codes": {
-    "invalid-request": {"retryable": false, "meaning": "The request's shape or values are wrong."},
-    "invalid-message": {"retryable": false, "meaning": "A message fails the profile or its payload schema."},
+    "invalid-request": {"retryable": false, "meaning": "A request is well formed but its values are not acceptable to the owner, for example an unknown option."},
+    "invalid-message": {"retryable": false, "meaning": "A message fails the profile or its payload schema, including a command whose payload fails its schema."},
     "too-large": {"retryable": false, "meaning": "A message exceeds the 256 KiB cap."},
     "unsupported-version": {"retryable": false, "meaning": "The schema family is known but not at this version."},
     "unknown-schema": {"retryable": false, "meaning": "No schema is registered for this family."},
@@ -13,7 +13,8 @@
     "invalid-state": {"retryable": false, "meaning": "The target's current state does not allow this operation."},
     "revision-conflict": {"retryable": false, "meaning": "The caller's revision is stale; read again before deciding."},
     "duplicate-conflict": {"retryable": false, "meaning": "A message reuses (source, id) with different content."},
-    "expired": {"retryable": false, "meaning": "A command or effect arrived after its expiry."},
+    "expired": {"retryable": false, "meaning": "A command or sync request arrived after its expiry."},
+    "cancelled": {"retryable": false, "meaning": "The request was cancelled or superseded before it completed."},
     "capacity": {"retryable": true, "meaning": "The target is busy or a bounded queue is full."},
     "unavailable": {"retryable": true, "meaning": "The target or a dependency cannot be reached now."},
     "uncertain-result": {"retryable": false, "meaning": "The operation may have taken effect; nothing retries it automatically."},

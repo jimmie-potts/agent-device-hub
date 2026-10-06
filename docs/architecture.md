@@ -85,30 +85,36 @@ their tests, policies and capability specifications.
 
 ## Event and messaging platform
 
-[ADR 0012](decisions/0012-bunny-event-platform.md) selects how every component
-will communicate, and supersedes ADR 0010's staged adoption. None of it is
-implemented yet.
+[ADR 0012](decisions/0012-bunny-event-platform.md), as amended on 2026-10-06,
+selects how every component will communicate, and supersedes ADR 0010's staged
+adoption. Only the message profile 2.0 contract exists so far
+(`@jimmie-potts/event-contracts/v2`).
 
-- **Bus.** A local NATS JetStream bus will connect all components.
-- **Publishing.** Owners will publish full-record state events and occurrence
-  events through an outbox. One owner holds each fact, and one writer controls
-  each device.
-- **Consumers.** Each consumer will keep its own store, built from the events
-  it receives.
-- **Commands.** Commands will be live-only requests with expiry. The Hub will
-  track device commands, moments, mode changes and notices from accepted to
-  completed.
-- **Conventions.** Events, commands, replies and errors will share one
-  CloudEvents profile, one error body and one set of naming and version
-  conventions.
-- **Edges.** Hooks, the dashboard and MCP clients reach only the Hub over HTTP.
+- **Runtime.** One TypeScript runtime, `apps/runtime`, will host the core and
+  every device as a module from a fixed, shipped list. Modules talk through the
+  SDK's in-process bus; there is no broker.
+- **Publishing.** Owners publish full-record state events, removal events and
+  occurrence events. Core changes commit with their tracker, history and inbox
+  rows in one transaction; each module reports outcomes through its own outbox.
+  One owner holds each fact, and one writer controls each device.
+- **Consumers.** A consumer syncs current state from the owner when it connects
+  or restarts, then follows live events. Copies of other owners' state are
+  rebuilt by sync, not stored.
+- **Commands.** Commands are live-only requests with expiry. The core tracks
+  device commands, moments, mode changes and notices from sent to completed.
+- **Conventions.** Every message uses profile 2.0: one CloudEvents envelope, one
+  error body and code registry, and shared payload building blocks.
+- **Edges.** Remote parts (hooks, the dashboard, MCP clients, the CHOMPI bridge
+  and the Wispr collector) use the same SDK calls over SSE down and HTTP up.
 - **No replay.** Past occurrences or effects are never redelivered to views or
   devices.
 
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)
-delivers the cutover. Until each component's child delivery lands, its released
-1.x contract and the [event profile 1.0](event-contract.md) stay authoritative
-for that component. A component may extend them only additively.
+delivers the rebuild and one offline cutover
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). Until
+the cutover, each component's released 1.x contract and the
+[event profile 1.0](event-contract.md) stay authoritative for the installed
+system. A component may extend them only additively.
 
 ## Installed release ownership
 

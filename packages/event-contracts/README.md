@@ -64,8 +64,9 @@ follows the strict profile for new code.
 - `schemas/v2/envelope.schema.json`: the envelope every message uses. It has
   a required `subject` and `traceparent`, an absolute `dataschema` URI and a
   `kind`. Commands and sync requests require `expiresat`; no other kind may
-  carry it. The `type` suffix must match the kind, for example `.requested` for
-  a command.
+  carry it. The `type` suffix must match the kind, for example
+  `org.bunny.<entity>.<verb>.requested` for a command. Only sync messages may use
+  `org.bunny.sync.requested` and `org.bunny.sync.completed`.
 - `schemas/v2/blocks.schema.json`: building blocks for payloads. These are
   identifiers, `<name>AtMs` instants, revisions, the `{epoch, sequence}`
   ticket, ordering, tagged unknown values, kebab-case enum values, entity
@@ -73,23 +74,28 @@ follows the strict profile for new code.
 - `schemas/v2/kinds.schema.json`: payloads the profile owns for replies,
   completed outcomes, removals, sync requests and `sync.completed`.
 - `schemas/v2/errors.json`: the error code registry. Each code says whether a
-  retry can help.
+  retry can help. The error block in `blocks.schema.json` lists the same codes
+  and flags, so a received error body with another code or flag is refused; a
+  test keeps the two files equal.
 - `src/v2/index.ts`:
   - `MessageValidator`. `register(dataschema, schema)` adds a module's payload
     schema under `https://bunny.invalid/events/<family>/<major>.<minor>`; it
     refuses reserved families and duplicates. `validate(input, {nowMs})`
     returns `{ok:true,value}` or `{ok:false,error}`, where `error` is the
     registry's error detail.
-  - `errorBody(code, extra)`, which builds `{"error":{...}}` and takes
-    `retryable` from the registry.
+  - `errorBody(code, extra)`, which builds `{"error":{...}}`, takes
+    `retryable` from the registry and throws on extras the error block would
+    refuse.
   - `compareDelivery(prior, next)`, which classifies a retry under the
-    identity `(source, id)` as `new`, `duplicate` or `conflict`.
+    identity `(source, id)` as `new`, `duplicate` or `conflict`. It compares
+    every attribute and the payload, ignoring key order, so an outbox resends
+    the exact message it stored rather than rebuilding it.
 
 Validation refuses a message with:
 - `too-large`, when it is over 256 KiB;
-- `invalid-message`, when it is not plain JSON, breaks the envelope or payload
-  schema, has an all-zero trace context or uses the wrong built-in schema for
-  its kind;
+- `invalid-message`, when it is not a plain JSON object, breaks the envelope or
+  payload schema, has an all-zero trace context, names an impossible date or
+  uses the wrong built-in schema for its kind;
 - `unsupported-version`, for another `bunnyprofile` or an unregistered version
   of a registered family;
 - `unknown-schema`, for an unregistered family;
@@ -106,3 +112,28 @@ for each kind. Each invalid case patches a valid message and states the
 expected code. `tests/v2.test.mjs` runs the fixtures, plus the size, expiry,
 retry identity, registration and error-registry cases. `npm run test:events`
 runs it with the 1.0 tests.
+
+### How 1.x error codes merged
+
+1.x components used several names for one condition. The registry keeps one
+code for each; nothing maps 1.x codes at runtime, because 1.x retires at the
+cutover. The main merges:
+
+| 1.x names found in source | 2.0 code |
+| --- | --- |
+| `capacity`, `wispr-response-capacity` | `capacity` |
+| `unavailable`, `wispr-unavailable`, `target-unhealthy`, and `transport-failure` before anything was sent | `unavailable` |
+| `transport-failure` after sending | `uncertain-result` |
+| `stale-generation` | `revision-conflict` |
+| `moment-blocked` | `invalid-state` |
+| `interrupted` | `cancelled` |
+| `invalid-operation`, `invalid-input`, `bad` | `invalid-request` |
+| `invalid-event`, `invalid-record` | `invalid-message` |
+| `write-failed`, `storage-failed` | `internal` |
+
+Domain reasons such as `composer-unfocused` or `not-enabled` are not error
+codes. They go in `detail` or in the module's own payload fields.
+
+`invalid-message` covers a message whose envelope or payload fails its schema,
+including a command. `invalid-request` covers a well-formed request whose values
+the owner does not accept.
