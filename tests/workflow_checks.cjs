@@ -221,7 +221,7 @@ const expectedTriggers = {
   pull_request: { 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
 };
 
-test('both workflows exclude only guide-only changes', () => {
+test('every workflow skips guide-only changes and Checks also skips Markdown-only changes', () => {
   // [name, paths, skipped by the guide-only filter, skipped by the Checks filter]
   const cases = [
     ['guide addition', ['docs/work-guide/new.md'], true, true],
@@ -332,6 +332,32 @@ test('Depot CI runs six Linux jobs and retains every suite once', () => {
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
   assert.equal(builds, 3);
+});
+
+// Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.
+const packagedMarkdown = [
+  'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/maintenance/README.md', 'apps/wispr-collector/README.md',
+  'docs/agent-lifecycle-contract.md', 'docs/app-verification.md', 'docs/controller-contract.md',
+  'docs/decisions/0009-app-verification-runs.md', 'docs/install-contract.md', 'docs/observability-contract.md',
+  'docs/provider-qualification.md', 'packages/agent-state/README.md', 'packages/app-verify/README.md',
+  'packages/mcp/README.md', 'packages/observability/README.md', 'packages/wispr-contracts/README.md',
+];
+const packagedNames = new Set(['README.md', 'SETUP.md', 'CONTRACT.md', 'install-contract.md', 'provider-qualification.md',
+  'app-verification.md', 'adr-0009-app-verification-runs.md']);
+
+test('Markdown that package checks copy exists, and the hash-checked vendor folders hold none', () => {
+  for (const file of packagedMarkdown) assert.ok(fs.existsSync(path.join(root, file)), `${file} is copied by a package script; delete or rename it only with that script`);
+  for (const script of fs.readdirSync(path.join(root, 'scripts')).filter(file => /^package-.*\.mjs$/.test(file))) {
+    const text = fs.readFileSync(path.join(root, 'scripts', script), 'utf8');
+    for (const [, name] of text.matchAll(/['"`]([^'"`\s]*\.md)['"`]/g)) {
+      assert.ok(packagedMarkdown.includes(name) || packagedNames.has(name), `${script} copies ${name}; add it to packagedMarkdown`);
+    }
+  }
+  // The performance admission checks reject any entry in a vendored source folder outside its hash list.
+  for (const folder of ['nanoleaf', 'nanoleaf-linux']) {
+    const entries = fs.readdirSync(path.join(root, 'scripts/performance/vendor', folder), { recursive: true }).map(String);
+    assert.deepEqual(entries.filter(file => file.endsWith('.md')), [], `scripts/performance/vendor/${folder}`);
+  }
 });
 
 const builtPayloads = {

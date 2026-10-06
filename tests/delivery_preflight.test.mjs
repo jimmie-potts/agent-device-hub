@@ -856,13 +856,31 @@ test('guide-only: missing runs alone never establish the exception', async () =>
   assertUnresolved(await preflight(guideOnlyWorld()), 'ci-pr', /guide-only exception needs the guide verification receipt/);
 });
 
+test('guide files with other Markdown skip Checks and need the guide evidence (Hub #861)', async t => {
+  const mixed = () => {
+    const world = guideOnlyWorld();
+    world.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
+    world.compares[`${BASE}...${HEAD}`].files = world.files;
+    world.checkRuns[HEAD] = cleanWorld().checkRuns[HEAD].filter(run => /^(Workflow|Work guide) \//.test(run.name));
+    world.checkSuites[HEAD] = cleanWorld().checkSuites[HEAD];
+    return world;
+  };
+  const missing = await preflight(mixed());
+  assertUnresolved(missing, 'ci-pr', /needs the guide verification receipt/);
+  assert.match(gate(missing, 'ci-pr').reasons.join(), /skip ci\.yml; docs\/sdlc\.md#markdown-only-ci-routing requires the guide evidence/);
+  const world = mixed();
+  const receipt = writeGuideEvidence(scratch(t));
+  const ci = gate(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] }), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+});
+
 test('guide-only: mixed changes, renames out of the folder and inconsistent runs cannot use it', async t => {
   const directory = scratch(t);
   const receipt = writeGuideEvidence(directory);
   const mixed = guideOnlyWorld();
-  mixed.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
-  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Workflow \/ Workflow checks on ubuntu-latest: missing/);
-  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: docs\/sdlc\.md/);
+  mixed.files.push({ filename: 'scripts/check-workflow.cjs', status: 'modified' });
+  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
+  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: scripts\/check-workflow\.cjs/);
 
   const renamed = guideOnlyWorld();
   renamed.files.push({ filename: 'docs/build_guide.py', previous_filename: 'docs/work-guide/work/build_guide.py', status: 'renamed' });

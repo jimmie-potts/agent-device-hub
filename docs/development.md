@@ -194,10 +194,12 @@ Normal Depot CI has six Linux jobs, and each suite runs in exactly one of them:
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip because the runner has no systemd |
 
-The Checks workflow performs three full builds across its jobs. Python checks
-run on Python 3.14 only, the version of the installed Nanoleaf runtime. They
-protect the Python consumers of shared contracts and retire with that code
-(#839). Local validation runs the same commands. Later runtime and browser
+The Checks workflow performs three full builds across its jobs. The Python
+contract, state and Tidbyt suites run on Python 3.14 only, the version of the
+installed Nanoleaf runtime. They protect the Python consumers of shared contracts
+and retire with that code (#839). Checks that call the runner's system
+`/usr/bin/python3`, such as the Linux performance qualification and the
+maintenance closeout fixtures, use Ubuntu 24.04's Python 3.12. Local validation runs the same commands. Later runtime and browser
 changes must add their own issue-appropriate checks.
 
 Native Windows is outside the supported CI matrix. Windows development uses
@@ -646,8 +648,8 @@ and TypeScript/Python consumers. Use Node 24 and Python 3.14, run `npm ci`
 and install `requirements-contracts.txt` in an isolated Python environment.
 Run `npm run build`, `npm run typecheck`, `npm run test:lifecycle`,
 `npm run test:lifecycle:python` and `npm run test:lifecycle:package`, in addition
-to all existing workflow, controller-contract and MCP checks. The combined
-contracts/state jobs run lifecycle checks on Ubuntu with both Python versions.
+to all existing workflow, controller-contract and MCP checks. The core CI
+job runs the lifecycle checks on Ubuntu with Python 3.14.
 Tests use synthetic metadata only.
 `npm run package:lifecycle` builds the private archive with a file-hash manifest;
 record its source revision and archive hash externally after reviewed delivery.
@@ -655,22 +657,22 @@ No command installs hooks, launches a client or contacts a device.
 
 ## Early performance measurement tooling
 
-`npm run test:performance` uses Python 3.14 to check measurement
+`npm run test:performance` uses Python 3.12 or 3.14 to check measurement
 statistics, pinned source verification, isolated legacy admission and bounded
-worker failure handling. The combined contracts/state jobs run this command
-on Ubuntu with both Python versions. The tests use synthetic state and do not
+worker failure handling. The core CI job runs this command on Ubuntu with
+Python 3.14. The tests use synthetic state and do not
 establish installed-client, full hook,
 helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
 for actual profile commands and pending budget gates.
 
 ## Linux hook performance qualification
 
-Run `npm run test:performance:linux` on Linux with system Python 3.14
+Run `npm run test:performance:linux` on Linux with system Python 3.12 or 3.14
 under `/usr` and the packaged `bwrap` executable available. These thirteen focused
 checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the
-Ubuntu workflow job; the other four Ubuntu jobs remain required.
+Ubuntu workflow job; the other Ubuntu jobs remain required.
 Hosted setup refreshes the package index before installing Ubuntu's `bubblewrap`
 and `apparmor-profiles` packages,
 then loads `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` and checks
@@ -713,8 +715,8 @@ If the system Python lacks Pillow, create a virtual environment, install
 `requirements-contracts.txt` into it and run the command with that environment
 active (the #222 and #241 closeouts both hit this).
 Keep running the shared controller-contract and workflow checks alongside them.
-The combined contracts/state CI jobs run `npm run test:tidbyt:built` and
-`npm run test:tidbyt:python` on both Python versions.
+The core CI job runs `npm run test:tidbyt:built` and
+`npm run test:tidbyt:python` with Python 3.14.
 
 The TypeScript suite covers the renderer, including golden WebP bytes, invalid
 frames and its import boundary. It also covers the cloud connection against a
@@ -768,8 +770,8 @@ device consumes), `HubStatusFeed` and its bounded hub GET helpers
 (`hubOrigin`, `hubToken`, `hubJson`, `HUB_ID`), and the generic feed-cadence
 machinery (`EvaluationLoop`, `BoundedReader`, `systemTimers`). Use Node 24 and
 run `npm run build`, `npm run typecheck` and `npm run test:agent-status` from
-the worktree root. The combined contracts/state CI jobs run
-`test:agent-status:built` after their fresh build.
+the worktree root. The core CI job runs
+`test:agent-status:built` after its fresh build.
 
 Tests cover the ranking (attention over working over done, an active child
 making its root working, read evidence never retiring done), `highestStatus`
@@ -799,8 +801,8 @@ and integrated performance remain separately evidenced downstream gates.
 
 Hub #5 targets Node 24 on Linux in WSL. Run `npm ci`, `npm run build`,
 `npm run typecheck`, `npm run test:hub` and `npm run test:hub:package` from the worktree root, alongside
-the shared controller/lifecycle/state/MCP and workflow suites. The combined
-Ubuntu contracts/state CI jobs run `npm run test:hub:built` and `npm run test:hub:package:built` after their fresh
+the shared controller/lifecycle/state/MCP and workflow suites. The core
+CI job runs `npm run test:hub:built` and `npm run test:hub:package:built` after its fresh
 build. Tests use disposable private Linux state, synthetic credentials and
 fake loopback controllers. They do not start installed services or operate
 devices. The source includes supervised child release, fenced import, route readiness,
@@ -824,8 +826,8 @@ Complete dependency inventories and the 8 MiB manifest boundary are covered;
 oversized or invalid metadata still reports unknown.
 
 Hub upgrade command checks use `apps/hub/tests/install-*.test.mjs` through
-`npm run test:hub` and `npm run test:hub:package`. The existing contracts/state
-CI matrix runs both suites after build/typecheck. Use the private test TMPDIR
+`npm run test:hub` and `npm run test:hub:package`. The core CI job runs both
+suites after build/typecheck. Use the private test TMPDIR
 above. Fixtures cover approval drift, package/dependency inventories, compatible
 latest-state recovery, both shared-layout adoption orders, interruption,
 receipt finalization and owned retention. They use synthetic state and fake
@@ -1043,7 +1045,7 @@ and CSV/JSON exports. A disposable stalled worker verifies the 2.5-second
 deadline and worker retirement; its factory seam is unavailable to installed
 configuration. `tests/wispr_hub_producer.test.mjs` verifies that the bundled
 consumer fixture exactly matches current collector output. The existing `test:hub:built` glob and offline Hub package
-suite include it; both contracts/state CI matrix jobs already run those commands.
+suite include it; the core CI job already runs those commands.
 Use the private cache TMPDIR described above. Run build/typecheck, Hub/package,
 Hub MCP, setup and the shared controller/lifecycle/state/MCP/workflow suites.
 Fixtures never open Wispr or collector databases or enable installed collection.
@@ -1054,7 +1056,7 @@ Use Node 24 from the assigned worktree root. Run `npm ci`, `npm run build`,
 `npm run typecheck`, `npm run test:wispr`, `npm run test:wispr:package`,
 `npm run test:contracts`, `npm run test:contracts:python`, `npm run test:package`,
 `npm run check:workflow` and `npm run test:workflow`.
-The contracts/state CI jobs run the Wispr `:built` suites after the shared build.
+The core CI job runs the Wispr `:built` suites after the shared build.
 `npm run build:wispr` builds just the two Wispr workspaces for focused development;
 it does not replace the shared acceptance checks.
 
@@ -1373,9 +1375,8 @@ previous release bytes. Package version changes do not change snapshot/storage 1
 
 The media cases cover alias-bound playlist start and controller v1 playback
 actions, strict inputs, current control/device permissions, typed owner
-rejections, replay and ambiguous results without automatic retries. The existing
-MCP and contracts/state CI jobs run these cases directly and in the offline hub
-archive; they require no new CI job or shared package change.
+rejections, replay and ambiguous results without automatic retries. The core
+CI job runs these cases directly and in the offline hub archive; they require no new CI job or shared package change.
 
 ## Hub automation checks
 
@@ -1415,7 +1416,7 @@ Hub worktree with Node 24 using `npm ci` and `npm run build`. Prepare Pixoo at
 `apps/hub/fixtures/pixoo-source.json` and Nanoleaf at
 `apps/hub/fixtures/compatibility-nanoleaf-source.json` in disposable source
 archives. Build Pixoo with Node 24 `npm ci` and `npm run build`; use system
-Python 3.14 for Nanoleaf and installed Playwright Chromium for the browser.
+Python 3.12 or 3.14 for Nanoleaf and installed Playwright Chromium for the browser.
 Run from the Hub worktree:
 
 ```bash
@@ -1439,8 +1440,8 @@ CI retains its existing component, contract, browser and package tests without
 adding private repository credentials. Run `npm run typecheck`,
 `npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
 `npm run check:workflow` and `npm run test:workflow` alongside the source check.
-The Hub command includes `tests/compatibility_process.test.mjs`, so both required
-contracts/state CI jobs check forced process cleanup and failed preflight reports
+The Hub command includes `tests/compatibility_process.test.mjs`, so the core CI
+job checks forced process cleanup and failed preflight reports
 without private source access.
 No product code or contract changes are intended. The #30 performance report is
 a separate required completion input. Source compatibility does not install
@@ -1450,7 +1451,7 @@ hooks, start an actual agent client or establish visible-device behavior.
 
 Hub #30 adds `npm run test:performance:standalone` for report completeness,
 negative acceptance and PID/network/mount confinement, including timeout and
-detached-child cleanup. Use Node 24 and system Python 3.14 with bubblewrap.
+detached-child cleanup. Use Node 24 and system Python 3.12/3.14 with bubblewrap.
 The existing Ubuntu workflow job runs these checks after its namespace preflight.
 They do not benchmark timing or fetch private consumer repositories. Run the
 shared build/type, contract/lifecycle/state, MCP, hub, dashboard and workflow
@@ -1469,8 +1470,7 @@ failures and is not a substitute for installed or physical acceptance.
 Use Node 24 and run `npm ci`, `npm run build`, `npm run typecheck` and
 `npm run test:lifx` from the worktree root. Run shared controller-contract
 TypeScript/Python and package checks plus `check:workflow` and `test:workflow`.
-The existing contracts/state CI jobs run `test:lifx:built` after their fresh build
-on both Python versions. Fake transports and fake sockets cover packet encoding,
+The core CI job runs `test:lifx:built` after its fresh build. Fake transports and fake sockets cover packet encoding,
 reply correlation, deadlines, bounded retry, replay, cancellation, overlapping
 commands, unsupported capabilities and partial multi-bulb results. Tests validate
 common receipts/snapshots against controller v1 and never open a native socket.
@@ -1530,9 +1530,8 @@ Hub #289 adds `apps/local-controllers`, the loopback host that serves controller
 v1 and the LIFX `lifx-light` profile for the in-process Tidbyt and LIFX
 controllers. Use Node 24 and run `npm run build`, `npm run typecheck` and
 `npm run test:local-controllers` from the worktree root, plus the controller
-contract, Tidbyt, LIFX, hub, MCP, dashboard and workflow checks. The combined
-contracts/state CI jobs run `npm run test:local-controllers:built` after their
-fresh build.
+contract, Tidbyt, LIFX, hub, MCP, dashboard and workflow checks. The core CI
+job runs `npm run test:local-controllers:built` after its fresh build.
 
 The suite starts the real host with a fake Tidbyt connection, fake LIFX
 transports and a loopback feed from a real in-memory shared owner. It covers
@@ -1900,14 +1899,13 @@ contract/workflow checks as well. CI runs these browser tests with pinned Chromi
 
 ## Shared observability contract checks
 
-The source contract in `packages/observability` uses Node 24 and Python 3.12 or
-3.14. From the assigned worktree, run `npm ci`, install
+The source contract in `packages/observability` uses Node 24 and Python 3.14. From the assigned worktree, run `npm ci`, install
 `requirements-contracts.txt` in an isolated Python environment, then run
 `npm run build`, `npm run typecheck`, `npm run test:observability`,
 `npm run test:observability:python`, `npm run test:observability:query` and
 `npm run test:observability:package` and `npm run test:observability:browser`
 (with Chromium in the shared Playwright cache). The browser check runs in the
-existing Depot dashboard job, where Chromium is already installed. The combined Depot contracts/state matrix
+existing Depot dashboard job, where Chromium is already installed. The Depot core job
 runs the built conformance, Python, query and archive-consumer checks. Keep
 the shared controller/lifecycle/workflow and affected consumer checks required
 by the final change.
@@ -1931,8 +1929,8 @@ installed coverage or physical-device behavior.
 
 Use Node 24 and Python 3.14. Run `npm ci`, the shared build/type/contract
 and workflow checks, the owning Hub/Hub MCP/package checks, and
-`npm run test:observability:pilot`. Depot runs the pilot tests in the existing
-contracts/state matrix. The source tests use synthetic inputs and no Docker.
+`npm run test:observability:pilot`. Depot runs the pilot tests in the core
+CI job. The source tests use synthetic inputs and no Docker.
 
 Hub synthetic state must be outside every Git checkout. On this host use:
 
@@ -2061,7 +2059,7 @@ installation.
 `npm run test:observability:built` includes the explicit Node host runtime
 checks against a loopback fake OTLP endpoint. `npm run test:observability:python`
 and `npm run test:observability:package:built` cover the Python host and external
-immutable consumer; both run in the existing contracts/state Python CI matrix.
+immutable consumer; both run in the core CI job with Python 3.14.
 Run build/type first and install the pinned contract and host requirements.
 Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
 adoption is covered by the existing Hub/MCP/setup checks. These are synthetic

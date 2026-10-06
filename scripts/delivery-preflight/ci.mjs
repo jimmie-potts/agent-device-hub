@@ -61,8 +61,14 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     return;
   }
   gate.evidence.mode = 'depot';
+  // Hub #861: Checks also ignores Markdown, so guide files that change together with other Markdown skip its suites.
+  // The revision then needs the guide evidence, as a guide-only change does.
+  const guidePaths = paths.filter(file => file.startsWith(GUIDE_ROOT));
+  const guideRidesAlong = filesComplete && guidePaths.length > 0 && outside.length > 0 && expected.filtered.length > 0;
   const { guideReceipts = [], guideRecords = [] } = ctx.declaration;
-  if (guideReceipts.length || guideRecords.length) {
+  if (guideRidesAlong) {
+    gate.note(`changed paths under ${GUIDE_ROOT} skip ${expected.filtered.map(item => item.workflow).join(', ')}; ${SDLC}#markdown-only-ci-routing requires the guide evidence`);
+  } else if (guideReceipts.length || guideRecords.length) {
     let why;
     if (!filesComplete) why = 'the changed-file list is incomplete';
     else if (outside.length) why = `not guide-only: ${outside.slice(0, 5).join(', ')}`;
@@ -71,6 +77,7 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     gate.note(`the guide-only exception does not apply: ${why}`);
   }
   await evaluateChecks(ctx, gate, { sha, names, checkBranch });
+  if (guideRidesAlong) await evaluateGuideEvidence(ctx, gate, { sha });
 }
 
 async function evaluateChecks(ctx, gate, { sha, names, checkBranch }) {
@@ -137,13 +144,19 @@ async function evaluateChecks(ctx, gate, { sha, names, checkBranch }) {
  * the revision, the HTML hash and passing local checks.
  */
 async function evaluateGuideException(ctx, gate, { sha }) {
-  const { github, repo, declaration } = ctx;
+  const { github, repo } = ctx;
   gate.evidence.mode = 'guide-only-exception';
   gate.note(`every changed path is under ${GUIDE_ROOT} and every workflow filters it; ${SDLC}#guide-only-ci-exception applies only with its evidence`);
   const runs = await ctx.read(gate, () => github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'));
   if (runs.ok && runs.value.some(run => run.app && run.app.slug === DEPOT_APP)) {
     gate.unresolved(`Depot runs exist for ${short(sha)} although the filters exclude this change; resolve that before using the exception`);
   }
+  await evaluateGuideEvidence(ctx, gate, { sha });
+}
+
+/** The guide verification receipt and its PR record for the candidate's committed guide HTML. */
+async function evaluateGuideEvidence(ctx, gate, { sha }) {
+  const { github, repo, declaration } = ctx;
   const receipts = declaration.guideReceipts || [];
   const records = declaration.guideRecords || [];
   if (!receipts.length || !records.length) {
