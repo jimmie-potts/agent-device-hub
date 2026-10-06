@@ -1606,7 +1606,8 @@ differences.
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:nanoleaf` from the worktree root. The core CI job runs
 `npm run test:nanoleaf:built` after its fresh build. The suite needs no device,
-Hub or Python.
+Hub or Python; the HTTP client's tests use stub servers on the loopback
+interface.
 
 The port is split into slices by area:
 
@@ -1629,11 +1630,12 @@ row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
 `shared_ack` and `shared_input.config` are not compared.
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
-discovery and malformed Lines replies, color parsing, and zone colors and effect
-payloads on random renderer states. The colors, payloads and pairing match
-exactly. A map geometry number may differ by 1e-12 times its magnitude, or by
-1e-12 below magnitude 1, because `Math.sin`, `Math.cos` and `Math.atan2` can
-differ from the C library's in the last bit.
+discovery and malformed Lines replies, color parsing, every effect pattern's
+payload, and zone colors and effect payloads on random renderer states. The
+colors, payloads, effects and pairing match exactly. A map geometry number may
+differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1, because
+`Math.sin`, `Math.cos` and `Math.atan2` can differ from the C library's in the
+last bit.
 `modules/nanoleaf/tests/fixtures/record.py` re-records them from a codex-nanoleaf
 checkout, as PORTING.md describes; CI does not run it.
 

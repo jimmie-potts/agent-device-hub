@@ -7,7 +7,7 @@ import {ValueError} from './errors.js';
 import type {Indication} from './line-projection.js';
 import {DEFAULT_PALETTE, isRole, paletteRgb, type Role} from './project-map.js';
 import type {SqlValue} from './sqlite.js';
-import type {LightRequest} from './transport.js';
+import {lightRequest, type LightRequest} from './transport.js';
 
 export type Palette = Readonly<Record<Role, Rgb>>;
 /** An element's project color, or null for the base color, and the half (0 or 1) that shows it. */
@@ -274,9 +274,7 @@ export function effectPayload(config: RenderConfig, snapshot: readonly Indicatio
 
 /** Send the frames and the indicator brightness; the receipt of what the device accepted. */
 export async function render(config: RenderConfig, snapshot: readonly Indication[], instant: number, loop: boolean): Promise<RenderingReceipt> {
-  // The Nanoleaf HTTP client joins in slice 2b; until then the pass supplies the request.
-  const request = config._controller_request;
-  if (request === undefined) throw new ValueError('Sending to the device needs a light request.');
+  const request = config._controller_request ?? lightRequest;
   const now = config._now ?? ((): number => Date.now() / 1000);
   const address = {ip: config.ip ?? '', token: config.token ?? ''};
   const effect = effectPayload(config, snapshot, instant, loop);
