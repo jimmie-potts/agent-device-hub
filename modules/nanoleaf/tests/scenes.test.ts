@@ -204,6 +204,14 @@ suite('SceneTest', () => {
     assert.throws(() => s.manager(), {name: 'ValueError'});
   });
 
+  test('a restarted worker returns a scene the indicators still own', async context => {
+    // The display shown before the restart is unchanged, but the saved state says the indicators hold the lights.
+    const result = await replay(context, 'an owned scene returns after a restart');
+    assert.equal((result.outcomes[2] as {result: {owned: boolean}}).result.owned, true);
+    assert.equal(selections(result.run.device.calls, 'Beach Waves').filter(at => at >= 1002).length, 1);
+    assert.equal(result.run.device.selected, 'Beach Waves');
+  });
+
   test('test_upgrade_adopts_cached_indicators_before_restoring_idle_baseline', async context => {
     // Partly, shared input only: the interrupted task leaves its Line when the owner removes it.
     const result = await replay(context, 'cached indicators are adopted');

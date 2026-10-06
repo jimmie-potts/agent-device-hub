@@ -1474,6 +1474,8 @@ def worker_cases():
                                                   ('run', 1003.0)]),
         case('cached indicators are adopted', [feed('prompt', 'a'), ('device', 'selected', '*Dynamic*'), ('sleep', 4.0), ('cache',),
                                                ('run', 1012.0, [(1007.0, feed('interrupt', 'a')), (1008.0, feed('end', 'a'))])]),
+        # The port's own: the indicators' ownership invalidates an unchanged idle display.
+        case('an owned scene returns after a restart', [('run', 1002.0), ('takeover',), ('scene',), ('run', 1004.0)]),
         # PaletteWorkerTest.
         case('palette change mid pulse and comet', [projects, feed('prompt', 'w'), feed('prompt', 'u'), ('run', 1012.0, [
             (1001.0, feed('stop', 'u')),
