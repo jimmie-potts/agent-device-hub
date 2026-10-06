@@ -9,14 +9,15 @@ export function core(mode: 'work' | 'free' | 'quiet' = 'work'): BunnyModule {
   return {
     manifest: {name: 'core', apiVersion: '1.0'},
     async start({sdk, database, clock, log}) {
-      // Serve the mode first, so a module that starts next can sync it.
       const state = modeState(mode, clock.now());
-      await sdk.serveSync(['mode'], () => ({revision: 1, states: [state]}));
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS taken (source TEXT NOT NULL, id TEXT NOT NULL, message TEXT NOT NULL, PRIMARY KEY (source, id)) STRICT');
       const prior = db.prepare('SELECT message FROM taken WHERE source = ? AND id = ?');
       const take = db.prepare('INSERT INTO taken (source, id, message) VALUES (?, ?, ?)');
-      await sdk.subscribe('bunny.event.*.*', message => {
+      // Both register before this start first awaits, and the runtime runs it before the next module's start, so a
+      // module that syncs the mode or resends outcomes in its start finds the core ready.
+      const served = sdk.serveSync(['mode'], () => ({revision: 1, states: [state]}));
+      const subscribed = sdk.subscribe('bunny.event.*.*', message => {
         const row = prior.get(message.source, message.id) as {message: string} | undefined;
         const verdict = compareDelivery(row === undefined ? undefined : JSON.parse(row.message) as Message, message);
         if (verdict === 'new') take.run(message.source, message.id, JSON.stringify(message));
@@ -25,6 +26,7 @@ export function core(mode: 'work' | 'free' | 'quiet' = 'work'): BunnyModule {
           source: message.source, id: message.id, kind: message.kind, ...(typeof requestId === 'string' ? {requestId} : {}),
         });
       });
+      await Promise.all([served, subscribed]);
     },
     stop: () => {},
   };

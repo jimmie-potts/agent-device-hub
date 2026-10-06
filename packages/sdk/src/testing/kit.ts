@@ -81,6 +81,8 @@ class World {
   readonly #spec: ConformanceSpec;
   readonly #dir: string;
   readonly #kit: Participant[] = [];
+  /** Every instance of the module this world hosted, the current one last. */
+  readonly #hosted: ModuleHarness[] = [];
   readonly timeoutMs: number;
   /** The kit's own participant, which sends requests and syncs. */
   readonly probe: Participant;
@@ -117,7 +119,9 @@ class World {
 
   /** A new instance of the module on this world's bus and state directory. */
   fresh(): ModuleHarness {
-    return new ModuleHarness(this.#spec.create(), {bus: this.bus, stateDir: this.#dir});
+    const harness = new ModuleHarness(this.#spec.create(), {bus: this.bus, stateDir: this.#dir});
+    this.#hosted.push(harness);
+    return harness;
   }
 
   check(message: unknown, where: string): void {
@@ -137,11 +141,11 @@ class World {
   async verify(): Promise<void> {
     await flush();
     assert.deepEqual(this.#invalid, [], 'every message follows profile 2.0');
-    assert.deepEqual([...this.#errors, ...this.harness.failures], [], 'no handler, timer or worker of the module failed');
+    assert.deepEqual([...this.#errors, ...this.#hosted.flatMap(harness => harness.failures)], [], 'no handler, timer or worker of the module failed');
   }
 
   async close(): Promise<void> {
-    await within(this.harness.stop(), this.timeoutMs, 'the module\'s stop').catch(() => {});
+    await Promise.all(this.#hosted.map(harness => within(harness.stop(), this.timeoutMs, 'the module\'s stop').catch(() => {})));
     await Promise.all(this.#kit.map(participant => participant.close()));
     await rm(this.#dir, {recursive: true, force: true});
   }

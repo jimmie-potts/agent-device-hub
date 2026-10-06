@@ -60,7 +60,8 @@ export class ModuleHarness {
 
   /**
    * Stops the module as the runtime does: its signal aborts, its timers are cancelled and its participant closes, then
-   * its `stop` runs, its workers end and its database closes. Calling it again returns the same promise.
+   * its `stop` runs, its workers end and its database closes. As in the runtime, `stop` runs only once `start` was
+   * called. Calling it again returns the same promise.
    */
   stop(): Promise<void> {
     this.#stopping ??= this.#stop();
@@ -83,7 +84,8 @@ export class ModuleHarness {
   async #stop(): Promise<void> {
     this.#controller.abort();
     for (const cancel of [...this.#timers]) cancel();
-    await this.#participant?.close();
+    if (this.#participant === undefined) return;
+    await this.#participant.close();
     await this.#module.stop();
     await Promise.allSettled([...this.#workers].map(worker => worker.terminate()));
     if (this.#database?.isOpen === true) this.#database.close();
