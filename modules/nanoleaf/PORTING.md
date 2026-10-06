@@ -72,12 +72,12 @@ Slices 2 and 3 translate their tests first.
 | `project_map.py` | Task metadata and placement: `init`, `seed`, `settings`, `line_id`, `normalize`, `default_color`, `fallback_title`, `Metadata`, `task_projects`, `owners`, `allocate` (`project-map.ts`). 2a: `palette`, `palette_rgb`, `render_config` (`project-map.ts`); `geometry`, `triangle_geometry`, `validated_connector_geometry`, `connector_layout` (`geometry.ts`) | 3: `record_event`, palette writes (`validate_palette`, `save_palette`), `rendering_snapshot`, map patches, `locate_state` | |
 | `bridge.py` | `dashboard` (`line-projection.ts`). 2a: the palette and timing constants, `pulse_amplitude`, `travel_delays`, `pixel_color`, `comet_color`, `zone_color`, `effect_payload`, `render`, `indicator_brightness` (`renderer.ts`) | 3: `introduction_ends`, `transition`, `handle_event`, `reconcile_read_state`, `unread_reader`, `SceneRestorer`, comets, `update_display`, previews, `run_worker` | `setup`, `main` (installer and CLI) |
 | `configuration.py` | `registered_devices` (`configuration.ts`). 2a: `pair_lines`, `load_config`, `follow_registry` (`configuration.ts`) | | `data_dir` (installation path) |
-| `enrollment.py` | `enroll`, `change_address`, `remove`, `check` and their checks (`enrollment.ts`); `private_address` (`transport.ts`) | 2b: `pair`, with the HTTP client | `read_token`, `reason`, `command` (CLI, #844) |
-| `transport.py` | 2a: the request shape callers inject, `LightRequest` (`transport.ts`) | 2b: `light_request`, the Nanoleaf HTTP API client | |
-| `effects.py` | 2a: `display`, the frame encoder (`effects.ts`) | 2b: validation, presets, patterns and `render` | |
+| `enrollment.py` | `enroll`, `change_address`, `remove`, `check` and their checks (`enrollment.ts`); `private_address` (`transport.ts`). 2b: `pair` (`enrollment.ts`) | | `read_token`, `reason`, `command` (CLI, #844) |
+| `transport.py` | 2a: the request shape callers inject, `LightRequest`. 2b: `light_request` (`lightRequest` over `nodeTransport`, `transport.ts`) | | |
+| `effects.py` | 2a: `display`, the frame encoder. 2b: validation, presets, the patterns and `render` (`effects.ts`) | | |
 | `modes.py`, `edits.py` | | 3 | |
 | `controller_state.py` | | 3: the execution half that `run_worker` and `change_mode` call: `Execution`, `Cancelled`, `controls`, `control_payload`, `overrides`, `hold`, `held`, `release`, `discovered`, `scenes`, `scene_id`, and the worker's recovery of interrupted attempts in `recover` | The ledger and HTTP half: tables, `init`, `drop`, `ledgers`, `present`, `read`, `save`, `snapshot`, `capabilities`, `event`, `finish`, `changed`, `credential`, the listener's expiry in `recover`, `readonly` and admission (runtime commands and replies) |
-| `integration_api.py` | | 2b: saved animation favorites and their table | The integration extension API (runtime commands, #844) |
+| `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`) | | The rest of the integration extension API (runtime commands, #844) |
 | `controller_server.py`, `controller_contract.py` | | | The HTTP controller (runtime commands and replies) |
 | `codex_hooks.py` | | | Codex hook registration, retired (owner decision, 2026-10-05) |
 | `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | | The web server is replaced by the runtime; the wall pages, their view and assets move with #844 |
@@ -96,7 +96,7 @@ each such test says so in a comment, and [Dropped assertions](#dropped-assertion
 | --- | --- | --- | --- |
 | `test_shared_input.py` | 74 | 59 (`shared-input.test.ts`): 58 in slice 1, and `test_stale_peer_does_not_suppress_healthy_outward_wave` in 2a. Partly: `test_generation_validation_preserves_closed_contract`, `test_atomic_cutover_identity_and_legacy_suppression`, `test_failed_preflight_and_comet_reservation_preserve_legacy`, `test_eviction_http_requires_origin_token_and_current_task`, `test_skipped_sessions_take_no_part_in_grouping_or_acknowledgment`, `test_declared_subagent_of_an_undeclared_parent_follows_the_missing_parent_rule`, `test_damaged_backup_refuses_rollback_without_partial_restore`. `test_released_owner_clears_only_nanoleaf_on_evidenced_new_turn` uses the recorded owner snapshot | Slice 3: `test_rollback_completion_can_be_read_and_release_its_line`, `test_worker_polls_and_refreshes_metadata_in_free_without_legacy_unread_reads`. Not ported: `test_released_fixture_corpus`, `test_released_title_fixture_corpus_and_credentials` and four `TransportTest` cases (feed transport and schema check), the two legacy hooks checks, `test_inspection_missing_state_does_not_create_files`, `CommandTest` (2, CLI and owner acknowledgment), `test_pinned_archive_and_extracted_files` (vendored copy), `StartupTest` (wall server start) |
 | `test_shared_metadata.py` | 10 | 10 translated (`shared-metadata.test.ts`). Partly: `test_shared_title_and_project_precede_local_metadata`, `test_poll_refreshes_same_revision_without_lifecycle_or_effect_changes` | |
-| `test_enrollment.py` | 44 | 31 (`enrollment.test.ts`): 30 in slice 1, and `test_saved_geometry_loads_while_the_device_is_unreachable` in 2a. Partly: `test_files_are_owner_only_and_output_never_contains_the_credential`, `test_conflicts_are_refused_before_pairing_or_prompting`, `test_enrolled_device_stays_dark_until_activated`, `test_machine_credentials_are_unchanged`, `test_malformed_layout_is_refused_before_removal_writes`, `test_failure_after_the_registry_write_asks_for_a_rerun` | Slice 2b: `test_pair_posts_to_the_new_endpoint_without_a_proxy`. Slice 3: `test_activation_replays_no_comet_or_wave`. Not ported (CLI, prompt, installer): `test_http_failure_reports_only_the_status`, `test_hidden_prompt_supplies_the_credential`, `test_pairing_obtains_the_credential_from_the_device`, `test_installer_reads_its_token_file_through_the_shared_reader`, `test_output_names_activation_and_needs_no_restart`, `test_busy_state_is_reported_without_a_traceback`, `test_command_reports_removal`, both `AddressTest.test_command_*`, `DispatchTest` (2) |
+| `test_enrollment.py` | 44 | 32 (`enrollment.test.ts`): 30 in slice 1, `test_saved_geometry_loads_while_the_device_is_unreachable` in 2a and `test_pair_posts_to_the_new_endpoint_without_a_proxy` in 2b. Partly: `test_files_are_owner_only_and_output_never_contains_the_credential`, `test_conflicts_are_refused_before_pairing_or_prompting`, `test_enrolled_device_stays_dark_until_activated`, `test_machine_credentials_are_unchanged`, `test_malformed_layout_is_refused_before_removal_writes`, `test_failure_after_the_registry_write_asks_for_a_rerun` | Slice 3: `test_activation_replays_no_comet_or_wave`. Not ported (CLI, prompt, installer): `test_http_failure_reports_only_the_status`, `test_hidden_prompt_supplies_the_credential`, `test_pairing_obtains_the_credential_from_the_device`, `test_installer_reads_its_token_file_through_the_shared_reader`, `test_output_names_activation_and_needs_no_restart`, `test_busy_state_is_reported_without_a_traceback`, `test_command_reports_removal`, both `AddressTest.test_command_*`, `DispatchTest` (2) |
 | `test_devices.py` | 15 | 10 (`devices.test.ts`): 7 in slice 1, and `test_legacy_layout_loads_as_default_device_without_request`, `test_version_two_layout_with_lines_and_triangles`, `test_registry_address_change_keeps_identity_and_preferences` in 2a. Partly: `test_pre_change_linux_database_migrates_and_repeats_without_change`, `test_registry_address_change_keeps_identity_and_preferences` | Slice 3: `test_equal_element_ids_on_two_devices_do_not_collide`, `test_literally_equal_element_ids_on_two_devices_keep_separate_state`, `test_modes_and_scene_files_are_independent_per_device`, `test_untargeted_callers_address_default_device`. Not ported: `test_installer_writes_per_device_layout_and_registry` |
 | `test_bridge.py` | 45 | 13: in slice 1, 3 (`devices.test.ts`): `test_failed_initialization_closes_connection` (counts open file handles instead of patched connections), `test_failed_initialization_rolls_back_partial_schema`, `test_migration_keeps_task_assignments_and_removes_old_notifications`; in 2a, the 10 rendering and pairing cases (`renderer.test.ts`, `configuration.test.ts`) | The other 32 are listed by slice in [test_bridge.py](#test_bridgepy) |
 | `test_panels.py` | 15 | 15: in slice 1, `GeometryTest` (5) and, partly, `test_six_triangle_reservation_and_shared_overflow` (`devices.test.ts`); in 2a, `DiscoveryTest` (2, `configuration.test.ts`), `PayloadTest` (6) and, partly, `test_render_config_gives_triangles_no_signature` (`renderer.test.ts`) | |
@@ -111,8 +111,8 @@ each such test says so in a comment, and [Dropped assertions](#dropped-assertion
 | `test_connector_geometry.py` | 13 | 3 in 2a (`geometry.test.ts`): `test_actual_layout_preserves_identity_and_reported_housings`, `test_graph_is_allowlisted_and_rejects_invalid_geometry`, `test_synthetic_topologies_and_orientation_preserve_zone_ownership` | Not ported: the other 10 test the wall server's geometry enrichment, its connector cache file and its state (#844) |
 | `test_comets.py` | 16 | 2 in 2a (`renderer.test.ts`): `test_geometry_head_tail_duration_and_zone_pairs`, `test_protect_red_yellow_lines_and_outward_waves` | Slice 3: the other 14 |
 | `test_modes.py` | 15 | 1 in 2a (`renderer.test.ts`): `test_quiet_frames_are_steady_paired_colors` | Slice 3: the other 14 |
-| `test_effects.py` | 18 | 1 in 2a (`effects.test.ts`): `EncoderTest.test_display_encodes_zone_frames`, with the display encoder | Slice 2b: the other 17. `test_presets_resolve_to_identical_bounded_explicit_frames` drops the MCP host's advertised preset list |
-| `test_animation_favorites.py` | 7 | | Slice 2b: four cases, partly. Not ported: `test_stale_authority_replay_cancel_expiry_and_hold`, `test_worker_applies_save_without_light_write_and_rejects_changed_revision`, `test_revocation_and_wrong_target_never_save_or_play` (integration admission, processing and credentials) |
+| `test_effects.py` | 18 | 18: 1 in 2a, `EncoderTest.test_display_encodes_zone_frames`, with the display encoder; 17 in 2b. All in `effects.test.ts`. Partly: `test_presets_resolve_to_identical_bounded_explicit_frames` | |
+| `test_animation_favorites.py` | 7 | 4 in 2b (`favorites.test.ts`), each partly: `test_save_freezes_recipe_survives_reopen_and_replays`, `test_collision_atomic_rename_delete_bound_and_name_identity`, `test_preset_defaults_are_frozen_without_snapshot_or_display_mutation`, `test_malformed_names_recipes_mixed_selectors_and_bounds_are_rejected` | Not ported: `test_stale_authority_replay_cancel_expiry_and_hold`, `test_worker_applies_save_without_light_write_and_rejects_changed_revision`, `test_revocation_and_wrong_target_never_save_or_play` (integration admission, processing and credentials) |
 | `test_device_worker.py` | 40 | 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order` | Slice 3 by area; its CLI, installer and controller API checks are not ported |
 | `test_scene_restore.py`, `test_edit_parity.py` | | | Slice 3 by area. Their HTTP, integration and wall server checks are not ported |
 | `test_controller_state.py`, `test_controller_api.py`, `test_controller_cli.py`, `test_controller_contracts.py`, `test_integration_geometry.py`, `test_codex_links.py`, `test_prism_assets.py` | | | Not ported: the controller ledger, HTTP controller, integration API and wall server. Wall view and link behavior moves with #844 |
@@ -128,10 +128,15 @@ The port adds tests of its own:
 - `registry lock` (in-process turns), in `enrollment.test.ts`;
 - the recorded values in `compat.test.ts` and the replay in `trace.test.ts`;
 - the recorded comparisons `geometry recorded from Python` (`geometry.test.ts`), `frames recorded
-  from Python` and `colors recorded from Python` (`renderer.test.ts`), and `Lines replies parsed as
-  Python parsed them` and `discovery recorded from Python` (`configuration.test.ts`);
-- `test decoder checks the port adds` (`effects.test.ts`): the test decoder reads `animData` as
-  Python's `int()` did.
+  from Python` and `colors recorded from Python` (`renderer.test.ts`), `Lines replies parsed as
+  Python parsed them` and `discovery recorded from Python` (`configuration.test.ts`), and `effects
+  recorded from Python` (`effects.test.ts`);
+- `effect checks the port adds` and `test decoder checks the port adds` (`effects.test.ts`; the
+  test decoder reads `animData` as Python's `int()` did), and `favorite checks the port adds`
+  (`favorites.test.ts`);
+- `lightRequest` and `nodeTransport` (`transport.test.ts`). The `nodeTransport` tests use stub HTTP
+  servers on the loopback interface. They check that a device that never answers fails within the
+  timeout, and that a proxy set for Node is never used.
 
 ### Dropped assertions
 
@@ -186,6 +191,14 @@ Not ported (the layer that held them is replaced):
 - `test_upgrade_keeps_preferences_and_adopts_defaults`: the wall view, which moves with #844. Its
   palette and mode are read from the saved state instead, and its check that opening the view
   leaves the scene file unchanged is not translated.
+- `test_presets_resolve_to_identical_bounded_explicit_frames`: the MCP host's advertised preset list.
+  The runtime module will advertise `PRESETS` itself (#844).
+- The four `test_animation_favorites.py` cases: the integration API's admission, HTTP statuses,
+  request IDs, receipts and controller snapshot, and its Free-only rule for playing (runtime
+  commands, #844), and the worker's play (slice 3). The tests run each edit as admission and the
+  worker did: checked, then checked again and applied in its own transaction. Refusals are checked
+  by their failure codes. Python patched the byte bound to 100; the port checks it on a wall too
+  large for the recipe.
 
 ### test_bridge.py
 
@@ -259,8 +272,10 @@ retires with codex-nanoleaf (#839). It writes:
   - `palette_rgb` on well-formed and malformed color text (`renderer.test.ts`);
   - 90 random renderer states on five layouts (`renderer.test.ts`). Each state has 30 zone colors
     sampled across its pulse and the SHA-256 of its effect payload's JSON text.
+  - every effect pattern, color set, speed, direction and loop choice on the same five layouts
+    (`effects.test.ts`): a short hash of each payload's JSON text and a SHA-256 over all of them.
 
-  Zone colors, payloads and pairing compare exactly. A map geometry number may differ by 1e-12
+  Zone colors, payloads, effects and pairing compare exactly. A map geometry number may differ by 1e-12
   times its magnitude, or by 1e-12 below magnitude 1, for the reason in
   [Known differences](#known-differences). The largest recorded difference is 1.4e-14, and 58 of the
   3,432 recorded geometry numbers differ at all.
@@ -314,8 +329,8 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
   replaced once Python retires (#839).
 - `Math.sin`, `Math.cos` and `Math.atan2` are V8's functions, not the C library's that Python calls.
   On random inputs they differ in the last bit for about 3% (sine, cosine) and 18% (arc tangent), so
-  rotated map geometry can differ by an ulp. The recorded zone colors, payloads and pairing still
-  match exactly.
+  rotated map geometry can differ by an ulp. The recorded zone colors, payloads, effects and
+  pairing still match exactly.
 - As in Python, pairing reads the reported entries in order, duplicates and connectors included,
   and Line positions take the last entry with each panel ID and read only `x` and `y`. A device
   reply without `panelLayout`, a reported entry that is not an object or lacks a field Python read
@@ -327,15 +342,26 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
   `int(text, 16)` on each pair of characters also refused `#1g2233` and `#abc`, but accepted a
   short last channel (`#12345`), a sign or space (`#+1aabb`), extra characters (`#aabbccdd`) and a
   first character other than `#`. Saved colors are always written as `#` and six digits.
+- `nodeTransport`'s timeout bounds the whole exchange. Python's urllib timeout (1.2 seconds for light
+  requests, 5 for pairing) applied to each socket operation, so a reply that trickled in could take
+  longer there. Replies outside 2xx are an `HttpError` with the status, and redirects are not
+  followed; urllib followed them.
+- Device requests use their own connection (`agent: false`), so a proxy that Node 24 takes from the
+  environment under `NODE_USE_ENV_PROXY` is never used, as Python's `ProxyHandler({})` ignored
+  configured proxies.
+- The light credential must be ASCII letters and digits. Python's `isalnum()` also accepted letters
+  and digits of other scripts, which then failed when the URL was encoded.
+- `pair` refuses a reply that is not a JSON object with a `ValueError`; Python raised
+  `AttributeError`.
+- A favorite edit no longer bumps the controller ledger's revision, because the ledger is not
+  ported. A damaged saved recipe that is not an object, or that names a `kind`, is refused as
+  `unsupported-capability`; Python raised `TypeError`.
+- `PRESETS`, `DEFAULTS` and the bounds are frozen constants; the Python tests patched them.
 
 ## Known limits
 
 - The tests read task rows through `wallView`, a test helper that mirrors
   `wall_server.App.state`. No Python recording checks that helper; #844 ports the real view.
-- Until slice 2b adds the HTTP client, `loadConfig` and `render` have no default device request:
-  a device read or send without the caller's request is a `ValueError`. #844 runs the module in
-  disposable runs before the cutover (#840), so slice 2b must land before #844 wires the module.
-  Slice 2b removes this limit.
 
 ## Open decision
 
