@@ -1,10 +1,10 @@
 import type { BridgeEvent } from '../bridge.js';
 import { systemClock, type Clock } from '../clock.js';
-import type { CardButtons, ClaudeDesktopSession, Client, ForegroundWindow, Observation, OsAdapter } from '../os-adapter.js';
+import { MAX_VOLUME_PRESSES, type CardButtons, type ClaudeDesktopSession, type Client, type ForegroundWindow, type Observation, type OsAdapter, type VolumeKey } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
-import { PAGE_TURN, type RoutingProfile } from './profile.js';
+import { PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
 import { Detent } from './detent.js';
 import { SLOT_COUNT, candidatesFromSessions, sessionsForSlot, slotKey, type SlotReleaseReason, type SlotRecord, type SlotStore } from './slots.js';
 
@@ -72,6 +72,9 @@ const MAX_PENDING_STEPS = 64;
 const CARD_REUSE_MS = 500;
 /** Protocol turn IDs 41-46 pair with click IDs 29-34: the big wheel's click is its turn ID minus 12. */
 const TURN_TO_CLICK = 12;
+/** Bounds on volume work waiting while a volume key is being sent: presses, and mute toggles. */
+const MAX_PENDING_VOLUME = 50;
+const MAX_PENDING_MUTES = 4;
 
 /** The reason code of an adapter call that failed, timed out or answered unknown. */
 function reasonOf<T>(call: Call<Observation<T>>): string {
@@ -118,8 +121,8 @@ export class TaskRouter {
   /** Incremented by every Record press and release; a press waiting for an Enter tap checks it is still current. */
   #recordToken = 0;
   #chordDown = false;
-  /** The Enter keystroke of a Send while it is being typed; Record presses its chord right after it. */
-  #tapping: Promise<unknown> | null = null;
+  /** Keystrokes being typed (a Send's Enter, a volume key); Record presses its chord right after them. */
+  readonly #taps = new Set<Promise<unknown>>();
   /** A Send or card press is being checked or typed. */
   #sending = false;
   /** The last Send keystroke or card press, for the shared repeat window. */
@@ -139,6 +142,22 @@ export class TaskRouter {
   #chosen: { client: Client; cardId: string; index: number } | null = null;
   /** Until when the big-wheel LEDs show a refused or uncertain Send or card press. */
   #wheelErrorUntil = Number.NEGATIVE_INFINITY;
+  /**
+   * The Attention key (#865): when the bridge first saw each assigned task waiting, as a sequence number by slot key.
+   * The Hub's attention entries carry no time, so this order lives in memory only and restarts with the bridge.
+   */
+  readonly #attentionSeen = new Map<string, number>();
+  #attentionSequence = 0;
+  /** The last Attention key press and the task it opened, for the repeat window. */
+  #lastAttention: { at: number; sequence: number } | null = null;
+  /** Black-key controls flashing the error color for a refused press, and until when. */
+  readonly #keyErrors = new Map<number, number>();
+  /** The volume knob (#865): partial rotation, presses and mute toggles waiting for the single volume worker. */
+  readonly #volumeDetent = new Detent();
+  #volumePending = 0;
+  #mutePending = 0;
+  #volumeBusy = false;
+  #volumeErrorUntil = Number.NEGATIVE_INFINITY;
   readonly #errors = new Map<number, number>();
   #overflow = 0;
   #startedAt = 0;
@@ -223,6 +242,7 @@ export class TaskRouter {
     this.#wheelDetent.reset();
     this.#scrollPending = 0;
     this.#stepsPending = 0;
+    this.#clearVolume();
     this.#card = null;
     this.#chosen = null;
     this.#chordDown = false;
@@ -261,9 +281,11 @@ export class TaskRouter {
     }
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
-      // Knob 4 pages tasks (#822); the big wheel scrolls or answers a card; other turns are inert (knobs 1-3: #744).
+      // Knob 4 pages tasks (#822); the big wheel scrolls or answers a card; the volume knob steps the system volume
+      // (#865); other turns are inert (knobs 1-3: #744).
       if (event.control === PAGE_TURN) this.#pageTurn(event.delta);
       else if (event.control === controls.scroll) this.#wheelTurn(event.delta);
+      else if (this.#profile.volume && event.control === VOLUME_TURN) this.#volumeTurn(event.delta);
       return;
     }
     if (event.kind === 'release') {
@@ -287,7 +309,13 @@ export class TaskRouter {
     else if (event.control === controls.record) this.#track(this.#recordPress());
     else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
-    // Every other control is inert here: small knobs, the volume knob and unmapped keys belong to #744.
+    else if (this.#profile.volume && event.control === VOLUME_CLICK) this.#volumeMute();
+    else {
+      // Black keys act as the profile maps them (#865); other controls, such as the small knobs, are inert (#744).
+      const action = this.#profile.keys[String(event.control)];
+      if (action === 'attention') this.#attentionPress(event.control);
+      else if (action === 'back') this.#back();
+    }
   }
 
   // Slots and feed
@@ -299,6 +327,23 @@ export class TaskRouter {
       this.#overflow = overflow.length;
       this.#log({ type: 'overflow', count: overflow.length });
     }
+    this.#noteAttention();
+  }
+
+  /**
+   * Records when each assigned task was first seen waiting, and forgets tasks that no longer wait or hold a slot.
+   * Waiting changes only on a current feed; a stale feed keeps the order until the feed is current again.
+   */
+  #noteAttention(): void {
+    const records = this.#slots.entries();
+    const keys = new Set(records.map(slotKey));
+    for (const key of this.#attentionSeen.keys()) if (!keys.has(key)) this.#attentionSeen.delete(key);
+    if (this.#feed.status !== 'current') return;
+    for (const record of records) {
+      const key = slotKey(record);
+      if (slotState(record, sessionsForSlot(record, this.#feed.sessions), this.#feed.status) !== 'attention') this.#attentionSeen.delete(key);
+      else if (!this.#attentionSeen.has(key)) this.#attentionSeen.set(key, ++this.#attentionSequence);
+    }
   }
 
   #releaseSlot(slot: number, reason: SlotReleaseReason): void {
@@ -307,6 +352,7 @@ export class TaskRouter {
     this.#log({ type: 'slot-released', slot, client: record.client, reason });
     if (this.#focusing === slot) this.invalidate('slot-released');
     if (this.#feed.status !== 'unavailable') this.#reconcile();
+    else this.#noteAttention();
     this.#render();
   }
 
@@ -536,8 +582,8 @@ export class TaskRouter {
   async #recordPress(): Promise<void> {
     this.#recordHeld = true;
     const token = ++this.#recordToken;
-    if (this.#tapping) {
-      await this.#tapping;
+    if (this.#taps.size > 0) {
+      await Promise.all([...this.#taps]);
       if (token !== this.#recordToken || this.#closed) return;
     }
     this.#chordDown = true;
@@ -610,10 +656,7 @@ export class TaskRouter {
       if (!approval.ok || approval.value.status !== 'known') return refuse('approval-unknown', { client });
       if (approval.value.value) return refuse('approval-visible', { client });
       this.#lastSendAt = this.#clock.now();
-      const tap = this.#call(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.send }));
-      this.#tapping = tap;
-      const sent = await tap;
-      this.#tapping = null;
+      const sent = await this.#tap(() => this.#adapter.sendKeys({ action: 'tap', keys: this.#profile.shortcuts.send }));
       if (sent.ok) this.#log({ type: 'sent', client });
       else {
         this.#log({ type: 'send-uncertain', client, reason: sent.reason });
@@ -813,7 +856,117 @@ export class TaskRouter {
     }
   }
 
+  // The Attention key (#865)
+
+  /** Tasks on the profile's pages that wait for the owner, first seen first; none unless the feed is current. */
+  #waiting(): { slot: number; sequence: number }[] {
+    if (this.#feed.status !== 'current') return [];
+    const capacity = this.#profile.pages.count * SLOT_COUNT;
+    return this.#slots.entries()
+      .filter(record => record.slot <= capacity && slotState(record, sessionsForSlot(record, this.#feed.sessions), this.#feed.status) === 'attention')
+      .map(record => ({ slot: record.slot, sequence: this.#attentionSeen.get(slotKey(record)) ?? Number.POSITIVE_INFINITY }))
+      .sort((a, b) => a.sequence - b.sequence || a.slot - b.slot);
+  }
+
+  /**
+   * Opens the task the bridge first saw waiting, through the slot key's open and verify path, and shows its page. A
+   * press within `timing.attentionRepeatMs` of the last one moves on to the next waiting task, around to the first.
+   * With nothing waiting, or a feed that is not current, it refuses with the error flash. It is navigation only: it
+   * acknowledges nothing and changes no Hub state.
+   */
+  #attentionPress(control: number): void {
+    const now = this.#clock.now();
+    const waiting = this.#waiting();
+    if (waiting.length === 0) {
+      this.#log({ type: 'attention-refused', reason: this.#feed.status === 'current' ? 'none-waiting' : `feed-${this.#feed.status}` });
+      this.#keyErrors.set(control, now + this.#profile.timing.errorFlashMs);
+      this.#render();
+      return;
+    }
+    const last = this.#lastAttention;
+    const repeat = last !== null && now - last.at < this.#profile.timing.attentionRepeatMs;
+    const target = (repeat ? waiting.find(w => w.sequence > last.sequence) : undefined) ?? waiting[0];
+    this.#lastAttention = { at: now, sequence: target.sequence };
+    const page = Math.ceil(target.slot / SLOT_COUNT);
+    if (page !== this.#page) {
+      this.#page = page;
+      this.#pageDetent.reset();
+      this.#log({ type: 'page', page, pages: this.#profile.pages.count });
+    }
+    this.#log({ type: 'attention-open', slot: target.slot, waiting: waiting.length });
+    this.#slotPress(target.slot);
+  }
+
+  // The volume knob (#865)
+
+  /**
+   * A volume knob turn sends one volume key per `volume.stepCounts` encoder counts (clockwise raises the volume unless
+   * inverted), with the reversal rule of the other detents. Volume keys act on the system, so no window is checked.
+   * While Record holds the dictation chord the knob is ignored, so a volume key never joins the chord.
+   */
+  #volumeTurn(delta: number): void {
+    const { stepCounts, invert } = this.#profile.volume!;
+    const steps = this.#volumeDetent.turn(delta, stepCounts);
+    if (steps === 0) return;
+    if (this.#recordHeld || this.#chordDown) return this.#volumeIgnored();
+    const presses = invert ? -steps : steps;
+    this.#volumePending = Math.max(-MAX_PENDING_VOLUME, Math.min(MAX_PENDING_VOLUME, this.#volumePending + presses));
+    if (!this.#volumeBusy) this.#track(this.#drainVolume());
+  }
+
+  /** A volume knob click toggles mute, unless Record holds the dictation chord. */
+  #volumeMute(): void {
+    if (this.#recordHeld || this.#chordDown) return this.#volumeIgnored();
+    this.#mutePending = Math.min(MAX_PENDING_MUTES, this.#mutePending + 1);
+    if (!this.#volumeBusy) this.#track(this.#drainVolume());
+  }
+
+  #volumeIgnored(): void {
+    this.#log({ type: 'volume-ignored', reason: 'dictating' });
+    this.#flashVolume();
+  }
+
+  #clearVolume(): void {
+    this.#volumeDetent.reset();
+    this.#volumePending = 0;
+    this.#mutePending = 0;
+  }
+
+  /** The single volume worker: turns that arrive while it waits coalesce. A failed volume key is never retried. */
+  async #drainVolume(): Promise<void> {
+    this.#volumeBusy = true;
+    try {
+      while ((this.#volumePending !== 0 || this.#mutePending > 0) && !this.#closed) {
+        if (this.#recordHeld || this.#chordDown) return this.#clearVolume();
+        let key: VolumeKey;
+        let presses = 1;
+        if (this.#mutePending > 0) {
+          this.#mutePending--;
+          key = 'VolumeMute';
+        } else {
+          presses = Math.min(MAX_VOLUME_PRESSES, Math.abs(this.#volumePending));
+          key = this.#volumePending > 0 ? 'VolumeUp' : 'VolumeDown';
+          this.#volumePending -= Math.sign(this.#volumePending) * presses;
+        }
+        const sent = await this.#tap(() => this.#adapter.sendVolumeKey(key, presses));
+        if (!sent.ok) {
+          this.#log({ type: 'volume-failed', key, reason: sent.reason });
+          this.#flashVolume();
+          return this.#clearVolume();
+        }
+        this.#log({ type: 'volume', key, presses });
+      }
+    } finally {
+      this.#volumeBusy = false;
+    }
+  }
+
   // Lights
+
+  #flashVolume(): void {
+    this.#volumeErrorUntil = this.#clock.now() + this.#profile.timing.errorFlashMs;
+    this.#render();
+  }
 
   /** The big-wheel LEDs show the error color briefly for a refused or uncertain Send or card press (owner, #821). */
   #flashWheel(): void {
@@ -871,6 +1024,11 @@ export class TaskRouter {
     });
   }
 
+  #flashingKeys(now: number): Set<number> {
+    for (const [control, until] of this.#keyErrors) if (until <= now) this.#keyErrors.delete(control);
+    return new Set(this.#keyErrors.keys());
+  }
+
   #render(force = false): void {
     if (this.#closed) return;
     const now = this.#clock.now();
@@ -878,6 +1036,7 @@ export class TaskRouter {
     const frame = renderFrame({
       profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, wheelError: now < this.#wheelErrorUntil,
       page: { number: this.#page, hiddenAttention: this.#hiddenAttention() },
+      attentionWaiting: this.#waiting().length > 0, keyErrors: this.#flashingKeys(now), volumeError: now < this.#volumeErrorUntil,
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });
     const signature = JSON.stringify(frame);
@@ -913,6 +1072,17 @@ export class TaskRouter {
       }
       pending.then(value => finish({ ok: true, value }), () => finish({ ok: false, reason: 'rejected' }));
     });
+  }
+
+  /** Runs one keystroke call that a Record press waits for, so the dictation chord never joins it. */
+  async #tap(operation: () => Promise<void>): Promise<Call<void>> {
+    const call = this.#call(operation);
+    this.#taps.add(call);
+    try {
+      return await call;
+    } finally {
+      this.#taps.delete(call);
+    }
   }
 
   #sleep(ms: number): Promise<void> {
