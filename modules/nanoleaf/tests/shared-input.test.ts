@@ -5,14 +5,15 @@ import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {sha256Hex, type JsonObject} from '../src/compat.js';
-import {withState} from '../src/database.js';
+import {connectState, withState} from '../src/database.js';
 import {FeedError} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {BASELINE, COLORS, effectPayload, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
 import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRenderConfig, validateConfig, type Envelope, type Identity,
   type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
-import {execute, rows, transaction, type Row} from '../src/sqlite.js';
+import {transactWith} from '../src/journal.js';
+import {execute, rows, transaction, type Db, type Row} from '../src/sqlite.js';
 import {accept, clone, configure, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
   query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
   type WallTask} from './support.js';
@@ -1406,6 +1407,26 @@ suite('transaction helpers', () => {
       execute(db, "INSERT INTO meta VALUES ('x','1')");
       throw new Error('stop');
     })), /stop/);
+    assert.deepEqual(query(path, "SELECT * FROM meta WHERE key='x'"), []);
+  });
+
+  test('asynchronous work is refused and rolled back', async context => {
+    // The types refuse an async body, which would commit before its awaited work ran. One passed anyway is refused at
+    // run time and its promise left handled, as the SDK's outbox does; the runtime's transact refuses it too.
+    const path = temporary(context);
+    const work = async (db: Db): Promise<void> => {
+      execute(db, "INSERT INTO meta VALUES ('x','1')");
+      await Promise.resolve();
+      throw new Error('after the commit');
+    };
+    // A caller outside TypeScript: a function typed to return nothing may still return a promise.
+    const outside = (db: Db): (() => void) => () => work(db);
+    assert.throws(() => withState(path, db => transaction(db, outside(db))), TypeError);
+    assert.deepEqual(query(path, "SELECT * FROM meta WHERE key='x'"), []);
+    const db = connectState(path);
+    context.after(() => db.close());
+    await assert.rejects(transactWith(db, () => {})(outside(db)), TypeError);
+    assert.equal(db.isTransaction, false);
     assert.deepEqual(query(path, "SELECT * FROM meta WHERE key='x'"), []);
   });
 });
