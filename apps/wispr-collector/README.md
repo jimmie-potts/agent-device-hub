@@ -24,7 +24,7 @@ npm run test:wispr:package
 ## Offline package and commands
 
 Build `npm run package:wispr` on the development host. The reproducible
-`artifacts/wispr-collector-1.1.4.tgz` contains compiled code, the shared contract,
+`artifacts/wispr-collector-1.1.5.tgz` contains compiled code, the shared contract,
 pinned installed JavaScript dependencies, their licenses, a file-hash manifest
 and synthetic checks. Compare its SHA256 sidecar before extracting. Extraction
 needs no registry or network access. Supply native Windows Node 24 separately;
@@ -113,9 +113,11 @@ external lock or fix the private destination, then retry. Attempt status can be
 newer than the aggregate; consumers must match namespace, generation and revision
 and treat mismatches as unavailable. Do not use file modification time as freshness.
 A failed attempt appears as a collection gap on the next complete snapshot.
-Intervals longer than the planned five-minute collection cadence are marked
-`not-observed`; these are observation gaps, not evidence of lost dictations or
-zero usage. No rows deleted before first capture can be recovered.
+Successful runs finish a few seconds after each scheduled start, so an interval
+of up to 7.5 minutes (1.5 times the planned five-minute cadence) counts as
+observed. Longer intervals, such as a missed run, sleep or a stopped task, are
+marked `not-observed`; these are observation gaps, not evidence of lost
+dictations or zero usage. No rows deleted before first capture can be recovered.
 
 Take a named backup before an intentional clear, reset or private schema change.
 Keep enough disk capacity for another copy of the store; backup fails rather than

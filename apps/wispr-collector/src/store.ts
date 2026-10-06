@@ -12,6 +12,9 @@ import { publishTextRevocation } from './publication.js';
 import { initializeControl, readControl, writeControl, type Control } from './control.js';
 
 export const MAX_STORE_BYTES = 1024 * 1024 * 1024;
+// Successful observations land a few seconds after each five-minute task start, so their spacing
+// jitters around 300 s. Up to 1.5x the cadence counts as observed; one missed run (~600 s) does not.
+export const OBSERVATION_TOLERANCE_MS = 450_000;
 type Metadata = {
   format: 1; namespace: string; sourceIdentity: string; timezone: string; generation: string;
   dataEpoch: string; textEpoch: number; revision: number; captureAfter: number | null; snapshot: Snapshot; pending: boolean; languagePolicy?:string; dictionaryBaseline?:Snapshot['dictionary'];dictionaryResetPending?:boolean;
@@ -183,7 +186,7 @@ export class NumericStore {
         }else deleteLanguage.run(value.id);
       }
       const gaps=structuredClone(meta.snapshot.coverage.gaps),previous=meta.snapshot.lastSuccessAt;
-      if(previous&&previous<observedAt&&(options.failedAttempt||Date.parse(observedAt)-Date.parse(previous)>300_000)){
+      if(previous&&previous<observedAt&&(options.failedAttempt||Date.parse(observedAt)-Date.parse(previous)>OBSERVATION_TOLERANCE_MS)){
         const reason=options.failedAttempt?'failed-attempt' as const:'not-observed' as const;
         const last=gaps.at(-1);if(last&&last.to===previous&&last.reason===reason)last.to=observedAt;else gaps.push({from:previous,to:observedAt,reason});
       }
