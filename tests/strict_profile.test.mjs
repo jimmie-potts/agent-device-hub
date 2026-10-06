@@ -1,16 +1,18 @@
 // The strict profile for new code (Hub #867): which files it covers, the local rules and the compiler base.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join, relative, resolve} from 'node:path';
+import {dirname, join, relative} from 'node:path';
 import {describe, it, test} from 'node:test';
 import {ESLint, RuleTester} from 'eslint';
+import tseslint from 'typescript-eslint';
+import {staged as stagedGlobs, strict as strictGlobs} from '../eslint.config.mjs';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
 
 const root = join(import.meta.dirname, '..');
 const strictRules = ['@typescript-eslint/switch-exhaustiveness-check', '@typescript-eslint/strict-boolean-expressions',
-  '@typescript-eslint/no-non-null-assertion', 'bunny/disable-reason'];
+  '@typescript-eslint/no-non-null-assertion'];
 const severity = (config, rule) => {
   const value = config.rules?.[rule];
   return Array.isArray(value) ? value[0] : value;
@@ -21,12 +23,31 @@ test('the strict rules cover new code and skip old and staged code', async () =>
   for (const file of ['apps/runtime/src/a.ts', 'packages/sdk/src/a.ts', 'modules/example/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
     for (const rule of strictRules) assert.ok([2, 'error'].includes(severity(config, rule)), `${file}: ${rule}`);
+    assert.equal(config.linterOptions.noInlineConfig, true, `${file}: inline config`);
   }
-  assert.ok([2, 'error'].includes(severity(await eslint.calculateConfigForFile(join(root, 'modules/example/src/a.mjs')), 'bunny/module-boundary')));
+  const moduleScript = await eslint.calculateConfigForFile(join(root, 'modules/example/src/a.mjs'));
+  assert.ok([2, 'error'].includes(severity(moduleScript, 'bunny/module-boundary')));
+  assert.equal(moduleScript.linterOptions.noInlineConfig, true);
   for (const file of ['apps/hub/src/a.ts', 'modules/pixoo/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
     for (const rule of [...strictRules, 'bunny/module-boundary']) assert.ok(!severity(config, rule), `${file}: ${rule} stays off`);
+    assert.notEqual(config.linterOptions.noInlineConfig, true, `${file}: inline config stays on`);
   }
+});
+
+test('an inline ESLint comment in covered code fails lint, even a blanket disable', async () => {
+  const eslint = new ESLint({cwd: root});
+  const cases = [
+    '/* eslint-disable */\nexport {};\n',
+    '/* eslint-disable no-console -- a reason does not make it count */\nconsole.log(1);\nexport {};\n',
+    '/* eslint bunny/module-boundary: "off" */\nimport {store} from "@jimmie-potts/agent-state";\nexport {store};\n',
+  ];
+  for (const code of cases) {
+    const [result] = await eslint.lintText(code, {filePath: join(root, 'modules/example/src/a.mjs')});
+    assert.ok(result.messages.some(message => /noInlineConfig/.test(message.message)), code);
+  }
+  const [boundary] = await eslint.lintText(cases[2], {filePath: join(root, 'modules/example/src/a.mjs')});
+  assert.ok(boundary.messages.some(message => message.ruleId === 'bunny/module-boundary'), 'the boundary still applies');
 });
 
 test('the strict rules keep their intended options', async () => {
@@ -44,9 +65,11 @@ test('the strict rules keep their intended options', async () => {
   }
 });
 
-// Guards for conventions the lint rules alone cannot enforce.
-const covered = ['apps/runtime', 'packages/sdk', 'modules'];
-const staged = ['modules/pixoo'];
+// Guards for conventions the lint rules alone cannot enforce. They cover the directories of the `strict` and
+// `staged` globs in eslint.config.mjs.
+const directory = glob => glob.slice(0, glob.indexOf('*')).replace(/\/$/, '');
+const covered = strictGlobs.map(directory);
+const staged = stagedGlobs.map(directory);
 function tsconfigs(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
@@ -55,17 +78,23 @@ function tsconfigs(dir) {
     return /^tsconfig.*\.json$/.test(entry.name) ? [path] : [];
   });
 }
-function extendsStrict(file, seen = new Set()) {
-  if (resolve(file) === join(root, 'tsconfig.strict.json')) return true;
-  if (seen.has(file) || !existsSync(file)) return false;
-  seen.add(file);
-  const parent = JSON.parse(readFileSync(file, 'utf8')).extends;
-  return typeof parent === 'string' && parent.startsWith('.') && extendsStrict(resolve(dirname(file), parent), seen);
+// The project that compiles a covered directory without its own tsconfig.json, below the repository root.
+function nearestProject(dir) {
+  for (let current = dir; current !== root && current.startsWith(root); current = dirname(current)) {
+    if (existsSync(join(current, 'tsconfig.json'))) return [join(current, 'tsconfig.json')];
+  }
+  return [];
 }
+const strictOptions = ['noUncheckedIndexedAccess', 'exactOptionalPropertyTypes', 'noImplicitOverride', 'noImplicitReturns', 'noFallthroughCasesInSwitch'];
 
-test('every TypeScript project under a covered path extends the strict compiler base', () => {
-  for (const file of covered.flatMap(dir => tsconfigs(join(root, dir)))) {
-    assert.ok(extendsStrict(file), `${relative(root, file)} must extend tsconfig.strict.json`);
+test('every TypeScript project that compiles covered code has the strict compiler settings', () => {
+  const projects = new Set(covered.flatMap(dir => [...nearestProject(join(root, dir)), ...tsconfigs(join(root, dir))]));
+  for (const file of projects) {
+    // tsc resolves comments, extends chains and overrides the same way a build does.
+    const shown = spawnSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '--showConfig', '-p', file], {encoding: 'utf8'});
+    assert.equal(shown.status, 0, `${relative(root, file)}: ${shown.stdout}${shown.stderr}`);
+    const options = JSON.parse(shown.stdout).compilerOptions;
+    for (const option of strictOptions) assert.equal(options[option], true, `${relative(root, file)} must keep ${option} from tsconfig.strict.json`);
   }
 });
 
@@ -75,9 +104,11 @@ test('covered paths have no lint baseline, and every workspace package is scoped
   assert.deepEqual(inCovered, []);
   // The module boundary treats unscoped names as third-party, so workspace packages must use the scope.
   const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
-  for (const dir of workspaces) {
-    const name = JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8')).name;
-    assert.ok(name.startsWith('@jimmie-potts/'), `${dir} is named ${name}`);
+  const manifests = workspaces.flatMap(pattern => globSync(`${pattern}/package.json`, {cwd: root}));
+  assert.ok(manifests.length >= workspaces.length);
+  for (const manifest of manifests) {
+    const name = JSON.parse(readFileSync(join(root, manifest), 'utf8')).name;
+    assert.ok(name.startsWith('@jimmie-potts/'), `${dirname(manifest)} is named ${name}`);
   }
 });
 
@@ -105,20 +136,33 @@ tester.run('module-boundary', bunny.rules['module-boundary'], {
     {code: 'await import(`@jimmie-potts/hub`);', filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: 'const name = "x"; await import(`./${name}.mjs`);', filename: inModule, options, errors: [{messageId: 'dynamic'}]},
     {code: "import {x} from '/etc/other.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
-    {code: "import {x} from '../../other/src/y.mjs';", filename: inModule, options: [{...options[0], root: process.cwd()}], errors: [{messageId: 'outside'}]},
+    {code: "import {x} from 'file:///etc/other.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
   ],
 });
 
-tester.run('disable-reason', bunny.rules['disable-reason'], {
+// The `root` option, not the working directory, locates modules.
+tester.run('module-boundary root', bunny.rules['module-boundary'], {
   valid: [
-    '// eslint-disable-next-line no-console -- the CLI prints its result\nconsole.log(1);',
-    '/* eslint-disable no-console -- a command-line entry point */',
-    '// a comment that mentions eslint-disable in passing',
+    {code: "import {x} from '../../other/src/y.mjs';", filename: '/virtual/apps/runtime/src/a.mjs', options: [{...options[0], root: '/virtual'}]},
   ],
   invalid: [
-    {code: '// eslint-disable-next-line no-console\nconsole.log(1);', errors: [{messageId: 'reason'}]},
-    {code: '/* eslint-disable no-console --  */', errors: [{messageId: 'reason'}]},
-    {code: '/* eslint no-console: "off" */\nconsole.log(1);', errors: [{messageId: 'configuration'}]},
+    {code: "import {x} from '../../other/src/y.mjs';", filename: '/virtual/modules/example/src/a.mjs', options: [{...options[0], root: '/virtual'}], errors: [{messageId: 'outside'}]},
+    {code: "import {x} from '../../../other/src/y.mjs';", filename: '/virtual/modules/example/src/a.mjs', options: [{...options[0], root: '/virtual'}], errors: [{messageId: 'outside'}]},
+  ],
+});
+
+const typescript = new RuleTester({languageOptions: {parser: tseslint.parser, ecmaVersion: 'latest', sourceType: 'module'}});
+const inModuleTs = join(process.cwd(), 'modules/example/src/a.ts');
+typescript.run('module-boundary types', bunny.rules['module-boundary'], {
+  valid: [
+    {code: "type Sdk = import('@jimmie-potts/sdk').Sdk;", filename: inModuleTs, options},
+    {code: "import type {Local} from './local.js';", filename: inModuleTs, options},
+  ],
+  invalid: [
+    {code: "type Store = import('@jimmie-potts/agent-state').Store;", filename: inModuleTs, options, errors: [{messageId: 'workspace'}]},
+    {code: "type Other = import('../../other/src/a.js').Other;", filename: inModuleTs, options, errors: [{messageId: 'outside'}]},
+    {code: "import type {Other} from '../../other/src/a.js';", filename: inModuleTs, options, errors: [{messageId: 'outside'}]},
+    {code: "export type {Store} from '@jimmie-potts/agent-state';", filename: inModuleTs, options, errors: [{messageId: 'workspace'}]},
   ],
 });
 

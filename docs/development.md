@@ -313,35 +313,40 @@ New code for the runtime follows a stricter profile from its first commit
 `apps/runtime/`, `packages/sdk/` and `modules/`, and starts with no baseline
 entries. Staged imported code, currently `modules/pixoo/`, keeps the shared
 rules until its module story converts it. To cover another path, such as the
-2.0 contract sources, add it to `strict` in `eslint.config.mjs`.
+2.0 contract sources, add its glob to `strict` in `eslint.config.mjs`; the
+guard tests read that list.
 
 - **Lint (`bunny/strict`):**
   - switches over a union must handle every member, and a catch-all `default`
     does not count;
-  - conditions must be explicit: strings, numbers and nullable values are
+  - conditions must be explicit: strings, numbers and nullable primitives are
     compared, never tested for truthiness, so `undefined` is never confused
-    with zero, `false` or an empty string;
-  - no non-null assertions;
-  - every `eslint-disable` comment gives a reason after ` -- `, and no comment
-    configures a rule inline. This also applies to JavaScript files under
-    `modules/`.
+    with zero, `false` or an empty string. A nullable object may still be
+    tested directly;
+  - no non-null assertions.
+- **No inline ESLint comments:** covered files, including JavaScript under
+  `modules/`, set `noInlineConfig`. ESLint ignores every `eslint-disable`,
+  `eslint` or `global` comment there and reports it as a warning, which
+  `lint:js` fails. An exception is a config entry after the profile blocks in
+  `eslint.config.mjs`, scoped to its files, with a comment giving the reason.
 - **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
   Node built-ins and third-party packages. It checks static, re-export, type and
-  literal dynamic imports, and rejects non-literal dynamic imports. Paths resolve
-  from the repository root, so the rule works from any directory. `createRequire`
-  and `.cjs` files are not checked.
+  literal dynamic imports, including `file:` URLs, and rejects non-literal
+  dynamic imports. Paths resolve from the repository root, so the rule works
+  from any directory. `createRequire` and `.cjs` files are not checked.
 - **Compiler:** new packages extend `tsconfig.strict.json`, which adds
   `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
   `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
   to the shared settings.
 
-The local rules live in `scripts/eslint/bunny-rules.mjs`.
+The local rule lives in `scripts/eslint/bunny-rules.mjs`.
 `tests/strict_profile.test.mjs`, run by `npm run test:workflow`, checks:
-- which paths the profile covers, and the exact rule options;
-- both local rules;
-- that every `tsconfig*.json` under a covered path extends
-  `tsconfig.strict.json`;
+- which paths the profile covers, the exact rule options and that inline
+  comments fail lint there;
+- the module boundary rule, including type imports;
+- that every TypeScript project compiling covered code keeps the five compiler
+  settings, as `tsc --showConfig` reports them;
 - that covered paths have no lint baseline entries;
 - that every workspace package uses the `@jimmie-potts/` scope;
 - that the compiler base rejects an unchecked index and an explicit `undefined`

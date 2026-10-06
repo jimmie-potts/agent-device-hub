@@ -13,8 +13,12 @@ const unused = {
   ignoreRestSiblings: true,
 };
 // New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it.
-const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'];
-const staged = ['modules/pixoo/**'];
+// tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
+export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'];
+export const staged = ['modules/pixoo/**'];
+// Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
+// warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
+const noInlineConfig = {noInlineConfig: true};
 // Workspace packages a module may import (owner decision, 2026-10-05).
 const modulePackages = ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'];
 // Code that runs in a page.
@@ -119,25 +123,22 @@ export default defineConfig(
     name: 'bunny/strict',
     files: strict,
     ignores: staged,
-    plugins: {bunny},
+    linterOptions: noInlineConfig,
     rules: {
       // A catch-all default does not hide a newly added union variant.
       '@typescript-eslint/switch-exhaustiveness-check': ['error', {considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: false}],
       // Missing data is checked explicitly, never confused with zero, false or an empty string.
       '@typescript-eslint/strict-boolean-expressions': ['error', {allowString: false, allowNumber: false, allowNullableObject: true}],
       '@typescript-eslint/no-non-null-assertion': 'error',
-      'bunny/disable-reason': 'error',
     },
   },
   {
     name: 'bunny/module-boundary',
     files: ['modules/**/*.{ts,tsx,js,mjs}'],
     ignores: staged,
+    linterOptions: noInlineConfig,
     plugins: {bunny},
-    rules: {
-      'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages}],
-      'bunny/disable-reason': 'error',
-    },
+    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages}]},
   },
   {
     name: 'bunny/react-hooks',
