@@ -6,14 +6,14 @@ import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {pyJson, type Json, type JsonObject} from '../src/compat.js';
 import {currentComet, pruneComets} from '../src/comets.js';
-import {withState} from '../src/database.js';
+import {connectState, withState} from '../src/database.js';
 import * as edits from '../src/edits.js';
 import {dashboard, type Indication} from '../src/line-projection.js';
 import {modeStatus} from '../src/modes.js';
 import type {RenderConfig} from '../src/renderer.js';
 import {SceneRestorer} from '../src/scenes.js';
 import {identityKey} from '../src/shared-input.js';
-import {execute, rows, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import type {LightAddress} from '../src/transport.js';
 import {runWorker, type Sender, type WorkerOptions} from '../src/worker.js';
@@ -70,6 +70,16 @@ export class ManualClock {
     if (timer !== undefined) this.timers.delete(timer);
     return timer;
   }
+}
+
+/** The module's one database connection for a test, opened on the first call and closed when the test ends. */
+export function moduleDatabase(context: TestContext, directory: string): () => Db {
+  let db: Db | undefined;
+  context.after(() => db?.close());
+  return () => {
+    db ??= connectState(directory);
+    return db;
+  };
 }
 
 /** Let every pending promise and immediate run, so the worker reaches its next timer or ends. */
@@ -163,6 +173,8 @@ type Options = {scenes?: boolean; send?: 'capture' | 'fail' | 'failAfterFirst'};
 /** record.WorkerCase: one scripted case on SceneTest's Lines and fake device, with shared input selected at 1000. */
 export class WorkerCase {
   readonly directory: string;
+  /** The module's one connection, as ModuleContext.database gives it. */
+  readonly database: () => Db;
   readonly clock = new ManualClock();
   readonly device = new SceneDevice(this.clock);
   readonly feed = new Feed();
@@ -174,6 +186,7 @@ export class WorkerCase {
     writeFileSync(join(this.directory, 'config.json'), JSON.stringify(config));
     writeFileSync(join(this.directory, 'layout.json'), JSON.stringify({line_groups: SCENE.line_groups, line_positions: SCENE.line_positions}));
     this.feed.select(this.directory, this.clock.seconds());
+    this.database = moduleDatabase(context, this.directory);
   }
 
   query(sql: string, params: readonly SqlValue[] = []): SqlValue[][] {
@@ -243,7 +256,7 @@ export class WorkerCase {
             default: throw new Error(`Unknown edit ${text(0)}.`);
           }
         });
-      case 'second': return runWorker({directory: this.directory, clock: this.clock, scheduler: this.clock.scheduler,
+      case 'second': return runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
         signal: new AbortController().signal, request: this.device.request});
       case 'run': return this.run(Number(args[0]), (args[1] ?? []) as [number, Step][], (args[2] ?? {}) as Options);
       default: throw new Error(`Unknown step ${op}.`);
@@ -264,7 +277,7 @@ export class WorkerCase {
       return undefined;
     };
     let settled = false;
-    const running = outcomeOf(() => runWorker({directory: this.directory, clock: this.clock, scheduler: this.clock.scheduler,
+    const running = outcomeOf(() => runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
       signal: controller.signal, request: this.device.request, scenes: options.scenes ?? true,
       ...(options.send === undefined ? {} : {send})})).finally(() => { settled = true; });
     for (;;) {
@@ -303,10 +316,13 @@ export class WorkerCase {
  * Run a worker on `clock` until it ends or `until` seconds pass, then stop it; true when it was stopped or ended, false
  * when another instance held its device.
  */
-export async function runUntil(options: Omit<WorkerOptions, 'clock' | 'scheduler' | 'signal'>, clock: ManualClock, until: number): Promise<boolean> {
+export async function runUntil(context: TestContext,
+  options: Omit<WorkerOptions, 'clock' | 'scheduler' | 'signal' | 'database'> & Partial<Pick<WorkerOptions, 'database'>>, clock: ManualClock,
+  until: number): Promise<boolean> {
   const controller = new AbortController();
   let settled = false;
-  const running = runWorker({...options, clock, scheduler: clock.scheduler, signal: controller.signal}).finally(() => { settled = true; });
+  const running = runWorker({...options, database: options.database ?? moduleDatabase(context, options.directory), clock,
+    scheduler: clock.scheduler, signal: controller.signal}).finally(() => { settled = true; });
   for (;;) {
     await settle();
     if (settled) return running;

@@ -140,10 +140,14 @@ The port adds tests of its own:
   `shared-input.test.ts`;
 - `registry lock` (in-process turns), in `enrollment.test.ts`;
 - `an empty saved receipt reads as no receipt`, in `project-map.test.ts`;
-- `worker checks the port adds` (a preview ends with the tasks shown again; a wall edit a comet
-  deferred applies once it ends), in `worker.test.ts`, and `an idle pass leaves a device the
-  indicators do not hold` and `a restarted worker returns a scene the indicators still own`, in
-  `scenes.test.ts`;
+- `worker checks the port adds`, in `worker.test.ts`: the introduction ends when the radiating pulse
+  has crossed the device; a preview ends with the tasks shown again; a wall edit a comet deferred
+  applies once it ends; and two checks of the no-await rule, a mode command committed during a send
+  starts the pass again, and a mode command committed during a preview send that outlasts its pulse
+  ends the preview;
+- `an idle pass leaves a device the indicators do not hold`, `a restarted worker returns a scene the
+  indicators still own`, `a lost restore response in Quiet does not recapture the Quiet level` and
+  `a Quiet level with no remembered scene sends nothing`, in `scenes.test.ts`;
 - `edits recorded from Python` and `mode command checks the port adds` (an explicit mode command ends
   overrides on every device; an unknown mode changes nothing), in `edits.test.ts`;
 - the recorded values in `compat.test.ts` and the replay in `trace.test.ts`;
@@ -590,6 +594,14 @@ on a read-only export of that commit, since the Python tests import from their o
     unknown task.
   - A started comet without a numeric source or start is a `TypeError`; Python returned it as
     saved.
+- No transaction stays open across a wait or a device request (3d). The worker takes the module's one
+  database connection (ModuleContext.database). Each step decides in one short transaction, sends
+  after it commits, and checks its guards again in a new transaction. Python held its write lock
+  while it sent, so a change waited for the send; here a change that commits during a send is seen by
+  the checks after it, and the pass starts again, as Python's checks after a round trip did. Two checks
+  that could not fail in 3c now can, and port-added tests fail without them: the check after a pass's
+  sends, and a preview send's own revision check, which ends the preview when the send before it ran
+  past its pulse.
 - The display worker (3c):
   - It takes the runtime's clock in epoch milliseconds and its scheduler, and keeps seconds inside.
     Each of Python's sleeps is a timer of s * 1000 milliseconds, and the stop signal ends the worker
@@ -610,16 +622,8 @@ on a read-only export of that commit, since the Python tests import from their o
 
 - The tests read task rows through `wallView`, a test helper that mirrors
   `wall_server.App.state`. No Python recording checks that helper; #844 ports the real view.
-- The worker holds a write transaction while it sends to the device, as Python's did. In one process,
-  another writer that waits inside SQLite (an envelope's acceptance, an edit or a mode command) would
-  block the event loop until its timeout; #844 must let them wait without blocking, or queue them.
 - The worker's per-device lock is Python's lock file in the state directory, which also excludes a
   second process. #844 may replace it with an in-process guard.
-- Two of the worker's checks cannot fail in 3c, because a pass holds its write transaction across its
-  sends, so nothing can commit between the check and the send: the preview send's own revision check,
-  and the restart check after a pass's sends. Removing either changes no test. 3d's journaled sends
-  run outside the transaction, which makes the restart check live; 3d adds a test that fails without
-  it.
 - The `worker` command's retry loop (record the failure, wait two seconds, run again while the device
   is registered) is not ported yet; `recordFailure` is. 3e ports it with the multi-device worker
   cases, or #844's module host takes it over.

@@ -5,11 +5,13 @@ import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import {BASELINE, COLORS, effectPayload, render, type RenderConfig, type RenderingReceipt} from '../src/renderer.js';
+import {BASELINE, COLORS, effectPayload, PULSE_SECONDS, render, type RenderConfig, type RenderingReceipt} from '../src/renderer.js';
 import type {Indication} from '../src/line-projection.js';
-import {introductionEnds, updateDisplay} from '../src/worker.js';
-import {decode, framesOf, query, suite, temporary, test, writeAsync} from './support.js';
-import {keyOf, NamedError, replay, scheduledOf, SCENE} from './worker-support.js';
+import {modeStatus, setMode} from '../src/modes.js';
+import {execute, transaction, type Db} from '../src/sqlite.js';
+import {introductionEnds, updateDisplay, type Sender} from '../src/worker.js';
+import {decode, framesOf, query, suite, temporary, test} from './support.js';
+import {keyOf, ManualClock, moduleDatabase, NamedError, replay, runUntil, scheduledOf, SCENE} from './worker-support.js';
 
 /** BridgeTest.setUp's configuration. */
 const BRIDGE: RenderConfig = {ip: '192.168.1.207', token: 'test', line_groups: SCENE.line_groups, line_positions: SCENE.line_positions};
@@ -30,12 +32,13 @@ suite('BridgeTest', () => {
     const receipt = {apiVersion: '1.0', deviceId: 'wall', effect: {write: {animData: '1 100 1 0'}}, lineGroups: [[100, 101]], mode: 'work',
       brightness: 30, loop: true, animationEpochMs: 1_000_000, acceptedAtMs: 1_000_650};
     const snapshot = (status: string, epoch: number): Indication[] => [[status, epoch], ...Array.from({length: 14}, () => null)];
-    await writeAsync(directory, async db => updateDisplay(db, BRIDGE, snapshot('working', 1000), 1000, true, () => receipt));
+    const db = moduleDatabase(context, directory)();
+    await updateDisplay(db, BRIDGE, snapshot('working', 1000), 1000, true, () => receipt);
     const saved = (): unknown => JSON.parse(String(query(directory, "SELECT value FROM meta WHERE key='rendering_receipt'")[0]?.[0]));
     assert.deepEqual(saved(), receipt);
-    await assert.rejects(writeAsync(directory, async db => updateDisplay(db, BRIDGE, snapshot('blocked', 1001), 1001, false, () => {
+    await assert.rejects(updateDisplay(db, BRIDGE, snapshot('blocked', 1001), 1001, false, () => {
       throw new NamedError('OSError', 'Device unavailable');
-    })), {name: 'OSError'});
+    }), {name: 'OSError'});
     assert.deepEqual(saved(), receipt);
   });
 
@@ -47,7 +50,7 @@ suite('BridgeTest', () => {
         calls.push([endpoint, payload]);
         return Promise.resolve(null);
       }};
-    await writeAsync(directory, async db => updateDisplay(db, config, Array.from({length: 15}, () => null), 2000, false));
+    await updateDisplay(moduleDatabase(context, directory)(), config, Array.from({length: 15}, () => null), 2000, false);
     const receipt = JSON.parse(String(query(directory, "SELECT value FROM meta WHERE key='rendering_receipt'")[0]?.[0])) as RenderingReceipt;
     assert.deepEqual(receipt.effect, calls[0]?.[1]);
     assert.deepEqual(receipt.lineGroups, BRIDGE.line_groups);
@@ -178,12 +181,57 @@ suite('RecoveryTest', () => {
   });
 });
 
+/** A worker's directory with the scene configuration and no shared input selected, so the worker ends when idle. */
+function unshared(context: TestContext): {directory: string; clock: ManualClock; database: () => Db} {
+  const directory = temporary(context);
+  writeFileSync(join(directory, 'config.json'), JSON.stringify({...SCENE, metadata_path: join(directory, 'metadata.json'),
+    title_index_path: join(directory, 'session_index.jsonl')}));
+  writeFileSync(join(directory, 'layout.json'), JSON.stringify({line_groups: SCENE.line_groups, line_positions: SCENE.line_positions}));
+  return {directory, clock: new ManualClock(), database: moduleDatabase(context, directory)};
+}
+
 suite('worker checks the port adds', () => {
   test('the introduction ends when the radiating pulse has crossed the device', () => {
     // Python's introduction_ends gives these values: half a pulse after the last radiating pulse, plus its travel.
     assert.equal(introductionEnds([['working', 1000]]), 1001.8);
     assert.equal(introductionEnds([['unread', 1000], ['idle', 999]]), 0);
     assert.equal(introductionEnds([['working', 1000], ['blocked', 1003.25], null]), 1005.05);
+  });
+
+  test('a mode command committed during a send starts the pass again', async context => {
+    // Python held its write lock while it sent, so a command waited for the send. Here one commits during the send, on
+    // the module's own connection; the check after the sends starts the pass again instead of marking the old revision
+    // applied and ending, so the worker applies the command before it ends.
+    const {directory, clock, database} = unshared(context);
+    const sends: [number, boolean][] = [];
+    const send: Sender = (_config, snapshot, instant, loop) => {
+      sends.push([instant, loop]);
+      if (sends.length === 1) transaction(database(), () => setMode(database(), 'free', instant));
+      assert.ok(snapshot.every(item => item === null));
+      return undefined;
+    };
+    assert.equal(await runUntil(context, {directory, database, scenes: false, send}, clock, 1010), true);
+    assert.deepEqual(sends, [[1000, true], [1000, true]]);
+    assert.deepEqual(modeStatus(database()), {mode: 'free', pending: false, error: null});
+  });
+
+  test('a mode command committed during a preview send that outlasts its pulse ends the preview', async context => {
+    // The send runs past its pulse, so no wait checks between it and the next send; that send's own check ends the
+    // preview, and the next pass applies the command.
+    const {directory, clock, database} = unshared(context);
+    transaction(database(), () => execute(database(), "INSERT INTO meta VALUES ('preview', 'working')"));
+    const sends: [unknown, boolean][] = [];
+    const send: Sender = (_config, snapshot, _instant, loop) => {
+      sends.push([snapshot.find(item => item !== null)?.[0] ?? null, loop]);
+      if (sends.length === 1) {
+        transaction(database(), () => setMode(database(), 'quiet', clock.seconds()));
+        clock.ms += PULSE_SECONDS * 1000;
+      }
+      return undefined;
+    };
+    assert.equal(await runUntil(context, {directory, database, scenes: false, send}, clock, 1010), true);
+    assert.deepEqual(sends, [['working', false], [null, true]]);
+    assert.deepEqual(modeStatus(database()), {mode: 'quiet', pending: false, error: null});
   });
 
   test('a preview ends with the tasks shown again', async context => {
