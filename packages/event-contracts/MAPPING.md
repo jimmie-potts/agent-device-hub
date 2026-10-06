@@ -29,7 +29,7 @@ Three conventions apply throughout:
 
 ## Agent-state session record
 
-The source is the snapshot session record (snapshot 1.0 to 1.3) and the durable
+The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durable
 2.1 stored session. The 2.0 home is `session/2.0`, published as
 `org.bunny.session.updated`.
 
