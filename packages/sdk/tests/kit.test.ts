@@ -17,13 +17,13 @@ const schemas = {
 };
 
 /** What a broken bulb gets wrong. */
-type Fault = {name?: string; plainOutcome?: boolean; refuseWith?: ErrorCode; hangingStop?: boolean; dimState?: boolean};
+type Fault = {apiVersion?: string; plainOutcome?: boolean; refuseWith?: ErrorCode; hangingStop?: boolean; dimState?: boolean};
 type Switch = {power: 'on' | 'off'};
 
 /** A bulb module: it serves its bulbs through sync, switches one on command and reports the outcome through its outbox. */
 function bulb(fault: Fault = {}): BunnyModule {
   return {
-    manifest: {name: fault.name ?? 'bulb', apiVersion: '1.0'},
+    manifest: {name: 'bulb', apiVersion: fault.apiVersion ?? '1.0'},
     async start({sdk, database, clock, scheduler}) {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS bulbs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL)');
@@ -94,7 +94,7 @@ it('the kit catches a module that reports its outcome without the outbox', async
 });
 
 it('the kit catches a manifest the runtime would refuse', async () => {
-  assert.deepEqual(await failing(spec({name: 'Bulb'})), [CHECKS.manifest]);
+  assert.deepEqual(await failing(spec({apiVersion: '2.0'})), [CHECKS.manifest]);
 });
 
 it('the kit catches a refusal with another code than the module declares', async () => {
