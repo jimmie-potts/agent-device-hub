@@ -1,0 +1,743 @@
+{
+ "description": "Profile 2.0 fixtures (Hub #828). Each invalid case patches a valid message; null removes an attribute and a data patch replaces the whole payload. `detail` pins where the message fails; a oneOf failure names the oneOf's own location. `oversized` pads a valid message past the 256 KiB cap.",
+ "schemas": {
+  "https://bunny.invalid/events/example-session/2.0": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "revision",
+    "status",
+    "updatedAtMs",
+    "ordering"
+   ],
+   "properties": {
+    "id": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "revision": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "status": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"
+    },
+    "updatedAtMs": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "ordering": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"
+    },
+    "title": {
+     "oneOf": [
+      {
+       "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"
+      },
+      {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "status",
+        "value"
+       ],
+       "properties": {
+        "status": {
+         "const": "known"
+        },
+        "value": {
+         "type": "string",
+         "maxLength": 200
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  "https://bunny.invalid/events/example-turn/2.0": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "sessionId",
+    "endedAtMs"
+   ],
+   "properties": {
+    "sessionId": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "endedAtMs": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    }
+   }
+  },
+  "https://bunny.invalid/events/example-mode/2.0": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "requestId",
+    "ticket",
+    "mode"
+   ],
+   "properties": {
+    "requestId": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "ticket": {
+     "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"
+    },
+    "mode": {
+     "enum": [
+      "work",
+      "quiet",
+      "free"
+     ]
+    }
+   }
+  }
+ },
+ "valid": {
+  "state": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-state",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "session-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/example-session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "session-1",
+    "revision": 7,
+    "status": "waiting-for-input",
+    "updatedAtMs": 1791288000000,
+    "ordering": {
+     "status": "known",
+     "authority": "core",
+     "epoch": "e1",
+     "sequence": 7
+    },
+    "title": {
+     "status": "known",
+     "value": "Port Nanoleaf"
+    }
+   }
+  },
+  "state-unknown-order": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-state",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "session-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/example-session/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "session-1",
+    "revision": 8,
+    "status": "working",
+    "updatedAtMs": 1791288000000,
+    "ordering": {
+     "status": "unknown"
+    },
+    "title": {
+     "status": "unknown"
+    }
+   }
+  },
+  "removal": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-removal",
+   "source": "bunny/core",
+   "type": "org.bunny.session.removed",
+   "subject": "session-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "session",
+     "id": "session-1"
+    },
+    "revision": 9,
+    "reason": "expired"
+   }
+  },
+  "occurrence": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-occurrence",
+   "source": "bunny/core",
+   "type": "org.bunny.turn.ended",
+   "subject": "session-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/example-turn/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "sessionId": "session-1",
+    "endedAtMs": 1791288000000
+   }
+  },
+  "command": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-command",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.requested",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/example-mode/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "ticket": {
+     "epoch": "e1",
+     "sequence": 3
+    },
+    "mode": "quiet"
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "reply-accepted": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-reply",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.replied",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "status": "accepted"
+   }
+  },
+  "reply-rejected": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-reply",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.replied",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "error": {
+     "code": "capacity",
+     "retryable": true,
+     "requestId": "req-1",
+     "traceId": "0af7651916cd43dd8448eb211c80319c"
+    }
+   }
+  },
+  "outcome-succeeded": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-outcome",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "result": "succeeded",
+    "evidence": "observed"
+   }
+  },
+  "outcome-failed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-outcome",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "result": "failed",
+    "evidence": "none",
+    "error": {
+     "code": "unavailable",
+     "retryable": true
+    }
+   }
+  },
+  "outcome-uncertain": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-outcome",
+   "source": "bunny/core",
+   "type": "org.bunny.mode.set.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-1",
+    "result": "uncertain",
+    "evidence": "transmitted"
+   }
+  },
+  "sync-request": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-request",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.requested",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-request",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-request/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-1",
+    "families": [
+     "session"
+    ]
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "sync-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-sync-completed",
+   "source": "bunny/core",
+   "type": "org.bunny.sync.completed",
+   "subject": "core",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "sync-completed",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/sync-completed/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "sync-1",
+    "revision": 9,
+    "members": [
+     {
+      "family": "session",
+      "id": "session-2"
+     }
+    ]
+   }
+  }
+ },
+ "invalid": [
+  {
+   "name": "missing trace context",
+   "base": "state",
+   "patch": {
+    "traceparent": null
+   },
+   "expect": "invalid-message",
+   "detail": "envelope / required traceparent"
+  },
+  {
+   "name": "all-zero trace id",
+   "base": "state",
+   "patch": {
+    "traceparent": "00-00000000000000000000000000000000-b7ad6b7169203331-01"
+   },
+   "expect": "invalid-message",
+   "detail": "trace context"
+  },
+  {
+   "name": "non-URI dataschema",
+   "base": "state",
+   "patch": {
+    "dataschema": "example-session/2.0"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /dataschema pattern"
+  },
+  {
+   "name": "unknown version of a known family",
+   "base": "state",
+   "patch": {
+    "dataschema": "https://bunny.invalid/events/example-session/3.0"
+   },
+   "expect": "unsupported-version",
+   "detail": "https://bunny.invalid/events/example-session/3.0"
+  },
+  {
+   "name": "unknown family",
+   "base": "state",
+   "patch": {
+    "dataschema": "https://bunny.invalid/events/example-unknown/2.0"
+   },
+   "expect": "unknown-schema",
+   "detail": "https://bunny.invalid/events/example-unknown/2.0"
+  },
+  {
+   "name": "profile 1.0",
+   "base": "state",
+   "patch": {
+    "bunnyprofile": "1.0"
+   },
+   "expect": "unsupported-version",
+   "detail": "bunnyprofile 1.0"
+  },
+  {
+   "name": "undeclared attribute",
+   "base": "state",
+   "patch": {
+    "extra": "x"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope / additionalProperties extra"
+  },
+  {
+   "name": "time without milliseconds",
+   "base": "state",
+   "patch": {
+    "time": "2026-10-06T12:00:00Z"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /time pattern"
+  },
+  {
+   "name": "expiry on a state event",
+   "base": "state",
+   "patch": {
+    "expiresat": "2026-10-06T12:00:05.000Z"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /expiresat false schema"
+  },
+  {
+   "name": "command without expiry",
+   "base": "command",
+   "patch": {
+    "expiresat": null
+   },
+   "expect": "invalid-message",
+   "detail": "envelope / required expiresat"
+  },
+  {
+   "name": "command type without .requested",
+   "base": "command",
+   "patch": {
+    "type": "org.bunny.mode.set"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type pattern"
+  },
+  {
+   "name": "state type that names a command",
+   "base": "state",
+   "patch": {
+    "type": "org.bunny.session.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type not"
+  },
+  {
+   "name": "reply with the wrong schema",
+   "base": "reply-accepted",
+   "patch": {
+    "dataschema": "https://bunny.invalid/events/outcome/2.0"
+   },
+   "expect": "invalid-message",
+   "detail": "a reply message uses the reply schema"
+  },
+  {
+   "name": "reply with both status and error",
+   "base": "reply-accepted",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "status": "accepted",
+     "error": {
+      "code": "capacity",
+      "retryable": true
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / oneOf"
+  },
+  {
+   "name": "failed outcome without an error",
+   "base": "outcome-failed",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "result": "failed",
+     "evidence": "none"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required error"
+  },
+  {
+   "name": "succeeded outcome without evidence of transmission",
+   "base": "outcome-succeeded",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "result": "succeeded",
+     "evidence": "none"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /evidence enum"
+  },
+  {
+   "name": "payload claims a reserved family",
+   "base": "state",
+   "patch": {
+    "dataschema": "https://bunny.invalid/events/reply/2.0"
+   },
+   "expect": "invalid-message",
+   "detail": "reserved schema family"
+  },
+  {
+   "name": "ticket with a negative sequence",
+   "base": "command",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "ticket": {
+      "epoch": "e1",
+      "sequence": -1
+     },
+     "mode": "quiet"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ticket/sequence minimum"
+  },
+  {
+   "name": "identifier with a space",
+   "base": "state",
+   "patch": {
+    "id": "msg one"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /id pattern"
+  },
+  {
+   "name": "instant that is not an integer",
+   "base": "occurrence",
+   "patch": {
+    "data": {
+     "sessionId": "session-1",
+     "endedAtMs": 1.5
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /endedAtMs type"
+  },
+  {
+   "name": "known ordering without an authority",
+   "base": "state",
+   "patch": {
+    "data": {
+     "id": "session-1",
+     "revision": 7,
+     "status": "working",
+     "updatedAtMs": 1,
+     "ordering": {
+      "status": "known",
+      "epoch": "e1",
+      "sequence": 1
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ordering oneOf"
+  },
+  {
+   "name": "enum value that is not kebab-case",
+   "base": "state",
+   "patch": {
+    "data": {
+     "id": "session-1",
+     "revision": 7,
+     "status": "Waiting_For_Input",
+     "updatedAtMs": 1,
+     "ordering": {
+      "status": "unknown"
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /status pattern"
+  },
+  {
+   "name": "error code that is not kebab-case",
+   "base": "reply-rejected",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "error": {
+      "code": "Capacity",
+      "retryable": true
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / oneOf"
+  },
+  {
+   "name": "error code outside the registry",
+   "base": "reply-rejected",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "error": {
+      "code": "made-up-code",
+      "retryable": false
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / oneOf"
+  },
+  {
+   "name": "retryable flag that disagrees with the registry",
+   "base": "reply-rejected",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "error": {
+      "code": "uncertain-result",
+      "retryable": true
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload / oneOf"
+  },
+  {
+   "name": "a command type without an entity and a verb",
+   "base": "command",
+   "patch": {
+    "type": "org.bunny.set.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type pattern"
+  },
+  {
+   "name": "a sync request under a command's type",
+   "base": "sync-request",
+   "patch": {
+    "type": "org.bunny.mode.set.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type const"
+  },
+  {
+   "name": "a command in the sync namespace",
+   "base": "command",
+   "patch": {
+    "type": "org.bunny.sync.reset.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type not"
+  },
+  {
+   "name": "an impossible date",
+   "base": "state",
+   "patch": {
+    "time": "2026-02-30T12:00:00.000Z"
+   },
+   "expect": "invalid-message",
+   "detail": "time"
+  },
+  {
+   "name": "an all-zero parent span",
+   "base": "state",
+   "patch": {
+    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01"
+   },
+   "expect": "invalid-message",
+   "detail": "trace context"
+  },
+  {
+   "name": "a numeric profile",
+   "base": "state",
+   "patch": {
+    "bunnyprofile": 2
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /bunnyprofile const"
+  },
+  {
+   "name": "an outcome whose error flag disagrees with the registry",
+   "base": "outcome-failed",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "result": "failed",
+     "evidence": "none",
+     "error": {
+      "code": "capacity",
+      "retryable": false
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /error/retryable const"
+  }
+ ],
+ "expired": {
+  "name": "expired command",
+  "base": "command",
+  "nowMs": 1791288005000,
+  "expect": "expired"
+ },
+ "duplicates": {
+  "same": [
+   "command",
+   "command"
+  ],
+  "conflict": {
+   "base": "command",
+   "patch": {
+    "data": {
+     "requestId": "req-1",
+     "ticket": {
+      "epoch": "e1",
+      "sequence": 3
+     },
+     "mode": "free"
+    }
+   }
+  }
+ },
+ "oversized": {
+  "base": "state",
+  "field": "title",
+  "bytes": 262144,
+  "expect": "too-large"
+ }
+}

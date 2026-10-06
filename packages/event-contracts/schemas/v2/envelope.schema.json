@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/profile/2.0",
+  "description": "B.U.N.N.Y. profile 2.0: CloudEvents 1.0 structured JSON for every message (ADR 0012).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specversion", "bunnyprofile", "id", "source", "type", "subject", "time", "kind", "datacontenttype", "dataschema", "traceparent", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "bunnyprofile": {"const": "2.0"},
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "source": {"type": "string", "pattern": "^bunny(/[a-z0-9][a-z0-9-]*)+$", "maxLength": 256},
+    "type": {"type": "string", "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,4}$", "maxLength": 256},
+    "subject": {"type": "string", "minLength": 1, "maxLength": 256},
+    "time": {"$ref": "#/$defs/timestamp"},
+    "kind": {"enum": ["state", "removal", "occurrence", "command", "reply", "outcome", "sync-request", "sync-completed"]},
+    "datacontenttype": {"const": "application/json"},
+    "dataschema": {"type": "string", "pattern": "^https://bunny\\.invalid/events/[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*/[0-9]+\\.[0-9]+$", "maxLength": 256},
+    "traceparent": {"type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"},
+    "tracestate": {"type": "string", "maxLength": 512},
+    "expiresat": {"$ref": "#/$defs/timestamp"},
+    "data": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"enum": ["command", "sync-request"]}}}, "then": {"required": ["expiresat"], "properties": {"expiresat": true}}, "else": {"properties": {"expiresat": false}}},
+    {"if": {"properties": {"kind": {"const": "command"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,3}\\.requested$"}}}},
+    {"if": {"properties": {"kind": {"const": "sync-request"}}}, "then": {"properties": {"type": {"const": "org.bunny.sync.requested"}}}},
+    {"if": {"properties": {"kind": {"not": {"enum": ["sync-request", "sync-completed"]}}}}, "then": {"properties": {"type": {"type": "string", "not": {"pattern": "^org\\.bunny\\.sync\\."}}}}},
+    {"if": {"properties": {"kind": {"const": "reply"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.replied$"}}}},
+    {"if": {"properties": {"kind": {"const": "outcome"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.completed$"}}}},
+    {"if": {"properties": {"kind": {"const": "removal"}}}, "then": {"properties": {"type": {"type": "string", "pattern": "\\.removed$"}}}},
+    {"if": {"properties": {"kind": {"const": "sync-completed"}}}, "then": {"properties": {"type": {"const": "org.bunny.sync.completed"}}}},
+    {"if": {"properties": {"kind": {"enum": ["state", "occurrence"]}}}, "then": {"properties": {"type": {"not": {"type": "string", "pattern": "\\.(requested|replied|completed|removed)$"}}}}}
+  ],
+  "$defs": {
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"}
+  }
+}

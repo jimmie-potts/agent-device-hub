@@ -11,8 +11,8 @@ Before designing or changing communication between components, read
 commands, replies, errors, message formats, consumer state and trace
 propagation, and all such work follows that ADR.
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
-the cutover. Until a component's own child delivery lands, extend its released
-1.x contract only additively. This includes the owner's CHOMPI work. Do not add
+the rebuild and its one offline cutover. Until that cutover, extend each
+component's released 1.x contract only additively. This includes the owner's CHOMPI work. Do not add
 another message format, error shape or new path that polls the Hub for state.
 GitHub issues own the delivery sequence, acceptance criteria, dependencies and
 status; do not copy issue lists or dependency chains into repository docs.

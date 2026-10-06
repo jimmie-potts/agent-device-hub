@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/kinds/2.0",
+  "description": "Payloads that profile 2.0 defines for replies, outcomes, removals and sync.",
+  "$defs": {
+    "reply": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["requestId", "status"],
+          "properties": {"requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"}, "status": {"const": "accepted"}}},
+        {"type": "object", "additionalProperties": false, "required": ["requestId", "error"],
+          "properties": {"requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+            "error": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"}}}
+      ]
+    },
+    "outcome": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "result", "evidence"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "result": {"enum": ["succeeded", "failed", "uncertain"]},
+        "evidence": {"enum": ["transmitted", "observed", "none"]},
+        "error": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"}
+      },
+      "allOf": [
+        {"if": {"properties": {"result": {"const": "succeeded"}}}, "then": {"properties": {"error": false, "evidence": {"enum": ["transmitted", "observed"]}}}},
+        {"if": {"properties": {"result": {"const": "failed"}}}, "then": {"required": ["error"], "properties": {"error": true}}}
+      ]
+    },
+    "removal": {
+      "type": "object", "additionalProperties": false, "required": ["entity", "revision", "reason"],
+      "properties": {
+        "entity": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/entityRef"},
+        "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "reason": {"enum": ["expired", "retired", "deleted"]}
+      }
+    },
+    "sync-request": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "families"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "families": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"}}
+      }
+    },
+    "sync-completed": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "revision", "members"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "members": {"type": "array", "maxItems": 4096, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/entityRef"}}
+      }
+    }
+  }
+}

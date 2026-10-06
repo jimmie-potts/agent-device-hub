@@ -14,7 +14,7 @@ const unused = {
 };
 // New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it.
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
-export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}'];
+export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
 export const staged = ['modules/pixoo/**'];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
