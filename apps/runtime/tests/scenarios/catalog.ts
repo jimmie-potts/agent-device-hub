@@ -205,8 +205,8 @@ const inboxOf = (h: Harness, requestId: string): InboxItem['item'][] =>
 const switches = (h: Harness): number => h.devices().lamp.calls.length;
 const logged = (h: Harness, event: string, from = 1): Generational<{record: LogRecord}>[] =>
   h.logs().filter(entry => entry.generation >= from && entry.record.event_name === event);
-const received = (h: Harness, requestId: string, from = 1): number =>
-  logged(h, 'lamp.command.received', from).filter(entry => entry.record.attributes.requestId === requestId).length;
+const received = (h: Harness, requestId: string): number =>
+  logged(h, 'lamp.command.received').filter(entry => entry.record.attributes.requestId === requestId).length;
 async function running(h: Harness, names: readonly string[]): Promise<Outcome> {
   const report = await h.health();
   const states = names.map(name => `${name} ${report.find(module => module.name === name)?.state ?? 'missing'}`);

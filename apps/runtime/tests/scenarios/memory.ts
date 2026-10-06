@@ -73,7 +73,7 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
   throw new Error('found no free loopback port outside the installed services\' ports');
 }
 
-type Generation = {number: number; host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant};
+type Generation = {host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
 type Copy = SyncedCopy<Record<string, unknown>>;
 
@@ -322,7 +322,7 @@ class Memory implements MemoryHarness {
       bus: host.bus, validator: this.#validator, grants: [...this.#parts.values()].map(({source, token}) => ({source, token})),
       log: record => { this.#edgeLog.push(record); }, now: this.#clock.now, scheduler: this.#clock.scheduler,
     }) : undefined;
-    this.#generations.push({number, host, edge, watcher});
+    this.#generations.push({host, edge, watcher});
     if (edge !== undefined) this.#edgeReady(edge);
   }
 
