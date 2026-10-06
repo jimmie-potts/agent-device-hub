@@ -315,8 +315,9 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
       * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], '${{ matrix.os }}');
-    // The core job runs every Node and Python suite once; it takes about 8.5 minutes.
-    assert.equal(job['timeout-minutes'], id === 'core' ? 15 : 10);
+    // The core job runs every Node and Python suite once; it takes about 8.5 minutes. The dashboard job took
+    // 523 s on GitHub-hosted runners (#870).
+    assert.equal(job['timeout-minutes'], ['core', 'dashboard'].includes(id) ? 15 : 10);
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
@@ -327,8 +328,9 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
       if: "runner.os == 'Linux'",
       run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
     }] : []);
-    // Hub #494: no job may provide or require a systemd user manager; lifecycle tests skip where the runner has none.
-    assert.equal(job.env, undefined);
+    // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
+    // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
+    assert.deepEqual(job.env, id === 'app-verify' ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);

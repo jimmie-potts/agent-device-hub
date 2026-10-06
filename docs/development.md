@@ -153,7 +153,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-core job's fifteen. Branch pushes do not duplicate PR checks.
+core and dashboard jobs' fifteen. Branch pushes do not duplicate PR checks.
 The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
 because GitHub keeps the manually disabled state of the retired `ci.yml` and
 `work-guide.yml` copies, whose earlier billing-blocked runs do not validate a
@@ -1702,9 +1702,11 @@ The App verification CI job runs both after a fresh build and Chromium
 install. Depot's Ubuntu runner, which ran CI until #870, was not booted with
 systemd: on PR #552, `systemctl --user is-system-running` answered `offline` and
 `loginctl enable-linger` failed with "System has not been booted with systemd
-as init system (PID 1)". The lifecycle tests skip on any runner without a user
-manager; #870's first hosted run records whether GitHub-hosted runners have one.
-Where they skip, CI proves the first part only.
+as init system (PID 1)". GitHub-hosted runners do have a user manager, but under
+their systemd 255 the lease timer does not read back
+([run](https://github.com/jimmie-potts/agent-device-hub/actions/runs/37464802851), [#873](https://github.com/jimmie-potts/agent-device-hub/issues/873)).
+The App verification job therefore hides the user bus, the lifecycle tests skip,
+and CI proves the first part only.
 `npm run package:app-verify` writes
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
@@ -1747,7 +1749,7 @@ Hub #495 composes one preview from the three adapters with
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
 adapters in disposable pinned Git checkouts and skip without a user manager,
-as on Depot's runner. The safety-thaw cases also change a run's own lease
+as in the App verification CI job. The safety-thaw cases also change a run's own lease
 without updating the composition, expire it during a freeze, and verify stop
 removes the timer and service after an interrupted injection.
 `apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command

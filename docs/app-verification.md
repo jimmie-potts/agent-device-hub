@@ -532,8 +532,9 @@ Pending host behavior, left explicit rather than inferred:
   distribution's implicit login session. So the distribution's lifetime with no
   terminal open bounds every lease (ADR 0008 trial pending).
 - CI: Depot's Ubuntu runner, used until #870, was not booted with systemd
-  (PR #552); #870's first hosted run records whether GitHub-hosted runners
-  have a user manager. Without one, CI runs
+  (PR #552). GitHub-hosted runners have a user manager, but the lease timer
+  does not read back under their systemd 255 (#873), so the App verification
+  job hides the user bus. CI runs
   the core's receipt, supervisor-refusal, lock and unsupervised capture tests
   (through `runCaptureStep`), and the Hub's `steps.test.mjs` (its seven
   fixture reference steps, including the three Hub #336 moment steps, under
@@ -550,8 +551,8 @@ The shared core's suite (`packages/app-verify/tests`) proves the
 application-independent part of each clause once, against real transient
 units and a fixture application: the **core** column. Those lifecycle tests
 need a user manager, so they run on a systemd host such as the owner's WSL
-PC, and the delivery evidence records them. Without a user manager on the CI
-runner, the Hub's App verification CI job runs only the parts that need none:
+PC, and the delivery evidence records them. The App verification CI job hides
+the runner's user manager (#873), so it runs only the parts that need none:
 
 - receipt validation, including the optional 1.1 fields;
 - the receipt lock under contention, including a lock left by a killed
