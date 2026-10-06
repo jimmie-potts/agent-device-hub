@@ -11,9 +11,17 @@
     "./v2": {
       "types": "./dist/v2/index.d.ts",
       "import": "./dist/v2/index.js"
+    },
+    "./v2/families": {
+      "types": "./dist/v2/families.d.ts",
+      "import": "./dist/v2/families.js"
     }
   },
   "dependencies": {
     "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@jimmie-potts/agent-state": "3.6.0",
+    "@jimmie-potts/device-contracts": "1.2.0"
   }
 }

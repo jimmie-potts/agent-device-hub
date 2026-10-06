@@ -99,9 +99,10 @@ Existing formats move in one offline cutover:
 - **Replies** answer a command immediately with `accepted` or with a rejection
   in the shared error body.
 - **Outcomes** complete a command: `succeeded`, `failed` or `uncertain`, with
-  evidence `transmitted`, `observed` or `none`. `none` means nothing reached the
-  device, for example a failure before sending; a succeeded outcome always has
-  `transmitted` or `observed` evidence, and a failed one carries an error.
+  evidence `transmitted`, `observed` or `none`. `none` means there is no
+  evidence that anything reached the device, as after a failure before sending
+  or a lost answer; a succeeded outcome always has `transmitted` or `observed`
+  evidence, and a failed one carries an error.
 - **Sync** messages bring a consumer up to date: a sync request to an owner,
   answered with the owner's current state at a revision and then
   `sync.completed`. A sync replaces the consumer's full membership, so entities
@@ -353,7 +354,8 @@ both. Each change and its trade-off:
 - **Envelope.** Profile 2.0 adds `kind`, which replaces `deliveryclass`,
   limits `expiresat` to commands and sync requests, reserves the reply,
   outcome, removal and sync type names for their kinds, and fixes each error
-  code's `retryable` in one registry. Outcome evidence may be `none` when
-  nothing reached the device.
+  code's `retryable` in one registry. Outcome evidence may be `none`: no
+  evidence that anything reached the device, after a failure before sending or
+  a lost answer.
 - **One offline cutover.** It replaces the dual-version period and the staged
   installs, because downtime is acceptable.

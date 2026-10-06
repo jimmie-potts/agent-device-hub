@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/lifecycle/2.0",
+  "description": "Occurrence: one agent hook observation for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field; event kinds are kebab-case. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["identity", "turn", "parent", "event", "observedAtMs", "ordering"],
+  "properties": {
+    "identity": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity"},
+    "turn": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/knownId"},
+    "parent": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/parent"},
+    "nativeEventId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "event": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind"],
+        "properties": {"kind": {"enum": ["session-started", "turn-started", "activity-observed", "turn-ended", "turn-interrupted", "runtime-ended"]}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "attention"],
+        "properties": {
+          "kind": {"enum": ["question-continuing", "attention-input", "attention-approval", "attention-resolved"]},
+          "attention": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/knownId"}
+        }},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "consumerId", "noticeId"],
+        "properties": {
+          "kind": {"const": "notice-acknowledged"},
+          "consumerId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+          "noticeId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+        }},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "state"],
+        "properties": {"kind": {"const": "read-observed"}, "state": {"enum": ["read", "unread"]}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind", "dimension", "reason"],
+        "properties": {
+          "kind": {"const": "evidence-unavailable"},
+          "dimension": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/dimension"},
+          "reason": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/reason"}
+        }}
+    ]},
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "occurredAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+    "projectId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "label": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/label"},
+    "title": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/title"},
+    "project": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/project"},
+    "hostSessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+  },
+  "allOf": [
+    {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/hostSessionOnlyAtRoot"},
+    {"if": {"properties": {"event": {"type": "object", "properties": {"kind": {"const": "read-observed"}}}}},
+      "then": {"properties": {"identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}}
+  ]
+}

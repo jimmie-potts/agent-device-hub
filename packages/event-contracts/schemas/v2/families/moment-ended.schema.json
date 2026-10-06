@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/moment-ended/2.0",
+  "description": "Occurrence: a moment that played on a device ended (Hub #842). The module that played it publishes it; the envelope source names the module and the subject names the target. `completed`: its duration elapsed; `preempted`: an attention or failure alert over status; `superseded`: a newer moment replaced it; `interrupted`: an explicit command, including a mode change. A moment that never started has no ending; its request outcome reports it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "momentId", "ending", "endedAtMs"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "momentId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "ending": {"enum": ["completed", "preempted", "superseded", "interrupted"]},
+    "endedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+  }
+}

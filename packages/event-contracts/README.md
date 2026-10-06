@@ -72,15 +72,24 @@ follows the strict profile for new code.
   ticket, ordering, tagged unknown values, kebab-case enum values, entity
   references and the error body.
 - `schemas/v2/kinds.schema.json`: payloads the profile owns for replies,
-  completed outcomes, removals, sync requests and `sync.completed`.
+  completed outcomes, removals, sync requests and `sync.completed`. An outcome
+  is `succeeded`, `failed` or `uncertain`, with evidence `transmitted`,
+  `observed` or `none`. `none` means there is no evidence that anything reached
+  the device, as after a failure before sending or a lost answer. A succeeded
+  outcome always has `transmitted` or `observed` evidence, and a failed one
+  carries an error.
 - `schemas/v2/errors.json`: the error code registry. Each code says whether a
   retry can help. The error block in `blocks.schema.json` lists the same codes
   and flags, so a received error body with another code or flag is refused; a
   test keeps the two files equal.
 - `src/v2/index.ts`:
-  - `MessageValidator`. `register(dataschema, schema)` adds a module's payload
-    schema under `https://bunny.invalid/events/<family>/<major>.<minor>`; it
-    refuses reserved families and duplicates. `validate(input, {nowMs})`
+  - `MessageValidator`. `register(dataschema, schema, check?)` adds a module's
+    payload schema under `https://bunny.invalid/events/<family>/<major>.<minor>`;
+    it refuses reserved families and duplicates. The optional `check` states a
+    rule the schema cannot, such as two fields that must agree; it runs after
+    the schema passes and returns where the message breaks it. A check that
+    throws or returns an empty or non-string answer still refuses the message
+    with `invalid-message`, and validation never throws. `validate(input, {nowMs})`
     returns `{ok:true,value}` or `{ok:false,error}`, where `error` is the
     registry's error detail.
   - `errorBody(code, extra)`, which builds `{"error":{...}}`, takes
@@ -94,8 +103,8 @@ follows the strict profile for new code.
 Validation refuses a message with:
 - `too-large`, when it is over 256 KiB;
 - `invalid-message`, when it is not a plain JSON object, breaks the envelope or
-  payload schema, has an all-zero trace context, names an impossible date or
-  uses the wrong built-in schema for its kind;
+  payload schema or a registered check, has an all-zero trace context, names an
+  impossible date or uses the wrong built-in schema for its kind;
 - `unsupported-version`, for another `bunnyprofile` or an unregistered version
   of a registered family;
 - `unknown-schema`, for an unregistered family;
@@ -111,7 +120,76 @@ Module payload schemas reference the blocks by URI, for example
 for each kind. Each invalid case patches a valid message and states the
 expected code. `tests/v2.test.mjs` runs the fixtures, plus the size, expiry,
 retry identity, registration and error-registry cases. `npm run test:events`
-runs it with the 1.0 tests.
+runs it, the core family and mapping tests, and the 1.0 tests.
+
+### Core payload families
+
+The core families are the facts every module can rely on
+([Hub #842](https://github.com/jimmie-potts/agent-device-hub/issues/842)).
+Import them from `@jimmie-potts/event-contracts/v2/families`. Each schema lives
+in `schemas/v2/families/<family>.schema.json`, is built from the shared blocks
+and is registered under `https://bunny.invalid/events/<family>/2.0`. No family
+carries a device-specific payload: modules define those.
+
+| Kind | Family | Type |
+| --- | --- | --- |
+| state | `session`, `mode`, `inbox-item`, `playback` | `org.bunny.<family>.updated` |
+| occurrence | `lifecycle` (a hook observation for the core) | `org.bunny.lifecycle.observed` |
+| occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
+| occurrence | `moment-ended` | `org.bunny.moment.ended` |
+| command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
+
+The rules:
+- A state event carries the full record of one entity, and its `subject` is the
+  entity's `id`.
+- A session's `id` is `sessionEntityId(identity)`, the lowercase hex SHA-256 of
+  the identity as compact sorted-key UTF-8 JSON.
+- Agent occurrences name the session, its identity, the observation's turn and
+  evidence, and the owner revision that committed them. An attention occurrence
+  also carries the item's own turn, which a clearing observation's turn may have
+  left behind.
+- The owner publishes a new revision when a session's freshness or the playback
+  availability changes.
+- Commands name no device: the envelope `subject` names the target. Their
+  replies and outcomes use the profile's reply and outcome payloads.
+- A removal event, with reason `expired`, `retired` or `deleted`, drops an
+  entity. A sync replaces the consumer's membership of the synced families.
+
+`registerCoreFamilies(validator)` registers every family. A family's messages
+must use its kind and type. `MessageValidator.register` takes an optional check
+for rules a schema cannot state. The core families use it to refuse:
+- a known parent in another provider, client, host or source, or with the same
+  session ID (cross-source parentage);
+- known ordering whose `authority` is not the identity's `sourceId`;
+- a session `id` or `subject` that is not the identity key, an occurrence or a
+  turn-ended inbox item whose `session` is not, and a state event whose
+  `subject` is not its `id`;
+- a session `generation` after its `revision`;
+- freshness that disagrees with the envelope `time`: `current` five minutes or
+  more after the last evidence, or `uncertain` before that without a restart;
+- a raised attention item from a turn other than the observation's;
+- repeated notice IDs or unavailable dimensions;
+- a moment that starts more than 60 s after the request.
+
+The schemas keep the 1.x per-record rules:
+- read evidence only from Codex Desktop;
+- no host session ID below a known parent;
+- `restartUncertain` forces `uncertain` freshness;
+- a flourish never covers status;
+- the credential checks on titles, projects and labels.
+
+Display precedence holds: `sessionTitle(record)` returns the label, where a user
+label always wins over an agent label, then the title. Undefined leaves the
+consumer's neutral fallback.
+
+[MAPPING.md](MAPPING.md) shows where every field of the 1.x session record,
+snapshot, lifecycle observation, controller receipt, moment command and playback
+snapshot lands, and lists the fields with no 2.0 home. `fixtures/v2/families.json`
+has a valid message for every family. Its invalid cases name where each fails, and
+its scenarios show that removal, expiry and a sync that drops a held entity leave
+a consumer with exactly the owner's entities. `tests/families.test.mjs` runs them.
+`tests/mapping.test.mjs` converts the 1.x corpora and a real agent-state owner's
+expiry and retirement through MAPPING.md's rules.
 
 ### How 1.x error codes merged
 

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/attention-raised/2.0",
+  "description": "Occurrence: an agent session started waiting for a person, with a continuing question, an input request or an approval (Hub #842). It is published when the owner adds the attention to the session record. The item's `turn` is the observation's `turn` (validator).",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/session/2.0#/$defs/occurrence",
+  "unevaluatedProperties": false,
+  "required": ["attention"],
+  "properties": {
+    "attention": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/attention"}
+  }
+}

@@ -683,6 +683,20 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
+`test:events:built` also runs the core payload family tests (Hub #842):
+- `tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
+  for every family, each invalid case with its expected detail, and removal,
+  expiry and sync scenarios through the reference consumer in
+  `tests/consumer.mjs`.
+- `tests/mapping.test.mjs` checks that
+  [MAPPING.md](../packages/event-contracts/MAPPING.md) names every 1.x field.
+  It converts the 1.x lifecycle, snapshot and controller receipt corpora, and it
+  drives a real agent-state owner through expiry and retirement.
+
+The mapping test imports the built `@jimmie-potts/agent-state` and
+`@jimmie-potts/device-contracts`, the package's devDependencies, so run the full
+`npm run build` first, as CI does.
+
 ## SDK checks
 
 `packages/sdk` holds the SDK's in-process bus (publish, subscribe, request and

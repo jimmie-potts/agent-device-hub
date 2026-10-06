@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/mode/2.0",
+  "description": "State: the Hub's selected mode, the full record (Hub #842). It records what the owner chose, not what any device shows. Each module maps it to its native mode; per-device overrides belong to #695.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "mode", "selectedAtMs"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "mode": {"$ref": "#/$defs/mode"},
+    "selectedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+  },
+  "$defs": {
+    "mode": {"enum": ["work", "free", "quiet"]}
+  }
+}
