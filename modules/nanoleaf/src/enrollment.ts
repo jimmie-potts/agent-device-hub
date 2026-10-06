@@ -20,10 +20,10 @@ export const KIND = 'panels';
 export const MODEL = 'NL22';
 export const REMOVE_WAIT_SECONDS = 10.0;
 
-/** A Nanoleaf controller read: the device address and credential, an HTTP method, an endpoint and an optional body. */
 /**
- * A request to a light. It must settle within its own timeout, as the Python client's did: registry operations for the
- * same state directory take turns in this process, so one request that never settles holds every later one.
+ * A Nanoleaf controller read: the device address and credential, an HTTP method, an endpoint and an optional body. It
+ * must settle within its own timeout, as the Python client's did: registry operations for the same state directory take
+ * turns in this process, so one request that never settles holds every later one.
  */
 export type LightRequest = (address: {ip: string; token: string}, method: string, endpoint?: string, payload?: unknown) => Promise<unknown>;
 
