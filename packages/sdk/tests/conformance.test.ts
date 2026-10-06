@@ -111,10 +111,11 @@ function suite(transport: Transport): void {
     const answer = deferred<Reply>();
     await responder.respond('bunny.cmd.mode.*', () => answer.promise);
     const result = await requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 300, requestId: 'req-held'});
+    // The handler finishes before the checks, so a failed check cannot leave it waiting at close.
+    answer.resolve({status: 'accepted'});
     assert.equal(result.status, 'uncertain');
     assert.equal(codeOf(result), 'uncertain-result');
     assert.equal(result.error?.error.requestId, 'req-held');
-    answer.resolve({status: 'accepted'});
   }));
 
   it(name(`a command still waiting at its deadline is ${transport.queuedCommandAtDeadline}, and never reaches the handler`), () => using(transport, {}, async world => {
@@ -127,10 +128,15 @@ function suite(transport: Transport): void {
       return command.data.mode === 'work' ? busy.promise : {status: 'accepted'};
     });
     const first = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 10_000});
-    await until(() => handled.length === 1, 'the first command');
-    const late = await requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 300});
+    let late;
+    try {
+      await until(() => handled.length === 1, 'the first command');
+      late = await requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 300});
+    } finally {
+      // Released before any check, so a failed check cannot leave the handler waiting at close.
+      busy.resolve({status: 'accepted'});
+    }
     assert.equal(codeOf(late), transport.queuedCommandAtDeadline);
-    busy.resolve({status: 'accepted'});
     assert.equal((await first).status, 'accepted');
     assert.equal((await requester.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 5000})).status, 'accepted');
     assert.deepEqual(handled, ['work', 'free'], 'the expired command was ignored');
@@ -168,12 +174,12 @@ function suite(transport: Transport): void {
     const never = deferred<Snapshot>();
     await owner.serveSync([FAMILY], () => never.promise);
     const late = await consumer.sync<Session>([FAMILY], record, {timeoutMs: 300});
+    never.resolve({revision: 0, states: []});
     assert.equal(late.status, 'rejected');
     if (late.status !== 'rejected') return;
     assert.equal(late.error.error.code, 'unavailable');
     assert.equal(late.error.error.retryable, true);
     assert.equal(late.error.error.detail, 'no sync answer within 300 ms');
-    never.resolve({revision: 0, states: []});
     await flush();
     assert.deepEqual(changes, [], 'no sync.completed follows a refusal, and a late answer is ignored');
   }));
@@ -187,16 +193,19 @@ function suite(transport: Transport): void {
       seen.push(`s1@${message.data.revision}`);
       if (message.data.revision === 1) await gate.promise;
     }, {onOverflow: ({dropped}: Overflow) => { seen.push(`dropped ${String(dropped)}`); }});
-    await sender.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1));
-    await until(() => seen.length === 1, 'the first message');
-    for (const revision of [2, 3, 4, 5, 6]) {
-      await sender.publish(`bunny.state.${FAMILY}.s1`, session('s1', revision));
-      await flush();
+    try {
+      await sender.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1));
+      await until(() => seen.length === 1, 'the first message');
+      for (const revision of [2, 3, 4, 5, 6]) {
+        await sender.publish(`bunny.state.${FAMILY}.s1`, session('s1', revision));
+        await flush();
+      }
+      // Revision 1 is being handled, 2 and 3 wait, and 4, 5 and 6 find the queue full.
+      await until(() => world.errors.length === 3, 'three capacity reports');
+    } finally {
+      gate.resolve(undefined);
     }
-    // Revision 1 is being handled, 2 and 3 wait, and 4, 5 and 6 find the queue full.
-    await until(() => world.errors.length === 3, 'three capacity reports');
     for (const {error} of world.errors) assert.ok(refused('capacity')(error));
-    gate.resolve(undefined);
     await until(() => seen.length === 4, 'the rest');
     assert.deepEqual(seen, ['s1@1', 'dropped 3', 's1@2', 's1@3']);
   }));

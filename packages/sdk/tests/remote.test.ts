@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
 import {REMOTE_PATH, REMOTE_SCHEMA, SdkError, type Overflow, type SyncChange} from '../src/index.js';
-import {SESSION_FAMILY, blob, checked, it, session, turnEnded, until, type Session} from './support.js';
+import {SESSION_FAMILY, blob, checked, flush, it, session, turnEnded, until, type Session} from './support.js';
 import {startEdge, type Edge} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -142,8 +142,13 @@ it('a slow remote consumer lags only itself, and is told of what it lost', () =>
   const fast: number[] = [];
   await checked(edge.bus.connect('bunny/second')).subscribe<{revision: number}>('bunny.state.test-blob.*', message => { fast.push(message.data.revision); });
   const sender = checked(edge.bus.connect('bunny/core'));
-  for (let revision = 1; revision <= 150; revision += 1) await sender.publish('bunny.state.test-blob.b1', blob('b1', revision, 100_000));
-  await until(() => fast.length === 150, 'every message for the fast subscriber');
+  // The bus's queues hold 4 messages, so the fast subscriber gets a turn after each publish; the publisher never
+  // waits for the slow socket.
+  for (let revision = 1; revision <= 150; revision += 1) {
+    await sender.publish('bunny.state.test-blob.b1', blob('b1', revision, 100_000));
+    await flush();
+  }
+  assert.equal(fast.length, 150, 'every message for the fast subscriber');
   await until(() => edge.errors.some(({scope}) => scope.source === 'bunny/wall'), 'a dropped delivery for the slow one');
   // Reading again, the slow consumer is told of its loss.
   let overflow: {subscription?: string; dropped?: number} | undefined;

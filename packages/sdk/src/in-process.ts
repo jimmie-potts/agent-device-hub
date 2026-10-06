@@ -74,6 +74,9 @@ function isPublished(kind: MessageKind): kind is PublishedKind {
   }
 }
 
+const foreign = (source: string, message: Message<unknown>): SdkError =>
+  new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
+
 const isReply = (value: unknown): value is Reply => typeof value === 'object' && value !== null
   && (('status' in value && value.status === 'accepted') || ('error' in value && typeof value.error === 'object' && value.error !== null));
 
@@ -199,13 +202,34 @@ export class InProcessBus {
    * Sends a command that a remote part prepared, unchanged, from `source`, and waits `waitMs` for its result. For a
    * remote edge, which has validated the command.
    */
-  requestMessage(_source: string, _key: string, _command: Command<object>, _waitMs: number): Promise<RequestResult> {
-    return Promise.reject(new Error('requestMessage is not implemented yet'));
+  requestMessage(source: string, key: string, command: Command<object>, waitMs: number): Promise<RequestResult> {
+    return attempt(() => {
+      const route = parseKey(key);
+      if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
+      if (command.source !== source) throw foreign(source, command);
+      if (command.kind !== 'command' || !command.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
+      const {requestId} = command.data as {requestId?: unknown};
+      if (typeof requestId !== 'string' || !ID.test(requestId)) throw invalid('requestId is not an identifier');
+      const expiresAtMs = Date.parse(command.expiresat ?? '');
+      if (Number.isNaN(expiresAtMs)) throw invalid('a command carries expiresat');
+      if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
+      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs);
+    });
   }
 
-  /** Sends a sync request that a remote part prepared, unchanged, and waits `waitMs` for its answer. For a remote edge. */
-  syncMessage(_source: string, _request: Message<SyncRequest>, _waitMs: number): Promise<SyncAnswer> {
-    return Promise.reject(new Error('syncMessage is not implemented yet'));
+  /**
+   * Sends a sync request that a remote part prepared, unchanged, and waits `waitMs` for its answer. For a remote edge,
+   * which aborts `signal` when the remote part stops waiting, so the request is withdrawn.
+   */
+  syncMessage(source: string, request: Message<SyncRequest>, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
+    return attempt(() => {
+      if (request.source !== source) throw foreign(source, request);
+      if (request.kind !== 'sync-request') throw invalid('a sync request has kind sync-request');
+      const expiresAtMs = Date.parse(request.expiresat ?? '');
+      if (Number.isNaN(expiresAtMs)) throw invalid('a sync request carries expiresat');
+      if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
+      return this.#sync.dispatch(request, expiresAtMs, waitMs, signal);
+    });
   }
 
   #route(key: string, kind: PublishedKind): RoutingKey {
@@ -225,7 +249,7 @@ export class InProcessBus {
 
   /** A prepared message goes out as it is; only its own source may send it. */
   #publishMessage<T extends object>(source: string, key: string, message: Message<T>): Message<T> {
-    if (message.source !== source) throw new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
+    if (message.source !== source) throw foreign(source, message);
     if (!isPublished(message.kind)) throw invalid(`a ${message.kind} message is not published`);
     this.#deliver(key, this.#route(key, message.kind), message);
     return message;
@@ -280,6 +304,15 @@ export class InProcessBus {
     const sentAtMs = this.#now(), expiresAtMs = sentAtMs + timeoutMs;
     const data = {...draft.data, requestId};
     const command = this.#envelope(member.source, 'command', {...draft, data}, childOf(options.parent), {sentAtMs, expiresAtMs});
+    return this.#dispatch(member, key, route, command, expiresAtMs, timeoutMs);
+  }
+
+  /**
+   * Hands a command to the responder that owns `route`, and settles at its reply or after `waitMs`. A participant's
+   * own requests settle when it closes; a remote edge's have no participant and settle by their wait.
+   */
+  #dispatch(member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number): Promise<RequestResult> {
+    const {requestId} = command.data;
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
@@ -292,7 +325,7 @@ export class InProcessBus {
         if (settled) return;
         settled = true;
         cancel();
-        member.requests.delete(abandon);
+        member?.requests.delete(abandon);
         resolve(result);
       };
       const delivery: Delivery = {command, expiresAtMs, settle};
@@ -303,10 +336,10 @@ export class InProcessBus {
         end({status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)},
           {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)});
       };
-      member.requests.add(abandon);
-      cancel = this.#scheduler.after(timeoutMs, () => {
-        end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${timeoutMs} ms`, ids)},
-          {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
+      member?.requests.add(abandon);
+      cancel = this.#scheduler.after(waitMs, () => {
+        end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${waitMs} ms`, ids)},
+          {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${waitMs} ms`, ids)});
       });
       if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
