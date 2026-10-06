@@ -133,15 +133,15 @@ Every message SHALL carry a W3C version-00 `traceparent`. A message sent with a 
 
 ### Requirement: Sync a consumer's copy from its owner
 
-The SDK SHALL give each participant `sync(families, handler, {timeoutMs, maxBuffered, parent})`, which keeps a copy of one owner's families. It SHALL subscribe to `bunny.state.<family>.*` for each family before it sends a sync request of kind `sync-request` with a `requestId`, the families and `expiresat` set `timeoutMs` after its `time`. An entity SHALL be a state's schema family and `data.id`, or a removal's `data.entity`, at its `data.revision`.
+The SDK SHALL give each participant `sync(families, handler, {timeoutMs, maxBuffered, parent})`, which keeps a copy of one owner's families. It SHALL subscribe to `bunny.state.<family>.*` for each family before it sends any sync request, even when an overflow comes first, of kind `sync-request` with a `requestId`, the families and `expiresat` set `timeoutMs` after its `time`. An entity SHALL be a state's schema family and `data.id`, or a removal's `data.entity`, at its `data.revision`.
 
 Until the owner answers, live messages SHALL wait in a buffer of at most `maxBuffered` messages, 1024 by default. On the answer, the copy SHALL first take the owner's states. It SHALL then drop each held entity that is not a member and is at or below the sync revision, and apply each buffered message above the revision in order. Only then SHALL the handler be told about each change in that order: `updated`, `removed` and `synced`, so that when `synced` is told the copy has applied the snapshot and every buffered message above its revision. A change applied to the copy SHALL always be told, unless the copy was closed first.
 
 After a sync, the copy SHALL apply live messages in order, with the same buffer bound while its handler catches up. It SHALL drop a duplicate, a revision older than the one it holds, anything at or below the sync revision, and a state at or below the revision of a removal it applied. A live message that names no entity of the synced families SHALL be reported to `onError` and ignored.
 
-A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and an answer to a request sent before the latest overflow SHALL NOT be applied. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
+A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and a served answer to a request sent before the latest overflow SHALL NOT be applied; a refusal still ends the first sync or the copy. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
 
-`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`; each later request of the first sync SHALL get only the time left. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. A request that the transport fails to send SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
+`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to 2147483647 and a `maxBuffered` that is not a positive integer.
 
 #### Scenario: Current state, then live messages
 - **WHEN** an owner holds two sessions and a consumer syncs, and the owner later updates one
@@ -188,7 +188,7 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 - **THEN** the handler hears only the current state and `synced`
 
 #### Scenario: A stalled handler
-- **WHEN** a copy's handler stalls while 49 more messages arrive than its buffer of 3 holds
+- **WHEN** a copy's handler stalls while 49 messages arrive, 46 more than its buffer of 3 holds
 - **THEN** the owner receives no more than one further sync request, and once the handler returns it hears the resync rather than each buffered message
 
 #### Scenario: A second consumer while another copy overflows
@@ -196,12 +196,24 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 - **THEN** the second consumer is served next, and the first copy replaces its request once
 
 #### Scenario: A copy's own requests and the owner's queue
-- **WHEN** the owner's queue holds one waiting request and a copy overflows several times while its request is served
+- **WHEN** the owner's queue holds at most one waiting request and a copy overflows several times while its request is served
 - **THEN** the copy completes its sync, never refused with `capacity` by its own requests
 
 #### Scenario: A first sync that keeps overflowing
-- **WHEN** every answer to a copy's first sync arrives after more live messages than its buffer holds
-- **THEN** `sync` resolves as `rejected` with the retryable `unavailable` within `timeoutMs` of its first request
+- **WHEN** two answers to a copy's first sync each arrive 400 ms after more live messages than its buffer holds, and a third never arrives
+- **THEN** the third request gets only the 200 ms left, and `sync` resolves as `rejected` with the retryable `unavailable` at 1000 ms
+
+#### Scenario: A first sync out of time
+- **WHEN** the only answer to a first sync arrives at its deadline after an overflow
+- **THEN** no further request is sent, and `sync` resolves as `rejected` with `unavailable` naming the request that was sent
+
+#### Scenario: Subscriptions before any request
+- **WHEN** a copy of two families sees an overflow on the first while the second is still subscribing
+- **THEN** no request is sent until the second subscription exists, and then exactly one is
+
+#### Scenario: Only the first request joins the caller's trace
+- **WHEN** a copy synced with a parent trace syncs again after an overflow
+- **THEN** the first request carries the parent's trace ID and the second starts a new trace
 
 #### Scenario: A refused copy stays stopped
 - **WHEN** an owner refuses a first sync, or a later sync fails, and more messages than the buffer holds then arrive while an owner serves
@@ -220,7 +232,7 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 - **THEN** it is reported to `onError` with the copy's source and ignored, and later messages still apply
 
 #### Scenario: A transport that fails
-- **WHEN** the transport's sync request rejects
+- **WHEN** the transport's sync request rejects, or throws
 - **THEN** the error is reported, and `sync` resolves as `rejected` with `unavailable` naming the request
 
 #### Scenario: Hub #842's reference scenarios

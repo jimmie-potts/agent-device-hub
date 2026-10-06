@@ -43,3 +43,16 @@
   - removing the rejection handler fails the transport test;
   - capping owners fails the owner test.
 - [x] 5.6 Update the README (`synced`, the `onOverflow` gap position, one outstanding request, the first-sync bound, owner caps), this spec and its synced copy, and design.md (one outstanding request, tombstone growth, and the #880 and #883 deferrals). `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:sdk:built` three times (65 tests), `npm run test:events:built`, `npm run test:workflow`, `npm run check:workflow` and `npm run openspec -- validate --specs --strict` all exit zero.
+- [x] 5.7 Final review round. Tests first; three fail before the fix:
+  - no request before every subscription exists;
+  - a transport request that throws is refused like one that rejects;
+  - a first sync out of time names the last request sent.
+
+  Two more pin existing behavior: the third request of an overflowing first sync gets only the 200 ms left, and a later request starts its own trace. The fix gates sending on all subscriptions existing, catches a throwing transport call and records the last request sent. Each control fails only its own test:
+  - sending before every subscription exists;
+  - removing the throw guard;
+  - giving later requests the full `timeoutMs`;
+  - keeping `parent` for later requests;
+  - naming a new request on timeout.
+
+  The spec wording now says: 49 messages into a buffer of 3; an owner queue holding at most one waiting request; only served answers from before an overflow are discarded. The README and design.md match. All 68 SDK tests pass, and the full check list exits zero.

@@ -159,7 +159,9 @@ the copy current:
 
 1. It subscribes to `bunny.state.<family>.*` for each family, then sends a sync
    request of kind `sync-request` with `expiresat` set `timeoutMs` after its
-   `time`. A copy never has more than one request outstanding.
+   `time`. No request goes out before every subscription exists, and a copy
+   never has more than one request outstanding. Only the first request joins
+   `parent`'s trace; a later one starts its own.
 2. The owner's `provider` gets that request and returns `{revision, states}`:
    its current state at `revision`, as one state draft per entity, without
    `kind`. Each state carries `data.id` and a `data.revision` no greater than
@@ -190,15 +192,17 @@ with every change.
 
 `sync` resolves with `{status: 'synced', copy, message}` after the first sync,
 or with `{status: 'rejected', requestId, error}` if that sync is refused or does
-not complete within `timeoutMs` of its first request. The copy's `get(entity)`
+not complete within `timeoutMs` of its first request. A later request of the
+first sync gets only the time left, and a first sync that runs out of time names
+the last request it sent. The copy's `get(entity)`
 and `states()` return current state messages, and `close()` stops it; a copy
 closed while its handler runs hears no further change. A handler that throws is
 reported to `onError`, and so is a live message that names no entity of the
 synced families, which the copy ignores.
 
 If the buffer overflows, or a subscription's queue drops a message, the copy
-wants a new sync. It never combines partial state: an answer to a request sent
-before the overflow is not applied. The copy sends the next request only once
+wants a new sync. It never combines partial state: a served answer to a request
+sent before the overflow is not applied, though a refusal still ends the sync. The copy sends the next request only once
 no other is outstanding and its handler has returned, so however often a busy
 or stalled copy overflows, it asks the owner's shared queue for one sync at a
 time. The buffer also holds live messages while the handler catches up, so a
@@ -216,7 +220,7 @@ follows:
 | --- | --- |
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
-| `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport failed to send it (also reported to `onError`), or the first sync ran out of time. |
+| `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
 | `capacity` | The owner's queue is full. |
 | `invalid-request` | The families belong to more than one owner. |
 
