@@ -56,7 +56,10 @@ suite('lightRequest', () => {
   });
 });
 
-/** A stub device on the loopback interface; `handle` answers each request. */
+/**
+ * A stub device on the loopback interface; `handle` answers each request. It binds 127.0.0.1 on an ephemeral port, so it
+ * cannot collide with an installed service, and closes with its connections when the test ends.
+ */
 async function stub(context: TestContext, handle: (request: IncomingMessage, body: string, response: ServerResponse) => void): Promise<string> {
   const server: Server = createServer((request, response) => {
     let body = '';
@@ -102,14 +105,25 @@ suite('nodeTransport', () => {
       seen.push(request.url ?? '');
       response.end('{}');
     });
-    // Node 24 sends requests through HTTP_PROXY when NODE_USE_ENV_PROXY is set; the refused proxy would fail the request.
+    const proxied: string[] = [];
+    const proxy = await stub(context, (request, _body, response) => {
+      proxied.push(request.url ?? '');
+      response.writeHead(502).end();
+    });
+    // Node 24 sends requests through HTTP_PROXY when NODE_USE_ENV_PROXY is set; this proxy records any that reach it.
     const transport = new URL('../src/transport.js', import.meta.url).href;
     const script = `const {nodeTransport} = await import(${JSON.stringify(transport)});
 const reply = await nodeTransport({url: ${JSON.stringify(url + '/api/v1/new')}, method: 'POST', headers: {}, body: null, timeoutSeconds: 2});
 process.stdout.write(JSON.stringify(reply));`;
-    const {stdout} = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 10_000,
-      env: {...process.env, NODE_USE_ENV_PROXY: '1', HTTP_PROXY: 'http://127.0.0.1:9', http_proxy: 'http://127.0.0.1:9', NO_PROXY: ''}});
+    const run = promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 10_000,
+      env: {...process.env, NODE_USE_ENV_PROXY: '1', HTTP_PROXY: proxy, http_proxy: proxy, NO_PROXY: ''}});
+    // The child exits by itself; this stops it if the test fails before it does.
+    context.after(() => {
+      if (run.child.exitCode === null) run.child.kill();
+    });
+    const {stdout} = await run;
     assert.deepEqual(JSON.parse(stdout), {status: 200, body: '{}'});
     assert.deepEqual(seen, ['/api/v1/new']);
+    assert.deepEqual(proxied, []);
   });
 });

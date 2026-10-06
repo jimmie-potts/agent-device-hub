@@ -77,7 +77,7 @@ Slices 2 and 3 translate their tests first.
 | `effects.py` | 2a: `display`, the frame encoder. 2b: validation, presets, the patterns and `render` (`effects.ts`) | | |
 | `modes.py`, `edits.py` | | 3 | |
 | `controller_state.py` | | 3: the execution half that `run_worker` and `change_mode` call: `Execution`, `Cancelled`, `controls`, `control_payload`, `overrides`, `hold`, `held`, `release`, `discovered`, `scenes`, `scene_id`, and the worker's recovery of interrupted attempts in `recover` | The ledger and HTTP half: tables, `init`, `drop`, `ledgers`, `present`, `read`, `save`, `snapshot`, `capabilities`, `event`, `finish`, `changed`, `credential`, the listener's expiry in `recover`, `readonly` and admission (runtime commands and replies) |
-| `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`) | | The rest of the integration extension API (runtime commands, #844) |
+| `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`). These are domain rules and stay in the module; #844's command schema checks message shape and does not take them over | | The rest of the integration extension API (runtime commands, #844) |
 | `controller_server.py`, `controller_contract.py` | | | The HTTP controller (runtime commands and replies) |
 | `codex_hooks.py` | | | Codex hook registration, retired (owner decision, 2026-10-05) |
 | `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | | The web server is replaced by the runtime; the wall pages, their view and assets move with #844 |
@@ -135,8 +135,9 @@ The port adds tests of its own:
   test decoder reads `animData` as Python's `int()` did), and `favorite checks the port adds`
   (`favorites.test.ts`);
 - `lightRequest` and `nodeTransport` (`transport.test.ts`). The `nodeTransport` tests use stub HTTP
-  servers on the loopback interface. They check that a device that never answers fails within the
-  timeout, and that a proxy set for Node is never used.
+  servers that bind 127.0.0.1 on ephemeral ports, and one child Node process; each test closes its
+  servers and stops the child when it ends. They check that a device that never answers fails
+  within the timeout, and that a proxy set for Node is never used.
 
 ### Dropped assertions
 
