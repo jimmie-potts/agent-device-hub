@@ -163,10 +163,11 @@ device. The hub calls existing controllers; it does not bypass their queues.
 Keep controller databases private, especially across Windows and WSL. Use
 explicit API/ownership handoffs, not concurrent access to a mounted SQLite file.
 
-Preserve legacy Nanoleaf behavior until an explicitly selected and verified
-shared-input cutover. Retain task/effect epochs, source reservations, unread
-policy, preferences and scenes. Preserve Pixoo's simulator startup, originals,
-referenced renditions, playback recovery and explicit Monitor/Media semantics.
+Preserve legacy Nanoleaf device behavior. The shared-input cutover is complete,
+and the runtime port keeps shared input only (#26, owner decision 2026-10-06).
+Retain task/effect epochs, source reservations, unread policy, preferences and
+scenes. Preserve Pixoo's simulator startup, originals, referenced renditions,
+playback recovery and explicit Monitor/Media semantics.
 
 Read-only, planning and explicitly source-only work do not authorize runtime
 changes. Standing installation authority covers the established target and
