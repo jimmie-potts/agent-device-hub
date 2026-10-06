@@ -11,7 +11,7 @@ import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.j
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
-  type Responder, type Sdk, type SendOptions, type SubscribeOptions, type Subscription,
+  type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
 } from './sdk.js';
 import {startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
@@ -28,12 +28,19 @@ export type RemoteOptions = {
   onError?: (error: unknown, scope: ErrorScope) => void;
   /** How long to wait before reconnecting a lost stream. Defaults to 100 ms, doubling up to 5 s. */
   reconnectDelayMs?: number;
+  /** Runs request and sync deadlines and reconnect delays. Defaults to the global `setTimeout`. */
+  scheduler?: Scheduler;
 };
 
-/** A remote participant: the SDK calls, and `close`, which ends its stream and everything it opened. */
-export interface RemoteParticipant extends Sdk {
-  close(): Promise<void>;
-}
+/**
+ * A remote participant: the SDK calls, and `close`, which ends its stream and closes everything it opened, its sync
+ * copies included. A first sync still under way resolves `cancelled`, and its request is withdrawn at the edge.
+ */
+export type RemoteParticipant = Participant;
+const timers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -74,6 +81,9 @@ class RemoteClient {
   #connected: Promise<string> = Promise.resolve('');
   readonly #subscriptions = new Map<string, Local>();
   readonly #answering = new Map<string, Answering<object>>();
+  /** Sync copies, which close with the participant. */
+  readonly #copies = new Set<Subscription>();
+  readonly #scheduler: Scheduler;
 
   constructor(options: RemoteOptions) {
     this.#base = `${options.url.replace(/\/$/, '')}${REMOTE_PATH}`;
@@ -88,6 +98,7 @@ class RemoteClient {
       warning.name = 'BunnySdkWarning';
       process.emitWarning(warning);
     });
+    this.#scheduler = options.scheduler ?? timers;
     this.#firstDelayMs = options.reconnectDelayMs ?? 100;
     this.#delayMs = this.#firstDelayMs;
   }
@@ -105,14 +116,20 @@ class RemoteClient {
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => this.#request(key, draft, options),
       respond: <T extends object>(pattern: string, responder: Responder<T>) =>
         this.#answer<T>('respond', {pattern}, `respond ${pattern}`, (command, id) => this.#reply(command as Command<T>, responder, id)),
-      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => startSync<T>({
-        now: this.#now,
-        subscribe: (pattern, deliver, subscribeOptions) => this.#subscribe(pattern, deliver, subscribeOptions),
-        request: outgoing => this.#syncRequest(outgoing),
-        report: error => { this.#report(error, `sync ${families.join(',')}`); },
-      }, families, handler, options),
-      serveSync: (families: readonly string[], provider: SyncProvider) =>
-        this.#answer<SyncRequest>('serve', {families: [...families]}, `sync ${families.join(',')}`, (request, id) => this.#serve(request, provider, id)),
+      sync: async <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
+        this.#live();
+        return startSync<T>({
+          now: this.#now,
+          subscribe: (pattern, deliver, subscribeOptions) => this.#subscribe(pattern, deliver, subscribeOptions),
+          request: outgoing => this.#syncRequest(outgoing),
+          report: error => { this.#report(error, `sync ${families.join(',')}`); },
+          track: copy => {
+            this.#copies.add(copy);
+            return () => { this.#copies.delete(copy); };
+          },
+        }, families, handler, options);
+      },
+      serveSync: (families: readonly string[], provider: SyncProvider) => this.#answer<SyncRequest>('serve', {families: [...families]}, `sync ${families.join(',')}`, (request, id) => this.#serve(request, provider, id)),
       close: () => this.#close(),
     };
   }
@@ -201,7 +218,7 @@ class RemoteClient {
 
   async #reconnect(): Promise<string> {
     for (;;) {
-      await new Promise(resolve => { setTimeout(resolve, this.#delayMs); });
+      await new Promise<void>(resolve => { this.#scheduler.after(this.#delayMs, resolve); });
       if (this.#closed) throw new SdkError(body('invalid-state', `${this.#source} is closed`));
       try {
         const connection = await this.#open();
@@ -339,7 +356,7 @@ class RemoteClient {
     });
   }
 
-  #syncRequest({families, requestId, timeoutMs, trace}: OutgoingSync): Promise<SyncAnswer> {
+  #syncRequest({families, requestId, timeoutMs, trace, signal}: OutgoingSync): Promise<SyncAnswer> {
     const sentAtMs = this.#now();
     const request = buildMessage(this.#source, 'sync-request', {
       type: 'org.bunny.sync.requested', subject: families.join(','), dataschema: SYNC_REQUEST, data: {requestId, families: [...families]},
@@ -347,24 +364,38 @@ class RemoteClient {
     const ids = {requestId, traceId: traceIdOf(trace.traceparent)};
     // A sync changes nothing, so at the deadline it is unavailable, as in process.
     const late: SyncAnswer = {status: 'rejected', requestId, error: body('unavailable', `no sync answer within ${timeoutMs} ms`, ids)};
-    return this.#within(timeoutMs, late, async signal => {
+    // A copy that closes withdraws its request: the call is dropped, and the edge takes it out of the owner's queue.
+    const withdrawn: SyncAnswer = {status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)};
+    return this.#within(timeoutMs, late, async dropped => {
       try {
-        return fields(await this.#post('sync', {request}, signal)).answer as SyncAnswer;
+        return fields(await this.#post('sync', {request}, dropped)).answer as SyncAnswer;
       } catch (error) {
         return {status: 'rejected', requestId, error: named(bodyOf(error), ids)};
       }
-    });
+    }, {signal, answer: withdrawn});
   }
 
-  /** Runs one call until `timeoutMs`; at the deadline it aborts the call and settles with `late`. */
-  async #within<T>(timeoutMs: number, late: T, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  /**
+   * Runs one call until `timeoutMs` on the scheduler; at the deadline it drops the call and settles with `late`. When
+   * `withdraw.signal` aborts first, it drops the call and settles with `withdraw.answer`.
+   */
+  async #within<T>(timeoutMs: number, late: T, call: (signal: AbortSignal) => Promise<T>, withdraw?: {signal: AbortSignal; answer: T}): Promise<T> {
     const controller = new AbortController();
-    let timer: NodeJS.Timeout | undefined;
-    const deadline = new Promise<T>(resolve => { timer = setTimeout(() => { resolve(late); }, timeoutMs); });
+    let cancel: Cancel = () => {};
+    let stop = (): void => {};
+    const ended = new Promise<T>(resolve => {
+      cancel = this.#scheduler.after(timeoutMs, () => { resolve(late); });
+      if (withdraw === undefined) return;
+      const withdrawn = (): void => { resolve(withdraw.answer); };
+      if (withdraw.signal.aborted) withdrawn();
+      withdraw.signal.addEventListener('abort', withdrawn);
+      stop = () => { withdraw.signal.removeEventListener('abort', withdrawn); };
+    });
     try {
-      return await Promise.race([deadline, call(controller.signal)]);
+      return await Promise.race([ended, call(controller.signal)]);
     } finally {
-      clearTimeout(timer);
+      cancel();
+      stop();
       controller.abort();
     }
   }
@@ -379,6 +410,10 @@ class RemoteClient {
 
   async #close(): Promise<void> {
     this.#closed = true;
+    // Copies first: each settles its first sync as cancelled and withdraws its request before the stream goes.
+    const copies = [...this.#copies].map(copy => copy.close());
+    this.#copies.clear();
+    await Promise.all(copies);
     this.#stream?.abort();
     const queues = [...[...this.#subscriptions.values()].map(local => local.queue), ...[...this.#answering.values()].map(answering => answering.queue)];
     this.#subscriptions.clear();

@@ -9,7 +9,7 @@ import {
 import {buildMessage, type Content} from './envelope.js';
 import type {InProcessBus} from './in-process.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
-import {SdkError, type Command, type Reply, type Sdk, type Subscription} from './sdk.js';
+import {SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
 import {childOf} from './trace.js';
 
@@ -24,7 +24,13 @@ export type EdgeOptions = {
   grants: readonly RemoteGrant[];
   log?: (record: EdgeLogRecord) => void;
   now?: () => number;
+  /** Runs the edge's own waits for forwarded commands and sync requests. Defaults to the global `setTimeout`. */
+  scheduler?: Scheduler;
 };
+const timers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
 
 /**
  * How long past a request's expiry the edge still waits for its result. The remote requester's own deadline settles
@@ -89,6 +95,7 @@ export class RemoteEdge {
   readonly #grants: {source: string; digest: Buffer}[];
   readonly #log: (record: EdgeLogRecord) => void;
   readonly #now: () => number;
+  readonly #scheduler: Scheduler;
   readonly #connections = new Map<string, Connection>();
   /** One participant per source, for calls that need no connection. */
   readonly #participants = new Map<string, Sdk>();
@@ -106,6 +113,7 @@ export class RemoteEdge {
       }
     };
     this.#now = options.now ?? (() => Date.now());
+    this.#scheduler = options.scheduler ?? timers;
   }
 
   /** Serves one HTTP request; mount it on a `node:http` server. */
@@ -144,6 +152,8 @@ export class RemoteEdge {
       // A remote part that stops waiting, at its deadline or because its copy closed, drops the call.
       const dropped = new AbortController();
       response.once('close', () => { if (!response.writableEnded) dropped.abort(); });
+      // The remote part may have gone while its body was read.
+      if (response.closed) dropped.abort();
       this.#write(response, 200, {schema: REMOTE_SCHEMA, ...await this.#call(source, route, body, dropped.signal)});
     } catch (error) {
       const refused = error instanceof Refusal || error instanceof SdkError ? error.body
@@ -363,12 +373,13 @@ export class RemoteEdge {
   #forward<T extends Reply | Snapshot | ErrorBody>(connection: Connection, key: string, expiresat: string | undefined, event: StreamEventName, data: object): Promise<T> {
     const late = errorBody('unavailable', {detail: 'the remote part did not answer in time'});
     return new Promise<T>(resolve => {
+      let cancel: Cancel = () => {};
       const finish = (answer: Reply | Snapshot | ErrorBody): void => {
-        clearTimeout(timer);
+        cancel();
         connection.waiting.delete(key);
         resolve(answer as T);
       };
-      const timer = setTimeout(() => { finish(late); }, Math.max(0, Date.parse(expiresat ?? '') - this.#now()) + GRACE_MS);
+      cancel = this.#scheduler.after(Math.max(0, Date.parse(expiresat ?? '') - this.#now()) + GRACE_MS, () => { finish(late); });
       connection.waiting.set(key, finish);
       void this.#push(connection, event, data);
     });
