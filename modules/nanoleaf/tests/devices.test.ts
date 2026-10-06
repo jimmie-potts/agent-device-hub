@@ -1,7 +1,7 @@
 // Translated from codex-nanoleaf tests/test_devices.py, the schema cases of tests/test_bridge.py and the geometry and
 // reservation cases of tests/test_panels.py (PORTING.md lists every case and where the rest went).
 import assert from 'node:assert/strict';
-import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync} from 'node:fs';
+import {copyFileSync, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {withState} from '../src/database.js';
@@ -208,9 +208,11 @@ suite('DeviceTest', () => {
 /** Open handles to a file in this process (Linux /proc), or null where /proc is unavailable. */
 function openHandles(path: string): number | null {
   if (!existsSync('/proc/self/fd')) return null;
+  // /proc names each open file by its resolved path.
+  const target = realpathSync(path);
   return readdirSync('/proc/self/fd').filter(fd => {
     try {
-      return readlinkSync(join('/proc/self/fd', fd)) === path;
+      return readlinkSync(join('/proc/self/fd', fd)) === target;
     } catch {
       return false;
     }
@@ -229,6 +231,11 @@ suite('BridgeTest', () => {
       context.skip('No /proc on this platform.');
       return;
     }
+    assert.equal(openHandles(path), 0);
+    // Positive control: an open connection is counted.
+    const open = new DatabaseSync(path);
+    assert.ok((openHandles(path) ?? 0) >= 1);
+    open.close();
     assert.equal(openHandles(path), 0);
     assert.throws(() => withState(directory, () => undefined), /map_settings/);
     assert.equal(openHandles(path), 0);

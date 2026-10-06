@@ -1,8 +1,11 @@
-// Behavior the translated tests leave open, compared with Python on recorded inputs: recorded/trace.json holds random
-// snapshot sequences (source switches, owner revisions, feed loss, Line placement, evictions, comets, modes, reservations
-// and Codex metadata changes) run through the Python bridge, with every saved row after each step. The port replays the
-// same steps and must save the same rows and return the same results. A scripted sequence covers comet queueing and
-// cancellation, which random sequences rarely reach.
+// Behavior the translated tests leave open, compared with Python on recorded inputs. recorded/trace.json holds three
+// random sequences (source switches, owner revisions, feed loss, Line placement, evictions, comets, modes, reservations
+// and Codex metadata changes) and two scripted ones (comet queueing and cancellation; Line placement), run through the
+// Python bridge. After each step the port must return the same result and save the same rows in these tables: sessions,
+// activity, task_info, slots, comets, waits, receipts, shared_stale, shared_suppressed_waves, shared_evictions, projects,
+// line_prefs, map_settings, meta and display_v3, all in rowid order. It must also save the same shared_input source,
+// generation, received, connection, error and backup, and an envelope with the same hash. The palette, map_pending,
+// locate and shared_ack tables and shared_input.config are not compared.
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';

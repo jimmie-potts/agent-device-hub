@@ -40,10 +40,38 @@ import store  # noqa: E402
 CORPUS = SOURCE / 'bridge/vendor/agent-state-3.3.0/package/fixtures/snapshots-v1.json'
 
 
-def write(name, value, indent=1):
+def write(name, value):
     OUTPUT.mkdir(exist_ok=True)
-    text = json.dumps(value, indent=indent, sort_keys=True, separators=None if indent else (',', ':'))
-    (OUTPUT / name).write_text(text + '\n')
+    (OUTPUT / name).write_text(json.dumps(value, indent=1, sort_keys=True) + '\n')
+
+
+def write_trace(traces):
+    """trace.json with each trace field, session, starting table and step on its own line, so a re-recording diffs
+    line by line without the size of fully indented JSON."""
+    def line(value):
+        return json.dumps(value, sort_keys=True, separators=(',', ':'))
+
+    def members(pairs, close):
+        return [text + (',' if index < len(pairs) - 1 else '') for index, text in enumerate(pairs)] + [close]
+
+    out = ['[']
+    for t_index, record in enumerate(traces):
+        fields = []
+        for key in sorted(record):
+            value = record[key]
+            if key in ('sessions', 'start'):
+                fields.append([json.dumps(key) + ':{'] + members([json.dumps(k) + ':' + line(v) for k, v in sorted(value.items())], '}'))
+            elif key == 'steps':
+                fields.append([json.dumps(key) + ':['] + members([line(step) for step in value], ']'))
+            else:
+                fields.append([json.dumps(key) + ':' + line(value)])
+        out.append('{')
+        for f_index, lines in enumerate(fields):
+            out.extend(lines[:-1] + [lines[-1] + (',' if f_index < len(fields) - 1 else '')])
+        out.append('}' + (',' if t_index < len(traces) - 1 else ''))
+    out.append(']')
+    OUTPUT.mkdir(exist_ok=True)
+    (OUTPUT / 'trace.json').write_text('\n'.join(out) + '\n')
 
 
 def dump(directory):
@@ -617,4 +645,4 @@ if __name__ == '__main__':
     values()
     setups()
     owner_snapshot()
-    write('trace.json', [trace(seed, 110) for seed in (1, 2, 3)] + [scripted(), scripted_placement()], indent=None)
+    write_trace([trace(seed, 110) for seed in (1, 2, 3)] + [scripted(), scripted_placement()])
