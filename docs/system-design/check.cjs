@@ -2,6 +2,7 @@ const fs = require('fs'), path = require('path'), os = require('os');
 const assert = require('assert/strict');
 const {pathToFileURL} = require('url');
 const crypto = require('crypto');
+const {screenshot} = require('../skins/screenshot.cjs');
 let modulePath;
 for (const p of [process.env.GUIDE_PLAYWRIGHT_MODULE, 'playwright'].filter(Boolean)) {
   try {modulePath = require.resolve(p); break;} catch {}
@@ -61,7 +62,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     assert(await panel.locator('a[href^="reference/"]').count()>=1,'Dated reference link');
     await page.locator('.detail-clear').click(); assert.equal(await panel.getAttribute('data-node'),'');
     {const width=()=>mapSvg.evaluate(e=>e.getBoundingClientRect().width); const base=await width(); await page.locator('.atlas-map .zoom-in').click(); assert(await width()>base*1.2,'Zoom widens the map'); assert(await page.locator('.atlas-map .map-stage').evaluate(e=>e.scrollWidth>e.clientWidth),'Zoomed map scrolls inside its stage'); await fit(); await page.locator('.atlas-map .zoom-fit').click(); assert.equal(Math.round(await width()),Math.round(base));}
-    await page.screenshot({path:path.join(out,'map-selected.png')});
+    await screenshot(page,{path:path.join(out,'map-selected.png')});
     // Walkthrough: one phase open at a time, highlighted arrows, diagram labels open phases.
     const phases=page.locator('.walk-phase');
     assert.equal(await phases.count(),data.map.phases.length);
@@ -73,7 +74,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     assert(await phases.nth(1).locator('.phase-messages li').count()===stepCount && await phases.nth(1).locator('a[href^="https://github.com/"]').count()>=1);
     await page.locator('.atlas-canvas[data-diagram^="seq-"] [data-segment-id$="-3"]').click();
     assert(await phases.nth(3).evaluate(e=>e.classList.contains('is-open')),'Diagram phase labels open the phase'); assert.equal(await page.locator('.phase-body:not([hidden])').count(),1);
-    await page.screenshot({path:path.join(out,'walkthrough-phase.png'),fullPage:false});
+    await screenshot(page,{path:path.join(out,'walkthrough-phase.png'),fullPage:false});
     await phases.nth(3).locator('.phase-button').click(); assert.equal(await page.locator('.phase-body:not([hidden])').count(),0);
     await page.goto(pathToFileURL(path.join(root,'index.html')).href+'#detail-core'); assert.equal(await panel.getAttribute('data-node'),'core','Deep link selects a map component');
     await visit('index.html');
@@ -81,7 +82,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
       if(await page.locator('html').getAttribute('data-theme')!==theme)await page.locator('#theme-toggle').click();
       for (const [width,height] of [[1440,1000],[1920,1080]]) {
         await page.setViewportSize({width,height}); await fit();
-        await page.screenshot({path:path.join(out,`overview-${width}-${theme}.png`)});
+        await screenshot(page,{path:path.join(out,`overview-${width}-${theme}.png`)});
       }
     }
     for (const item of data.components) {
@@ -92,19 +93,19 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     }
     await visit('components/CORE-playback.html');
     await page.setViewportSize({width:1440,height:1000});
-    await page.screenshot({path:path.join(out,'playback-desktop.png'),fullPage:true});
+    await screenshot(page,{path:path.join(out,'playback-desktop.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844}); await fit();
     assert(!await page.locator('#sidebar').isVisible());
     await page.locator('#menu-toggle').click(); assert(await page.locator('#sidebar').isVisible());
     await page.locator('#search').fill('rules'); assert(await page.locator('.nav-item:visible').count()>0);
     await page.locator('#menu-toggle').click(); assert(!await page.locator('#sidebar').isVisible());
-    await page.screenshot({path:path.join(out,'playback-mobile.png'),fullPage:true});
+    await screenshot(page,{path:path.join(out,'playback-mobile.png'),fullPage:true});
     await visit('index.html'); await fit();
     assert(await page.locator('.atlas-map .map-stage').evaluate(e=>e.scrollWidth>e.clientWidth),'Narrow widths scroll the map instead of shrinking it');
     assert(await page.locator('.atlas-canvas[data-diagram^="arch-"] > svg').evaluate(e=>e.getBoundingClientRect().width>=860),'Map keeps a readable width on mobile');
     await page.locator('#map-index > summary').click(); await page.locator('.node-button[data-node="nanoWorker"]').click(); assert.equal(await page.locator('#map-detail').getAttribute('data-node'),'nanoWorker');
     assert.equal((await page.locator('.map-reading').innerText()).match(/\[\[/g),null,'Map reading text has no unresolved [[issue]] markers'); assert.equal((await page.locator('.walk-reading').innerText()).match(/\[\[/g),null,'Walkthrough reading text has no unresolved [[issue]] markers');
-    await page.screenshot({path:path.join(out,'overview-mobile.png'),fullPage:true});
+    await screenshot(page,{path:path.join(out,'overview-mobile.png'),fullPage:true});
     await visit('full-system-design.html');
     await page.setViewportSize({width:1440,height:1000}); await fit();
     assert.equal(await page.locator('article.document').count(),data.components.length);
@@ -121,8 +122,8 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     assert.deepEqual(errors,[]); assert.deepEqual(external,[]);
     // Neon skin: theme control, one-shot motion, decoration out of the way, both themes at 390 and 1440 px.
     const {check:checkSkin}=require('../skins/check_skin.cjs'), controls=['#theme-toggle','#print','#menu-toggle','#search'];
-    const skin={overview:await checkSkin(browser,{url:pathToFileURL(path.join(root,'index.html')).href,decorated:['body','.topbar','.component-card'],controls,shot:(p,name)=>p.screenshot({path:path.join(out,`skin-overview-${name}.png`)})}),
-                component:await checkSkin(browser,{url:pathToFileURL(path.join(root,'components/CORE-playback.html')).href,decorated:['body','.topbar'],controls,shot:(p,name)=>p.screenshot({path:path.join(out,`skin-component-${name}.png`)})})};
+    const skin={overview:await checkSkin(browser,{url:pathToFileURL(path.join(root,'index.html')).href,decorated:['body','.topbar','.component-card'],controls,shot:(p,name)=>screenshot(p,{path:path.join(out,`skin-overview-${name}.png`)})}),
+                component:await checkSkin(browser,{url:pathToFileURL(path.join(root,'components/CORE-playback.html')).href,decorated:['body','.topbar'],controls,shot:(p,name)=>screenshot(p,{path:path.join(out,`skin-component-${name}.png`)})})};
     const receipt={ok:true,documents:data.components.length+2,viewports:['1440x1000','1920x1080','390x844'],themes:['dark','light'],checks:['navigation','search','no-results','system-map-first-screen','map-selection-mouse-keyboard-list','map-links','map-zoom','walkthrough-phases','deep-link','theme','mobile-menu','mobile-map-scroll','all-component-pages','anchors','print','print-map-details','no-external-requests','no-console-errors','skin-theme-motion-decoration'],skin,overviewSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),output:out};
     fs.writeFileSync(path.join(out,'browser.json'),JSON.stringify(receipt,null,2)+'\n');
     console.log(JSON.stringify(receipt,null,2));

@@ -2,6 +2,7 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const {pathToFileURL} = require('url');
 const assert = require('assert/strict');
 const crypto = require('crypto');
+const {screenshot:frameScreenshot} = require('../../skins/screenshot.cjs');
 // Resolve installed packages and browsers. These checks never install software.
 let playwrightPath;
 for (const candidate of [process.env.GUIDE_PLAYWRIGHT_MODULE,'playwright'].filter(Boolean)) {
@@ -227,7 +228,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const summary=`${count} guides · ${liveTotal} issues in these guides · ${diagramIds.length} diagrams`;
     assert.equal(await page.locator('#result-count').textContent(),staticSummary);
     assert.equal(await page.locator('.future-scenarios').getAttribute('open'),null,'Future scenarios start collapsed on load');
-    const screenshot=name=>page.screenshot({path:path.join(root,`work/guide-${name}.png`)});
+    const screenshot=name=>frameScreenshot(page,{path:path.join(root,`work/guide-${name}.png`)});
     await page.evaluate(()=>window.scrollTo(0,0)); await screenshot('desktop'); await page.locator('#newly-added').screenshot({path:path.join(root,'work/guide-status-overview.png')}); await page.locator('#shared-codex').screenshot({path:path.join(root,'work/guide-next-step.png')}); await page.locator('#collapse-all').click();
     assert.equal(await page.locator('.guide[open]').count(),0); assert.equal(await page.locator('.reference[open]').count(),0,'Collapse all closes reference sections');
     // Deep link into a diagram reveals its collapsed architecture parent.
@@ -406,7 +407,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
        assert(await selectedAll(),`A ${clipboard} clipboard selects the prompt`); assert(/copy it manually/.test(await status.textContent()));
      }
-     await page.screenshot({path:path.join(root,'work/guide-brief-fallback-mobile.png')});
+     await frameScreenshot(page,{path:path.join(root,'work/guide-brief-fallback-mobile.png')});
      await dialog.locator('.brief-close').click(); assert(await focusedOn(badge)); await page.evaluate(()=>{delete navigator.clipboard; delete navigator.clipboard.writeText;});
      assert.equal(await page.locator('#search').evaluate(e=>e.placeholder.length>0),true); assert(/task brief/i.test(await page.locator('.search-meta').textContent()),'Search hint explains that issue links open a brief');}
     // Starting-session recommendations (#252): snapshot labels survive the live refresh, the brief shows the saved
@@ -595,7 +596,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert((await offline.locator('#overview-freshness').textContent()).includes('snapshot'));
     assert.deepEqual(offlineErrors,[],'Failed or offline reads do not produce console or page errors'); await offline.close();
     // Neon skin: theme control, one-shot motion, decoration out of the way, both themes at 390 and 1440 px.
-    const skin=await require(path.join(root,'../skins/check_skin.cjs')).check(browser,{url:pathToFileURL(file).href,decorated:['body','.topbar','.guide','.reference','.shell .hero'],controls:['#theme-toggle','#search','#expand-all','#collapse-all','#print'],allowRequest:u=>u.startsWith(`${apiOrigin}/repos/jimmie-potts/`),shot:(p,name)=>p.screenshot({path:path.join(root,`work/guide-skin-${name}.png`)})});
+    const skin=await require(path.join(root,'../skins/check_skin.cjs')).check(browser,{url:pathToFileURL(file).href,decorated:['body','.topbar','.guide','.reference','.shell .hero'],controls:['#theme-toggle','#search','#expand-all','#collapse-all','#print'],allowRequest:u=>u.startsWith(`${apiOrigin}/repos/jimmie-potts/`),shot:(p,name)=>frameScreenshot(p,{path:path.join(root,`work/guide-skin-${name}.png`)})});
     const receipt={checkedAt:new Date().toISOString(),snapshot:snapshot.refreshedAt,architectureReviewedAt:sources.reviewedAt,historyFetchedAt:history.fetchedAt,htmlSha256:sha(file),htmlBytes:fs.statSync(file).size,guides:count,primaryOpenIssues:openKeys.length,linkedIssues:new Set(links.map(l=>l.key)).size,diagrams:diagramIds.length,companionViewers:receipts.diagrams.map(d=>({id:d.id,sha256:d.artifact.sha256,bytes:d.artifact.bytes})),roadmapNodes:meta.history.roadmapNodes,mergedPRs:prs,viewports:widths,issueStatusAndEvidence:'passed',liveGitHubStatus:'passed',allSuccessFreshness:'passed',repositoryFallback:'passed',offlineFallback:'passed',pagination:'passed',overviewLists:'passed',coverage:'passed',linksAndAnchors:'passed',search:'passed',navigation:'passed',expandCollapse:'passed',architecture:'passed',diagramZoomFitAndInlineViewer:'passed',timelineTooltipsAndFilters:'passed',taskBriefs:'passed',direction:'passed',printExpansionAndRestoration:'passed',skin,externalRequests:requests.length,approvedGitHubRequests:apiRequests.length,companionViewerRequests:[...new Set(companionRequests)],companionViewerRenderedWithRequestsBlocked:true,errors,consoleErrors,runtime:{node:process.version,playwright:playwrightPath,chromium:executablePath,browserVersion:browser.version()}};
     fs.writeFileSync(path.join(root,'work/guide-verification.json'),JSON.stringify(receipt,null,2)+'\n');console.log(JSON.stringify(receipt,null,2));
   } finally {await browser.close();}

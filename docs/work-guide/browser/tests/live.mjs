@@ -5,6 +5,7 @@ import {resolve,join} from 'node:path';
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import {screenshot} from '../../../skins/screenshot.cjs';
 import {checkCandidate,defaultOutput} from '../build.mjs';
 const checked=await checkCandidate();
 const dataset=JSON.parse(await readFile(join(defaultOutput,'releases',checked.releaseId.slice(7),'records.json'),'utf8'));
@@ -21,7 +22,7 @@ try{
  await page.goto(origin+'/index.html');await page.waitForFunction(()=>window.guide);
  assert.equal(await page.evaluate(()=>window.guide.releaseId),checked.releaseId);
  assert.match(await page.locator('#freshness').textContent(),new RegExp(primary.length+' unique open primary issues'));
- await page.screenshot({path:join(evidence,'live-home-desktop.png')});
+ await screenshot(page,{path:join(evidence,'live-home-desktop.png')});
  await page.getByRole('link',{name:'All issues',exact:true}).click();
  const open=dataset.issues.filter(x=>x.state==='OPEN');assert.match(await page.locator('.total').first().textContent(),new RegExp(open.length+' total'));
  const target=primary.at(-1);await page.getByRole('searchbox').fill(target.id);
@@ -31,7 +32,7 @@ try{
  await page.goBack();assert.equal(await page.getByRole('searchbox').inputValue(),target.id);
  assert.deepEqual((await new AxeBuilder({page}).analyze()).violations.map(x=>x.id),[]);
  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
- await page.screenshot({path:join(evidence,'live-mobile.png')});
+ await screenshot(page,{path:join(evidence,'live-mobile.png')});
  assert.deepEqual((await new AxeBuilder({page}).analyze()).violations.map(x=>x.id),[]);
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  await writeFile(join(evidence,'live.json'),JSON.stringify({...checked,primaryOpen:primary.length,retainedOpen:open.length,epics:audit.epicCount,primaryPlacements:audit.placements.length,axeViolations:0,externalRequests:0,passed:true},null,2));

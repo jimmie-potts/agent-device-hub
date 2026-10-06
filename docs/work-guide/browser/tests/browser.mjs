@@ -4,6 +4,7 @@ import {resolve,join} from 'node:path';
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import {screenshot} from '../../../skins/screenshot.cjs';
 import {buildCandidate} from '../build.mjs';
 import {parseMetadata} from '../collector.mjs';
 import {datasetIdentity,placementOf} from '../runtime/records.mjs';
@@ -89,12 +90,12 @@ try {
  await page.keyboard.press('Tab');await page.keyboard.press('Enter');assert.equal(await page.locator('#page-title').evaluate(x=>document.activeElement===x),true);
  assert.ok(await page.locator('.issue').count()>0,'Skip to content must retain the current view');
  const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations.map(x=>x.id),[]);
- await page.screenshot({path:join(evidence,'desktop.png'),fullPage:false});
+ await screenshot(page,{path:join(evidence,'desktop.png'),fullPage:false});
  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Navigation',exact:true}).click();
  assert.ok(await page.getByRole('link',{name:'All issues',exact:true}).isVisible());
  await page.getByRole('link',{name:'All issues',exact:true}).click();
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
- await page.screenshot({path:join(evidence,'mobile.png'),fullPage:false});
+ await screenshot(page,{path:join(evidence,'mobile.png'),fullPage:false});
  const axeMobile=await new AxeBuilder({page}).analyze();assert.deepEqual(axeMobile.violations.map(x=>x.id),[]);
  // Exercise the approved composed presentation through the exported renderer.
  const composeDataset=JSON.parse(await readFile(new URL('../../contracts/epic-guide/fixtures/dataset.json',import.meta.url),'utf8'));

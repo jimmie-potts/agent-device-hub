@@ -1,6 +1,7 @@
 const fs = require('fs'), path = require('path'), os = require('os');
 const assert = require('assert/strict');
 const {pathToFileURL} = require('url');
+const {screenshot} = require('../../skins/screenshot.cjs');
 
 async function check(browser, output) {
   const root = __dirname;
@@ -19,7 +20,7 @@ async function check(browser, output) {
     assert.equal(await page.locator('.card').count(),6);
     for (const width of [1440,390]) {
       await page.setViewportSize({width,height:1000}); await fit('index');
-      await page.screenshot({path:path.join(output,`reference-${width}.png`),fullPage:true});
+      await screenshot(page,{path:path.join(output,`reference-${width}.png`),fullPage:true});
     }
     await page.setViewportSize({width:1440,height:1000});
     for (const service of ['pixoo','nanoleaf-controller','nanoleaf-map']) {
@@ -38,7 +39,7 @@ async function check(browser, output) {
       }
       assert.equal(await page.getByRole('button',{name:/Test Request|Send Request|Ask AI|Ask Scalar/}).count(),0);
       await fit(service);
-      await page.screenshot({path:path.join(output,service+'-api.png')});
+      await screenshot(page,{path:path.join(output,service+'-api.png')});
       if(service==='pixoo') {
         await page.getByRole('button',{name:/^Open Search/}).click();
         const search=page.getByRole('combobox');
@@ -47,7 +48,7 @@ async function check(browser, output) {
         await page.keyboard.press('Escape');
       }
       await page.setViewportSize({width:390,height:844}); await fit(service+' mobile');
-      await page.screenshot({path:path.join(output,service+'-api-mobile.png')});
+      await screenshot(page,{path:path.join(output,service+'-api-mobile.png')});
       await page.setViewportSize({width:1440,height:1000});
     }
     let tableCount=0;
@@ -55,7 +56,7 @@ async function check(browser, output) {
       const schema=JSON.parse(fs.readFileSync(path.join(root,'schemas',name+'.json')));
       await visit(`database/${name}/index.html`);
       assert.equal(await page.locator('#database_objects tbody tr').count(),schema.tables.length);
-      await page.screenshot({path:path.join(output,name+'-tables.png')});
+      await screenshot(page,{path:path.join(output,name+'-tables.png')});
       for(const table of schema.tables) {
         await visit(`database/${name}/tables/${table.name}.html`);
         await page.locator('#standard_table').waitFor();
@@ -65,10 +66,10 @@ async function check(browser, output) {
       }
       await visit(`database/${name}/relationships.html`);
       if(name==='pixoo-library')assert(await page.locator('object.diagram').count()>0);
-      await page.screenshot({path:path.join(output,name+'-relationships.png')});
+      await screenshot(page,{path:path.join(output,name+'-relationships.png')});
       await page.setViewportSize({width:390,height:844});
       await visit(`database/${name}/index.html`); await fit(name+' mobile');
-      await page.screenshot({path:path.join(output,name+'-mobile.png')});
+      await screenshot(page,{path:path.join(output,name+'-mobile.png')});
       await page.setViewportSize({width:1440,height:1000});
     }
     assert.equal(tableCount,28);
