@@ -748,16 +748,16 @@ export class TaskRouter {
 
   /**
    * Moves card focus by `steps`, stopping at the first and last button; the first step from no focus enters at an end.
-   * The button focused after the step is the wheel's choice for the next click, even when a clamped step did not move.
+   * A step that moved focus onto the requested stop, as the adapter's read-back confirms, makes it the wheel's choice
+   * for the next click. A clamped step that could not move focus chooses nothing.
    */
   async #cardStep(client: Client, card: CardButtons, steps: number): Promise<void> {
     if (card.count === 0) return;
     const from = card.focused ?? (steps > 0 ? -1 : card.count);
     const index = Math.max(0, Math.min(card.count - 1, from + steps));
     if (index === card.focused) {
-      // A deliberate step clamped at an end leaves focus where it is and chooses that button, so one clockwise turn
-      // chooses a Codex card's approve button, which opens focused as the last button. The click re-reads focus.
-      this.#chosen = { client, cardId: card.id, index };
+      // A step clamped at an end cannot move focus, so it chooses nothing and leaves any earlier choice from a real move
+      // (owner decision on #821: approval comes from a click on a stop the wheel visibly moved to, never from a turn).
       this.#log({ type: 'card-step', client, index, count: card.count });
       return;
     }

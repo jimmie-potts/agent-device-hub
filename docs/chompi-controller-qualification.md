@@ -421,7 +421,7 @@ that cannot be mistaken for any task state.
 | Card open: wheel turn | Focus moves one stop per detent threshold; reversal restarts the count; stops at the ends; text fields, disabled and menu buttons are skipped. A Claude question card's stops are its answer rows and "Other" only (class token `text-left`), not its header or footer buttons; other cards stop on every actionable button |
 | Card open: Claude applies a wheel step's focus late | Chosen when focus is seen on the requested stop within the helper's 400 ms read-back; otherwise no choice and a click presses nothing. A still click during the read-back is refused (`card-busy`) |
 | Card open: wheel click within the stillness time, while a step runs, with no button focused or with focus moved | Nothing pressed; nothing typed; wheel LEDs flash red |
-| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. One clockwise step on such a Codex card chooses approve (clamped at the end) |
+| Card open: wheel click without a wheel step to the focused button (a Codex card opening with approve focused, focus moved by the mouse, or a new card) | Nothing pressed (`card-nothing-chosen`); nothing typed; wheel LEDs flash red. A clamped step on such a Codex card (one clockwise step with approve, the last stop, focused) chooses nothing either; a step away and back chooses approve |
 | A card replaced by another with the same buttons | Assumed: the new card has a new runtime ID, so the earlier choice does not apply; the installed check below confirms it for a multi-question Claude card |
 | Codex view without a composer and without exactly one selected sidebar row, without exactly one on-screen group holding a text element and two actionable buttons, or with more than 512 groups (a very long thread) | Card state unknown: the wheel does nothing. That settings pages and dialogs fall here is unverified; the installed check below confirms it |
 | Codex card with focus on the sidebar row or another button outside its stops | Still a card, with no stop focused; one clockwise step focuses Deny |
@@ -476,8 +476,9 @@ With harmless cards in throwaway tasks, after the bridge with #821 is installed:
    there and the bridge logs `card-unknown` (`cardButtons` reads unknown).
 2. Answer a multi-question Claude question card with the wheel. After the card moves to its next question, click
    the wheel without turning it and confirm that nothing is pressed (`card-nothing-chosen`); then step and press.
-3. On a Codex approval card, check both starting states. If Codex focused approve, one clockwise step and a still
-   click press approve once. If nothing has focus (as in installed check 4 on 2026-10-05, when the wheel was inert
+3. On a Codex approval card, check both starting states. If Codex focused approve, one clockwise step (clamped) and
+   a still click press nothing; one counter-clockwise step to Deny and one clockwise step back, then a still click,
+   press approve once. If nothing has focus (as in installed check 4 on 2026-10-05, when the wheel was inert
    before the structural rule), one clockwise step focuses Deny and one counter-clockwise step focuses approve, and
    a still click presses the stop reached. Without a turn, a click presses nothing and the wheel LEDs flash red.
 4. Click into a task with the mouse and send with Play; pick a Claude question option and a permission option
