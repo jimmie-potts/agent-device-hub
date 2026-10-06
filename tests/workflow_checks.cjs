@@ -327,7 +327,7 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
       if: "runner.os == 'Linux'",
       run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
     }] : []);
-    // Hub #494: the CI runner provides no systemd user manager, so no job may claim to provide or require one.
+    // Hub #494: no job may provide or require a systemd user manager; lifecycle tests skip where the runner has none.
     assert.equal(job.env, undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));

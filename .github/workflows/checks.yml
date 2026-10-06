@@ -124,7 +124,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      # Without a systemd user manager on the runner (PR #552), lifecycle tests skip with a printed reason; unsupervised capture tests, including the Hub's steps, run.
+      # Lifecycle tests need a systemd user manager and skip with a printed reason without one (Depot's runner had none, PR #552); unsupervised capture tests, including the Hub's steps, always run.
       - run: npm run test:app-verify:built
       - run: npm run test:app-verify:package:built
       - run: npm run test:hub:verify:built

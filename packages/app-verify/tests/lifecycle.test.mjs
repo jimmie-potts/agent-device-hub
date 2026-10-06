@@ -167,7 +167,7 @@ test('failed starts clean up everything they created and keep a failed receipt',
   }
 });
 
-// No skip: this is the CI runner's condition, forced here by hiding the user bus.
+// No skip: a runner without a user manager, forced here by hiding the user bus.
 test('start refuses without a user manager, exits 3 and creates nothing', async () => {
   const box = await sandbox();
   try {

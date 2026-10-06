@@ -270,6 +270,14 @@ test('CI: a Depot-era revision expects Depot check runs under "<workflow> / <job
   assertUnresolved(await preflight(world), 'ci-pr', /Checks \/ Build, lint and core tests on ubuntu-latest: missing/);
 });
 
+test('CI: a failed workflow read is a read failure, never a fall-through to the next provider', async () => {
+  const world = cleanWorld();
+  world.workflows[HEAD] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { ...WORKFLOW_FILES } };
+  world.failures.push({ match: /contents\/\.depot\/workflows\?/, status: 502 });
+  const ci = gate(await preflight(world), 'ci-pr');
+  assert.equal(ci.status, 'read-failure', ci.reasons.join('; '));
+});
+
 test('CI: a revision without any workflow directory is unresolved', async () => {
   const world = cleanWorld();
   world.workflows[HEAD] = {};

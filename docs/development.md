@@ -197,7 +197,7 @@ Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one o
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip because the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub and CHOMPI bridge adapters' steps and the bridge control page's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 
 The Checks workflow performs three full builds across its jobs. The Python
 contract, state and Tidbyt suites run on Python 3.14 only, the version of the
@@ -337,13 +337,16 @@ existing login. Find the runs for the SHA, list a run's jobs, then read the
 failed steps' log:
 
 ```bash
-gh run list --repo jimmie-potts/agent-device-hub --commit <sha> --json databaseId,workflowName,event,status,conclusion
+gh run list --repo jimmie-potts/agent-device-hub --commit <full-sha> --json databaseId,workflowName,event,status,conclusion
 gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
 gh run view <run-id> --repo jimmie-potts/agent-device-hub --log-failed
 ```
 
-These are read operations; access does not itself authorize dispatch, rerun,
-cancellation or secret changes. A delivery authorized to rerun one failed job on
+`--commit` needs the full 40-character SHA; an abbreviated one silently lists
+nothing. The retired `ci.yml` and `work-guide.yml` still appear, disabled, with
+the same workflow names as `checks.yml` and `guide.yml`, so select workflows by
+file name. These are read operations; access does not itself authorize
+dispatch, rerun, cancellation or secret changes. A delivery authorized to rerun one failed job on
 the reviewed head runs `gh run rerun <run-id> --job <job-id>`, with the job's
 `databaseId` from `gh run view <run-id> --json jobs`. Downloaded artifacts and
 raw logs stay outside Git; summarize only the evidence needed for the task. See
@@ -1700,7 +1703,8 @@ install. Depot's Ubuntu runner, which ran CI until #870, was not booted with
 systemd: on PR #552, `systemctl --user is-system-running` answered `offline` and
 `loginctl enable-linger` failed with "System has not been booted with systemd
 as init system (PID 1)". The lifecycle tests skip on any runner without a user
-manager, so CI proves the first part only.
+manager; #870's first hosted run records whether GitHub-hosted runners have one.
+Where they skip, CI proves the first part only.
 `npm run package:app-verify` writes
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
@@ -1743,7 +1747,7 @@ Hub #495 composes one preview from the three adapters with
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
 adapters in disposable pinned Git checkouts and skip without a user manager,
-as on the CI runner. The safety-thaw cases also change a run's own lease
+as on Depot's runner. The safety-thaw cases also change a run's own lease
 without updating the composition, expire it during a freeze, and verify stop
 removes the timer and service after an interrupted injection.
 `apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command

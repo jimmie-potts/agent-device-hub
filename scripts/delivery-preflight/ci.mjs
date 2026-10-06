@@ -73,6 +73,8 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
       for (const key of dropped) gate.unresolved(`${key}: expected at ${short(baseline)} but dropped by the candidate's workflow change; confirm the intended coverage`);
       const moved = before.value.provider.id === provider.id ? '' : ` and moves CI from ${before.value.provider.title} to ${provider.title}`;
       if (!dropped.length) gate.note(`the candidate changes its workflows${moved}; no job expected at ${short(baseline)} is dropped`);
+    } else if (before.ok) {
+      gate.note(`${short(baseline)} has no workflows, so there is no earlier coverage to compare`);
     }
   }
 
