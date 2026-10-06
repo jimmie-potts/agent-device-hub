@@ -383,10 +383,12 @@ test('authentication failure leaves LIFX recovery reads operational with no pain
 });
 
 test('an admitted LIFX paint retains its terminal receipt after publisher stop',async t=>{
-  let release;
-  const o=await owner(t);const controller=new LifxController({controllerId:'lifx',sourceId:'test',bulbs:[{deviceId:'desk',address:'192.0.2.10',...evidence}],modeStateRoot:tempRoot(t),timeoutMs:10,retries:0,transportFactory:()=>({exchange:()=>new Promise(resolve=>{release=resolve;}),close(){}})});
+  let release,arrived;const reached=new Promise(resolve=>{arrived=resolve;});
+  // The paint's exchange stalls past its 10 ms timeout. The test resumes from `reached` in the same microtask
+  // checkpoint as that exchange, so stop and release always come before the timeout can fire.
+  const o=await owner(t);const controller=new LifxController({controllerId:'lifx',sourceId:'test',bulbs:[{deviceId:'desk',address:'192.0.2.10',...evidence}],modeStateRoot:tempRoot(t),timeoutMs:10,retries:0,transportFactory:()=>({exchange:()=>new Promise(resolve=>{release=resolve;const end=performance.now()+25;while(performance.now()<end){/* busy-wait */}arrived();}),close(){}})});
   const publisher=new LifxStatusPublisher({feed:{snapshot:()=>o.snapshot()},controller,bulbs:[{deviceId:'desk'}]});t.after(()=>publisher.stop());
-  await setMode(controller,'desk','Work');await publisher.whenIdle();await flush();assert.equal(typeof release,'function');
+  await setMode(controller,'desk','Work');await reached;assert.equal(typeof release,'function');
   publisher.stop();release(Buffer.alloc(0));await flush();assert.equal(publisher.state().desk.lastReceipt.outcome,'sent');
 });
 
