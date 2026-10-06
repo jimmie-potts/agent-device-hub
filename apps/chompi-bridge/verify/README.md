@@ -45,7 +45,10 @@ that the matching check fails:
 Names starting with `control-` are negative controls, not catalog scenarios. Each must fail, and `help` and the
 page label them that way:
 
-- the three scenarios above, whose `start` fails with `check-failed` by design;
+- the three scenarios above, whose `start` fails with `check-failed` by design. They are start-only:
+  `npm run -s verify:chompi -- start --scenario <control>` shows the failure on its own, while
+  `scenario <run-id> <control>` and `handoff <run-id> --reset <control>` refuse with `start-only-scenario` (exit 2)
+  before anything changes, because reseeding a running run into one would fail its check and stop the run;
 - the capture step `control-attention-light`, which expects attention that no task has. A reviewer may run it on
   purpose to see a failing capture. Keep it out of a verified set that serves as delivery proof: capture it after
   `handoff`, or not at all, as the [app verification contract](../../../docs/app-verification.md#adapter-acceptance)

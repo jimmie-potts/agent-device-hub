@@ -15,9 +15,9 @@ import { DESK_BASIC, SCENARIOS } from '../dist/sim/scenarios.js';
 export const RUN_SCENARIOS = Object.freeze({
   'desk-basic': { description: 'One Codex and one Claude task, idle, with another app in front; explore freely', seed: DESK_BASIC },
   ...Object.fromEntries(SCENARIOS.map(s => [s.id, { description: `Catalog scenario: ${s.title}`, seed: s.seed, catalog: s.id }])),
-  'control-hid-device': { description: 'Negative control, not a catalog scenario: the bridge runs without --simulate, so its HID transport is created (node-hid is refused)', seed: DESK_BASIC, fault: 'hid-device' },
-  'control-desktop-calls': { description: 'Negative control, not a catalog scenario: the bridge runs without --desktop sim, so the platform OS adapter is created (on Linux the unsupported adapter, which makes no Win32 or UI Automation call)', seed: DESK_BASIC, fault: 'desktop-calls' },
-  'control-installed-hub': { description: 'Negative control, not a catalog scenario: the bridge is pointed at the installed Hub\'s port; the run refuses every such request', seed: DESK_BASIC, fault: 'installed-hub' },
+  'control-hid-device': { description: 'Negative control, not a catalog scenario, start-only: the bridge runs without --simulate, so its HID transport is created (node-hid is refused); the start fails no-hid-device, and scenario refuses it on a running run', seed: DESK_BASIC, fault: 'hid-device' },
+  'control-desktop-calls': { description: 'Negative control, not a catalog scenario, start-only: the bridge runs without --desktop sim, so the platform OS adapter is created (on Linux the unsupported adapter, which makes no Win32 or UI Automation call); the start fails no-desktop-calls, and scenario refuses it on a running run', seed: DESK_BASIC, fault: 'desktop-calls' },
+  'control-installed-hub': { description: 'Negative control, not a catalog scenario, start-only: the bridge is pointed at the installed Hub\'s port; the run refuses every such request; the start fails own-feed-only, and scenario refuses it on a running run', seed: DESK_BASIC, fault: 'installed-hub' },
 });
 
 /** @param {string} dataDir @param {string} name */

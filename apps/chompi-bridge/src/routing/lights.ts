@@ -34,7 +34,7 @@ export function ledIndex(control: number): number | undefined {
 
 const OFF: Rgb = [0, 0, 0];
 /** Attention alternates between its color and this fraction of it. */
-const PULSE_LOW = 0.2;
+export const PULSE_LOW = 0.2;
 
 /** A slot key shows its task state only (#821): nothing marks a selected or targeted task. */
 export interface SlotLight { state: SlotState; error: boolean }
@@ -48,10 +48,10 @@ export interface RenderInput {
   pulseOn: boolean;
 }
 
-const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * factor), Math.round(g * factor), Math.round(b * factor)];
+export const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * factor), Math.round(g * factor), Math.round(b * factor)];
 
 /** The two big-wheel LEDs (protocol LED indices 30 and 31). */
-const WHEEL_LEDS = [30, 31];
+export const WHEEL_LEDS: readonly number[] = [30, 31];
 
 /**
  * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to

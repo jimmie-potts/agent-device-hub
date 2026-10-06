@@ -17,6 +17,26 @@ const serve = fileURLToPath(new URL('serve.mjs', import.meta.url));
 const version = JSON.parse(await readFile(join(bridge, 'package.json'), 'utf8')).version;
 const CATALOG = SCENARIOS.map(s => s.id);
 
+/** The boundary negative controls: each crosses a boundary, so its start fails a check by design. Start-only. */
+export const START_ONLY = Object.freeze(Object.keys(RUN_SCENARIOS).filter(name => RUN_SCENARIOS[name]?.fault));
+
+/**
+ * Refuses, before the core acts, an operation that would reseed a running run into a boundary negative control:
+ * `scenario <run-id> <control>` and `handoff <run-id> --reset <control>`. The reseed would fail its boundary check and
+ * stop the whole run. Start one with `start --scenario <control>` instead.
+ * @param {readonly string[]} argv
+ * @returns {{operation: string, error: string, detail: string} | undefined}
+ */
+export function startOnlyRefusal(argv) {
+  const [operation, , ...rest] = argv;
+  const target = operation === 'scenario' ? rest[0] : operation === 'handoff' && rest[0] === '--reset' ? rest[1] : undefined;
+  if (!target || !START_ONLY.includes(target)) return undefined;
+  return {
+    operation, error: 'start-only-scenario',
+    detail: `${target} is a boundary negative control: its start fails a boundary check by design, so reseeding a running run into it would stop the run. Start it on its own with npm run -s verify:chompi -- start --scenario ${target}.`,
+  };
+}
+
 /** The served candidate: every built bridge module and the page, hashed as `sha256sum <files> | sha256sum` prints. */
 export function artifactFiles(at = root) {
   const dist = join(at, 'apps/chompi-bridge/dist');

@@ -18,6 +18,8 @@
 
 - [x] 4.1 Address round 1: Tier 2 waits for readiness and the page gates Run scenario (`verify/tests/scenario-ready.test.mjs`); type-check the run's modules; byte-bounded request bodies; lights named by role (`tests/panel.test.mjs`); an accurate reconnect title; no stray axe video; per-crossing boundary wording; the one-run rule; negative controls labelled.
 
+- [x] 4.2 Address round 2: a deterministic not-ready test (the controller unplugged before the scenario starts); the light roles share `PULSE_LOW`, `WHEEL_LEDS`, `SLOT_STATES` and `scale` with routing/lights.ts; the boundary negative controls are start-only (`verify/tests/wrapper.test.mjs`).
+
 ## 5. Documentation and validation
 
 - [x] 5.1 Adapter README, bridge README, docs/app-verification.md, docs/development.md and docs/sdlc.md.

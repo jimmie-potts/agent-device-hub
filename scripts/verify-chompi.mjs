@@ -19,6 +19,11 @@ if (!built) {
   process.exitCode = 3;
 } else {
   const {runCli} = await import('@jimmie-potts/app-verify');
-  const {default: plugin} = await import('../apps/chompi-bridge/verify/plugin.mjs');
-  process.exitCode = await runCli(plugin, process.argv.slice(2));
+  const {default: plugin, startOnlyRefusal} = await import('../apps/chompi-bridge/verify/plugin.mjs');
+  // The boundary negative controls fail their start by design; reseeding a running run into one would stop it.
+  const refusal = startOnlyRefusal(process.argv.slice(2));
+  if (refusal) {
+    console.log(JSON.stringify(refusal));
+    process.exitCode = 2;
+  } else process.exitCode = await runCli(plugin, process.argv.slice(2));
 }

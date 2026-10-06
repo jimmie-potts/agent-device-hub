@@ -33,12 +33,17 @@ async function finished(api, ms = 45000) {
   throw new Error('the scenario did not finish');
 }
 
-test('a scenario run immediately after the seed waits for the run to be ready and passes', async t => {
-  const { api } = await started(t, 'send-front-window');
-  const before = (await api('/api/harness/state')).body;
-  assert.notEqual(before.ready, true, 'right after the seed the controller is still connecting');
-  assert.equal(typeof before.ready, 'string');
+test('a scenario started while the run is not ready waits, then acts on the connected controller and passes', async t => {
+  const { api, server } = await started(t, 'send-front-window');
+  // Not ready by construction, not by timing: the controller is unplugged before the scenario starts.
+  assert.equal((await api('/api/harness/controller', { op: 'unplug' })).status, 200);
   assert.equal((await api('/api/harness/scenario', { op: 'run' })).status, 200);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  const waiting = (await api('/api/harness/state')).body;
+  assert.equal(waiting.ready, 'controller not connected');
+  assert.deepEqual([waiting.scenario.state, waiting.scenario.steps.length], ['running', 0], 'the scenario waits and takes no step');
+  assert.equal(server.parts.desktop.log.filter(e => e.kind === 'link' || e.kind === 'key').length, 0, 'nothing acted while waiting');
+  assert.equal((await api('/api/harness/controller', { op: 'plug' })).status, 200);
   const result = await finished(api);
   assert.equal(result.state, 'passed', JSON.stringify(result.steps.at(-1)));
   assert.equal(result.steps[0].name, 'press the Codex task\'s slot key');

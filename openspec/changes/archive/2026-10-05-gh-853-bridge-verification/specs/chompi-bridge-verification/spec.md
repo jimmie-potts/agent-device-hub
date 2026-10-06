@@ -8,7 +8,11 @@
 - **THEN** the run reports a loopback URL and build identity, serves the page, and `stop` removes its unit, lease and runtime directory while proof stays under the main checkout's `.local/evidence/verify/`
 
 ### Requirement: Run boundaries
-A run SHALL NOT open a HID device, call Win32 or UI Automation, or contact an installed Hub or bridge. The run SHALL refuse loads of `node-hid`, `koffi` and `@koromix/*`, SHALL refuse every bridge request to any origin but its own before connecting, and SHALL keep the bridge's instance lock in its private directory. The boundary checks `no-hid-device`, `no-desktop-calls` and `own-feed-only` SHALL fail the start when a run crosses the boundary, and `doctor` SHALL re-run them.
+A run SHALL NOT open a HID device, call Win32 or UI Automation, or contact an installed Hub or bridge. The run SHALL refuse loads of `node-hid`, `koffi` and `@koromix/*`, SHALL refuse every bridge request to any origin but its own before connecting, and SHALL keep the bridge's instance lock in its private directory. The boundary checks `no-hid-device`, `no-desktop-calls` and `own-feed-only` SHALL fail the start when a run crosses the boundary, and `doctor` SHALL re-run them. The negative-control seeds that cross a boundary SHALL be start-only: reseeding a running run into one SHALL be refused before anything changes.
+
+#### Scenario: Negative control on a running run
+- **WHEN** a reviewer asks a running run to reseed into a boundary negative control
+- **THEN** the command is refused with `start-only-scenario` and the run keeps serving
 
 #### Scenario: Correct run
 - **WHEN** a run starts with the simulator transport, the simulated desktop and its own feed
