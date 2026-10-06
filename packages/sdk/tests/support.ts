@@ -2,6 +2,7 @@
 // profile 2.0 instead (ADR 0012): participants come wrapped by `checked`, and `it` fails a test that saw an invalid one.
 import assert from 'node:assert/strict';
 import {test, type TestContext} from 'node:test';
+import {setTimeout as delay} from 'node:timers/promises';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type Participant, type RequestOptions,
@@ -31,10 +32,14 @@ export const SESSION_FAMILY = 'test-session';
 export const SESSION_SCHEMA = `${BASE}test-session/2.0`;
 export const TURN_SCHEMA = `${BASE}test-turn/2.0`;
 export const MODE_SCHEMA = `${BASE}test-mode/2.0`;
-const validator = new MessageValidator();
+/** Large state records, for the 256 KiB cap and a slow remote consumer. */
+export const BLOB_SCHEMA = `${BASE}test-blob/2.0`;
+/** The validator every test message is checked with; a test edge validates inbound messages with it too. */
+export const validator = new MessageValidator();
 validator.register(SESSION_SCHEMA, closed({id: block('id'), revision: block('revision')}));
 validator.register(TURN_SCHEMA, closed({sessionId: block('id')}));
 validator.register(MODE_SCHEMA, closed({requestId: block('requestId'), mode: {enum: ['work', 'quiet', 'free']}}));
+validator.register(BLOB_SCHEMA, closed({id: block('id'), revision: block('revision'), pad: {type: 'string', maxLength: 400_000}}));
 
 /** Checks one message against profile 2.0 and its payload schema. */
 export function assertValid(message: unknown): void {
@@ -174,3 +179,16 @@ export function trace(traceparent: string): {traceId: string; spanId: string; fl
   const [, traceId = '', spanId = '', flags = ''] = match;
   return {traceId, spanId, flags};
 }
+
+/** Waits until `ready()` holds, polling every few milliseconds, for deliveries that cross a real connection. */
+export async function until(ready: () => boolean, what = 'the condition', timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) assert.fail(`timed out waiting for ${what}`);
+    await delay(2);
+  }
+}
+
+export type Blob = {id: string; revision: number; pad: string};
+export const blob = (id: string, revision: number, bytes: number): Draft<Blob> =>
+  ({kind: 'state', type: 'org.bunny.blob.updated', subject: id, dataschema: BLOB_SCHEMA, data: {id, revision, pad: 'x'.repeat(bytes)}});

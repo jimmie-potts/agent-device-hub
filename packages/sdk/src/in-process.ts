@@ -10,7 +10,7 @@ import {
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
   type TraceContext,
 } from './sdk.js';
-import {startSync, type SyncHandler, type SyncOptions, type SyncProvider} from './sync.js';
+import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 /** Which participant and subscription a reported error belongs to. */
@@ -193,6 +193,19 @@ export class InProcessBus {
     // the close never waits for another participant's handler.
     for (const abandon of [...member.requests]) abandon();
     await Promise.all([...member.opened].map(subscription => subscription.close()));
+  }
+
+  /**
+   * Sends a command that a remote part prepared, unchanged, from `source`, and waits `waitMs` for its result. For a
+   * remote edge, which has validated the command.
+   */
+  requestMessage(_source: string, _key: string, _command: Command<object>, _waitMs: number): Promise<RequestResult> {
+    return Promise.reject(new Error('requestMessage is not implemented yet'));
+  }
+
+  /** Sends a sync request that a remote part prepared, unchanged, and waits `waitMs` for its answer. For a remote edge. */
+  syncMessage(_source: string, _request: Message<SyncRequest>, _waitMs: number): Promise<SyncAnswer> {
+    return Promise.reject(new Error('syncMessage is not implemented yet'));
   }
 
   #route(key: string, kind: PublishedKind): RoutingKey {

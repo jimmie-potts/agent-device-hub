@@ -44,13 +44,16 @@ export type RequestResult =
   | {status: 'uncertain'; requestId: string; error: ErrorBody};
 
 export type Handler<T> = (message: Message<T>) => void | Promise<void>;
+/** How many messages a gap lost, when that is known. After a remote reconnect it is not, and `dropped` is absent. */
+export type Overflow = {dropped?: number};
 export type SubscribeOptions = {
   /**
-   * Told that the subscription's full queue dropped messages, with how many since it was last told. It runs in the
-   * subscription's order, before the next message is delivered, and says that messages were lost, not where. A
-   * subscriber that keeps a copy should sync again instead of continuing with a gap.
+   * Told that the subscription lost messages: its full queue dropped them, with how many since it was last told, or a
+   * remote connection was lost and restored, with no count. It runs in the subscription's order, before the next
+   * message is delivered, and says that messages were lost, not where. A subscriber that keeps a copy should sync
+   * again instead of continuing with a gap.
    */
-  onOverflow?: (overflow: {dropped: number}) => void | Promise<void>;
+  onOverflow?: (overflow: Overflow) => void | Promise<void>;
 };
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 
