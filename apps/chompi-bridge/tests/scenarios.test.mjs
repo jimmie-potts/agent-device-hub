@@ -18,7 +18,7 @@ async function harness(t, seed = DESK_BASIC) {
 test('the catalog names each scenario once, with synthetic seeds and at least one observation', () => {
   const ids = SCENARIOS.map(s => s.id);
   assert.equal(new Set(ids).size, ids.length);
-  for (const id of ['send-front-window', 'record-dictation', 'claude-question-wheel', 'codex-card-structure', 'reconnect-no-replay', 'profile-reload']) assert.ok(scenario(id), id);
+  for (const id of ['send-front-window', 'record-dictation', 'claude-question-wheel', 'codex-card-structure', 'reconnect-no-replay', 'profile-reload', 'task-pages']) assert.ok(scenario(id), id);
   for (const s of SCENARIOS) {
     assert.match(s.id, /^[a-z][a-z0-9-]{2,40}$/);
     assert.ok(s.steps.some(step => step.kind !== 'act'), `${s.id} observes something`);

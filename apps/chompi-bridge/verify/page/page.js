@@ -91,7 +91,7 @@ function keyButton(key) {
   return button;
 }
 
-function encoderCard(encoder) {
+function encoderCard(encoder, defaultCounts) {
   const headingId = `${encoder.id}-heading`;
   const leds = encoder.leds.map(index => {
     const led = el('span', { class: 'led', 'aria-hidden': 'true' });
@@ -100,7 +100,8 @@ function encoderCard(encoder) {
     return [led, light];
   });
   const isWheel = encoder.id === 'wheel';
-  const counts = el('input', { id: `${encoder.id}-counts`, type: 'number', min: '1', max: '96', value: isWheel ? '6' : '1', inputmode: 'numeric' });
+  // The big wheel starts at one card step and knob 4 at one page step; the other knobs at one count.
+  const counts = el('input', { id: `${encoder.id}-counts`, type: 'number', min: '1', max: '96', value: String(defaultCounts[encoder.id] ?? 1), inputmode: 'numeric' });
   const turn = sign => () => {
     const n = Math.max(1, Math.min(96, Number.parseInt(counts.value, 10) || 1));
     void post('controller', { op: 'turn', control: encoder.turn, delta: sign * n }, `Turned ${encoder.label} ${sign > 0 ? 'right' : 'left'} ${n}`);
@@ -120,7 +121,7 @@ function encoderCard(encoder) {
 }
 
 function buildController(panel) {
-  for (const encoder of panel.encoders) $('encoders').append(encoderCard(encoder));
+  for (const encoder of panel.encoders) $('encoders').append(encoderCard(encoder, panel.counts ?? {}));
   for (const key of panel.keys) {
     const button = keyButton(key);
     $(key.row === 'white' ? 'white-keys' : key.row === 'black' ? 'black-keys' : 'panel-keys').append(button);

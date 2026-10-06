@@ -1,8 +1,9 @@
 import type { Rgb } from '../protocol.js';
 import { LED_COUNT } from '../protocol.js';
-import { PULSE_LOW, SLOT_STATES, WHEEL_LEDS, ledIndex, scale } from '../routing/lights.js';
+import { PAGE_LED, PULSE_LOW, SLOT_STATES, WHEEL_LEDS, ledIndex, scale } from '../routing/lights.js';
+import { DEFAULT_PAGE_COLORS, PAGE_TURN } from '../routing/profile.js';
 
-export { WHEEL_LEDS };
+export { PAGE_LED, WHEEL_LEDS };
 
 /**
  * The CHOMPI panel as protocol v1 numbers it (packages/chompi-protocol/README.md "Control and LED IDs"), for the
@@ -33,26 +34,29 @@ export const PANEL_ENCODERS: readonly PanelEncoder[] = Object.freeze([
   encoder('volume', 'Volume', 6, [34]),
 ]);
 
-/** Named controls the shipped profile uses. */
-export const CONTROL = Object.freeze({ record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45 });
+/** Named controls the shipped profile uses, and knob 4's turn, which always pages tasks (#822). */
+export const CONTROL = Object.freeze({ record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45, pageTurn: PAGE_TURN });
 
 /** Which routing light an LED can show, from the profile's controls. */
-export type LightRole = 'slot' | 'record' | 'wheel' | 'unused';
+export type LightRole = 'slot' | 'record' | 'wheel' | 'page' | 'unused';
 
 /**
  * The colors each role can show, as the router renders them (`renderFrame` in routing/lights.ts): the error flash
- * before any slot state (it overrides one), the Record color, the wheel's error flash.
+ * before any slot state (it overrides one), the Record color, the wheel's error flash, and on knob 4's page LED the
+ * attention color it alternates with while a hidden page has attention (the page colors are matched separately).
  */
 const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze({
   slot: ['error', ...SLOT_STATES.filter(state => state !== 'empty')],
   record: ['record'],
   wheel: ['error'],
+  page: ['attention'],
   unused: [],
 });
 
 export interface LightProfile {
   controls: { slots: readonly number[]; record: number };
-  colors: Readonly<Record<string, readonly number[]>>;
+  /** Named colors, and `pages`: knob 4's color for each task page, page 1 first (the shipped defaults when absent). */
+  colors: Readonly<Record<string, readonly number[]>> & { readonly pages?: readonly (readonly number[])[] };
 }
 
 export function lightRoles(profile: LightProfile): LightRole[] {
@@ -64,13 +68,14 @@ export function lightRoles(profile: LightProfile): LightRole[] {
   const record = ledIndex(profile.controls.record);
   if (record !== undefined) roles[record] = 'record';
   for (const index of WHEEL_LEDS) roles[index] = 'wheel';
+  roles[PAGE_LED] = 'page';
   return roles;
 }
 
 /**
  * Names each LED by what its role can show, never by the first profile color that happens to match: the held Record
- * key reads "record" even when the record and error colors are the same red. Off is "off"; an unexpected color is
- * named by its RGB value.
+ * key reads "record" even when the record and error colors are the same red, and knob 4's LED reads "page 2" or, while
+ * it alternates for a hidden page's attention, "attention". Off is "off"; an unexpected color is named by its RGB value.
  */
 export function describeLights(profile: LightProfile, leds: readonly Rgb[]): string[] {
   const roles = lightRoles(profile);
@@ -80,6 +85,10 @@ export function describeLights(profile: LightProfile, leds: readonly Rgb[]): str
     const match = (color: readonly number[] | undefined) => !!color && color.every((v, c) => v === rgb[c]);
     const name = ROLE_NAMES[role].find(n => match(profile.colors[n]));
     if (name) return name;
+    if (role === 'page') {
+      const page = (profile.colors.pages ?? DEFAULT_PAGE_COLORS).findIndex(match);
+      if (page >= 0) return `page ${page + 1}`;
+    }
     const attention = profile.colors.attention;
     if (role === 'slot' && attention && match(scale(attention as unknown as Rgb, PULSE_LOW))) return 'attention (pulse low)';
     return `rgb ${rgb.join(', ')}`;

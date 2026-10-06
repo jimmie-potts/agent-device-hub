@@ -1014,11 +1014,16 @@ test('the router lights slots from feed state only and pulses attention; the whe
 });
 
 test('overflow is reported without moving existing slots', async t => {
+  // Since #822 a sixteenth task takes slot 16 on page 2; overflow needs every page full (see the pages tests).
   const sessions = Array.from({ length: 16 }, (_, i) => codexTask(i + 1));
   const ctx = await setup(t, { sessions });
-  assert.equal(ctx.router.status().overflow, 1);
-  assert.equal(ctx.lastLog('overflow').count, 1);
+  assert.equal(ctx.router.status().overflow, 0);
   assert.equal(ctx.slots.get(15).taskId, tid(15));
+  assert.equal(ctx.slots.get(16).taskId, tid(16));
+  const one = await setup(t, { sessions, profile: withProfile({ pages: { count: 1 } }) });
+  assert.equal(one.router.status().overflow, 1, 'with one page the sixteenth task overflows as before');
+  assert.equal(one.lastLog('overflow').count, 1);
+  assert.equal(one.slots.get(15).taskId, tid(15));
 });
 
 // Scroll
@@ -1603,6 +1608,128 @@ test('a refused or uncertain Send or card press flashes the wheel LEDs red for t
   assert.equal(ctx.lastLog('card-press-uncertain').reason, 'rejected');
   assert.deepEqual(wheel(), red, 'an uncertain card press');
   assert.equal(ctx.adapter.enters, 1);
+});
+
+// Task pages (#822)
+
+const KNOB4 = 43, KNOB4_CLICK = 31, PAGE_LED = 29;
+const PAGE_STEP = PROFILE.pages.stepCounts;
+const codexMany = (n, from = 1, options = {}) => Array.from({ length: n }, (_, i) => codexTask(from + i, options));
+const page = ctx => ctx.router.status().page;
+
+test('pages: the default profile has 4 pages stepped like big-wheel card steps', () => {
+  assert.equal(PROFILE.pages.count, 4);
+  assert.equal(PAGE_STEP, PROFILE.cards.stepCounts);
+  assert.equal(PROFILE.colors.pages.length, 8);
+});
+
+test('pages: knob 4 changes the visible page one page per detent, ignoring light touches and stopping at the ends', async t => {
+  const ctx = await setup(t, { sessions: codexMany(20) });
+  assert.equal(page(ctx), 1, 'the bridge starts on page 1');
+  ctx.turn(KNOB4, PAGE_STEP - 1);
+  assert.equal(page(ctx), 1, 'a light touch moves nothing');
+  ctx.turn(KNOB4, 1);
+  assert.equal(page(ctx), 2);
+  assert.deepEqual(ctx.lastLog('page'), { type: 'page', page: 2, pages: 4 });
+  ctx.turn(KNOB4, PAGE_STEP - 1);
+  ctx.turn(KNOB4, -(PAGE_STEP - 1));
+  assert.equal(page(ctx), 2, 'a reversal restarts the count, so a wiggle never pages');
+  ctx.turn(KNOB4, 10 * PAGE_STEP);
+  assert.equal(page(ctx), 4, 'paging stops at the last page');
+  ctx.turn(KNOB4, -10 * PAGE_STEP);
+  assert.equal(page(ctx), 1, 'and at the first');
+});
+
+test('pages: paging is never input: no keystroke, link, focus, adapter call or acknowledgement', async t => {
+  const ctx = await setup(t, { sessions: codexMany(20, 1, { attention: ['approval'] }) });
+  front(ctx, 'codex');
+  const calls = ctx.adapter.calls.length;
+  for (let i = 0; i < 3; i++) { ctx.turn(KNOB4, PAGE_STEP); ctx.turn(KNOB4, -PAGE_STEP); }
+  await ctx.click(KNOB4_CLICK);
+  await settle();
+  assert.equal(ctx.adapter.calls.length, calls, 'paging asks the desktop nothing');
+  assert.deepEqual(ctx.adapter.keys, []);
+  assert.deepEqual(ctx.adapter.opened, []);
+  assert.equal(ctx.router.status().slots[0].state, 'attention', 'attention stays');
+  assert.equal(typeof ctx.router.acknowledge, 'undefined');
+});
+
+test('pages: slot keys act on the visible page', async t => {
+  const ctx = await setup(t, { sessions: codexMany(20) });
+  ctx.turn(KNOB4, PAGE_STEP);
+  await ctx.focus(2);
+  assert.deepEqual(ctx.adapter.opened, [`codex://threads/${tid(17)}`], 'key 2 on page 2 is slot 17');
+  assert.deepEqual(focused(ctx), [17]);
+  assert.equal(ctx.router.status().slots[1].slot, 17);
+});
+
+test('pages: the Claude release gesture frees a slot on page 2', async t => {
+  const ctx = await setup(t, { sessions: Array.from({ length: 17 }, (_, i) => claudeTask(i + 1)) });
+  ctx.turn(KNOB4, PAGE_STEP);
+  ctx.press(SLOT(2));
+  await advance(ctx.clock, PROFILE.timing.releaseHoldMs + 50, 50);
+  ctx.press(LOOP);
+  await settle();
+  assert.equal(ctx.slots.get(17), undefined);
+  assert.deepEqual([ctx.lastLog('slot-released').slot, ctx.lastLog('slot-released').reason], [17, 'release-gesture']);
+  assert.equal(ctx.slots.get(2).taskId, lid(2), 'page 1 is untouched');
+});
+
+test('pages: the release gesture releases the slot its key showed when pressed, even after paging during the hold', async t => {
+  const ctx = await setup(t, { sessions: Array.from({ length: 17 }, (_, i) => claudeTask(i + 1)) });
+  ctx.press(SLOT(2)); // slot 2 on page 1
+  ctx.turn(KNOB4, PAGE_STEP); // page 2, where key 2 would be slot 17
+  assert.equal(page(ctx), 2);
+  await advance(ctx.clock, PROFILE.timing.releaseHoldMs + 50, 50);
+  ctx.press(LOOP);
+  await settle();
+  assert.equal(ctx.slots.get(2), undefined, 'slot 2 is released');
+  assert.equal(ctx.slots.get(17).taskId, lid(17), 'slot 17 is untouched');
+  assert.deepEqual([ctx.lastLog('slot-released').slot, ctx.lastLog('slot-released').reason], [2, 'release-gesture']);
+});
+
+test('pages: overflow is reported only when every page is full', async t => {
+  const full = await setup(t, { sessions: codexMany(60) });
+  assert.equal(full.router.status().overflow, 0);
+  assert.equal(full.lastLog('overflow'), undefined);
+  const over = await setup(t, { sessions: codexMany(61) });
+  assert.equal(over.router.status().overflow, 1);
+  assert.equal(over.lastLog('overflow').count, 1);
+});
+
+test('pages: keys show the visible page; knob 4\'s LED shows the page color and pulses for attention on a hidden page', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1, { attention: ['approval'] }), ...codexMany(19, 2)] });
+  const pulses = async () => {
+    const seen = new Set();
+    for (let i = 0; i < 4; i++) { seen.add(JSON.stringify(ctx.lights.last[PAGE_LED])); await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2, 50); }
+    return seen;
+  };
+  assert.deepEqual([...await pulses()], [JSON.stringify(PROFILE.colors.pages[0])], 'page 1 in its color; the attention task is visible, so no pulse');
+  ctx.turn(KNOB4, PAGE_STEP);
+  await settle();
+  for (let i = 0; i < 5; i++) assert.deepEqual(ctx.lights.last[i], PROFILE.colors.idle, `key ${i + 1} shows slot ${16 + i}`);
+  for (let i = 5; i < 15; i++) assert.deepEqual(ctx.lights.last[i], [0, 0, 0], `key ${i + 1} is an empty slot and stays off`);
+  const seen = await pulses();
+  assert.ok(seen.has(JSON.stringify(PROFILE.colors.pages[1])), 'page 2 in its color');
+  assert.ok(seen.has(JSON.stringify(PROFILE.colors.attention)), 'alternating with the attention color for slot 1 on hidden page 1');
+  assert.equal(seen.size, 2);
+});
+
+test('pages: a profile reload with fewer pages clamps the visible page and keeps every task', async t => {
+  const ctx = await setup(t, { sessions: codexMany(35) });
+  ctx.turn(KNOB4, 2 * PAGE_STEP);
+  assert.equal(page(ctx), 3);
+  ctx.router.setProfile(withProfile({ pages: { count: 2 } }));
+  assert.equal(page(ctx), 2, 'the visible page is clamped');
+  assert.equal(ctx.slots.entries().length, 35, 'nothing is dropped or moved');
+  assert.equal(ctx.router.status().beyondPages, 5);
+  assert.deepEqual(ctx.lastLog('slots-beyond-pages'), { type: 'slots-beyond-pages', count: 5, pages: 2 });
+  ctx.router.setProfile(withProfile({ pages: { count: 4 } }));
+  assert.equal(ctx.router.status().beyondPages, 0);
+  assert.equal(page(ctx), 2, 'the page stays where it was clamped');
+  ctx.turn(KNOB4, PAGE_STEP);
+  assert.equal(ctx.router.status().slots[0].slot, 31, 'page 3 shows slot 31 again');
+  assert.equal(ctx.router.status().slots[0].client, 'codex');
 });
 
 test('on a platform without an adapter every focus and Send fails closed and nothing is typed', async t => {

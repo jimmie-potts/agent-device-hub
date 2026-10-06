@@ -27,6 +27,10 @@ export const KEY_NAMES: readonly string[] = Object.freeze([
 
 /** Click IDs of the four small top knobs (`ENC_1`-`ENC_4`) and the volume knob (`ENC_6`): never Send. */
 export const SMALL_KNOB_CLICKS: readonly number[] = Object.freeze([29, 30, 31, 32]);
+/** Small knob 4's turn (`ENC_3`, the rightmost small knob): it pages tasks (#822) and is never mapped to anything else. */
+export const PAGE_TURN = 43;
+/** Small knob 4's click: unassigned while its turn pages tasks (#822), so no control may map it. */
+export const PAGE_CLICK = 31;
 export const VOLUME_CLICK = 34;
 
 export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
@@ -54,6 +58,23 @@ export interface CardSettings {
 export const DEFAULT_CARD_STEP_COUNTS = 6;
 export const DEFAULT_CARD_SETTINGS: CardSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, clickStillMs: 250 });
 const CARD_BOUNDS: Record<keyof CardSettings, [number, number, string]> = { stepCounts: [1, 96, ''], clickStillMs: [0, 2000, ' ms'] };
+
+/** Task pages (#822): pages of 15 slots, paged with small knob 4. */
+export interface PageSettings {
+  /** How many pages of 15 slots (1-8). */
+  readonly count: number;
+  /** Knob 4 encoder counts per page step; the count restarts on a direction reversal. */
+  readonly stepCounts: number;
+}
+export const DEFAULT_PAGE_SETTINGS: PageSettings = Object.freeze({ count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS });
+const PAGE_BOUNDS: Record<keyof PageSettings, [number, number]> = { count: [1, 8], stepCounts: [1, 96] };
+/**
+ * Knob 4's LED color for each page, page 1 first. Distinct from each other and from the attention color, which the
+ * LED alternates with while a hidden page has attention.
+ */
+export const DEFAULT_PAGE_COLORS: readonly Rgb[] = Object.freeze([
+  [0, 180, 255], [220, 0, 255], [0, 220, 60], [200, 200, 200], [0, 40, 255], [255, 60, 140], [140, 255, 0], [0, 255, 180],
+] as Rgb[]);
 
 export interface RoutingTiming {
   verifyTimeoutMs: number;
@@ -100,7 +121,9 @@ export interface RoutingProfile {
   readonly scroll: { readonly notchesPerStep: number; readonly invert: boolean };
   /** Optional in the file; absent fields take `DEFAULT_CARD_SETTINGS`. */
   readonly cards: CardSettings;
-  readonly colors: Readonly<Record<ColorName, Rgb>>;
+  readonly colors: Readonly<Record<ColorName, Rgb>> & { readonly pages: readonly Rgb[] };
+  /** Optional in the file; absent fields take `DEFAULT_PAGE_SETTINGS`. */
+  readonly pages: PageSettings;
   readonly brightnessPercent: number;
   readonly timing: Readonly<RoutingTiming>;
   /** Both clients' UI selectors and links depend on the client version; an unlisted or unknown version disables that client. */
@@ -166,7 +189,13 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
     if (!isInt(control, 1, 34)) { issues.push(`${where}: ${JSON.stringify(control)} is not a click control 1-34`); return false; }
     return true;
   };
-  if (click(value.record, `${path}.record`)) claim(value.record as number, `${path}.record`);
+  // Knob 4's click stays unassigned (#822); Send already refuses every small-knob click.
+  const assignable = (control: unknown, where: string): boolean => {
+    if (!click(control, where)) return false;
+    if (control === PAGE_CLICK) { issues.push(`${where}: ${PAGE_CLICK} is small knob 4's click, which stays unassigned`); return false; }
+    return true;
+  };
+  if (assignable(value.record, `${path}.record`)) claim(value.record as number, `${path}.record`);
   const send = value.send;
   if (!Array.isArray(send) || send.length < 1 || send.length > 3) issues.push(`${path}.send: must list 1-3 click controls`);
   else for (const [i, control] of send.entries()) {
@@ -176,8 +205,9 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
     else if (control === VOLUME_CLICK) issues.push(`${where}: ${control} is the volume knob click and can never send`);
     else claim(control, where);
   }
-  if (click(value.back, `${path}.back`)) claim(value.back as number, `${path}.back`);
+  if (assignable(value.back, `${path}.back`)) claim(value.back as number, `${path}.back`);
   if (!isInt(value.scroll, 41, 46)) issues.push(`${path}.scroll: ${JSON.stringify(value.scroll)} is not a turn control 41-46`);
+  else if (value.scroll === PAGE_TURN) issues.push(`${path}.scroll: ${PAGE_TURN} is knob 4's turn, which pages tasks`);
   if (issues.length > before) return undefined;
   return { slots: slots as number[], record: value.record as number, send: send as number[], back: value.back as number, scroll: value.scroll as number };
 }
@@ -199,15 +229,18 @@ function shortcuts(value: unknown, issues: Issues): RoutingProfile['shortcuts'] 
 function colors(value: unknown, issues: Issues): RoutingProfile['colors'] | undefined {
   const path = 'profile.colors';
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
-  if (!fields(value, path, COLOR_NAMES, RETIRED_COLOR_NAMES, issues)) return undefined;
+  if (!fields(value, path, COLOR_NAMES, [...RETIRED_COLOR_NAMES, 'pages'], issues)) return undefined;
   const before = issues.length;
+  const isColor = (color: unknown) => Array.isArray(color) && color.length === 3 && color.every(c => isInt(c, 0, 255));
   for (const name of [...COLOR_NAMES, ...RETIRED_COLOR_NAMES]) {
     if (!(name in value)) continue;
-    const color = value[name];
-    if (!Array.isArray(color) || color.length !== 3 || !color.every(c => isInt(c, 0, 255))) issues.push(`${path}.${name}: must be [r, g, b] with integers 0-255`);
+    if (!isColor(value[name])) issues.push(`${path}.${name}: must be [r, g, b] with integers 0-255`);
   }
+  const pages = value.pages ?? DEFAULT_PAGE_COLORS;
+  if (!Array.isArray(pages) || pages.length < 1 || pages.length > 8) issues.push(`${path}.pages: must list 1-8 colors, page 1 first`);
+  else for (const [i, color] of pages.entries()) if (!isColor(color)) issues.push(`${path}.pages[${i}]: must be [r, g, b] with integers 0-255`);
   if (issues.length > before) return undefined;
-  return Object.fromEntries(COLOR_NAMES.map(name => [name, value[name]])) as unknown as RoutingProfile['colors'];
+  return { ...Object.fromEntries(COLOR_NAMES.map(name => [name, value[name]])), pages: (pages as Rgb[]).map(c => [...c]) } as unknown as RoutingProfile['colors'];
 }
 
 function cards(value: unknown, issues: Issues): CardSettings | undefined {
@@ -223,6 +256,21 @@ function cards(value: unknown, issues: Issues): CardSettings | undefined {
   }
   if (issues.length > before) return undefined;
   return { ...DEFAULT_CARD_SETTINGS, ...value as Partial<CardSettings> };
+}
+
+function pages(value: unknown, issues: Issues): PageSettings | undefined {
+  const path = 'profile.pages';
+  if (value === undefined) return DEFAULT_PAGE_SETTINGS;
+  if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
+  const names = Object.keys(PAGE_BOUNDS) as (keyof PageSettings)[];
+  if (!fields(value, path, [], names, issues)) return undefined;
+  const before = issues.length;
+  for (const name of names) {
+    const [min, max] = PAGE_BOUNDS[name];
+    if (name in value && !isInt(value[name], min, max)) issues.push(`${path}.${name}: must be an integer ${min}-${max}`);
+  }
+  if (issues.length > before) return undefined;
+  return { ...DEFAULT_PAGE_SETTINGS, ...value as Partial<PageSettings> };
 }
 
 function scroll(value: unknown, issues: Issues): RoutingProfile['scroll'] | undefined {
@@ -278,7 +326,7 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (!isObject(input)) throw new ProfileError(['profile: must be a JSON object']);
   const value = structuredClone(input) as Record<string, unknown>;
   const required = ['schemaVersion', 'profileVersion', 'controls', 'shortcuts', 'scroll', 'colors', 'brightnessPercent', 'timing', 'qualifiedVersions'];
-  fields(value, 'profile', required, ['cards'], issues);
+  fields(value, 'profile', required, ['cards', 'pages'], issues);
   if ('schemaVersion' in value && value.schemaVersion !== PROFILE_SCHEMA_VERSION) issues.push(`profile.schemaVersion: must be ${PROFILE_SCHEMA_VERSION}`);
   if ('profileVersion' in value && !isInt(value.profileVersion, 0, 0xffffffff)) issues.push('profile.profileVersion: must be an integer 0-4294967295');
   if ('brightnessPercent' in value && !isInt(value.brightnessPercent, 0, 100)) issues.push('profile.brightnessPercent: must be an integer 0-100');
@@ -287,14 +335,19 @@ export function validateProfile(input: unknown): RoutingProfile {
     shortcuts: 'shortcuts' in value ? shortcuts(value.shortcuts, issues) : undefined,
     scroll: 'scroll' in value ? scroll(value.scroll, issues) : undefined,
     cards: cards(value.cards, issues),
+    pages: pages(value.pages, issues),
     colors: 'colors' in value ? colors(value.colors, issues) : undefined,
     timing: 'timing' in value ? timing(value.timing, issues) : undefined,
     qualifiedVersions: 'qualifiedVersions' in value ? versions(value.qualifiedVersions, issues) : undefined,
   };
+  if (parts.pages && parts.colors && parts.colors.pages.length < parts.pages.count) {
+    issues.push(`profile.colors.pages: must list a color for each of the ${parts.pages.count} pages`);
+  }
   if (issues.length) throw new ProfileError(issues);
   return deepFreeze({
     schemaVersion: PROFILE_SCHEMA_VERSION, profileVersion: value.profileVersion as number, brightnessPercent: value.brightnessPercent as number,
-    controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, cards: { ...parts.cards! }, colors: parts.colors!, timing: parts.timing!,
+    controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, cards: { ...parts.cards! }, pages: { ...parts.pages! }, colors: parts.colors!,
+    timing: parts.timing!,
     qualifiedVersions: parts.qualifiedVersions!,
   });
 }

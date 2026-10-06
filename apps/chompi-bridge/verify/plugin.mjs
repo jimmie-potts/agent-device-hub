@@ -217,6 +217,7 @@ export default definePlugin({
             for (const action of ['turn left', 'turn right', 'click']) await buttons.and(t.page.getByLabel(`${name} ${action}`, { exact: true })).waitFor();
           }
         });
+        await t.expect('knob 4\'s light names the visible task page: page 1', () => t.page.locator('[data-encoder="knob-4"] > .light').filter({ hasText: /^page 1$/ }).waitFor());
         await t.expect('both seeded tasks hold lit slot keys', async () => {
           const codex = await slotOf(t, 'Synthetic Codex task 1');
           const claude = await slotOf(t, 'Synthetic Claude task 2');

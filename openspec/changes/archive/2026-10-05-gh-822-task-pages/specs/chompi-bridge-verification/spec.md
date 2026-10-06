@@ -1,32 +1,4 @@
-# chompi-bridge-verification Specification
-
-## Purpose
-
-Let a reviewer try a CHOMPI bridge change in a disposable run on the WSL host, with a simulated controller, a simulated desktop and a synthetic Hub, and let CI run the same scenario catalog, without touching the real controller, the Windows desktop, the installed bridge or the installed Hub.
-
-## Requirements
-
-### Requirement: Disposable bridge verification run
-`npm run -s verify:chompi -- <operation>` SHALL start, inspect, capture, hand off and stop disposable CHOMPI bridge runs through `@jimmie-potts/app-verify` without changing it. A run SHALL serve, on one loopback port, a control page, its harness API and a synthetic Hub feed, and SHALL run the bridge CLI from the checkout with `--simulate --desktop sim` against that feed. Its feed token SHALL be generated per run and stored privately in the run's directory. A run SHALL record its actual parts (the bridge and the control page) and simulated parts (controller, desktop, Hub feed) as components.
-
-#### Scenario: Start and stop
-- **WHEN** a reviewer starts a run on the WSL host and later stops it
-- **THEN** the run reports a loopback URL and build identity, serves the page, and `stop` removes its unit, lease and runtime directory while proof stays under the main checkout's `.local/evidence/verify/`
-
-### Requirement: Run boundaries
-A run SHALL NOT open a HID device, call Win32 or UI Automation, or contact an installed Hub or bridge. The run SHALL refuse loads of `node-hid`, `koffi` and `@koromix/*`, SHALL refuse every bridge request to any origin but its own before connecting, and SHALL keep the bridge's instance lock in its private directory. The boundary checks `no-hid-device`, `no-desktop-calls` and `own-feed-only` SHALL fail the start when a run crosses the boundary, and `doctor` SHALL re-run them. The negative-control seeds that cross a boundary SHALL be start-only: reseeding a running run into one SHALL be refused before anything changes.
-
-#### Scenario: Negative control on a running run
-- **WHEN** a reviewer asks a running run to reseed into a boundary negative control
-- **THEN** the command is refused with `start-only-scenario` and the run keeps serving
-
-#### Scenario: Correct run
-- **WHEN** a run starts with the simulator transport, the simulated desktop and its own feed
-- **THEN** all three checks pass
-
-#### Scenario: Boundary crossed
-- **WHEN** a run's bridge starts without `--simulate`, without `--desktop sim`, or pointed at the installed Hub's port
-- **THEN** the matching check fails and names the crossing: without `--simulate` the HID transport is created and the module guard refuses `node-hid` before any device is enumerated; without `--desktop sim` the platform OS adapter is created, which on Linux is the unsupported adapter that can make no Win32 or UI Automation call, so nothing is refused and the check fails on that adapter count; and against the installed Hub's port the run's fetch refuses every request before it connects
+## MODIFIED Requirements
 
 ### Requirement: Control page
 The control page SHALL show the simulated controller (15 slot keys, 10 black keys, Record, Play, Loop, knobs 1-4, the big wheel and volume, with every LED's color and profile name), the simulated windows with the foreground, selected task, composer focus and text and any card with its focused stop, the Hub sessions with their slots, the desktop key and press log and the bridge's log. Controls SHALL press, hold, release, turn and click through the simulator's protocol input, and SHALL script the desktop and the synthetic Hub. Every control SHALL be keyboard-operable and labelled, each light SHALL be named by what its role can show rather than by the first matching color (knob 4's LED by the visible task page, such as `page 2`, or `attention` while it alternates for a hidden page), and the page SHALL make no external request. Knob 4's turn SHALL start at one page step and the big wheel's at one card step, both from the run's profile. Names starting with `control-` SHALL be labelled as negative controls, not catalog scenarios. The harness API SHALL accept only JSON from the run's own origin and host.

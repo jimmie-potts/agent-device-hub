@@ -53,7 +53,7 @@ test('the reference and catalog scenario steps pass, and the negative control fa
   try {
     const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
     assert.deepEqual(reference, ['controls-page', 'focus-and-send', 'scenario-send-front-window', 'scenario-record-dictation', 'scenario-claude-question-wheel',
-      'scenario-codex-card-structure', 'scenario-reconnect-no-replay', 'scenario-profile-reload']);
+      'scenario-codex-card-structure', 'scenario-reconnect-no-replay', 'scenario-profile-reload', 'scenario-task-pages']);
     for (const step of reference) {
       const result = await judge(base, step);
       assert.equal(result.outcome, 'passed', `${step}: ${result.reason}`);

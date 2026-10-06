@@ -880,7 +880,8 @@ same `npm run test:chompi-bridge` runs its `routing-*.test.mjs` suites with
 a scripted fake OS adapter, a fake Hub `fetch`, `ManualClock` and the device
 simulator: profile validation and reload, the read-only feed client (GET-only,
 refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
-token-file privacy), slot assignment, release and persistence, state lights,
+token-file privacy), slot assignment, release and persistence across task pages (#822: the version 1 to 2
+file migration, interrupted writes, corrupt files and rollback), knob-4 paging, state lights and the page LED,
 each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
 answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
