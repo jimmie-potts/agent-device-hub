@@ -157,6 +157,36 @@ suite('SceneTest', () => {
     assert.equal(s.saved().owned, false);
   });
 
+  test('a lost restore response in Quiet does not recapture the Quiet level', async context => {
+    // The port's own Quiet variant of the case above, checked against Python's restorer: the level is saved as the
+    // port's own before the requests, so the next observation does not take 10% as the scene's brightness.
+    const s = new Scenes(context);
+    const manager = s.manager();
+    await manager.observe();
+    await manager.send(SCENE, ACTIVE, 1000, true);
+    s.device.loseSelectionReply = true;
+    await assert.rejects(manager.send(quiet(), IDLE, 1003, true), {name: 'OSError'});
+    assert.deepEqual([s.device.selected, s.device.brightness], ['Beach Waves', 10]);
+    const retried = s.manager();
+    await retried.observe();
+    assert.deepEqual(s.saved().scene, {name: 'Beach Waves', brightness: 43});
+    assert.deepEqual([s.saved().quiet_scene, s.saved().quiet_brightness], ['Beach Waves', 10]);
+  });
+
+  test('a Quiet level with no remembered scene sends nothing', async context => {
+    // A damaged state: the playing scene is the one the port dimmed, but no scene is remembered. Python's lookup failed
+    // before any request; the port refuses the same way (checked against Python's restorer).
+    const s = new Scenes(context);
+    writeFileSync(join(s.directory, 'scene-state.json'),
+      JSON.stringify({version: 1, scene: null, owned: false, quiet_scene: 'Beach Waves', quiet_brightness: 10}));
+    s.device.brightness = 10;
+    const manager = s.manager();
+    await manager.observe();
+    s.device.calls = [];
+    await assert.rejects(manager.send(SCENE, IDLE, 1000, true), {name: 'TypeError'});
+    assert.deepEqual(s.device.calls, []);
+  });
+
   test('test_capture_failure_leaves_original_scene_untouched', async context => {
     const result = await replay(context, 'a failed capture changes nothing');
     assert.deepEqual(result.outcomes.at(-1), {result: {outcome: {error: 'OSError', message: 'Device unavailable'}, scheduled: []}});

@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {BASELINE, COLORS, effectPayload, render, type RenderConfig, type RenderingReceipt} from '../src/renderer.js';
 import type {Indication} from '../src/line-projection.js';
-import {updateDisplay} from '../src/worker.js';
+import {introductionEnds, updateDisplay} from '../src/worker.js';
 import {decode, framesOf, query, suite, temporary, test, writeAsync} from './support.js';
 import {keyOf, NamedError, replay, scheduledOf, SCENE} from './worker-support.js';
 
@@ -179,6 +179,13 @@ suite('RecoveryTest', () => {
 });
 
 suite('worker checks the port adds', () => {
+  test('the introduction ends when the radiating pulse has crossed the device', () => {
+    // Python's introduction_ends gives these values: half a pulse after the last radiating pulse, plus its travel.
+    assert.equal(introductionEnds([['working', 1000]]), 1001.8);
+    assert.equal(introductionEnds([['unread', 1000], ['idle', 999]]), 0);
+    assert.equal(introductionEnds([['working', 1000], ['blocked', 1003.25], null]), 1005.05);
+  });
+
   test('a preview ends with the tasks shown again', async context => {
     // After a preview the worker forgets the display it last sent, so the next pass shows the task again.
     const {run} = await replay(context, 'a preview ends with the tasks shown again');

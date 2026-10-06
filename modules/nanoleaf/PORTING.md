@@ -615,6 +615,11 @@ on a read-only export of that commit, since the Python tests import from their o
   block the event loop until its timeout; #844 must let them wait without blocking, or queue them.
 - The worker's per-device lock is Python's lock file in the state directory, which also excludes a
   second process. #844 may replace it with an in-process guard.
+- Two of the worker's checks cannot fail in 3c, because a pass holds its write transaction across its
+  sends, so nothing can commit between the check and the send: the preview send's own revision check,
+  and the restart check after a pass's sends. Removing either changes no test. 3d's journaled sends
+  run outside the transaction, which makes the restart check live; 3d adds a test that fails without
+  it.
 - The `worker` command's retry loop (record the failure, wait two seconds, run again while the device
   is registered) is not ported yet; `recordFailure` is. 3e ports it with the multi-device worker
   cases, or #844's module host takes it over.

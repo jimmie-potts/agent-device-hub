@@ -138,8 +138,10 @@ export class SceneRestorer {
         }
       } else if (this.state.quiet_scene === this.selected) {
         if (override === null) {
-          // The mode policy applies again: the remembered brightness returns.
-          await this.request(address(config), 'PUT', '/state', {brightness: {value: this.state.scene?.brightness ?? null, duration: 0}});
+          // The mode policy applies again: the remembered brightness returns. With no scene remembered there is no level
+          // to return to, and nothing is sent, as Python's lookup failed before its request.
+          if (this.state.scene === null) throw new TypeError('No remembered scene to restore the brightness of.');
+          await this.request(address(config), 'PUT', '/state', {brightness: {value: this.state.scene.brightness, duration: 0}});
           this.save({quiet_scene: null, quiet_brightness: null});
         } else if (this.state.quiet_brightness !== override) {
           await this.request(address(config), 'PUT', '/state', {brightness: {value: override, duration: 0}});
