@@ -144,7 +144,9 @@ export function valid(command: unknown): command is AnimationCommand {
   return loop === undefined || typeof loop === 'boolean';
 }
 
+/** #RRGGBB as red, green and blue; anything else is a ValueError, as for the palette (PORTING.md). */
 export function rgb(color: string): Rgb {
+  if (!COLOR.test(color)) throw new ValueError(`Invalid color ${JSON.stringify(color)}.`);
   return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
 }
 

@@ -343,6 +343,7 @@ PYTHONDONTWRITEBYTECODE=1 fnm exec --using=.nvmrc -- python3 modules/nanoleaf/te
   `int(text, 16)` on each pair of characters also refused `#1g2233` and `#abc`, but accepted a
   short last channel (`#12345`), a sign or space (`#+1aabb`), extra characters (`#aabbccdd`) and a
   first character other than `#`. Saved colors are always written as `#` and six digits.
+  `effects.rgb` applies the same rule to animation colors, which `effects.valid` checks first.
 - `nodeTransport`'s timeout bounds the whole exchange. Python's urllib timeout (1.2 seconds for light
   requests, 5 for pairing) applied to each socket operation, so a reply that trickled in could take
   longer there. Replies outside 2xx are an `HttpError` with the status, and redirects are not

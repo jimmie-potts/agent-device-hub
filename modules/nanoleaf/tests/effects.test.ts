@@ -309,6 +309,11 @@ suite('effect checks the port adds', () => {
     for (const fields of [{pattern: 'constructor'}, {speed: 'toString'}, {direction: '__proto__'}]) assert.equal(effects.valid(command(fields)), false);
     assert.equal(effects.valid({kind: 'animation.play', preset: 'constructor'}), false);
   });
+
+  test('a color is six hexadecimal digits after #, or a ValueError', () => {
+    assert.deepEqual(effects.rgb('#0044AA'), [0, 68, 170]);
+    for (const color of ['#1g2233', '#abc', '#12345', 'x0044aa', '#0044aa00']) assert.throws(() => effects.rgb(color), {name: 'ValueError'}, color);
+  });
 });
 
 suite('test decoder checks the port adds', () => {
