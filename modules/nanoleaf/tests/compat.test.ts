@@ -5,7 +5,7 @@ import {dumps, floatText, isObject, parseFloatText, pyDist, pyHypot, pyJson, pyM
 import {privateAddress} from '../src/transport.js';
 import {defaultColor, fallbackTitle, normalize} from '../src/project-map.js';
 import {evictionToken, identityKey, type Identity, type SharedSession, type SharedState} from '../src/shared-input.js';
-import {fixtureJson, legacyPrompt, loadDump, query, recordedSetup, setMode, suite, temporary, test, write} from './support.js';
+import {fixtureJson, loadDump, query, recordedSetup, setMode, suite, taskRow, temporary, test, write} from './support.js';
 
 const recorded = fixtureJson('recorded/values.json');
 if (!isObject(recorded)) throw new Error('values.json is not an object.');
@@ -81,10 +81,10 @@ suite('values recorded from Python', () => {
 });
 
 suite('test fixtures recorded from Python', () => {
-  test('legacyPrompt saves what a legacy UserPromptSubmit hook event saved', context => {
+  test('taskRow saves what a prompt hook event saved in Python', context => {
     const directory = temporary(context);
-    write(directory, db => legacyPrompt(db, 'a', '1', 1000));
-    const recordedRows = recordedSetup('legacyPrompt');
+    write(directory, db => taskRow(db, 'a', '1', 1000));
+    const recordedRows = recordedSetup('taskRow');
     for (const table of ['sessions', 'activity', 'task_info', 'meta', 'slots', 'comets', 'waits', 'receipts']) {
       assert.deepEqual(query(directory, `SELECT * FROM ${table} ORDER BY rowid`), recordedRows[table]?.rows, table);
     }

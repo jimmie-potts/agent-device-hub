@@ -9,12 +9,12 @@ import {withState} from '../src/database.js';
 import {dashboard} from '../src/line-projection.js';
 import {lineId, Metadata, normalize, owners} from '../src/project-map.js';
 import {execute, type Db} from '../src/sqlite.js';
-import {legacyPrompt, query, suite, temporary, test, wallView, write} from './support.js';
+import {query, suite, taskRow, temporary, test, wallView, write} from './support.js';
 
 const CONFIG = {line_groups: Array.from({length: 15}, (_, i) => [100 + i * 2, 101 + i * 2]),
   line_positions: Array.from({length: 15}, (_, i) => [i * 10, 0])};
 
-/** ProjectTest: two saved projects, legacy tasks prompted at 1000 and the wall's map preferences. */
+/** ProjectTest: two saved projects, tasks prompted at 1000 and the wall's map preferences. */
 class Projects {
   readonly directory: string;
 
@@ -28,7 +28,7 @@ class Projects {
 
   task(session: string, project: string | null): void {
     write(this.directory, db => {
-      legacyPrompt(db, session, '1', 1000);
+      taskRow(db, session, '1', 1000);
       execute(db, 'UPDATE task_info SET project=? WHERE session=?', project, session);
     });
   }
@@ -107,7 +107,7 @@ suite('ProjectTest', () => {
   });
 
   test('test_metadata_paths_titles_and_manual_override', context => {
-    // The hook event's working directory is saved as the legacy event recorder saves it.
+    // The prompt's working directory is saved as Python's event recorder saved it.
     const p = new Projects(context);
     p.task('a', null);
     write(p.directory, db => execute(db, "UPDATE task_info SET cwd='/mnt/c/repo/b/subdir' WHERE session='a'"));

@@ -1,11 +1,12 @@
 // Behavior the translated tests leave open, compared with Python on recorded inputs. recorded/trace.json holds three
-// random sequences (source switches, owner revisions, feed loss, Line placement, evictions, comets, modes, reservations
-// and Codex metadata changes) and two scripted ones (comet queueing and cancellation; Line placement), run through the
-// Python bridge. After each step the port must return the same result and save the same rows in these tables: sessions,
-// activity, task_info, slots, comets, waits, receipts, shared_stale, shared_suppressed_waves, shared_evictions, projects,
-// line_prefs, map_settings, meta and display_v3, all in rowid order. It must also save the same shared_input source,
-// generation, received, connection, error and backup, and an envelope with the same hash. The palette, map_pending,
-// locate and shared_ack tables and shared_input.config are not compared.
+// random sequences (selecting shared input, owner revisions, feed loss, Line placement, evictions, comets, modes,
+// reservations and Codex metadata changes) and two scripted ones (comet queueing and cancellation; Line placement), run
+// through the Python bridge on shared input only. After each step the port must return the same result and save the same
+// rows in these tables: sessions, activity, task_info, slots, comets, waits, receipts, shared_stale,
+// shared_suppressed_waves, shared_evictions, projects, line_prefs, map_settings, meta and display_v3, all in rowid order.
+// It must also save the same shared_input source, generation, received, connection and error, and an envelope with the
+// same hash. The palette, map_pending, locate and shared_ack tables, shared_input.config and the legacy task backup in
+// shared_input.backup are not compared.
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -16,7 +17,7 @@ import type {DeviceConfig} from '../src/devices.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {evict, evictionToken, presented, state, visibleTasks, type Envelope, type PresentedTask, type SharedSession} from '../src/shared-input.js';
-import {acceptEnvelope, markFailed, selectSource} from '../src/shared-source.js';
+import {acceptEnvelope, markFailed, selectShared} from '../src/shared-source.js';
 import {execute, rows, transaction, type SqlValue} from '../src/sqlite.js';
 import {markDirty} from '../src/store.js';
 import {fixtureJson, loadDump, metadataReader, suite, temporary, test, type Dump} from './support.js';
@@ -27,7 +28,6 @@ const TABLES = ['sessions', 'activity', 'task_info', 'slots', 'comets', 'waits',
 type CompactEnvelope = Omit<Envelope, 'snapshot'> & {snapshot: Omit<Envelope['snapshot'], 'sessions'> & {sessions: string[]}};
 type Operation =
   | {op: 'select'; source: 'shared'; instant: number; envelope: CompactEnvelope}
-  | {op: 'select'; source: 'legacy'}
   | {op: 'accept'; instant: number; resync: boolean; envelope: CompactEnvelope}
   | {op: 'failed'}
   | {op: 'dashboard'; device: string; instant: number}
@@ -61,7 +61,7 @@ function savedState(directory: string): Record<string, unknown> {
     for (const table of TABLES) saved[table] = rows(db, `SELECT * FROM ${table} ORDER BY rowid`);
     const current = state(db);
     saved.shared_input = {source: current.source, generation: current.generation, received: current.received, connection: current.connection,
-      error: current.error, backup: current.backup, envelope: current.envelope === null ? null : sha256Hex(dumps(current.envelope))};
+      error: current.error, envelope: current.envelope === null ? null : sha256Hex(dumps(current.envelope))};
     return saved;
   });
 }
@@ -70,15 +70,12 @@ function apply(directory: string, trace: Trace, operation: Operation): unknown {
   const write = <T>(body: (db: Parameters<typeof dashboard>[0]) => T): T => withState(directory, db => transaction(db, () => body(db)));
   try {
     switch (operation.op) {
-      case 'select':
-        if (operation.source === 'shared') {
-          const metadata = metadataReader(directory);
-          const value = expand(trace, operation.envelope);
-          write(db => selectSource(db, {source: 'shared', envelope: value, instant: operation.instant, targets: registeredDevices(directory), metadata}));
-        } else {
-          write(db => selectSource(db, {source: 'legacy'}));
-        }
+      case 'select': {
+        const metadata = metadataReader(directory);
+        const value = expand(trace, operation.envelope);
+        write(db => selectShared(db, {envelope: value, instant: operation.instant, targets: registeredDevices(directory), metadata}));
         return null;
+      }
       case 'accept': {
         const metadata = metadataReader(directory);
         const value = expand(trace, operation.envelope);

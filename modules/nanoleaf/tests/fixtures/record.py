@@ -13,7 +13,6 @@ import hashlib
 import importlib.util
 import json
 import math
-import os
 from pathlib import Path
 import random
 import subprocess
@@ -28,7 +27,6 @@ sys.path.insert(0, str(SOURCE / 'bridge'))
 spec = importlib.util.spec_from_file_location('bridge', SOURCE / 'bridge/bridge.py')
 b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
-import codex_hooks  # noqa: E402
 import database  # noqa: E402
 import devices  # noqa: E402
 import jsonfile  # noqa: E402
@@ -136,13 +134,11 @@ def private(ip):
 
 
 def selection_setup(path):
-    """SelectionTest.setUp in test_shared_input.py, before shared_source.configure."""
-    b.handle_event(path, {'session_id': 'legacy', 'turn_id': 'turn', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
-                   now=lambda: 1000.0)
+    """SelectionTest.setUp in test_shared_input.py, before shared_source.configure, for shared input only: the local
+    project. The port keeps no legacy input (owner decision, Hub #26, 2026-10-06), so the legacy task Python prompted
+    and bound to the shared one is left out."""
     with contextlib.closing(database.connect_state(path)) as db, db:
-        db.execute("INSERT INTO slots (session, slot) VALUES ('legacy',0)")
         db.execute("INSERT INTO projects VALUES ('project','LOCAL TITLE','#112233','[]')")
-        db.execute("UPDATE task_info SET project='project',manual_project='project' WHERE session='legacy'")
 
 
 def setups():
@@ -152,28 +148,10 @@ def setups():
         prompt = root / 'prompt'; prompt.mkdir()
         b.handle_event(prompt, {'session_id': 'a', 'turn_id': '1', 'hook_event_name': 'UserPromptSubmit'}, launch=lambda _: None,
                        now=lambda: 1000.0)
-        recorded['legacyPrompt'] = dump(prompt)
+        recorded['taskRow'] = dump(prompt)
         selection = root / 'selection'; selection.mkdir()
         selection_setup(selection)
         recorded['selection'] = dump(selection)
-        backup = root / 'backup'; backup.mkdir()
-        selection_setup(backup)
-        # TaskBackupTest.setUp additions.
-        jsonfile.write_json(backup / 'config.json', {'ip': '192.0.2.1', 'token': 'fake', 'panelsToken': 'other', 'devices': {
-            'panels': {'kind': 'panels', 'ip': '192.0.2.2', 'token_ref': 'panelsToken'}}})
-        def event(session, name, **extra):
-            b.handle_event(backup, {'session_id': session, 'turn_id': 't1', 'hook_event_name': name, **extra},
-                           launch=lambda _: None, now=lambda: 1000.0 + len(session))
-        event('other', 'UserPromptSubmit'); event('other', 'PermissionRequest', tool_name='shell')
-        event('done', 'UserPromptSubmit'); event('done', 'Stop')
-        modes.set_mode(backup, 'quiet', launch=lambda _: None, device='panels', now=lambda: 1000.0)
-        with contextlib.closing(database.connect_state(backup)) as db, db:
-            db.executemany('INSERT INTO slots (session,slot,device) VALUES (?,?,?)',
-                           [('legacy', 4, 'panels'), ('other', 1, 'wall'), ('other', 0, 'panels'), ('done', 2, 'wall')])
-            db.execute("INSERT INTO projects VALUES ('chosen','Chosen','#445566','[]')")
-            db.execute("INSERT INTO line_prefs (line_id,project,signature,device) VALUES ('100:101','project',1,'wall')")
-            db.execute("INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('done','t1',1010,NULL,NULL,'panels')")
-        recorded['taskBackup'] = dump(backup)
         enrolled = root / 'enrollment'; enrolled.mkdir()
         # EnrollmentTest.setUp without the controller ledger, which is not ported.
         for session in ('a', 'b'):
@@ -369,19 +347,17 @@ def trace_state(path):
         tables = {table: [list(row) for row in db.execute(f'SELECT * FROM {table} ORDER BY rowid')] for table in TRACE_TABLES}
         current = shared_input.state(db)
     envelope = current['envelope']
-    tables['shared_input'] = {key: current[key] for key in ('source', 'generation', 'received', 'connection', 'error', 'backup')}
+    # The legacy task backup (`backup`) is not ported, so it is not recorded.
+    tables['shared_input'] = {key: current[key] for key in ('source', 'generation', 'received', 'connection', 'error')}
     tables['shared_input']['envelope'] = hashlib.sha256(shared_input.dumps(envelope).encode()).hexdigest() if envelope else None
     return tables
 
 
 @contextlib.contextmanager
 def traced_state():
-    """The trace's starting state: SelectionTest's bound legacy task, two registered devices and a shared configuration."""
+    """The trace's starting state: SelectionTest's local project, two registered devices and a shared configuration."""
     with tempfile.TemporaryDirectory() as temporary:
         path = Path(temporary) / 'state'; path.mkdir()
-        home = Path(temporary) / 'codex-home'
-        os.environ['CODEX_HOME'] = str(home)
-        codex_hooks.manage_hooks(home, 'register', script=Path(b.__file__))
         metadata_path = path / 'metadata.json'; index_path = path / 'session_index.jsonl'
         jsonfile.write_json(path / 'config.json', {'ip': '192.0.2.1', 'token': 'fake', 'panelsToken': 'other',
             'metadata_path': str(metadata_path), 'title_index_path': str(index_path),
@@ -390,8 +366,7 @@ def traced_state():
         config = {'version': 1, 'ownerId': 'owner', 'consumerId': 'nanoleaf', 'endpoint': 'http://127.0.0.1:12345/api/monitor/v1',
                   'tokenFile': '/synthetic/token', 'clearOnNewTurn': True,
                   'qualifiedSources': [{'provider': 'codex', 'client': 'desktop', 'hostId': 'host', 'sourceId': 'source'},
-                                       {'provider': 'claude', 'client': 'code', 'hostId': 'host', 'sourceId': 'claude-source'}],
-                  'bindings': [{'identity': identity_of('r1'), 'legacySessionId': 'legacy'}]}
+                                       {'provider': 'claude', 'client': 'code', 'hostId': 'host', 'sourceId': 'claude-source'}]}
         shared_source.configure(path, config)
         original = shared_input.check_envelope
         # The port receives validated snapshots; the schema check stays with the feed.
@@ -433,17 +408,15 @@ def trace(seed, steps):
             instant += rng.choice([0.25, 0.5, 1.0, 2.0])
             choice = rng.random()
             current = shared_input.inspect(path)['source']
-            if current == 'legacy' and choice < 0.6:
+            if current != 'shared' and choice < 0.6:
                 operation = {'op': 'select', 'source': 'shared', 'instant': instant}
             elif choice < 0.55:
                 world.mutate()
                 operation = {'op': 'accept', 'instant': instant, 'resync': rng.random() < 0.1}
             elif choice < 0.66:
                 operation = {'op': 'dashboard', 'device': rng.choice(['wall', 'panels']), 'instant': instant}
-            elif choice < 0.69:
-                operation = {'op': 'failed'}
             elif choice < 0.72:
-                operation = {'op': 'select', 'source': 'legacy'}
+                operation = {'op': 'failed'}
             elif choice < 0.77:
                 operation = {'op': 'evict', 'device': rng.choice(['wall', 'panels']), 'pick': rng.random()}
             elif choice < 0.80:
@@ -474,7 +447,7 @@ def trace(seed, steps):
                     'thread-project-assignments': {'r2': {'projectId': rng.choice(['local', 'nested', 'missing'])}},
                     'thread-workspace-root-hints': {'r1': '/repo/nested/src', 'r3': '/repo/x'}, 'pad': 'x' * count}),
                     'session_index.jsonl': json.dumps({'id': 'r1', 'thread_name': 'Indexed ' + 'y' * count}) + '\n'}}
-            if operation['op'] in ('select', 'accept') and operation.get('source') != 'legacy':
+            if operation['op'] in ('select', 'accept'):
                 operation['envelope'] = world.envelope()
             recorder.run(operation)
         return recorder.result
@@ -546,7 +519,8 @@ def scripted():
 
 def scripted_placement():
     """Line placement the translated tests leave open: inactive occupants replaced, a reserved comet source kept on an
-    invalid element until the comet ends, a stale epoch phase renewed, and the display cache cleared by source switches."""
+    invalid element until the comet ends, a stale epoch phase renewed, and the display cache cleared when shared input is
+    selected. Rows saved before the selection stand in for tasks a device already held."""
     with traced_state() as (path, config):
         recorder = Recorder('placement', path, config)
 
@@ -556,9 +530,10 @@ def scripted_placement():
         def dashboard(device, instant):
             recorder.run({'op': 'dashboard', 'device': device, 'instant': instant})
 
-        # Legacy input: the bound task holds the first Line; an ended and an idle task hold the others.
-        sql("INSERT INTO sessions VALUES ('done','t','ended',990.0), ('idle','t','idle',991.0)")
-        sql("INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('idle',2,'wall')")
+        # Before shared input is selected: two ended tasks hold two Lines. Python showed only its legacy rules here,
+        # which hid idle tasks; the port applies shared input's rules, which show them, so no idle task is saved.
+        sql("INSERT INTO sessions VALUES ('done','t','ended',990.0), ('closed','t','ended',991.0)")
+        sql("INSERT INTO slots (session,slot,device) VALUES ('done',1,'wall'), ('closed',2,'wall')")
         sql("INSERT INTO sessions VALUES ('new1','t','working',992.0), ('new2','t','question',993.0), ('new3','t','blocked',994.0)")
         dashboard('wall', 1000.0)
         sql("UPDATE activity SET turn='old' WHERE session='new3'")
@@ -580,7 +555,6 @@ def scripted_placement():
         recorder.run({'op': 'select', 'source': 'shared', 'instant': 1006.0, 'envelope': world.envelope('running')})
         dashboard('wall', 1006.0)
         sql("INSERT INTO display_v3 (snapshot,looping,rendered,device) VALUES ('[]',1,1006.0,'panels')")
-        recorder.run({'op': 'select', 'source': 'legacy'})
         dashboard('wall', 1007.0)
         # Project layout prefers a task's reserved element over the Shared ones before it.
         sql("INSERT OR IGNORE INTO map_settings (style,coverage,rotation,flip_x,flip_y,device) VALUES ('classic','whole',0,0,0,'panels')")
@@ -590,7 +564,6 @@ def scripted_placement():
         sql("DELETE FROM slots WHERE device='panels'")
         dashboard('panels', 1008.0)
         # A running comet's source element stays free for it even when it is empty.
-        sql("DELETE FROM slots WHERE device='panels' AND session='legacy'")
         sql("INSERT INTO comets (session,turn,queued,source,started,device) VALUES ('gone','t',1008.0,2,1008.0,'panels')")
         dashboard('panels', 1009.0)
         sql('DELETE FROM comets')
@@ -602,11 +575,8 @@ def apply(path, operation):
     op = operation['op']
     try:
         if op == 'select':
-            if operation['source'] == 'shared':
-                shared_source.select_source(path, 'shared', fetch=lambda *_, **__: copy.deepcopy(operation['envelope']),
-                                            now=lambda: operation['instant'])
-            else:
-                shared_source.select_source(path, 'legacy')
+            shared_source.select_source(path, 'shared', fetch=lambda *_, **__: copy.deepcopy(operation['envelope']),
+                                        now=lambda: operation['instant'])
             return None
         if op == 'accept':
             return shared_source.accept(path, copy.deepcopy(operation['envelope']), now=lambda: operation['instant'],

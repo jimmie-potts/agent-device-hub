@@ -8,15 +8,14 @@ import {DatabaseSync} from 'node:sqlite';
 import {withState} from '../src/database.js';
 import type {JsonObject} from '../src/compat.js';
 import {loadConfig} from '../src/configuration.js';
-import {columns, DEFAULT, layoutDevices, legacyRow, projection, registry, saveLayout, validateElements} from '../src/devices.js';
+import {columns, DEFAULT, layoutDevices, projection, registry, saveLayout, validateElements} from '../src/devices.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {readLayout} from '../src/panels.js';
 import {allocate, owners, settings, type TaskRow} from '../src/project-map.js';
-import {BACKUP, dumpTables, restoreTables, type Backup} from '../src/shared-input.js';
 import {execute, rows, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {FIXTURES, fixtureJson, legacyPrompt, query, refuse, suite, temporary, test, write} from './support.js';
+import {FIXTURES, fixtureJson, query, refuse, suite, taskRow, temporary, test, write} from './support.js';
 
 const LINUX_STATE = join(FIXTURES, 'linux-state-v4');
 
@@ -139,9 +138,9 @@ suite('DeviceTest', () => {
     writeTwoDevices(directory);
     const lines = await loadConfig(directory, DEFAULT, refuse);
     const panels = await loadConfig(directory, 'panels', refuse);
-    // Two legacy prompts, saved as the legacy hook path saves them.
-    write(directory, db => legacyPrompt(db, 'a', '1', 1000));
-    write(directory, db => legacyPrompt(db, 'b', '1', 1001));
+    // Two prompted tasks, saved as their rows.
+    write(directory, db => taskRow(db, 'a', '1', 1000));
+    write(directory, db => taskRow(db, 'b', '1', 1001));
     write(directory, db => {
       const first = dashboard(db, lines, 1002);
       const second = dashboard(db, panels, 1002);
@@ -191,63 +190,6 @@ suite('DeviceTest', () => {
     });
   });
 
-  test('test_pre_change_shared_input_backup_restores_after_migration', context => {
-    const directory = temporary(context);
-    loadLinuxState(directory);
-    const backup = {sessions: [['legacy', 'turn', 'working', 900.0]], slots: [['legacy', 7]], waits: [],
-      activity: [['legacy', 'turn', 'working', 900.0]], receipts: [], comets: [['legacy', 'turn', 901.0, 7, 902.0]],
-      task_info: [['legacy', 'Old title', '', null, null, 'turn', 900.0]]};
-    const raw = new DatabaseSync(join(directory, 'status.sqlite'));
-    raw.prepare("UPDATE shared_input SET source='shared', backup=? WHERE id=1").run(JSON.stringify(backup));
-    raw.close();
-    write(directory, db => {
-      restoreTables(db, backup);
-      assert.deepEqual(rows(db, 'SELECT session, slot, device FROM slots'), [['legacy', 7, 'wall']]);
-      assert.deepEqual(rows(db, 'SELECT session, source, started, device FROM comets'), [['legacy', 7, 902, 'wall']]);
-      const restored = dumpTables(db);
-      restoreTables(db, restored);
-      assert.deepEqual(dumpTables(db), restored);
-    });
-  });
-
-  test('test_backup_names_every_column_in_table_order', context => {
-    // Older sources restore a backup positionally, so its named columns keep each table's order.
-    const fresh = temporary(context);
-    const migrated = temporary(context);
-    loadLinuxState(migrated);
-    for (const directory of [fresh, migrated]) {
-      withState(directory, db => {
-        for (const [table, names] of Object.entries(BACKUP)) assert.deepEqual(columns(db, table), [...names], table);
-      });
-    }
-  });
-
-  test('test_rows_saved_before_the_device_key_belong_to_the_original_device', () => {
-    assert.deepEqual(legacyRow('slots', ['a', 7]), {session: 'a', slot: 7, device: 'wall'});
-    assert.deepEqual(legacyRow('comets', ['a', 't', 1.0, 2, null]), {session: 'a', turn: 't', queued: 1.0, source: 2, started: null, device: 'wall'});
-    assert.equal(legacyRow('slots', ['a', 7, 'panels']), null);
-    assert.equal(legacyRow('sessions', ['a', 't', 'working', 1.0]), null);
-  });
-
-  test('test_device_aware_backup_restores_each_devices_rows', context => {
-    const directory = temporary(context);
-    writeTwoDevices(directory);
-    const backup: Backup = {sessions: [['a', 't', 'working', 900.0], ['b', 't', 'unread', 901.0]],
-      slots: [['a', 0, 'wall'], ['a', 2, 'panels'], ['b', 1, 'panels']], waits: [['a', 't', 'permission:shell', 'permission', 'shell']],
-      activity: [['a', 't', 'working', 900.0], ['b', 't', 'unread', 901.0]], receipts: [['b', 't', 901.0, 0]],
-      comets: [['b', 't', 902.0, 1, 903.0, 'panels'], ['b', 't', 902.0, null, null, 'wall']],
-      task_info: [['a', 'Title', '/synthetic', 'p', 'q', 't', 900.0]]};
-    for (let repeat = 0; repeat < 2; repeat += 1) {
-      // Repeated initialization keeps the restored rows.
-      write(directory, db => {
-        restoreTables(db, backup);
-        assert.deepEqual(dumpTables(db), backup);
-      });
-    }
-    assert.deepEqual(query(directory, 'SELECT device, session, source, started FROM comets ORDER BY device'), [['panels', 'b', 1, 903], ['wall', 'b', null, null]]);
-    assert.deepEqual(query(directory, 'SELECT device, session, slot FROM slots ORDER BY device, slot'),
-      [['panels', 'b', 1], ['panels', 'a', 2], ['wall', 'a', 0]]);
-  });
 });
 
 /** Open handles to a file in this process (Linux /proc), or null where /proc is unavailable. */

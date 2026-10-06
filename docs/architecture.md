@@ -293,8 +293,9 @@ until recovery or explicit rollback. Never run embedded and standalone owners
 against the same state simultaneously. Controller databases stay private; Windows/WSL
 processes do not coordinate through a mounted SQLite database.
 
-Legacy Nanoleaf hooks remain available until an authorized verified cutover.
-Only one selected ingestion path updates each session. Shared-input consumers
+The Nanoleaf shared-input cutover is complete: its legacy hooks are removed, and
+the runtime port keeps shared input only (#26). Until #840, rollback is the old
+Python installation. Only one selected ingestion path updates each session. Shared-input consumers
 can cache presentation state; they do not become independent status authorities.
 Loss of the hub has a documented recovery/rollback path and never blocks agents
 or ordinary media use.

@@ -3,7 +3,7 @@
 // validated session state (PORTING.md). Everything here runs inside the caller's transaction.
 import {compareText, dumps, floatText, isObject, parseFloatText, parseJson, sameValue, sha256Hex, type Json} from './compat.js';
 // shared_input.ID is the same pattern as devices.ID.
-import {DEFAULT, ID, legacyRow} from './devices.js';
+import {DEFAULT, ID} from './devices.js';
 import {FeedError, ValueError} from './errors.js';
 import {defaultColor, fallbackTitle, isLineStatus, type Metadata, type TaskRow} from './project-map.js';
 import type {RenderConfig} from './renderer.js';
@@ -105,11 +105,6 @@ export interface StoredEnvelope extends Envelope<StoredSession> {
   skipped?: Skipped;
 }
 
-export interface Binding {
-  identity: Identity;
-  legacySessionId: string;
-}
-
 /** The saved shared-input configuration (version 1), as validateConfig returns it. */
 export interface SharedConfig {
   version: 1;
@@ -120,7 +115,6 @@ export interface SharedConfig {
   controlTokenFile?: string;
   clearOnNewTurn: true;
   qualifiedSources: Source[];
-  bindings: Binding[];
 }
 
 export interface SharedState {
@@ -131,7 +125,6 @@ export interface SharedState {
   received: SqlValue;
   connection: SqlValue;
   error: SqlValue;
-  backup: Json | null;
 }
 
 /** shared_input.decode: saved JSON; anything unreadable is invalid-json. */
@@ -154,8 +147,10 @@ export function validIdentity(value: unknown, fields: readonly string[] = IDENTI
     || (value.provider === 'claude' && value.client === 'code');
 }
 
+// Python's configuration also took `bindings`, which carried legacy tasks across a source switch; legacy input is
+// not ported (owner decision, Hub #26, 2026-10-06), so a configuration with them is refused.
 const ALLOWED_CONFIG = new Set(['version', 'ownerId', 'consumerId', 'endpoint', 'tokenFile', 'controlTokenFile', 'clearOnNewTurn',
-  'qualifiedSources', 'bindings']);
+  'qualifiedSources']);
 
 function configurationProblem(value: unknown): boolean {
   if (!isObject(value) || Object.keys(value).some(key => !ALLOWED_CONFIG.has(key))) return true;
@@ -172,33 +167,14 @@ function configurationProblem(value: unknown): boolean {
   }
   if (!Object.hasOwn(value, 'tokenFile')) return true;
   const sources = value.qualifiedSources;
-  const bindings = Object.hasOwn(value, 'bindings') ? value.bindings : [];
-  if (!Array.isArray(sources) || sources.length < 1 || sources.length > 128
-      || sources.some(source => !validIdentity(source, SOURCE)) || new Set(sources.map(dumps)).size !== sources.length
-      || !Array.isArray(bindings) || bindings.length > 128) {
-    return true;
-  }
-  const keys = new Set<string>();
-  const locals = new Set<string>();
-  for (const binding of bindings) {
-    if (!isObject(binding) || Object.keys(binding).length !== 2 || !Object.hasOwn(binding, 'identity')
-        || !Object.hasOwn(binding, 'legacySessionId') || !validIdentity(binding.identity)) {
-      return true;
-    }
-    const local = binding.legacySessionId;
-    if (typeof local !== 'string' || !ID.test(local) || local.startsWith('shared-')) return true;
-    const key = identityKey(binding.identity as unknown as Identity);
-    if (keys.has(key) || locals.has(local)) return true;
-    keys.add(key);
-    locals.add(local);
-  }
-  return false;
+  return !Array.isArray(sources) || sources.length < 1 || sources.length > 128
+    || sources.some(source => !validIdentity(source, SOURCE)) || new Set(sources.map(dumps)).size !== sources.length;
 }
 
-/** Check a shared-input configuration; returns a copy with `bindings` defaulted and keys sorted. */
+/** Check a shared-input configuration; returns a copy with its keys sorted. */
 export function validateConfig(value: unknown): SharedConfig {
   if (configurationProblem(value) || !isObject(value)) throw new FeedError('invalid-config');
-  return decode(dumps({...value, bindings: Object.hasOwn(value, 'bindings') ? value.bindings : []})) as SharedConfig;
+  return decode(dumps(value)) as SharedConfig;
 }
 
 /**
@@ -232,26 +208,23 @@ export function declared(snapshot: Snapshot, config: Pick<SharedConfig, 'qualifi
   return [{...snapshot, sessions: kept}, {sessions: skipped.length, sources: distinct.map(source => decode(source) as Source)}];
 }
 
-// The legacy task backup: each local task table and its columns in table order, because older
-// sources restore the backup positionally. These are local presentation tables, never another
-// agent reducer.
-export const BACKUP = {
-  sessions: ['id', 'turn', 'status', 'updated'],
-  slots: ['session', 'slot', 'device'],
-  waits: ['session', 'turn', 'key', 'kind', 'tool'],
-  activity: ['session', 'turn', 'status', 'started'],
-  receipts: ['session', 'turn', 'completed', 'observed'],
-  comets: ['session', 'turn', 'queued', 'source', 'started', 'device'],
-  task_info: ['session', 'title', 'cwd', 'project', 'manual_project', 'turn', 'started'],
-} as const;
-export type BackupTable = keyof typeof BACKUP;
-export const BACKUP_TABLES = Object.keys(BACKUP) as BackupTable[];
 /** The original Lines device. */
 export const DEFAULT_DEVICE = DEFAULT;
 
+/**
+ * The stored source before shared input is first selected, and while a new configuration waits for its selection.
+ * It is Python's name for its other input, kept so saved state and the recordings stay comparable; nothing reads tasks
+ * from it any more.
+ */
+export const NOT_SELECTED = 'legacy';
+
+/**
+ * The shared input row and its tables. A new database starts unselected. The `backup` column held the legacy task
+ * backup, which is not ported; it stays for saved state's sake.
+ */
 export function initSharedInput(db: Db): void {
   db.exec('CREATE TABLE IF NOT EXISTS shared_input (id INTEGER PRIMARY KEY, source TEXT, generation INTEGER, config TEXT, envelope TEXT, received REAL, connection TEXT, error TEXT, backup TEXT)');
-  db.exec("INSERT OR IGNORE INTO shared_input VALUES (1,'legacy',0,NULL,NULL,NULL,'unavailable',NULL,NULL)");
+  execute(db, "INSERT OR IGNORE INTO shared_input VALUES (1,?,0,NULL,NULL,NULL,'unavailable',NULL,NULL)", NOT_SELECTED);
   db.exec('CREATE TABLE IF NOT EXISTS shared_stale (session TEXT PRIMARY KEY)');
   db.exec('CREATE TABLE IF NOT EXISTS shared_suppressed_waves (session TEXT PRIMARY KEY, epoch REAL)');
   db.exec('CREATE TABLE IF NOT EXISTS shared_ack (id INTEGER PRIMARY KEY, payload TEXT, result TEXT)');
@@ -261,11 +234,11 @@ export function initSharedInput(db: Db): void {
 const decoded = (value: SqlValue | undefined): unknown => (value === undefined || value === null ? null : decode(String(value)));
 
 export function state(db: Db): SharedState {
-  const row = first(db, 'SELECT source,generation,config,envelope,received,connection,error,backup FROM shared_input WHERE id=1');
+  const row = first(db, 'SELECT source,generation,config,envelope,received,connection,error FROM shared_input WHERE id=1');
   if (row === undefined) throw new TypeError('The shared input row is missing.');
-  const [source = null, generation = null, config, envelope, received = null, connection = null, error = null, backup] = row;
+  const [source = null, generation = null, config, envelope, received = null, connection = null, error = null] = row;
   return {source, generation: Number(generation), config: decoded(config) as SharedConfig | null,
-    envelope: decoded(envelope) as StoredEnvelope | null, received, connection, error, backup: decoded(backup) as Json | null};
+    envelope: decoded(envelope) as StoredEnvelope | null, received, connection, error};
 }
 
 export function selected(db: Db): boolean {
@@ -273,14 +246,16 @@ export function selected(db: Db): boolean {
   return row?.[0] === 'shared';
 }
 
-/** The tasks a device shows, alerts first: shared input keeps idle tasks and hides the device's evictions. */
+/**
+ * The tasks a device shows, alerts first: idle tasks too, but not the device's evictions. These are the shared-input rules,
+ * applied whether or not shared input is selected, so a task held while shared input is paused keeps its Line. Python
+ * applied its legacy rules then (idle hidden, evictions ignored); the port has no legacy input (PORTING.md).
+ */
 export function visibleTasks(db: Db, device: string): TaskRow[] {
-  const shared = selected(db);
-  const statuses = shared ? "'working','question','blocked','unread','idle'" : "'working','question','blocked','unread'";
-  const excluded = shared ? 'AND NOT EXISTS (SELECT 1 FROM shared_evictions WHERE session=sessions.id AND device=?) ' : '';
-  const sql = 'SELECT id,turn,status FROM sessions WHERE status IN (' + statuses + ') ' + excluded
-    + "ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'question' THEN 1 ELSE 2 END, updated, id";
-  return (shared ? rows(db, sql, device) : rows(db, sql)).map(([id = null, turn = null, status = null]) => [String(id), turn, status]);
+  return rows(db, "SELECT id,turn,status FROM sessions WHERE status IN ('working','question','blocked','unread','idle') "
+    + 'AND NOT EXISTS (SELECT 1 FROM shared_evictions WHERE session=sessions.id AND device=?) '
+    + "ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'question' THEN 1 ELSE 2 END, updated, id", device)
+    .map(([id = null, turn = null, status = null]) => [String(id), turn, status]);
 }
 
 /** A stale-view guard, not an authentication credential or lifecycle event. */
@@ -304,96 +279,6 @@ export function evict(db: Db, device: string, payload: unknown): void {
   }
   execute(db, 'INSERT OR REPLACE INTO shared_evictions VALUES (?,?,?)', key, device, payload.evictionToken);
   for (const table of ['slots', 'comets']) execute(db, 'DELETE FROM ' + table + ' WHERE session=? AND device=?', key, device);
-}
-
-export type Backup = Record<BackupTable, SqlValue[][]>;
-
-/** Every task table's rows as backup rows. */
-export function dumpTables(db: Db): Backup {
-  const saved = {} as Backup;
-  for (const table of BACKUP_TABLES) {
-    saved[table] = rows(db, 'SELECT ' + BACKUP[table].join(',') + ' FROM ' + table + ' ORDER BY rowid').map(row => [...row]);
-  }
-  return saved;
-}
-
-function bindable(value: unknown): SqlValue {
-  if (value === null || typeof value === 'string' || typeof value === 'number') return value;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  throw new TypeError('Error binding parameter: type is not supported.');
-}
-
-function backupValues(table: BackupTable, row: unknown): Record<string, unknown> {
-  const names: readonly string[] = BACKUP[table];
-  let values: Record<string, unknown> | null = null;
-  if (Array.isArray(row)) {
-    const cells: unknown[] = row;
-    values = cells.length === names.length ? Object.fromEntries(names.map((name, index) => [name, cells[index]])) : legacyRow(table, cells);
-  }
-  if (values === null) throw new FeedError('invalid-backup');
-  return values;
-}
-
-/** Replace every task table with a backup's rows, whether saved before or after the device key. */
-export function restoreTables(db: Db, saved: unknown): void {
-  if (!isObject(saved) || BACKUP_TABLES.some(table => !Array.isArray(saved[table]))) throw new FeedError('invalid-backup');
-  for (const table of BACKUP_TABLES) {
-    execute(db, 'DELETE FROM ' + table);
-    for (const row of saved[table] as Json[]) {
-      const values = backupValues(table, row);
-      const names = Object.keys(values);
-      execute(db, 'INSERT INTO ' + table + ' (' + names.join(',') + ') VALUES (' + names.map(() => '?').join(',') + ')',
-        ...names.map(name => bindable(values[name])));
-    }
-  }
-}
-
-/**
- * Back up the legacy task tables and keep only the explicitly bound tasks, under their shared keys.
- *
- * A bound task keeps its placements, status epoch and metadata. Every other legacy row waits in
- * the backup for a return to legacy input. Runs inside the caller's transaction.
- */
-export function saveLegacyTasks(db: Db, bindings: readonly Binding[]): void {
-  const saved = dumpTables(db);
-  const keys = new Map(bindings.map(binding => [binding.legacySessionId, identityKey(binding.identity)]));
-  const carried: Backup = {sessions: [], slots: [], waits: [], activity: [], receipts: [], comets: [], task_info: []};
-  for (const table of ['slots', 'activity', 'task_info'] as const) {
-    const at = (BACKUP[table] as readonly string[]).indexOf('session');
-    carried[table] = saved[table].flatMap(row => {
-      const shared = keys.get(String(row[at]));
-      return typeof row[at] === 'string' && shared !== undefined ? [[...row.slice(0, at), shared, ...row.slice(at + 1)]] : [];
-    });
-  }
-  restoreTables(db, carried);
-  execute(db, 'UPDATE shared_input SET backup=? WHERE id=1', dumps(saved));
-}
-
-/**
- * Restore the legacy task backup inside the caller's transaction.
- *
- * Each bound task keeps its current project choice and its placement on every device, under its
- * legacy session.
- */
-export function restoreLegacyTasks(db: Db, bindings: readonly Binding[]): void {
-  const kept = new Map<string, [Row | undefined, Row[]]>();
-  for (const binding of bindings) {
-    const key = identityKey(binding.identity);
-    const info = first(db, 'SELECT project,manual_project FROM task_info WHERE session=?', key);
-    const placed = rows(db, 'SELECT device,slot FROM slots WHERE session=? ORDER BY device', key);
-    kept.set(binding.legacySessionId, [info, placed]);
-  }
-  const saved = first(db, 'SELECT backup FROM shared_input WHERE id=1')?.[0] ?? null;
-  restoreTables(db, saved === null ? null : decode(String(saved)));
-  // Release old slots before applying the complete remap to avoid swaps colliding.
-  for (const session of kept.keys()) execute(db, 'DELETE FROM slots WHERE session=?', session);
-  for (const [session, [info, placed]] of kept) {
-    if (info !== undefined) execute(db, 'UPDATE task_info SET project=?,manual_project=? WHERE session=?', info[0] ?? null, info[1] ?? null, session);
-    for (const [device = null, slot = null] of placed) {
-      execute(db, 'DELETE FROM slots WHERE slot=? AND device=?', slot, device);
-      execute(db, 'INSERT INTO slots (session, slot, device) VALUES (?,?,?)', session, slot, device);
-    }
-  }
 }
 
 type Alert = 'blocked' | 'question';

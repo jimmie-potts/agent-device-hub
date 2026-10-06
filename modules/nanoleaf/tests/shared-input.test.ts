@@ -1,28 +1,23 @@
 // Translated from codex-nanoleaf tests/test_shared_input.py (PORTING.md lists every case and where untranslated parts went).
 // Suite names are the Python classes and test names the Python methods.
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync} from 'node:fs';
+import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {sha256Hex, type JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import {FeedError} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
-import {registeredDevices} from '../src/configuration.js';
 import {dashboard} from '../src/line-projection.js';
-import {Metadata} from '../src/project-map.js';
 import {BASELINE, COLORS, effectPayload, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
-import {BACKUP_TABLES, declared, dumpTables, identityKey, presented, restoreLegacyTasks, restoreTables, saveLegacyTasks, semanticStatus,
-  sharedRenderConfig, validateConfig, type Envelope, type Identity, type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
-import {selectSource} from '../src/shared-source.js';
+import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRenderConfig, validateConfig, type Envelope, type Identity,
+  type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
 import {execute, rows, transaction, type Row} from '../src/sqlite.js';
 import {accept, clone, configure, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
-  loadDump, query, recordedSetup, selectionSetup, selectLegacy, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
+  query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
   type WallTask} from './support.js';
 
 const KEY = identityKey(firstSession(envelope()).identity);
-/** Rows in a stable order, as Python's sorted(..., key=repr). */
-const byText = (values: readonly Row[]): Row[] => [...values].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
 const throwsFeed = (body: () => unknown, code?: string): void => {
   assert.throws(body, (error: unknown) => error instanceof FeedError && (code === undefined || error.message === code));
 };
@@ -80,7 +75,7 @@ suite('consumer envelope check', () => {
     delete (firstSession(missing) as {generation?: number}).generation;
     throwsFeed(() => selectShared(path, missing), 'invalid-feed');
     assert.deepEqual(savedRows(path), before);
-    assert.equal(sharedState(path).source, 'legacy');
+    assert.equal(sharedState(path).source, NOT_SELECTED);
   });
 
   test('an older revision never replaces a newer one', context => {
@@ -106,7 +101,7 @@ suite('TransportTest', () => {
   test('test_configuration_rejects_remote_targets_and_unqualified_sources', () => {
     const config: JsonObject = {version: 1, ownerId: 'owner', consumerId: 'nanoleaf', endpoint: 'http://127.0.0.1:41000/api/monitor/v1',
       tokenFile: '/synthetic/token', clearOnNewTurn: true,
-      qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}], bindings: []};
+      qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}]};
     validateConfig(config);
     for (const [key, value] of [['endpoint', 'http://example.com/api/monitor/v1'], ['endpoint', 'http://127.0.0.1:42/api/monitor/v1?x=1'],
       ['clearOnNewTurn', false], ['qualifiedSources', []]] as const) {
@@ -117,41 +112,29 @@ suite('TransportTest', () => {
 
 suite('SelectionTest', () => {
   test('test_atomic_cutover_identity_and_legacy_suppression', context => {
+    // Partly: shared input only. The bound legacy task's carried slot and epoch, and the ignored legacy hook event, are
+    // not ported (owner decision 2026-10-06); the epoch comes from the evidence time instead, as Python gives without
+    // the binding. The inspection view is not ported.
     const {path} = selectionSetup(context);
-    assert.equal(sharedState(path).source, 'legacy');
+    assert.equal(sharedState(path).source, NOT_SELECTED);
     const value = envelope();
     firstSession(value).activity = 'active';
     selectShared(path, value);
     assert.deepEqual(query(path, 'SELECT id,status FROM sessions'), [[KEY, 'working']]);
-    assert.deepEqual(query(path, 'SELECT session,slot FROM slots'), [[KEY, 0]]);
-    assert.deepEqual(query(path, 'SELECT started FROM activity'), [[1000]]);
-    // The ignored legacy hook event moves with legacy input (slice 3); the inspection view is not ported.
+    assert.deepEqual(query(path, 'SELECT started FROM activity'), [[990]]);
     assert.equal(sharedState(path).source, 'shared');
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
   });
 
   test('test_failed_preflight_and_comet_reservation_preserve_legacy', context => {
+    // Partly: a failed fetch never reaches the port, which receives envelopes from the runtime, and there is no legacy
+    // task to keep. A running comet still refuses the selection, which changes nothing.
     const {path} = selectionSetup(context);
-    // A failed fetch never reaches the port, which receives envelopes from the runtime; legacy input stays selected.
-    assert.equal(sharedState(path).source, 'legacy');
+    assert.equal(sharedState(path).source, NOT_SELECTED);
     write(path, db => execute(db, "INSERT INTO comets (session, turn, queued, source, started) VALUES ('legacy','turn',1000,0,1000)"));
     throwsFeed(() => selectShared(path), 'active-comet');
-    assert.deepEqual(query(path, 'SELECT id FROM sessions'), [['legacy']]);
-  });
-
-  test('test_rollback_preserves_mode_and_current_bound_assignment', context => {
-    const {path} = selectionSetup(context);
-    selectShared(path);
-    write(path, db => {
-      execute(db, 'UPDATE slots SET slot=2 WHERE session=?', KEY);
-      execute(db, "INSERT OR REPLACE INTO meta VALUES ('mode','free')");
-    });
-    selectLegacy(path);
-    assert.deepEqual(query(path, 'SELECT id,status FROM sessions'), [['legacy', 'working']]);
-    assert.deepEqual(query(path, 'SELECT session,slot FROM slots'), [['legacy', 2]]);
-    assert.deepEqual(query(path, "SELECT value FROM meta WHERE key='mode'"), [['free']]);
-    assert.equal(sharedState(path).source, 'legacy');
-    assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
+    assert.deepEqual(query(path, 'SELECT id FROM sessions'), []);
+    assert.equal(sharedState(path).source, NOT_SELECTED);
   });
 
   test('test_notices_read_and_same_project_concurrency', context => {
@@ -184,6 +167,8 @@ suite('SelectionTest', () => {
   });
 
   test('test_wall_projects_survive_retirement_recreation_restart_and_source_switch', context => {
+    // Partly: the Line the bound legacy task carried over and the switch back to legacy input are not ported (owner
+    // decision 2026-10-06).
     const {path} = selectionSetup(context);
     const layout = {line_groups: [[100, 101], [102, 103]], line_positions: [[0, 0], [10, 0]]};
     write(path, db => {
@@ -200,7 +185,6 @@ suite('SelectionTest', () => {
     const first = view();
     assert.equal(first.projects[0]?.active, 1);
     assert.equal(first.tasks[0]?.project, 'project');
-    assert.equal(first.tasks[0]?.line, '100:101');
     const other = view('second');
     assert.equal(other.tasks[0]?.line, null);
     assert.equal(other.projects[0]?.waiting, 1);
@@ -228,8 +212,6 @@ suite('SelectionTest', () => {
     assert.equal(view().tasks[0]?.project, null, 'Retired task overrides do not return without new attribution');
     write(path, db => execute(db, "UPDATE task_info SET manual_project='project' WHERE session=?", KEY));
     assert.equal(view().projects[0]?.active, 1);
-    selectLegacy(path);
-    assert.equal(view().projects[0]?.color, '#112233');
     assert.deepEqual(query(path, 'SELECT * FROM projects'), saved);
     assert.deepEqual(query(path, 'SELECT * FROM line_prefs'), reservations);
   });
@@ -452,15 +434,24 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
   });
 
+
   test('test_delayed_poll_cannot_overwrite_rollback', context => {
-    const {path} = selectionSetup(context);
+    // Partly, shared input only: a new configuration pauses shared input and a second selection resumes it, in place of
+    // Python's switch to legacy input (owner decision 2026-10-06). A poll or failure report carrying the first
+    // selection's generation still changes nothing. The poll carries a newer revision that would change the task.
+    const {path, config} = selectionSetup(context);
     selectShared(path);
     const before = generation(path);
-    selectLegacy(path);
-    assert.equal(accept(path, envelope(), 1001, {generation: before}), false);
+    configure(path, config);
+    selectShared(path, envelope(), 1002);
+    const saved = savedRows(path);
+    const late = envelope();
+    late.snapshot.revision += 1;
+    firstSession(late).activity = 'active';
+    assert.equal(accept(path, late, 1003, {generation: before}), false);
     failed(path, before);
-    assert.deepEqual(query(path, 'SELECT id FROM sessions'), [['legacy']]);
-    assert.equal(sharedState(path).source, 'legacy');
+    assert.deepEqual(savedRows(path), saved);
+    assert.equal(sharedState(path).source, 'shared');
   });
 });
 
@@ -478,19 +469,6 @@ suite('ReleaseTest', () => {
 });
 
 suite('DeviceSwitchTest', () => {
-  test('test_switching_preserves_bound_placements_on_every_device', context => {
-    const {path} = selectionSetup(context);
-    write(path, db => execute(db, "INSERT INTO slots (session, slot, device) VALUES ('legacy',4,'panels')"));
-    selectShared(path);
-    assert.deepEqual(byText(query(path, 'SELECT session,slot,device FROM slots')), byText([[KEY, 0, 'wall'], [KEY, 4, 'panels']]));
-    write(path, db => {
-      execute(db, "UPDATE slots SET slot=7 WHERE session=? AND device='panels'", KEY);
-      execute(db, "UPDATE slots SET slot=2 WHERE session=? AND device='wall'", KEY);
-    });
-    selectLegacy(path);
-    assert.deepEqual(byText(query(path, 'SELECT session,slot,device FROM slots')), byText([['legacy', 2, 'wall'], ['legacy', 7, 'panels']]));
-  });
-
   test('test_shared_completion_queues_comets_on_registered_work_devices', context => {
     const {path} = selectionSetup(context);
     writeJson(join(path, 'config.json'), {ip: '192.0.2.1', token: 'fake', panelsToken: 'other', devices: {
@@ -715,6 +693,7 @@ suite('ChildSessionTest', () => {
   });
 
   test('test_eviction_unknown_turn_and_source_selection_do_not_replay', context => {
+    // Partly: a new configuration takes the place of Python's switch to legacy input and back (owner decision 2026-10-06).
     const c = new Children(context);
     c.root.turn = {status: 'unknown'};
     c.select();
@@ -728,8 +707,11 @@ suite('ChildSessionTest', () => {
     c.root.read = 'read';
     c.advance(1002);
     assert.deepEqual(c.tasks(1002), {});
-    selectLegacy(c.path);
-    assert.equal(c.wall()[0]?.evictionToken, undefined);
+    configure(c.path, c.config);
+    // The pause clears the eviction, so the paused view shows the task again, without an eviction token.
+    const paused = c.wall();
+    assert.equal(paused.length, 1);
+    assert.equal(paused[0]?.evictionToken, undefined);
     assert.throws(() => evictTask(c.path, 'wall', payload), {name: 'ValueError'});
     selectShared(c.path, c.value, 1004);
     assert.throws(() => evictTask(c.path, 'wall', payload), {name: 'ValueError'});
@@ -790,6 +772,7 @@ suite('ChildSessionTest', () => {
   });
 
   test('test_retained_child_tasks_leave_without_disturbing_other_tasks', context => {
+    // Partly: the manual project the bound legacy task carried over is not ported (owner decision 2026-10-06).
     const c = new Children(context);
     const peer = clone(c.root);
     peer.identity.sessionId = 'peer';
@@ -818,7 +801,6 @@ suite('ChildSessionTest', () => {
     c.advance(1001);
     assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'current'], [peerKey]: ['unread', 102, 'current']});
     assert.deepEqual(query(c.path, 'SELECT session,turn,status,started FROM activity WHERE session=?', c.key), before);
-    assert.deepEqual(query(c.path, 'SELECT manual_project FROM task_info WHERE session=?', c.key), [['project']]);
     assert.deepEqual(query(c.path, "SELECT value FROM meta WHERE key='mode'"), [['quiet']]);
     assert.deepEqual(query(c.path, 'SELECT line_id,project,signature,device FROM line_prefs'), [['100', 'project', 1, 'wall']]);
     assert.deepEqual(query(c.path, 'SELECT * FROM sessions WHERE id=?', childKey), []);
@@ -826,6 +808,7 @@ suite('ChildSessionTest', () => {
   });
 
   test('test_child_without_its_parent_shows_only_attention', context => {
+    // Partly: the Lines are those Python gives without the bound legacy task (owner decision 2026-10-06).
     const c = new Children(context);
     const missing = clone(c.root);
     missing.identity.sessionId = 'gone';
@@ -835,10 +818,10 @@ suite('ChildSessionTest', () => {
     c.value.snapshot.sessions.push(orphan);
     c.value = recount(c.value);
     c.select();
-    assert.deepEqual(c.tasks(1000), {[c.key]: ['idle', 100, 'current'], [orphanKey]: ['blocked', 102, 'current']});
+    assert.deepEqual(c.tasks(1000), {[c.key]: ['idle', 102, 'current'], [orphanKey]: ['blocked', 100, 'current']});
     c.set(1, childOf(missing, 'orphan', 'active'));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 102, 'current']});
     assert.deepEqual(query(c.path, 'SELECT id FROM sessions'), [[c.key]]);
   });
 
@@ -1292,6 +1275,7 @@ suite('UndeclaredSourceTest', () => {
   });
 
   test('test_declaring_a_source_later_does_not_replay_comets_or_waves', context => {
+    // Partly: a new configuration takes the place of Python's switch to legacy input and back (owner decision 2026-10-06).
     const c = new Children(context);
     const claude = claudeSession('claude-1', undefined, 'active');
     claude.turn = {status: 'known', id: 'turn'};
@@ -1308,7 +1292,6 @@ suite('UndeclaredSourceTest', () => {
     const first = skipped.notices[0];
     if (first !== undefined) first.id = 'b'.repeat(64);
     c.advance(1001);
-    selectLegacy(c.path);
     const sources = c.config.qualifiedSources as JsonObject[];
     configure(c.path, {...c.config, qualifiedSources: [...sources, CLAUDE]});
     c.value = recount(clone(c.value));
@@ -1332,144 +1315,87 @@ suite('DeclaredSourceConfigTest', () => {
   });
 });
 
-suite('TaskBackupTest', () => {
-  // #120: the legacy task backup and the source switch around it, as whole operations.
-  const BACKED_UP = ['sessions', 'slots', 'waits', 'activity', 'receipts', 'comets', 'task_info'];
-
-  const setup = (context: TestContext): {path: string; config: JsonObject} => {
-    const path = temporary(context);
-    // SelectionTest.setUp and TaskBackupTest.setUp's legacy events, mode and rows, as Python saved them.
-    loadDump(path, recordedSetup('taskBackup'));
-    writeJson(join(path, 'config.json'), {ip: '192.0.2.1', token: 'fake', panelsToken: 'other', devices: {
-      panels: {kind: 'panels', ip: '192.0.2.2', token_ref: 'panelsToken'}}});
-    for (const name of ['scene-state.json', 'scene-state.panels.json']) {
-      writeFileSync(join(path, name), JSON.stringify({scene: {name, brightness: 30}}));
-    }
-    const config = {version: 1, ownerId: 'owner', consumerId: 'nanoleaf', endpoint: 'http://127.0.0.1:12345/api/monitor/v1',
-      tokenFile: join(path, 'token'), clearOnNewTurn: true,
-      qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}],
-      bindings: [{identity: firstSession(envelope()).identity as unknown as JsonObject, legacySessionId: 'legacy'}]};
+suite('shared input only', () => {
+  // The port keeps no legacy input (owner decision, Hub #26, 2026-10-06). Python changed its configuration only from
+  // legacy input; here a new configuration pauses shared input until it is selected again.
+  test('a new configuration pauses shared input, and selecting it again resumes with retained epochs', context => {
+    const {path, config} = selectionSetup(context);
+    const value = envelope();
+    firstSession(value).activity = 'active';
+    selectShared(path, value);
+    const epoch = query(path, 'SELECT started FROM activity');
+    write(path, db => {
+      execute(db, "INSERT INTO comets (session,turn,queued,source,started,device) VALUES (?,'t',1000,NULL,NULL,'wall')", KEY);
+      execute(db, "INSERT INTO receipts VALUES (?,'t',1000,0)", KEY);
+    });
     configure(path, config);
-    return {path, config};
-  };
-
-  const snapshot = (path: string): Record<string, unknown> => {
-    const tables: Record<string, unknown> = {};
-    for (const table of [...BACKED_UP, 'projects', 'line_prefs', 'map_settings']) tables[table] = byText(query(path, 'SELECT * FROM ' + table));
-    tables.modes = byText(query(path, "SELECT key,value FROM meta WHERE key LIKE 'mode%'"));
-    tables.scenes = ['scene-state.json', 'scene-state.panels.json'].map(name => readFileSync(join(path, name), 'utf8'));
-    return tables;
-  };
-
-  test('test_stored_backup_keeps_each_row_in_table_column_order', context => {
-    const {path} = setup(context);
-    const expected = Object.fromEntries(BACKED_UP.map(table => [table, byText(query(path, 'SELECT * FROM ' + table))]));
-    selectShared(path);
-    const stored = JSON.parse(String(query(path, 'SELECT backup FROM shared_input WHERE id=1')[0]?.[0])) as Record<string, Row[]>;
-    assert.deepEqual(new Set(Object.keys(stored)), new Set(BACKED_UP));
-    assert.deepEqual(Object.fromEntries(Object.entries(stored).map(([table, values]) => [table, byText(values)])), expected);
-  });
-
-  test('test_cutover_and_rollback_preserve_legacy_state_and_carry_bound_choices', context => {
-    const {path} = setup(context);
-    const before = snapshot(path) as Record<string, Row[]>;
-    selectShared(path);
-    // Only the bound task crosses over, keeping its placements, epoch and manual project.
-    assert.deepEqual(byText(query(path, 'SELECT session,slot,device FROM slots')), byText([[KEY, 0, 'wall'], [KEY, 4, 'panels']]));
-    assert.deepEqual(query(path, 'SELECT manual_project FROM task_info'), [['project']]);
-    write(path, db => {
-      execute(db, "UPDATE slots SET slot=5 WHERE session=? AND device='wall'", KEY);
-      execute(db, "UPDATE slots SET slot=6 WHERE session=? AND device='panels'", KEY);
-      execute(db, "UPDATE task_info SET manual_project='chosen' WHERE session=?", KEY);
-    });
-    const sharedProject = query(path, 'SELECT project FROM task_info')[0]?.[0] ?? null;
-    selectLegacy(path);
-    for (let repeat = 0; repeat < 2; repeat += 1) {
-      const after = snapshot(path) as Record<string, Row[]>;
-      assert.equal(sharedState(path).source, 'legacy');
-      for (const table of ['sessions', 'waits', 'activity', 'modes', 'scenes', 'line_prefs', 'map_settings']) {
-        assert.deepEqual(after[table], before[table], table);
-      }
-      assert.deepEqual(after.receipts, []);
-      assert.deepEqual(after.comets, []);
-      const projects = new Set((after.projects ?? []).map(row => JSON.stringify(row)));
-      assert.ok((before.projects ?? []).every(row => projects.has(JSON.stringify(row))));
-      assert.deepEqual(after.slots, byText([...(before.slots ?? []).filter(row => row[0] !== 'legacy'), ['legacy', 5, 'wall'], ['legacy', 6, 'panels']]));
-      const legacy = (before.task_info ?? []).find(row => row[0] === 'legacy');
-      assert.ok(legacy !== undefined);
-      assert.deepEqual(after.task_info, byText([...(before.task_info ?? []).filter(row => row[0] !== 'legacy'),
-        [...legacy.slice(0, 3), sharedProject, 'chosen', ...legacy.slice(5)]]));
-    }
-  });
-
-  test('test_failed_cutover_leaves_legacy_state_untouched', context => {
-    const {path} = setup(context);
-    const before = snapshot(path);
-    // Python patched project_envelope to fail; a metadata reader that fails inside the projection does the same here.
-    class Failing extends Metadata {
-      override syncCatalog(): boolean {
-        throw new Error('projection failed');
-      }
-    }
-    assert.throws(() => write(path, db => selectSource(db, {source: 'shared', envelope: envelope(), instant: 1000,
-      targets: registeredDevices(path), metadata: new Failing({})})), /projection failed/);
-    assert.deepEqual(snapshot(path), before);
-    assert.deepEqual(query(path, 'SELECT source,generation,backup FROM shared_input'), [['legacy', 1, null]]);
-  });
-
-  test('test_switch_operations_stay_inside_the_callers_transaction', context => {
-    const {path, config} = setup(context);
-    const bindings = (config.bindings ?? []) as unknown as SharedConfig['bindings'];
-    const operate = (action: (db: Parameters<typeof saveLegacyTasks>[0]) => void): Row[] => {
-      const before = snapshot(path);
-      const changed = withState(path, db => {
-        db.exec('BEGIN IMMEDIATE');
-        // The port's switch operations take the caller's connection; they cannot open another.
-        action(db);
-        assert.equal(db.isTransaction, true, 'no hidden commit');
-        const result = rows(db, 'SELECT * FROM slots');
-        db.exec('ROLLBACK');
-        return result;
-      });
-      assert.deepEqual(snapshot(path), before);
-      return changed;
-    };
-    assert.deepEqual(byText(operate(db => saveLegacyTasks(db, bindings))), byText([[KEY, 0, 'wall'], [KEY, 4, 'panels']]));
-    selectShared(path);
-    write(path, db => execute(db, "UPDATE slots SET slot=3 WHERE session=? AND device='wall'", KEY));
-    const restored = operate(db => restoreLegacyTasks(db, bindings));
-    assert.ok(restored.some(row => JSON.stringify(row) === JSON.stringify(['legacy', 3, 'wall'])));
-    assert.ok(!restored.some(row => row[0] === KEY));
-  });
-
-  test('test_malformed_backup_rows_are_rejected', context => {
-    const {path} = setup(context);
-    withState(path, db => {
-      db.exec('BEGIN IMMEDIATE');
-      const saved = dumpTables(db);
-      for (const [table, row] of [['sessions', ['a', 't']], ['slots', ['a']], ['comets', ['a', 't', 1.0]], ['task_info', 'not-a-row']] as const) {
-        throwsFeed(() => restoreTables(db, {...saved, [table]: [row]}), 'invalid-backup');
-      }
-      const damaged = Object.fromEntries(Object.entries(saved).filter(([table]) => table !== 'waits'));
-      for (const value of [null, [], damaged]) throwsFeed(() => restoreTables(db, value), 'invalid-backup');
-      assert.equal(BACKUP_TABLES.length, 7);
-      db.exec('ROLLBACK');
-    });
-  });
-
-  test('test_damaged_backup_refuses_rollback_without_partial_restore', context => {
-    // Python ran this through the shared-select command; its fixed error output is the command line's, which is not ported.
-    const {path} = setup(context);
-    selectShared(path);
-    write(path, db => {
-      const saved = JSON.parse(String(rows(db, 'SELECT backup FROM shared_input WHERE id=1')[0]?.[0])) as Record<string, unknown[]>;
-      saved.task_info?.push(['damaged', 'row']); // Every earlier table would already be restored.
-      execute(db, 'UPDATE shared_input SET backup=? WHERE id=1', JSON.stringify(saved));
-    });
-    const before = snapshot(path);
-    throwsFeed(() => selectLegacy(path), 'invalid-backup');
-    assert.deepEqual(snapshot(path), before);
+    assert.equal(sharedState(path).source, NOT_SELECTED);
+    for (const table of ['comets', 'receipts', 'display_v3']) assert.deepEqual(query(path, 'SELECT * FROM ' + table), [], table);
+    assert.deepEqual(query(path, 'SELECT session FROM shared_stale'), [[KEY]]);
+    assert.deepEqual(query(path, 'SELECT id,status FROM sessions'), [[KEY, 'working']]);
+    const next = clone(value);
+    next.snapshot.revision += 1;
+    assert.equal(accept(path, next, 1001), false, 'a paused source accepts nothing');
+    selectShared(path, next, 1002);
     assert.equal(sharedState(path).source, 'shared');
+    assert.deepEqual(query(path, 'SELECT * FROM shared_stale'), []);
+    assert.deepEqual(query(path, 'SELECT started FROM activity'), epoch);
+    assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
+  });
+
+  test('a running comet refuses a new configuration', context => {
+    const {path, config} = selectionSetup(context);
+    selectShared(path);
+    const before = savedRows(path);
+    write(path, db => execute(db, "INSERT INTO comets (session,turn,queued,source,started,device) VALUES (?,'t',1000,0,1000,'wall')", KEY));
+    throwsFeed(() => configure(path, config), 'active-comet');
+    assert.equal(sharedState(path).source, 'shared');
+    assert.deepEqual(query(path, 'SELECT session,started FROM comets'), [[KEY, 1000]]);
+    write(path, db => execute(db, 'DELETE FROM comets'));
+    assert.deepEqual(savedRows(path), before);
+  });
+
+  test('selecting shared input while it is selected changes nothing', context => {
+    // Python's select_source returned at once for the current source.
+    const {path} = selectionSetup(context);
+    selectShared(path);
+    const before = savedRows(path);
+    const next = envelope();
+    next.snapshot.revision += 1;
+    firstSession(next).activity = 'active';
+    selectShared(path, next, 1001);
+    assert.deepEqual(savedRows(path), before);
+  });
+
+  test('a paused idle task keeps its Line', context => {
+    // Shared input's display rules apply while it is paused: an idle task stays visible, so a waiting task cannot take
+    // its Line, and it keeps that Line when shared input is selected again.
+    const one = {line_groups: [[100, 101]], line_positions: [[0, 0]]};
+    const c = new Children(context);
+    c.select();
+    c.root.read = 'read';
+    c.advance(1001);
+    const peer = clone(c.root);
+    peer.identity.sessionId = 'peer';
+    peer.activity = 'active';
+    c.value.snapshot.sessions.push(peer);
+    c.advance(1002);
+    const placed = (instant: number): Row[] => write(c.path, db => {
+      dashboard(db, one, instant);
+      return rows(db, "SELECT session,slot FROM slots WHERE device='wall'");
+    });
+    assert.deepEqual(query(c.path, 'SELECT id,status FROM sessions ORDER BY status'), [[c.key, 'idle'], [identityKey(peer.identity), 'working']]);
+    assert.deepEqual(placed(1002), [[c.key, 0]]);
+    configure(c.path, c.config);
+    assert.deepEqual(placed(1003), [[c.key, 0]]);
+    selectShared(c.path, c.value, 1004);
+    assert.deepEqual(placed(1004), [[c.key, 0]]);
+  });
+
+  test('a configuration with legacy bindings is refused', () => {
+    const config = selectionConfig('/synthetic');
+    validateConfig(config);
+    throwsFeed(() => validateConfig({...config, bindings: []}), 'invalid-config');
   });
 });
 

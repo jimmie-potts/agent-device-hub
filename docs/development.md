@@ -1635,23 +1635,26 @@ interface.
 
 The port is split into slices by area:
 
-- **Slice 1:** session-to-Line projection, shared and legacy source switching,
+- **Slice 1:** session-to-Line projection, shared input selection,
   Codex metadata, Line placement, NL22 enrollment, and the device registry,
   layout and database migration they need.
 - **Slice 2a:** device configuration loading, Line pairing, map geometry and
   the renderer, with the display encoder it shares with effects.
 - **Slice 2b:** effects, saved animation favorites and the Nanoleaf HTTP
   client, including device pairing (`pair`).
-- **Slice 3:** the worker, legacy hook input, modes, scenes, comets, edits and
-  the control execution half of `controller_state.py`.
+- **Slice 3:** removing the legacy input slice 1 ported (3a; the port keeps
+  shared input only, owner decision 2026-10-06), then the worker, modes,
+  scenes, comets, edits and the control execution half of
+  `controller_state.py`.
 
 The translated Python tests keep their class and method names. A replay of
 recorded Python sequences compares, after every step, the results and the rows of
 `sessions`, `activity`, `task_info`, `slots`, `comets`, `waits`, `receipts`,
 `shared_stale`, `shared_suppressed_waves`, `shared_evictions`, `projects`,
 `line_prefs`, `map_settings`, `meta` and `display_v3`, plus the `shared_input`
-row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
-`shared_ack` and `shared_input.config` are not compared.
+row's `source`, `generation`, `received`, `connection` and `error`, and its
+envelope by hash. `palette`, `map_pending`, `locate`, `shared_ack` and the
+`shared_input` row's `config` and `backup` are not compared.
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
 discovery and malformed Lines replies, color parsing, every effect pattern's
