@@ -14,7 +14,8 @@ import type {RenderConfig} from '../src/renderer.js';
 import {execute} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import {updateDisplay} from '../src/worker.js';
-import {Clock, completion, query, setMode, suite, taskRow, temporary, test, wallView, write, writeAsync, type WallView} from './support.js';
+import {Clock, completion, query, setMode, suite, taskRow, temporary, test, wallView, write, type WallView} from './support.js';
+import {moduleDatabase} from './worker-support.js';
 
 /** SceneTest.setUp's configuration. */
 const CONFIG: RenderConfig = {ip: '192.168.1.207', token: 'PRIVATE_TEST_TOKEN',
@@ -311,7 +312,7 @@ suite('ProjectTest', () => {
       return endpoint === '/state' ? Promise.reject(new Error('Brightness update failed after effect acceptance')) : Promise.resolve(null);
     }};
     const snapshot: Indication[] = [['working', 1999], ...Array.from({length: 14}, () => null)];
-    await assert.rejects(writeAsync(p.directory, async db => updateDisplay(db, config, snapshot, 2000, false)), /Brightness update failed/);
+    await assert.rejects(updateDisplay(moduleDatabase(context, p.directory)(), config, snapshot, 2000, false), /Brightness update failed/);
     assert.deepEqual(calls, ['/effects', '/state']);
     assert.deepEqual(JSON.parse(String(query(p.directory, "SELECT value FROM meta WHERE key='rendering_receipt'")[0]?.[0])), receipt);
     write(p.directory, db => execute(db, "INSERT OR REPLACE INTO meta VALUES ('control_error','Brightness update failed after effect acceptance')"));

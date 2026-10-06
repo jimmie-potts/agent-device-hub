@@ -61,26 +61,29 @@ export function number(row: Row, index: number): number {
   return value;
 }
 
-/** Python's `with db:` around an explicit BEGIN: commit on success, roll back on any error. */
-export function transaction<T>(db: Db, body: () => T, begin = 'BEGIN IMMEDIATE'): T {
-  db.exec(begin);
-  try {
-    const result = body();
-    db.exec('COMMIT');
-    return result;
-  } catch (error) {
-    if (db.isTransaction) db.exec('ROLLBACK');
-    throw error;
-  }
-}
+/** A result that is not a promise: the work runs inside a synchronous SQLite transaction, as the SDK's outbox requires. */
+export type Synchronous<R> = R extends PromiseLike<unknown> ? never : R;
 
-/** transaction() around an asynchronous body, such as one that sends to a device while it holds the write lock. */
-export async function transactionAsync<T>(db: Db, body: () => Promise<T>, begin = 'BEGIN IMMEDIATE'): Promise<T> {
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') && value !== null && 'then' in value && typeof value.then === 'function';
+
+/**
+ * Python's `with db:` around an explicit BEGIN: commit on success, roll back on any error. The body is synchronous: no
+ * transaction stays open across a wait or a device request. Its type refuses a promise. One returned anyway is refused
+ * with a `TypeError`, which rolls back only the work done before the body's first await; writes after it run outside
+ * the transaction.
+ */
+export function transaction<T>(db: Db, body: () => Synchronous<T>, begin = 'BEGIN IMMEDIATE'): T {
   db.exec(begin);
   try {
-    const result = await body();
-    if (db.isTransaction) db.exec('COMMIT');
-    return result;
+    const result: unknown = body();
+    if (isThenable(result)) {
+      // Leave the returned promise handled: its outcome no longer matters once the work is refused.
+      result.then(undefined, () => {});
+      throw new TypeError('the transaction\'s work must be synchronous');
+    }
+    db.exec('COMMIT');
+    return result as T;
   } catch (error) {
     if (db.isTransaction) db.exec('ROLLBACK');
     throw error;

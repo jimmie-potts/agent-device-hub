@@ -7,16 +7,17 @@ import {describe, test as nodeTest, type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {copyJson, isObject, sha256Hex, type Json, type JsonObject} from '../src/compat.js';
 import {registeredDevices} from '../src/configuration.js';
-import {connectState, withState} from '../src/database.js';
+import {withState} from '../src/database.js';
 import {columns, DEFAULT, deviceOf, elements, type DeviceConfig} from '../src/devices.js';
 import * as edits from '../src/edits.js';
 import {readJson} from '../src/jsonfile.js';
+import type {Report} from '../src/journal.js';
 import {setMode as commandMode} from '../src/modes.js';
 import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
 import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
   type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
-import {execute, rows, transaction, transactionAsync, type Db, type Row, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, transaction, type Db, type Row, type SqlValue, type Synchronous} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
 
 /** node:test's test(), whose returned promise the runner awaits itself. */
@@ -45,17 +46,7 @@ export const query = (directory: string, sql: string, ...params: readonly SqlVal
   withState(directory, db => rows(db, sql, ...params));
 
 /** Run `body` in one immediate transaction on the saved state. */
-export const write = <T>(directory: string, body: (db: Db) => T): T => withState(directory, db => transaction(db, () => body(db)));
-
-/** Run an asynchronous `body` in one immediate transaction on its own connection to the saved state. */
-export async function writeAsync<T>(directory: string, body: (db: Db) => Promise<T>): Promise<T> {
-  const db = connectState(directory);
-  try {
-    return await transactionAsync(db, () => body(db));
-  } finally {
-    db.close();
-  }
-}
+export const write = <T>(directory: string, body: (db: Db) => Synchronous<T>): T => withState(directory, db => transaction<T>(db, () => body(db)));
 
 export interface TableDump {
   columns: string[];
@@ -235,8 +226,14 @@ export class Feed {
 }
 
 /** modes.set_mode: an explicit mode command for one device, without the worker launch. */
-export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT): boolean =>
-  write(directory, db => commandMode(db, mode, instant, device));
+/** A mode command from a test; by default no queued command may end, since these tests journal none. */
+export const setMode = (directory: string, mode: string, instant = 1000, device: string = DEFAULT, report: Report = unreported): boolean =>
+  write(directory, db => commandMode(db, mode, instant, report, device));
+
+/** A report for code that journals no command: any message fails the test. */
+export const unreported: Report = message => {
+  throw new Error(`Unexpected report ${JSON.stringify(message)}.`);
+};
 
 /**
  * A new working task saved as rows, for tests whose subject is not task input. They are the rows Python's prompt hook event

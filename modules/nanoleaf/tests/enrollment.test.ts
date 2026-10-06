@@ -301,7 +301,7 @@ suite('FreeStartTest', () => {
     await e.enroll();
     e.fake.seen = [];
     const clock = new ManualClock();
-    assert.equal(await runUntil({directory: e.directory, device: 'panels', request: e.fake.request}, clock, 1025), true);
+    assert.equal(await runUntil(context, {directory: e.directory, device: 'panels', request: e.fake.request}, clock, 1025), true);
     assert.deepEqual(e.fake.seen, []);
     assert.deepEqual(e.status('panels'), {mode: 'free', pending: false, error: null});
     await assert.rejects(e.enroll({token: ''}), refused('letters and numbers'));

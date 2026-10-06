@@ -21,7 +21,7 @@ import {identityKey, NOT_SELECTED, state} from '../src/shared-input.js';
 import {execute, rows, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import {completion, envelope, evictTask, Feed, firstSession, fixtureJson, query, refuse, selectionSetup, selectShared, setMode, suite,
-  taskRow, temporary, test, wallView, write, type FeedChange} from './support.js';
+  taskRow, temporary, test, unreported, wallView, write, type FeedChange} from './support.js';
 
 interface Outcome {
   result?: Json;
@@ -108,7 +108,7 @@ function editStep(db: Db, config: DeviceConfig & {line_groups: number[][]}, step
     case 'currentComet': return currentComet(db, num(first), device);
     case 'dashboard': return dashboard(db, config, num(first));
     case 'query': return rows(db, str(first)).map(row => [...row]);
-    case 'changeMode': return changeMode(db, str(first), num(second), device);
+    case 'changeMode': return changeMode(db, str(first), num(second), unreported, device);
     case 'rendering': {
       const control = controlState(db, device);
       return renderingSnapshot(db, config, control.mode, control.revision !== control.applied, control.error, num(first));

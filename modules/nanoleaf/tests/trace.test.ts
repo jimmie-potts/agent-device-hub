@@ -18,7 +18,7 @@ import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {evict, evictionToken, presented, state, visibleTasks, type Envelope, type PresentedTask, type SharedSession} from '../src/shared-input.js';
 import {acceptEnvelope, markFailed, selectShared} from '../src/shared-source.js';
-import {execute, rows, transaction, type SqlValue} from '../src/sqlite.js';
+import {execute, rows, transaction, type SqlValue, type Synchronous} from '../src/sqlite.js';
 import {markDirty} from '../src/store.js';
 import {fixtureJson, loadDump, metadataReader, suite, temporary, test, type Dump} from './support.js';
 
@@ -67,7 +67,7 @@ function savedState(directory: string): Record<string, unknown> {
 }
 
 function apply(directory: string, trace: Trace, operation: Operation): unknown {
-  const write = <T>(body: (db: Parameters<typeof dashboard>[0]) => T): T => withState(directory, db => transaction(db, () => body(db)));
+  const write = <T>(body: (db: Parameters<typeof dashboard>[0]) => Synchronous<T>): T => withState(directory, db => transaction<T>(db, () => body(db)));
   try {
     switch (operation.op) {
       case 'select': {
