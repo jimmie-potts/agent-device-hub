@@ -32,6 +32,16 @@ const setup = (t, exchange, opts = {}) =>
     ...opts,
   });
 
+// A stalled runner: blocks the event loop past the 10 ms attempt timeout that `setup` configures.
+const stall = (ms = 25) => { const end = performance.now() + ms; while (performance.now() < end) { /* busy-wait */ } };
+// Resolves when the fake transport receives an attempt. Code after `await reached` runs in the same
+// microtask checkpoint as that attempt, so no timer can fire first, even a 10 ms timeout already due.
+function arrival() {
+  let signal;
+  const reached = new Promise((resolve) => { signal = resolve; });
+  return { reached, signal };
+}
+
 test("a qualified bulb advertises Work/Quiet/Free; an unqualified one advertises no modes", (t) => {
   const c = setup(t, async () => Buffer.alloc(0));
   assert.deepEqual(c.snapshot("bulb-1").controller.capabilities.modes, { supported: true, values: ["Work", "Quiet", "Free"] });
@@ -201,10 +211,12 @@ test("paintStatus for an unqualified bulb is rejected without traffic or a pendi
 
 test("a generation cancel alone drops a queued paint without traffic and leaves the controller open", async (t) => {
   let started = 0;
-  const c = setup(t, () => { started++; return new Promise(() => {}); });
+  const { reached, signal } = arrival();
+  const c = setup(t, () => { started++; signal(); return new Promise(() => {}); });
   const inFlight = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
   const queued = c.paintStatus("bulb-1", { hue: 1, saturation: 1, brightness: 1, kelvin: 2700 });
-  await new Promise(resolve => setImmediate(resolve));
+  stall(); // the first attempt's 10 ms timeout is now due; cancel must still come before any retry
+  await reached;
   c.cancel("bulb-1");
   const dropped = await queued.done;
   assert.equal(dropped.outcome, "cancelled");
@@ -219,9 +231,11 @@ test("a generation cancel alone drops a queued paint without traffic and leaves 
 
 test("close cancels an in-flight paint", async (t) => {
   let started = 0;
-  const c = setup(t, () => { started++; return new Promise(() => {}); });
+  const { reached, signal } = arrival();
+  const c = setup(t, () => { started++; signal(); return new Promise(() => {}); });
   const first = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
-  await new Promise(resolve => setImmediate(resolve));
+  stall();
+  await reached;
   c.close();
   const receipt = await first.done;
   assert.equal(receipt.outcome, "cancelled");
@@ -231,13 +245,16 @@ test("close cancels an in-flight paint", async (t) => {
 test("closeGracefully lets an in-flight paint finish and cancels every queued one without new traffic", async (t) => {
   let calls = 0;
   let resolveActive;
+  const { reached, signal } = arrival();
   const c = setup(t, async () => {
     calls++;
+    signal();
     if (calls === 1) return new Promise((resolve) => { resolveActive = () => resolve(Buffer.alloc(0)); });
     throw new Error("must not be called: no traffic after the in-flight paint");
   });
   const first = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
-  await new Promise((resolve) => setImmediate(resolve)); // let the first attempt actually reach the transport
+  stall();
+  await reached; // the first attempt reached the transport, and its due timeout has not fired
   assert.equal(calls, 1);
   const second = c.paintStatus("bulb-1", { hue: 1, saturation: 1, brightness: 1, kelvin: 2701 });
   const third = c.paintStatus("bulb-1", { hue: 2, saturation: 2, brightness: 2, kelvin: 2702 });
