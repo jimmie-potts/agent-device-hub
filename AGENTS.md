@@ -77,7 +77,9 @@ handoff; prose alone does not exclude another writer.
 Use one coordinating writer and an isolated branch/worktree per deliverable.
 Preserve other worktrees, branches, installations and their owners. Deliver
 changes through PRs. Independent read-only Standards and Specification reviewers
-must inspect the same committed base/head. A change with observable behavior
+must inspect the same committed base/head, except that one of them may confirm
+the later deltas docs/sdlc.md step 3 lists, with the other axis's verdict carried
+over and recorded in the PR. A change with observable behavior
 also needs an independent Acceptance reviewer. That reviewer runs the same head
 in a disposable verification run, uses it as a person would and has only the
 limited authority in [Acceptance review](docs/sdlc.md#acceptance-review), which
@@ -89,7 +91,7 @@ and conditional job/log inspection; diagnostic access is in docs/development.md.
 Only changes entirely under docs/work-guide/ may use the intentional CI-filter
 exception in docs/sdlc.md; read its evidence requirements before merge or closure.
 Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
-Validate locally, review the local commit, and push only reviewed heads, because CI minutes are limited. Recheck
+Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.

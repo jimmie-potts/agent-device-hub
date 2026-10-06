@@ -281,20 +281,21 @@ permission to replace an owner.
    Obtain successful current sync/archive lookups; synchronize every affected spec
    and archive on the delivery branch before final review. Incomplete tasks,
    missing acceptance or failed lookups prevent archive.
-   CI minutes are limited and every pushed revision runs every applicable
-   job, so validate locally first. Build once, then run the affected `:built`
-   checks before each push. Push only reviewed heads: the first after step 3's
-   reviews, then one per later fix round after its re-review. Prove that a
-   check fails with a local negative control. The one exception to pushing
-   only reviewed heads is a failing probe, pushed only when the issue requires
-   hosted failure evidence. Before review, check every
-   acceptance item against its evidence, search the docs for each fact the
-   change alters, and state limits and remaining uncertainty in the review brief
-   and the PR body.
-2. Commit the candidate and run step 3's reviews, including an Acceptance review
-   when one applies, on that local commit before the first push, so a review fix
-   round costs no CI run. Push the reviewed head and open a PR with
-   Refs #<issue>. Record base, head,
+   Validate locally before every push: build once, then run the affected
+   `:built` checks. Prove that a check fails with a local negative control.
+   Before review, check every acceptance item against its evidence. Search the
+   docs for each fact the change alters. Search at least `README.md`,
+   `AGENTS.md`, `docs/architecture.md`, `docs/development.md`, `docs/sdlc.md`,
+   the ADRs under `docs/decisions/`, the contract documents, the OpenSpec specs
+   and the affected app, package, controller and module READMEs and guides.
+   State limits and remaining uncertainty in the review brief and the PR body.
+2. Commit the candidate, push it once its local checks pass, and open a PR with
+   Refs #<issue>. Start step 3's reviews on that head while hosted CI runs:
+   hosted runners find problems local checks cannot, such as #873, #875 and
+   #877. Push one head per fix round, not intermediate commits. A push that
+   only gathers hosted evidence, such as a failing probe, goes on its own draft
+   PR with no closing keyword, closed unmerged afterwards, never on the head
+   under review. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
    keyword (or variant) before `#<n>` anywhere in the body, including inside an
@@ -305,11 +306,39 @@ permission to replace an owner.
    to clear a reference (the read can lag a few minutes), and read back the
    issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. The comparison's head may be a local
-   commit. A fix that follows CI feedback is re-reviewed before its push. When the change has observable
+   fixed comparison through code-review. When the change has observable
    behavior, also obtain an independent [Acceptance review](#acceptance-review)
    of that comparison. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
+   Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
+   `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
+   owns the issue, the OpenSpec specs and the contract documents. A later delta
+   goes back to both reviewers, with three exceptions that one reviewer
+   confirms:
+   - **Pure rebase:** the range-diff shows every commit identical. Either
+     reviewer confirms it. If the new base changed one axis's sources, or the
+     issue changed since the review, that axis confirms it. If both axes'
+     sources changed, both confirm.
+   - **Documentation only:** the delta changes only Markdown documentation that
+     no tool reads. The axis that owns the changed files confirms it; files
+     that neither axis owns may be confirmed by either. If it changes files that
+     both axes own, both confirm.
+   - **Code comments only:** the delta changes only comments that direct no
+     tool. The Standards reviewer confirms it.
+
+   These still go back to both: any change to an `AGENTS.md`, a `CLAUDE.md` or
+   this file, directive comments such as `@ts-expect-error`, Markdown that a
+   tool reads (such as issue templates or fixtures), a delta that mixes
+   documentation and code comments, and any change to code, schemas, tests or
+   configuration. The confirming reviewer's return names the new head. The
+   other axis's earlier verdict carries over to that head, and the PR body
+   records the carry-over with the range-diff or the diff. The
+   [Acceptance review](#acceptance-review) rules are unchanged.
+   Reviewer briefs say that reviewers make no GitHub writes, including reruns,
+   merges and comments, and that a reviewer that needs a TMPDIR uses a short one
+   outside every checkout; an Acceptance reviewer keeps its own write limits.
+   Merge each story as soon as its gates pass, and start new work from merged
+   main rather than from an unmerged branch.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
