@@ -7,7 +7,11 @@ import * as providers from '../dist/providers.js';
 const source={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'UserPromptSubmit'};
 const raw={session_id:'session',turn_id:'turn',cwd:'/work/café-project',prompt:'CONTENT_CANARY',token:'SECRET_CANARY'};
 async function folder(t){const dir=await mkdtemp(join(tmpdir(),'title-fixture-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;}
+// Title reads race a 100 ms deadline. These tests freeze it with a mocked clock, so a loaded host cannot drop a title
+// and a fail-open result comes from validation, never from the deadline.
+const freezeDeadline=t=>t.mock.timers.enable({apis:['setTimeout']});
 test('Codex reader uses latest matching index title and project basename, including rename',async t=>{
+ freezeDeadline(t);
  const dir=await folder(t),path=join(dir,'session_index.jsonl');
  await writeFile(path,[{id:'other',thread_name:'Other'},{id:'session',thread_name:'First title'},{id:'session',thread_name:'Renamed café'}].map(JSON.stringify).join('\n')+'\n');
  const event=await providers.enrichHook(raw,source,1000,{codexHome:dir});
@@ -15,6 +19,7 @@ test('Codex reader uses latest matching index title and project basename, includ
  await writeFile(path,JSON.stringify({id:'session',thread_name:'Another rename'})+'\n');assert.equal((await providers.enrichHook(raw,source,1001,{codexHome:dir})).title.value,'Another rename');
 });
 test('Claude prefers latest custom-title over ai-title and never copies conversation records',async t=>{
+ freezeDeadline(t);
  const dir=await folder(t),path=join(dir,'session.jsonl');
  await writeFile(path,[{type:'user',message:{content:'CONTENT_CANARY'}},{type:'custom-title',customTitle:'Owner title',sessionId:'session'},{type:'ai-title',aiTitle:'AI title',sessionId:'session'}].map(JSON.stringify).join('\n')+'\n');
  const event=await providers.enrichHook({...raw,transcript_path:path},{...source,provider:'claude',client:'code'},1000);
@@ -22,6 +27,7 @@ test('Claude prefers latest custom-title over ai-title and never copies conversa
  await writeFile(path,JSON.stringify({type:'ai-title',aiTitle:'AI only',sessionId:'session'})+'\n');assert.deepEqual((await providers.enrichHook({...raw,transcript_path:path},{...source,provider:'claude',client:'code'},1001)).title,{value:'AI only',source:'provider'});
 });
 test('missing, malformed, secret-bearing and symlinked sources fail open; child metadata is not inherited',async t=>{
+ freezeDeadline(t);
  const dir=await folder(t),path=join(dir,'session_index.jsonl');
  for(const text of [null,'not json\n',JSON.stringify({id:'session',thread_name:'Bearer '+'s'.repeat(43)})+'\n',JSON.stringify({id:'session',thread_name:'Title\u2028Bearer '+'s'.repeat(43)})+'\n']){
   if(text!==null)await writeFile(path,text);
@@ -33,6 +39,7 @@ test('missing, malformed, secret-bearing and symlinked sources fail open; child 
 });
 
 test('bounded tails, malformed records and Windows project names do not change lifecycle identity',async t=>{
+ freezeDeadline(t);
  const dir=await folder(t),path=join(dir,'session_index.jsonl');
  await writeFile(path,'x'.repeat(1024*1024)+'\n'+JSON.stringify({id:'session',thread_name:'Last valid title'})+'\n');
  const event=await providers.enrichHook({...raw,cwd:'C:\\work\\project'},source,1000,{codexHome:dir});assert.equal(event.title.value,'Last valid title');assert.equal(event.project,'project');assert.equal(event.identity.sessionId,'session');
