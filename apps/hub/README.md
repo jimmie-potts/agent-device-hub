@@ -191,7 +191,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 The hub reads each registered controller at controller contract 1.1 where the controller serves it, and at 1.0 where it does not ([Hub #576](https://github.com/jimmie-potts/agent-device-hub/issues/576)).
 
-Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`, which the dashboard's device reads use since [Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336). The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. A 400 `invalid-request` answer means the controller serves only 1.0, as the Nanoleaf controller and the local controller host do today. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
+Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`, which the dashboard's device reads use since [Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336). The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. An `invalid-request` refusal means the controller serves only 1.0: the local controller host answers 400, and the Nanoleaf controller answers 404 because it treats an unknown read parameter as an unknown route ([Hub #856](https://github.com/jimmie-potts/agent-device-hub/issues/856)). Any other 404, such as `unknown-device`, still fails the read. Hubs before 0.6.2 accepted only the 400, so the dashboard, the MCP `status` tool and automation targets reported the Nanoleaf wall unavailable. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
 
 - Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
 - A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
@@ -626,7 +626,7 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.6.1 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.1 a full owner
+Hub 0.6.2 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.1 a full owner
 lets a new root task displace a finished subagent subtree without attention
 ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Durable 2.1 is not readable
 by owners older than 0.4.0. Package publication is source delivery, not installation;

@@ -16,7 +16,7 @@ import {definePlugin} from '@jimmie-potts/app-verify';
 
 const serve = fileURLToPath(new URL('fixture-consumer-serve.mjs', import.meta.url));
 /** Stand-in faults a test selects in the wrapper, never through the environment. */
-export const FAULTS = ['start-fails', 'no-controller', 'no-feed', 'installed-endpoint'];
+export const FAULTS = ['start-fails', 'no-controller', 'no-feed', 'installed-endpoint', 'versioned-read-fails'];
 
 async function token(runtimeDir, name) {
   const path = join(runtimeDir, name);

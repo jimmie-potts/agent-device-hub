@@ -653,6 +653,12 @@ development only, not citable evidence.
 
 ### Start and pairing
 
+Unless `APP_VERIFY_PROOF_ROOT` is set, the orchestrator gives every adapter the
+Hub's proof root, so consumer receipts and events stay under the canonical Hub
+checkout even when a consumer runs from a disposable checkout. Each composed
+run's receipt then records `roots.proof` as that absolute path, not the
+`<canonical checkout>` label.
+
 `start` records each step in the composition before the next one runs:
 
 1. The wall, then Pixoo, then the Hub start in their default standalone
@@ -679,7 +685,9 @@ development only, not citable evidence.
    - Places pointing Wall at the paired wall run.
 5. Readiness waits up to 60 s for all of these:
    - the Hub's feed answers;
-   - the Hub reads both controllers and reports both devices ready;
+   - the Hub reads both controllers through the dashboard's versioned path
+     (`/api/controllers/v1/<alias>/snapshot?apiVersion=1.1`) and reports both
+     devices ready, so a device card the dashboard cannot load fails readiness;
    - each consumer's own state read (see below) reports its feed `current`
      at the Hub's revision;
    - each run's own `doctor` reports `running` with every read-only check

@@ -3,12 +3,14 @@
 // its name does not match `*.test.mjs`. Hub #335 added command admission through the contract's reference `admit`,
 // scripted answers, a holdable request and a moment spy.
 //
-// const fake = await startFakeController({serves: '1.1'});  // or '1.0' or '1.0-negotiating'
+// const fake = await startFakeController({serves: '1.1'});  // or '1.0', '1.0-negotiating' or '1.0-unknown-route'
 // t.after(fake.close);
 // new ControllerClient(fake.config());                        // or startHub({controllers: [fake.config()]})
 //
 // serves '1.1'             answers apiVersion=1.0 and 1.1 through negotiateApiVersion; a malformed or foreign-major value is invalid-request.
-// serves '1.0'             answers a versioned read with 400 invalid-request, as the Nanoleaf controller and the local controller host do.
+// serves '1.0'             answers a versioned read with 400 invalid-request, as the local controller host does.
+// serves '1.0-unknown-route' answers a versioned read with 404 invalid-request, as the Nanoleaf controller does: it treats an
+//                          unknown read parameter as an unknown route (Hub #856).
 // serves '1.0-negotiating' answers a versioned read with a 1.0 snapshot, the contract's "negotiates but serves only 1.0".
 //
 // POST /commands runs the contract's reference `admit` against the snapshot the fake serves: 202 with the receipt for
@@ -23,7 +25,7 @@ const fixtures=JSON.parse(await readFile(new URL('../fixtures/controller-v1.json
 const fixture=(definition,id)=>structuredClone(fixtures.schemaCases.find(c=>id?c.id===id:c.definition===definition&&c.valid).value);
 
 export const FAKE_CONTROLLER_TOKEN='c'.repeat(43);
-const SERVES=['1.1','1.0','1.0-negotiating'];
+const SERVES=['1.1','1.0','1.0-negotiating','1.0-unknown-route'];
 /** The contract's HTTP mapping for typed failures. Moment failures ride in 200 receipts. */
 const HTTP_STATUS={'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,'revision-conflict':409,'stale-generation':409,
   'request-conflict':409,'request-order':409,'request-expired':410,'unsupported-capability':422,'capacity':429};
@@ -214,8 +216,9 @@ export async function startFakeController(options={}){
       return reply(res,503,{failure:{code:'controller-unavailable'}});
     }
     // Every declared parameter appears once, and nothing else is admitted.
-    const params=[...url.searchParams.keys()],allowed=['deviceId',...(state.serves==='1.0'?[]:['apiVersion'])];
-    if(params.some(name=>!allowed.includes(name))||new Set(params).size!==params.length)return reply(res,400,{failure:{code:'invalid-request'}});
+    const strict=state.serves==='1.0'||state.serves==='1.0-unknown-route';
+    const params=[...url.searchParams.keys()],allowed=['deviceId',...(strict?[]:['apiVersion'])];
+    if(params.some(name=>!allowed.includes(name))||new Set(params).size!==params.length)return reply(res,state.serves==='1.0-unknown-route'?404:400,{failure:{code:'invalid-request'}});
     const deviceId=snapshotV1_0({identity}).identity.deviceId;
     if(url.searchParams.get('deviceId')!==deviceId)return reply(res,404,{failure:{code:'unknown-device'}});
     const requested=url.searchParams.get('apiVersion');

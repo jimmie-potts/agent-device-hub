@@ -82,7 +82,7 @@ export class ControllerClient {
     },waitMs);
   }
   /** One bounded call inside a held slot. */
-  private async send(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+  private async send(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false, versionProbe = false): Promise<{status:number;value:unknown}> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
     const abort = new AbortController(); this.abort = abort;
     const timer = setTimeout(() => abort.abort(),this.timeoutMs);
@@ -99,8 +99,12 @@ export class ControllerClient {
           const codes:Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-input':400,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'monitor-unavailable':503};
           if (typeof value.error.code === 'string' && codes[value.error.code] === response.status) throw new HttpError(value.error.code,response.status);
         }
-        if (optional && response.status === 404 && object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
-            value.failure.code === 'invalid-request') throw new HttpError('unsupported-capability',422);
+        const unknownRoute = response.status === 404 && object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
+          value.failure.code === 'invalid-request';
+        if (optional && unknownRoute) throw new HttpError('unsupported-capability',422);
+        // The Nanoleaf controller refuses an unknown read parameter as an unknown route (Hub #856); for the version probe
+        // that refusal means what the contract's 400 `invalid-request` means.
+        if (versionProbe && unknownRoute) throw new HttpError('invalid-request',404);
         const mapping: Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-request':400,'unknown-device':404,
           'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'unsupported-capability':422};
         if (object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
@@ -122,7 +126,7 @@ export class ControllerClient {
   private async readSnapshot(version: '1.0'|'1.1'): Promise<Snapshot|SnapshotV1_1> {
     // Multi-device owners take the configured device ID; Pixoo serves one device.
     const query = [...(this.config.kind !== 'pixoo' ? ['deviceId=' + encodeURIComponent(this.config.deviceId)] : []),...(version === '1.1' ? ['apiVersion=1.1'] : [])];
-    const {value:result} = await this.send('/snapshot' + (query.length ? '?' + query.join('&') : ''));
+    const {value:result} = await this.send('/snapshot' + (query.length ? '?' + query.join('&') : ''),undefined,false,false,version === '1.1');
     const definition = version === '1.1' && object(result) && result.apiVersion === '1.1' ? 'snapshotV1_1' : 'snapshot';
     if (!validate(definition,result) || (result as Snapshot).identity.controllerId !== this.config.controllerId || (result as Snapshot).identity.deviceId !== this.config.deviceId) {
       this.health = 'unavailable'; throw new HttpError('incompatible-controller',502);
@@ -131,7 +135,8 @@ export class ControllerClient {
   }
   /**
    * Reads at 1.1 where the controller serves it, else at 1.0 (contract 1.1, "Moments"). Only an `invalid-request` refusal of the versioned
-   * read makes a controller `1.0-only`, for the epoch of the unversioned answer. Later reads in that epoch send no version parameter;
+   * read makes a controller `1.0-only`, for the epoch of the unversioned answer: the contract's 400, or the 404 the Nanoleaf controller
+   * answers for an unknown read parameter (Hub #856). Later reads in that epoch send no version parameter;
    * a different epoch probes again. Timeouts, 5xx answers and malformed answers never create, change or clear a verdict.
    * The caller holds the slot, so the probe and its fallback read are one turn.
    */
@@ -144,7 +149,7 @@ export class ControllerClient {
     let answer: Snapshot|SnapshotV1_1;
     try { answer = await this.readSnapshot('1.1'); }
     catch (error) {
-      if (!(error instanceof HttpError) || error.code !== 'invalid-request' || error.status !== 400) throw error;
+      if (!(error instanceof HttpError) || error.code !== 'invalid-request' || (error.status !== 400 && error.status !== 404)) throw error;
       plain ??= await this.readSnapshot('1.0') as Snapshot;
       this.served = {version:'1.0',epoch:plain.identity.controllerEpoch};
       return plain;

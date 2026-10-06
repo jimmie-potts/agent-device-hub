@@ -67,7 +67,9 @@ const controller = createServer(async (req, res) => {
   if (!scenario.controllerToken || req.headers.authorization !== `Bearer ${scenario.controllerToken}`) return send(res, 401, {failure: {code: 'unauthenticated'}});
   let body = '';
   for await (const chunk of req) body += chunk;
-  const path = new URL(req.url, 'http://127.0.0.1').pathname;
+  const url = new URL(req.url, 'http://127.0.0.1'), path = url.pathname;
+  // A controller whose versioned read fails while its plain read works, as the wall did for the dashboard (Hub #856).
+  if (req.method === 'GET' && path === '/controller/v1/snapshot' && url.searchParams.has('apiVersion') && scenario.fault === 'versioned-read-fails') return send(res, 503, {failure: {code: 'monitor-unavailable'}});
   if (req.method === 'GET' && path === '/controller/v1/snapshot') return send(res, 200, snapshot);
   if (req.method === 'GET' && path === '/controller/pixoo-integration/v1/snapshot' && scenario.kind === 'pixoo') return send(res, 200, pixooIntegration);
   if (req.method === 'POST' && path === '/controller/v1/commands') {

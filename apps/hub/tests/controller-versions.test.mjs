@@ -4,6 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {createServer} from 'node:http';
 import {validate} from '@jimmie-potts/device-contracts';
 import {ControllerClient} from '../dist/controllers.js';
 import {startHub} from '../dist/server.js';
@@ -38,6 +39,36 @@ test('a 1.0-only controller costs exactly one fallback read and no further probe
   for(let i=0;i<3;i++)assert.deepEqual(await client.snapshot('1.1'),fake.snapshot10());
   assert.equal(versionedReads(fake).length,1);assert.equal(fake.reads(),5);
   assert.equal(fake.commands.length,0);
+});
+
+// Hub #856: the Nanoleaf controller refuses an unknown read parameter as an unknown route, 404 invalid-request.
+test('a controller that refuses the versioned read with 404 invalid-request is 1.0-only after one fallback read',async t=>{
+  const {fake,client}=await pair(t,{serves:'1.0-unknown-route'});
+  const first=await client.snapshot('1.1');
+  assert.deepEqual(first,fake.snapshot10());assert.ok(validate('snapshot',first));
+  assert.deepEqual(fake.requests.map(r=>r.search),['?deviceId=light&apiVersion=1.1','?deviceId=light']);
+  assert.deepEqual(client.negotiation(),{verdict:'1.0-only',epoch:'runtime-1'});
+  assert.equal(client.status().health,'ready','the refusal is a version verdict, not an outage');
+  for(let i=0;i<3;i++)assert.deepEqual(await client.snapshot('1.1'),fake.snapshot10());
+  assert.equal(versionedReads(fake).length,1);assert.equal(fake.commands.length,0);
+});
+
+test('a 404 refusal with any other body shape is an outage, not a 1.0-only verdict',async t=>{
+  const template=await startFakeController({serves:'1.1'});
+  const server=createServer((req,res)=>{res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({failure:{code:'invalid-request',detail:'x'}}));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const client=new ControllerClient({...template.config(),endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`});
+  t.after(async()=>{client.close();await template.close();await new Promise(resolve=>server.close(resolve));});
+  await assert.rejects(client.snapshot('1.1'),error=>error.code==='controller-unavailable'&&error.status===503);
+  assert.deepEqual(client.negotiation(),{verdict:'unknown'});
+});
+
+test('a 404 for an unknown device on a versioned read still fails and records no verdict',async t=>{
+  const fake=await startFakeController({serves:'1.1'}),client=new ControllerClient({...fake.config(),deviceId:'elsewhere'});
+  t.after(async()=>{client.close();await fake.close();});
+  await assert.rejects(client.snapshot('1.1'),error=>error.code==='unknown-device'&&error.status===404);
+  assert.deepEqual(client.negotiation(),{verdict:'unknown'});
+  assert.equal(versionedReads(fake).length,1,'no fallback read follows an unknown device');
 });
 
 test('a controller that negotiates down answers a versioned read with 1.0 and needs no second read',async t=>{
@@ -171,6 +202,16 @@ test('the snapshot route returns 1.0 by default and 1.1 only on request',async t
   const restarted=await (await get(hub,'/api/controllers/v1/legacy/snapshot?apiVersion=1.1')).json();
   assert.equal(restarted.apiVersion,'1.1');assert.equal(restarted.identity.controllerEpoch,'runtime-2');
   assert.equal(modern.commands.length+legacy.commands.length,0);
+});
+
+test('the snapshot route reads a controller that refuses the versioned read with 404 at 1.0',async t=>{
+  const modern=await startFakeController({serves:'1.1',controllerId:'modern-owner'}),wall=await startFakeController({serves:'1.0-unknown-route',controllerId:'wall-owner'});
+  t.after(async()=>{await modern.close();await wall.close();});
+  const hub=await hubWith(t,modern,wall);
+  const answer=await get(hub,'/api/controllers/v1/legacy/snapshot?apiVersion=1.1');
+  assert.equal(answer.status,200,'the dashboard read no longer reports the controller unavailable');
+  assert.deepEqual(await answer.json(),wall.snapshot10());
+  assert.equal(wall.reads.versioned(),1);assert.equal(wall.commands.length,0);
 });
 
 test('unsupported values and extra parameters answer 400 before any controller read',async t=>{
