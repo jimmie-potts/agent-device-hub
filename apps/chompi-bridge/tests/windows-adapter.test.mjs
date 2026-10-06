@@ -41,10 +41,10 @@ function adapter(win32, helper = fakeHelper(() => ({ ok: false, reason: 'unused'
   return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', env: {}, ...extra });
 }
 
-test('the Windows adapter implements interface version 3', async () => {
+test('the Windows adapter implements interface version 4', async () => {
   const instance = adapter(fakeWin32());
   assert.equal(instance.version, OS_ADAPTER_VERSION);
-  assert.equal(instance.version, 3);
+  assert.equal(instance.version, 4);
   assert.equal(instance.platform, 'win32');
   await instance.close();
 });
@@ -115,6 +115,25 @@ test('openUri validates the link before handing it to the shell', async () => {
   assert.equal(win32.state.opened.length, 2, 'rejected links never reach the shell');
   win32.state.shellResult = 31;
   await assert.rejects(instance.openUri(`codex://threads/${thread}`), error => error.code === 'open-uri-failed' && error.shellResult === 31);
+});
+
+test('sendVolumeKey sends system volume keys through the held-key tracker, with no window check (#865)', async () => {
+  const win32 = fakeWin32({ family: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe' });
+  const helper = fakeHelper(() => { throw new Error('no UI Automation for volume'); });
+  const instance = adapter(win32, helper);
+  await instance.sendVolumeKey('VolumeDown', 2);
+  await instance.sendVolumeKey('VolumeMute', 1);
+  assert.deepEqual(win32.state.sent, [
+    [{ vk: 0xae, up: false }, { vk: 0xae, up: true }, { vk: 0xae, up: false }, { vk: 0xae, up: true }],
+    [{ vk: 0xad, up: false }, { vk: 0xad, up: true }],
+  ]);
+  assert.equal(helper.calls.length, 0, 'no foreground, composer or card check');
+  await instance.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
+  await assert.rejects(instance.sendVolumeKey('VolumeUp', 1), error => error.code === 'keys-held');
+  await assert.rejects(instance.sendVolumeKey('Enter', 1), error => error.code === 'invalid-volume-request');
+  assert.equal(win32.state.sent.length, 3, 'only the chord after the two volume taps');
+  await instance.close();
+  await assert.rejects(instance.sendVolumeKey('VolumeUp', 1), error => error.code === 'adapter-closed');
 });
 
 test('sendKeys and releaseAll go through the held-key tracker', async () => {

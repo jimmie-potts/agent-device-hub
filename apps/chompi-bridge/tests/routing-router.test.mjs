@@ -1116,9 +1116,10 @@ test('other encoder turns are inert', async t => {
   const ctx = await setup(t, { sessions: [codexTask(1)] });
   await ctx.focus(1);
   ctx.adapter.keys.length = 0;
-  for (const control of [41, 42, 43, 44, 46]) { ctx.turn(control, 2); await settle(); }
+  for (const control of [41, 42, 43, 44]) { ctx.turn(control, 2); await settle(); }
   assert.equal(ctx.adapter.count('scrollClient'), 0);
   assert.equal(ctx.adapter.count('cardButtons'), 0);
+  assert.equal(ctx.adapter.count('sendVolumeKey'), 0);
   assert.deepEqual(ctx.adapter.keys, []);
 });
 
@@ -1760,4 +1761,268 @@ test('close releases held keys and stops timers', async t => {
   assert.equal(ctx.adapter.held.size, 0);
   assert.equal(ctx.clock.pending, 0);
   await ctx.slots.flush();
+});
+
+// The Attention key and the volume knob (#865)
+
+const ATTENTION = 16, VOLUME_TURN = 46, VOLUME_CLICK = 34, ATTENTION_LED = 15, VOLUME_LED = 34;
+const REPEAT = PROFILE.timing.attentionRepeatMs;
+/** Hub records for Codex tasks 1-n, with attention on the listed task numbers. */
+const tasksWith = (n, attention = {}) => Array.from({ length: n }, (_, i) => codexTask(i + 1, attention[i + 1] ? { attention: [attention[i + 1]] } : {}));
+const opened = ctx => ctx.adapter.opened.map(uri => uri.replace(/^codex:\/\/threads\/019a0000-0000-7000-8000-0*/, 'task '));
+
+test('attention: the key opens the task the bridge first saw waiting, on whatever page it sits, and shows that page', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(20, { 18: 'approval' }) });
+  ctx.feed(tasksWith(20, { 18: 'approval', 3: 'question' }));
+  await ctx.click(ATTENTION);
+  await settle();
+  assert.deepEqual(opened(ctx), ['task 18'], 'slot 18 waited first, though slot 3 comes first in slot order');
+  assert.equal(page(ctx), 2, 'the visible page switches to the target\'s page');
+  assert.deepEqual(ctx.lastLog('page'), { type: 'page', page: 2, pages: 4 });
+  assert.deepEqual(focused(ctx), [18], 'through the same open and verify path as a slot key');
+  assert.deepEqual(ctx.lastLog('attention-open'), { type: 'attention-open', slot: 18, waiting: 2 });
+});
+
+test('attention: a repeat press within the window moves on to the next waiting task and wraps around; a later press starts over', async t => {
+  assert.equal(REPEAT, 4000);
+  const ctx = await setup(t, { sessions: tasksWith(20, { 2: 'input' }) });
+  ctx.feed(tasksWith(20, { 2: 'input', 17: 'approval' }));
+  ctx.feed(tasksWith(20, { 2: 'input', 17: 'approval', 5: 'question' }));
+  for (let i = 0; i < 4; i++) { await ctx.click(ATTENTION); await advance(ctx.clock, 200); }
+  assert.deepEqual(opened(ctx), ['task 2', 'task 17', 'task 5', 'task 2'], 'first-seen order, then around again');
+  assert.equal(page(ctx), 1);
+  await advance(ctx.clock, REPEAT);
+  ctx.feed(tasksWith(20, { 17: 'approval', 5: 'question' }));
+  await ctx.click(ATTENTION);
+  await settle();
+  assert.deepEqual(opened(ctx).at(-1), 'task 17', 'after the window the earliest still waiting opens again');
+  assert.equal(page(ctx), 2);
+});
+
+test('attention: a task answered since the last press drops out, and the next press within the window still moves on', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(5, { 1: 'approval' }) });
+  ctx.feed(tasksWith(5, { 1: 'approval', 2: 'approval' }));
+  ctx.feed(tasksWith(5, { 1: 'approval', 2: 'approval', 3: 'approval' }));
+  await ctx.click(ATTENTION);
+  ctx.feed(tasksWith(5, { 2: 'approval', 3: 'approval' }));
+  await ctx.click(ATTENTION);
+  assert.deepEqual(opened(ctx), ['task 1', 'task 2']);
+});
+
+test('attention: order is first seen in bridge memory; attention that clears and returns goes to the back', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(4, { 1: 'approval' }) });
+  ctx.feed(tasksWith(4, { 1: 'approval', 4: 'approval' }));
+  ctx.feed(tasksWith(4, { 4: 'approval' }));
+  ctx.feed(tasksWith(4, { 1: 'approval', 4: 'approval' }));
+  await ctx.click(ATTENTION);
+  assert.deepEqual(opened(ctx), ['task 4']);
+  // A restarted bridge has no memory of the order: it orders what it sees in one snapshot by slot.
+  const fresh = await setup(t, { sessions: tasksWith(4, { 1: 'approval', 4: 'approval' }) });
+  await fresh.click(ATTENTION);
+  assert.deepEqual(opened(fresh), ['task 1']);
+});
+
+test('attention: with nothing waiting the key refuses with a red flash, opens nothing and asks the desktop nothing', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(3) });
+  const calls = ctx.adapter.calls.length;
+  await ctx.click(ATTENTION);
+  await settle();
+  assert.equal(ctx.adapter.calls.length, calls, 'no adapter call');
+  assert.deepEqual(ctx.adapter.opened, []);
+  assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'none-waiting' });
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.error);
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0], 'the flash ends');
+  assert.equal(page(ctx), 1, 'the page does not change');
+});
+
+test('attention: a stale feed refuses, because waiting is unknown; the key light is off', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(3, { 2: 'approval' }) });
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention);
+  ctx.feed(tasksWith(3, { 2: 'approval' }), 'stale');
+  await settle();
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
+  await ctx.click(ATTENTION);
+  assert.deepEqual(ctx.adapter.opened, []);
+  assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'feed-stale' });
+  ctx.feed(tasksWith(3, { 2: 'approval' }));
+  await ctx.click(ATTENTION);
+  assert.deepEqual(opened(ctx), ['task 2'], 'the order survives a stale spell');
+});
+
+test('attention: the key light shows the attention color while any task waits, on any page, and off otherwise', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(20) });
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
+  ctx.feed(tasksWith(20, { 19: 'question' }));
+  await settle();
+  for (let i = 0; i < 3; i++) {
+    assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention, 'steady while a task on hidden page 2 waits');
+    await advance(ctx.clock, PROFILE.timing.attentionPulseMs / 2, 50);
+  }
+  ctx.feed(tasksWith(20));
+  await settle();
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], [0, 0, 0]);
+});
+
+test('attention: the key never acknowledges anything and the task keeps its attention', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(2, { 1: 'approval' }) });
+  await ctx.click(ATTENTION);
+  await settle();
+  assert.deepEqual(focused(ctx), [1]);
+  assert.equal(ctx.router.status().slots[0].state, 'attention', 'attention stays');
+  assert.deepEqual(ctx.lights.last[ATTENTION_LED], PROFILE.colors.attention, 'the key still shows a task waiting');
+  assert.equal(typeof ctx.router.acknowledge, 'undefined', 'the router has no Hub write path');
+  assert.deepEqual(ctx.adapter.keys, [{ action: 'tap', keys: ['LeftAlt', 'L'] }], 'only the composer shortcut a slot key also types');
+});
+
+test('attention: a slot beyond the profile\'s pages has no visible key, so the Attention key skips it', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(20, { 18: 'approval' }), profile: withProfile({ pages: { count: 2 } }) });
+  ctx.router.setProfile(withProfile({ pages: { count: 1 } }));
+  await ctx.click(ATTENTION);
+  assert.deepEqual(ctx.adapter.opened, []);
+  assert.deepEqual(ctx.lastLog('attention-refused'), { type: 'attention-refused', reason: 'none-waiting' });
+});
+
+test('attention: the key follows the profile map; an unmapped black key does nothing', async t => {
+  const ctx = await setup(t, { sessions: tasksWith(2, { 2: 'approval' }), profile: withProfile({ keys: { 20: 'attention' } }) });
+  const calls = ctx.adapter.calls.length;
+  await ctx.click(ATTENTION);
+  assert.equal(ctx.adapter.calls.length, calls);
+  assert.equal(ctx.lastLog('attention-refused'), undefined);
+  await ctx.click(20);
+  assert.deepEqual(opened(ctx), ['task 2']);
+});
+
+test('back on a black key acts like Loop: it ends dictation and is the Claude release gesture', async t => {
+  const ctx = await setup(t, { sessions: [claudeTask(1), claudeTask(2)], profile: withProfile({ keys: { 16: 'attention', 17: 'back' } }) });
+  ctx.press(RECORD);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 2);
+  ctx.press(17);
+  await settle();
+  assert.equal(ctx.adapter.held.size, 0, 'the chord is released');
+  assert.equal(ctx.lastLog('invalidated').reason, 'back');
+  ctx.release(17);
+  ctx.release(RECORD);
+  ctx.press(SLOT(2));
+  await advance(ctx.clock, PROFILE.timing.releaseHoldMs + 50, 50);
+  ctx.press(17);
+  await settle();
+  assert.equal(ctx.slots.get(2), undefined);
+  assert.equal(ctx.lastLog('slot-released').reason, 'release-gesture');
+});
+
+test('volume: each detent of the volume knob sends one volume key to the system, never to a window', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)] });
+  front(ctx, 'codex');
+  const calls = ctx.adapter.calls.length;
+  ctx.turn(VOLUME_TURN, 3);
+  await settle();
+  ctx.turn(VOLUME_TURN, -2);
+  await settle();
+  assert.deepEqual(ctx.adapter.volumeKeys, [{ key: 'VolumeUp', presses: 3 }, { key: 'VolumeDown', presses: 2 }], 'clockwise raises the volume');
+  assert.deepEqual(ctx.adapter.calls.slice(calls).map(c => c[0]), ['sendVolumeKey', 'sendVolumeKey'], 'no foreground, composer or card check');
+  assert.deepEqual(ctx.adapter.keys, [], 'nothing is typed into the client');
+  assert.equal(ctx.adapter.enters, 0);
+  assert.deepEqual(ctx.lastLog('volume'), { type: 'volume', key: 'VolumeDown', presses: 2 });
+  ctx.adapter.foreground = TERMINAL;
+  ctx.turn(VOLUME_TURN, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.volumeKeys.at(-1), { key: 'VolumeUp', presses: 1 }, 'whatever is in front');
+});
+
+test('volume: steps and direction come from the profile, and a reversal restarts the count', async t => {
+  const ctx = await setup(t, { profile: withProfile({ volume: { stepCounts: 3, invert: true } }) });
+  ctx.turn(VOLUME_TURN, 7);
+  await settle();
+  assert.deepEqual(ctx.adapter.volumeKeys, [{ key: 'VolumeDown', presses: 2 }], 'inverted: clockwise lowers');
+  ctx.turn(VOLUME_TURN, -2);
+  ctx.turn(VOLUME_TURN, 2);
+  await settle();
+  assert.equal(ctx.adapter.volumeKeys.length, 1, 'a wiggle never steps');
+});
+
+test('volume: the knob\'s click toggles mute once per click', async t => {
+  const ctx = await setup(t);
+  await ctx.click(VOLUME_CLICK);
+  await ctx.click(VOLUME_CLICK);
+  assert.deepEqual(ctx.adapter.volumeKeys, [{ key: 'VolumeMute', presses: 1 }, { key: 'VolumeMute', presses: 1 }]);
+  assert.equal(ctx.adapter.enters, 0);
+});
+
+test('volume: while Record holds the dictation chord, the knob is ignored and never joins the chord', async t => {
+  const ctx = await setup(t);
+  ctx.press(RECORD);
+  await settle();
+  ctx.turn(VOLUME_TURN, 2);
+  await ctx.click(VOLUME_CLICK);
+  await settle();
+  assert.equal(ctx.adapter.count('sendVolumeKey'), 0, 'no volume key while the chord is down');
+  assert.deepEqual([...ctx.adapter.held].sort(), ['LeftControl', 'LeftWindows'], 'the chord is untouched');
+  assert.deepEqual(ctx.logs.filter(l => l.type === 'volume-ignored').map(l => l.reason), ['dictating', 'dictating']);
+  assert.deepEqual(ctx.lights.last[VOLUME_LED], PROFILE.colors.error, 'the volume LED flashes');
+  ctx.release(RECORD);
+  await settle();
+  ctx.turn(VOLUME_TURN, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.volumeKeys, [{ key: 'VolumeUp', presses: 1 }], 'after Record the knob works again, from a fresh count');
+});
+
+test('volume: Record pressed during a volume keystroke presses its chord right after it', async t => {
+  const ctx = await setup(t);
+  let finish;
+  const order = [];
+  ctx.adapter.sendVolumeKey = async (key, presses) => { order.push(`volume ${key} start`); await new Promise(resolve => { finish = resolve; }); order.push(`volume ${key} end`); };
+  const sendKeys = ctx.adapter.sendKeys.bind(ctx.adapter);
+  ctx.adapter.sendKeys = async request => { order.push(`keys ${request.action}`); return sendKeys(request); };
+  ctx.turn(VOLUME_TURN, 1);
+  await settle();
+  ctx.press(RECORD);
+  await settle();
+  assert.deepEqual(order, ['volume VolumeUp start'], 'the chord waits for the volume key');
+  finish();
+  await settle();
+  assert.deepEqual(order, ['volume VolumeUp start', 'volume VolumeUp end', 'keys down']);
+});
+
+test('volume: a failed volume key flashes the volume LED and is not retried; pending turns are dropped', async t => {
+  const ctx = await setup(t);
+  ctx.adapter.reject.sendVolumeKey = new Error('held-modifier');
+  ctx.turn(VOLUME_TURN, 2);
+  await settle();
+  assert.equal(ctx.adapter.count('sendVolumeKey'), 1);
+  assert.deepEqual(ctx.lastLog('volume-failed'), { type: 'volume-failed', key: 'VolumeUp', reason: 'rejected' });
+  assert.deepEqual(ctx.lights.last[VOLUME_LED], PROFILE.colors.error);
+  delete ctx.adapter.reject.sendVolumeKey;
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs + 100, 100);
+  assert.deepEqual(ctx.lights.last[VOLUME_LED], [0, 0, 0]);
+  assert.equal(ctx.adapter.count('sendVolumeKey'), 1, 'nothing is retried');
+});
+
+test('volume: fast spins coalesce into bounded calls while one is running', async t => {
+  const ctx = await setup(t);
+  for (let i = 0; i < 30; i++) ctx.turn(VOLUME_TURN, 1);
+  await settle(40);
+  const total = ctx.adapter.volumeKeys.reduce((sum, v) => sum + v.presses, 0);
+  assert.equal(total, 30, 'every step arrives once');
+  assert.ok(ctx.adapter.volumeKeys.every(v => v.presses <= 10), 'at most 10 presses per call');
+  assert.ok(ctx.adapter.count('sendVolumeKey') < 30, 'turns coalesce');
+});
+
+test('volume: a disconnect drops pending volume steps and partial rotation', async t => {
+  const ctx = await setup(t, { profile: withProfile({ volume: { stepCounts: 2 } }) });
+  ctx.turn(VOLUME_TURN, 1);
+  ctx.bridge('disconnected');
+  ctx.turn(VOLUME_TURN, 1);
+  await settle();
+  assert.deepEqual(ctx.adapter.volumeKeys, [], 'half a step before and half after the disconnect make no step');
+});
+
+test('volume: a profile whose older mapping uses the volume knob keeps that mapping and the knob sends no volume key', async t => {
+  const ctx = await setup(t, { sessions: [codexTask(1)], profile: withProfile({ controls: { ...base.controls, scroll: 46 } }) });
+  front(ctx, 'codex');
+  ctx.turn(VOLUME_TURN, 2);
+  await settle(20);
+  assert.equal(ctx.adapter.count('sendVolumeKey'), 0);
+  assert.ok(ctx.adapter.scrolled.length > 0, 'turn 46 scrolls, as that profile maps it');
 });

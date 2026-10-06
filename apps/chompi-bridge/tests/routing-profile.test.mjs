@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_PROFILE_PATH, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
+import { DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_CARD_STEP_COUNTS, DEFAULT_KEY_ACTIONS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
 import { advance, onCleanup, settle, tempDir } from './routing-helpers.mjs';
 
@@ -149,6 +149,65 @@ test('timing and qualified versions are bounded', () => {
   assert.match(issues(() => validateProfile({ ...shipped(), qualifiedVersions: { codex: ['26.930.3930.0'], claude: [] } }))[0], /qualifiedVersions\.claude/);
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), qualifiedVersions: { claude: ['2.19675.0.0'] } })), ['profile.qualifiedVersions.codex: required']);
   assert.match(issues(() => validateProfile({ ...shipped(), qualifiedVersions: { claude: ['2.19675.0.0'], codex: ['x y'] } }))[0], /qualifiedVersions\.codex\[0\]/);
+});
+
+test('black keys: an optional map from controls 16-25 to attention or back, defaulting to an Attention key on 16 (#865)', () => {
+  assert.equal('keys' in shipped(), false, 'the shipped profile leaves the default to the one constant in profile.ts');
+  assert.deepEqual(DEFAULT_KEY_ACTIONS, { 16: 'attention' });
+  assert.deepEqual(validateProfile(shipped()).keys, { 16: 'attention' });
+  assert.deepEqual(validateProfile(installedTrialProfile()).keys, { 16: 'attention' }, 'the installed profile gets the Attention key without edits');
+  assert.deepEqual(validateProfile({ ...shipped(), keys: {} }).keys, {}, 'an empty map turns every black key off');
+  assert.deepEqual(validateProfile({ ...shipped(), keys: { 25: 'attention', 17: 'back' } }).keys, { 17: 'back', 25: 'attention' });
+  const withKeys = keys => () => validateProfile({ ...shipped(), keys });
+  for (const control of ['15', '26', '1', 'x', '16.0', '016']) {
+    assert.deepEqual(issues(withKeys({ [control]: 'attention' })), [`profile.keys.${control}: not a black key control 16-25`]);
+  }
+  for (const action of ['send', 'Attention', '', null, 1]) {
+    assert.deepEqual(issues(withKeys({ 16: action })), ['profile.keys.16: must be "attention" or "back"']);
+  }
+  assert.match(issues(withKeys(['attention']))[0], /^profile\.keys: must be an object$/);
+});
+
+test('black keys: a control already used elsewhere is rejected; the default yields to an older mapping (#865)', () => {
+  const slots = [16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, slots }, keys: { 16: 'attention' } })),
+    ['profile.keys.16: 16 is already mapped by profile.controls.slots[0]']);
+  for (const [field, value] of [['record', 17], ['back', 17], ['send', [17]]]) {
+    assert.match(issues(() => validateProfile({ ...shipped(), controls: { ...shipped().controls, [field]: value }, keys: { 17: 'back' } }))[0],
+      new RegExp(`^profile\\.keys\\.17: 17 is already mapped by profile\\.controls\\.${field}`));
+  }
+  // An earlier profile that already used control 16 still loads: the default Attention key stands aside.
+  assert.deepEqual(validateProfile({ ...shipped(), controls: { ...shipped().controls, record: 16 } }).keys, {});
+  assert.deepEqual(validateProfile({ ...shipped(), controls: { ...shipped().controls, slots } }).keys, {});
+});
+
+test('volume: optional detent counts and direction; the knob\'s turn and click are reserved (#865)', () => {
+  assert.equal('volume' in shipped(), false);
+  assert.deepEqual(DEFAULT_VOLUME_SETTINGS, { stepCounts: 1, invert: false });
+  assert.deepEqual(validateProfile(shipped()).volume, { stepCounts: 1, invert: false });
+  assert.deepEqual(validateProfile(installedTrialProfile()).volume, { stepCounts: 1, invert: false });
+  assert.deepEqual(validateProfile({ ...shipped(), volume: { stepCounts: 3 } }).volume, { stepCounts: 3, invert: false });
+  assert.deepEqual(validateProfile({ ...shipped(), volume: { invert: true } }).volume, { stepCounts: 1, invert: true });
+  for (const stepCounts of [0, 97, 1.5, '2']) assert.deepEqual(issues(() => validateProfile({ ...shipped(), volume: { stepCounts } })), ['profile.volume.stepCounts: must be an integer 1-96']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), volume: { invert: 'no' } })), ['profile.volume.invert: must be true or false']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), volume: { brightness: true } })), ['profile.volume.brightness: unknown field']);
+  assert.match(issues(() => validateProfile({ ...shipped(), volume: 2 }))[0], /^profile\.volume: must be an object$/);
+  const withVolume = controls => () => validateProfile({ ...shipped(), controls: { ...shipped().controls, ...controls }, volume: {} });
+  assert.deepEqual(issues(withVolume({ scroll: 46 })), ['profile.controls.scroll: 46 is the volume knob\'s turn']);
+  for (const field of ['record', 'back']) assert.deepEqual(issues(withVolume({ [field]: 34 })), [`profile.controls.${field}: 34 is the volume knob's click`]);
+  // An earlier profile that used the volume knob for something else still loads, with the volume knob off.
+  assert.equal(validateProfile({ ...shipped(), controls: { ...shipped().controls, scroll: 46 } }).volume, null);
+  assert.equal(validateProfile({ ...shipped(), controls: { ...shipped().controls, back: 34 } }).volume, null);
+});
+
+test('the Attention key\'s repeat window is an optional timing field (#865)', () => {
+  assert.equal('attentionRepeatMs' in shipped().timing, false);
+  assert.equal(DEFAULT_ATTENTION_REPEAT_MS, 4000);
+  assert.equal(validateProfile(shipped()).timing.attentionRepeatMs, 4000);
+  assert.equal(validateProfile({ ...shipped(), timing: { ...shipped().timing, attentionRepeatMs: 2500 } }).timing.attentionRepeatMs, 2500);
+  for (const attentionRepeatMs of [499, 30_001, '4000']) {
+    assert.deepEqual(issues(() => validateProfile({ ...shipped(), timing: { ...shipped().timing, attentionRepeatMs } })), ['profile.timing.attentionRepeatMs: must be an integer 500-30000 ms']);
+  }
 });
 
 test('reload swaps in a valid edit, keeps the last good profile on an invalid one and reports nothing when unchanged', async t => {

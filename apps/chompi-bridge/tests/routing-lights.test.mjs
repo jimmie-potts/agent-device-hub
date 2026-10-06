@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { SLOT_STATES, ledIndex, renderFrame, slotState } from '../dist/routing/lights.js';
+import { SLOT_STATES, VOLUME_LED, ledIndex, renderFrame, slotState } from '../dist/routing/lights.js';
 import { DEFAULT_PROFILE_PATH, validateProfile } from '../dist/routing/profile.js';
 import { claudeTask, codexTask, view } from './routing-helpers.mjs';
 
@@ -106,4 +106,29 @@ test('custom slot controls map to their own key LEDs', () => {
   const slots = blank();
   slots[0].state = 'active';
   assert.deepEqual(renderFrame({ profile: custom, slots, recording: false, pulseOn: true })[10], custom.colors.active);
+});
+
+test('the Attention key shows the attention color while a task waits, error on a refusal, and off otherwise (#865)', () => {
+  const ATTENTION_LED = 15; // black key 16
+  const none = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true, attentionWaiting: false });
+  assert.deepEqual(none[ATTENTION_LED], [0, 0, 0]);
+  for (const pulseOn of [true, false]) {
+    const waiting = renderFrame({ profile, slots: blank(), recording: false, pulseOn, attentionWaiting: true });
+    assert.deepEqual(waiting[ATTENTION_LED], profile.colors.attention, 'steady, not pulsing like a slot key');
+    for (let i = 0; i < 35; i++) if (i !== ATTENTION_LED) assert.deepEqual(waiting[i], [0, 0, 0], `LED ${i} is unaffected`);
+  }
+  const refused = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true, attentionWaiting: true, keyErrors: new Set([16]) });
+  assert.deepEqual(refused[ATTENTION_LED], profile.colors.error);
+  const moved = validateProfile({ ...JSON.parse(readFileSync(DEFAULT_PROFILE_PATH, 'utf8')), keys: { 20: 'attention', 21: 'back' } });
+  const frame = renderFrame({ profile: moved, slots: blank(), recording: false, pulseOn: true, attentionWaiting: true });
+  assert.deepEqual(frame[19], moved.colors.attention, 'the light follows the mapped key');
+  assert.deepEqual(frame[ATTENTION_LED], [0, 0, 0]);
+  assert.deepEqual(frame[20], [0, 0, 0], 'a Back key has no light');
+});
+
+test('the volume knob LED lights only to flash a refused or failed volume key (#865)', () => {
+  assert.equal(VOLUME_LED, 34);
+  const flashed = renderFrame({ profile, slots: blank(), recording: false, pulseOn: true, volumeError: true });
+  assert.deepEqual(flashed[VOLUME_LED], profile.colors.error);
+  assert.deepEqual(renderFrame({ profile, slots: blank(), recording: false, pulseOn: true })[VOLUME_LED], [0, 0, 0]);
 });
