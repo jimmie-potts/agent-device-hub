@@ -3,7 +3,9 @@
 // consumer scenarios and agent-state's stalled-consumer resync.
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Draft, type ErrorScope, type Removal, type Sdk, type Snapshot, type SyncChange, type SyncedCopy, type SyncRequest} from '../src/index.js';
+import {
+  SdkError, type Draft, type ErrorScope, type Removal, type Sdk, type Snapshot, type Subscription, type SyncChange, type SyncedCopy, type SyncRequest,
+} from '../src/index.js';
 import {startSync, type SyncAnswer, type SyncCompleted, type SyncTransport} from '../src/sync.js';
 import {
   MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, manualClock, peek, removed, session, trace, turnEnded,
@@ -789,4 +791,34 @@ it('each overflow that restarts a copy\'s sync is reported to onSyncRestart with
   void owner.update('s1', 3);
   await flush();
   assert.deepEqual(restarts, [{source: 'bunny/wall', pattern: `sync ${FAMILY}`}]);
+});
+
+it('a copy closed while it subscribes makes no further subscription and closes the one it was making', async () => {
+  const made: string[] = [];
+  const closed: string[] = [];
+  const gate = deferred<undefined>();
+  let tracked: Subscription | undefined;
+  const transport: SyncTransport = {
+    now: () => Date.now(),
+    subscribe: async pattern => {
+      made.push(pattern);
+      await gate.promise;
+      return {close: () => { closed.push(pattern); return Promise.resolve(); }};
+    },
+    request: () => assert.fail('no sync request goes out'),
+    report: () => {},
+    track: copy => {
+      tracked = copy;
+      return () => {};
+    },
+  };
+  const pending = startSync(transport, [FAMILY, 'mode', 'scene'], () => {}, {timeoutMs: 5000});
+  await flush();
+  assert.deepEqual(made, [`bunny.state.${FAMILY}.*`]);
+  await tracked?.close();
+  gate.resolve(undefined);
+  const result = await pending;
+  assert.equal(result.status === 'rejected' ? result.error.error.code : result.status, 'cancelled');
+  assert.deepEqual(made, [`bunny.state.${FAMILY}.*`], 'no family is subscribed after the close');
+  assert.deepEqual(closed, [`bunny.state.${FAMILY}.*`], 'the subscription that was being made is closed');
 });

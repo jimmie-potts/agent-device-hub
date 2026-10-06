@@ -4,6 +4,10 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
+import {access, mkdir, readFile, symlink, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
+import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {LogRecord} from '../src/index.js';
@@ -11,6 +15,7 @@ import {entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));
+const SLOW_LOAD = fileURLToPath(new URL('./fixtures/slow-load.js', import.meta.url));
 
 type Exit = {code: number | null; signal: NodeJS.Signals | null};
 type Spawned = {child: ChildProcess; records: () => LogRecord[]; stdout: () => string; exited: Promise<Exit>};
@@ -141,4 +146,58 @@ it('a busy spell shorter than the lag limit does not restart the runtime', async
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.equal(runtime.records().some(record => record.event_name === 'runtime.stuck'), false);
+});
+
+it('the entry point imports only the launcher, so its signal handlers come before the rest of the runtime loads', async () => {
+  const source = await readFile(MAIN, 'utf8');
+  const imports = [...source.matchAll(/^import\s.*?from\s+'([^']+)';/gm)].map(match => match[1]);
+  assert.deepEqual(imports, ['./launch.js']);
+});
+
+it('a signal while the runtime still loads stops it with exit 0, before it creates any state', async context => {
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    const dir = join(await stateDir(context), 'state');
+    const runtime = spawnRuntime(context, SLOW_LOAD, ['--port', '0', '--state-dir', dir]);
+    await waitFor(() => recorded(runtime, 'fixture.loading'), 5000, 'the load to begin');
+    runtime.child.kill(signal);
+    assert.deepEqual(await runtime.exited, {code: 0, signal: null}, signal);
+    await assert.rejects(access(dir), `${signal}: no state was created`);
+    assert.equal(runtime.stdout(), '', `${signal}: no ready line`);
+  }
+});
+
+it('a refused state directory names its reason in the runtime.failed record, so the journal says why', async context => {
+  const root = await stateDir(context);
+  const checkout = join(root, 'checkout');
+  await mkdir(join(checkout, '.git'), {recursive: true});
+  await mkdir(join(root, 'real'), {mode: 0o700});
+  await symlink(join(root, 'real'), join(root, 'link'));
+  await symlink(join(root, 'nowhere'), join(root, 'dangling'));
+  await writeFile(join(root, 'file'), '');
+  await mkdir(join(root, 'shared'), {mode: 0o750});
+  const cases: readonly (readonly [string, string])[] = [
+    ['relative/state', 'state-dir-relative'],
+    [`/mnt/bunny-runtime-test-${process.pid}/state`, 'state-dir-mount'],
+    [join(checkout, 'state'), 'state-dir-checkout'],
+    [join(root, 'link', 'state'), 'state-dir-link'],
+    [join(root, 'dangling'), 'state-dir-link'],
+    [join(root, 'file'), 'state-dir-not-directory'],
+    [join(root, 'shared'), 'state-dir-not-private'],
+  ];
+  for (const [dir, code] of cases) {
+    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
+    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, dir);
+    const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
+    assert.deepEqual(fatal?.attributes, {'error.type': 'RuntimeError', 'error.code': code}, dir);
+  }
+});
+
+it('a health port already in use names its reason in the runtime.failed record', async context => {
+  const blocker = createServer();
+  await new Promise<void>(resolve => { blocker.listen({host: '127.0.0.1', port: 0}, resolve); });
+  context.after(() => { blocker.close(); });
+  const {port} = blocker.address() as AddressInfo;
+  const runtime = spawnRuntime(context, MAIN, ['--port', String(port), '--state-dir', join(await stateDir(context), 'state')]);
+  assert.deepEqual(await runtime.exited, {code: 1, signal: null});
+  assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'EADDRINUSE');
 });

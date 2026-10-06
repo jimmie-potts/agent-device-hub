@@ -137,8 +137,11 @@ it('answers only requests that name its loopback listener and carry no browser o
   assert.equal((await getHealth(runtime.url, {host})).status, 200);
   assert.equal((await getHealth(runtime.url, {host: `localhost:${port}`})).status, 200);
   assert.equal((await getHealth(runtime.url, {host, 'sec-fetch-site': 'none'})).status, 200);
+  assert.equal((await getHealth(runtime.url, {host: `LOCALHOST:${port}`})).status, 200, 'a host name is not case-sensitive');
+  assert.equal((await getHealth(runtime.url, {host: `LocalHost:${port}`})).status, 200);
   for (const headers of [
-    {host: `rebound.example:${port}`}, {host: '127.0.0.1'}, {host, origin: 'http://rebound.example'}, {host, origin: runtime.url},
+    {host: `rebound.example:${port}`}, {host: '127.0.0.1'}, {host: `127.0.0.1:${Number(port) + 1}`}, {host: `localhost:${port}0`},
+    {host, origin: 'http://rebound.example'}, {host, origin: runtime.url},
     {host, 'sec-fetch-site': 'cross-site'}, {host, 'sec-fetch-site': 'same-origin'},
   ]) {
     assert.deepEqual(await getHealth(runtime.url, headers), {status: 403, body: forbidden}, JSON.stringify(headers));

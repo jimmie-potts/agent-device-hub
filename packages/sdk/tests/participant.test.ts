@@ -182,3 +182,22 @@ it('closing a participant closes the sync owners it serves, refusing their waiti
   await assert.rejects(core.serveSync([SESSION_FAMILY], () => ({revision: 0, states: []})), refused('invalid-state'));
   await assert.rejects(core.sync([SESSION_FAMILY], () => {}, {timeoutMs: 1000}), refused('invalid-state'));
 });
+
+it('closing a participant while its sync still subscribes leaves no subscription behind', async () => {
+  const {bus: created, wall, errors} = bus({maxQueued: 1});
+  const raw = created.connect('bunny/raw');
+  const families = ['fam-a', 'fam-b', 'fam-c', 'fam-d'];
+  const pending = wall.sync(families, () => {}, {timeoutMs: 1000});
+  await wall.close();
+  assert.equal(outcome(await peek(pending)), 'cancelled');
+  // A burst on every family: a subscription that outlived the close would queue one message and drop the rest.
+  for (const family of families) {
+    for (const revision of [1, 2, 3]) {
+      void raw.publish(`bunny.state.${family}.x`, {
+        kind: 'state', type: 'org.bunny.thing.updated', subject: 'x', dataschema: `https://bunny.invalid/events/${family}/2.0`, data: {id: 'x', revision},
+      });
+    }
+  }
+  await flush();
+  assert.deepEqual(errors.filter(({scope}) => scope.source === 'bunny/wall').map(({scope}) => scope.pattern), [], 'nothing queues to the closed participant');
+});

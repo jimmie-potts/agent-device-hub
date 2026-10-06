@@ -216,7 +216,7 @@ it('a stopped module leaves nothing behind', async context => {
   assert.equal(moduleClock.now(), clock.now());
 });
 
-it('dropped deliveries are logged once at once and then once per minute with a count, per subscription', async context => {
+it('dropped deliveries are logged once at once, then at most once a minute while they go on, with a count', async context => {
   const clock = manualClock();
   const gate = deferred<undefined>();
   context.after(() => { gate.resolve(undefined); });
@@ -229,17 +229,53 @@ it('dropped deliveries are logged once at once and then once per minute with a c
   });
   const probe = fixture('probe');
   const {runtime, logs} = await run(context, {modules: [slow, probe], clock: {now: clock.now}, scheduler: clock.scheduler});
-  const sent = 1100;
-  for (let revision = 1; revision <= sent; revision += 1) await contextOf(probe).sdk.publish('bunny.state.session.s1', session(revision));
+  let sent = 0;
+  const burst = async (count: number): Promise<void> => {
+    for (let index = 0; index < count; index += 1) {
+      sent += 1;
+      await contextOf(probe).sdk.publish('bunny.state.session.s1', session(sent));
+    }
+  };
   const drops = (): LogRecord[] => logs.filter(record => record.event_name === 'runtime.delivery.dropped');
+  const counts = (): unknown[] => drops().map(record => record.attributes['bunny.dropped.count']);
+  await burst(1100);
   assert.equal(drops().length, 1, 'the first drop is logged at once');
   assert.deepEqual(drops()[0]?.attributes, {'bunny.source': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.dropped.count': 1});
   clock.advance(60_000);
-  assert.equal(drops().length, 2, 'the rest of the minute is one record');
+  assert.equal(drops().length, 2, 'the rest of the first minute is one record');
+  await burst(10);
+  assert.equal(drops().length, 2, 'drops that go on wait for the next minute');
   clock.advance(60_000);
-  assert.equal(drops().length, 2, 'a quiet minute writes nothing');
+  assert.deepEqual(counts().slice(2), [10]);
+  clock.advance(60_000);
+  assert.equal(drops().length, 3, 'a quiet minute writes nothing and ends the window');
+  await burst(1);
+  assert.deepEqual(counts().slice(3), [1], 'after a quiet minute, the next drop is logged at once');
   gate.resolve(undefined);
-  const counted = (): number => drops().reduce((total, record) => total + Number(record.attributes['bunny.dropped.count']), 0);
+  const counted = (): number => counts().reduce<number>((total, count) => total + Number(count), 0);
   await waitFor(() => delivered + counted() === sent, 5000, 'every message delivered or counted as dropped');
   assert.equal(stateOf(runtime, 'slow'), 'running', 'a slow subscriber lags; it is not failed');
+});
+
+it('a module whose start fails after it began a sync leaves no subscription behind', async context => {
+  const families = Array.from({length: 10}, (_, index) => `fam-${index}`);
+  const syncer = fixture('syncer', ({sdk}) => {
+    void sdk.sync(families, () => {}, {timeoutMs: 1000});
+    throw new Error('the start failed after it began a sync');
+  });
+  const probe = fixture('probe');
+  const {runtime, logs} = await run(context, {modules: [syncer, probe]});
+  await waitFor(() => syncer.stops === 1, 5000, 'the stop');
+  assert.equal(stateOf(runtime, 'syncer'), 'failed');
+  // A burst beyond a queue's limit on every family: a subscription that outlived the stop would drop deliveries.
+  const {sdk} = contextOf(probe);
+  for (const family of families) {
+    for (let revision = 1; revision <= 1100; revision += 1) {
+      void sdk.publish(`bunny.state.${family}.x`, {
+        kind: 'state', type: 'org.bunny.thing.updated', subject: 'x', dataschema: `https://bunny.invalid/events/${family}/2.0`, data: {id: 'x', revision},
+      });
+    }
+  }
+  await flush();
+  assert.deepEqual(logs.filter(record => record.event_name === 'runtime.delivery.dropped').map(record => record.attributes['bunny.pattern']), []);
 });
