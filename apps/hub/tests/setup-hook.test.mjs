@@ -67,8 +67,8 @@ test('setup receipt blocks incomplete, foreign and malformed installations after
 });
 
 // The hook gives the title read a 100 ms deadline and then sends the event without a title. A loaded
-// host can miss that deadline in a fresh hook process, so hook-level tests treat the title as optional
-// and the in-process test proves the read itself against a mocked clock.
+// host can miss that deadline in a fresh hook process. The hook-level title test therefore stretches only
+// that timer through a test-only preload, and the in-process test proves the deadline with a mocked clock.
 const expectedTitle={value:'Rewrite café prompts',source:'user'};
 const titlePayload=transcript=>({hook_event_name:'UserPromptSubmit',session_id:'session',prompt_id:'turn',transcript_path:transcript,cwd:'/private/work/project',prompt:'CONTENT_CANARY'});
 async function titleFixture(t,prefix){
@@ -81,10 +81,12 @@ async function titleFixture(t,prefix){
 
 test('explicit lifecycle 1.1 produces bounded shared names; old configuration keeps 1.0',async t=>{
  const {directory,path,transcript,requests,common}=await titleFixture(t,'hub-title-hook-');const payload=titlePayload(transcript);
- for(const config of [common,{...common,lifecycleVersion:'1.1'}]){await writeFile(path,JSON.stringify(config),{mode:0o600});assert.deepEqual(await run(path,payload,{CODEX_HOME:directory}),{code:0,stdout:'',stderr:''});}
+ // The preload gives 5 s to a timer whose immediate caller is agent-state's metadata module, the title read's deadline,
+ // so the hook cannot miss the title under load. The hook's own 2.9 s exit timer and every other timer are untouched.
+ const stretch=join(directory,'stretch.mjs');await writeFile(stretch,"const setTimer=globalThis.setTimeout;globalThis.setTimeout=function(callback,delay,...rest){const caller=new Error().stack.split('\\n')[2]??'';return setTimer.call(this,callback,/agent-state[/]dist[/]metadata[.]js:/.test(caller)?5000:delay,...rest);};");
+ for(const config of [common,{...common,lifecycleVersion:'1.1'}]){await writeFile(path,JSON.stringify(config),{mode:0o600});assert.deepEqual(await run(path,payload,{CODEX_HOME:directory,NODE_OPTIONS:`--import=${pathToFileURL(stretch).href}`}),{code:0,stdout:'',stderr:''});}
  assert.equal(requests.length,2);assert.equal(requests[0].apiVersion,'1.0');assert.equal(requests[0].project,undefined);assert.equal(requests[0].title,undefined);
- assert.equal(requests[1].apiVersion,'1.1');assert.equal(requests[1].project,'project');assert.ok(!JSON.stringify(requests).includes('CONTENT_CANARY'));assert.ok(!JSON.stringify(requests).includes('/private/'));
- if(requests[1].title!==undefined)assert.deepEqual(requests[1].title,expectedTitle);
+ assert.equal(requests[1].apiVersion,'1.1');assert.deepEqual(requests[1].title,expectedTitle);assert.equal(requests[1].project,'project');assert.ok(!JSON.stringify(requests).includes('CONTENT_CANARY'));assert.ok(!JSON.stringify(requests).includes('/private/'));
 });
 
 test('lifecycle 1.1 enrichment reads the session title and fails open at the 100 ms deadline',async t=>{
