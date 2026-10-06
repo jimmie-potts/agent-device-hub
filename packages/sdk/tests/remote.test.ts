@@ -1,17 +1,18 @@
 // What only the remote transport has (Hub #883): authentication, validation at the edge, reconnects, a slow remote
 // consumer and the 256 KiB cap on a sync answer. The shared behavior is in conformance.test.ts.
 import assert from 'node:assert/strict';
+import {setTimeout as delay} from 'node:timers/promises';
 import {MAX_DETAIL, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
 import {InProcessBus, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, type Command, type Overflow, type Reply, type RequestResult, type Scheduler, type SyncChange} from '../src/index.js';
 import {MODE_SCHEMA, SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, validator, type Mode, type Session} from './support.js';
-import {startEdge, type Edge} from './transports.js';
+import {startEdge, type Edge, type EdgeSetup} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
 const TRACE = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
-async function withEdge(options: {maxQueued?: number}, body: (edge: Edge) => Promise<void>): Promise<void> {
+async function withEdge(options: EdgeSetup, body: (edge: Edge) => Promise<void>): Promise<void> {
   const edge = await startEdge(options);
   try {
     await body(edge);
@@ -402,3 +403,98 @@ it('closing a remote participant cancels its reconnect backoff', () => withEdge(
   await remote.close();
   assert.deepEqual(scheduler.pending, [], 'nothing is left on the scheduler');
 }));
+
+// Final review round (PR #909): a held command is never answered as a refusal, a retry keeps its own reply, and a
+// gap comes before the new stream's messages.
+
+it('closing the edge while a remote handler holds a command settles it uncertain-result, with no reply from the responder', async () => {
+  const edge = await startEdge();
+  const requester = checked(edge.bus.connect('bunny/core'));
+  const responder = checked(await edge.connect('bunny/wall'));
+  const holding = deferred<Reply>();
+  const got: string[] = [];
+  await responder.respond<Mode>('bunny.cmd.mode.*', command => { got.push(command.data.mode); return holding.promise; });
+  const pending = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 10_000});
+  try {
+    await until(() => got.length === 1, 'the command at the remote handler');
+    await edge.edge.close();
+    const result = await pending;
+    assert.equal(result.status, 'uncertain');
+    assert.equal(codeOf(result), 'uncertain-result');
+    assert.equal('reply' in result, false, 'the responder never replied');
+  } finally {
+    holding.resolve({status: 'accepted'});
+    await edge.close();
+  }
+});
+
+it('a forward that outlasts its command on the edge\'s own scheduler settles it uncertain-result, never as a refusal', () => {
+  const scheduler = manual();
+  return withEdge({scheduler}, async edge => {
+    const requester = checked(edge.bus.connect('bunny/core'));
+    const responder = checked(await edge.connect('bunny/wall'));
+    const holding = deferred<Reply>();
+    const got: string[] = [];
+    await responder.respond<Mode>('bunny.cmd.mode.*', command => { got.push(command.data.mode); return holding.promise; });
+    // The bus's deadline is a minute away on its own timers; the edge's scheduler runs the forward's wait now.
+    const pending = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});
+    try {
+      await until(() => got.length === 1 && scheduler.pending.length > 0, 'the forward waiting on the edge\'s scheduler');
+      for (const entry of [...scheduler.pending]) entry.run();
+      const result = await pending;
+      assert.equal(result.status, 'uncertain');
+      assert.equal(codeOf(result), 'uncertain-result');
+      assert.equal('reply' in result, false);
+    } finally {
+      holding.resolve({status: 'accepted'});
+    }
+  });
+});
+
+it('a retry that reuses a held command\'s requestId gets its own reply, not the first command\'s', () => withEdge({}, async edge => {
+  const requester = checked(edge.bus.connect('bunny/core'));
+  const responder = checked(await edge.connect('bunny/wall'));
+  const holding = deferred<Reply>();
+  const got: string[] = [];
+  await responder.respond<Mode>('bunny.cmd.mode.*', command => {
+    got.push(command.data.mode);
+    return command.data.mode === 'work' ? holding.promise : {status: 'accepted'};
+  });
+  const first = requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 500, requestId: 'req-again'});
+  let retry;
+  try {
+    await until(() => got.length === 1, 'the first command at the remote handler');
+    edge.edge.disconnect('bunny/wall');
+    assert.equal(codeOf(await first), 'uncertain-result');
+    await until(() => reconnects(edge, 'bunny/wall') === 2, 'the reconnect');
+    // The requester tries again with the same requestId. The held first command then refuses, late.
+    retry = requester.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 10_000, requestId: 'req-again'});
+    await flush();
+  } finally {
+    holding.resolve(errorBody('invalid-state', {detail: 'the first command, refused late'}));
+  }
+  const result = await retry;
+  assert.equal(result?.status, 'accepted', 'the retry\'s own reply settles the retry');
+}));
+
+it('after a reconnect, a subscription hears of the gap before any message of the new stream', () => {
+  const late = deferred<undefined>();
+  // Hold the second subscription's re-registration, the fourth subscribe call, until the test releases it.
+  return withEdge({before: (route, nth) => route === 'subscribe' && nth === 4 ? late.promise : undefined}, async edge => {
+    const remote = await edge.connect('bunny/wall');
+    const seen: string[] = [];
+    await remote.subscribe(`bunny.state.${FAMILY}.*`, message => { seen.push(`message ${message.subject}`); }, {onOverflow: () => { seen.push('gap'); }});
+    await remote.subscribe('bunny.state.test-blob.*', () => {});
+    try {
+      edge.edge.disconnect('bunny/wall');
+      await until(() => edge.received('subscribe') === 3, 'the first re-registration');
+      // The first subscription is live again on the new stream; the second is still being registered.
+      await checked(edge.bus.connect('bunny/core')).publish(`bunny.state.${FAMILY}.s1`, session('s1', 1));
+      await delay(200);
+    } finally {
+      late.resolve(undefined);
+    }
+    await until(() => seen.length === 2, 'the gap and the message');
+    assert.deepEqual(seen, ['gap', 'message s1']);
+  });
+});

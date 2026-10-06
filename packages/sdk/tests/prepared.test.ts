@@ -2,8 +2,9 @@
 // injects a remote part's message.
 import assert from 'node:assert/strict';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {SdkError} from '../src/index.js';
-import {bus, flush, it, session, turnEnded} from './support.js';
+import {buildMessage} from '../src/envelope.js';
+import {SdkError, type Command} from '../src/index.js';
+import {MODE_SCHEMA, bus, flush, it, session, turnEnded, type Mode} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
@@ -28,4 +29,19 @@ it('a prepared message keeps the key-class rules and comes only from its own sou
   await assert.rejects(core.publishMessage('bunny.event.session.s1', command), refused('invalid-request'), 'a kind that is not published');
   await core.close();
   await assert.rejects(core.publishMessage('bunny.state.session.s1', stored), refused('invalid-state'), 'a closed participant');
+});
+
+it('a prepared command whose signal has already aborted is cancelled and never runs', async () => {
+  const {bus: created, wall} = bus();
+  const handled: string[] = [];
+  await wall.respond<Mode>('bunny.cmd.mode.*', command => { handled.push(command.data.mode); return {status: 'accepted'}; });
+  const sentAtMs = Date.now();
+  const command = buildMessage<Mode & {requestId: string}>('bunny/core', 'command', {
+    type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: MODE_SCHEMA, data: {mode: 'work', requestId: 'req-gone'},
+  }, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, sentAtMs, sentAtMs + 5000) as Command<Mode>;
+  const result = await created.requestMessage('bunny/core', 'bunny.cmd.mode.wall', command, 5000, AbortSignal.abort());
+  await flush();
+  assert.equal(result.status, 'rejected');
+  assert.equal(result.status === 'rejected' ? result.error.error.code : '', 'cancelled');
+  assert.deepEqual(handled, [], 'the command never reached the handler');
 });

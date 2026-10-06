@@ -68,21 +68,37 @@ export type Edge = {
   close(): Promise<void>;
 };
 
+export type EdgeSetup = {
+  maxQueued?: number;
+  /** The edge's own scheduler, apart from the bus's. */
+  scheduler?: Scheduler;
+  /** Holds the `nth` call of a route, counted from 1, until the returned promise settles, before the edge sees it. */
+  before?: (route: string, nth: number) => Promise<void> | undefined;
+};
+
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
-export async function startEdge({maxQueued}: {maxQueued?: number} = {}): Promise<Edge> {
+export async function startEdge({maxQueued, scheduler, before}: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const logs: EdgeLogRecord[] = [];
   const report = (error: unknown, scope: ErrorScope): void => { errors.push({error, scope}); };
   const bus = new InProcessBus({onError: report, ...(maxQueued === undefined ? {} : {maxQueued})});
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
-  const edge = new RemoteEdge({bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), log: record => { logs.push(record); }});
+  const edge = new RemoteEdge({
+    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), log: record => { logs.push(record); },
+    ...(scheduler === undefined ? {} : {scheduler}),
+  });
   const received = new Map<string, number>();
   const dropped = new Map<string, number>();
+  const arrivals = new Map<string, number>();
   const server: Server = createServer((request, response) => {
     const route = (request.url ?? '').split('/').pop() ?? '';
+    const nth = (arrivals.get(route) ?? 0) + 1;
+    arrivals.set(route, nth);
     request.once('end', () => { received.set(route, (received.get(route) ?? 0) + 1); });
     response.once('close', () => { if (!response.writableEnded) dropped.set(route, (dropped.get(route) ?? 0) + 1); });
-    edge.handle(request, response);
+    const held = before?.(route, nth);
+    if (held === undefined) edge.handle(request, response);
+    else void held.then(() => { edge.handle(request, response); });
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
