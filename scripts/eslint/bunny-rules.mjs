@@ -21,7 +21,11 @@ const moduleBoundary = {
     docs: {description: 'Keep each module to its own files, the SDK and the contracts packages'},
     schema: [{
       type: 'object',
-      properties: {root: {type: 'string'}, allowedPackages: {type: 'array', items: {type: 'string'}}},
+      properties: {
+        root: {type: 'string'},
+        allowedPackages: {type: 'array', items: {type: 'string'}},
+        workspaceScopes: {type: 'array', items: {type: 'string'}},
+      },
       additionalProperties: false,
     }],
     messages: {
@@ -35,6 +39,7 @@ const moduleBoundary = {
     const own = moduleRoot(root, context.filename);
     if (!own) return {};
     const allowed = new Set(context.options[0]?.allowedPackages ?? []);
+    const scopes = context.options[0]?.workspaceScopes ?? ['@jimmie-potts/'];
     const filePath = url => {
       try {
         return fileURLToPath(url);
@@ -48,7 +53,7 @@ const moduleBoundary = {
       } else if (source.startsWith('.') || isAbsolute(source) || source.startsWith('file:')) {
         const target = source.startsWith('file:') ? filePath(source) : resolve(dirname(context.filename), source);
         if (target !== own && !target.startsWith(own + sep)) context.report({node, messageId: 'outside', data: {source, module: relative(root, own)}});
-      } else if (source.startsWith('@jimmie-potts/')) {
+      } else if (scopes.some(scope => source.startsWith(scope))) {
         const name = source.split('/').slice(0, 2).join('/');
         if (!allowed.has(name)) context.report({node, messageId: 'workspace', data: {source}});
       }

@@ -334,7 +334,9 @@ module story converts it. To cover another path, add its glob to `strict` in
   `eslint.config.mjs`, scoped to its files, with a comment giving the reason.
 - **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
-  Node built-ins and third-party packages. It checks static, re-export, type and
+  Node built-ins and third-party packages. Workspace packages are those in
+  `workspaceScopes` (`@jimmie-potts/`, and `@pixoo/` for the staged Pixoo
+  snapshot); every workspace package must use one of them. It checks static, re-export, type and
   literal dynamic imports, including `file:` URLs, and rejects non-literal
   dynamic imports. Paths resolve from the repository root, so the rule works
   from any directory. `createRequire` and `.cjs` files are not checked.
