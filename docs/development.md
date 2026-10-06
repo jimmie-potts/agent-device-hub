@@ -346,10 +346,11 @@ gh run view <run-id> --repo jimmie-potts/agent-device-hub --log-failed
 nothing. The retired `ci.yml` and `work-guide.yml` still appear, disabled, with
 the same workflow names as `checks.yml` and `guide.yml`, so select workflows by
 file name. These are read operations; access does not itself authorize
-dispatch, rerun, cancellation or secret changes. A delivery authorized to rerun one failed job on
-the reviewed head runs `gh run rerun <run-id> --job <job-id>`, with the job's
-`databaseId` from `gh run view <run-id> --json jobs`. Downloaded artifacts and
-raw logs stay outside Git; summarize only the evidence needed for the task. See
+dispatch, rerun, cancellation or secret changes. A delivery authorized to rerun
+one failed job on the reviewed head runs `gh run rerun --job <job-id>`, with the
+job's `databaseId` from `gh run view <run-id> --json jobs`; `gh` refuses a run
+ID given together with `--job`. Downloaded artifacts and raw logs stay outside
+Git; summarize only the evidence needed for the task. See
 the [SDLC](sdlc.md#ci-evidence) for the evidence to record.
 
 Runs before #870 were on Depot. Their GitHub check records stay readable as
