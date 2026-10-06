@@ -150,6 +150,22 @@ it('each module has its own participant, named for the module, on one shared bus
   assert.deepEqual(received, ['bunny/modules/speaker']);
 });
 
+it('a module publishes a prepared message unchanged through its own participant', async context => {
+  const received: unknown[] = [];
+  const listener = fixture('listener', async ({sdk}) => {
+    await sdk.subscribe('bunny.state.session.*', message => { received.push(message); });
+  });
+  const speaker = fixture('speaker');
+  await run(context, {modules: [listener, speaker]});
+  const {sdk} = contextOf(speaker);
+  const prepared = await sdk.publish('bunny.state.session.s1', session(1));
+  await flush();
+  const again = await sdk.publishMessage('bunny.state.session.s1', prepared);
+  await flush();
+  assert.equal(again, prepared, 'the same message, with its id and time');
+  assert.deepEqual(received, [prepared, prepared]);
+});
+
 it('health counts each module\'s sync restarts, so a restart loop shows', async context => {
   const gate = deferred<undefined>();
   context.after(() => { gate.resolve(undefined); });
