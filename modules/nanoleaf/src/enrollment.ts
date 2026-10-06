@@ -5,7 +5,7 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as wait} from 'node:timers/promises';
-import {isObject, sameValue, type JsonObject} from './compat.js';
+import {isObject, parseJson, sameValue, type JsonObject} from './compat.js';
 import {withState} from './database.js';
 import {credential, DEFAULT, DEVICE_TABLES, ID, layoutDevices, lockFile, metaKey, registry, saveDeviceLayout, sceneFile,
   type LayoutEntry, type RegistryEntry} from './devices.js';
@@ -14,7 +14,7 @@ import {readJson, writeJson} from './jsonfile.js';
 import {readLayout} from './panels.js';
 import {execute, first, transaction} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
-import {nodeTransport, privateAddress, type HttpTransport, type LightRequest} from './transport.js';
+import {HttpError, nodeTransport, PORT, privateAddress, type HttpTransport, type LightRequest} from './transport.js';
 
 export const KIND = 'panels';
 export const MODEL = 'NL22';
@@ -23,8 +23,17 @@ export const REMOVE_WAIT_SECONDS = 10.0;
 export const PAIR_TIMEOUT_SECONDS = 5;
 
 /** Ask the device for a new credential while its pairing window is open (enrollment.pair). */
-export function pair(_ip: string, _transport: HttpTransport = nodeTransport): Promise<string> {
-  return Promise.reject(new Error('Not ported yet (Hub #26, slice 2b).'));
+export async function pair(ip: string, transport: HttpTransport = nodeTransport): Promise<string> {
+  const response = await transport({url: `http://${privateAddress(ip)}:${PORT}/api/v1/new`, method: 'POST', headers: {}, body: null,
+    timeoutSeconds: PAIR_TIMEOUT_SECONDS});
+  if (response.status === 403) {
+    throw new ValueError('The device refused pairing. Hold its power button until the lights flash, then retry within 30 seconds.');
+  }
+  if (response.status < 200 || response.status > 299) throw new HttpError(response.status);
+  const reply = parseJson(response.body);
+  const token = isObject(reply) ? reply.auth_token : undefined;
+  if (typeof token !== 'string') throw new ValueError('The device did not return a credential.');
+  return token;
 }
 
 /** Python's os.path.realpath(strict=False): resolve every symlink that exists and keep the rest of the path. */

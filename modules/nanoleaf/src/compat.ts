@@ -225,6 +225,10 @@ export const pyJsonIndented = (value: unknown): string =>
 export const dumps = (value: unknown): string =>
   encode(value, {sortKeys: true, ensureAscii: false, itemSeparator: ',', keySeparator: ':', indent: null}, 0);
 
+/** controller_state.encoded: sorted keys, compact separators and ASCII escapes, as saved favorite recipes are stored. */
+export const encoded = (value: unknown): string =>
+  encode(value, {sortKeys: true, ensureAscii: true, itemSeparator: ',', keySeparator: ':', indent: null}, 0);
+
 /** Python's str.split(separator, maxsplit). */
 export function splitText(text: string, separator: string, maxsplit: number): string[] {
   const parts = text.split(separator);

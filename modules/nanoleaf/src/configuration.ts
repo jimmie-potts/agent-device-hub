@@ -8,7 +8,7 @@ import {credential, DEFAULT, KINDS, layoutDevices, linesEntry, projection, regis
 import {ValueError} from './errors.js';
 import {readJson, writeJson} from './jsonfile.js';
 import {readLayout} from './panels.js';
-import type {LightRequest} from './transport.js';
+import {lightRequest, type LightRequest} from './transport.js';
 
 /** One device's configuration: config.json with the device's layout, identity, address and credential. */
 export interface LoadedConfig extends DeviceProjection {
@@ -107,7 +107,7 @@ const complete = (layout: LayoutEntry | null): boolean => layout !== null && lay
  * A saved layout needs no device request. A missing or incomplete one is read from the device through `request` and
  * saved before use.
  */
-export async function loadConfig(directory: string, device: string = DEFAULT, request?: LightRequest): Promise<LoadedConfig> {
+export async function loadConfig(directory: string, device: string = DEFAULT, request: LightRequest = lightRequest): Promise<LoadedConfig> {
   const config = readJson(join(directory, 'config.json'));
   const entries = registry(config);
   const entry = entries.get(device);
@@ -118,8 +118,6 @@ export async function loadConfig(directory: string, device: string = DEFAULT, re
   const known = layoutDevices(existsSync(layoutFile) ? readJson(layoutFile) : {});
   let layout = known.get(device) ?? null;
   if (layout === null || !complete(layout)) {
-    // The Nanoleaf HTTP client joins in slice 2b; until then the caller supplies the request.
-    if (request === undefined) throw new ValueError('Reading the layout from the device needs a light request.');
     const reply = await request({ip: entry.ip ?? '', token: token ?? ''}, 'GET');
     if (!isObject(reply) || !Object.hasOwn(reply, 'panelLayout')) throw new ValueError('The device reported no layout.');
     const panelLayout = reply.panelLayout;

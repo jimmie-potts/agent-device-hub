@@ -1,6 +1,8 @@
 // Requests to a Nanoleaf controller's local API (transport.py). Callers decide what a request means.
 // Every request carries its own timeout and goes straight to the device, never through a configured proxy.
+import {request as httpRequest} from 'node:http';
 import {isIPv6} from 'node:net';
+import {parseJson, pyJson} from './compat.js';
 import {ValueError} from './errors.js';
 
 /** The Nanoleaf local API's port. */
@@ -81,15 +83,48 @@ export function privateAddress(ip: string): string {
   return ip;
 }
 
-const notPorted = (): never => {
-  throw new Error('Not ported yet (Hub #26, slice 2b).');
-};
+const METHODS_WITH_BODY: ReadonlySet<string> = new Set(['PATCH', 'POST', 'PUT']);
 
-/** HTTP over node:http with a whole-exchange deadline and no proxy. */
-export const nodeTransport: HttpTransport = () => Promise.resolve(notPorted());
+/**
+ * HTTP over node:http. The deadline covers the whole exchange, from connecting to the reply's last byte, so a device that
+ * accepts the connection and never answers fails with ETIMEDOUT. `agent: false` keeps device traffic off any proxy that
+ * Node would otherwise take from the environment (NODE_USE_ENV_PROXY).
+ */
+export const nodeTransport: HttpTransport = request => new Promise((resolve, reject) => {
+  const headers: Record<string, string> = {...request.headers};
+  // As Python's http.client: a body's length, and a zero length for a body-carrying method without one.
+  if (request.body !== null) headers['Content-Length'] = String(Buffer.byteLength(request.body, 'utf8'));
+  else if (METHODS_WITH_BODY.has(request.method.toUpperCase())) headers['Content-Length'] = '0';
+  let settled = false;
+  const finish = (outcome: () => void): void => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    outcome();
+  };
+  const exchange = httpRequest(request.url, {method: request.method, headers, agent: false}, response => {
+    const chunks: Buffer[] = [];
+    response.on('data', (chunk: Buffer) => chunks.push(chunk));
+    response.on('error', (error: Error) => finish(() => reject(error)));
+    response.on('end', () => finish(() => resolve({status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8')})));
+  });
+  const timer = setTimeout(() => {
+    const error = Object.assign(new Error(`The device did not answer within ${request.timeoutSeconds} seconds.`), {code: 'ETIMEDOUT'});
+    finish(() => reject(error));
+    exchange.destroy(error);
+  }, request.timeoutSeconds * 1000);
+  exchange.on('error', (error: Error) => finish(() => reject(error)));
+  exchange.end(request.body ?? undefined);
+});
 
 /** transport.light_request: one request to the device's local API; its JSON reply, or null for an empty one. */
-export function lightRequest(_address: LightAddress, _method: string, _endpoint = '', _payload: unknown = null,
-  _transport: HttpTransport = nodeTransport): Promise<unknown> {
-  return Promise.resolve(notPorted());
+export async function lightRequest(address: LightAddress, method: string, endpoint = '', payload: unknown = null,
+  transport: HttpTransport = nodeTransport): Promise<unknown> {
+  const ip = privateAddress(address.ip);
+  if (!/^[A-Za-z0-9]+$/.test(address.token)) throw new ValueError('The token must contain only letters and numbers.');
+  const response = await transport({url: `http://${ip}:${PORT}/api/v1/${address.token}${endpoint}`, method,
+    headers: {'Content-Type': 'application/json'}, body: payload === null || payload === undefined ? null : pyJson(payload),
+    timeoutSeconds: LIGHT_TIMEOUT_SECONDS});
+  if (response.status < 200 || response.status > 299) throw new HttpError(response.status);
+  return response.body === '' ? null : parseJson(response.body);
 }
