@@ -9,8 +9,8 @@ import {launchOwner,quiesceAndStop,stopOwner} from '../dist/migration.js';
 const token='m'.repeat(43),credentials=[{id:'migration',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control','admin','ingest'],devices:[]}];
 const options=directory=>({directory,ownerId:'owner',consumers:[],controllers:[],credentials,port:0});
 const headers={authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'};
-// Fixture launches only prepare a released source. A CI host stall held one past the 5 s default for about 8.7 s (#584);
-// the default bound itself stays covered by the SIGTERM-resistant startup test.
+// Fixture launches only set up the owners a test needs. A CI host stall held one past the 5 s default for about 8.7 s
+// (#584); the SIGTERM-resistant startup test covers the default and a caller's bound.
 const fixtureStartup={startupTimeoutMs:30000};
 test('verified process handoff imports once, remains fenced across restart and rejects forged release',async()=>{
  const root=await mkdtemp(join(tmpdir(),'hub-migration-'));let source,destination;
@@ -97,9 +97,13 @@ test('failed supervised startup terminates its own SIGTERM-resistant child',asyn
  try{
   const entrypoint=join(root,'fixture.mjs'),pidPath=join(root,'pid');await writeFile(entrypoint,"import {writeFileSync} from 'node:fs';writeFileSync(process.argv[2],String(process.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000);",{mode:0o600});
   for(const startupTimeoutMs of [0,60001,1.5,Number.NaN,'5000'])await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token,startupTimeoutMs}),/invalid-launch/);
-  const started=performance.now();await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token}),/owner-start-timeout/);
-  assert.ok(performance.now()-started>=4900,'the default startup bound stays 5 s');
-  const pid=Number(await readFile(pidPath,'utf8'));assert.throws(()=>process.kill(pid,0),e=>e.code==='ESRCH');
+  // A failed launch waits 1 s after SIGTERM before SIGKILL, so the elapsed time is the bound plus about 1 s. Only lower
+  // bounds are checked: a host stall can lengthen a launch but never shorten it.
+  for(const [startupTimeoutMs,minimum,meaning] of [[undefined,5900,'the default startup bound is 5 s'],[5600,6500,'a caller\'s startupTimeoutMs replaces the default']]){
+   const started=performance.now();await assert.rejects(launchOwner({kind:'hub',entrypoint,args:[pidPath],environment:{},token,...(startupTimeoutMs===undefined?{}:{startupTimeoutMs})}),/owner-start-timeout/);
+   assert.ok(performance.now()-started>=minimum,meaning);
+   const pid=Number(await readFile(pidPath,'utf8'));assert.throws(()=>process.kill(pid,0),e=>e.code==='ESRCH');
+  }
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
