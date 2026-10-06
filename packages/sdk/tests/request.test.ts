@@ -5,12 +5,17 @@ import {SdkError, type Command, type Reply} from '../src/index.js';
 import {assertValid, bus, deferred, flush, it, peek, setMode, trace, type Mode} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
+const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
+const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
 
 it('a request reaches its responder once and comes back accepted', async () => {
   const {core, wall} = bus();
   const commands: Command<Mode>[] = [];
   await wall.respond<Mode>('bunny.cmd.mode.*', command => { commands.push(command); return {status: 'accepted'}; });
+  const timers = (): number => process.getActiveResourcesInfo().filter(resource => resource === 'Timeout').length;
+  const before = timers();
   const result = await core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 5000});
+  assert.equal(timers(), before, 'the reply clears the deadline timer');
 
   assert.equal(commands.length, 1);
   const [command] = commands;
@@ -54,7 +59,8 @@ it('a responder that throws refuses with internal, and the error is reported', a
   const result = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000});
   assert.equal(result.status, 'rejected');
   assert.equal(result.error.error.code, 'internal');
-  if (result.status === 'rejected' && result.reply !== undefined) assertValid(result.reply);
+  assert.ok(result.reply, 'the refusal comes in a reply');
+  assertValid(result.reply);
   assert.deepEqual(errors, [{error: failure, scope: {source: 'bunny/wall', pattern: 'bunny.cmd.mode.wall'}}]);
 });
 
@@ -75,15 +81,49 @@ it('closing a responder refuses the requests still waiting for it as unavailable
   const gate = deferred<Reply>();
   const owner = await wall.respond('bunny.cmd.mode.wall', () => gate.promise);
   const first = core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});
-  const waiting = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 60_000});
+  const waiting = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 60_000, requestId: 'req-wait', parent: PARENT});
   await flush();
   const closed = owner.close();
   const refused = await peek(waiting);
-  assert.equal(refused?.status, 'rejected');
-  assert.equal(refused.error.error.code, 'unavailable');
+  assert.deepEqual(refused, {
+    status: 'rejected', requestId: 'req-wait',
+    error: errorBody('unavailable', {requestId: 'req-wait', traceId: PARENT_TRACE, detail: 'the responder closed'}),
+  });
   gate.resolve({status: 'accepted'});
   await closed;
   assert.equal((await peek(first))?.status, 'accepted', 'the command already being handled still gets its reply');
+});
+
+it('a full responder queue refuses the request with capacity, naming it and its trace', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  const gate = deferred<Reply>();
+  await wall.respond('bunny.cmd.mode.wall', () => gate.promise);
+  const busy = core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000});
+  await flush();
+  const waiting = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 5000});
+  const full = await core.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 5000, requestId: 'req-full', parent: PARENT});
+  assert.deepEqual(full, {
+    status: 'rejected', requestId: 'req-full',
+    error: errorBody('capacity', {requestId: 'req-full', traceId: PARENT_TRACE, detail: 'the responder\'s queue is full'}),
+  });
+  assert.equal(full.error.error.retryable, true, 'nothing reached the owner, so sending again later is safe');
+  gate.resolve({status: 'accepted'});
+  assert.equal((await busy).status, 'accepted');
+  assert.equal((await waiting).status, 'accepted');
+});
+
+it('a responder that closes itself still answers the command it is handling', async () => {
+  const {core, wall} = bus();
+  const owner = await wall.respond('bunny.cmd.mode.wall', async () => {
+    await owner.close();
+    return {status: 'accepted'};
+  });
+  const first = core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000});
+  const waiting = core.request('bunny.cmd.mode.wall', setMode('quiet'), {timeoutMs: 5000});
+  assert.equal((await peek(first))?.status, 'accepted', 'close resolves inside the responder that called it');
+  const refused = await peek(waiting);
+  assert.equal(refused?.status, 'rejected');
+  assert.equal(refused.error.error.code, 'unavailable');
 });
 
 it('one responder owns each command key', async () => {
@@ -104,4 +144,6 @@ it('a request needs a command key, a positive whole timeout and a valid requestI
     await assert.rejects(core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs}), refused('invalid-request'), String(timeoutMs));
   }
   await assert.rejects(core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'not an id'}), refused('invalid-request'));
+  const unnamed = {...setMode('work'), type: 'org.bunny.mode.set'};
+  await assert.rejects(core.request('bunny.cmd.mode.wall', unnamed, {timeoutMs: 5000}), refused('invalid-request'), 'a command type ends in .requested');
 });

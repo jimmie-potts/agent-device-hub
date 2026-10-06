@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '../src/index.js';
-import {assertValid, bus, flush, it, removed, session, setMode, turnEnded} from './support.js';
+import {assertValid, bus, flush, it, modeSet, removed, session, setMode, turnEnded} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
@@ -92,6 +92,19 @@ it('a message kind travels on its own key class, and commands only through reque
   await assert.rejects(core.publish('bunny.cmd.mode.wall', command), refused('invalid-request'), 'publish to a command key');
   await assert.rejects(core.subscribe('bunny.cmd.mode.*', () => {}), refused('invalid-request'), 'subscribe to command keys');
   await assert.rejects(core.respond('bunny.state.mode.*', () => ({status: 'accepted'})), refused('invalid-request'), 'respond off a command key');
+});
+
+it('an outcome is published on an event key, and refused on state and command keys', async () => {
+  const {core, wall} = bus();
+  const received: Message[] = [];
+  await wall.subscribe('bunny.event.mode.*', message => { received.push(message); });
+  const sent = await core.publish('bunny.event.mode.wall', modeSet('req-1'));
+  await flush();
+  assertValid(sent);
+  assert.equal(sent.kind, 'outcome');
+  assert.deepEqual(received, [sent]);
+  await assert.rejects(core.publish('bunny.state.mode.wall', modeSet('req-1')), refused('invalid-request'), 'outcome on a state key');
+  await assert.rejects(core.publish('bunny.cmd.mode.wall', modeSet('req-1')), refused('invalid-request'), 'outcome on a command key');
 });
 
 it('a participant source follows the profile', () => {

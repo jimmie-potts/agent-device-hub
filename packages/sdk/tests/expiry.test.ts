@@ -6,7 +6,7 @@ import {START, bus, deferred, flush, it, peek, setMode, trace, type Mode} from '
 
 it('a request past its deadline resolves as uncertain-result and is never retried', async context => {
   context.mock.timers.enable({apis: ['setTimeout', 'Date'], now: START});
-  const {core, wall} = bus();
+  const {core, wall, errors} = bus();
   const commands: Command<Mode>[] = [];
   const answer = deferred<Reply>();
   await wall.respond<Mode>('bunny.cmd.mode.*', command => { commands.push(command); return answer.promise; });
@@ -26,12 +26,15 @@ it('a request past its deadline resolves as uncertain-result and is never retrie
   assert.deepEqual(result.error, errorBody('uncertain-result', {requestId: command.data.requestId, traceId, detail: 'no reply within 1000 ms'}));
   assert.equal(result.error.error.retryable, false);
 
-  // The reply that arrives late changes nothing, and nothing sends the command again.
+  // Nothing sends the command again, and the late reply is dropped without disturbing the responder.
   answer.resolve({status: 'accepted'});
   context.mock.timers.tick(60_000);
   await flush();
-  assert.equal(await peek(pending), result);
   assert.equal(commands.length, 1);
+  assert.deepEqual(errors, []);
+  const next = core.request('bunny.cmd.mode.wall', setMode('free'), {timeoutMs: 1000});
+  assert.equal((await peek(next))?.status, 'accepted', 'the responder serves the next request');
+  assert.equal(commands.length, 2);
 });
 
 it('a responder ignores a request that expired while it waited, then serves fresh ones', async context => {

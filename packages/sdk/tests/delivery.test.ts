@@ -1,7 +1,7 @@
 // Per-subscriber delivery queues: a slow consumer lags only itself and cannot block the bus (ADR 0012).
 import assert from 'node:assert/strict';
 import {InProcessBus, SdkError} from '../src/index.js';
-import {bus, deferred, flush, it, peek, session, setMode, settled} from './support.js';
+import {bus, checked, deferred, flush, it, peek, session, setMode, settled} from './support.js';
 
 it('a slow subscriber delays only itself, and catches up in order', async () => {
   const {core, wall} = bus();
@@ -99,12 +99,33 @@ it('closing a subscription waits for its running handler and drops what is queue
   assert.deepEqual(handled, [1]);
 });
 
-it('without an error handler, a handler error becomes a process warning', async () => {
+it('without an error handler, a handler error becomes a process warning naming its source and pattern', async () => {
   const created = new InProcessBus();
-  const core = created.connect('bunny/core');
+  const core = checked(created.connect('bunny/core'));
+  const failure = new Error('bad handler');
   const warned = new Promise<Error>(resolve => { process.once('warning', resolve); });
-  await core.subscribe('bunny.state.session.*', () => { throw new Error('bad handler'); });
+  await core.subscribe('bunny.state.session.*', () => { throw failure; });
   await core.publish('bunny.state.session.s1', session('s1', 1));
   const warning = await warned;
-  assert.equal(warning.message, 'bad handler');
+  assert.equal(warning.name, 'BunnySdkWarning');
+  assert.equal(warning.message, 'bunny/core on bunny.state.session.*: bad handler');
+  assert.equal(warning.cause, failure);
+});
+
+it('a handler that closes its own subscription finishes, and nothing more reaches it', async () => {
+  const {core, wall} = bus();
+  const started: number[] = [];
+  const finished: number[] = [];
+  const subscription = await wall.subscribe<{revision: number}>('bunny.state.session.*', async message => {
+    started.push(message.data.revision);
+    await subscription.close();
+    finished.push(message.data.revision);
+  });
+  await Promise.all([1, 2].map(revision => core.publish('bunny.state.session.s1', session('s1', revision))));
+  await flush();
+  assert.deepEqual(started, [1]);
+  assert.deepEqual(finished, [1], 'close resolves inside the handler that called it');
+  await core.publish('bunny.state.session.s1', session('s1', 3));
+  await flush();
+  assert.deepEqual(started, [1]);
 });
