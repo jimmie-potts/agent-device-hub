@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Draft, type Removal, type Sdk, type Snapshot, type SyncChange, type SyncedCopy, type SyncRequest} from '../src/index.js';
-import {startSync, type SyncTransport} from '../src/sync.js';
+import {startSync, type SyncAnswer, type SyncCompleted, type SyncTransport} from '../src/sync.js';
 import {
   MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, peek, removed, session, trace, turnEnded, type Session,
 } from './support.js';
@@ -531,28 +531,86 @@ it('a copy\'s own replaced requests never fill the owner\'s queue', async () => 
   if (result.status === 'synced') assert.deepEqual(held(result.copy), ['s1@6']);
 });
 
-it('a first sync that keeps overflowing is refused as unavailable within its deadline', async context => {
+it('a first sync that keeps overflowing is refused as unavailable at its deadline', async context => {
   context.mock.timers.enable({apis: ['setTimeout', 'Date'], now: START});
   const {core, wall} = bus();
   const owner = sessionOwner(core);
   let served = 0;
   let revision = 0;
+  const never = deferred<Snapshot>();
   await core.serveSync([FAMILY], async () => {
     served += 1;
+    // The first two answers take 400 ms each and see more live messages than the buffer holds; the third never comes.
+    if (served > 2) return never.promise;
     const snapshot = owner.snapshot();
-    // Each answer takes 400 ms, and the first five calls see more live messages than the buffer holds.
-    if (served <= 5) for (let count = 0; count < 3; count += 1) await owner.update('s1', ++revision);
+    for (let count = 0; count < 3; count += 1) await owner.update('s1', ++revision);
     await flush();
     context.mock.timers.tick(400);
     return snapshot;
   });
-  const result = await wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 1000, maxBuffered: 2});
-  assert.equal(result.status, 'rejected');
-  if (result.status !== 'rejected') return;
+  const pending = wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 1000, maxBuffered: 2});
+  for (let round = 0; round < 10 && served < 3; round += 1) await flush();
+  assert.equal(served, 3);
+  assert.equal(Date.now() - START, 800);
+  // The third request, sent at 800 ms, gets only the 200 ms left.
+  context.mock.timers.tick(199);
+  assert.equal(await peek(pending), undefined);
+  context.mock.timers.tick(1);
+  const result = await peek(pending);
+  assert.equal(result?.status, 'rejected');
+  if (result?.status !== 'rejected') return;
   assert.equal(result.error.error.code, 'unavailable');
   assert.equal(result.error.error.retryable, true);
-  assert.ok(Date.now() - START <= 1200, 'it ends at its deadline, not after the overflows stop');
-  assert.ok(served <= 3, `${served} provider calls`);
+});
+
+it('a first sync out of time names the last request it sent', async () => {
+  let now = START;
+  const sent: {requestId: string; answer: (answer: SyncAnswer) => void}[] = [];
+  let overflow = (): void => {};
+  const transport: SyncTransport = {
+    now: () => now,
+    subscribe: (_pattern, _handler, {onOverflow}) => {
+      overflow = () => { void onOverflow?.({dropped: 1}); };
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: ({requestId}) => new Promise<SyncAnswer>(answer => { sent.push({requestId, answer}); }),
+    report: () => {},
+  };
+  const pending = startSync(transport, [FAMILY], () => {}, {timeoutMs: 1000});
+  await flush();
+  const [first] = sent;
+  assert.ok(first);
+  // The answer on its way now has a gap, and it arrives at the deadline, too late for another request.
+  overflow();
+  now = START + 1000;
+  const completed: Message<SyncCompleted> = {
+    specversion: '1.0', bunnyprofile: '2.0', id: 'done-1', source: 'bunny/core', type: 'org.bunny.sync.completed', subject: FAMILY,
+    time: new Date(now).toISOString(), kind: 'sync-completed', datacontenttype: 'application/json',
+    dataschema: 'https://bunny.invalid/events/sync-completed/2.0', traceparent: PARENT.traceparent,
+    data: {requestId: first.requestId, revision: 0, members: []},
+  };
+  first.answer({status: 'served', requestId: first.requestId, states: [], completed});
+  const result = await pending;
+  assert.equal(sent.length, 1);
+  assert.equal(result.status === 'rejected' ? result.error.error.code : result.status, 'unavailable');
+  assert.equal(result.status === 'rejected' ? result.requestId : '', first.requestId);
+});
+
+it('only the first sync request joins the caller\'s trace; a later one starts its own', async () => {
+  const {core, wall} = bus({maxQueued: 1});
+  const owner = sessionOwner(core);
+  const requests: Message<SyncRequest>[] = [];
+  await core.serveSync([FAMILY], request => { requests.push(request); return owner.snapshot(); });
+  const result = await wall.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000, parent: PARENT});
+  assert.equal(result.status, 'synced');
+  // A burst: the queue holds s1@1 and drops s1@2, so the copy syncs again.
+  void owner.update('s1', 1);
+  void owner.update('s1', 2);
+  await flush();
+  const traces = requests.map(request => trace(request.traceparent).traceId);
+  assert.equal(traces.length, 2);
+  assert.equal(traces[0], PARENT_TRACE);
+  assert.notEqual(traces[1], PARENT_TRACE);
 });
 
 it('a refused first sync stays stopped however many messages follow', async () => {
@@ -641,19 +699,53 @@ it('a message without an entity is reported and ignored, and the copy goes on', 
   assert.deepEqual(errors[0].scope, {source: 'bunny/wall', pattern: `sync ${FAMILY}`});
 });
 
-it('a sync request whose transport fails is reported and refused as unavailable', async () => {
-  const reported: unknown[] = [];
+it('a sync request whose transport rejects or throws is reported and refused as unavailable', async () => {
   const failure = new Error('the connection dropped');
+  const failures: Record<string, () => Promise<SyncAnswer>> = {rejects: () => Promise.reject(failure), throws: () => { throw failure; }};
+  for (const [how, request] of Object.entries(failures)) {
+    const reported: unknown[] = [];
+    const transport: SyncTransport = {
+      now: () => Date.now(),
+      subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+      request,
+      report: error => { reported.push(error); },
+    };
+    const result = await startSync(transport, [FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(result.status, 'rejected', how);
+    if (result.status !== 'rejected') return;
+    assert.equal(result.error.error.code, 'unavailable', how);
+    assert.equal(result.error.error.requestId, result.requestId, how);
+    assert.deepEqual(reported, [failure], how);
+  }
+});
+
+it('a copy sends no sync request until every family is subscribed, even after an overflow', async () => {
+  const sent: number[] = [];
+  const slow = deferred<undefined>();
+  const overflows: (() => void)[] = [];
+  let subscribed = 0;
   const transport: SyncTransport = {
     now: () => Date.now(),
-    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
-    request: () => Promise.reject(failure),
-    report: error => { reported.push(error); },
+    subscribe: async (pattern, _handler, {onOverflow}) => {
+      overflows.push(() => { void onOverflow?.({dropped: 1}); });
+      // The second family subscribes slowly, as a remote transport may.
+      if (pattern === 'bunny.state.mode.*') await slow.promise;
+      subscribed += 1;
+      return {close: () => Promise.resolve()};
+    },
+    request: () => {
+      sent.push(subscribed);
+      return new Promise<SyncAnswer>(() => {});
+    },
+    report: () => {},
   };
-  const result = await startSync(transport, [FAMILY], () => {}, {timeoutMs: 5000});
-  assert.equal(result.status, 'rejected');
-  if (result.status !== 'rejected') return;
-  assert.equal(result.error.error.code, 'unavailable');
-  assert.equal(result.error.error.requestId, result.requestId);
-  assert.deepEqual(reported, [failure]);
+  void startSync(transport, [FAMILY, 'mode'], () => {}, {timeoutMs: 5000});
+  await flush();
+  // The first family's queue overflows while the second is still subscribing.
+  overflows[0]?.();
+  await flush();
+  assert.deepEqual(sent, [], 'no request before the last subscription');
+  slow.resolve(undefined);
+  await flush();
+  assert.deepEqual(sent, [2], 'one request, once both families are subscribed');
 });
