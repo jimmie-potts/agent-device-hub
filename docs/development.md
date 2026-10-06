@@ -193,7 +193,7 @@ Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one o
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, agent state and status, Hub with its setup and MCP tests, MCP, Tidbyt, LIFX, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest), and the Python consumers, Tidbyt Pillow golden-image check and performance checks |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, agent state and status, Hub with its setup and MCP tests, MCP, Tidbyt, LIFX, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest), and the Python consumers, Tidbyt Pillow golden-image check and performance checks |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
@@ -685,6 +685,20 @@ covers every message kind and building block, the size cap, expiry, retry
 identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
+
+## SDK checks
+
+`packages/sdk` holds the SDK's in-process bus (publish, subscribe, request and
+respond) from [ADR 0012](decisions/0012-bunny-event-platform.md). Its
+[README](../packages/sdk/README.md) documents the API. The package follows the
+[strict profile](#strict-profile-for-new-code), tests included.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:sdk` from the worktree root. `test:sdk` builds, then runs
+`test:sdk:built`: the compiled tests in `packages/sdk/dist/tests/`. The core CI
+job runs `npm run test:sdk:built` after its fresh build. The tests check every
+message they see against profile 2.0 with the event contracts' validator; the
+bus itself does not validate. They need no runtime, device or network.
 
 ## Agent lifecycle contract checks
 
