@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import {test, type TestContext} from 'node:test';
 import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type RequestOptions, type Responder,
-  type Sdk, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type Participant, type RequestOptions,
+  type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '../src/index.js';
 
 const invalid: string[] = [];
@@ -48,9 +48,10 @@ function check(message: unknown, where: string): void {
 }
 
 /** The participant, with every message it sends or receives checked against profile 2.0 for `it`. */
-export function checked(sdk: Sdk): Sdk {
+export function checked(sdk: Participant): Participant {
   return {
     source: sdk.source,
+    close: () => sdk.close(),
     publish: async <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => {
       const message = await sdk.publish(key, draft, options);
       check(message, `published on ${key}`);
@@ -105,7 +106,7 @@ export const modeSet = (requestId: string): Draft<Outcome> => ({
 });
 
 /** A bus whose handler errors are collected, with checked core and wall participants. */
-export function bus(options: BusOptions = {}): {bus: InProcessBus; core: Sdk; wall: Sdk; errors: {error: unknown; scope: ErrorScope}[]} {
+export function bus(options: BusOptions = {}): {bus: InProcessBus; core: Participant; wall: Participant; errors: {error: unknown; scope: ErrorScope}[]} {
   const errors: {error: unknown; scope: ErrorScope}[] = [];
   const created = new InProcessBus({onError: (error, scope) => { errors.push({error, scope}); }, ...options});
   return {bus: created, core: checked(created.connect('bunny/core')), wall: checked(created.connect('bunny/wall')), errors};
@@ -136,6 +137,29 @@ export function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void
 }
 
 export const START = Date.parse('2026-10-06T12:00:00.000Z');
+
+/** A clock and scheduler that move only when the test advances them, like a module's clock in the runtime. */
+export function manualClock(start = START): {now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number} {
+  let now = start;
+  const timers = new Set<{at: number; callback: () => void}>();
+  return {
+    now: () => now,
+    scheduler: {after: (delayMs, callback) => {
+      const timer = {at: now + delayMs, callback};
+      timers.add(timer);
+      return () => { timers.delete(timer); };
+    }},
+    advance: ms => {
+      now += ms;
+      for (const timer of [...timers].sort((a, b) => a.at - b.at)) {
+        if (timer.at > now) break;
+        // A callback that ran earlier in this pass may have cancelled this one.
+        if (timers.delete(timer)) timer.callback();
+      }
+    },
+    pending: () => timers.size,
+  };
+}
 export const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 
 /** The trace id, span id and flags of a version-00 traceparent. */

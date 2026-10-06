@@ -58,6 +58,20 @@ export interface Subscription {
   close(): Promise<void>;
 }
 
+/** Cancels a scheduled callback. It does nothing once the callback has run or was cancelled. */
+export type Cancel = () => void;
+
+/** The wall clock, in epoch milliseconds. */
+export interface Clock {
+  now(): number;
+}
+
+/** Runs delayed callbacks. The runtime gives the bus and every module the same one, so SDK deadlines follow it. */
+export interface Scheduler {
+  /** Runs `callback` once after `delayMs` milliseconds, and returns a function that cancels it. */
+  after(delayMs: number, callback: () => void): Cancel;
+}
+
 /** One participant's connection to the bus. Every message it sends carries its `source`. */
 export interface Sdk {
   readonly source: string;
@@ -76,6 +90,11 @@ export interface Sdk {
   sync<T extends object = Record<string, unknown>>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions): Promise<SyncResult<T>>;
   /** Answers sync requests for `families` from the owner's current state. One owner serves each family. */
   serveSync(families: readonly string[], provider: SyncProvider): Promise<Subscription>;
+}
+
+/** A participant as the code that connected it holds it: the SDK calls, and `close`. */
+export interface Participant extends Sdk {
+  close(): Promise<void>;
 }
 
 /** A refused SDK call, such as a malformed routing key, carrying the shared error body. */

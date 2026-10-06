@@ -7,7 +7,8 @@ import {DeliveryQueue} from './queue.js';
 import {overlaps, parseKey, parsePattern, type Category, type Pattern} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
-  type RequestResult, type Responder, type Sdk, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
+  type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
+  type TraceContext,
 } from './sdk.js';
 import {startSync, type SyncHandler, type SyncOptions, type SyncProvider} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
@@ -25,6 +26,8 @@ export type BusOptions = {
   maxQueued?: number;
   /** Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` process warning. */
   onError?: (error: unknown, scope: ErrorScope) => void;
+  /** Runs request deadlines. Defaults to the global `setTimeout`. */
+  scheduler?: Scheduler;
 };
 
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
@@ -97,9 +100,10 @@ export class InProcessBus {
    * A participant's connection. `source` is its CloudEvents source, such as `bunny/core` or `bunny/modules/pixoo`; a
    * malformed one throws `SdkError` at once.
    */
-  connect(source: string): Sdk {
+  connect(source: string): Participant {
     if (!SOURCE.test(source) || source.length > 256) throw invalid(`source ${source}`);
     return {
+      close: () => Promise.reject(new Error('not implemented')),
       source,
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
         attempt(() => this.#publish(source, key, draft, options)),
