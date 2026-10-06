@@ -1,4 +1,5 @@
 export {InProcessBus, type BusOptions, type ErrorScope} from './in-process.js';
+export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
 export {
   MAX_TIMEOUT_MS, SdkError, type AcceptedReply, type Cancel, type Clock, type Command, type CommandDraft, type Draft, type Handler, type Overflow,
   type Participant, type PublishedKind, type RejectedReply, type Reply, type RequestOptions, type RequestResult, type Responder,
