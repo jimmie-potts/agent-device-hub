@@ -1608,13 +1608,15 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:nanoleaf:built` after its fresh build. The suite needs no device,
 Hub or Python.
 
-The port is split into three slices by area:
+The port is split into slices by area:
 
 - **Slice 1:** session-to-Line projection, shared and legacy source switching,
   Codex metadata, Line placement, NL22 enrollment, and the device registry,
   layout and database migration they need.
-- **Slice 2:** device configuration loading, geometry, the renderer, effects,
-  saved animation favorites and the Nanoleaf HTTP client.
+- **Slice 2a:** device configuration loading, Line pairing, map geometry and
+  the renderer, with the display encoder it shares with effects.
+- **Slice 2b:** effects, saved animation favorites and the Nanoleaf HTTP
+  client, including pairing.
 - **Slice 3:** the worker, legacy hook input, modes, scenes, comets, edits and
   the control execution half of `controller_state.py`.
 
@@ -1625,6 +1627,14 @@ recorded Python sequences compares, after every step, the results and the rows o
 `line_prefs`, `map_settings`, `meta` and `display_v3`, plus the `shared_input`
 row except `config` (its envelope by hash). `palette`, `map_pending`, `locate`,
 `shared_ack` and `shared_input.config` are not compared.
+
+Recorded Python outputs also check Line pairing, map geometry, configuration
+discovery, and zone colors and effect payloads on random renderer states. The
+colors, payloads and pairing match exactly; map geometry matches within a
+relative 1e-9, because `Math.sin`, `Math.cos` and `Math.atan2` can differ from
+the C library's in the last bit. `modules/nanoleaf/tests/fixtures/record.py`
+re-records them from a codex-nanoleaf checkout, as PORTING.md describes; CI does
+not run it.
 
 ## Local controller host checks
 
