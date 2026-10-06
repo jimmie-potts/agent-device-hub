@@ -652,7 +652,9 @@ development only, not citable evidence.
 
 Unless `APP_VERIFY_PROOF_ROOT` is set, the orchestrator gives every adapter the
 Hub's proof root, so consumer receipts and events stay under the canonical Hub
-checkout even when a consumer runs from a disposable checkout.
+checkout even when a consumer runs from a disposable checkout. Each composed
+run's receipt then records `roots.proof` as that absolute path, not the
+`<canonical checkout>` label.
 
 `start` records each step in the composition before the next one runs:
 

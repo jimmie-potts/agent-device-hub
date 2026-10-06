@@ -3,7 +3,7 @@
 // its name does not match `*.test.mjs`. Hub #335 added command admission through the contract's reference `admit`,
 // scripted answers, a holdable request and a moment spy.
 //
-// const fake = await startFakeController({serves: '1.1'});  // or '1.0' or '1.0-negotiating'
+// const fake = await startFakeController({serves: '1.1'});  // or '1.0', '1.0-negotiating' or '1.0-unknown-route'
 // t.after(fake.close);
 // new ControllerClient(fake.config());                        // or startHub({controllers: [fake.config()]})
 //

@@ -4,6 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {createServer} from 'node:http';
 import {validate} from '@jimmie-potts/device-contracts';
 import {ControllerClient} from '../dist/controllers.js';
 import {startHub} from '../dist/server.js';
@@ -50,6 +51,16 @@ test('a controller that refuses the versioned read with 404 invalid-request is 1
   assert.equal(client.status().health,'ready','the refusal is a version verdict, not an outage');
   for(let i=0;i<3;i++)assert.deepEqual(await client.snapshot('1.1'),fake.snapshot10());
   assert.equal(versionedReads(fake).length,1);assert.equal(fake.commands.length,0);
+});
+
+test('a 404 refusal with any other body shape is an outage, not a 1.0-only verdict',async t=>{
+  const template=await startFakeController({serves:'1.1'});
+  const server=createServer((req,res)=>{res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({failure:{code:'invalid-request',detail:'x'}}));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const client=new ControllerClient({...template.config(),endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`});
+  t.after(async()=>{client.close();await template.close();await new Promise(resolve=>server.close(resolve));});
+  await assert.rejects(client.snapshot('1.1'),error=>error.code==='controller-unavailable'&&error.status===503);
+  assert.deepEqual(client.negotiation(),{verdict:'unknown'});
 });
 
 test('a 404 for an unknown device on a versioned read still fails and records no verdict',async t=>{

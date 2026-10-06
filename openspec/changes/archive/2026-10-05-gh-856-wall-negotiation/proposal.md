@@ -27,6 +27,6 @@ None.
 
 - **Source:** `apps/hub/src/controllers.ts`, `apps/hub/verify/compose.mjs`, hub and verify tests and fixtures.
 - **Docs:** `apps/hub/README.md`, `docs/app-verification.md` and `docs/controller-contract.md`.
-- **Nothing else:** no contract package, Nanoleaf or Pixoo source changes. The fix is installed on the owner's Hub.
+- **Nothing else:** no contract package, Nanoleaf or Pixoo source changes. Delivery target: installed on the owner's Hub after merge.
 
 **No design.md.** The change narrows one error mapping, switches one read path and passes one existing environment override. It has no new concurrency, migration or timing behavior.

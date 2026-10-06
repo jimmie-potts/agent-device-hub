@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Return a disposable Hub, Nanoleaf and Pixoo composition to its paired initial state while preserving run ownership, private pairing and frozen verification proof.
+Return a disposable Hub, Nanoleaf and Pixoo composition to its paired initial state while preserving run ownership, private pairing and frozen verification proof, and keep the composition's readiness checks and proof location faithful to what the dashboard reads and what consumers record.
 
 ## Requirements
 

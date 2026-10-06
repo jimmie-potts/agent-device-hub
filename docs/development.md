@@ -740,7 +740,7 @@ Controller contract 1.1 reads for #576 are covered by
 packaged hub tests already include, so they need no new CI job. They run over
 loopback HTTP against the shared fake controller in
 `apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
-`'1.0'` and `'1.0-negotiating'`, epoch restarts, injected timeouts and 5xx answers,
+`'1.0'`, `'1.0-negotiating'` and `'1.0-unknown-route'` (Nanoleaf's 404 refusal), epoch restarts, injected timeouts and 5xx answers,
 and a log of every request and command). Import it from a test instead of writing
 another ad hoc server; it is not a `*.test.mjs` suite. The cases cover negotiation
 and the `1.0-only` verdict per controller epoch, unchanged 1.0 readers, the strict
