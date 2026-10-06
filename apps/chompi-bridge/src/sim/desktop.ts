@@ -1,12 +1,12 @@
 import { systemClock, type Clock } from '../clock.js';
 import {
-  OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
-  type Observation, type OsAdapter,
+  MAX_VOLUME_PRESSES, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type Client, type ClientVersions, type ForegroundWindow, type KeyRequest,
+  type Observation, type OsAdapter, type VolumeKey,
 } from '../os-adapter.js';
 import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constants.js';
 
 /**
- * A simulated Codex and Claude desktop behind OS adapter interface version 3, for disposable verification runs and the
+ * A simulated Codex and Claude desktop behind OS adapter interface version 4, for disposable verification runs and the
  * shared scenario catalog (#853). `chompi-bridge run --desktop sim` selects it; nothing loads it otherwise. It models
  * what the router observes and causes, as the qualified clients behave (README "Safety rules", UIA-NOTES.md):
  *
@@ -16,7 +16,9 @@ import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constant
  * - Enter submits the focused composer's text, or presses a focused card stop, as a keyboard would;
  * - a Claude card keeps the composer; a Codex card replaces it, so Codex's approval check is unknown while it is open;
  * - pressing a stop answers and closes the card; Codex's composer then comes back focused;
- * - releasing the dictation chord inserts a fixed synthetic phrase into the focused composer, as Wispr would.
+ * - releasing the dictation chord inserts a fixed synthetic phrase into the focused composer, as Wispr would;
+ * - a volume key changes a synthetic system volume (2 points per press, 0-100) or toggles mute, reaches no window and,
+ *   like the Windows keyboard, is refused while any key is held; a volume step unmutes, as Windows does.
  *
  * Everything is synthetic: titles and text come from the run's seed or its operator, never from a real desktop. This
  * proves routing behavior, not Windows client fidelity (UI Automation trees, real focus timing, Wispr).
@@ -61,12 +63,19 @@ export type DesktopLogEntry =
   | { at: number; seq: number; kind: 'card-press'; client: Client; index: number; stop: string; card: CardKind }
   | { at: number; seq: number; kind: 'scroll'; client: Client; notches: number }
   | { at: number; seq: number; kind: 'dictation'; client: Client | null; text: string }
+  | { at: number; seq: number; kind: 'volume'; key: VolumeKey; presses: number; volume: number; muted: boolean }
   | { at: number; seq: number; kind: 'operator'; action: string };
 
 type LogInput = DesktopLogEntry extends infer T ? T extends unknown ? Omit<T, 'at' | 'seq'> : never : never;
 
+/** The synthetic system audio the volume keys change. */
+export interface SystemAudio { volume: number; muted: boolean }
+/** Volume points per volume key press, as Windows steps it. */
+export const SIM_VOLUME_STEP = 2;
+
 export interface DesktopSnapshot {
   foreground: WindowId | null;
+  system: SystemAudio;
   dictating: boolean;
   held: string[];
   versions: Record<Client, string | null>;
@@ -98,6 +107,7 @@ export class SimulatedDesktop {
   readonly #cards: Record<Client, SimCard | null> = { codex: null, claude: null };
   readonly #held = new Set<string>();
   #dictating = false;
+  readonly #system: SystemAudio = { volume: 50, muted: false };
   #cardSerial = 0;
   #logSeq = 0;
   #listeners = new Set<() => void>();
@@ -190,6 +200,7 @@ export class SimulatedDesktop {
     const card = (client: Client): SimCard | null => this.#cards[client] ? { ...this.#cards[client]!, stops: [...this.#cards[client]!.stops] } : null;
     return {
       foreground: this.#foreground,
+      system: { ...this.#system },
       dictating: this.#dictating,
       held: this.held,
       versions: { ...this.#versions },
@@ -265,6 +276,18 @@ export class SimulatedDesktop {
       this.#endDictation();
     } else this.#tap(keys.join('+'));
     this.#changed();
+  }
+
+  /** @internal A volume key acts on the system, never a window; like the Windows keyboard it never joins held keys. */
+  volume(key: VolumeKey, presses: number): void {
+    if (this.#held.size > 0) throw new Error('keys-held');
+    if (key === 'VolumeMute') this.#system.muted = !this.#system.muted;
+    else {
+      const step = key === 'VolumeUp' ? SIM_VOLUME_STEP : -SIM_VOLUME_STEP;
+      this.#system.volume = Math.max(0, Math.min(100, this.#system.volume + step * presses));
+      this.#system.muted = false;
+    }
+    this.#record({ kind: 'volume', key, presses, ...this.#system });
   }
 
   /** @internal */
@@ -373,7 +396,7 @@ export class SimulatedDesktop {
   }
 }
 
-/** The router's view of a simulated desktop: OS adapter interface version 3, branded `simulated`. */
+/** The router's view of a simulated desktop: OS adapter interface version 4, branded `simulated`. */
 export interface SimulatedOsAdapter extends OsAdapter {
   readonly simulated: true;
   readonly desktop: SimulatedDesktop;
@@ -397,6 +420,14 @@ export function createSimulatedOsAdapter(desktop: SimulatedDesktop): SimulatedOs
     async foregroundWindow() { enter('foregroundWindow'); return desktop.observeForeground(); },
     async openUri(uri) { enter('openUri'); desktop.openLink(uri); },
     async sendKeys(request) { enter('sendKeys'); desktop.keys(request); },
+    sendVolumeKey: (key, presses) => new Promise<void>(resolve => {
+      enter('sendVolumeKey');
+      if (!['VolumeUp', 'VolumeDown', 'VolumeMute'].includes(key) || !Number.isInteger(presses) || presses < 1 || presses > MAX_VOLUME_PRESSES) {
+        throw new Error('invalid-volume-request');
+      }
+      desktop.volume(key, presses);
+      resolve();
+    }),
     async releaseAll() { enter('releaseAll'); desktop.releaseKeys(); },
     releaseAllSync() { enter('releaseAllSync'); desktop.releaseKeys(); },
     async scrollClient(client, notches) { enter('scrollClient'); return known(desktop.scroll(client, notches)); },

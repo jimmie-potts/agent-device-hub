@@ -2,7 +2,7 @@
 // (nothing is opened, read or written), checks that the matcher rejects the attached stock CHOMPI, checks the
 // named-pipe single-instance lock across processes, runs the Windows OS adapter's read-only observations, then runs
 // the portable suites under this runtime. The adapter check never sends a keystroke or opens a link: its Win32
-// surface is wrapped so SendInput (keys and wheel) and ShellExecute throw. On a \\wsl.localhost checkout installed from Linux, the
+// surface is wrapped so SendInput (keys, the volume keys and wheel) and ShellExecute throw. On a \\wsl.localhost checkout installed from Linux, the
 // win32-x64 koffi prebuild (@koromix/koffi-win32-x64, pinned in the lockfile) must sit beside koffi; npm ci on Windows
 // installs it.
 import assert from 'node:assert/strict';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createNodeHidTransport, loadNodeHid } from '../dist/node-hid-transport.js';
 import { matchesController } from '../dist/matcher.js';
 import { acquireInstanceLock, defaultLockPath, InstanceLockHeldError } from '../dist/lock.js';
-import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY, createWindowsAdapter, loadWin32Api, UiaHelper } from '../dist/windows/index.js';
+import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY, createWindowsAdapter, loadWin32Api, UiaHelper, VOLUME_KEYS } from '../dist/windows/index.js';
 
 assert.equal(process.platform, 'win32', 'native CHOMPI bridge check requires Windows');
 assert.equal(process.versions.node.split('.')[0], '24', 'native CHOMPI bridge check requires Node 24');
@@ -143,6 +143,12 @@ assert.equal(versions.claude.status, 'known', `Claude version: ${versions.claude
 assert.deepEqual(await adapter.codexArchived(randomUUID()), { status: 'known', value: false });
 assert.deepEqual(await adapter.claudeSessions([]), { status: 'known', value: [] });
 assert.deepEqual(await adapter.claudeSessions([`local_${randomUUID()}`]), { status: 'known', value: [] }, 'a missing record is omitted');
+// The volume keys (#865) use the same guarded SendInput. Their key table is checked, and malformed requests are refused
+// before any attempt; no volume key is sent.
+assert.deepEqual([...VOLUME_KEYS], [['VolumeUp', 0xaf], ['VolumeDown', 0xae], ['VolumeMute', 0xad]]);
+for (const [key, presses] of [['VolumeUp', 0], ['VolumeDown', 11], ['Enter', 1]]) {
+  await assert.rejects(adapter.sendVolumeKey(key, presses), error => error.code === 'invalid-volume-request', `${key} x${presses} is refused`);
+}
 await adapter.close();
 assert.equal(guarded.calls, 0, 'no keystroke or link was attempted');
 const foregroundPackage = foreground.value?.packageIdentity ?? null;
@@ -176,7 +182,8 @@ console.log(JSON.stringify({
   controllerMatches: controllers.length,
   lock: { secondHolderRefused: true, releasedOnExit: true, releasedOnKill: true },
   osAdapter: {
-    scope: 'read-only; SendInput (keys, wheel) and ShellExecute guarded, zero attempts; no card button focused or pressed',
+    scope: 'read-only; SendInput (keys, volume keys, wheel) and ShellExecute guarded, zero attempts; no card button focused or pressed',
+    volumeKeys: { table: 'VolumeUp 0xAF, VolumeDown 0xAE, VolumeMute 0xAD', malformedRefused: true, sent: 0 },
     ffiLoaded: true,
     foreground: foreground.value === null ? 'none' : foregroundPackage === CODEX_PACKAGE_FAMILY ? 'codex' : foregroundPackage === CLAUDE_PACKAGE_FAMILY ? 'claude' : foregroundPackage ? 'other-packaged' : 'unpackaged',
     releaseAllNoop: true,

@@ -45,8 +45,17 @@ export interface RenderInput {
   recording: boolean;
   /** A refused or uncertain Send or card press: both big-wheel LEDs show the error color. */
   wheelError?: boolean;
-  /** The visible task page (1-based) for knob 4's LED, and whether a hidden page holds a task with attention. */
-  page?: { number: number; hiddenAttention: boolean };
+  /**
+   * The visible task page (1-based) for knob 4's LED, whether a hidden page holds a task with attention, and whether a
+   * refused Attention click flashes the LED in the error color (#865).
+   */
+  page?: { number: number; hiddenAttention: boolean; error?: boolean };
+  /** Whether any task on a page waits for the owner: the light of a black key mapped to `attention` (#865). */
+  attentionWaiting?: boolean;
+  /** Black-key controls flashing the error color for a refused press. */
+  keyErrors?: ReadonlySet<number>;
+  /** A volume key ignored during Record or failed: the volume knob's LED shows the error color. */
+  volumeError?: boolean;
   pulseOn: boolean;
 }
 
@@ -56,13 +65,22 @@ export const scale = ([r, g, b]: Rgb, factor: number): Rgb => [Math.round(r * fa
 export const WHEEL_LEDS: readonly number[] = [30, 31];
 /** Small knob 4's LED (protocol LED index 29): the page indicator (#822). */
 export const PAGE_LED = 29;
+/** The volume knob's LED (protocol LED index 34): it lights only to flash an ignored or failed volume key (#865). */
+export const VOLUME_LED = 34;
+
+/** The black-key controls the profile gives `action`, in control order. */
+export function keyControls(keys: Readonly<Partial<Record<string, string>>>, action: string): number[] {
+  return Object.entries(keys).filter(([, value]) => value === action).map(([control]) => Number(control)).sort((a, b) => a - b);
+}
 
 /**
  * The 35-LED frame for `bridge.setLeds`. LEDs without a routing meaning stay off. The big wheel's LEDs light only to
  * flash a refused or uncertain Send or card press (not a `repeat` bounce or a Send abandoned for Record): readiness is
  * decided at the press, and nothing polls the window in front to show it.
  */
-export function renderFrame({ profile, slots, recording, wheelError = false, page, pulseOn }: RenderInput): Rgb[] {
+export function renderFrame({
+  profile, slots, recording, wheelError = false, page, attentionWaiting = false, keyErrors, volumeError = false, pulseOn,
+}: RenderInput): Rgb[] {
   const frame: Rgb[] = Array.from({ length: LED_COUNT }, () => OFF);
   const { colors } = profile;
   slots.forEach((light, i) => {
@@ -77,6 +95,13 @@ export function renderFrame({ profile, slots, recording, wheelError = false, pag
   if (recording && record !== undefined) frame[record] = colors.record;
   if (wheelError) for (const index of WHEEL_LEDS) frame[index] = colors.error;
   // Knob 4's LED shows the visible page; it alternates with the attention color while a hidden page has attention.
-  if (page) frame[PAGE_LED] = page.hiddenAttention && pulseOn ? colors.attention : colors.pages[page.number - 1] ?? OFF;
+  // A refused Attention click flashes it in the error color, then it shows the page again.
+  if (page) frame[PAGE_LED] = page.error ? colors.error : page.hiddenAttention && pulseOn ? colors.attention : colors.pages[page.number - 1] ?? OFF;
+  // A black key mapped to `attention` shows the attention color, steady, while any task waits; a Back key has no light.
+  for (const control of keyControls(profile.keys, 'attention')) {
+    const index = ledIndex(control);
+    if (index !== undefined) frame[index] = keyErrors?.has(control) ? colors.error : attentionWaiting ? colors.attention : OFF;
+  }
+  if (volumeError) frame[VOLUME_LED] = colors.error;
   return frame.map(([r, g, b]) => [r, g, b] as const);
 }

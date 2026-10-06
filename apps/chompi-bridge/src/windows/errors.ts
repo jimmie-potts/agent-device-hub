@@ -1,7 +1,7 @@
 import type { KeyName } from '../os-adapter.js';
 
 export type KeyboardErrorCode =
-  | 'invalid-key-request' | 'unknown-key' | 'held-modifier' | 'held-key' | 'key-already-down' | 'keys-held'
+  | 'invalid-key-request' | 'invalid-volume-request' | 'unknown-key' | 'held-modifier' | 'held-key' | 'key-already-down' | 'keys-held'
   | 'release-pending' | 'send-input-failed' | 'win32-unavailable' | 'adapter-closed';
 
 /** A refused or failed keystroke. `code` is stable; messages carry key names only, never desktop content. */

@@ -42,11 +42,11 @@ const DRIVERS = {
 };
 
 for (const [name, make] of Object.entries(DRIVERS)) {
-  test(`${name}: version 3 shape and the foreground window by package identity`, async () => {
+  test(`${name}: version 4 shape and the foreground window by package identity`, async () => {
     const d = make(new ManualClock(1_000));
     assert.equal(d.adapter.version, OS_ADAPTER_VERSION);
     assert.equal(typeof d.adapter.platform, 'string');
-    for (const method of ['clientVersions', 'foregroundWindow', 'openUri', 'sendKeys', 'releaseAll', 'scrollClient', 'codexSelectedThread', 'composerFocused',
+    for (const method of ['clientVersions', 'foregroundWindow', 'openUri', 'sendKeys', 'sendVolumeKey', 'releaseAll', 'scrollClient', 'codexSelectedThread', 'composerFocused',
       'approvalVisible', 'cardButtons', 'focusCardButton', 'invokeCardButton', 'codexArchived', 'claudeSessions', 'close']) {
       assert.equal(typeof d.adapter[method], 'function', method);
     }
@@ -151,7 +151,40 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     await d.adapter.close();
     assert.equal(d.adapter.held?.size ?? d.desktop.held.length, 0);
   });
+
+  test(`${name}: a volume key reaches the system, never a window, and never joins held keys (#865)`, async () => {
+    const d = make(new ManualClock(1_000));
+    d.codexThread(tid(1), 'Task 1');
+    await d.adapter.openUri(`codex://threads/${tid(1)}`);
+    await d.adapter.sendKeys({ action: 'tap', keys: ['LeftAlt', 'L'] });
+    const keysBefore = d.adapter.keys?.length ?? d.desktop.log.filter(e => e.kind === 'key').length;
+    for (const [key, presses] of [['Enter', 1], ['VolumeUp', 0], ['VolumeUp', 11], ['VolumeDown', 1.5], ['VolumeMute', '1']]) {
+      await assert.rejects(d.adapter.sendVolumeKey(key, presses), /invalid-volume-request/, `${key} x${presses} is refused`);
+    }
+    await d.adapter.sendVolumeKey('VolumeUp', 2);
+    await d.adapter.sendVolumeKey('VolumeMute', 1);
+    assert.equal(d.adapter.keys?.length ?? d.desktop.log.filter(e => e.kind === 'key').length, keysBefore, 'no keystroke reaches the client');
+    assert.deepEqual(await d.adapter.composerFocused('codex'), known(true), 'the client is untouched');
+    await d.adapter.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
+    await assert.rejects(d.adapter.sendVolumeKey('VolumeDown', 1), /keys-held/);
+    await d.adapter.releaseAll();
+  });
 }
+
+test('the simulated desktop keeps a synthetic system volume and mute state that volume keys change (#865)', async () => {
+  const desktop = new SimulatedDesktop({ clock: new ManualClock(1_000) });
+  const adapter = createSimulatedOsAdapter(desktop);
+  assert.deepEqual(desktop.snapshot().system, { volume: 50, muted: false });
+  await adapter.sendVolumeKey('VolumeUp', 3);
+  await adapter.sendVolumeKey('VolumeMute', 1);
+  assert.deepEqual(desktop.snapshot().system, { volume: 56, muted: true });
+  await adapter.sendVolumeKey('VolumeDown', 10);
+  await adapter.sendVolumeKey('VolumeDown', 10);
+  await adapter.sendVolumeKey('VolumeDown', 10);
+  assert.deepEqual(desktop.snapshot().system, { volume: 0, muted: false }, 'the level stops at 0, and a volume step unmutes as Windows does');
+  assert.deepEqual(desktop.log.filter(e => e.kind === 'volume').map(e => [e.key, e.presses]), [['VolumeUp', 3], ['VolumeMute', 1], ['VolumeDown', 10], ['VolumeDown', 10], ['VolumeDown', 10]]);
+  assert.deepEqual(desktop.calls.filter(c => c === 'sendVolumeKey').length, 5);
+});
 
 test('the simulated desktop types Enter into the focused composer and nowhere else', async () => {
   const clock = new ManualClock(1_000);

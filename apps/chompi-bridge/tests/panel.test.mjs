@@ -14,7 +14,7 @@ test('LED roles follow the profile: slot keys, the Record key, the two wheel LED
   assert.equal(roles[25], 'record');
   assert.deepEqual([roles[30], roles[31]], ['wheel', 'wheel']);
   assert.equal(roles[29], 'page');
-  assert.equal(roles[15], 'unused');
+  assert.equal(roles[16], 'unused', 'unmapped black keys have no light');
 });
 
 test('lights are named by role, so a held Record reads record although record and error share a color', () => {
@@ -44,4 +44,20 @@ test('knob 4\'s LED is named by its page color, or attention while it alternates
   assert.equal(describeLights(custom, leds)[29], `rgb ${DEFAULT_PAGE_COLORS[0].join(', ')}`, 'only the profile\'s colors name a page');
   leds[0] = DEFAULT_PAGE_COLORS[0];
   assert.equal(describeLights(profile, leds)[0], `rgb ${DEFAULT_PAGE_COLORS[0].join(', ')}`, 'a slot key never reads as a page');
+});
+
+test('a black key mapped to attention and the volume knob have light roles; knob 4\'s LED can read error (#865)', () => {
+  const roles = lightRoles(profile);
+  assert.equal(roles[15], 'unused', 'no black key is mapped by default');
+  assert.equal(roles[34], 'volume');
+  assert.equal(lightRoles({ ...profile, keys: { 20: 'attention', 21: 'back' } })[19], 'attention', 'the role follows the profile map');
+  assert.equal(lightRoles({ ...profile, keys: { 20: 'attention', 21: 'back' } })[20], 'unused');
+  const leds = off();
+  leds[29] = profile.colors.error;
+  leds[34] = profile.colors.error;
+  const names = describeLights(profile, leds);
+  assert.deepEqual([names[29], names[34]], ['error', 'error'], 'a refused Attention click on knob 4\'s LED, a volume flash');
+  const mapped = { ...profile, keys: { 20: 'attention' } };
+  leds[19] = profile.colors.attention;
+  assert.equal(describeLights(mapped, leds)[19], 'attention');
 });
