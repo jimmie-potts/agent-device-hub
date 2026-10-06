@@ -121,3 +121,20 @@ test('language survives independent numeric exclusions while capture and timesta
  assert.equal(raw(ingest(source.map(r=>({...r,timestamp:'invalid'})))).coverage.eligible,0);
  const cleared=store.clearAll('2026-10-02T16:00:00.000Z');store.markPublished(cleared.snapshot.revision);assert.equal(raw(ingest(source)).coverage.eligible,0);store.close();
 });
+
+test('on-time collections within the cadence tolerance record no observation gap',t=>{
+  const {open}=setup(t);const store=open();let at=Date.parse('2026-10-02T16:00:00.000Z');
+  const step=(ms,options)=>{at+=ms;const s=store.ingest([row('a')],new Date(at).toISOString(),options);store.markPublished(s.revision);return s.coverage.gaps;};
+  step(0);
+  assert.deepEqual(step(300_017),[]);
+  assert.deepEqual(step(449_999),[]);
+  assert.deepEqual(step(450_000),[]);
+  const missedFrom=new Date(at).toISOString();
+  assert.deepEqual(step(450_001),[{from:missedFrom,to:new Date(at).toISOString(),reason:'not-observed'}]);
+  const merged=step(600_000);
+  assert.deepEqual(merged,[{from:missedFrom,to:new Date(at).toISOString(),reason:'not-observed'}]);
+  assert.equal(step(300_000).length,1);
+  const failedFrom=new Date(at).toISOString();
+  assert.deepEqual(step(300_017,{failedAttempt:true}).at(-1),{from:failedFrom,to:new Date(at).toISOString(),reason:'failed-attempt'});
+  store.close();
+});
