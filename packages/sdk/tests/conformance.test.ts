@@ -286,6 +286,8 @@ function suite(transport: Transport): void {
       await closing;
       const result = await waiting;
       assert.equal(codeOf(result), transport.closedWhileQueued);
+      // Remotely, the edge takes the command out once it sees the requester drop the call.
+      await world.dropped('request', 1);
     } finally {
       busy.resolve({status: 'accepted'});
     }

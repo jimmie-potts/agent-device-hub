@@ -9,7 +9,7 @@ import {
 import {buildMessage, type Content} from './envelope.js';
 import type {InProcessBus} from './in-process.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
-import {SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
+import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
 import {childOf} from './trace.js';
 
@@ -21,6 +21,7 @@ export type EdgeOptions = {
   bus: InProcessBus;
   /** Validates every inbound message: profile 2.0, the registered payload schemas and the 256 KiB cap. */
   validator: MessageValidator;
+  /** One per remote source. A token may appear once; a source may hold several, as during a rotation. */
   grants: readonly RemoteGrant[];
   log?: (record: EdgeLogRecord) => void;
   now?: () => number;
@@ -33,11 +34,13 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 }};
 
 /**
- * How long past a request's expiry the edge still waits for its result. The remote requester's own deadline settles
- * the request first, so a remote part always sees the same deadline answer.
+ * How long past its expiry the edge still holds a forwarded command or sync request for the remote part's answer. The
+ * bus settles the requester at the expiry itself, so this only frees the forward once nothing can use its answer.
  */
-const GRACE_MS = 1000;
+const FORWARD_MARGIN_MS = 100;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
+const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
+const REPLY_SCHEMA = 'https://bunny.invalid/events/reply/2.0';
 
 class Refusal extends Error {
   readonly body: ErrorBody;
@@ -65,13 +68,20 @@ function identifier(body: Fields, name: string): string {
   return value;
 }
 
-/** An error body whose code is registered with its flag, as a remote responder or owner may refuse with. */
-function registered(value: unknown): ErrorBody | undefined {
+/**
+ * A remote responder's or owner's refusal, rebuilt as the shared error body: a registered code with its flag, and at
+ * most `MAX_DETAIL` characters of detail. Anything else it carried is dropped. Undefined when it is not a refusal.
+ */
+function rebuilt(value: unknown): ErrorBody | undefined {
   const error = fields(fields(value)?.error);
   const code = error?.code;
   if (typeof code !== 'string' || errorCodes[code]?.retryable !== error?.retryable) return undefined;
-  return value as ErrorBody;
+  const detail = typeof error?.detail === 'string' && error.detail.length > 0 ? error.detail.slice(0, MAX_DETAIL) : undefined;
+  return errorBody(code, detail === undefined ? {} : {detail});
 }
+
+/** A forwarded command or sync request, waiting for the remote part's answer. */
+type Waiting = {kind: 'command' | 'sync'; connection: string; finish: (answer: Reply | Snapshot | ErrorBody) => void};
 
 type Connection = {
   id: string;
@@ -85,8 +95,6 @@ type Connection = {
   drained: Promise<void> | undefined;
   /** Subscriptions, responders and sync owners by the id the remote part chose. */
   opened: Map<string, Subscription>;
-  /** Forwarded commands and sync requests waiting for the remote part's answer, by `<id>/<requestId>`. */
-  waiting: Map<string, (answer: Reply | Snapshot | ErrorBody) => void>;
 };
 
 export class RemoteEdge {
@@ -97,13 +105,27 @@ export class RemoteEdge {
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #connections = new Map<string, Connection>();
+  /**
+   * Forwarded commands and sync requests waiting for an answer, by source, responder or owner id and request id. They
+   * outlive a connection, so a reply that comes on the reconnected stream still reaches the requester.
+   */
+  readonly #waiting = new Map<string, Waiting>();
   /** One participant per source, for calls that need no connection. */
   readonly #participants = new Map<string, Sdk>();
 
   constructor(options: EdgeOptions) {
     this.#bus = options.bus;
     this.#validator = options.validator;
-    this.#grants = options.grants.map(({source, token}) => ({source, digest: digest(token)}));
+    // A token that two grants share would make the source ambiguous. Neither refusal names the token.
+    const grants = options.grants.map(({source, token}) => {
+      if (typeof source !== 'string' || !SOURCE.test(source) || source.length > 256) throw new SdkError(errorBody('invalid-request', {detail: 'a grant names a malformed source'}));
+      if (typeof token !== 'string' || token.length === 0) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} has no token`}));
+      return {source, digest: digest(token)};
+    });
+    if (new Set(grants.map(grant => grant.digest.toString('hex'))).size !== grants.length) {
+      throw new SdkError(errorBody('invalid-request', {detail: 'two grants share a token'}));
+    }
+    this.#grants = grants;
     const log = options.log ?? (() => {});
     this.#log = record => {
       try {
@@ -131,9 +153,15 @@ export class RemoteEdge {
     }
   }
 
-  /** Ends every stream and closes what the remote parts opened. */
+  /**
+   * Ends every stream and closes what the remote parts opened. Forwarded commands still waiting become uncertain, and
+   * forwarded sync requests unavailable.
+   */
   close(): Promise<void> {
     this.disconnect();
+    for (const waiting of [...this.#waiting.values()]) {
+      waiting.finish(waiting.kind === 'command' ? errorBody('uncertain-result', {detail: 'the edge closed'}) : errorBody('unavailable', {detail: 'the edge closed'}));
+    }
     return Promise.resolve();
   }
 
@@ -149,7 +177,7 @@ export class RemoteEdge {
       }
       if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', `no ${String(request.method)} ${path}`);
       const body = await this.#read(request, route === 'answer' ? MAX_ANSWER_BYTES : MAX_CALL_BYTES);
-      // A remote part that stops waiting, at its deadline or because its copy closed, drops the call.
+      // A remote part that stops waiting, because its copy or participant closed, drops the call.
       const dropped = new AbortController();
       response.once('close', () => { if (!response.writableEnded) dropped.abort(); });
       // The remote part may have gone while its body was read.
@@ -160,7 +188,8 @@ export class RemoteEdge {
         : errorBody('internal', {detail: `the edge failed: ${error instanceof Error ? error.message : 'unknown'}`.slice(0, MAX_DETAIL)});
       const {code, detail} = refused.error;
       this.#log({event: 'edge.refused', route, code, ...(source === undefined ? {} : {source}), ...(detail === undefined ? {} : {detail})});
-      this.#write(response, statusOf(code), refused);
+      // A body over its limit is left unread, so the connection closes after the refusal.
+      this.#write(response, statusOf(code), refused, code === 'too-large');
     }
   }
 
@@ -178,15 +207,25 @@ export class RemoteEdge {
     return source;
   }
 
+  /** Reads a JSON body, and stops reading as soon as it passes `limit`. */
   async #read(request: IncomingMessage, limit: number): Promise<Fields> {
     const chunks: Buffer[] = [];
-    let size = 0;
-    // The whole body is read even when it is too large, so the client gets the refusal rather than a reset.
-    for await (const chunk of request as AsyncIterable<Buffer>) {
-      size += chunk.length;
-      if (size <= limit) chunks.push(chunk);
-    }
-    if (size > limit) throw refuse('too-large', `the call is over ${limit} bytes`);
+    await new Promise<void>((resolve, reject) => {
+      let size = 0;
+      const take = (chunk: Buffer): void => {
+        size += chunk.length;
+        if (size <= limit) {
+          chunks.push(chunk);
+          return;
+        }
+        request.off('data', take);
+        request.pause();
+        reject(refuse('too-large', `the call is over ${limit} bytes`));
+      };
+      request.on('data', take);
+      request.once('end', resolve);
+      request.once('error', reject);
+    });
     let parsed: unknown;
     try {
       parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -205,21 +244,24 @@ export class RemoteEdge {
         await this.#participant(source).publishMessage(text(body, 'key'), this.#inbound(source, body.message));
         return {status: 'published'};
       case 'request': {
+        // The edge answers when its bus settles: the reply, `expired` if the command was still queued at its deadline,
+        // or `uncertain-result` if a handler had it. The remote requester waits a little longer, so it hears this.
         const command = this.#inbound(source, body.command) as Command<object>;
-        const result = await this.#bus.requestMessage(source, text(body, 'key'), command, this.#waitFor(command));
+        const result = await this.#bus.requestMessage(source, text(body, 'key'), command, this.#remaining(command), signal);
         return {result};
       }
       case 'sync': {
         const request = this.#inbound(source, body.request) as Message<SyncRequest>;
-        const answer = await this.#bus.syncMessage(source, request, this.#waitFor(request), signal);
+        if (request.subject !== request.data.families.join(',')) throw refuse('invalid-message', 'a sync request\'s subject names its families, joined by commas');
+        const answer = await this.#bus.syncMessage(source, request, this.#remaining(request), signal);
         if (answer.status === 'served') this.#capped(answer);
         return {answer};
       }
       case 'subscribe': {
         const connection = this.#connection(source, body);
         const id = this.#fresh(connection, body);
-        connection.opened.set(id, await connection.participant.subscribe(text(body, 'pattern'), message => this.#push(connection, 'message', {subscription: id, message}), {
-          onOverflow: ({dropped}) => this.#push(connection, 'overflow', {subscription: id, ...(dropped === undefined ? {} : {dropped})}),
+        connection.opened.set(id, await connection.participant.subscribe(text(body, 'pattern'), message => this.#pushed(connection, 'message', {subscription: id, message}), {
+          onOverflow: ({dropped}) => this.#pushed(connection, 'overflow', {subscription: id, ...(dropped === undefined ? {} : {dropped})}),
         }));
         return {status: 'subscribed'};
       }
@@ -227,7 +269,7 @@ export class RemoteEdge {
         const connection = this.#connection(source, body);
         const id = this.#fresh(connection, body);
         connection.opened.set(id, await connection.participant.respond(text(body, 'pattern'), command =>
-          this.#forward<Reply>(connection, `${id}/${command.data.requestId}`, command.expiresat, 'command', {responder: id, command})));
+          this.#forward<Reply>(connection, 'command', id, command, 'command', {responder: id, command})));
         return {status: 'responding'};
       }
       case 'serve': {
@@ -237,20 +279,20 @@ export class RemoteEdge {
         const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every(family => typeof family === 'string');
         if (!isNames(families)) throw refuse('invalid-request', 'families is not a list of names');
         connection.opened.set(id, await connection.participant.serveSync(families, request =>
-          this.#forward<Snapshot | ErrorBody>(connection, `${id}/${request.data.requestId}`, request.expiresat, 'sync-request', {server: id, request})));
+          this.#forward<Snapshot | ErrorBody>(connection, 'sync', id, request, 'sync-request', {server: id, request})));
         return {status: 'serving'};
       }
       case 'reply': {
-        const connection = this.#connection(source, body);
-        const reply = body.reply;
-        if (fields(reply)?.status !== 'accepted' && registered(reply) === undefined) throw refuse('invalid-request', 'a reply is accepted or a registered error body');
-        connection.waiting.get(`${identifier(body, 'responder')}/${identifier(body, 'requestId')}`)?.(reply as Reply);
+        this.#connection(source, body);
+        const requestId = identifier(body, 'requestId');
+        const reply = this.#reply(source, requestId, body.reply);
+        this.#waiting.get(this.#key(source, identifier(body, 'responder'), requestId))?.finish(reply);
         return {status: 'received'};
       }
       case 'answer': {
-        const connection = this.#connection(source, body);
-        const answer = registered(body.answer) ?? this.#snapshot(source, body.answer);
-        connection.waiting.get(`${identifier(body, 'server')}/${identifier(body, 'requestId')}`)?.(answer);
+        this.#connection(source, body);
+        const answer = rebuilt(body.answer) ?? this.#snapshot(source, body.answer);
+        this.#waiting.get(this.#key(source, identifier(body, 'server'), identifier(body, 'requestId')))?.finish(answer);
         return {status: 'received'};
       }
       case 'close': {
@@ -269,12 +311,26 @@ export class RemoteEdge {
     const result = this.#validator.validate(value, {nowMs: this.#now()});
     if (!result.ok) throw new Refusal({error: result.error});
     if (result.value.source !== source) throw refuse('forbidden', `this token cannot send a message from ${result.value.source}`);
+    if (result.value.expiresat !== undefined && this.#remaining(result.value) > MAX_TIMEOUT_MS) {
+      throw refuse('invalid-request', `a deadline is at most ${MAX_TIMEOUT_MS} ms away`);
+    }
     return result.value;
   }
 
-  /** The edge waits past the expiry, so that the remote requester's own deadline decides. */
-  #waitFor(message: Message): number {
-    return Math.max(1, Date.parse(message.expiresat ?? '') - this.#now()) + GRACE_MS;
+  /** The time left until a command's or sync request's expiry; the edge's bus waits exactly that long. */
+  #remaining(message: Message): number {
+    return Math.max(1, Math.ceil(Date.parse(message.expiresat ?? '') - this.#now()));
+  }
+
+  /** A remote responder's reply: accepted, or a refusal rebuilt as the shared error body, checked as its reply payload. */
+  #reply(source: string, requestId: string, value: unknown): Reply {
+    const reply: Reply | undefined = fields(value)?.status === 'accepted' ? {status: 'accepted'} : rebuilt(value);
+    if (reply === undefined) throw refuse('invalid-request', 'a reply is accepted or a registered error body');
+    const data = 'error' in reply ? {requestId, error: reply.error} : {requestId, status: reply.status};
+    const candidate = buildMessage(source, 'reply', {type: 'org.bunny.remote.reply.replied', subject: requestId, dataschema: REPLY_SCHEMA, data}, childOf(undefined), this.#now());
+    const result = this.#validator.validate(candidate);
+    if (!result.ok) throw new Refusal({error: result.error});
+    return reply;
   }
 
   /** A remote owner's snapshot, with each state checked as the message it becomes. */
@@ -292,7 +348,7 @@ export class RemoteEdge {
     return snapshot as Snapshot;
   }
 
-  /** Every message of a sync answer must fit the profile's cap at a remote edge; paging is not built yet. */
+  /** Every message of a sync answer must fit the profile's cap at a remote edge; paging is not built yet (#782). */
   #capped(answer: Extract<SyncAnswer, {status: 'served'}>): void {
     for (const message of [...answer.states, answer.completed]) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
@@ -324,12 +380,16 @@ export class RemoteEdge {
     return id;
   }
 
+  #key(source: string, id: string, requestId: string): string {
+    return `${source}\n${id}\n${requestId}`;
+  }
+
   #open(source: string, response: ServerResponse): void {
     let markClosed = (): void => {};
     const closed = new Promise<void>(resolve => { markClosed = resolve; });
     const connection: Connection = {
       id: randomUUID(), source, participant: this.#bus.connect(source), response, open: true, drained: undefined, closed, markClosed,
-      opened: new Map(), waiting: new Map(),
+      opened: new Map(),
     };
     this.#connections.set(connection.id, connection);
     response.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive'});
@@ -338,14 +398,19 @@ export class RemoteEdge {
     this.#log({event: 'edge.connected', route: 'stream', source});
   }
 
-  /** A lost stream closes everything the connection opened; forwarded calls still waiting get no answer. */
+  /**
+   * A lost stream closes everything the connection opened. A forwarded sync request still waiting is refused as
+   * unavailable, since a sync only reads. A forwarded command is not answered: its handler may be running it, so it
+   * waits for a reply on the reconnected stream, or for its deadline, which makes it uncertain.
+   */
   #drop(connection: Connection): void {
     if (!connection.open) return;
     connection.open = false;
     connection.markClosed();
     this.#connections.delete(connection.id);
-    const gone = errorBody('unavailable', {detail: 'the remote part disconnected'});
-    for (const answer of [...connection.waiting.values()]) answer(gone);
+    for (const waiting of [...this.#waiting.values()]) {
+      if (waiting.kind === 'sync' && waiting.connection === connection.id) waiting.finish(errorBody('unavailable', {detail: 'the remote owner disconnected'}));
+    }
     for (const opened of connection.opened.values()) {
       opened.close().catch(() => {});
     }
@@ -353,10 +418,13 @@ export class RemoteEdge {
     this.#log({event: 'edge.disconnected', route: 'stream', source: connection.source});
   }
 
-  /** Writes one event. When the socket's buffer is full it waits for it to drain, so a slow reader's queue fills. */
-  async #push(connection: Connection, event: StreamEventName, data: object): Promise<void> {
-    if (!connection.open) return;
-    if (connection.response.write(frame(event, data))) return;
+  /**
+   * Writes one event, and says whether it went to the socket. When the socket's buffer is full it waits for it to
+   * drain, so a slow reader's queue fills.
+   */
+  async #push(connection: Connection, event: StreamEventName, data: object): Promise<boolean> {
+    if (!connection.open) return false;
+    if (connection.response.write(frame(event, data))) return true;
     connection.drained ??= new Promise(resolve => {
       connection.response.once('drain', () => {
         connection.drained = undefined;
@@ -364,30 +432,42 @@ export class RemoteEdge {
       });
     });
     await Promise.race([connection.drained, connection.closed]);
+    return true;
+  }
+
+  async #pushed(connection: Connection, event: StreamEventName, data: object): Promise<void> {
+    await this.#push(connection, event, data);
   }
 
   /**
-   * Sends a command or sync request down the stream and waits for the remote part's answer, until the grace after its
-   * expiry. The requester's own deadline has settled it by then, so this late refusal never reaches it.
+   * Sends a command or sync request down the stream and waits for the remote part's answer, past its expiry by a
+   * margin; the bus settles the requester at the expiry itself. A frame that never reached the socket is unavailable.
    */
-  #forward<T extends Reply | Snapshot | ErrorBody>(connection: Connection, key: string, expiresat: string | undefined, event: StreamEventName, data: object): Promise<T> {
-    const late = errorBody('unavailable', {detail: 'the remote part did not answer in time'});
+  #forward<T extends Reply | Snapshot | ErrorBody>(
+    connection: Connection, kind: Waiting['kind'], id: string, message: Message<{requestId: string}>, event: StreamEventName, data: object,
+  ): Promise<T> {
+    const key = this.#key(connection.source, id, message.data.requestId);
+    const late = kind === 'command'
+      ? errorBody('uncertain-result', {detail: 'the remote responder did not answer in time'})
+      : errorBody('unavailable', {detail: 'the remote owner did not answer in time'});
     return new Promise<T>(resolve => {
       let cancel: Cancel = () => {};
       const finish = (answer: Reply | Snapshot | ErrorBody): void => {
         cancel();
-        connection.waiting.delete(key);
+        this.#waiting.delete(key);
         resolve(answer as T);
       };
-      cancel = this.#scheduler.after(Math.max(0, Date.parse(expiresat ?? '') - this.#now()) + GRACE_MS, () => { finish(late); });
-      connection.waiting.set(key, finish);
-      void this.#push(connection, event, data);
+      cancel = this.#scheduler.after(Math.max(0, Date.parse(message.expiresat ?? '') - this.#now()) + FORWARD_MARGIN_MS, () => { finish(late); });
+      this.#waiting.set(key, {kind, connection: connection.id, finish});
+      void this.#push(connection, event, data).then(written => {
+        if (!written) finish(errorBody('unavailable', {detail: 'the remote part was not connected'}));
+      });
     });
   }
 
-  #write(response: ServerResponse, status: number, body: object): void {
+  #write(response: ServerResponse, status: number, body: object, close = false): void {
     if (response.headersSent || response.destroyed) return;
-    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'});
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', ...(close ? {connection: 'close'} : {})});
     response.end(JSON.stringify(body));
   }
 }

@@ -4,7 +4,7 @@
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DeliveryQueue} from './queue.js';
-import {SdkError, type Draft, type Handler, type SubscribeOptions, type Subscription, type TraceContext} from './sdk.js';
+import {MAX_TIMEOUT_MS, SdkError, type Draft, type Handler, type SubscribeOptions, type Subscription, type TraceContext} from './sdk.js';
 import {childOf, traceIdOf} from './trace.js';
 
 export type SyncRequest = {requestId: string; families: string[]};
@@ -84,8 +84,6 @@ const FAMILY = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const MAX_FAMILIES = 32;
 const MAX_FAMILY = 64;
 const MAX_SUBJECT = 256;
-// setTimeout's longest delay; a longer one would fire at once.
-const MAX_TIMEOUT_MS = 2_147_483_647;
 const invalid = (detail: string): SdkError => new SdkError(errorBody('invalid-request', {detail: detail.slice(0, MAX_DETAIL)}));
 
 /** A non-empty list of distinct family names, as an owner serves them. */

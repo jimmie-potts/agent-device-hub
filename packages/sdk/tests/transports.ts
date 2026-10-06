@@ -23,6 +23,8 @@ export type World = {
   local(source: Source): Participant;
   /** Waits until `count` calls of this kind have reached the bus: at once in process, once the edge read them remotely. */
   arrived(call: 'request' | 'sync', count: number): Promise<void>;
+  /** Waits until `count` calls of this kind were dropped by the remote part and seen so at the edge; at once in process. */
+  dropped(call: 'request' | 'sync', count: number): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -44,7 +46,8 @@ export const inProcess: Transport = {
     const bus = new InProcessBus({onError: (error, scope) => { errors.push({error, scope}); }, ...(maxQueued === undefined ? {} : {maxQueued})});
     const local = (source: Source): Participant => checked(bus.connect(source));
     return Promise.resolve({
-      bus, errors, local, connect: source => Promise.resolve(local(source)), arrived: () => Promise.resolve(), close: () => Promise.resolve(),
+      bus, errors, local, connect: source => Promise.resolve(local(source)), arrived: () => Promise.resolve(), dropped: () => Promise.resolve(),
+      close: () => Promise.resolve(),
     });
   },
 };
@@ -60,6 +63,8 @@ export type Edge = {
   connect(source: Source, options?: {maxQueued?: number; scheduler?: Scheduler; now?: () => number}): Promise<RemoteParticipant>;
   /** How many calls of each route the edge has read. */
   received(route: string): number;
+  /** How many calls of each route the remote part dropped before the edge answered. */
+  dropped(route: string): number;
   close(): Promise<void>;
 };
 
@@ -72,9 +77,11 @@ export async function startEdge({maxQueued}: {maxQueued?: number} = {}): Promise
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
   const edge = new RemoteEdge({bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), log: record => { logs.push(record); }});
   const received = new Map<string, number>();
+  const dropped = new Map<string, number>();
   const server: Server = createServer((request, response) => {
     const route = (request.url ?? '').split('/').pop() ?? '';
     request.once('end', () => { received.set(route, (received.get(route) ?? 0) + 1); });
+    response.once('close', () => { if (!response.writableEnded) dropped.set(route, (dropped.get(route) ?? 0) + 1); });
     edge.handle(request, response);
   });
   server.listen(0, '127.0.0.1');
@@ -82,7 +89,7 @@ export async function startEdge({maxQueued}: {maxQueued?: number} = {}): Promise
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const opened: RemoteParticipant[] = [];
   return {
-    bus, edge, url, tokens, logs, errors, received: route => received.get(route) ?? 0,
+    bus, edge, url, tokens, logs, errors, received: route => received.get(route) ?? 0, dropped: route => dropped.get(route) ?? 0,
     connect: async (source, options = {}) => {
       const remote = await connectRemote({
         url, source, token: tokens.get(source) ?? '', onError: report, reconnectDelayMs: 20,
@@ -115,6 +122,10 @@ export const remote: Transport = {
       arrived: async (call, count) => {
         // The edge dispatches a call within microtasks of reading it.
         await until(() => edge.received(call) >= count, `${count} ${call} calls at the edge`);
+        await flush();
+      },
+      dropped: async (call, count) => {
+        await until(() => edge.dropped(call) >= count, `${count} dropped ${call} calls at the edge`);
         await flush();
       },
     };

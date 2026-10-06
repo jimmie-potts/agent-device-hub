@@ -11,7 +11,7 @@ import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.j
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
-  type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
+  MAX_TIMEOUT_MS, type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
 } from './sdk.js';
 import {startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
@@ -43,8 +43,12 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 }};
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
-const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_RECONNECT_DELAY_MS = 5000;
+/**
+ * How long past its deadline a remote requester waits for the edge's answer. The edge answers when its bus settles,
+ * at the deadline, so this only decides when the edge cannot be heard.
+ */
+export const REQUESTER_GRACE_MS = 1000;
 const SYNC_REQUEST = `${SCHEMA_BASE}sync-request/2.0`;
 const body = (code: ErrorCode, detail: string, ids: {requestId?: string; traceId?: string} = {}): ErrorBody =>
   errorBody(code, {...ids, detail: detail.slice(0, MAX_DETAIL)});
@@ -63,7 +67,8 @@ function bodyOf(error: unknown): ErrorBody {
 const named = (refused: ErrorBody, ids: {requestId: string; traceId: string}): ErrorBody => ({error: {...refused.error, ...ids}});
 
 type Item = {message: Message} | {gap: Overflow};
-type Local = {pattern: string; queue: DeliveryQueue<Item>; dropped: number; unknownGap: boolean};
+/** `ready` holds a gap notice back until the subscription is registered again after a reconnect. */
+type Local = {pattern: string; queue: DeliveryQueue<Item>; dropped: number; unknownGap: boolean; ready: Promise<void>};
 type Answering<T> = {queue: DeliveryQueue<Message<T>>; register: (connection: string) => Promise<unknown>};
 
 class RemoteClient {
@@ -76,7 +81,12 @@ class RemoteClient {
   readonly #firstDelayMs: number;
   #delayMs: number;
   #closed = false;
+  #closing: Promise<void> | undefined;
   #stream: AbortController | undefined;
+  /** Cancels the reconnect backoff, and wakes its wait, when the participant closes. */
+  #backoff: {cancel: Cancel; wake: () => void} | undefined;
+  /** Abandons each request still waiting for the edge's answer. */
+  readonly #requests = new Set<AbortController>();
   /** The current connection's id; while the stream is lost, a promise of the next one. */
   #connected: Promise<string> = Promise.resolve('');
   readonly #subscriptions = new Map<string, Local>();
@@ -218,17 +228,31 @@ class RemoteClient {
 
   async #reconnect(): Promise<string> {
     for (;;) {
-      await new Promise<void>(resolve => { this.#scheduler.after(this.#delayMs, resolve); });
+      await new Promise<void>(resolve => {
+        this.#backoff = {cancel: this.#scheduler.after(this.#delayMs, resolve), wake: resolve};
+      });
+      this.#backoff = undefined;
       if (this.#closed) throw new SdkError(body('invalid-state', `${this.#source} is closed`));
       try {
         const connection = await this.#open();
-        // One registration that fails is reported, so it cannot keep the others from reconnecting.
+        // Every subscription hears of the gap before any message of the new stream, but only once all of them are
+        // registered again, so a sync copy that resyncs on it never asks before its subscriptions exist.
+        let registered = (): void => {};
+        const ready = new Promise<void>(resolve => { registered = resolve; });
         for (const [id, local] of this.#subscriptions) {
-          await this.#post('subscribe', {connection, id, pattern: local.pattern}).catch((error: unknown) => { this.#report(error, local.pattern); });
+          local.ready = ready;
+          this.#gap(id, {});
         }
-        for (const [id, answering] of this.#answering) await answering.register(connection).catch((error: unknown) => { this.#report(error, id); });
+        try {
+          // One registration that fails is reported, so it cannot keep the others from reconnecting.
+          for (const [id, local] of this.#subscriptions) {
+            await this.#post('subscribe', {connection, id, pattern: local.pattern}).catch((error: unknown) => { this.#report(error, local.pattern); });
+          }
+          for (const [id, answering] of this.#answering) await answering.register(connection).catch((error: unknown) => { this.#report(error, id); });
+        } finally {
+          registered();
+        }
         this.#delayMs = this.#firstDelayMs;
-        for (const id of this.#subscriptions.keys()) this.#gap(id, {});
         return connection;
       } catch (error) {
         this.#report(error, 'stream');
@@ -260,13 +284,20 @@ class RemoteClient {
         this.#report(error, pattern);
       }
     };
-    const local: Local = {pattern, dropped: 0, unknownGap: false, queue: new DeliveryQueue<Item>(this.#maxQueued, async item => {
+    const local: Local = {pattern, dropped: 0, unknownGap: false, ready: Promise.resolve(), queue: new DeliveryQueue<Item>(this.#maxQueued, async item => {
       const notice: Overflow | undefined = local.unknownGap ? {} : local.dropped > 0 ? {dropped: local.dropped} : undefined;
       local.dropped = 0;
       local.unknownGap = false;
-      if (notice !== undefined && onOverflow !== undefined) await run(() => onOverflow(notice));
-      if ('message' in item) await run(() => handler(item.message));
-      else if (onOverflow !== undefined) await run(() => onOverflow(item.gap));
+      if (notice !== undefined && onOverflow !== undefined) {
+        await local.ready;
+        await run(() => onOverflow(notice));
+      }
+      if ('message' in item) {
+        await run(() => handler(item.message));
+      } else if (onOverflow !== undefined) {
+        await local.ready;
+        await run(() => onOverflow(item.gap));
+      }
     })};
     // Registered before the call, so a message that the stream carries before the reply still finds its handler.
     this.#subscriptions.set(id, local);
@@ -275,6 +306,7 @@ class RemoteClient {
     } catch (error) {
       this.#subscriptions.delete(id);
       await local.queue.close();
+      this.#forget(id);
       throw new SdkError(bodyOf(error));
     }
     return {close: () => this.#unregister(id, () => local.queue.close(), () => this.#subscriptions.delete(id))};
@@ -305,6 +337,7 @@ class RemoteClient {
     } catch (error) {
       this.#answering.delete(id);
       await answering.queue.close();
+      this.#forget(id);
       throw new SdkError(bodyOf(error));
     }
     return {close: () => this.#unregister(id, () => answering.queue.close(), () => this.#answering.delete(id))};
@@ -344,16 +377,27 @@ class RemoteClient {
     const sentAtMs = this.#now();
     const command = buildMessage(this.#source, 'command', {...draft, data: {...draft.data, requestId}}, childOf(options.parent), sentAtMs, sentAtMs + timeoutMs);
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
-    // A remote requester cannot know whether the handler started, so its deadline is always uncertain.
-    const late: RequestResult = {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)};
-    return this.#within(timeoutMs, late, async signal => {
-      try {
-        return fields(await this.#post('request', {key, command}, signal)).result as RequestResult;
-      } catch (error) {
-        if (error instanceof SdkError) return {status: 'rejected', requestId, error: named(error.body, ids)};
-        return late;
-      }
-    });
+    // The edge answers at the deadline, as the bus settles: expired, uncertain-result or the reply. Only an edge that
+    // cannot be heard leaves the requester to decide, after its grace, and then the command's fate is unknown.
+    const waitMs = timeoutMs + REQUESTER_GRACE_MS;
+    const silent: RequestResult = {status: 'uncertain', requestId, error: body('uncertain-result', `the edge did not answer within ${waitMs} ms`, ids)};
+    // A participant that closes abandons the request. The call is dropped, so the edge takes a still-queued command
+    // out; whether a handler already had it, the requester cannot know.
+    const abandoned: RequestResult = {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)};
+    const abandon = new AbortController();
+    this.#requests.add(abandon);
+    try {
+      return await this.#within(waitMs, silent, async signal => {
+        try {
+          return fields(await this.#post('request', {key, command}, signal)).result as RequestResult;
+        } catch (error) {
+          if (error instanceof SdkError) return {status: 'rejected', requestId, error: named(error.body, ids)};
+          return silent;
+        }
+      }, {signal: abandon.signal, answer: abandoned});
+    } finally {
+      this.#requests.delete(abandon);
+    }
   }
 
   #syncRequest({families, requestId, timeoutMs, trace, signal}: OutgoingSync): Promise<SyncAnswer> {
@@ -362,15 +406,22 @@ class RemoteClient {
       type: 'org.bunny.sync.requested', subject: families.join(','), dataschema: SYNC_REQUEST, data: {requestId, families: [...families]},
     }, trace, sentAtMs, sentAtMs + timeoutMs);
     const ids = {requestId, traceId: traceIdOf(trace.traceparent)};
-    // A sync changes nothing, so at the deadline it is unavailable, as in process.
-    const late: SyncAnswer = {status: 'rejected', requestId, error: body('unavailable', `no sync answer within ${timeoutMs} ms`, ids)};
+    // A sync changes nothing, so at the deadline it is unavailable on every transport. The edge says so at the
+    // deadline; the requester's grace decides only when the edge cannot be heard.
+    const waitMs = timeoutMs + REQUESTER_GRACE_MS;
+    const silent: SyncAnswer = {status: 'rejected', requestId, error: body('unavailable', `the edge did not answer within ${waitMs} ms`, ids)};
     // A copy that closes withdraws its request: the call is dropped, and the edge takes it out of the owner's queue.
     const withdrawn: SyncAnswer = {status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)};
-    return this.#within(timeoutMs, late, async dropped => {
+    return this.#within(waitMs, silent, async dropped => {
       try {
         return fields(await this.#post('sync', {request}, dropped)).answer as SyncAnswer;
       } catch (error) {
-        return {status: 'rejected', requestId, error: named(bodyOf(error), ids)};
+        const refused = bodyOf(error);
+        // An edge whose clock is ahead finds the request expired. A sync only reads, so asking again is safe.
+        if (refused.error.code === 'expired') {
+          return {status: 'rejected', requestId, error: body('unavailable', 'the edge found the sync request expired; the clocks may differ', ids)};
+        }
+        return {status: 'rejected', requestId, error: named(refused, ids)};
       }
     }, {signal, answer: withdrawn});
   }
@@ -408,8 +459,21 @@ class RemoteClient {
     await closing;
   }
 
-  async #close(): Promise<void> {
+  /** Forgets an id at the edge after a failed registration, in case a reconnect registered it meanwhile. */
+  #forget(id: string): void {
+    void this.#connected.then(connection => this.#post('close', {connection, id})).catch(() => {});
+  }
+
+  #close(): Promise<void> {
+    return this.#closing ??= this.#shutdown();
+  }
+
+  async #shutdown(): Promise<void> {
     this.#closed = true;
+    this.#backoff?.cancel();
+    this.#backoff?.wake();
+    // Requests waiting for the edge settle at once; their calls are dropped and their deadlines cancelled.
+    for (const abandon of [...this.#requests]) abandon.abort();
     // Copies first: each settles its first sync as cancelled and withdraws its request before the stream goes.
     const copies = [...this.#copies].map(copy => copy.close());
     this.#copies.clear();
@@ -434,7 +498,14 @@ class RemoteClient {
     const response = await fetch(`${this.#base}/${call}`, {
       method: 'POST', headers: this.#headers(), body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
     });
-    if (!response.ok) throw new SdkError(await this.#refusal(response));
+    if (!response.ok) {
+      const refused = await this.#refusal(response);
+      // The edge no longer knows a connection that was lost meanwhile. Asking again on the next one is safe.
+      if (payload.connection !== undefined && refused.error.code === 'not-found') {
+        throw new SdkError(body('unavailable', 'the stream was lost; try again once it reconnects'));
+      }
+      throw new SdkError(refused);
+    }
     return await response.json() as unknown;
   }
 

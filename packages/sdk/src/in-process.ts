@@ -6,7 +6,7 @@ import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
 import {overlaps, parseKey, parsePattern, type Category, type Pattern, type RoutingKey} from './routing.js';
 import {
-  SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
+  MAX_TIMEOUT_MS, SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
   type TraceContext,
 } from './sdk.js';
@@ -35,8 +35,6 @@ export type BusOptions = {
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const REPLY_SCHEMA = 'https://bunny.invalid/events/reply/2.0';
-// setTimeout's longest delay; a longer one would fire at once.
-const MAX_TIMEOUT_MS = 2_147_483_647;
 /** The shared error body, with `detail` cut to the length the error block allows, since it may quote a caller's key. */
 const body = (code: ErrorCode, detail: string, ids: {requestId?: string; traceId?: string} = {}): ErrorBody =>
   errorBody(code, {...ids, detail: detail.slice(0, MAX_DETAIL)});
@@ -200,9 +198,10 @@ export class InProcessBus {
 
   /**
    * Sends a command that a remote part prepared, unchanged, from `source`, and waits `waitMs` for its result. For a
-   * remote edge, which has validated the command.
+   * remote edge, which has validated the command, and which aborts `signal` when the remote part stops waiting: a
+   * command still queued is then taken out, so it never runs.
    */
-  requestMessage(source: string, key: string, command: Command<object>, waitMs: number): Promise<RequestResult> {
+  requestMessage(source: string, key: string, command: Command<object>, waitMs: number, signal?: AbortSignal): Promise<RequestResult> {
     return attempt(() => {
       const route = parseKey(key);
       if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
@@ -213,7 +212,7 @@ export class InProcessBus {
       const expiresAtMs = Date.parse(command.expiresat ?? '');
       if (Number.isNaN(expiresAtMs)) throw invalid('a command carries expiresat');
       if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
-      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs);
+      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs, signal);
     });
   }
 
@@ -311,9 +310,13 @@ export class InProcessBus {
    * Hands a command to the responder that owns `route`, and settles at its reply or after `waitMs`. A participant's
    * own requests settle when it closes; a remote edge's have no participant and settle by their wait.
    */
-  #dispatch(member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number): Promise<RequestResult> {
+  #dispatch(
+    member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number, signal?: AbortSignal,
+  ): Promise<RequestResult> {
     const {requestId} = command.data;
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+    // Refusals name the command's own deadline, which the remote requester chose, not what was left of it here.
+    const timeoutMs = Math.round(expiresAtMs - Date.parse(command.time));
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
       return Promise.resolve({status: 'rejected', requestId, error: body('unavailable', `no responder for ${key}`, ids)});
@@ -326,6 +329,7 @@ export class InProcessBus {
         settled = true;
         cancel();
         member?.requests.delete(abandon);
+        signal?.removeEventListener('abort', abandon);
         resolve(result);
       };
       const delivery: Delivery = {command, expiresAtMs, settle};
@@ -337,10 +341,12 @@ export class InProcessBus {
           {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)});
       };
       member?.requests.add(abandon);
+      signal?.addEventListener('abort', abandon);
       cancel = this.#scheduler.after(waitMs, () => {
-        end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${waitMs} ms`, ids)},
-          {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${waitMs} ms`, ids)});
+        end({status: 'rejected', requestId, error: body('expired', `the responder did not start it within ${timeoutMs} ms`, ids)},
+          {status: 'uncertain', requestId, error: body('uncertain-result', `no reply within ${timeoutMs} ms`, ids)});
       });
+      if (signal?.aborted === true) abandon();
       if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
       }

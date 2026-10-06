@@ -127,9 +127,11 @@ export class SyncOwners {
       signal.addEventListener('abort', withdraw);
       // At the deadline the requester stops waiting. A sync changes nothing, so it is unavailable, never expired, and
       // asking again is safe.
+      // The refusal names the request's own deadline, which a remote requester chose, not what was left of it here.
+      const timeoutMs = Math.round(expiresAtMs - Date.parse(request.time));
       cancel = this.#dependencies.scheduler.after(waitMs, () => {
         owner.queue.remove(delivery);
-        settle(refusal(request, 'unavailable', `no sync answer within ${waitMs} ms`));
+        settle(refusal(request, 'unavailable', `no sync answer within ${timeoutMs} ms`));
       });
       if (!owner.queue.push(delivery)) settle(refusal(request, 'capacity', 'the owner\'s queue is full'));
     });
