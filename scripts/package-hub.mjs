@@ -17,6 +17,22 @@ const released={
  'device-mcp':{version:'1.0.1',sha256:'e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32',manifest:'949ef80fd0a440e1816bc2dc250f63c5f40ff6369f251519cad1e3408d036a3e'}
 };
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
+// Lock paths that the root manifest and the workspaces outside modules/ need at run time.
+// Staged device modules under modules/ are not part of the Hub package (Hub #25).
+function runtimeClosure(lock){
+ const packages=lock.packages,seen=new Set();
+ // Node's lookup: the package's own node_modules, then each enclosing one, then the root's.
+ const resolveFrom=(from,name)=>{for(let base=from;;){const candidate=(base?`${base}/`:'')+`node_modules/${name}`;if(packages[candidate])return candidate;if(!base)return undefined;const index=base.lastIndexOf('/node_modules/');base=index<0?'':base.slice(0,index);}};
+ const visit=path=>{
+  if(seen.has(path))return;seen.add(path);
+  const entry=packages[path];
+  if(entry.link)return visit(entry.resolved);
+  for(const field of ['dependencies','optionalDependencies','peerDependencies'])for(const name of Object.keys(entry[field]??{})){const found=resolveFrom(path,name);if(found)visit(found);}
+ };
+ visit('');
+ for(const workspace of packages[''].workspaces??[])if(!workspace.startsWith('modules/'))visit(workspace);
+ return seen;
+}
 // Keep the installed consumer outside every checkout so workspace resolution
 // cannot hide a missing bundled dependency.
 const commonResult=spawnSync('git',['rev-parse','--git-common-dir'],{cwd:root,encoding:'utf8'});
@@ -64,7 +80,8 @@ try {
   // Keep their private packages and resolve all public imports from the locked root.
   for(const name of dependencies)await hoistPublic(join(stage,'node_modules',name));
   const lock=JSON.parse(await readFile(join(root,'package-lock.json'),'utf8'));
-  const lockedPublic=Object.entries(lock.packages).filter(([path,entry])=>path.startsWith('node_modules/')&&!entry.link&&!entry.dev);
+  const hubClosure=runtimeClosure(lock);
+  const lockedPublic=Object.entries(lock.packages).filter(([path,entry])=>path.startsWith('node_modules/')&&!entry.link&&!entry.dev&&hubClosure.has(path));
   for(const [path,entry] of lockedPublic){
     const source=join(root,path);
     // npm skips optional packages built for another OS or CPU (for example koffi's

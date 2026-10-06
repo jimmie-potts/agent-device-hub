@@ -1,0 +1,17 @@
+{
+  "name": "@pixoo/presentation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/agent-state": "3.6.0",
+    "@pixoo/core": "0.0.0",
+    "@pixoo/playback": "0.0.0"
+  }
+}

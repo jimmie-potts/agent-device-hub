@@ -21,6 +21,9 @@ export const staged = ['modules/pixoo/**'];
 const noInlineConfig = {noInlineConfig: true};
 // Workspace packages a module may import (owner decision, 2026-10-05).
 const modulePackages = ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'];
+// Every workspace package's scope. The boundary rule treats other scopes as third-party, so a module importing
+// any other package in these scopes is refused; @pixoo/ is the staged Pixoo snapshot's scope (Hub #25, until #843).
+export const workspaceScopes = ['@jimmie-potts/', '@pixoo/'];
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',
@@ -138,7 +141,7 @@ export default defineConfig(
     ignores: staged,
     linterOptions: noInlineConfig,
     plugins: {bunny},
-    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages}]},
+    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages, workspaceScopes}]},
   },
   {
     name: 'bunny/react-hooks',

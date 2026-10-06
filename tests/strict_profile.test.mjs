@@ -7,7 +7,7 @@ import {dirname, join, relative} from 'node:path';
 import {describe, it, test} from 'node:test';
 import {ESLint, RuleTester} from 'eslint';
 import tseslint from 'typescript-eslint';
-import {staged as stagedGlobs, strict as strictGlobs} from '../eslint.config.mjs';
+import {staged as stagedGlobs, strict as strictGlobs, workspaceScopes} from '../eslint.config.mjs';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
 
 const root = join(import.meta.dirname, '..');
@@ -61,6 +61,7 @@ test('the strict rules keep their intended options', async () => {
   const boundary = (await new ESLint({cwd: root}).calculateConfigForFile(join(root, 'modules/example/src/a.ts'))).rules['bunny/module-boundary'][1];
   assert.equal(boundary.root, root);
   assert.deepEqual(boundary.allowedPackages, ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts']);
+  assert.deepEqual(boundary.workspaceScopes, ['@jimmie-potts/', '@pixoo/']);
   const base = JSON.parse(readFileSync(join(root, 'tsconfig.strict.json'), 'utf8')).compilerOptions;
   for (const option of ['noUncheckedIndexedAccess', 'exactOptionalPropertyTypes', 'noImplicitOverride', 'noImplicitReturns', 'noFallthroughCasesInSwitch']) {
     assert.equal(base[option], true, option);
@@ -110,13 +111,13 @@ test('covered paths have no lint baseline, and every workspace package is scoped
   const baseline = Object.keys(JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8')));
   const inCovered = baseline.filter(file => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')));
   assert.deepEqual(inCovered, []);
-  // The module boundary treats unscoped names as third-party, so workspace packages must use the scope.
+  // The module boundary treats other scopes as third-party, so every workspace package must use a listed scope.
   const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
   const manifests = workspaces.flatMap(pattern => globSync(`${pattern}/package.json`, {cwd: root}));
   assert.ok(manifests.length >= workspaces.length);
   for (const manifest of manifests) {
     const name = JSON.parse(readFileSync(join(root, manifest), 'utf8')).name;
-    assert.ok(name.startsWith('@jimmie-potts/'), `${dirname(manifest)} is named ${name}`);
+    assert.ok(workspaceScopes.some(scope => name.startsWith(scope)), `${dirname(manifest)} is named ${name}, outside ${workspaceScopes.join(', ')}`);
   }
 });
 
@@ -124,7 +125,7 @@ RuleTester.describe = describe;
 RuleTester.it = it;
 const tester = new RuleTester({languageOptions: {ecmaVersion: 'latest', sourceType: 'module'}});
 const inModule = join(process.cwd(), 'modules/example/src/a.mjs');
-const options = [{allowedPackages: ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts']}];
+const options = [{allowedPackages: ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'], workspaceScopes: ['@jimmie-potts/', '@pixoo/']}];
 
 tester.run('module-boundary', bunny.rules['module-boundary'], {
   valid: [
@@ -133,11 +134,14 @@ tester.run('module-boundary', bunny.rules['module-boundary'], {
     {code: "import {sdk} from '@jimmie-potts/sdk';", filename: inModule, options},
     {code: "import {schema} from '@jimmie-potts/event-contracts/v2';", filename: inModule, options},
     {code: "import {readFile} from 'node:fs/promises';", filename: inModule, options},
+    {code: "import {parse} from '@scope/third-party';", filename: inModule, options},
     {code: "import other from '../../../apps/hub/src/a.mjs';", filename: join(process.cwd(), 'apps/runtime/src/a.mjs'), options},
   ],
   invalid: [
     {code: "import {x} from '../../other/src/y.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
     {code: "import {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
+    // A staged snapshot's packages are workspace packages too, not third-party ones.
+    {code: "import {Device} from '@pixoo/core';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: "export * from '../../../apps/hub/src/a.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
     {code: "await import('@jimmie-potts/hub');", filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: "export {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
