@@ -201,3 +201,34 @@ it('a health port already in use names its reason in the runtime.failed record',
   assert.deepEqual(await runtime.exited, {code: 1, signal: null});
   assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'EADDRINUSE');
 });
+
+it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, and the command is never sent again', async context => {
+  // Hub #882: the lamp's outbox holds the outcome across the kill; the stand-in core keeps what it took in its own file.
+  const dir = await stateDir(context);
+  const args = ['--port', '0', '--state-dir', dir];
+  const named = (runtime: Spawned, event: string): LogRecord[] => runtime.records().filter(record => record.event_name === event);
+  const outcomes = (runtime: Spawned, event: string): LogRecord[] => named(runtime, event).filter(record => record.attributes.kind === 'outcome');
+
+  const crashed = spawnRuntime(context, FIXTURE, ['lamp-crash', ...args]);
+  assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
+  assert.equal(named(crashed, 'lamp.command.received').length, 1, 'the lamp had the command once');
+  assert.equal(named(crashed, 'core.message.taken').length, 0, 'nothing was published before the kill');
+
+  const restarted = await launch(context, FIXTURE, ['lamp-restart', ...args]);
+  await waitFor(() => outcomes(restarted, 'core.message.taken').length > 0, 10_000, 'the outcome after the restart');
+  restarted.child.kill('SIGTERM');
+  assert.deepEqual(await restarted.exited, {code: 0, signal: null});
+  const [taken] = outcomes(restarted, 'core.message.taken');
+  assert.equal(outcomes(restarted, 'core.message.taken').length, 1);
+  assert.equal(taken?.attributes.requestId, 'req-crash');
+  assert.equal(named(restarted, 'lamp.command.received').length, 0, 'no command was sent again');
+
+  // Restarted again within the retention time, the lamp sends it once more; the core drops the duplicate.
+  const again = await launch(context, FIXTURE, ['lamp-restart', ...args]);
+  await waitFor(() => outcomes(again, 'core.message.duplicate').length > 0, 10_000, 'the resent outcome');
+  again.child.kill('SIGTERM');
+  assert.deepEqual(await again.exited, {code: 0, signal: null});
+  assert.equal(outcomes(again, 'core.message.taken').length, 0, 'exactly once across all three runs');
+  assert.equal(outcomes(again, 'core.message.duplicate')[0]?.attributes.id, taken?.attributes.id);
+  assert.equal(named(again, 'lamp.command.received').length, 0);
+});

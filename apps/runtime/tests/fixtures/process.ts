@@ -2,6 +2,8 @@
 // through the same entry point as the shipped runtime, with these modules instead of the shipped list.
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {runMain} from '../../src/index.js';
+import {core} from './core.js';
+import {lamp, switchLamp} from './lamp.js';
 
 const module = (name: string, start: BunnyModule['start']): BunnyModule => ({manifest: {name, apiVersion: '1.0'}, start, stop: () => {}});
 const steady = module('steady', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.steady', () => ({status: 'accepted'})); });
@@ -34,7 +36,20 @@ const spin = (ms: number): number => {
   return spins;
 };
 
+/** Switches lamp-1 on once, shortly after the modules have started. */
+const driver = module('driver', ({sdk, scheduler, log}) => {
+  scheduler.after(100, async () => {
+    const {key, draft} = switchLamp('lamp-1', 'on');
+    const result = await sdk.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
+    log.info('driver.result', {status: result.status});
+  });
+});
+
 const scenarios: Record<string, readonly BunnyModule[]> = {
+  // The process dies between the lamp's commit and its publish (Hub #882): its outbox holds the outcome.
+  'lamp-crash': [core(), lamp({beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), driver],
+  // The next start, with no driver: nothing sends the command again.
+  'lamp-restart': [core(), lamp()],
   // Errors raised in each module's own flow, outside every SDK handler and runtime timer, reach the process.
   escaping: [
     module('thrower', () => { setTimeout(() => { throw new Error('thrown from a timer'); }, 10); }),
