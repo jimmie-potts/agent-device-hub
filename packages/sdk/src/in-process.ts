@@ -15,9 +15,13 @@ export type ErrorScope = {source: string; pattern: string};
 export type BusOptions = {
   /** The clock for `time`, `expiresat` and expiry checks, in epoch milliseconds. Defaults to `Date.now()`. */
   now?: () => number;
-  /** How many messages may wait in one subscription's queue before more are dropped for it. Defaults to 1024. */
+  /**
+   * How many messages may wait in one subscription's or responder's queue. Defaults to 1024. A full subscription
+   * queue drops the message for that subscription and reports `capacity` to `onError`; a full responder queue refuses
+   * the request with `capacity`.
+   */
   maxQueued?: number;
-  /** Receives handler errors and dropped deliveries. Defaults to a process warning. */
+  /** Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` process warning. */
   onError?: (error: unknown, scope: ErrorScope) => void;
 };
 
@@ -73,13 +77,18 @@ export class InProcessBus {
     this.#now = options.now ?? (() => Date.now());
     this.#maxQueued = maxQueued;
     this.#onError = options.onError ?? ((error, scope) => {
-      process.emitWarning(error instanceof Error ? error : new Error('a handler threw a non-Error value'), {
-        type: 'BunnySdkWarning', detail: `${scope.source} on ${scope.pattern}`,
-      });
+      // An Error warning prints its own name and message, so they carry the scope; the original is its cause.
+      const reason = error instanceof Error ? error.message : 'a non-Error value was thrown';
+      const warning = new Error(`${scope.source} on ${scope.pattern}: ${reason}`, {cause: error});
+      warning.name = 'BunnySdkWarning';
+      process.emitWarning(warning);
     });
   }
 
-  /** A participant's connection. `source` is its CloudEvents source, such as `bunny/core` or `bunny/modules/pixoo`. */
+  /**
+   * A participant's connection. `source` is its CloudEvents source, such as `bunny/core` or `bunny/modules/pixoo`; a
+   * malformed one throws `SdkError` at once.
+   */
   connect(source: string): Sdk {
     if (!SOURCE.test(source) || source.length > 256) throw invalid(`source ${source}`);
     return {
@@ -129,6 +138,7 @@ export class InProcessBus {
   #request<T extends object>(source: string, key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
     const route = parseKey(key);
     if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
+    if (!draft.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
     const {timeoutMs} = options;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
     const requestId = options.requestId ?? randomUUID();
