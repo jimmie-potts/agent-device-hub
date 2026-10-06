@@ -13,7 +13,7 @@ import {readJson} from '../src/jsonfile.js';
 import {fallbackTitle, Metadata, owners, taskProjects} from '../src/project-map.js';
 import {evict, evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession,
   type SharedState, type Snapshot} from '../src/shared-input.js';
-import {acceptEnvelope, configureSource, markFailed, selectSource, sourceConfig} from '../src/shared-source.js';
+import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
 import {execute, rows, transaction, type Db, type Row, type SqlValue} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
 
@@ -103,12 +103,11 @@ export function metadataReader(directory: string): Metadata {
   return new Metadata(isObject(config) ? config : {});
 }
 
-/** The shared configuration SelectionTest saves. */
+/** The shared configuration SelectionTest saves, without the legacy binding Python's had (PORTING.md). */
 export function selectionConfig(directory: string): JsonObject {
   return {version: 1, ownerId: 'owner', consumerId: 'nanoleaf', endpoint: 'http://127.0.0.1:12345/api/monitor/v1',
     tokenFile: join(directory, 'token'), clearOnNewTurn: true,
-    qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}],
-    bindings: [{identity: fixture().sessions[0]?.identity as unknown as Json, legacySessionId: 'legacy'}]};
+    qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}]};
 }
 
 export const configure = (directory: string, config: unknown): SharedConfig => write(directory, db => configureSource(db, config));
@@ -116,11 +115,7 @@ export const configure = (directory: string, config: unknown): SharedConfig => w
 /** shared_source.select_source(directory, 'shared', fetch=...): the envelope stands in for a successful preflight. */
 export function selectShared(directory: string, value: Envelope = envelope(), instant = 1000): void {
   const metadata = metadataReader(directory);
-  write(directory, db => selectSource(db, {source: 'shared', envelope: value, instant, targets: registeredDevices(directory), metadata}));
-}
-
-export function selectLegacy(directory: string): void {
-  write(directory, db => selectSource(db, {source: 'legacy'}));
+  write(directory, db => select(db, {envelope: value, instant, targets: registeredDevices(directory), metadata}));
 }
 
 export interface Accept {
@@ -140,7 +135,10 @@ export const sharedState = (directory: string): SharedState => withState(directo
 
 export const generation = (directory: string): number => withState(directory, db => sourceConfig(db).generation);
 
-/** SelectionTest.setUp: the bound legacy task recorded from Python, then the shared configuration. */
+/**
+ * SelectionTest.setUp for shared input only: the local project recorded from Python, then the shared configuration.
+ * Python's setUp also prompted a legacy task and bound it to the shared one; that is not ported (PORTING.md).
+ */
 export function selectionSetup(context: TestContext): {path: string; config: JsonObject} {
   const path = temporary(context);
   loadDump(path, recordedSetup('selection'));

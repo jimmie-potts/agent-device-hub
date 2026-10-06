@@ -49,8 +49,7 @@ export interface DeviceConfig {
   line_positions?: number[][];
 }
 
-// Column order keeps the legacy columns first and the device key last: older sources
-// restore the shared-input backup positionally.
+// Column order keeps the original columns first and the device key last, as migrated state has them.
 export const SCHEMAS = {
   slots: `(session TEXT NOT NULL, slot INTEGER NOT NULL, device TEXT NOT NULL DEFAULT ${QUOTED}, `
     + 'PRIMARY KEY (device, session), UNIQUE (device, slot))',
@@ -283,20 +282,6 @@ export function create(db: Db, table: DeviceTable): void {
 
 export function columns(db: Db, table: string): string[] {
   return rows(db, 'PRAGMA table_info("' + table + '")').map(row => String(row[1]));
-}
-
-/**
- * Named values of a row saved before its table had the device key, or null for any other shape.
- *
- * Such a row belongs to the original device, as the migration below decides for stored rows.
- */
-export function legacyRow(table: string, row: readonly unknown[]): Record<string, unknown> | null {
-  const names: readonly string[] | undefined = Object.hasOwn(REBUILT, table) ? REBUILT[table as keyof typeof REBUILT] : undefined;
-  if (names === undefined || row.length !== names.length) return null;
-  const values: Record<string, unknown> = {};
-  names.forEach((name, index) => { values[name] = row[index]; });
-  values.device = DEFAULT;
-  return values;
 }
 
 /** Guarded, idempotent device-scoped upgrade inside the caller's initialization transaction. */
