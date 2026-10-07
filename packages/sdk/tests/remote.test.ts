@@ -215,7 +215,7 @@ it('an exception inside the edge reaches the remote part as fixed text and the e
   assert.deepEqual(raw, {status: 500, body: errorBody('internal', {detail: 'the edge failed'})}, 'the response carries fixed text');
   assert.deepEqual(edge.diagnostics.filter(record => record.event === 'edge.refused'), [], 'an exception is no refusal');
   const failures = edge.diagnostics.filter(record => record.event === 'edge.failed');
-  assert.deepEqual(failures, [1, 2].map(() => ({event: 'edge.failed', level: 'error', route: 'sync', source: 'bunny/wall', errorType: 'Error'})));
+  assert.deepEqual(failures, [1, 2].map(() => ({event: 'edge.failed', level: 'error', route: 'sync', code: 'internal', source: 'bunny/wall', errorType: 'Error'})));
   const evidence = JSON.stringify({synced, raw, diagnostics: edge.diagnostics, errors: edge.errors.map(({error}) => error instanceof SdkError ? error.body : String(error))});
   assert.equal(evidence.includes(SECRET), false, 'the exception\'s message stays in memory');
 }));

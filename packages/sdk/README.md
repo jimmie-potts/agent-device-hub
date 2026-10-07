@@ -407,13 +407,16 @@ async start({sdk, database, clock, log, trace}) {
   again. If publishing is refused, for example because the module is stopping,
   the messages stay stored, unpublished, and the next transaction or start
   sends them unchanged. Nothing sends them again on its own.
-- A refused publish is reported to the `onError` option, with the bus's
-  signature: an `SdkError` with the refusal's registry code (`internal` for an
-  error without one) and the fixed detail `committed, awaiting publication`,
-  with the refusal as its `cause`, and the scope
-  `{source, pattern: 'outbox'}`. It is reported once per run of refusals, and
-  again only after a send goes through or the code changes. Without an
-  `onError`, it becomes a `BunnySdkWarning` process warning.
+- A refused publish is reported once per run of refusals, and again only after
+  a send goes through or the code changes, in one place. With the module's
+  `log`, it is one `outbox.deferred` record (see below). Otherwise it goes to
+  the `onError` option, with the bus's signature: an `SdkError` with the
+  refusal's registry code (`internal` for an error without one) and the fixed
+  detail `committed, awaiting publication`, with the refusal as its `cause`,
+  and the scope `{source, pattern: 'outbox'}`. Without an `onError`, it becomes
+  a `BunnySdkWarning` process warning that names the code and that fixed
+  detail, never the refusal's message. A refusal that `republish()` passes on
+  to its caller is not reported.
 - The `validator` option checks each message as `add` stores it, so a message
   it refuses throws `SdkError` with the validator's code and rolls the
   transaction back. A remote part passes the validator its edge uses, with the
@@ -428,19 +431,21 @@ async start({sdk, database, clock, log, trace}) {
   `(source, id)`. `acknowledge` returns false when the outbox no longer holds
   that outcome.
 - `republish()` sends again, in order, everything still stored, and resolves
-  with how many messages went out. Call it once in the module's start, after the
-  module follows the core's acknowledgments, so that it hears an acknowledgment
-  of a resent outcome.
+  with how many messages went out, or rejects with a refusal. Call it once in
+  the module's start, after the module follows the core's acknowledgments, so
+  that it hears an acknowledgment of a resent outcome.
 - With the module's `log` and `trace` (#949), the outbox records an outcome's
   first publication once, as `outcome.published`: INFO for a succeeded outcome
   and WARN for a failed or uncertain one, in the outcome's own trace. A replay
   records nothing more, so a replayed outcome never makes a second record. A
-  publish refused after the commit makes one `outbox.deferred` warning with the
-  refusal's code and `bunny.outbox.waiting_count`, the messages the send left
-  behind. Each outcome sent gets a `bunny.outcome.publish` span: the stored
-  context's child when the same transaction stored it, and otherwise, after a
-  restart or a deferral, a new root linked to that context, never its child.
-  The kit fails a module whose outbox records nothing.
+  run of refused publishes after their commits makes one `outbox.deferred`
+  warning, in place of the `onError` report, with the refusal's code and
+  `bunny.outbox.waiting_count`, the messages still waiting to go out, so one
+  deferral is one record in the runtime. Each outcome sent gets a
+  `bunny.outcome.publish` span: the stored context's child when the same
+  transaction stored it, and otherwise, after a restart or a deferral, a new
+  root linked to that context, never its child. The kit fails a module whose
+  outbox records nothing.
 
 The core's acknowledgment belongs to Hub #782. Until it exists, the kit's
 [stand-in acknowledgment](#module-test-kit) lets tests exercise `acknowledge`,
@@ -586,8 +591,9 @@ that throws loses its record and changes nothing.
 | `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
 | `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
 | `edge.refused` | WARN for `unauthenticated`, `forbidden`, `capacity`, `unavailable` and `internal`; INFO otherwise | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. |
-| `edge.failed` | ERROR | The edge, for an exception it did not expect, with the exception's type only. |
+| `edge.failed` | ERROR | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type only. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
+| `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
 
 Each request makes one admission record when it reaches the queue and one
 ending record, made inside its single settlement, so a late reply or a second
