@@ -10,12 +10,13 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
-import {HEALTH_PATH} from '../src/index.js';
+import {HEALTH_PATH, type RuntimeHealth} from '../src/index.js';
 import {SCENARIOS, expect, runScenario, type Scenario} from '../tests/scenarios/catalog.js';
 import {sourceOf} from '../tests/scenarios/parts.js';
 import {connectRun, readGrants} from './adapter.js';
 import {checkNoOutboundConnections, checkPrivateState, checkSimulatedTransports} from './boundaries.js';
 import {ask, followProof} from './follow-proof.js';
+import {judgeHealth} from './health.js';
 import {HARNESS_PATH, type BoundaryReport} from './protocol.js';
 import {RUN_SCENARIOS, START_ONLY, seedRun} from './seed.js';
 
@@ -232,9 +233,12 @@ export default definePlugin({
         return undefined;
       }
     },
-    probe: async ({url, signal}) => {
+    // The runtime's own health, which `start` waits for and `doctor` reports: every module running but the ones the
+    // run's seed expects refused, and the lag check not stopped (Hub #954).
+    probe: async ({url, signal, scenario}) => {
       const response = await fetch(new URL(HEALTH_PATH, url), {signal});
-      return response.ok ? {ok: true} : {ok: false, reason: `health answered ${response.status}`};
+      if (!response.ok) return {ok: false, reason: `health answered ${response.status}`};
+      return judgeHealth(await response.json() as RuntimeHealth, RUN_SCENARIOS[scenario]?.refused);
     },
     timeoutMs: 30_000,
     failureCause: tail => /^runtime-start-failed: [a-z0-9-]+$/m.exec(tail)?.[0],

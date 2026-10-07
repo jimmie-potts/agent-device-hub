@@ -26,11 +26,12 @@ export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: 
 /**
  * `config` gives a catalog seed's sections; `simulated` configures each of those factories from its simulated section
  * instead, as the shipped run does. `prepare` runs last, once the run's state directory exists, as an installer's step
- * before the runtime's first start would.
+ * before the runtime's first start would. `refused` names the modules the runtime is expected to refuse, which the run's
+ * health allows (Hub #954): a catalog seed's, or every configured shipped module in a control that gives no sections.
  */
 export type RunScenario = {
   description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
-  prepare?: (dataDir: string) => Promise<void>;
+  prepare?: (dataDir: string) => Promise<void>; refused?: readonly string[];
 };
 
 /** The run's state directory, which the runtime's `--state-dir` names: `<data>/state`. */
@@ -111,6 +112,9 @@ async function migrateNanoleaf(dataDir: string): Promise<void> {
   await run('verify', config);
 }
 
+/** The shipped modules that take a section: a run that gives no sections, as the shipped controls do, has them refused. */
+const CONFIGURED: readonly string[] = shippedModules.filter(factory => factory.simulatedSection !== undefined).map(factory => factory.name);
+
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
   shipped: {
@@ -129,11 +133,11 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   },
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
-    ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}),
+    ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
   } satisfies RunScenario])),
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',
-    runtime: 'shipped', modules: [], fault: 'real-transports',
+    runtime: 'shipped', modules: [], fault: 'real-transports', refused: CONFIGURED,
   },
   'control-installed-port': {
     description: 'Negative control, start only: a probe module reaches for the installed Hub\'s port 8788, which the run\'s guard refuses, so the no-outbound-connections check fails',
@@ -141,7 +145,7 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   },
   'control-default-state': {
     description: 'Negative control, start only: the runtime without --state-dir falls back to its default directory under the run\'s private home, so the private-state check fails',
-    runtime: 'shipped', modules: [], fault: 'default-state',
+    runtime: 'shipped', modules: [], fault: 'default-state', refused: CONFIGURED,
   },
 };
 

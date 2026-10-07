@@ -29,7 +29,28 @@ bulb off the network or back, take the simulated Tidbyt cloud offline or back, s
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
-`bunny/parts/<role>`.
+`bunny/parts/<role>`. Its refusals are the shared error body from the registry, with fixed text, and an unexpected
+failure, such as a body that is not JSON, is a 500 with `internal` and `the harness failed`, never the error's own text
+(#954).
+
+The supervisor's simulated devices serve the fixture modules. A `shipped` run's modules reach the simulated devices
+that their own `--simulate` transports create inside the runtime, so two limits apply there (#954):
+- `POST /api/harness/v1/simulate` answers 409 with `invalid-state`, so no single run takes a device offline with every
+  shipped module running. Take a device offline in its module's catalog scenario, such as `nanoleaf-wall` or
+  `pixoo-offline`, instead.
+- `GET /api/harness/v1/state` still lists the supervisor's devices, which a `shipped` run never uses: their empty counts,
+  such as no cloud calls and no LIFX packets, say nothing about the shipped modules. Read health, the journal records and
+  what the bus published instead.
+
+## Health
+
+`start` waits for the runtime's own health, and `doctor` reports it as the run's `health`. Health passes when every
+module runs, apart from a module the run's seed expects the runtime to refuse, and the lag check has not stopped: the
+rule the in-memory harness applies when a scenario starts. The expected refusals are `misconfigured-module`'s sign, and
+in `control-real-transports` and `control-default-state`, which give no module sections, every shipped module that
+takes one. Otherwise `start` keeps waiting until its readiness deadline, and `doctor` reports `health: failed` with each
+module that is not as expected, its state and its registry code, such as
+`the runtime is degraded: chime failed (internal)` after `scenario-module-fails-others-continue` (#954).
 
 ## Run scenarios
 
@@ -416,7 +437,9 @@ sign's page and its preview. Without the cookie the page answers 401.
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. It tests the supervisor's stop, crash restart, restart serialization, orphan
 handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
-pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process, and
-that `build-current` watches every source the run loads.
+pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,
+that `build-current` watches every source the run loads, that health fails once a module fails in a run and passes an
+expected refusal, that the harness's refusals come from the registry, and that the run adapter names a failure without
+an exception's text.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).
