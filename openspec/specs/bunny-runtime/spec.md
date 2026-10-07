@@ -1,7 +1,7 @@
 # bunny-runtime Specification
 
 ## Purpose
-Define the B.U.N.N.Y. runtime process under ADR 0012: health with zero modules, the fixed module list with manifests and the API version check, the module context, failure isolation, private state and the event-loop lag check. Its shipped list starts with the agent-session core, the one owner of agent sessions, with its store and extension point. With `--edge` it serves the SDK's remote transport to remote parts, each with a grant from its state directory, and with `--simulate` it builds its modules with simulated transports. Its tests hold the fixture modules, which pass the module test kit, the fixture core with stand-in parts, and the runtime's scenario catalog with its in-memory harness, and its disposable verification runs run that catalog against the runtime itself. It is source that later stories add modules to; it claims no installation or device behavior.
+Define the B.U.N.N.Y. runtime process under ADR 0012: health with zero modules, the fixed module list with manifests and the API version check, each module's own configuration, secrets and private folder from one private configuration file, the module context, failure isolation, private state and the event-loop lag check. Its shipped list starts with the agent-session core, the one owner of agent sessions, with its store and extension point. With `--edge` it serves the SDK's remote transport to remote parts, each with a grant from its state directory, and with `--simulate` it builds its modules with simulated transports. Its tests hold the fixture modules, which pass the module test kit, the fixture core with stand-in parts, and the runtime's scenario catalog with its in-memory harness, and its disposable verification runs run that catalog against the runtime itself. It is source that later stories add modules to; it claims no installation or device behavior.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ The runtime SHALL start with the fixed module list shipped in its code, and SHAL
 
 #### Scenario: Zero modules
 - **WHEN** the runtime starts with no modules on port 0
-- **THEN** health on a loopback port answers 200 with schema `runtime-health/1.0`, status `ok`, module API version `1.0`, positive memory figures and no modules
+- **THEN** health on a loopback port answers 200 with schema `runtime-health/1.0`, status `ok`, module API version `1.1`, positive memory figures and no modules
 
 #### Scenario: Another route
 - **WHEN** a client sends GET to `/`, POST to the health path, GET with a query string or GET to another version's path
@@ -54,8 +54,8 @@ The runtime SHALL start with the fixed module list shipped in its code, and SHAL
 Each module SHALL declare a manifest with a name and the module API version it was written for, and SHALL be written against the module API in `@jimmie-potts/sdk`. The runtime SHALL refuse, and never start, a module whose name is not lowercase letters and digits with single hyphens of at most 64 characters, whose name another module already has, whose `apiVersion` is not `<major>.<minor>`, or whose API version has another major version or a newer minor version than the runtime's. A refused module SHALL get no participant on the bus, and health SHALL list it as `refused` with the reason. The other modules SHALL start.
 
 #### Scenario: An incompatible module is refused
-- **WHEN** modules declare API versions `2.0`, `1.1`, `0.9`, `one` and `1.0` to a runtime that supports `1.0`
-- **THEN** only the `1.0` module starts, health is `degraded` with status 200, the first three are `refused` with `unsupported-version` and the fourth with `invalid-request`, and a request to a key the refused module would answer is `unavailable`
+- **WHEN** modules declare API versions `2.0`, `1.2`, `0.9`, `one`, `1.1` and `1.0` to a runtime that supports `1.1`
+- **THEN** only the `1.1` and `1.0` modules start, health is `degraded` with status 200, the first three are `refused` with `unsupported-version` and the fourth with `invalid-request`, and a request to a key the refused module would answer is `unavailable`
 
 #### Scenario: Version matching
 - **WHEN** a module's API version is compared with a runtime's `1.2`
@@ -74,9 +74,13 @@ The runtime SHALL call each module's `start` with a context that gives the modul
 - the runtime's clock and a scheduler on the runtime's scheduler, which also run the bus's `time`, `expiresat` and request deadlines;
 - worker threads that the runtime terminates when the module stops;
 - the module's own SQLite file, `modules/<name>.sqlite` in the runtime's private state directory, opened with `node:sqlite` on first use, mode 600, and kept across restarts;
+- the configuration its manifest's `configure` returned from its own section of the configuration file, or undefined for a module without `configure` (see "Module configuration");
+- `secrets.read(name)`, which reads only a secret file that the module's own section names, as "Module configuration" requires;
+- `files()`, the absolute path of its own private folder, `modules/<name>/` in the state directory beside its SQLite file, created with mode 700 on first use and kept across restarts;
+- `workers.call(file, request, {timeoutMs, signal?, transferList?})`, a bounded worker call as `bunny-sdk` "Bounded worker calls" requires, with its deadline on the runtime's scheduler;
 - an abort signal that aborts when the module stops.
 
-A scheduler delay SHALL be an integer from 0 to 2147483647; any other SHALL throw `RangeError`. Once the module's stop begins, its participant, scheduler, workers and database SHALL refuse use with `invalid-state`, while its logger, tracing, clock and signal SHALL keep working, so that its `stop` can still log. Log records SHALL be diagnostic-contract records, as "Diagnostic-contract log records" requires, at `info` and above by default.
+A scheduler delay SHALL be an integer from 0 to 2147483647; any other SHALL throw `RangeError`. A worker the module starts with its own `env` SHALL keep the process's `NODE_OPTIONS`, before the module's own and only once, so that what the process preloads, such as a verification run's network guard, also loads in it. A failed worker call SHALL reject only that call and SHALL NOT fail the module. Once the module's stop begins, its participant, scheduler, workers, database, folder and secrets SHALL refuse use with `invalid-state`, and its running worker calls SHALL be cancelled, while its configuration, logger, tracing, clock and signal SHALL keep working, so that its `stop` can still log. Log records SHALL be diagnostic-contract records, as "Diagnostic-contract log records" requires, at `info` and above by default.
 
 #### Scenario: Log records name the module and the trace
 - **WHEN** a module logs at each level with fields and a span from `trace.span(parent)`
@@ -97,6 +101,18 @@ A scheduler delay SHALL be an integer from 0 to 2147483647; any other SHALL thro
 #### Scenario: A prepared message
 - **WHEN** a module publishes a message and then publishes the same message again with `publishMessage`
 - **THEN** another module receives it twice, the same message with its `id` and `time`
+
+#### Scenario: A module's own configuration, secrets and folder
+- **WHEN** two modules each have a section naming their own token file, and one of them reads its token and asks for a secret only the other's section names
+- **THEN** each gets only its own section as its configuration and its own token without the trailing line break, the other's secret is `not-found`, and each folder is `modules/<name>/` with mode 700
+
+#### Scenario: A worker call
+- **WHEN** a module calls a worker that answers, one that never answers with a 2000 ms deadline on an injected scheduler, and one that throws, then the runtime stops during a fourth call
+- **THEN** the first resolves with the worker's reply, the second rejects with `uncertain-result` when the injected scheduler reaches the deadline, the third with `internal`, the module keeps running, the fourth rejects with `cancelled` at the stop, and a call after the stop with `invalid-state`
+
+#### Scenario: A worker with its own environment
+- **WHEN** the process has `NODE_OPTIONS` and a module starts workers with an `env` without it, with another value, and with the same value
+- **THEN** each worker sees the process's value, before the module's own and only once
 
 ### Requirement: Failure isolation
 
@@ -162,7 +178,7 @@ To stop a module, the runtime SHALL abort its signal, cancel its timers and clos
 
 ### Requirement: Private runtime state
 
-The runtime SHALL keep its state in one directory, created with mode 700 when missing. It SHALL refuse to start with a relative path, a path under `/mnt`, a path inside a Git checkout, a path with a link anywhere along it, a file, or a directory that others can open, before it serves health or starts a module. It SHALL check the whole path before it creates anything, and SHALL NOT create anything through a link. A refusal SHALL say why, and the service process's `runtime.failed` record SHALL carry its stable `error.code`: `state-dir-relative`, `state-dir-mount`, `state-dir-checkout`, `state-dir-link`, `state-dir-not-directory` or `state-dir-not-private`. Other refusals the runtime makes itself SHALL carry codes too, such as `posix-host-required` and `port-invalid`, and a Node error SHALL keep its own, such as `EADDRINUSE`.
+The runtime SHALL keep its state in one directory, created with mode 700 when missing. It SHALL refuse to start with a relative path, a path under `/mnt`, a path inside a Git checkout, a path with a link anywhere along it, a file, or a directory that others can open, before it serves health or starts a module. It SHALL check the whole path before it creates anything, and SHALL NOT create anything through a link. A refusal SHALL say why, and the service process's `runtime.failed` record SHALL carry its stable `error.code`: `state-dir-relative`, `state-dir-mount`, `state-dir-checkout`, `state-dir-link`, `state-dir-not-directory` or `state-dir-not-private`. The same rules SHALL apply to the private files the runtime reads, the configuration file and the modules' secret files: an absolute path off `/mnt`, no link anywhere along it, outside every Git checkout, and a regular file with one link and no permission for group or others, owned by the runtime's user, within a size bound, 1 MiB for the configuration file and 64 KiB for a secret file. The runtime SHALL open such a file without following a link and check the file it opened, so that a file swapped in between is checked too. A module's private folder, `modules/<name>/`, SHALL be created with mode 700, and the runtime SHALL refuse with `module-folder-not-private`, and never create anything through, a `modules` directory or folder that is a link, belongs to another user or that others can open. Other refusals the runtime makes itself SHALL carry codes too, such as `posix-host-required` and `port-invalid`, and a Node error SHALL keep its own, such as `EADDRINUSE`.
 
 #### Scenario: A missing directory
 - **WHEN** the state directory and its parents do not exist
@@ -187,6 +203,14 @@ The runtime SHALL keep its state in one directory, created with mode 700 when mi
 #### Scenario: A Windows mount
 - **WHEN** the state directory is `/mnt` or under it
 - **THEN** the runtime refuses, saying it must not be on a Windows mount, and creates nothing there
+
+#### Scenario: A configuration or secret file the runtime cannot trust
+- **WHEN** the configuration file or a module's secret file is a link, lies under a linked directory, is readable by others, has a second link, is over its size bound, lies inside a Git checkout or under `/mnt`, or is a directory
+- **THEN** a configuration file refuses the runtime's start with its code and a secret file refuses its module, each before anything starts and without quoting the file
+
+#### Scenario: A module folder that is not private
+- **WHEN** a module's folder or the `modules` directory is a link, or the folder has mode 755
+- **THEN** `files()` throws `module-folder-not-private`, and nothing is created in the link's target
 
 ### Requirement: Event-loop lag check
 
@@ -218,7 +242,7 @@ The runtime process SHALL detect an event loop that stays stuck for the lag limi
 
 ### Requirement: Fixture module
 
-The runtime's tests SHALL hold a fixture module, a simulated lamp that later stories use as their stand-in device module, a consume-only fixture chime, and the fixture core: the real core with stand-in parts. A module that reaches a device SHALL be created by a factory that takes the device's transport, `create<Name>Module({transport})`, with no manifest slot or registry for transports; the lamp (`createLampModule`) and the chime (`createChimeModule`) SHALL show the convention with simulated transports that keep their state when the runtime restarts.
+The runtime's tests SHALL hold a fixture module, a simulated lamp that later stories use as their stand-in device module, a consume-only fixture chime, a configured fixture sign, and the fixture core: the real core with stand-in parts. A module that reaches a device SHALL be created by a factory that takes the device's transport, `create<Name>Module({transport})`, with no manifest slot or registry for transports; the lamp (`createLampModule`) and the chime (`createChimeModule`) SHALL show the convention with simulated transports that keep their state when the runtime restarts.
 
 The lamp SHALL serve its lamps through sync, copy the core's mode and sessions, switch a lamp on command, refuse an unknown lamp with `not-found` and switching on in quiet mode with `invalid-state`, and report each switch through its outbox: the lamp's state, an occurrence and the outcome. It SHALL accept a command whose `requestId` it already handled from the same source without acting or reporting again. When its lamp cannot be reached, its outcome SHALL be `failed`, with evidence `none` and the `unavailable` error. Its indicator SHALL show whether a session waits for a person. The chime SHALL ring once for each approval prompt in the sessions it copies, keeping what it rang in its own SQLite file across restarts. Both SHALL pass the module test kit.
 
@@ -248,13 +272,21 @@ The fixture core's stand-in parts SHALL join the core through its extension poin
 - **WHEN** the runtime restarts while an approval prompt the chime rang for still waits
 - **THEN** the chime does not ring for it again
 
+#### Scenario: The sign passes the kit
+- **WHEN** the runtime's tests run the module test kit on the sign with its section, its synthetic token and an instance whose sign never answers
+- **THEN** every check passes, the offline check included
+
+#### Scenario: A sign that is offline at start
+- **WHEN** the runtime starts the sign from a private configuration file while its sign never answers, and the sign later comes online
+- **THEN** the sign module is `running` and health `ok` once the starts settle, it reports the sign `unavailable` and stays running, then `available`, the sign shows `HELLO` with no refused token, its layout is in `modules/sign/layout.json`, and no record, message or health holds the token
+
 ### Requirement: Scenario catalog and in-memory harness
 
-The runtime's tests SHALL keep one scenario catalog of seeds and named steps: actions, expectations within a time bound and observations that hold for a while. A seed SHALL name the modules to start, built by their factories with simulated transports, and the families a reader copies. Every execution adapter SHALL run the same definitions unchanged; a scenario SHALL touch the runtime only through the harness contract, and a transport-specific expectation SHALL be data in the scenario. A failed step SHALL name what it observed and stop the scenario.
+The runtime's tests SHALL keep one scenario catalog of seeds and named steps: actions, expectations within a time bound and observations that hold for a while. A seed SHALL name the modules to start, built by their factories with simulated transports, the families a reader copies and, when it configures modules, each one's section. Each execution adapter SHALL write a configured seed's sections, as an installer would, into a private configuration file with a private token file per module holding a synthetic token, and SHALL start the runtime with it. Every execution adapter SHALL run the same definitions unchanged; a scenario SHALL touch the runtime only through the harness contract, and a transport-specific expectation SHALL be data in the scenario. A failed step SHALL name what it observed and stop the scenario.
 
 The in-memory harness (tier 1) SHALL host a seed's modules in the runtime's module host, on a manual clock and scheduler that also drive the bus, the edge and every remote client. It SHALL run each scenario twice: with the scenario's parts on the host's bus, and with them reaching it through a `RemoteEdge` on 127.0.0.1 with a run-generated token per part. It SHALL be able to crash the runtime between the lamp's commit and its publish and start it again on the same state directory and edge port, to disconnect a part, and to lose the core's next acknowledgment to the lamp on its way. It SHALL never listen on an installed service's port (8765, 8787, 8788, 8791 or 41231), SHALL keep its state in a private directory outside every Git checkout, which it removes afterwards, SHALL keep its tokens out of every log record and message, and SHALL check every message it sees against profile 2.0. `npm run test:runtime:scenarios` SHALL run the catalog, and the core CI job SHALL run its `:built` variant after its fresh build.
 
-The catalog SHALL cover an approval prompt reaching every module, a command with a tracked outcome, a module failing while the others continue, a part reconnecting and syncing, the runtime starting with zero modules, the agent-session core with no device module, and the early end-to-end path: a hook observation, the committed session, the simulated device's update, a command, its outcome, history and inbox rows, then sync and read, with a duplicate command, a failed command whose inbox row the reader reads, the deadline answers, a disconnect, a crash-restart and a lost acknowledgment. The deadline answers SHALL follow the SDK on both transports: a command its handler holds at the deadline is `uncertain-result`, and one still queued is `expired`, as `bunny-sdk` "Request and respond with expiry" requires; a requester that closes while its command is queued gets `cancelled` in process and `uncertain-result` remotely, as "One conformance suite for every transport" fixes per transport. A remote requester whose command is in flight when the runtime crashes SHALL get `uncertain-result`, as the remote client settles a call whose connection drops, by the command's deadline plus `REQUESTER_GRACE_MS` at the latest. An in-process requester dies with the runtime; the harness labels its request `lost`, which is not an SDK answer.
+The catalog SHALL cover an approval prompt reaching every module, a command with a tracked outcome, a module failing while the others continue, a part reconnecting and syncing, the runtime starting with zero modules, the agent-session core with no device module, a configured module starting while its device is offline and reaching it once it is online, a module whose configuration is invalid refused while the others run, and the early end-to-end path: a hook observation, the committed session, the simulated device's update, a command, its outcome, history and inbox rows, then sync and read, with a duplicate command, a failed command whose inbox row the reader reads, the deadline answers, a disconnect, a crash-restart and a lost acknowledgment. The deadline answers SHALL follow the SDK on both transports: a command its handler holds at the deadline is `uncertain-result`, and one still queued is `expired`, as `bunny-sdk` "Request and respond with expiry" requires; a requester that closes while its command is queued gets `cancelled` in process and `uncertain-result` remotely, as "One conformance suite for every transport" fixes per transport. A remote requester whose command is in flight when the runtime crashes SHALL get `uncertain-result`, as the remote client settles a call whose connection drops, by the command's deadline plus `REQUESTER_GRACE_MS` at the latest. An in-process requester dies with the runtime; the harness labels its request `lost`, which is not an SDK answer.
 
 #### Scenario: Tier 1 in CI
 - **WHEN** `npm run test:runtime:scenarios` runs
@@ -275,6 +307,10 @@ The catalog SHALL cover an approval prompt reaching every module, a command with
 #### Scenario: The agent-session core alone
 - **WHEN** the core runs with no device module, a hook observes two sessions, an approval prompt raised and resolved, a turn's end and one session's runtime end, the panel acknowledges the finished turn's notice and the operator tries to acknowledge it as the panel, and the runtime restarts
 - **THEN** on both transports the reader holds both sessions, hears `attention.raised`, `attention.cleared` with cause `resolved`, `turn.ended` naming the notice and `session.ended`; the finished turn stays on the session record as an unread notice and never becomes an inbox item; the notice is acknowledged by the panel only and the operator's attempt is `forbidden`; and after the restart the session is uncertain until a new turn's evidence makes it current
+
+#### Scenario: Configured modules on both transports
+- **WHEN** the configured-module and misconfigured-module scenarios run in process and through the edge
+- **THEN** the sign runs while its sign is offline, reports it `unavailable`, then `available` with the greeting shown and no token refused; with an invalid section the sign is `refused` with `invalid-request`, never reaches its sign, and the core still commits a session the reader holds; and in both, no log record, published message, health entry or reader copy holds the synthetic token
 
 ### Requirement: Simulated modules and the SDK edge
 
@@ -310,7 +346,7 @@ The shipped module list SHALL be a list of module factories, each of which creat
 
 ### Requirement: Disposable verification runs
 
-`npm run -s verify:runtime -- <operation>` SHALL start, inspect, capture, hand off and stop disposable runs of the runtime through `@jimmie-potts/app-verify` without changing it. A run SHALL serve a supervisor that holds the run's simulated devices and runs the runtime from the checkout as a child, through the runtime's own entry with `--simulate`, `--edge`, `--environment test` and the run's state directory: with the shipped module list, or with the fixture modules, whose simulated transports reach the supervisor's devices over the child's IPC channel. The run's grants SHALL be generated per run, one per part, into the state directory's grants file, and never printed. A runtime child that dies on its own SHALL be started again on the same port and state directory, at most five times within any minute, and its simulated devices SHALL keep their state. Starts and restarts SHALL run one after another, and only the current runtime's own exit SHALL count as a crash. A child whose supervisor dies SHALL stop itself, and stopping a run SHALL end its runtime, its listeners and every process it started. The run's ready line SHALL name the runtime's health page, which the preview card links. The supervisor SHALL serve a loopback harness API, announced as the run's `harness` endpoint, that answers only local JSON requests naming its listener, drives the simulated devices and the run's controls (hold, release, fail the next switch, fault the chime, arm a crash between the lamp's commit and its publish, lose an acknowledgment, end a part's stream at the edge, restart) and reports the run's state, which it SHALL bring up to date with the runtime before it answers. Ending a stream SHALL take only a part's source, `bunny/parts/<role>`. A run adapter SHALL implement the scenario catalog's harness contract over that API and the SDK edge, and one capture step per catalog scenario SHALL run it, so every catalog scenario that passes in the in-memory harness passes in a run. Its disconnect SHALL end the part's stream at the runtime's edge, so the same remote part reconnects and its subscriptions hear of the gap, as in the in-memory harness. A run SHALL never reach an installed service, a port of one, personal state or a device: the boundary checks `simulated-transports`, `no-outbound-connections` and `private-state` SHALL fail the start when a run crosses the boundary, judged from what happened rather than from the runtime's arguments, `doctor` SHALL re-run them, and the negative-control seeds that cross a boundary SHALL be start-only. For `no-outbound-connections`, a guard loaded through `NODE_OPTIONS` into the runtime and into each worker thread and Node process that inherits its environment SHALL refuse every outbound TCP connection and UDP datagram made through Node's network modules before anything leaves, and record each attempt. `private-state` SHALL observe the runtime's home, that nothing exists under its default state directory, and that every database the runtime has open is in the run's state directory.
+`npm run -s verify:runtime -- <operation>` SHALL start, inspect, capture, hand off and stop disposable runs of the runtime through `@jimmie-potts/app-verify` without changing it. A run SHALL serve a supervisor that holds the run's simulated devices and runs the runtime from the checkout as a child, through the runtime's own entry with `--simulate`, `--edge`, `--environment test`, the run's state directory and, for a scenario whose seed configures modules, `--config` with the configuration file the seed wrote under `<data>/config`, owner-only, with token files holding only the synthetic token: with the shipped module list, or with the fixture modules, whose simulated transports reach the supervisor's devices over the child's IPC channel. The run's grants SHALL be generated per run, one per part, into the state directory's grants file, and never printed. A runtime child that dies on its own SHALL be started again on the same port and state directory, at most five times within any minute, and its simulated devices SHALL keep their state. Starts and restarts SHALL run one after another, and only the current runtime's own exit SHALL count as a crash. A child whose supervisor dies SHALL stop itself, and stopping a run SHALL end its runtime, its listeners and every process it started. The run's ready line SHALL name the runtime's health page, which the preview card links. The supervisor SHALL serve a loopback harness API, announced as the run's `harness` endpoint, that answers only local JSON requests naming its listener, drives the simulated devices and the run's controls (hold, release, fail the next switch, fault the chime, arm a crash between the lamp's commit and its publish, lose an acknowledgment, end a part's stream at the edge, restart) and reports the run's state, which it SHALL bring up to date with the runtime before it answers. Ending a stream SHALL take only a part's source, `bunny/parts/<role>`. A run adapter SHALL implement the scenario catalog's harness contract over that API and the SDK edge, and one capture step per catalog scenario SHALL run it, so every catalog scenario that passes in the in-memory harness passes in a run. Its disconnect SHALL end the part's stream at the runtime's edge, so the same remote part reconnects and its subscriptions hear of the gap, as in the in-memory harness. A run SHALL never reach an installed service, a port of one, personal state or a device: the boundary checks `simulated-transports`, `no-outbound-connections` and `private-state` SHALL fail the start when a run crosses the boundary, judged from what happened rather than from the runtime's arguments, `doctor` SHALL re-run them, and the negative-control seeds that cross a boundary SHALL be start-only. For `no-outbound-connections`, a guard loaded through `NODE_OPTIONS` into the runtime and into each worker thread and Node process that inherits its environment SHALL refuse every outbound TCP connection and UDP datagram made through Node's network modules before anything leaves, and record each attempt. `private-state` SHALL observe the runtime's home, that nothing exists under its default state directory, and that every database the runtime has open is in the run's state directory.
 
 #### Scenario: Start, capture and stop
 - **WHEN** a reviewer starts a run with the fixture modules, captures a catalog scenario, reseeds it to `zero-modules` and captures that scenario, then stops it
@@ -347,6 +383,10 @@ The shipped module list SHALL be a list of module factories, each of which creat
 #### Scenario: Process cleanup
 - **WHEN** a run's supervisor is stopped, or killed
 - **THEN** its runtime child is gone and both ports are closed; a killed supervisor's child stops itself
+
+#### Scenario: A configured run
+- **WHEN** a reviewer starts the configured-module run and captures its scenario, stops it, then does the same with the misconfigured-module run
+- **THEN** each capture passes, health shows the sign `running` and then `refused` with `invalid-request`, the runtime started with `--config`, and no capture log, attachment or runtime record holds the synthetic token
 
 ### Requirement: Diagnostic-contract log records
 
@@ -507,3 +547,35 @@ The core SHALL take parts, the extension point for Hub #782's tracker and histor
 #### Scenario: A part's rows
 - **WHEN** a part derives a row from each committed change, and then throws
 - **THEN** the first change's row commits with it, and the throw leaves every row unchanged, publishes nothing and is reported as a failed commit
+
+### Requirement: Module configuration
+
+With `--config <file>` (`RuntimeOptions.configFile`), the runtime SHALL read one private configuration file, as "Private runtime state" requires, before it serves health: `{"schema": "runtime-config/1.0", "modules": {<module name>: <section>}}`. It SHALL refuse to start, with a `RuntimeError` whose `error.code` the `runtime.failed` record carries, a file that is not private (`config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`) or that is not JSON, names another schema, lacks an object `modules` or has another member (`config-invalid`), and no refusal SHALL quote the file. A section for a module the runtime does not host SHALL be ignored, and a lookup SHALL find only the file's own members.
+
+Before it starts the modules, the runtime SHALL admit each module whose manifest it accepted, in list order, with `checkConfiguration` against that module's own section only. It SHALL refuse a module, give it no participant and never start it, while the others start, when the module declares `configure` and has no section (`not-found`); when its section is not a JSON object or its `secrets` member is malformed (`invalid-request`); when its `configure` refuses, with the refusal's code and detail, or throws (`internal`); when it names a device that is not a routing ID or that a module before it already named (`invalid-request`); or when a secret file its section names is missing (`not-found`), is not private (`forbidden`), or is over 64 KiB or not UTF-8 text (`invalid-request`). Health SHALL show it `refused` with that code and a fixed detail, and its `runtime.module.refused` record SHALL carry `bunny.code`, `bunny.phase` `manifest` and, for a `configure` that threw, the error's type, never the detail or what it threw. Without a configuration file, a module that declares `configure` SHALL be refused with `not-found`.
+
+`secrets.read(name)` SHALL read, anew on each call, only a file that the module's own section names, and SHALL resolve with its UTF-8 text without trailing line breaks. It SHALL reject with an `SdkError` with a registry code and fixed text: `not-found` for a name the section does not name or a missing file, `forbidden` for a file that is not private, `invalid-request` for one that is too large or not UTF-8 text, and `invalid-state` once the module's stop has begun. No secret SHALL reach a message the runtime sends, a log record, health or an error body: the runtime SHALL never log the configuration file or a secret, and the log writer SHALL drop, and count, any record whose attribute holds a secret a module has read.
+
+#### Scenario: A missing or invalid section
+- **WHEN** one module declaring `configure` has no section, another's section is an array, a third's `configure` refuses with `invalid-request` and a detail, a fourth's `configure` throws, and a fifth takes its section
+- **THEN** the first four are `refused` with `not-found`, `invalid-request`, `invalid-request` with that detail, and `internal`, none of them started, health is `degraded`, the fifth runs, and the refusal records carry their codes and the `manifest` phase without the thrown error's message
+
+#### Scenario: No configuration file
+- **WHEN** the runtime runs without `--config` with a module that declares `configure` and one that does not
+- **THEN** the first is `refused` with `not-found`, the second runs with an undefined configuration, and its `secrets.read` is `not-found`
+
+#### Scenario: Two modules name one device
+- **WHEN** a module names devices `sign-1` and `sign-2`, the next names `sign-2`, and a third names `sign-3`
+- **THEN** the second is `refused` with `invalid-request` and the other two run
+
+#### Scenario: A secret file that changes after admission
+- **WHEN** an admitted module reads its token, then the file becomes readable by group, is removed, and is replaced by bytes that are not UTF-8
+- **THEN** the reads resolve with the token, then reject with `forbidden`, `not-found` and `invalid-request`; and after the runtime stops, `invalid-state`
+
+#### Scenario: No secret in a record, health or an error body
+- **WHEN** a module reads its synthetic token, logs it in a registered attribute, logs another record and throws an error quoting it from its start, another module's token file is readable by group, and a third module's reads of an unnamed secret and of a file made readable by group fail
+- **THEN** the writer drops exactly the record holding the token, the module's other record arrives, the first module is `failed` with "start failed", the second is `refused` with `forbidden`, and no log record, health body or error body holds the token
+
+#### Scenario: The shipped process with a configuration file
+- **WHEN** the shipped entry point runs with `--config` naming a relative path, a missing file, a file with mode 644, a file that is not JSON, a link, and a valid file
+- **THEN** each of the first five exits 1 with no ready line and a `runtime.failed` record carrying `RuntimeError` and `config-relative`, `config-missing`, `config-not-private`, `config-invalid` or `config-link`, and the last serves health `ok` and exits 0 on SIGTERM
