@@ -19,7 +19,10 @@ export interface LightState {
   power: boolean;
 }
 
-/** One bulb's packet exchange: a request of `type`, answered by a payload of `expectedType`, until `signal` aborts. */
+/**
+ * One bulb's packet exchange: a request of `type`, answered by a payload of `expectedType`. Once `signal` aborts, the
+ * exchange stops waiting and rejects, at once or as soon as whatever it sent has ended: the queue waits for it.
+ */
 export interface Transport {
   exchange(type: number, payload: Uint8Array, expectedType: number, signal: AbortSignal): Promise<Buffer>;
   close(): void;

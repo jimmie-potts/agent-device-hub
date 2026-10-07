@@ -485,23 +485,18 @@ it('a bulb that comes back is available within 30 s of a reader syncing its reco
 });
 
 it('a stop waits for the bulb\'s call in flight to end, and keeps the bulb\'s lease until then', async () => {
-  // A transport whose abort takes effect two turns later, as a socket that closes late would. One turn after the stop
-  // asked it to end, the test checks whether the bulb's lease is free.
+  // A transport whose call ends only when the test lets it, after the stop asked it to end, as a socket that closes late.
   const network = new SimulatedLifx();
-  let folder = '';
-  let leaseWhileEnding: string | undefined;
+  let asked = false;
+  let finish: () => void = () => {};
   const late: LifxNetwork = {connect: address => {
     const inner = network.connect(address);
     return {
       exchange: (type, payload, expected, signal) => {
         const relay = new AbortController();
         signal.addEventListener('abort', () => {
-          setImmediate(() => {
-            const taken = acquireLease(folder, address);
-            leaseWhileEnding = taken.status === 'held' ? 'free' : taken.reason;
-            if (taken.status === 'held') taken.lease.release();
-            setImmediate(() => { relay.abort(); });
-          });
+          asked = true;
+          finish = () => { relay.abort(); };
         }, {once: true});
         return inner.exchange(type, payload, expected, relay.signal);
       },
@@ -509,12 +504,20 @@ it('a stop waits for the bulb\'s call in flight to end, and keeps the bulb\'s le
     };
   }};
   const world = await open({network, transport: late, section: {bulbs: [PENDANT]}});
-  folder = join(world.dir, 'lifx', 'leases');
+  const folder = join(world.dir, 'lifx', 'leases');
   await world.clock.advance(1);
   network.offline(PENDANT.address);
   accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-ending'}));
-  await world.harness.stop();
-  assert.equal(leaseWhileEnding, 'busy', 'the lease was still held while the call ended');
+  const stopping = world.harness.stop();
+  // Long enough for the participant's close and the module's own stop to begin, which wait for the call.
+  await new Promise(resolve => { setTimeout(resolve, 100); });
+  assert.ok(asked, 'the stop asked the call to end');
+  const taken = acquireLease(folder, PENDANT.address);
+  if (taken.status === 'held') taken.lease.release();
+  assert.equal(taken.status === 'refused' && taken.reason, 'busy', 'the lease is still held while the call has not ended');
+  finish();
+  await stopping;
+  assert.deepEqual(world.harness.failures, [], 'the stop finished within its deadline');
   network.online(PENDANT.address);
   await world.start();
   await world.clock.advance(1);

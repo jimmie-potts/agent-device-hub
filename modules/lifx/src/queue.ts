@@ -261,14 +261,14 @@ export class BulbQueue {
       counter.exchanges += 1;
       let cancelTimer: Cancel = () => {};
       try {
+        // The attempt's deadline and the queue's close both abort the transport's call, and the attempt ends only when
+        // the transport says the call ended, so nothing reports a call over while its packet may still be going out.
         return await new Promise<Buffer>((resolve, reject) => {
-          abort.signal.addEventListener('abort', () => { reject(cancelled()); }, {once: true});
           try {
-            cancelTimer = this.#scheduler.after(this.#timeoutMs, () => { reject(new Error('timeout')); });
+            cancelTimer = this.#scheduler.after(this.#timeoutMs, () => { abort.abort(); });
           } catch {
             // The module's timers refuse use once it stops.
-            reject(cancelled());
-            return;
+            abort.abort();
           }
           this.#transport.exchange(type, payload, expected, abort.signal).then(resolve, () => { reject(new Error('transport')); });
         });
