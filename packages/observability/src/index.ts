@@ -2,7 +2,8 @@ import check from './validator.js';
 import catalogData from './catalog.json' with {type:'json'};
 import schema from './record.schema.json' with {type:'json'};
 
-export const ARTIFACT_VERSION = '1.1.0';
+export const ARTIFACT_VERSION = '1.2.0';
+/** The default producer profile. Profile 1.2 adds the runtime's vocabulary; its producers select it explicitly. */
 export const SCHEMA_VERSION = '1.1';
 export const SEMANTIC_CONVENTIONS_VERSION = '1.44.0';
 export const MAX_RECORD_BYTES = 8192;
@@ -10,9 +11,10 @@ export const MAX_QUEUE_RECORDS = 1024;
 export const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 export const MAX_FLUSH_MS = 1000;
 export type Primitive = string | number | boolean;
+export type SchemaVersion = '1.0'|'1.1'|'1.2';
 export type TraceContext = Readonly<{trace_id:string; span_id:string; trace_flags:string}>;
 export type DiagnosticRecord = {
-  schema_version:'1.0'|'1.1'; timestamp?:string; observed_timestamp?:string;
+  schema_version:SchemaVersion; timestamp?:string; observed_timestamp?:string;
   severity_number:number; severity_text:string; event_name:string; body:string;
   resource:Record<string,string>; scope:{name:string;version:string};
   attributes:Record<string,Primitive>; trace_id?:string; span_id?:string; trace_flags?:string;
@@ -95,9 +97,10 @@ export function createRecord(input:unknown):Result<DiagnosticRecord> {
     return validateRecord(value);
   } catch {return failure();}
 }
-export function projectRecord(input:unknown,version:'1.0'|'1.1'):Result<DiagnosticRecord> {
+// A later profile's vocabulary fails the target profile's validation, so a projection never forwards it.
+export function projectRecord(input:unknown,version:SchemaVersion):Result<DiagnosticRecord> {
   const result=validateRecord(input);
-  if(!result.ok || !['1.0','1.1'].includes(version))return failure();
+  if(!result.ok || !catalogData.schema_versions.includes(version))return failure();
   result.value.schema_version=version;
   if(version==='1.0')delete result.value.attributes['bunny.queue.depth'];
   return validateRecord(result.value);
