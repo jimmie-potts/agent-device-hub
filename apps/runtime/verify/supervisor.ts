@@ -16,6 +16,7 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
@@ -57,6 +58,9 @@ const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
 const speakers = new SimulatedSpeakers();
+const lifx = new SimulatedLifx();
+/** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
+const exchanges = new Map<string, AbortController>();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 /** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -169,6 +173,23 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       controller?.abort();
       return;
     }
+    case 'lifx.exchange': {
+      const key = `${number} ${message.id}`;
+      const controller = new AbortController();
+      exchanges.set(key, controller);
+      lifx.exchange(message.address, message.packet, Buffer.from(message.payload, 'base64'), message.expected, controller.signal).then(
+        payload => { exchanges.delete(key); tell(child, {type: 'lifx.answered', id: message.id, payload: payload.toString('base64')}); },
+        () => { if (exchanges.delete(key)) tell(child, {type: 'lifx.failed', id: message.id}); },
+      );
+      return;
+    }
+    case 'lifx.abandon': {
+      const key = `${number} ${message.id}`;
+      const controller = exchanges.get(key);
+      exchanges.delete(key);
+      controller?.abort();
+      return;
+    }
     case 'published':
       published.push({generation: number, message: message.message});
       return;
@@ -195,8 +216,8 @@ function spawnRuntime(): Promise<string> {
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
   child.once('exit', () => {
-    // A runtime that ended no longer waits on its shows or its speakers' calls.
-    for (const waiting of [shows, speakerCalls]) {
+    // A runtime that ended no longer waits on its shows, its speakers' calls or its bulbs' answers.
+    for (const waiting of [shows, speakerCalls, exchanges]) {
       for (const [key, controller] of waiting) {
         if (!key.startsWith(`${number} `)) continue;
         waiting.delete(key);
@@ -387,6 +408,10 @@ async function simulate(request: SimulateRequest): Promise<boolean> {
     case 'playback':
       simulatePlayback(speakers, request);
       return true;
+    case 'lifx':
+      if (request.action === 'online') lifx.online(request.address);
+      else lifx.offline(request.address);
+      return true;
     case 'lamp':
       break;
   }
@@ -418,7 +443,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state()},
+        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state()},
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);

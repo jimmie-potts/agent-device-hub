@@ -6,8 +6,10 @@
 // its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
 // stream at the edge, which `runMain` hands over once it serves.
 import http from 'node:http';
+import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
+import {followStandInAcks} from '@jimmie-potts/sdk/testing';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
@@ -27,6 +29,7 @@ const take = (control: Control): boolean => {
 const switches = new Map<number, {resolve: (power: Power) => void; reject: (error: Error) => void}>();
 const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
 const speakerCalls = new Map<number, {resolve: (reply: SonyReply | SonosReply) => void; reject: (error: Error) => void}>();
+const exchanges = new Map<number, {resolve: (payload: Buffer) => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -57,6 +60,14 @@ process.on('message', (value: unknown) => {
     case 'speaker.failed':
       speakerCalls.get(message.id)?.reject(new Error('the speaker did not answer'));
       speakerCalls.delete(message.id);
+      return;
+    case 'lifx.answered':
+      exchanges.get(message.id)?.resolve(Buffer.from(message.payload, 'base64'));
+      exchanges.delete(message.id);
+      return;
+    case 'lifx.failed':
+      exchanges.get(message.id)?.reject(new Error('the bulb refused the packet'));
+      exchanges.delete(message.id);
       return;
     case 'control':
       flags[message.control] = true;
@@ -128,6 +139,29 @@ function speakerCall(signal: AbortSignal, message: (id: number) => ChildMessage)
     else send(message(id));
   });
 }
+/**
+ * The LIFX bulbs, reached over the IPC channel: each packet goes to the supervisor's simulated bulb (Hub #928). A bulb
+ * off the network never answers, so the module's own deadline aborts the wait, which tells the supervisor to stop too.
+ */
+const bulbs: LifxNetwork = {connect: address => ({
+  exchange: (packet, payload, expected, signal) => new Promise<Buffer>((resolve, reject) => {
+    next += 1;
+    const id = next;
+    const abandon = (): void => {
+      if (!exchanges.delete(id)) return;
+      send({type: 'lifx.abandon', id});
+      reject(new Error('the bulb did not answer'));
+    };
+    exchanges.set(id, {
+      resolve: answer => { signal.removeEventListener('abort', abandon); resolve(answer); },
+      reject: error => { signal.removeEventListener('abort', abandon); reject(error); },
+    });
+    signal.addEventListener('abort', abandon, {once: true});
+    if (signal.aborted) abandon();
+    else send({type: 'lifx.exchange', id, address, packet, payload: Buffer.from(payload).toString('base64'), expected});
+  }),
+  close: () => {},
+})};
 /** The speakers, reached over the IPC channel; the supervisor's simulated speakers answer. Their addresses stay here. */
 const speakers: SpeakerTransport = {
   sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
@@ -167,6 +201,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   chime: fixture('chime', () => createChimeModule({transport: chime})),
   sign: fixture('sign', () => createSignModule({transport: signs}), signSchemas),
   playback: fixture('playback', () => createPlaybackModule({transport: speakers})),
+  // The shipped LIFX module with simulated bulbs; it follows the fixture core's stand-in acknowledgments until #782.
+  lifx: fixture('lifx', () => createLifxModule({transport: bulbs, acknowledgments: followStandInAcks}), lifxSchemas),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({

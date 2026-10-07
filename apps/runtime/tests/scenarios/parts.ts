@@ -3,7 +3,9 @@
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
+import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {registerLifxFamilies} from '@jimmie-potts/lifx';
 import type {SimulatedSpeakers} from '@jimmie-potts/playback';
 import type {Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {standInAckSchemas} from '@jimmie-potts/sdk/testing';
@@ -16,11 +18,13 @@ import type {ReaderView, Role, Seed, Simulation} from './catalog.js';
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
 
-/** Profile 2.0 with the core families and every fixture family the catalog's messages use. */
+/** Profile 2.0 with the core and device families, and every module and fixture family the catalog's messages use. */
 export function scenarioValidator(): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
+  registerDeviceFamilies(validator);
   for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas})) validator.register(dataschema, schema);
+  registerLifxFamilies(validator);
   return validator;
 }
 

@@ -38,7 +38,7 @@ export function artifactFiles(at = root): string[] {
     ...built('apps/runtime/dist/src'), ...built('apps/runtime/dist/verify', file => !file.startsWith('tests/')),
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
-    ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'), ...built('modules/playback/dist/src'),
+    ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'), ...built('modules/playback/dist/src'), ...built('modules/lifx/dist/src'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -52,13 +52,13 @@ export const BUILD_SOURCES = [
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
-  ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)modules/playback/src/**',
+  ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
-  'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'modules/playback/dist/src/index.js',
+  'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */

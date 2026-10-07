@@ -1,5 +1,5 @@
 // The runtime as a service process, run in a child process as the service manager would run it: the shipped entry
-// point with zero modules, errors that escape to the process, and the event-loop lag check that makes the service
+// point with its module list and with zero modules, errors that escape to the process, and the event-loop lag check that makes the service
 // manager restart the whole runtime when the process itself is stuck.
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';

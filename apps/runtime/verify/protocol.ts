@@ -27,6 +27,10 @@ export type ChildMessage =
   | {type: 'speaker.sonos'; id: number; action: string; args: string}
   /** The playback module's deadline for that call passed, or it stopped, so the simulated speaker stops waiting. */
   | {type: 'speaker.abandon'; id: number}
+  /** The LIFX module sends one packet, its payload in base64, to the simulated bulb at `address` (Hub #928). */
+  | {type: 'lifx.exchange'; id: number; address: string; packet: number; payload: string; expected: number}
+  /** The LIFX module stopped waiting for that packet's answer, so the simulated bulb stops too. */
+  | {type: 'lifx.abandon'; id: number}
   | {type: 'published'; message: Message}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
@@ -38,6 +42,8 @@ export type SupervisorMessage =
   | {type: 'sign.failed'; id: number}
   | {type: 'speaker.replied'; id: number; reply: SonyReply | SonosReply}
   | {type: 'speaker.failed'; id: number}
+  | {type: 'lifx.answered'; id: number; payload: string}
+  | {type: 'lifx.failed'; id: number}
   | {type: 'control'; id: number; control: Control}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
@@ -86,4 +92,5 @@ export type SimulateRequest =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
   | {device: 'chime'; action: 'fault-next'}
   | {device: 'sign'; action: 'online' | 'offline'}
-  | Extract<Simulation, {device: 'playback'}>;
+  | Extract<Simulation, {device: 'playback'}>
+  | {device: 'lifx'; action: 'online' | 'offline'; address: string};

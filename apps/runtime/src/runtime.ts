@@ -4,6 +4,7 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
+import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
 import {diagnosticWriter} from './diagnostics.js';
@@ -175,10 +176,14 @@ function close(server: Server): Promise<void> {
   });
 }
 
-/** The edge's validator: profile 2.0, the core families and the modules' own payload schemas. */
+/**
+ * The edge's validator: profile 2.0, the core families, the device families that every device module answers (#918,
+ * #928), and the modules' own payload schemas.
+ */
 function edgeValidator(schemas: Readonly<Record<string, object>>): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
+  registerDeviceFamilies(validator);
   for (const [dataschema, schema] of Object.entries(schemas)) validator.register(dataschema, schema);
   return validator;
 }
