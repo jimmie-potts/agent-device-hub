@@ -29,9 +29,16 @@ export const OWNER_ID = 'bunny-core';
 export const DEFAULT_CONSUMERS: readonly Consumer[] = Object.freeze([
   {id: 'dashboard', clearOnNewTurn: false}, {id: 'nanoleaf', clearOnNewTurn: true}, {id: 'pixoo', clearOnNewTurn: true},
 ]);
-/** The shortest wait before the core tries again to publish freshness that a failed commit left behind. */
-const REFRESH_RETRY_MS = 1000;
+/**
+ * The first wait before the core tries again after a failed commit, to publish freshness or to open its owner; each
+ * further failure doubles it, up to `RETRY_MAX_MS`.
+ */
+export const REFRESH_RETRY_MS = 1000;
+export const RETRY_MAX_MS = 60_000;
+/** While the store keeps failing, the core summarizes the condition at most this often (ADR 0012, "Repetition"). */
+export const SUMMARY_MS = 60_000;
 const MAX_DELAY_MS = 2_147_483_647;
+const MAX_DURATION_MS = 86_400_000;
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /** What the core gives one of its parts. */
@@ -88,6 +95,54 @@ const REASONS: Partial<Record<ErrorCode, string>> = {
 };
 const refused = (code: ErrorCode): LogFields => ({'bunny.outcome': 'rejected', 'bunny.code': code, ...(REASONS[code] === undefined ? {} : {'bunny.reason': REASONS[code]})});
 const requestField = (requestId: unknown): LogFields => typeof requestId === 'string' && REQUEST_ID.test(requestId) ? {'bunny.request.id': requestId} : {};
+const MESSAGE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
+const SOURCE = /^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/;
+const KINDS: readonly string[] = ['state', 'removal', 'occurrence', 'command', 'reply', 'outcome', 'sync-request', 'sync-completed'];
+/** A received message's identifying fields, each only when it is well formed, so a refused message's record is still written. */
+const messageFields = (message: Message<unknown>): LogFields => ({
+  ...(typeof message.source === 'string' && SOURCE.test(message.source) && message.source.length <= 256 ? {'bunny.participant': message.source} : {}),
+  ...(typeof message.id === 'string' && MESSAGE_ID.test(message.id) ? {'bunny.message.id': message.id} : {}),
+  ...(typeof message.kind === 'string' && KINDS.includes(message.kind) ? {'bunny.message.kind': message.kind} : {}),
+});
+
+/** A capped, doubling wait between attempts. A first wait of 0 would retry at once, every time. */
+class Backoff {
+  readonly #first: number;
+  readonly #max: number;
+  #delay = 0;
+  #next = 0;
+  #pending = false;
+
+  constructor(first: number, max: number) {
+    this.#first = first;
+    this.#max = max;
+  }
+
+  /** Whether an attempt failed and the next one waits. */
+  get pending(): boolean {
+    return this.#pending;
+  }
+
+  /** When the next attempt is due. */
+  get next(): number {
+    return this.#next;
+  }
+
+  failed(now: number): void {
+    this.#delay = this.#pending ? Math.min(this.#max, this.#delay * 2) : this.#first;
+    this.#next = now + this.#delay;
+    this.#pending = true;
+  }
+
+  ready(now: number): boolean {
+    return !this.#pending || now >= this.#next;
+  }
+
+  reset(): void {
+    this.#pending = false;
+    this.#delay = 0;
+  }
+}
 
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): BunnyModule {
@@ -115,6 +170,13 @@ class Core {
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
   #owner: AgentState | undefined;
+  /** Why the owner is not open, while it is not, and when to try again. */
+  #ownerDown: ErrorCode = 'unavailable';
+  readonly #reopen = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
+  readonly #freshness = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
+  /** Since when the store has refused durable work, and when that was last summarized. */
+  #degradedSince: number | undefined;
+  #summarizedAt = 0;
   /** The core's own operations run one at a time, so each commit is the reduction of the one observation under way. */
   #queue: Promise<unknown> = Promise.resolve();
   #timer: Cancel | undefined;
@@ -169,16 +231,26 @@ class Core {
     this.#starting = (async () => {
       try {
         await Promise.all(registered);
-        await this.#open();
+        try {
+          await this.#open();
+        } catch (error) {
+          // A full disk at the start, as when maintenance fell due, leaves the core up, refusing durable work until it
+          // has room. Anything else, such as a store it cannot read or a lease another runtime holds, fails it.
+          if (this.#store.takeFailure() !== 'full') throw error;
+          this.#ownerFailed('capacity');
+        }
         // A stop that came meanwhile shuts the owner down; whatever waits on `ready` finds the core stopped.
         if (this.#stopped) {
           this.#opened();
           return;
         }
-        // A restart leaves every stored session uncertain until fresh evidence, and the records say so at once.
-        await this.#store.refresh();
+        // A restart leaves every stored session uncertain until fresh evidence, and the records say so at once. If the
+        // store refuses, syncs answer `unavailable` until a later refresh succeeds.
+        await this.#refresh();
         // What a crash kept from going out goes out now, with its stored `id` and `time`.
-        await this.#store.republish();
+        await this.#store.republish().catch(() => {
+          // Whatever was not sent stays stored, and goes out with the next commit.
+        });
         this.#opened();
         this.#schedule();
       } catch (error) {
@@ -197,8 +269,9 @@ class Core {
     await this.#queue;
     const owner = this.#owner;
     this.#owner = undefined;
-    await owner?.shutdown();
+    await owner?.shutdown().catch(() => {});
     await this.#store.drain();
+    this.#store.close();
   }
 
   /** Runs one of the core's operations after those before it. */
@@ -210,25 +283,55 @@ class Core {
 
   async #open(): Promise<void> {
     this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now()});
+    this.#reopen.reset();
+  }
+
+  /** The owner could not be opened: refuse with `code` meanwhile, and try again after a capped backoff. */
+  #ownerFailed(code: ErrorCode): void {
+    this.#ownerDown = code;
+    this.#reopen.failed(this.#clock.now());
+    this.#degraded(code);
   }
 
   /**
-   * Calls the owner. After a commit that failed, as on a full disk, agent-state's owner is faulted; the core opens it
-   * again on its store, which holds exactly what committed, so later work is taken once the disk has room. An owner
-   * that cannot be opened again fails the core, and the runtime with it.
+   * The open owner, or why there is none. After a commit that failed, as on a full disk, agent-state's owner is faulted;
+   * the core opens it again on the store, which keeps its lock throughout and holds exactly what committed. Opening
+   * writes nothing unless maintenance fell due; if it fails, the core stays up and tries again after a capped backoff.
    */
-  async #call(work: (owner: AgentState) => Promise<Outcome>): Promise<Outcome> {
-    if (this.#stopped) return {ok: false, code: 'unavailable'};
-    if (this.#owner === undefined) await this.#open();
-    const owner = this.#owner;
-    if (owner === undefined) return {ok: false, code: 'unavailable'};
+  async #ensureOwner(): Promise<AgentState | Refusal> {
+    if (this.#owner !== undefined) return this.#owner;
+    const refusal = (): Refusal => ({code: this.#ownerDown, detail: this.#ownerDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
+    if (!this.#reopen.ready(this.#clock.now())) return refusal();
+    try {
+      await this.#open();
+    } catch {
+      this.#ownerFailed(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
+      this.#log.debug('operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': this.#ownerDown});
+      return refusal();
+    }
+    return this.#owner ?? refusal();
+  }
+
+  /** Calls the owner, mapping a refusal to the registry's terms, and opens a faulted owner again. */
+  async #call(work: (owner: AgentState) => Promise<Outcome>): Promise<Extract<Outcome, {ok: true}> | {ok: false; refusal: Refusal}> {
+    if (this.#stopped) return {ok: false, refusal: {code: 'unavailable', detail: 'the core is stopping'}};
+    const owner = await this.#ensureOwner();
+    if (!('ingest' in owner)) return {ok: false, refusal: owner};
     const result = await work(owner);
-    if (!result.ok && (result.code === 'storage-failed' || result.code === 'unavailable') && !this.#stopped) {
+    if (result.ok) {
+      if (result.outcome === 'applied' || result.outcome === 'ambiguous') this.#recovered();
+      return result;
+    }
+    const refusal = this.#refusal(result);
+    if ((result.code === 'storage-failed' || result.code === 'unavailable') && !this.#stopped) {
+      if (result.code === 'storage-failed') this.#degraded(refusal.code);
+      // The faulted owner lets go of its lease only: the store keeps its lock, so no other runtime can take it.
       this.#owner = undefined;
       await owner.shutdown().catch(() => {});
-      await this.#open();
+      this.#store.abandonLease();
+      await this.#ensureOwner();
     }
-    return result;
+    return {ok: false, refusal};
   }
 
   /** Why a refused owner call was refused, in the registry's terms. */
@@ -240,7 +343,8 @@ class Core {
         // Nothing committed: the store refused the change before anything reported it accepted.
         return this.#store.takeFailure() === 'full' ? {code: 'capacity', detail: 'the core store is full'} : {code: 'internal', detail: 'the core store failed'};
       case 'unavailable':
-        return {code: 'unavailable', detail: 'the core is not taking changes now'};
+        // A faulted owner: its own maintenance may have failed on a full disk.
+        return this.#store.takeFailure() === 'full' ? {code: 'capacity', detail: 'the core store is full'} : {code: 'unavailable', detail: 'the core is not taking changes now'};
       case 'invalid-event':
         return {code: 'invalid-request', detail: 'the observation is not one the core admits'};
       case 'invalid-operation':
@@ -250,18 +354,64 @@ class Core {
     }
   }
 
+  /**
+   * The store refused durable work. Repeated failures log their transition, then a summary at most once a minute
+   * (ADR 0012, "Repetition"), never a record per attempt above DEBUG.
+   */
+  #degraded(code: ErrorCode): void {
+    const now = this.#clock.now();
+    const fields = {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': code};
+    const record = (extra: LogFields = {}): void => {
+      if (code === 'internal') this.#log.error('operation.failed', {...fields, ...extra});
+      else this.#log.warn('operation.failed', {...fields, ...extra});
+    };
+    if (this.#degradedSince === undefined) {
+      this.#degradedSince = now;
+      this.#summarizedAt = now;
+      record();
+      return;
+    }
+    if (now - this.#summarizedAt < SUMMARY_MS) return;
+    this.#summarizedAt = now;
+    record({'bunny.duration_ms': Math.min(MAX_DURATION_MS, Math.max(0, now - this.#degradedSince))});
+  }
+
+  /** A durable change committed again: the condition ends, with one record. */
+  #recovered(): void {
+    if (this.#degradedSince === undefined) return;
+    const duration = Math.min(MAX_DURATION_MS, Math.max(0, this.#clock.now() - this.#degradedSince));
+    this.#degradedSince = undefined;
+    this.#log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'current', 'bunny.duration_ms': duration});
+  }
+
+  /**
+   * Brings freshness up to date. A refusal is not fatal: the next attempt waits a capped, doubling backoff, and each one
+   * is logged at DEBUG only. True when the records are up to date.
+   */
+  async #refresh(): Promise<boolean> {
+    try {
+      if (await this.#store.refresh()) this.#recovered();
+      this.#freshness.reset();
+      return true;
+    } catch {
+      this.#freshness.failed(this.#clock.now());
+      this.#degraded(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
+      this.#log.debug('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'unavailable'});
+      return false;
+    }
+  }
+
   /** Takes one hook observation into the reducer, once by `(source, id)`. */
   async #observe(message: Message<LifecycleObservation>): Promise<void> {
     await this.#ready;
     if (this.#stopped) return;
     await this.#run(async () => {
-      const fields: LogFields = {
-        'bunny.participant': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.operation': 'lifecycle',
-      };
-      // The bus does not check messages; a remote edge has, but an in-process sender may not have.
+      const fields: LogFields = {...messageFields(message), 'bunny.operation': 'lifecycle'};
+      // The bus does not check messages; a remote edge has, but an in-process sender may not have. A refused message's
+      // record carries only its well-formed fields and no trace, so the record is still written.
       const checked = this.#validator.validate(message);
       if (!checked.ok || message.type !== LIFECYCLE_TYPE) {
-        this.#log.info('message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)}, message);
+        this.#log.info('message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
         return;
       }
       const verdict = this.#store.received(message);
@@ -274,19 +424,16 @@ class Core {
         return;
       }
       const observation = message.data;
-      const intake = {message, kind: reducedKind(observation), entity: sessionEntityId(observation.identity)};
-      const result = await this.#store.intake(intake, () => this.#call(owner => owner.ingest(toEnvelope(observation))));
+      const cause = {message, kind: reducedKind(observation), entity: sessionEntityId(observation.identity), observation};
+      const result = await this.#store.during(cause, () => this.#call(owner => owner.ingest(toEnvelope(observation))));
       if (result.ok) {
         const outcome = result.outcome === 'duplicate' ? 'duplicate' : result.outcome === 'stale' ? 'stale' : 'accepted';
         const record = {...fields, 'bunny.outcome': outcome, 'bunny.state.revision': this.#store.revision, ...(outcome === 'stale' ? {'bunny.reason': 'stale'} : {})};
         if (outcome === 'duplicate') this.#log.debug('message.received', record, message);
         else this.#log.info('message.received', record, message);
       } else {
-        const {code} = this.#refusal(result);
-        const record = {...fields, ...refused(code)};
-        if (code === 'internal') this.#log.error('message.received', record, message);
-        else if (code === 'capacity' || code === 'unavailable') this.#log.warn('message.received', record, message);
-        else this.#log.info('message.received', record, message);
+        // A refusal is a domain outcome; a store that keeps refusing is the condition `#degraded` records.
+        this.#log.info('message.received', {...fields, ...refused(result.refusal.code)}, message);
       }
       this.#schedule();
     });
@@ -304,10 +451,9 @@ class Core {
       const {requestId, consumerId, noticeId} = command.data;
       const fields: LogFields = {'bunny.participant': command.source, 'bunny.operation': 'status', ...requestField(requestId)};
       const refuse = (code: ErrorCode, detail: string): ErrorBody => {
-        const record = {...fields, ...refused(code)};
-        if (code === 'forbidden' || code === 'capacity' || code === 'unavailable') this.#log.warn('command.rejected', record, command);
-        else if (code === 'internal') this.#log.error('command.rejected', record, command);
-        else this.#log.info('command.rejected', record, command);
+        // A correct consumer never sends one for another; the store's own condition is recorded by `#degraded`.
+        if (code === 'forbidden') this.#log.warn('command.rejected', {...fields, ...refused(code)}, command);
+        else this.#log.info('command.rejected', {...fields, ...refused(code)}, command);
         return errorBody(code, {detail});
       };
       const checked = this.#validator.validate(command);
@@ -317,11 +463,10 @@ class Core {
       const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
       if (!record.notices.some(notice => notice.id === noticeId)) return refuse('not-found', 'no such notice');
-      const result = await this.#call(owner => owner.acknowledge(record.identity, noticeId, consumerId));
-      if (!result.ok) {
-        const {code, detail} = this.#refusal(result);
-        return refuse(code, detail);
-      }
+      // The session's new revision joins the command's trace.
+      const cause = {message: command, kind: 'notice.acknowledged', entity: record.id};
+      const result = await this.#store.during(cause, () => this.#call(owner => owner.acknowledge(record.identity, noticeId, consumerId)));
+      if (!result.ok) return refuse(result.refusal.code, result.refusal.detail);
       this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
@@ -335,10 +480,8 @@ class Core {
     await this.#ready;
     if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
     return this.#run(async () => {
-      try {
-        await this.#store.refresh();
-      } catch {
-        this.#log.warn('operation.failed', {'bunny.operation': 'snapshot', ...refused('unavailable')}, request);
+      if (!await this.#refresh()) {
+        this.#schedule();
         return errorBody('unavailable', {detail: 'the core cannot bring its sessions up to date now'});
       }
       this.#schedule();
@@ -353,23 +496,20 @@ class Core {
     });
   }
 
-  /** Publishes freshness when the next current record turns uncertain, at a new revision (MAPPING.md, `freshness`). */
-  #schedule(retry = false): void {
+  /**
+   * Publishes freshness when the next current record turns uncertain, at a new revision (MAPPING.md, `freshness`). After
+   * a refresh the store refused, the next attempt waits its backoff instead.
+   */
+  #schedule(): void {
     this.#timer?.();
     this.#timer = undefined;
     if (this.#stopped) return;
-    const at = this.#store.nextTurn();
+    const at = this.#freshness.pending ? this.#freshness.next : this.#store.nextTurn();
     if (at === undefined) return;
-    const delay = Math.min(MAX_DELAY_MS, Math.max(retry ? REFRESH_RETRY_MS : 0, at - this.#clock.now()));
+    const delay = Math.min(MAX_DELAY_MS, Math.max(0, at - this.#clock.now()));
     this.#timer = this.#scheduler.after(delay, () => this.#run(async () => {
-      try {
-        await this.#store.refresh();
-        this.#schedule();
-      } catch {
-        // The disk may be full: what committed stands, and the core tries again shortly instead of failing.
-        this.#log.warn('operation.failed', {'bunny.operation': 'status', ...refused('unavailable')});
-        this.#schedule(true);
-      }
+      await this.#refresh();
+      this.#schedule();
     }));
   }
 }

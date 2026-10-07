@@ -7,8 +7,11 @@
 // `state`, checked by agent-state's `validateExport` on every load and commit, under a compare-and-swap on the revision,
 // and the lease as an exclusive transaction held open on a separate lock database. What differs:
 // - The store lives in the core module's own database, `modules/core.sqlite`, not a directory of its own, and its lock
-//   database sits beside it as `core.sqlite-owner`. A second holder, in another process or this one, is waited for until
-//   agent-state's deadline instead of refused at once, so a runtime that restarts in the same process takes over.
+//   database sits beside it as `core.sqlite-owner`, with no rollback journal, so taking the lock writes nothing. A second
+//   holder, in another process or this one, is waited for until agent-state's deadline instead of refused at once, so a
+//   runtime that restarts in the same process takes over.
+// - The lock lasts from the first lease until the core stops, not one lease: an owner opened again after a failed
+//   commit takes a new lease on the store it never let go of.
 // - The Hub's fence and automation tables are the old Hub's own and are not copied.
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox.
@@ -26,13 +29,18 @@ import {
   REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
 
-/** The lifecycle observation the core is reducing, so the commit it causes can derive its occurrences from it. */
-export type Intake = {
-  readonly message: Message<LifecycleObservation>;
-  /** The 1.x event kind the reducer journals it as, such as `turn.ended`. */
+/**
+ * What the core is doing when a change commits: a hook's observation, whose occurrences, `(source, id)` and trace the
+ * change it causes takes, or a command, such as an acknowledgment, whose trace the change joins.
+ */
+export type Cause = {
+  readonly message: Message<unknown>;
+  /** The journal kind of the change it causes, such as `turn.ended` or `notice.acknowledged`. */
   readonly kind: string;
   /** Its session's entity ID. */
   readonly entity: string;
+  /** The hook's observation, when a lifecycle observation causes the change. */
+  readonly observation?: LifecycleObservation;
 };
 
 /** One committed change of the core: the revision it carries and the messages it publishes, in order. */
@@ -85,7 +93,7 @@ type Plan = {
   restarted: Set<string>;
   hostSessions: Map<string, string>;
   messages: {key: string; draft: Draft<object>; history: boolean}[];
-  intake: Intake | undefined;
+  cause: Cause | undefined;
 };
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -135,6 +143,10 @@ export class CoreStore implements Storage {
   readonly #validator = new MessageValidator();
   #opened: {outbox: Outbox; statements: Statements} | undefined;
   #leased = false;
+  /** The store's lock, held from the first lease until `close`. */
+  #lock: Lock | undefined;
+  /** The owner's current lease, if any. */
+  #lease: {released: boolean} | undefined;
   /** The last committed agent-state, as the lease loaded and committed it. */
   #durable: DurableState | undefined;
   /** The published session records, by entity ID. */
@@ -147,7 +159,7 @@ export class CoreStore implements Storage {
   #loaded = false;
   /** Each root session's latest host session ID, kept with its record. */
   #hostSessions = new Map<string, string>();
-  #intake: Intake | undefined;
+  #cause: Cause | undefined;
   /** The instant every message of the transaction under way is stamped with. */
   #frozen: number | undefined;
   #failure: StoreFailure | undefined;
@@ -188,13 +200,13 @@ export class CoreStore implements Storage {
     return failure;
   }
 
-  /** Runs `work`, during which a commit for `intake`'s session derives its occurrences from it. */
-  async intake<T>(intake: Intake, work: () => Promise<T>): Promise<T> {
-    this.#intake = intake;
+  /** Runs `work`, during which the change `cause` makes commits as its answer: in its trace, with its occurrences. */
+  async during<T>(cause: Cause, work: () => Promise<T>): Promise<T> {
+    this.#cause = cause;
     try {
       return await work();
     } finally {
-      this.#intake = undefined;
+      this.#cause = undefined;
     }
   }
 
@@ -223,7 +235,7 @@ export class CoreStore implements Storage {
     const atMs = this.#options.clock.now();
     let result: R | undefined;
     const plan: Plan = {
-      durable: undefined, revision: undefined, records: [], removed: [], restarted: this.#restarted, hostSessions: this.#hostSessions, messages: [], intake: undefined,
+      durable: undefined, revision: undefined, records: [], removed: [], restarted: this.#restarted, hostSessions: this.#hostSessions, messages: [], cause: undefined,
     };
     await this.#commit(plan, atMs, tx => { result = work(tx); });
     return result as R;
@@ -239,6 +251,13 @@ export class CoreStore implements Storage {
     while (this.#sending.size > 0) await Promise.allSettled([...this.#sending]);
   }
 
+  /**
+   * Gives agent-state's owner a lease on the store. The store takes its lock on the first one and keeps it until
+   * `close`, so the core can open its owner again after a failed commit without letting go of the store, and without
+   * writing anything: another runtime waiting for the lock never gets it while this core runs. Every lease reloads the
+   * store's revision, commit count and records from the file, and the store's tables are written only once the file is
+   * known to be this owner's or empty.
+   */
   async acquire(ownerId: string, signal: AbortSignal): Promise<StorageLease> {
     if (!ID.test(ownerId)) throw new Error('storage-unavailable');
     // One lease at a time: an attempt still under way, or a lease not yet released, is waited for.
@@ -248,24 +267,20 @@ export class CoreStore implements Storage {
     }
     signal.throwIfAborted();
     this.#leased = true;
-    let lock: Lock;
     try {
-      lock = await takeLock(this.#db.location(), signal);
-    } catch (error) {
-      this.#leased = false;
-      throw new Error('storage-unavailable', {cause: error});
-    }
-    try {
+      this.#lock ??= await takeLock(this.#db.location(), signal);
+      this.#checkOwner(ownerId);
       this.#openTables();
+      this.#loadCaches();
     } catch (error) {
       this.#leased = false;
-      lock.release();
       throw new Error('storage-unavailable', {cause: error});
     }
-    let released = false;
+    const lease = {released: false};
+    this.#lease = lease;
     const check = (abort?: AbortSignal): void => {
       abort?.throwIfAborted();
-      if (released) throw new Error('store-released');
+      if (lease.released) throw new Error('store-released');
     };
     return {
       load: abort => {
@@ -277,13 +292,48 @@ export class CoreStore implements Storage {
         await this.#commitChange(change, ownerId);
       },
       release: () => {
-        if (released) return Promise.resolve();
-        released = true;
-        this.#leased = false;
-        lock.release();
+        this.#endLease(lease);
         return Promise.resolve();
       },
     };
+  }
+
+  /**
+   * Ends the owner's lease without letting go of the store, as after a faulted owner whose own release did not finish,
+   * so a new owner can take the next lease.
+   */
+  abandonLease(): void {
+    if (this.#lease !== undefined) this.#endLease(this.#lease);
+  }
+
+  /** Lets go of the store's lock once the core stops. */
+  close(): void {
+    this.abandonLease();
+    this.#lock?.release();
+    this.#lock = undefined;
+  }
+
+  #endLease(lease: {released: boolean}): void {
+    if (lease.released) return;
+    lease.released = true;
+    if (this.#lease === lease) this.#lease = undefined;
+    this.#leased = false;
+  }
+
+  /** Refuses a file that holds another owner's state before anything is written to it. */
+  #checkOwner(ownerId: string): void {
+    const table = this.#db.prepare('SELECT 1 FROM sqlite_master WHERE type = \'table\' AND name = \'state\'').get();
+    if (table === undefined) return;
+    const row = this.#db.prepare('SELECT payload FROM state WHERE id = 1').get() as {payload: unknown} | undefined;
+    if (row === undefined) return;
+    let stored: unknown;
+    try {
+      stored = typeof row.payload === 'string' ? JSON.parse(row.payload) : undefined;
+    } catch {
+      stored = undefined;
+    }
+    const owner = typeof stored === 'object' && stored !== null && 'ownerId' in stored ? stored.ownerId : undefined;
+    if (owner !== ownerId) throw new Error('invalid-store');
   }
 
   #openTables(): void {
@@ -307,9 +357,16 @@ export class CoreStore implements Storage {
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
     this.#opened = {outbox, statements};
+  }
+
+  /** The revision, commit count and published records as the file holds them. */
+  #loadCaches(): void {
+    const statements = this.#statements();
     const stored = statements.revision.get() as {value: number; commits: number} | undefined;
     this.#revision = stored?.value ?? 0;
     this.#commits = stored?.commits ?? 0;
+    this.#records = new Map();
+    this.#hostSessions = new Map();
     for (const row of statements.records.all() as {record: string}[]) {
       const record = JSON.parse(row.record) as SessionRecord;
       this.#records.set(record.id, record);
@@ -371,6 +428,8 @@ export class CoreStore implements Storage {
     const outbox = this.#outbox();
     let revision = plan.revision;
     const commits = this.#commits + 1;
+    // A failure names only the commit it came from.
+    this.#failure = undefined;
     const added: Message[] = [];
     let addTo: AddMessage = () => { throw new Error('add a message only inside the transaction'); };
     let adds = 0;
@@ -396,7 +455,7 @@ export class CoreStore implements Storage {
         addTo = add;
         extra(tx);
         for (const {key, draft, history} of plan.messages) {
-          const message = tx.add(key, draft, plan.intake === undefined ? {} : {parent: plan.intake.message}) as Message;
+          const message = tx.add(key, draft, plan.cause === undefined ? {} : {parent: plan.cause.message}) as Message;
           // A message the profile refuses rolls the whole change back: the core never commits what it cannot publish.
           const checked = this.#validator.validate(message);
           if (!checked.ok) throw new SdkError({error: checked.error});
@@ -405,9 +464,11 @@ export class CoreStore implements Storage {
         }
         for (const record of plan.records) statements.writeRecord.run('session', record.id, record.revision, JSON.stringify(record));
         for (const id of plan.removed) statements.deleteRecord.run('session', id);
-        if (plan.intake !== undefined) {
+        const observation = plan.cause?.observation;
+        if (plan.cause !== undefined && observation !== undefined) {
           statements.prune.run(atMs);
-          tx.take(plan.intake.message, TAKEN_LIFECYCLE_MS);
+          // Kept as long as agent-state still admits the observation, which it judges by the hook's own instant.
+          tx.take(plan.cause.message, Math.max(0, observation.observedAtMs - atMs) + TAKEN_LIFECYCLE_MS);
         }
         if (added.length > 0) {
           const change: CoreChange = {revision: tx.revision(), messages: added};
@@ -421,7 +482,17 @@ export class CoreStore implements Storage {
     }
     // The outbox commits before it returns, or returns a rejection with the transaction rolled back, and it resolves
     // only once the publication ends. The commit counter tells the two apart at once, so the publication is not awaited.
-    const stored = statements.revision.get() as {commits: number} | undefined;
+    // A rollback that failed leaves the transaction open with its writes in it, where the counter would read as
+    // committed: roll it back here, and report the change as not committed.
+    const open = this.#db.isTransaction;
+    if (open) {
+      try {
+        this.#db.exec('ROLLBACK');
+      } catch {
+        // The connection's next transaction fails in turn; nothing is reported committed.
+      }
+    }
+    const stored = open ? undefined : statements.revision.get() as {commits: number} | undefined;
     if (stored?.commits !== commits) {
       try {
         await sent;
@@ -451,7 +522,8 @@ export class CoreStore implements Storage {
     const change = committed?.change;
     const restarted = new Set(this.#restarted);
     const hostSessions = new Map(this.#hostSessions);
-    const intake = change === undefined ? undefined : this.#matches(change, prior, committed?.next);
+    const cause = change === undefined ? undefined : this.#matches(change, prior, committed?.next);
+    const intake = cause?.observation === undefined ? undefined : {...cause, observation: cause.observation};
     const before = new Map((prior?.sessions ?? []).map(session => [entityOf(session), session]));
     const after = new Map((next?.sessions ?? []).map(session => [entityOf(session), session]));
     if (intake !== undefined && change?.replace === undefined) {
@@ -463,7 +535,7 @@ export class CoreStore implements Storage {
         if (fresh) restarted.delete(intake.entity);
         // As agent-state keeps it in memory: a committed 1.2 observation sets the host session ID when present and clears
         // it when absent, and a record whose parent is known never carries one. The core keeps it with the record.
-        const host = intake.message.data.hostSessionId;
+        const host = intake.observation.hostSessionId;
         if (session.parent.status === 'known' || host === undefined) hostSessions.delete(intake.entity);
         else hostSessions.set(intake.entity, host);
       }
@@ -487,7 +559,7 @@ export class CoreStore implements Storage {
       const cleared = attentionAdded(session.attention, old?.attention ?? []);
       if (intake !== undefined && change?.replace === undefined && id === intake.entity) {
         const base = observed(intake, session, revision);
-        const turn = intake.message.data.turn;
+        const turn = intake.observation.turn;
         for (const attention of raised) occurrences.push(occurrence('attention-raised', 'org.bunny.attention.raised', {...base, attention} satisfies AttentionRaised));
         for (const attention of cleared) {
           occurrences.push(occurrence('attention-cleared', 'org.bunny.attention.cleared', {...base, attention, cause: causeOf(intake.kind, attention, turn)} satisfies AttentionCleared));
@@ -517,7 +589,7 @@ export class CoreStore implements Storage {
     // The revision follows the ID, as the session family lists it.
     const records = updated.map(({id, ...rest}): SessionRecord => ({id, revision, ...rest}));
     return {
-      durable: committed?.next, revision: publishes ? revision : undefined, records, removed, restarted, hostSessions, intake,
+      durable: committed?.next, revision: publishes ? revision : undefined, records, removed, restarted, hostSessions, cause,
       messages: [
         ...ended.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft, history: true})),
         ...removals,
@@ -527,9 +599,9 @@ export class CoreStore implements Storage {
     };
   }
 
-  /** The intake this commit is the reduction of, if any. */
-  #matches(change: Commit, prior: DurableState | undefined, next: DurableState | undefined): Intake | undefined {
-    const intake = this.#intake;
+  /** The cause this commit answers, if any: the change its kind names, on its session. */
+  #matches(change: Commit, prior: DurableState | undefined, next: DurableState | undefined): Cause | undefined {
+    const intake = this.#cause;
     if (intake === undefined) return undefined;
     if (change.replace === undefined) {
       return change.session !== undefined && entityOf(change.session) === intake.entity && change.journal?.kind === intake.kind ? intake : undefined;
@@ -576,7 +648,8 @@ async function takeLock(location: string | null, signal: AbortSignal): Promise<L
       }
       const lock = new DatabaseSync(path);
       try {
-        lock.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE');
+        // No rollback journal: the lock database holds no data, so taking the lock writes nothing, even on a full disk.
+        lock.exec('PRAGMA busy_timeout = 0; PRAGMA journal_mode = MEMORY; BEGIN EXCLUSIVE');
       } catch (error) {
         lock.close();
         throw error;
@@ -636,8 +709,8 @@ function occurrence<T extends object>(family: string, type: string, data: T & {s
 }
 
 /** What an occurrence of an observation carries: its session, identity, turn, evidence and the committing revision. */
-function observed(intake: Intake, session: Session, revision: number): AgentOccurrence {
-  const {turn, observedAtMs, occurredAtMs, ordering} = intake.message.data;
+function observed(intake: {observation: LifecycleObservation}, session: Session, revision: number): AgentOccurrence {
+  const {turn, observedAtMs, occurredAtMs, ordering} = intake.observation;
   return {session: entityOf(session), identity: session.identity, turn, observedAtMs, ...(occurredAtMs === undefined ? {} : {occurredAtMs}), ordering, revision};
 }
 

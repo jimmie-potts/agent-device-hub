@@ -3,6 +3,7 @@
 // through the outbox. These tests drive the owner directly, as the core does, with a recording participant in place of
 // the bus, and check the store's rows and what went out.
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createAgentState, recoveryJournalKey, validateExport, type DurableState} from '@jimmie-potts/agent-state';
@@ -221,8 +222,7 @@ it('a full disk refuses the change before anything reports it accepted, changes 
 
   // Room again: the owner, faulted by the failed commit, opens again on what committed, and takes the same message.
   world.db.exec('PRAGMA max_page_count = 1073741823');
-  await world.owner?.shutdown().catch(() => {});
-  world.owner = await createAgentState({storage: world.store, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: world.clock.now});
+  await world.reopen();
   assert.equal((await world.take(message)).ok, true);
   assert.deepEqual(sessions(world.since(from)).map(record => record.identity.sessionId), [CHILD.sessionId]);
 });
@@ -317,7 +317,114 @@ it('the lease is exclusive: a second owner on the same store waits for it, and t
   await assert.rejects(open(200), /storage-unavailable/, 'refused at agent-state\'s deadline while the first holds the lease');
   const waiting = open(3000);
   await world.owner?.shutdown();
+  world.store.close();
   const owner = await waiting;
   context.after(() => owner.shutdown());
   assert.deepEqual(owner.snapshot().sessions.map(session => session.identity.sessionId), [IDENTITY.sessionId], 'it reads what the first committed');
+});
+
+it('the lease needs no journal: a lock database whose journal cannot be written still gives it, as on a full disk', async context => {
+  const file = join(await stateDir(context), 'core.sqlite');
+  // A directory where SQLite would write the lock database's rollback journal: any journal write fails.
+  await mkdir(`${file}-owner-journal`);
+  const world = await World.open(context, {file});
+  assert.equal((await world.observe(sessionStarted)).ok, true);
+});
+
+it('the store keeps its lock while a failed commit\'s owner is opened again, so a second store waiting for it never gets it', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  const second = new CoreStore({
+    database: new DatabaseSync(world.file), clock: {now: world.clock.now}, onError: () => {},
+    sdk: {source: 'bunny/core', publishMessage: <T extends object>(_key: string, message: Message<T>): Promise<Message<T>> => Promise.resolve(message)},
+  });
+  const contending = createAgentState({storage: second, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: world.clock.now, storageTimeoutMs: 1500})
+    .then(owner => owner.shutdown().then(() => 'took the lease'), () => 'refused');
+  const revision = world.store.revision;
+  fillDisk(world.db);
+  assert.deepEqual(await world.observe(sessionStarted, {identity: CHILD}), {ok: false, code: 'storage-failed'});
+  // The owner is opened again after a pause in which the second store keeps trying for the lock.
+  await world.reopen(200);
+  assert.equal(await contending, 'refused');
+  second.close();
+  world.db.exec('PRAGMA max_page_count = 1073741823');
+  const taken = await world.observe(sessionStarted, {identity: CHILD});
+  assert.equal(taken.ok, true);
+  assert.ok(world.store.revision > revision, 'the revision only rises');
+  assert.deepEqual(world.rows('SELECT value, commits FROM core_revision').map(row => (row as {value: number}).value), [world.store.revision], 'as the file holds it');
+});
+
+it('an observation\'s (source, id) is kept 24 hours past its own instant, even from a hook whose clock runs two hours ahead', async context => {
+  const world = await World.open(context);
+  const ahead = lifecycleMessage(lifecycleOf(approvalPrompt('approval-1'), START + 7_200_000), START, 'hook-ahead');
+  assert.equal((await world.take(ahead)).ok, true);
+  // A day and an hour later, after another intake pruned what was due, agent-state would still admit the observation.
+  world.clock.advance(90_000_000);
+  await world.observe(sessionStarted, {identity: CHILD});
+  assert.equal(world.store.received(ahead), 'duplicate', 'so it is still dropped as a duplicate');
+});
+
+it('a (source, id) is pruned once its 24 hours have passed, and not before', async context => {
+  const world = await World.open(context);
+  const first = lifecycleMessage(lifecycleOf(sessionStarted, START), START, 'hook-first');
+  await world.take(first);
+  world.clock.advance(86_399_999);
+  await world.observe(turnStarted, {turn: 'turn-2'});
+  assert.equal(world.store.received(first), 'duplicate', 'kept until 24 hours have passed');
+  world.clock.advance(1);
+  await world.observe(sessionStarted, {identity: CHILD});
+  assert.equal(world.store.received(first), 'new', 'pruned by the next intake once they have');
+  assert.equal(world.rows('SELECT id FROM core_taken WHERE id = \'hook-first\'').length, 0);
+});
+
+it('a rollback that fails is not taken for a commit: the change is refused and nothing is kept', async context => {
+  let failRollback = false;
+  let failing = false;
+  const wrap = (db: DatabaseSync): DatabaseSync => new Proxy(db, {
+    get(target, property) {
+      if (property === 'exec') {
+        return (sql: string) => {
+          if (sql === 'ROLLBACK' && failRollback) {
+            failRollback = false;
+            throw new Error('the rollback failed');
+          }
+          target.exec(sql);
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+  const derive: Deriver = () => { if (failing) throw new Error('the part failed'); };
+  const world = await World.open(context, {wrap, derivers: [derive]});
+  await world.observe(sessionStarted);
+  const before = world.snapshot();
+  failing = true;
+  failRollback = true;
+  assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: false, code: 'storage-failed'});
+  assert.equal(failRollback, false, 'the outbox\'s rollback failed');
+  assert.deepEqual(world.snapshot(), before, 'the store rolled the change back itself');
+});
+
+it('a failure names only the commit it came from: a later commit clears it', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  fillDisk(world.db);
+  world.clock.advance(300_000);
+  await assert.rejects(world.store.refresh(), 'the store refuses to publish the record turning uncertain');
+  world.db.exec('PRAGMA max_page_count = 1073741823');
+  await world.store.refresh();
+  assert.equal(world.store.takeFailure(), undefined, 'the full disk is no longer named');
+});
+
+it('a store that holds another owner\'s state is refused before anything is written to it', async context => {
+  const file = join(await stateDir(context), 'core.sqlite');
+  const other = new DatabaseSync(file);
+  other.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL)');
+  other.prepare('INSERT INTO state VALUES (1, 1, ?)').run(JSON.stringify({ownerId: 'someone-else'}));
+  const tables = (): unknown[] => other.prepare('SELECT name FROM sqlite_master ORDER BY name').all().map(row => ({...row}));
+  const before = tables();
+  await assert.rejects(World.open(context, {file}), /storage-unavailable/);
+  assert.deepEqual(tables(), before, 'no core table was created');
+  other.close();
 });

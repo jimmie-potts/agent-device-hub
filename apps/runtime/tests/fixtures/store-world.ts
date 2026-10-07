@@ -45,16 +45,24 @@ export class World {
   /** When set, a publish never finishes, as in a process that died after its commit. */
   dead = false;
 
-  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[]) {
+  readonly #wrap: (db: DatabaseSync) => DatabaseSync;
+
+  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db) {
+    this.#wrap = wrap;
     this.file = file;
     this.clock = clock;
     this.db = new DatabaseSync(file);
     this.store = this.#store(derivers);
   }
 
-  static async open(context: TestContext, options: {file?: string; clock?: ReturnType<typeof manualClock>; derivers?: readonly Deriver[]} = {}): Promise<World> {
+
+  static async open(context: TestContext, options: {
+    file?: string; clock?: ReturnType<typeof manualClock>; derivers?: readonly Deriver[];
+    /** Stands in front of the store's connection, as a test that makes one of its calls fail does. */
+    wrap?: (db: DatabaseSync) => DatabaseSync;
+  } = {}): Promise<World> {
     const file = options.file ?? join(await stateDir(context), 'core.sqlite');
-    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? []);
+    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap);
     context.after(() => world.close());
     await world.start();
     return world;
@@ -62,7 +70,7 @@ export class World {
 
   #store(derivers: readonly Deriver[]): CoreStore {
     return new CoreStore({
-      database: this.db, clock: {now: this.clock.now}, derivers,
+      database: this.#wrap(this.db), clock: {now: this.clock.now}, derivers,
       sdk: {source: 'bunny/core', publishMessage: <T extends object>(key: string, message: Message<T>): Promise<Message<T>> => {
         if (this.dead) return new Promise(() => {});
         if (this.refuse !== undefined) return Promise.reject(this.refuse);
@@ -88,6 +96,7 @@ export class World {
    */
   async crashAndRestart(derivers: readonly Deriver[] = []): Promise<void> {
     await this.owner?.shutdown().catch(() => {});
+    this.store.close();
     this.db.close();
     this.dead = false;
     this.db = new DatabaseSync(this.file);
@@ -104,7 +113,8 @@ export class World {
   async take(message: Message<LifecycleObservation>): Promise<Awaited<ReturnType<Owner['ingest']>>> {
     const owner = this.owner;
     assert.ok(owner, 'the owner is open');
-    const result = await this.store.intake({message, kind: reducedKind(message.data), entity: message.subject}, () => owner.ingest(toEnvelope(message.data)));
+    const cause = {message, kind: reducedKind(message.data), entity: message.subject, observation: message.data};
+    const result = await this.store.during(cause, () => owner.ingest(toEnvelope(message.data)));
     await flush();
     return result;
   }
@@ -131,7 +141,17 @@ export class World {
 
   async close(): Promise<void> {
     await this.owner?.shutdown().catch(() => {});
+    this.store.close();
     if (this.db.isOpen) this.db.close();
+  }
+
+  /** Opens the owner again on the same store, as the core does after a failed commit; the store keeps its lock. */
+  async reopen(pauseMs = 0): Promise<void> {
+    await this.owner?.shutdown().catch(() => {});
+    this.store.abandonLease();
+    // A pause lets another store waiting for the lock try for it, as a busy host would.
+    if (pauseMs > 0) await new Promise(resolve => { setTimeout(resolve, pauseMs); });
+    this.owner = await createAgentState({storage: this.store, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: this.clock.now});
   }
 }
 
