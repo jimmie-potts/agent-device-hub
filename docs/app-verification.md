@@ -158,13 +158,17 @@ whichever application started it:
 - The Hub's wrappers opt in through their package scripts: `verify`,
   `verify:compose`, `verify:chompi` and `verify:runtime`, and the
   [host route](#explicit-host-route-for-codex-development-coordinators) sets it
-  for the adapter it runs. The test suites do not set it, so they keep starting
+  for the adapter it runs. The pinned Nanoleaf and Pixoo cores (1.1.0) do not
+  read it, so `--app nanoleaf` and `--app pixoo` are not guarded. The test suites do not set it, so they keep starting
   runs side by side, and a wrapper started with `node scripts/verify.mjs`
   directly is not guarded. The Nanoleaf and Pixoo wrappers opt in the same way
   once they vendor a core that has this.
 - A unit that is `active (running)` or `activating` counts. A failed, inactive
   or stopping unit, a lease or thaw timer or its service, and the host route's
-  command unit do not, so a stale or failed unit never blocks a start. A claim
+  command unit do not, so a stale or failed unit never blocks a start. Any run
+  counts, including the short-lived `avt-<hex>` runs of another session's
+  app-verify tests; they end by themselves within minutes, so a refused start
+  waits and retries. A claim
   left by a killed start goes within about a second, and in any case after 30
   minutes. A live
   unit with a stale receipt does count, because it still holds memory:
@@ -719,8 +723,9 @@ run's receipt then records `roots.proof` as that absolute path, not the
 
 A composition counts as one run for the [one-run guard](#one-run-at-a-time):
 `verify:compose start` refuses with `run-active` while any run is live on the
-host, and starts the wall, Pixoo and the Hub without the variable, or each
-would refuse for the one before it.
+host, and starts its three runs without the variable. The pinned Nanoleaf and
+Pixoo cores (1.1.0) do not read it; the Hub's own wrapper does, and would
+refuse for the two consumers before it.
 
 `start` records each step in the composition before the next one runs:
 
@@ -891,8 +896,9 @@ receipts.
 A control holds only when it fails at its named assertion. `compose` records
 the expected assertion and whether the control held, and exits 0 only for a
 held control. A control that passes, or fails anywhere else, exits 1. Run the
-controls in a separate composition, or after `handoff` so the verified sets
-hold only passed captures; a separate composition keeps them from freezing or
+controls after `handoff`, or in a composition started once the first has
+stopped ([one run at a time](#one-run-at-a-time)), so the verified sets hold
+only passed captures; a separate composition keeps them from freezing or
 reseeding a Pixoo the owner is already looking at.
 
 "Follows the Hub" means the consumer's feed is `current`, names the owner
@@ -1035,9 +1041,10 @@ fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app compose --chec
 Use the same launcher options with existing `capture`, `handoff`, `extend` and
 `stop` arguments. The selected checkout must have the matching package identity
 and adapter entrypoint. The composition retains its existing source pins; its
-explicit `--unpinned` option still labels development-only evidence. Separate
-concurrent previews use separate worktrees and build outputs, including both
-consumer checkouts for each composition. One coordinator controls each run;
+explicit `--unpinned` option still labels development-only evidence. Run one
+preview at a time on a host ([one run at a time](#one-run-at-a-time)); each
+uses its own worktree and build outputs, including both consumer checkouts for
+each composition. One coordinator controls each run;
 do not capture, reset or stop another coordinator's run.
 
 The `prerequisites` adapter operation is read-only. Invoking it through
