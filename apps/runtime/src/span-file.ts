@@ -67,15 +67,14 @@ type Segment = {spans: string[]; evicted: number | undefined; unreadable: number
 
 /**
  * The spans of one segment's text: each complete line that is a JSON object with `resourceSpans`; a header line gives
- * the count of spans let go. A line that is not one, and a last line with no newline, which a crash cut short, count as
- * unreadable and are never returned. Text that `truncated` at the read bound ends mid-line without that being a crash.
+ * the count of spans let go. A line that is not one counts as unreadable and is never returned. A last line with no
+ * newline is a write in flight, or one that a kill cut short: it is never returned and not counted, since the runtime
+ * that ended without its stop record is a gap of its own and a runtime that continues the file ends the line first.
  */
 function parse(text: string, truncated: boolean): Segment {
   const segment: Segment = {spans: [], evicted: undefined, unreadable: 0, truncated};
   const lines = text.split('\n');
-  const last = lines.pop() ?? '';
-  // Text that was cut at the read bound ends mid-line too; that is a bound, not a crash, and the read says so.
-  if (last !== '' && !truncated) segment.unreadable += 1;
+  lines.pop();
   for (const line of lines) {
     let value: unknown;
     try {
@@ -124,7 +123,7 @@ export type SpanFileRead = {
   lines: string[];
   /** How many spans were let go, from the current segment's header; undefined when it has none. */
   evicted: number | undefined;
-  /** Lines that were cut short or are not spans. */
+  /** Complete lines that are not spans. */
   unreadable: number;
   /** A segment was longer than its bound, so the read stopped there. */
   truncated: boolean;
@@ -201,6 +200,11 @@ export function openSpanFile(stateDir: string, options: SpanFileOptions = {}): S
       count = segment.spans.length;
       bytes = fstatSync(descriptor).size;
       evicted = segment.evicted ?? 0;
+      // A line that a kill cut short ends here, so the next span is a line of its own and not glued to it.
+      if (!found.text.endsWith('\n') && !found.truncated) {
+        writeAll(descriptor, '\n');
+        bytes += 1;
+      }
     }
   } catch (error) {
     closeSync(descriptor);

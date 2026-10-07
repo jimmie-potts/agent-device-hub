@@ -104,13 +104,25 @@ it('a link, a second hard link and a group-readable file are refused, so a span 
   assert.throws(() => openSpanFile(open), (error: unknown) => error instanceof RuntimeError && error.code === 'span-file-not-private');
 });
 
-it('reading counts a line that is cut short or is not a span, and never returns it', async context => {
+it('reading counts a line that is not a span and never returns it, and leaves a last line with no newline alone', async context => {
   const dir = await stateDir(context);
   const header = JSON.stringify({schema: 'runtime-spans/1.0', evicted: 5});
   await writeFile(join(dir, SPANS_FILE), `${header}\n${span(1)}\nnot json\n${span(2)}\n${span(3).slice(0, 20)}`, {mode: 0o600});
   const read = readSpanFile(dir);
   assert.deepEqual(read.lines.map(idOf), [1, 2]);
-  assert.deepEqual([read.evicted, read.unreadable], [5, 2], 'the bad line and the cut line, and the count of spans let go from the header');
+  assert.deepEqual([read.evicted, read.unreadable], [5, 1], 'the bad line, and the count of spans let go from the header; the last line may be a write in flight');
+});
+
+it('a runtime that continues a file a kill left cut short ends that line first, so its own first span is not lost with it', async context => {
+  const dir = await stateDir(context);
+  const header = JSON.stringify({schema: 'runtime-spans/1.0', evicted: 0});
+  await writeFile(join(dir, SPANS_FILE), `${header}\n${span(1)}\n${span(2).slice(0, 20)}`, {mode: 0o600});
+  const file = openSpanFile(dir);
+  file.sink(span(3));
+  file.close();
+  const read = readSpanFile(dir);
+  assert.deepEqual(read.lines.map(idOf), [1, 3], 'the new span is a line of its own');
+  assert.equal(read.unreadable, 1, 'and the cut line is counted now that it is complete');
 });
 
 it('reading a file with no header, after a rotation, says the count of spans let go is unknown', async context => {

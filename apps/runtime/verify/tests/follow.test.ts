@@ -229,14 +229,19 @@ void test('a record or span that is not a contract record is counted and never s
     {...genuine, message: `the token is ${SECRET}`},
     poisoned,
   ];
-  const poisonedSpan = JSON.stringify({resourceSpans: [{resource: {attributes: []}, scopeSpans: [{scope: {name: 'bunny.runtime', version: '1.0.0'},
-    spans: [{traceId: 'c'.repeat(32), spanId: 'd'.repeat(16), name: 'bunny.command.request', attributes: [{key: 'bunny.request.id', value: {stringValue: 'req-gap'}},
-      {key: 'exception.message', value: {stringValue: SECRET}}]}]}]}]});
+  // A span that is shaped as the adapter projects it, with one more attribute that the catalog does not register.
+  const genuineSpan = base.spans.recorded ? base.spans.lines.find(line => line.includes('"req-gap"') && line.includes('bunny.command.queue')) : undefined;
+  assert.ok(genuineSpan !== undefined, 'a real span to poison');
+  const document = JSON.parse(genuineSpan) as {resourceSpans: {scopeSpans: {spans: {attributes: object[]}[]}[]}[]};
+  document.resourceSpans[0]?.scopeSpans[0]?.spans[0]?.attributes.push({key: 'exception.message', value: {stringValue: SECRET}});
+  const poisonedSpan = JSON.stringify(document);
+  const shapeless = JSON.stringify({resourceSpans: [{resource: {attributes: []}, scopeSpans: [{scope: {name: 'bunny.runtime', version: '1.0.0'},
+    spans: [{traceId: 'c'.repeat(32), spanId: 'd'.repeat(16), name: 'bunny.command.request', attributes: [{key: 'exception.message', value: {stringValue: SECRET}}]}]}]}]});
   const followed = follow({...base, journal: [...base.journal, ...forged.map((entry): JournalEntry => ({generation: 1, record: entry}))],
-    spans: present([...(base.spans.recorded ? base.spans.lines : []), poisonedSpan, `not json ${SECRET}`])}, {request: 'req-gap'});
+    spans: present([...(base.spans.recorded ? base.spans.lines : []), poisonedSpan, shapeless, `not json ${SECRET}`])}, {request: 'req-gap'});
   assert.equal(JSON.stringify(followed).includes(SECRET), false, 'a secret reaches no field');
   assert.equal(followed.searched.unreadableRecords, 3);
-  assert.equal(followed.searched.unreadableSpans, 2);
+  assert.equal(followed.searched.unreadableSpans, 3, 'the poisoned span, the one with no shape and the line that is not JSON');
   assert.deepEqual(events(followed), events(follow(base, {request: 'req-gap'})), 'the forged records took no part in the answer');
   const gap = followed.gaps.find(entry => entry.kind === 'unreadable');
   assert.ok(gap, 'and the loss is a named gap');

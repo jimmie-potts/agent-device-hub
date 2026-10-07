@@ -482,8 +482,10 @@ outside the runtime can read the spans, and a crash keeps those it had finished
   `span-file-not-private`, and the runtime does not start.
 - A span the file cannot take, because it is closed or the disk refuses it, is
   lost and counted in `runtime.stopped` like any other span the sink fails to
-  take. A line in the file that is cut short, as by a kill, is counted by the
-  reader and never returned.
+  take. A reader returns each complete line that is a span and counts a complete
+  line that is not. A last line with no newline is a write in flight, or one that a
+  kill cut short; it is never returned, a runtime that continues the file ends it
+  first, and the reader then counts it as not a span.
 
 ## Memory
 

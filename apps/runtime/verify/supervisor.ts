@@ -21,6 +21,7 @@ import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
+import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {FollowRefusal, follow, limitsOf, selectorOf, type Evidence, type SpanEvidence} from './follow.js';
 import {
@@ -41,8 +42,6 @@ const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 const STOP_MS = 8000;
 /** How long a flush or control waits for the child's answer. */
 const ANSWER_MS = 3000;
-/** How long a stopped runtime's last records have to reach the journal before the next runtime starts. */
-const DRAIN_MS = 1000;
 /** The lowest level the run's runtime writes, which the run states instead of leaving to the runtime's default. */
 const LOG_LEVEL = 'info';
 
@@ -238,18 +237,14 @@ async function stopRuntime(): Promise<void> {
   const child = current;
   if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, 'exit');
-  const closed = once(child, 'close');
+  // Its stderr may hold records still to be read, `runtime.stopped` the last: wait for them before anything starts again,
+  // so the journal shows a clean stop as one.
+  const flushed = drained(child, DRAIN_MS);
   child.kill('SIGTERM');
   const timer = setTimeout(() => { child.kill('SIGKILL'); }, STOP_MS);
   await exited;
   clearTimeout(timer);
-  // Its stderr may hold records still to be read, `runtime.stopped` the last: wait for them before anything starts again,
-  // so the journal shows a clean stop as one. A descendant that keeps the pipe open costs only the drain bound.
-  await new Promise<void>(drained => {
-    const drain = setTimeout(drained, DRAIN_MS);
-    const done = (): void => { clearTimeout(drain); drained(); };
-    closed.then(done, done);
-  });
+  await flushed;
 }
 
 /** Stops the runtime and starts it again, after any start or restart before it. A runtime that cannot start ends the run. */

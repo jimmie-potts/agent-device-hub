@@ -3,7 +3,9 @@
 // harness API answers only local JSON requests that name its listener.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {stat} from 'node:fs/promises';
 import {request} from 'node:http';
+import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {connectRemote} from '@jimmie-potts/sdk';
@@ -184,6 +186,14 @@ void test('a run follows one request: its decisions, its module\'s records and i
   assert.equal(unknown.status, 200);
   assert.equal(unknown.body.result, 'none-found', 'an absent request is reported absent');
   assert.deepEqual(body.gaps, [], 'a clean first runtime has no gap');
+});
+
+void test('the shipped runtime of a run records spans too: its span file is there, and the query reports no gap for it', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'shipped');
+  const answer = await follow(run, 'request=req-none');
+  assert.equal(answer.status, 200);
+  assert.deepEqual([answer.body.result, answer.body.gaps], ['none-found', []]);
+  assert.equal(((await stat(join(run.dataDir, 'state/spans.ndjson'))).mode & 0o777), 0o600);
 });
 
 void test('a follow query that names no selector, two, or a malformed one is refused with 400 and never echoed', {timeout: 60_000}, async context => {

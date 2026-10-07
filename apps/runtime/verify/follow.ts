@@ -351,8 +351,8 @@ export function follow(evidence: Evidence, selector: Selector, limits: Limits = 
     return {spanId: span.parentSpanId, state};
   };
 
-  const shownSpans = found.slice(0, limits.spans).map(({span, via}): FollowedSpan => {
-    const parent = parentOf(span);
+  const placed = found.map(({span, via}) => ({span, via, parent: parentOf(span)}));
+  const shownSpans = placed.slice(0, limits.spans).map(({span, via, parent}): FollowedSpan => {
     const generation = span.instance === undefined ? undefined : generations.get(span.instance);
     return {
       ...(generation === undefined ? {} : {generation}), name: span.name, kind: KINDS[span.kind - 1] ?? 'internal', traceId: span.traceId, spanId: span.spanId,
@@ -381,7 +381,7 @@ export function follow(evidence: Evidence, selector: Selector, limits: Limits = 
 
   const omitted = {records: records.length - shownRecords.length, spans: found.length - shownSpans.length};
   const gaps = gapsOf(evidence, entries, {
-    unreadable: {records: unreadableRecords, spans: unreadableSpans}, omitted, parentsMissing: shownSpans.filter(span => span.parent?.state === 'missing').length,
+    unreadable: {records: unreadableRecords, spans: unreadableSpans}, omitted, parentsMissing: placed.filter(({parent}) => parent?.state === 'missing').length,
   });
   const result = records.length + found.length === 0 ? 'none-found' : 'found';
   return {
