@@ -13,7 +13,8 @@ Modules are written against the [module API](../../packages/sdk/README.md#module
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
 subscription: adding or removing a module is a code change in `src/modules.ts`.
 Each entry there is the module's factory, which creates it with its real device
-transport, or with its simulated one under `--simulate`.
+transport, or with its simulated one under `--simulate`. Each module's settings
+and secrets come from one private [configuration file](#configuration).
 
 ## Agent-session core
 
@@ -114,6 +115,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | --- | --- |
 | `--port` | Required. The loopback port for health; 0 picks a free one. |
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
+| `--config` | The private [configuration file](#configuration), with each module's own section. Without it, a module that takes a configuration is refused. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
 | `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
@@ -201,6 +203,83 @@ Token rotation and grant permissions belong to #835.
 verification run's child uses it to end a part's stream, as a lost connection
 would; the shipped entry point does not pass it.
 
+## Configuration
+
+With `--config <file>`, the runtime reads one configuration file before it
+serves (Hub #919). It holds each module's own section, by module name:
+
+```json
+{
+  "schema": "runtime-config/1.0",
+  "modules": {
+    "sign": {
+      "greeting": "hello",
+      "signs": [{"id": "sign-1", "address": "192.0.2.10"}],
+      "secrets": {"token": "/home/owner/.config/agent-device-hub/secrets/sign-token"}
+    }
+  }
+}
+```
+
+The file follows the [state](#state) rules: an absolute path off `/mnt`, no
+link anywhere along it, outside every Git checkout, and a regular file with one
+link and no permissions for group or others, owned and readable by the
+runtime's user, of at most 1 MiB. The runtime opens the file's last part without
+following a link, then refuses it unless the file it opened, as `/proc/self/fd`
+shows, is the one at the path, so a directory swapped for a link after the
+checks is refused too. The operator chooses the paths of this file and the
+secret files; the runtime does not check the modes of their directories. It has only
+`schema` and `modules`; #835 adds the edge's section. Otherwise the runtime
+refuses to start, before it serves, with one of these codes in `runtime.failed`:
+`config-relative`, `config-mount`, `config-missing`, `config-link`,
+`config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
+user may not read, or one under a directory it may not search, included),
+`config-too-large` or `config-invalid`. No refusal quotes the file. The cutover's installer (#935)
+writes the file from today's files. There is no reload: a change takes effect
+when the runtime restarts.
+
+Before it starts the modules, the runtime admits each one in list order with
+the SDK's `checkConfiguration`, against its own section only. A section for a
+module the runtime does not host is ignored. A module is refused, never
+started, and shown in health as `refused` with a registry code and a fixed
+detail, while the others start, when:
+- it declares `configure` and the file has no section for it (`not-found`), or
+  there is no file;
+- its section is not a JSON object, or its `secrets` member does not map at most
+  16 names to absolute paths (`invalid-request`);
+- its `configure` refuses the section, with the refusal's code and detail, or
+  throws (`internal`);
+- it names a device that is not a routing ID, or one that a module before it
+  already named (`invalid-request`);
+- a secret file its section names is missing (`not-found`), is not private by
+  the rules above, not readable by the runtime's user or under a directory it
+  may not search (`forbidden`), or is larger than 64 KiB or not UTF-8 text
+  (`invalid-request`).
+
+The core (#831) declares no `configure`, so it needs no section. A malformed
+`core` section refuses the core, and the runtime then ends as it does when the
+core fails.
+
+Its `runtime.module.refused` record carries `bunny.code` and the `manifest`
+phase, and, for a `configure` that threw, the error's type. A module then gets
+its configuration as `config`, reads only the secret files its section names
+with `secrets.read(name)`, which checks the file again on every read, and keeps
+its own files in `files()`. A module never sees another module's section or
+secrets through its context; a module's own code is not sandboxed, as the
+[module API](../../packages/sdk/README.md#secrets) explains, which also says
+what each read refuses.
+
+No secret reaches a log record, health or an error body. The runtime logs no
+part of the file and no secret, and refusals carry fixed text. One registry of
+the secrets modules read serves every writer in the process: the runtime's
+writer drops, and counts in `runtime.stopped`, any record whose attribute holds
+one, as text or as a number's digits. The process's `runtime.failed` record and
+the runtime's records of a module's refusal, failure or stop problem leave such
+an error attribute out instead, so the record is still written without it, and a
+module's span leaves it out too, keeping the span for its children. Its tests and every disposable run
+scan records, health, error bodies and proof for the synthetic token
+`tok_SYNTHETIC919`.
+
 ## State
 
 The state directory is created owner-only (mode 700) when it is missing. The
@@ -209,14 +288,22 @@ checkout, a path with a link anywhere along it (including a dangling one), a
 file, and a directory that others can open. It checks the whole path before it
 creates anything, so a refused path creates nothing, and it never creates
 through a link. Each module's SQLite file is `modules/<name>.sqlite` in it, mode
-600, created when the module first calls `database()`.
+600, created when the module first calls `database()`. Beside it, the module's
+private folder `modules/<name>/` is created with mode 700 when the module first
+calls `files()`; a `modules` directory or folder that is a link, belongs to
+another user or that others can open is refused with
+`module-folder-not-private`.
 
 ## Failure isolation
 
 A device's errors and timeouts are not module failures. Under policy A in
-[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md), a module reaches
-its device lazily and turns those errors into outcomes and an `unavailable`
-device state. An error that escapes a module stops only that module, and health
+[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md), a module opens
+only local resources in `start`, reaches its device lazily and turns those
+errors into outcomes and an `unavailable` device state. The
+[module test kit](../../packages/sdk/README.md#module-test-kit) fails a module
+whose start waits on a device that never answers, and the fixture sign shows
+the pattern. A failed worker call is the module's to handle, too: it never
+fails the module. An error that escapes a module stops only that module, and health
 shows it `failed` until the runtime restarts; nothing restarts it
 automatically. That covers:
 - a start that throws, rejects or outlasts the start deadline (10 s);
@@ -253,6 +340,7 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `state-dir-not-private` | Others can open it. |
 | `posix-host-required` | The host has no POSIX user IDs. |
 | `module-db-not-private` | A module's SQLite file is not a private file with one link. |
+| `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`, `config-invalid` | The configuration file; see [Configuration](#configuration). |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
 | `edge-grants-missing`, `edge-grants-not-private`, `edge-grants-invalid`, `edge-grant-source` | The edge's grants file; see [SDK edge](#sdk-edge). |
 | `core-failed` | The [agent-session core](#agent-session-core) failed, such as on a store it cannot read or a lease another runtime holds. |
@@ -416,6 +504,22 @@ sessions and rings once for each approval prompt. It records what it rang in
 its own SQLite file, so a restart with the prompt still waiting does not ring
 again. It passes the kit as a module that only copies.
 
+`tests/fixtures/sign.ts` holds the sign, the configured stand-in for a device
+module with settings, a secret and private files (#919).
+`createSignModule({transport})` takes a `SignTransport`; `SimulatedSigns` starts
+offline, never answering, and accepts only the synthetic token. Its
+`configureSign` takes a greeting, the signs' IDs and addresses, and its token's
+file as `secrets.token`. Its start reads the token, keeps its layout in its
+private folder and serves its signs (family `sign`), and returns without
+reaching a sign. It then reaches each sign on the runtime's scheduler with a
+1 s deadline, to show the greeting it rendered with a worker call: a sign that
+does not answer is `unavailable` and is tried again with capped backoff, and
+one that shows the greeting is `available`. A render that fails, past its
+deadline included, is no evidence about the sign: its availability stays as it
+was, the failure is logged against the sign with the call's code, and the
+attempt is tried again. It logs each change and each run of failed renders once,
+not each attempt. `signSpec()` runs it through the kit, policy A's check included.
+
 `tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
 stand-in parts through its extension point. Each part goes when its owner
 lands:
@@ -478,7 +582,16 @@ The catalog holds:
   then sync and read. It adds a duplicate command, a failed command whose inbox
   row the reader reads, the deadline answers, a disconnect, a crash-restart and
   a lost acknowledgment, which the core takes as a duplicate and acknowledges
-  again.
+  again;
+- a configured module, the sign, starting while its sign is offline, reporting
+  it unavailable and showing its greeting once it is online;
+- a module whose configuration is invalid refused while the core runs on.
+
+A seed's `config` gives configured modules their sections. Each harness writes
+them, as the installer would, into a private configuration file with a token
+file per module that holds the synthetic token, and starts the runtime with it.
+Both configured scenarios check that the token appears in no log record,
+message, health entry or reader copy.
 
 The deadline answers per transport:
 

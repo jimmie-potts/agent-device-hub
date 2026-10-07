@@ -1,20 +1,25 @@
-// The module host (ADR 0012, "Runtime and transport"): manifests, contexts and supervision. A device's errors and
-// timeouts are not module failures: under policy A, a module turns them into outcomes and an `unavailable` device
-// state. Only an error that escapes a module, thrown, rejected or a start that outlasts its deadline, stops that module,
-// through its participant's close, and health shows it unhealthy; the others keep working.
+// The module host (ADR 0012, "Runtime and transport"): manifests, configuration, contexts and supervision. Before it
+// starts a module, it checks the module's own section of the configuration file and the secret files that section
+// names (Hub #919); a module it refuses never starts, and the others do. A device's errors and timeouts are not module
+// failures: under policy A, a module turns them into outcomes and an `unavailable` device state. Only an error that
+// escapes a module, thrown, rejected or a start that outlasts its deadline, stops that module, through its
+// participant's close, and health shows it unhealthy; the others keep working.
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
-import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, SdkError, checkApiVersion, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel, type Clock, type CommandDraft,
-  type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
-  type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
+  type Clock, type CommandDraft, type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder,
+  type Scheduler, type Sdk, type SendOptions, type SpanRecorder, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  type WorkerCallOptions,
 } from '@jimmie-potts/sdk';
 import {diagnosticWriter} from './diagnostics.js';
-import {errorFields, type LogWriter, type RuntimeLogger} from './log.js';
+import {errorFields, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
-import {openModuleDatabase} from './state.js';
+import {
+  MAX_SECRET_BYTES, PrivateFileError, openModuleDatabase, openModuleFolder, readPrivateFile, sectionOf, type FileProblem, type RuntimeConfig,
+} from './state.js';
 import type {RuntimeTracing} from './tracing.js';
 
 export type ModuleState = 'refused' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -39,6 +44,8 @@ export type HostOptions = {
    * spans give only trace context.
    */
   tracing?: Pick<RuntimeTracing, 'recorder'>;
+  /** The configuration file's sections, from `readRuntimeConfig`, or undefined when the runtime has no file. */
+  config?: RuntimeConfig;
 };
 
 /**
@@ -50,6 +57,8 @@ type Phase = 'manifest' | 'start' | 'handler' | 'timer' | 'worker' | 'async' | '
 /** A failure: the reason health shows, and where it arose, which only the log record carries. */
 type Failure = Reason & {phase: Phase};
 type Flow = {fail: (failure: Failure, error: unknown) => void};
+/** What the module's section gave it once admitted: its configuration and its secret files by name. */
+type Setup = {config: unknown; secrets: ReadonlyMap<string, string>};
 type Slot = {
   readonly module: BunnyModule;
   readonly name: string;
@@ -58,7 +67,10 @@ type Slot = {
   readonly log: RuntimeLogger;
   readonly controller: AbortController;
   readonly timers: Set<Cancel>;
+  /** Its worker threads, those of its worker calls included, which the runtime terminates when it stops. */
   readonly workers: Set<Worker>;
+  readonly calls: WorkerCalls;
+  setup: Setup | undefined;
   state: ModuleState;
   reason: Reason | undefined;
   /** How often an overflow restarted one of the module's sync copies. */
@@ -92,6 +104,60 @@ function attempt(call: () => unknown): Promise<unknown> {
 const named = (name: string): Record<string, string> => checkModuleName(name) === undefined ? {'bunny.module': name} : {};
 /** A record's fields for a reason: its 2.0 registry code and where it arose, never the sentence. */
 const reasonFields = ({code, phase}: Failure): Record<string, string> => ({'bunny.code': code, 'bunny.phase': phase});
+
+/** What a secret file's problem tells the module and health: a registry code and a fixed ending for its sentence. */
+const SECRET_PROBLEMS: Readonly<Record<FileProblem, readonly [ErrorCode, string]>> = {
+  relative: ['forbidden', 'must be an absolute path'],
+  mount: ['forbidden', 'must not be on a Windows mount'],
+  missing: ['not-found', 'does not exist'],
+  link: ['forbidden', 'must not be reached through a link'],
+  checkout: ['forbidden', 'must be outside every Git checkout'],
+  'not-file': ['forbidden', 'must be a regular file'],
+  'not-private': ['forbidden', 'must be private to its owner: readable by it, with no permissions for group or others and one link'],
+  'too-large': ['invalid-request', `must be at most ${MAX_SECRET_BYTES} bytes`],
+};
+const secretError = (name: string, [code, what]: readonly [ErrorCode, string], cause?: unknown): SdkError =>
+  new SdkError(errorBody(code, {detail: `the secret file for ${name} ${what}`}), cause === undefined ? undefined : {cause});
+
+/**
+ * Reads a module's secret file, named `name` in its section, as a private file of at most 64 KiB, and returns its UTF-8
+ * text without trailing line breaks. Throws an `SdkError` with a registry code and a fixed detail, never the text.
+ */
+async function loadSecret(name: string, path: string): Promise<string> {
+  let bytes: Buffer;
+  try {
+    bytes = await readPrivateFile(path, MAX_SECRET_BYTES);
+  } catch (error) {
+    throw secretError(name, error instanceof PrivateFileError ? SECRET_PROBLEMS[error.problem] : ['internal', 'could not be read'], error);
+  }
+  try {
+    return new TextDecoder('utf-8', {fatal: true}).decode(bytes).replace(/[\r\n]+$/, '');
+  } catch {
+    throw secretError(name, ['invalid-request', 'must be UTF-8 text']);
+  }
+}
+
+/**
+ * A worker's options with the process's `NODE_OPTIONS` kept in an `env` of the module's own, before its own, so that a
+ * worker a module gives its own environment still loads what the process preloads, such as a verification run's
+ * network guard (Hub #920). `SHARE_ENV` and an inherited environment keep it already.
+ */
+function keepNodeOptions(options: WorkerOptions | undefined): WorkerOptions | undefined {
+  const inherited = process.env.NODE_OPTIONS;
+  const env = options?.env;
+  if (inherited === undefined || inherited === '' || typeof env !== 'object') return options;
+  const own = env.NODE_OPTIONS;
+  if (own !== undefined && own.includes(inherited)) return options;
+  return {...options, env: {...env, NODE_OPTIONS: own === undefined || own === '' ? inherited : `${inherited} ${own}`}};
+}
+
+/**
+ * A module's span recorder that leaves out each attribute holding a secret a module read, as the log writer does for
+ * records (Hub #919). The span itself is kept, so its children keep their parent.
+ */
+const redactedSpans = (recorder: SpanRecorder, redactions: Redactions): SpanRecorder => ({
+  start: (name, options = {}) => recorder.start(name, options.attributes === undefined ? options : {...options, attributes: redactions.without(options.attributes)}),
+});
 
 /** Why a manifest is refused, or undefined when the module may start. `taken` holds the names already in use. */
 function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
@@ -143,19 +209,21 @@ export class ModuleHost {
     const names = new Set<string>();
     for (const module of modules) {
       const {name, apiVersion} = module.manifest;
+      const controller = new AbortController();
+      const workers = new Set<Worker>();
       const slot: Slot = {
         module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}),
         flow: {fail: (failure, error) => { this.#fail(slot, failure, error); }},
-        controller: new AbortController(), timers: new Set(), workers: new Set(),
-        state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
+        controller, timers: new Set(), workers,
+        calls: new WorkerCalls({scheduler: options.scheduler, signal: controller.signal, track: worker => {
+          workers.add(worker);
+          worker.once('exit', () => { workers.delete(worker); });
+        }}),
+        setup: undefined, state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
       };
       const reason = refusal(module.manifest, names);
       if (checkModuleName(name) === undefined) names.add(name);
-      if (reason !== undefined) {
-        slot.state = 'refused';
-        slot.reason = reason;
-        this.#log.error('runtime.module.refused', {...named(name), ...reasonFields({...reason, phase: 'manifest'})});
-      }
+      if (reason !== undefined) this.#refuse(slot, reason);
       this.#slots.push(slot);
     }
   }
@@ -165,8 +233,13 @@ export class ModuleHost {
     return this.#bus;
   }
 
-  /** Starts every module that was not refused, at once, and resolves when each start has finished, failed or timed out. */
+  /**
+   * Admits each module whose manifest was accepted, in list order, so that the first module to name a device keeps it.
+   * Then starts every admitted module at once, and resolves when each start has finished, failed or timed out.
+   */
   async start(): Promise<void> {
+    const devices = new Set<string>();
+    for (const slot of this.#slots) if (slot.state === 'starting') await this.#admit(slot, devices);
     await Promise.all(this.#slots.filter(slot => slot.state === 'starting').map(slot => this.#start(slot)));
   }
 
@@ -186,6 +259,61 @@ export class ModuleHost {
   health(): ModuleHealth[] {
     return this.#slots.map(({name, apiVersion, state, reason, syncRestarts}) =>
       ({name, apiVersion, state, healthy: state === 'running', syncRestarts, ...(reason === undefined ? {} : {reason})}));
+  }
+
+  /**
+   * Checks the module's own section of the configuration file, the devices it names against those of the modules
+   * admitted before it, and each secret file the section names. A module that fails any check is refused, with a
+   * reason whose code comes from the registry, and never starts.
+   */
+  async #admit(slot: Slot, devices: Set<string>): Promise<void> {
+    const checked = running.run(slot.flow, () => checkConfiguration(slot.module.manifest, sectionOf(this.#options.config, slot.name)));
+    if (checked.status === 'refused') {
+      this.#refuse(slot, checked.problem, checked.error);
+      return;
+    }
+    if (checked.devices.some(id => devices.has(id))) {
+      this.#refuse(slot, {code: 'invalid-request', detail: 'another module already names one of this module\'s devices'});
+      return;
+    }
+    for (const [name, path] of checked.secrets) {
+      try {
+        await loadSecret(name, path);
+      } catch (error) {
+        this.#refuse(slot, error instanceof SdkError ? {code: error.body.error.code, detail: error.body.error.detail ?? ''} : {code: 'internal', detail: 'a secret file could not be read'});
+        return;
+      }
+    }
+    for (const id of checked.devices) devices.add(id);
+    slot.setup = {config: checked.config, secrets: checked.secrets};
+  }
+
+  /** Refuses the module: it never starts, and health and its record name the reason. */
+  #refuse(slot: Slot, reason: Reason, error?: unknown): void {
+    slot.state = 'refused';
+    slot.reason = reason;
+    this.#log.error('runtime.module.refused', {...named(slot.name), ...reasonFields({...reason, phase: 'manifest'}), ...(error === undefined ? {} : this.#errorFields(error))});
+    // The runtime cannot continue without the one owner of agent sessions (Hub #831), whether it failed or was refused,
+    // as by a malformed `core` section of the configuration file.
+    if (slot.name === CORE_MODULE) this.#options.onCoreFailure?.(error);
+  }
+
+  /**
+   * An error's type and code for a record, leaving out one that holds a secret a module read, such as a code a device
+   * library copied from its credential. The record itself survives, as `runtime.failed` does (Hub #919).
+   */
+  #errorFields(error: unknown): Record<string, string> {
+    return this.#options.logs.redactions.without(errorFields(error));
+  }
+
+  /** The text of a secret file the module's own section names. Each read is checked anew and redacted from the log. */
+  async #readSecret(slot: Slot, name: string): Promise<string> {
+    if (slot.stopping !== undefined) throw stopped();
+    const path = slot.setup?.secrets.get(name);
+    if (path === undefined) throw new SdkError(errorBody('not-found', {detail: 'the configuration names no such secret'}));
+    const text = await loadSecret(name, path);
+    this.#options.logs.redact(text);
+    return text;
   }
 
   async #start(slot: Slot): Promise<void> {
@@ -217,7 +345,7 @@ export class ModuleHost {
     const {clock, scheduler, stateDir} = this.#options;
     const live = (): void => { if (slot.stopping !== undefined) throw stopped(); };
     const inFlow = <T>(call: () => T): T => running.run(slot.flow, call);
-    const spans = this.#options.tracing?.recorder(MODULE_SCOPE, {'bunny.module': slot.name}) ?? noSpans;
+    const spans = redactedSpans(this.#options.tracing?.recorder(MODULE_SCOPE, {'bunny.module': slot.name}) ?? noSpans, this.#options.logs.redactions);
     const sdk: Sdk = {
       source: participant.source,
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
@@ -257,18 +385,28 @@ export class ModuleHost {
         slot.timers.add(cancel);
         return cancel;
       }},
-      workers: {start: (file: URL, options?: WorkerOptions) => {
-        live();
-        const worker = inFlow(() => new Worker(file, options));
-        slot.workers.add(worker);
-        worker.on('error', error => { this.#fail(slot, {code: 'internal', detail: 'a worker failed', phase: 'worker'}, error); });
-        worker.once('exit', () => { slot.workers.delete(worker); });
-        return worker;
-      }},
+      workers: {
+        start: (file: URL, options?: WorkerOptions) => {
+          live();
+          const worker = inFlow(() => new Worker(file, keepNodeOptions(options)));
+          slot.workers.add(worker);
+          worker.on('error', error => { this.#fail(slot, {code: 'internal', detail: 'a worker failed', phase: 'worker'}, error); });
+          worker.once('exit', () => { slot.workers.delete(worker); });
+          return worker;
+        },
+        call: <Reply>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply> =>
+          slot.stopping !== undefined ? Promise.reject(stopped()) : inFlow(() => slot.calls.call<Reply>(file, request, options)),
+      },
       database: () => {
         live();
         slot.database ??= openModuleDatabase(stateDir, slot.name);
         return slot.database;
+      },
+      config: slot.setup?.config,
+      secrets: {read: name => this.#readSecret(slot, name)},
+      files: () => {
+        live();
+        return openModuleFolder(stateDir, slot.name);
       },
       signal: slot.controller.signal,
     };
@@ -284,7 +422,7 @@ export class ModuleHost {
       return;
     }
     if (slot === undefined) {
-      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...errorFields(error)});
+      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...this.#errorFields(error)});
       return;
     }
     this.#fail(slot, {code: 'internal', detail: 'a handler threw', phase: 'handler'}, error);
@@ -327,7 +465,7 @@ export class ModuleHost {
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */
   #fail(slot: Slot, failure: Failure, error: unknown): void {
-    const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : errorFields(error))};
+    const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : this.#errorFields(error))};
     if (slot.state === 'failed' || slot.state === 'stopped' || slot.state === 'refused') {
       this.#log.warn('runtime.module.error-after-stop', {...fields, 'bunny.phase': failure.phase});
       return;
@@ -364,7 +502,7 @@ export class ModuleHost {
     if (closed.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'handlers'});
     const ended = await this.#within(running.run(slot.flow, () => attempt(() => slot.module.stop())), stopTimeoutMs);
     if (ended.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'stop'});
-    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...errorFields(ended.error)});
+    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...this.#errorFields(ended.error)});
     await Promise.allSettled([...slot.workers].map(worker => worker.terminate()));
     if (slot.database?.isOpen === true) slot.database.close();
     if (slot.state === 'stopping') slot.state = 'stopped';

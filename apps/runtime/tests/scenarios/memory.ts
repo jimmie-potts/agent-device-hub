@@ -17,14 +17,15 @@ import {ModuleHost} from '../../src/host.js';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
 import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
-import {prepareStateDirectory} from '../../src/state.js';
+import {prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from '../../src/state.js';
 import {startTracing, type RuntimeTracing} from '../../src/tracing.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
 import {createCoreModule} from '../fixtures/core.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
+import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
 import {ROLES, type DeviceStates, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation, type TransportName} from './catalog.js';
-import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from './parts.js';
+import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf, writeConfiguration} from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
@@ -89,7 +90,10 @@ class Memory implements MemoryHarness {
   readonly #validator = scenarioValidator();
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
+  readonly #signs = new SimulatedSigns();
   readonly #parts: ReadonlyMap<Role, Part>;
+  /** The seed's configuration file, read as the runtime reads it, if it has one. */
+  #config: RuntimeConfig | undefined;
   readonly #generations: Generation[] = [];
   readonly #logs: Generational<{record: LogRecord}>[] = [];
   readonly #published: Generational<{message: Message}>[] = [];
@@ -125,6 +129,8 @@ class Memory implements MemoryHarness {
     // A tracing start that fails is the first generation's record, as the runtime writes it before its modules start.
     const opening = new LogWriter(record => { this.#logs.push({generation: 1, record}); }, 'info', {now: this.#clock.now}).logger(RUNTIME_SCOPE);
     this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); }, opening);
+    const {config} = this.#seed;
+    if (config !== undefined) this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), config));
     if (this.transport === 'remote') {
       const server = createServer((request, response) => { this.#serve(request, response); });
       // The edge never closes an idle connection under a remote part that is about to reuse it.
@@ -133,7 +139,10 @@ class Memory implements MemoryHarness {
       this.url = `http://127.0.0.1:${await listenLoopback(server)}`;
     }
     await this.#boot();
-    const report = this.#current().host.health().filter(module => !module.healthy);
+    // Only a module the seed expects the runtime to refuse, such as one it configures badly, may be unhealthy here; its
+    // scenario checks the refusal.
+    const expected: readonly string[] = this.#seed.refused ?? [];
+    const report = this.#current().host.health().filter(module => !module.healthy && !(module.state === 'refused' && expected.includes(module.name)));
     if (report.length > 0) throw new Error(`the runtime did not start: ${JSON.stringify(report)}`);
     for (const part of this.#parts.values()) await this.#connect(part);
   }
@@ -171,13 +180,20 @@ class Memory implements MemoryHarness {
   }
 
   devices(): DeviceStates {
-    return {lamp: this.#lamps.state(), chime: this.#chime.state()};
+    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state()};
   }
 
   simulate(simulation: Simulation): void {
-    if (simulation.device === 'chime') {
-      this.#chime.faultNext();
-      return;
+    switch (simulation.device) {
+      case 'chime':
+        this.#chime.faultNext();
+        return;
+      case 'sign':
+        if (simulation.action === 'online') this.#signs.online();
+        else this.#signs.offline();
+        return;
+      case 'lamp':
+        break;
     }
     switch (simulation.action) {
       case 'hold':
@@ -310,6 +326,7 @@ class Memory implements MemoryHarness {
     const host = new ModuleHost(modules, {
       clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000,
       ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
+      ...(this.#config === undefined ? {} : {config: this.#config}),
     });
     const written = diagnosticWriter(logs.logger(RUNTIME_SCOPE));
     const watcher = host.bus.connect('bunny/harness/watcher');
@@ -344,6 +361,8 @@ class Memory implements MemoryHarness {
         }});
       case 'chime':
         return createChimeModule({transport: this.#chime});
+      case 'sign':
+        return createSignModule({transport: this.#signs});
     }
   }
 

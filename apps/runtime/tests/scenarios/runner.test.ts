@@ -190,3 +190,11 @@ it('the end-to-end path\'s spans have durations and no lost parent, and work pub
     }
   }
 });
+
+it('a harness starts only when every module is healthy, except one the seed expects the runtime to refuse', async () => {
+  const misconfigured = named('misconfigured-module').seed;
+  const unexpected = {modules: misconfigured.modules, follows: misconfigured.follows, ...(misconfigured.config === undefined ? {} : {config: misconfigured.config})};
+  await assert.rejects(startMemoryHarness(unexpected, 'in-process'), /the runtime did not start/, 'a refusal the seed does not expect');
+  const h = await startMemoryHarness(misconfigured, 'in-process');
+  await h.close();
+});

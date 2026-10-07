@@ -338,3 +338,48 @@ it('--edge refuses a missing grants file and a grant that acts as the core or a 
     assert.equal(runtime.stdout(), '', 'no ready line');
   }
 });
+
+it('--config reads a private configuration file, and a file the runtime cannot trust names its reason in runtime.failed', async context => {
+  const root = await stateDir(context);
+  const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {}});
+  const write = async (name: string, text: string, mode = 0o600): Promise<string> => {
+    await writeFile(join(root, name), text, {mode});
+    await chmod(join(root, name), mode);
+    return join(root, name);
+  };
+  const good = await write('config.json', valid);
+  const cases: readonly (readonly [string, string])[] = [
+    ['relative/config.json', 'config-relative'],
+    [join(root, 'missing.json'), 'config-missing'],
+    [await write('shared.json', valid, 0o644), 'config-not-private'],
+    [await write('broken.json', '{'), 'config-invalid'],
+  ];
+  await symlink(good, join(root, 'linked.json'));
+  for (const [file, code] of [...cases, [join(root, 'linked.json'), 'config-link'] as const]) {
+    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', file]);
+    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, file);
+    assert.deepEqual(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes,
+      {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, file);
+    assert.equal(runtime.stdout(), '', `${file}: no ready line`);
+  }
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
+  assert.equal((await health(runtime.url)).body.status, 'ok');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+});
+
+it('an error that escapes every module carrying a secret a module read leaves that secret out of runtime.failed', async context => {
+  // The reviewer's case: an error code copied from a credential, thrown by a listener on an emitter outside every module.
+  const secret = 'tok_SYNTHETIC919';
+  const dir = await stateDir(context);
+  await writeFile(join(dir, 'token'), `${secret}\n`, {mode: 0o600});
+  await chmod(join(dir, 'token'), 0o600);
+  await writeFile(join(dir, 'config.json'), JSON.stringify({schema: 'runtime-config/1.0', modules: {leaker: {secrets: {token: join(dir, 'token')}}}}), {mode: 0o600});
+  await chmod(join(dir, 'config.json'), 0o600);
+  const runtime = spawnRuntime(context, FIXTURE, ['secret-escape', '--port', '0', '--state-dir', await stateDir(context), '--config', join(dir, 'config.json')]);
+  assert.deepEqual(await runtime.exited, {code: 1, signal: null}, 'an error outside every module is the runtime\'s own failure');
+  const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
+  assert.deepEqual(fatal?.attributes, {'error.type': 'Error', 'bunny.provenance': 'source'}, 'the record is written, without the code that holds the secret');
+  assert.equal(runtime.records().some(record => JSON.stringify(record).includes(secret)), false, 'no record holds the secret');
+  assert.equal(runtime.stdout().includes(secret), false);
+});

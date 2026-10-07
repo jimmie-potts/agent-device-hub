@@ -17,6 +17,10 @@ export type ChildMessage =
   | {type: 'lamp.switch'; id: number; lamp: string; power: Power}
   | {type: 'lamp.show'; indicator: Indicator}
   | {type: 'chime.ring'; ring: ChimeRing}
+  /** The sign module shows a frame on a simulated sign, with the token it read from its secret file (Hub #919). */
+  | {type: 'sign.show'; id: number; address: string; token: string; frame: string}
+  /** The sign module's deadline for that show passed, so the simulated sign stops waiting. */
+  | {type: 'sign.abandon'; id: number}
   | {type: 'published'; message: Message}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
@@ -24,6 +28,8 @@ export type ChildMessage =
 export type SupervisorMessage =
   | {type: 'lamp.switched'; id: number; power: Power}
   | {type: 'lamp.failed'; id: number; detail: string}
+  | {type: 'sign.shown'; id: number}
+  | {type: 'sign.failed'; id: number}
   | {type: 'control'; id: number; control: Control}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
@@ -68,4 +74,7 @@ export type BoundaryReport = {
 export type DisconnectRequest = {source: string};
 
 /** `POST simulate`: what a device should do, as the catalog's `Simulation`. */
-export type SimulateRequest = {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'} | {device: 'chime'; action: 'fault-next'};
+export type SimulateRequest =
+  | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
+  | {device: 'chime'; action: 'fault-next'}
+  | {device: 'sign'; action: 'online' | 'offline'};

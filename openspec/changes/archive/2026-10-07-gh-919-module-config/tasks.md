@@ -1,0 +1,46 @@
+## 1. SDK: module API 1.1
+
+- [x] 1.1 Assert, red before the implementation, that worker calls resolve, end at their deadline on a manual scheduler, are cancelled by the module's stop and by their own signal, keep a worker's failure to the call, cap concurrent calls and refuse a malformed deadline (`packages/sdk/tests/workers.test.ts`).
+- [x] 1.2 Assert that `checkConfiguration` accepts a module's own section with its devices and secrets, and refuses a missing section, a non-object, malformed secrets, a refusing or throwing `configure` and invalid devices (`configuration.test.ts`).
+- [x] 1.3 Add `configure` to the manifest, `config`, `secrets`, `files()` and `workers.call` to the context, `checkConfiguration`, `WorkerCalls`, and `MODULE_API_VERSION` `1.1`.
+
+## 2. Module test kit
+
+- [x] 2.1 Assert, red before the implementation, that the kit fails a module whose start waits on its device (only the offline check), a configuration the module refuses or lacks (every check), and a secret in a record, a message or a reply (the checks that see it, never quoting it), and that the harness serves named secrets from memory and a private folder (`kit.test.ts`).
+- [x] 2.2 Add `config`, `secrets` and `offline` to the spec, the offline check, the configuration check in the manifest check, the secret scan, and the harness's section, secrets, folder and worker calls.
+
+## 3. Runtime
+
+- [x] 3.1 Assert, red before the implementation, each module's own section, secrets and folder; refusals in health for a missing or invalid section, a throwing `configure`, a duplicate device and an unsafe secret file; secret re-checks; an untrusted configuration file refused before serving; private folders; worker calls on the runtime's scheduler; `NODE_OPTIONS` kept; and no secret in a record, health or an error body (`apps/runtime/tests/config.test.ts`).
+- [x] 3.2 Read the private configuration file (`--config`), admit modules in list order, read secrets with #880's rules, create private folders, merge `NODE_OPTIONS`, and drop records holding a secret a module read.
+- [x] 3.3 Assert the shipped entry point's `config-*` codes and a valid file, and move the API version test to `1.1` (`process.test.ts`, `manifest.test.ts`).
+- [x] 3.4 Reword the isolation test's header and start-timeout title under policy A (#948, PR #955).
+
+## 4. Fixture sign and scenario tiers
+
+- [x] 4.1 Add the configured fixture sign with its render worker; it passes the kit with the offline check, and under the runtime starts while offline, reports `unavailable`, then `available` (`sign.test.ts`).
+- [x] 4.2 Add `configured-module` and `misconfigured-module` to the catalog with a seed `config`, written by `writeConfiguration`, and play them in the in-memory harness on both transports.
+- [x] 4.3 Seed configured runs under `<data>/config`, pass `--config` from the supervisor, reach the simulated signs over IPC, and scan every capture step's proof and runtime records for the synthetic token (`verify/tests/steps.test.ts`).
+
+## 5. Documentation and qualification
+
+- [x] 5.1 Document the module API, secrets, worker calls and policy A check in the SDK README, configuration in the runtime README, and configured runs in the verify README.
+- [x] 5.2 Run build, typecheck, lint, the SDK, runtime, scenario, verify, event and workflow checks, and OpenSpec validation.
+- [x] 5.3 Show negative controls fail named tests: another module's section or secret readable, a linked or world-readable configuration file, a secret in a log, the policy A check removed, and a worker call not cancelled on stop.
+- [x] 5.4 Synchronize the affected specifications and archive the change.
+
+## 6. Review fixes (PR #960)
+
+- [x] 6.1 End a worker call that the worker had as `uncertain-result` on a stop, an abort, a worker error, an unreadable reply or an exit without one, keeping `cancelled` for a signal aborted before the worker starts (`workers.test.ts`, `config.test.ts`).
+- [x] 6.2 Share one redaction registry with the service process, so `runtime.failed` leaves out an error code that holds a module's secret (`process.test.ts`, the reviewer's case).
+- [x] 6.3 Refuse a private file whose opened file is not the one at its path, after a directory swap (`config.test.ts`), and count a file the runtime's user may not read as not private.
+- [x] 6.4 Scan the commands and sync requests a module sends, and test a secret in a command and one only in synced state (`kit.test.ts`).
+- [x] 6.5 Name the refusals a seed expects, so the in-memory harness stays strict elsewhere (`runner.test.ts`).
+- [x] 6.6 Type `config` as `Config | undefined`, report the sign's failed renders against the sign, word privacy as no permissions for group or others, match numbers in redaction, and test a hard-linked configuration file, unquoted refusals and malformed secrets.
+- [x] 6.7 Show each fix's mutant fails its named tests, and rerun the gate.
+
+## 7. Rebase over #962 and final fixes
+
+- [x] 7.1 Rebase over PR #962 (#831), rebuilding the delta's four shared `bunny-runtime` requirements from the synced text so both stories' requirements stand; the shipped core declares API `1.0` and no `configure`, so it runs under `1.1` without a section.
+- [x] 7.2 Count a secret or configuration file under a directory the runtime's user may not search as not private (`config.test.ts`).
+- [x] 7.3 Keep the records of a module's refusal, failure or stop problem when an error attribute holds a secret, leaving that attribute out, and end the runtime when the configuration refuses the core (`config.test.ts`).

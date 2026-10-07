@@ -307,16 +307,32 @@ lives here; [`apps/runtime`](../../apps/runtime/README.md) implements it. A
 module is an object with a `manifest`, `start(context)` and `stop()`:
 
 ```ts
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 
-export const lamp: BunnyModule = {
-  manifest: {name: 'lamp', apiVersion: '1.0'},
-  async start({sdk, log, database}) {
+type SignConfig = {address: string};
+
+export const sign: BunnyModule<SignConfig> = {
+  manifest: {
+    name: 'sign', apiVersion: '1.1',
+    configure: section => {
+      const {address} = section as {address?: unknown};
+      if (typeof address !== 'string') return errorBody('invalid-request', {detail: 'the sign needs an address'});
+      return {config: {address}, devices: ['sign-1']};
+    },
+  },
+  async start({sdk, log, database, config, secrets, files, scheduler}) {
+    // `configure` is optional in the type, so `config` may be undefined; the runtime starts this module only with it.
+    if (config === undefined) throw new Error('the sign started without its configuration');
     database().exec('CREATE TABLE IF NOT EXISTS scenes (id TEXT PRIMARY KEY)');
-    await sdk.respond('bunny.cmd.scene.lamp', command => {
+    const token = await secrets.read('token');
+    const layouts = files();
+    await sdk.respond('bunny.cmd.scene.sign-1', command => {
       log.info('command.executing', {'bunny.operation': 'mode'}, command);
       return {status: 'accepted'};
     });
+    // Reach the device later, never in start (policy A).
+    scheduler.after(0, () => reach(config.address, token, layouts));
   },
   stop() {},
 };
@@ -324,23 +340,46 @@ export const lamp: BunnyModule = {
 
 - **Manifest.** `name` is lowercase letters and digits with single hyphens, at
   most 64 characters. It names the module's source (`bunny/modules/<name>`), its
-  SQLite file and its log records. `apiVersion` is the module API version the
-  module was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current
-  one, `1.0`. The runtime refuses a module with another major version or a newer
+  SQLite file, its private folder, its section of the runtime's configuration
+  file and its log records. `apiVersion` is the module API version the module
+  was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current one,
+  `1.1`. The runtime refuses a module with another major version or a newer
   minor one. Write the version as a literal, so a later major version refuses
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
   own reason for refusing, as `{code, detail}`, or undefined.
-- **`start(context)`** subscribes, responds and opens devices. A throw, a
-  rejection or a start that outlasts the runtime's start deadline fails the
-  module.
-- **Device failures.** A device's errors and timeouts are not module failures
-  (policy A in [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)).
-  A module reaches its device lazily and turns those errors and timeouts into
-  outcomes and an `unavailable` device state. Only an error that escapes the
-  module stops it: a throw or rejection from its start, a handler, a responder,
-  a timer or a worker, or a start that outlasts its deadline. The module then
-  stays stopped until the runtime restarts.
+- **Configuration (1.1, Hub #919).** The manifest may declare
+  `configure(section)`. The runtime calls it before `start` with the module's
+  own section of its [configuration file](../../apps/runtime/README.md#configuration),
+  a JSON object, and never with another module's. It returns
+  `{config, devices?}` or a refusal from `errorBody`. It must be synchronous,
+  read no file and reach no device. A refusal's detail is fixed text that
+  repeats no value from the section, since health shows it. `config` becomes the
+  context's `config`, typed `Config | undefined` because `configure` is optional:
+  a module that declares one checks for undefined once, in `start`.
+  `devices` lists the routing IDs of the devices the module controls, and the
+  runtime refuses a module that names a device another module already named. A
+  module that declares `configure` needs a section; one without it takes no
+  configuration, and its `config` is undefined. The section's `secrets` member
+  maps at most `MAX_SECRETS` (16) names, each lowercase letters and digits with
+  single hyphens, to the absolute paths of the module's secret files.
+  `configure` sees those names and paths, never the files' contents. A refused
+  module never starts, and health shows it `refused` with the refusal's code
+  and detail. `checkConfiguration(manifest, section)` is the check the runtime
+  and the module test kit share: it returns `{status: 'accepted', config,
+  devices, secrets}` or `{status: 'refused', problem}`.
+- **`start(context)`** subscribes, responds and opens local resources: its
+  database, its private folder and its secrets. A throw, a rejection or a start
+  that outlasts the runtime's start deadline fails the module.
+- **Device failures (policy A).** A device's errors and timeouts are not
+  module failures ([ADR 0012](../../docs/decisions/0012-bunny-event-platform.md),
+  "Failure isolation"). A module never waits on its device in `start`: it
+  reaches the device later and turns its errors and timeouts into outcomes and
+  an `unavailable` device state. Only an error that escapes the module stops
+  it: a throw or rejection from its start, a handler, a responder, a timer or a
+  worker, or a start that outlasts its deadline. The module then stays stopped
+  until the runtime restarts. The [module test kit](#module-test-kit) checks
+  this: a module whose start waits on a device that never answers fails it.
 - **`stop()`** releases what the module holds. The runtime calls it once for
   every module whose start it called, even when start failed or has not
   finished. It runs after the module's participant has closed, which waits for
@@ -349,8 +388,13 @@ export const lamp: BunnyModule = {
 - **Factory.** A module that reaches a device is created by a factory that
   takes the device's transport, `create<Name>Module({transport})`. Tests and
   disposable runs pass a simulated transport, so no hardware is touched; there
-  is no manifest slot or registry for transports. The runtime's fixture lamp,
-  `createLampModule({transport})`, shows the convention (#846).
+  is no manifest slot or registry for transports. The device's settings and
+  credentials reach the module through its context, after `configure` accepted
+  its section, so a factory takes neither; a real transport uses
+  `context.config` and `context.secrets` when the module reaches its device.
+  The runtime's fixture lamp, `createLampModule({transport})`, shows the
+  convention (#846), and the fixture sign, `createSignModule({transport})`,
+  shows a configured module (#919).
 
 The context:
 
@@ -362,13 +406,80 @@ The context:
 | `trace.start(name, {parent?, links?, kind?, attributes?})` | A recorded span with a start, an end and a status, under `bunny.module` with the module's name, such as `bunny.device.call` around a call to the module's device. Pass its `context` on as a parent, and `end()` it, or `end('error')` when the work failed. Its context never goes to the device. See [Diagnostics and spans](#diagnostics-and-spans). |
 | `clock.now()` | The runtime's clock, which the bus also uses for `time` and `expiresat`. |
 | `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
-| `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. |
+| `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. A worker given its own `env` keeps the process's `NODE_OPTIONS`, before the module's own, so a verification run's network guard still loads in it. |
+| `workers.call(file, request, {timeoutMs, signal?, transferList?})` | One bounded request in a new worker thread, such as rendering a frame. See [Worker calls](#worker-calls). |
 | `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. |
+| `config` | What the manifest's `configure` returned from the module's own section, or undefined for a module without `configure`. |
+| `secrets.read(name)` | The text of the secret file the module's section names `name`. See [Secrets](#secrets). |
+| `files()` | The absolute path of the module's own private folder, `modules/<name>/` in the runtime's state directory beside its SQLite file, for media, layouts and scenes. It is created with mode 700 on first use and kept across restarts. |
 | `signal` | Aborted when the module stops, so device calls given it end. |
 
-Once the module's stop begins, its `sdk`, `scheduler`, `workers` and
-`database()` refuse use with an `SdkError` carrying `invalid-state`. Its `log`,
-`trace`, `clock` and `signal` keep working, so `stop()` can still log.
+Once the module's stop begins, its `sdk`, `scheduler`, `workers`,
+`database()`, `files()` and `secrets` refuse use with an `SdkError` carrying
+`invalid-state`. Its `config`, `log`, `trace`, `clock` and `signal` keep
+working, so `stop()` can still log.
+
+### Secrets
+
+`secrets.read(name)` reads the file that the module's section names `name` in
+its `secrets` member, anew on each call, and resolves with its UTF-8 text
+without trailing line breaks. A secret file holds one token, which the module
+uses whole. A module never reads a file its section does not name, so it never
+reads another module's secret. The file must be private, as the configuration
+file is: a regular file with one link and no permissions for group or others,
+owned and readable by the runtime's user, at most 64 KiB, reached through no
+link and outside every Git checkout and Windows mount. The runtime checks each
+named file before it starts the module, and refuses the module when one fails.
+`read` rejects with an `SdkError`:
+
+| Code | When |
+| --- | --- |
+| `not-found` | The section names no such secret, or the file is missing. |
+| `forbidden` | The file is not private: a link in its path, a permission for group or others, a second link, another owner, no read permission for the runtime's user, not a regular file, inside a Git checkout or on a Windows mount. |
+| `invalid-request` | The file is larger than 64 KiB or is not UTF-8 text. |
+| `invalid-state` | The module's stop has begun. |
+
+No detail quotes the file. A secret never goes into a message, a log field, an
+error body or health. The runtime drops, and counts, any log record whose
+attribute holds a secret a module read, as text or as a number's digits; its
+`runtime.failed` record and a module's spans leave such an attribute out. The
+module test kit fails a module whose message, command, sync request, log record,
+span, reply or synced state holds one of its secrets. A very short secret makes the runtime drop every
+record that contains it.
+
+These are boundaries of the module API, not a sandbox. A module's code runs in
+the runtime's process, as the runtime's user, so the context never hands it
+another module's section or secret, but nothing stops its own code from opening
+a file directly. The operator chooses where the configuration and secret files
+live; the runtime checks the files and the links along their paths, not the
+modes of their directories, and it confirms the opened file through
+`/proc/self/fd`.
+
+### Worker calls
+
+`workers.call(file, request, {timeoutMs, signal?, transferList?})` runs one
+request in a new worker thread from a module file. The worker gets `request` as
+its `workerData` and answers with one `parentPort.postMessage(reply)`; the call
+resolves with that reply, and the worker is terminated. Tidbyt and Pixoo render
+their frames this way, off the event loop. The deadline, an integer from 1 to
+`MAX_TIMEOUT_MS`, runs on the runtime's scheduler. A module has at most
+`MAX_WORKER_CALLS` (4) calls running. A failed call rejects with an `SdkError`
+and terminates its worker. A call refused before its worker starts had no
+effect. Once the worker has the request, every ending but its reply is
+`uncertain-result`, because the worker may have done part of its work: in
+ADR 0012, a rejection proves no effect, and cancellation is not undo.
+
+| Code | When |
+| --- | --- |
+| `invalid-state` | Before the worker starts: the module's stop has begun. |
+| `invalid-request` | Before the worker starts: the deadline is not an integer from 1 to `MAX_TIMEOUT_MS`. |
+| `cancelled` | Before the worker starts: `signal` had already aborted. |
+| `capacity` | Before the worker starts: the module already has `MAX_WORKER_CALLS` calls running. |
+| `internal` | Before the worker starts: it could not start, as for a file that is not a `file:` URL. |
+| `uncertain-result` | After the worker started: the deadline passed, the module stopped, `signal` aborted, the worker threw, its reply could not be read, or it ended without a reply. What it threw stays in memory as the error's cause. |
+
+A failed call never fails the module; the module turns it into an outcome.
+`WorkerCalls` is the implementation the runtime and the kit's harness share.
 
 ## Outbox
 
@@ -481,23 +592,44 @@ moduleConformance({
 });
 ```
 
+A configured module that reaches a device also gives its section, its secrets'
+synthetic text and an instance whose device never answers:
+
+```ts
+moduleConformance({
+  create: () => createSignModule({transport: new SimulatedSigns({online: true})}),
+  schemas: signSchemas,
+  serves: ['sign'],
+  config: {greeting: 'hello', signs: [{id: 'sign-1', address: '192.0.2.10'}], secrets: {token: '/nowhere/sign-token'}},
+  secrets: {token: 'tok_SYNTHETIC919'},
+  offline: {create: () => createSignModule({transport: new SimulatedSigns()}), unavailable: reportsUnavailable},
+});
+```
+
 `moduleConformance(spec)` registers a node:test suite named for the module, and
 is the only part of the kit that loads `node:test`. `conformanceChecks(spec)`
 returns the same checks as `{name, run}` for another runner, such as Vitest.
 Each check hosts a fresh instance of the module on its own bus and state
-directory, with a stand-in owner, `bunny/core`, serving the families it copies.
-Under ADR 0012's failure isolation (policy A), a device's errors and timeouts
-become outcomes and an `unavailable` device state, never a module failure, and
-only an error that escapes the module stops it. The kit fails a module whose
-handler, timer or worker fails. A check that a device failure stays with the
-device belongs to [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919).
+directory, with a stand-in owner, `bunny/core`, serving the families it copies,
+and the spec's `config` as the module's section and `secrets` as its secret
+files' text. Under ADR 0012's failure isolation (policy A), a device's errors
+and timeouts become outcomes and an `unavailable` device state, never a module
+failure, and only an error that escapes the module stops it. The kit fails a
+module whose handler, timer or worker fails. With `spec.offline`, it also
+starts an instance whose simulated device never answers, and fails the module
+when that start does not finish within `offline.startWithinMs` (1000 ms by
+default), because start opens only local resources and the module reaches its
+device later, or when the module never publishes a state that
+`offline.unavailable` recognizes as the device's `unavailable` report.
 Every message the check sees must follow profile 2.0, with the core families,
 the stand-in acknowledgment and `spec.schemas` registered. Every record the
 module logs must be one the runtime writes whole as a
 [diagnostic-contract](../../docs/observability-contract.md) record (#903): an
 event the catalog registers for the `bunny.module` scope, and only registered
-attributes with values of their registered types. No handler, timer or worker
-of the module may fail, and its stop may not throw or outlast its deadline.
+attributes with values of their registered types. No message, command or sync
+request the module sends, log record, span, reply or synced state may carry one
+of `spec.secrets`, and a failure names where one appeared, never the secret. No handler, timer or worker of the module
+may fail, and its stop may not throw or outlast its deadline.
 
 `checkModuleRecord(name, record)` is that record check on its own. It returns
 why the runtime would not write one of the module's records whole, naming the
@@ -505,13 +637,15 @@ event and attribute keys but never a value, or undefined. A module that needs
 another event or attribute asks for a catalog change in
 `@jimmie-potts/bunny-observability`; it never logs one the catalog lacks.
 
-`serves`, `copies`, `accepted` and `refused` are optional, so a module that
-only consumes runs the checks that apply to it. The checks:
+`config`, `secrets`, `offline`, `serves`, `copies`, `accepted` and `refused`
+are optional, so a module that only consumes runs the checks that apply to it.
+A module that reaches a device gives `offline`. The checks:
 
 | Check | Runs | What passes |
 | --- | --- | --- |
-| `declares a manifest the runtime accepts` | always | `checkManifest` finds nothing to refuse. |
+| `declares a manifest the runtime accepts` | always | `checkManifest` finds nothing to refuse, and `checkConfiguration` accepts `spec.config`. |
 | `starts, and stops leaving nothing behind` | always | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command, if any, is refused as `unavailable`, a sync of the served families, if any, is refused as `unavailable`, and no timer, worker or open database is left. |
+| `starts while its device never answers, and reports it unavailable` | with `offline` | Policy A: `offline.create()`'s start finishes within `offline.startWithinMs`, and the module then publishes a state that `offline.unavailable` accepts within `timeoutMs`. |
 | `serves its families through sync` | with `serves` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
 | `copies the families it follows` | with `copies` | The module's start syncs them, asking for nothing else. |
 | `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. The bus records one `command.admitted` and one `command.replied` in the command's trace, and its request span has one queue and one execute span as children, all ended without an error; the reply carries the execute span's context. |
@@ -529,8 +663,15 @@ context, and its database. A timer, socket or handle the module opened another
 way is beyond it.
 
 `ModuleHarness` is what the checks host a module with, as the runtime would:
-- its own participant on a given bus, which the module gets without `close`;
-- a context whose SQLite file lives in a given directory;
+- its own participant on a given bus, which the module gets without `close`,
+  and whose commands and syncs it keeps in `sent`, since no subscriber sees
+  them;
+- its `section`, checked with `checkConfiguration` before start, which throws
+  the refusal's `SdkError` and never starts a module the runtime would refuse;
+- a context whose SQLite file and private folder, `<name>/`, live in a given
+  directory, whose `secrets.read` serves the `secrets` option's text from
+  memory for the names the section gives, and whose worker calls are the
+  runtime's;
 - a `stop` that aborts the signal, cancels timers, closes the participant,
   runs `stop()`, ends workers and closes the database, in the runtime's order;
 - with `spans`, the module's `trace.start` spans, its name in `bunny.module`,

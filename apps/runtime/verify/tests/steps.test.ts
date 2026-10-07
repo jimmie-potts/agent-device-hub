@@ -1,11 +1,13 @@
 // Hub #920: the runtime adapter's capture steps judged without a supervisor unit, so they also run on CI hosts without
 // systemd --user. Each step gets its own freshly seeded run (the supervisor started directly). The edge-grants step and
 // every catalog scenario step pass, the same scenarios that pass in the in-memory harness; the negative control fails.
+// No step's proof or runtime record holds a grant or the configured modules' synthetic token (Hub #919).
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {runCaptureStep, type CaptureStepResult} from '@jimmie-potts/app-verify';
+import {SYNTHETIC_TOKEN} from '../../tests/fixtures/sign.js';
 import {SCENARIOS} from '../../tests/scenarios/catalog.js';
 import {readGrants} from '../adapter.js';
 import plugin from '../plugin.js';
@@ -22,6 +24,8 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
     });
     const log = await readFile(result.log, 'utf8');
     for (const token of (await readGrants(run.dataDir)).values()) assert.equal(log.includes(token), false, `${step}: the capture log never holds a grant`);
+    const proof = await Promise.all([result.log, ...result.attachments].map(file => readFile(file, 'utf8')));
+    assert.equal([...proof, run.stderr()].some(text => text.includes(SYNTHETIC_TOKEN)), false, `${step}: no proof and no runtime record holds the synthetic token`);
     return result;
   } finally {
     assert.equal((await run.stop()).code, 0, `${step}: the run stopped cleanly`);

@@ -12,6 +12,7 @@ import {
 import type {ChimeDeviceState} from '../fixtures/chime.js';
 import type {HistoryEntry} from '../fixtures/core.js';
 import {switchLamp, type Lamp, type LampDeviceState, type Power} from '../fixtures/lamp.js';
+import {SIGN_SECTION, SYNTHETIC_TOKEN, type Availability, type Sign, type SignDeviceState} from '../fixtures/sign.js';
 
 export const TRANSPORTS = ['in-process', 'remote'] as const;
 /** How the scenario's parts reach the runtime: on its bus, or through its SDK edge over SSE and HTTP. */
@@ -20,17 +21,30 @@ export type TransportName = (typeof TRANSPORTS)[number];
 export const ROLES = ['hook', 'operator', 'panel', 'reader'] as const;
 export type Role = (typeof ROLES)[number];
 /** The modules a run can start, each built by its factory with its simulated transport. */
-export type ModuleName = 'core' | 'lamp' | 'chime';
+export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign';
 
 export type Seed = {
   /** The modules the runtime starts with, in order. The core comes first (#831). */
   readonly modules: readonly ModuleName[];
   /** The families the reader keeps a copy of, one list per owner. */
   readonly follows: readonly (readonly string[])[];
+  /**
+   * The runtime's configuration file, when the seed has one (Hub #919): each configured module's section, without its
+   * `secrets` member. Each harness writes the file privately, with a token file per module holding the synthetic token,
+   * and starts the runtime with it (`writeConfiguration`).
+   */
+  readonly config?: Readonly<Partial<Record<ModuleName, object>>>;
+  /**
+   * The modules the runtime should refuse at start, such as one the seed configures badly. A harness refuses to start a
+   * scenario in which any other module is unhealthy.
+   */
+  readonly refused?: readonly ModuleName[];
 };
 
 /** What the reader has: its copies' current states and the occurrences and outcomes it heard. */
 export interface ReaderView {
+  /** Every family the reader copies, as the seed's `follows` names them. */
+  families(): readonly string[];
   /** The current state messages of one family in the reader's copy. */
   states<T>(family: string): Message<T>[];
   /** How often the copy that holds `family` has synced, the first sync included. */
@@ -45,11 +59,12 @@ export interface ReaderView {
 }
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
-export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState};
+export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState};
 /** What a scenario can make a simulated device do. */
 export type Simulation =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
-  | {device: 'chime'; action: 'fault-next'};
+  | {device: 'chime'; action: 'fault-next'}
+  | {device: 'sign'; action: 'online' | 'offline'};
 export type Generational<T> = {generation: number} & T;
 
 /** What a scenario can touch. Each run type implements it; the in-memory harness is `memory.ts`. */
@@ -619,9 +634,77 @@ const endToEnd: Scenario = {
   ],
 };
 
+/** The reader's copy of sign-1's availability. */
+const signShows = (h: Harness, availability: Availability): Outcome => {
+  const sign = h.reader.states<Sign>('sign').find(state => state.data.id === 'sign-1')?.data;
+  return sign?.availability === availability || `the reader's copy shows sign-1 ${String(sign?.availability)}`;
+};
+/**
+ * No log record, published message, health entry or message the reader holds carries the synthetic token, which the
+ * configured modules' secret files hold. The answer names where it appears, never the token.
+ */
+async function noToken(h: Harness): Promise<Outcome> {
+  const places: [string, unknown][] = [
+    ['a log record', h.logs()], ['a published message', h.published()], ['health', await h.health()], ['a message the reader heard', h.reader.heard()],
+    ...h.reader.families().map((family): [string, unknown] => [`the reader's copy of ${family}`, h.reader.states(family)]),
+  ];
+  const carrying = places.filter(([, value]) => JSON.stringify(value).includes(SYNTHETIC_TOKEN)).map(([place]) => place);
+  return carrying.length === 0 || `the token appears in ${carrying.join(', ')}`;
+}
+/** What the sign's section names, as the configuration file holds it. */
+const SIGN_ADDRESS = SIGN_SECTION.signs[0].address;
+
+/**
+ * A configured module (Hub #919): the sign gets its own section, reads its token from the private file the section
+ * names, and starts while its sign is offline (policy A). It reports the sign unavailable, reaches it once it comes
+ * online, and shows the greeting it rendered in a worker thread, sent with the token. The token appears nowhere.
+ */
+const configuredModule: Scenario = {
+  id: 'configured-module',
+  title: 'a configured module starts while its device is offline, and reaches it once it is online',
+  seed: {modules: ['core', 'sign'], follows: [CORE_FAMILIES, ['sign']], config: {sign: SIGN_SECTION}},
+  steps: [
+    expect('the core and the sign are running, though the sign is offline', h => running(h, ['core', 'sign'])),
+    expect('the reader\'s copy shows sign-1 unavailable once the sign\'s deadline passed', h => signShows(h, 'unavailable'), 5000),
+    holds('the sign shows nothing while it is offline', h => Object.keys(h.devices().sign.shown).length === 0 || `shown ${show(h.devices().sign.shown)}`, 300),
+    act('the sign comes online', h => { h.simulate({device: 'sign', action: 'online'}); }),
+    expect('the reader\'s copy shows sign-1 available', h => signShows(h, 'available'), 10_000),
+    expect('the sign shows the configured greeting, rendered in a worker thread and sent with the token from the secret file', h => {
+      const {shown, refused} = h.devices().sign;
+      return (shown[SIGN_ADDRESS] === 'HELLO' && refused === 0) || `shown ${show(shown)}, ${refused} refused tokens`;
+    }),
+    expect('the sign is still running, and health is healthy', h => running(h, ['core', 'sign'])),
+    holds('no log record, message, health entry or reader copy carries the token', h => noToken(h), 300),
+  ],
+};
+
+/**
+ * A module whose section the runtime refuses (Hub #919): a sign ID that is not a routing ID. Health shows the sign
+ * refused with a registry code, it never reaches its device, and the core runs on.
+ */
+const misconfiguredModule: Scenario = {
+  id: 'misconfigured-module',
+  title: 'a module whose configuration is invalid is refused, and the others run',
+  seed: {
+    modules: ['core', 'sign'], follows: [CORE_FAMILIES], config: {sign: {...SIGN_SECTION, signs: [{id: 'Sign 1', address: SIGN_ADDRESS}]}}, refused: ['sign'],
+  },
+  steps: [
+    expect('health shows the sign refused with invalid-request', async h => {
+      const sign = (await h.health()).find(module => module.name === 'sign');
+      return (sign?.state === 'refused' && sign.reason?.code === 'invalid-request') || `sign ${show(sign)}`;
+    }),
+    expect('the core keeps running', h => running(h, ['core'])),
+    act('the hook observes a session start', h => publish(h, sessionStarted)),
+    expect('the core committed it, and the reader holds the session', h => session(h) !== undefined || 'the reader holds no session'),
+    holds('the refused sign never reached its device', h => h.devices().sign.attempts === 0 || `${h.devices().sign.attempts} attempts`, 300),
+    holds('no log record, message, health entry or reader copy carries the token', h => noToken(h), 100),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
+  configuredModule, misconfiguredModule,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

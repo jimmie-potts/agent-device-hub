@@ -16,7 +16,10 @@ function describe(result: ScenarioResult, h: MemoryHarness): string {
 it('the catalog names each scenario once, and each one observes something', () => {
   const ids = SCENARIOS.map(scenario => scenario.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, ['approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions', 'end-to-end']);
+  assert.deepEqual(ids, [
+    'approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions',
+    'end-to-end', 'configured-module', 'misconfigured-module',
+  ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);
     assert.ok(scenario.steps.some(step => step.kind !== 'act'), `${scenario.id} observes something`);
