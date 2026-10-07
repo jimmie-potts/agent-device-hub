@@ -32,3 +32,8 @@
 
 - [x] 6.1 Update the runtime, SDK, verify, LIFX and playback READMEs and the event contracts' README and MAPPING.md.
 - [x] 6.2 Run the gate from the worktree root: build, typecheck, `lint:js`, the SDK, runtime, scenario, verify, events, maintenance and module suites, MCP's three suites, `test:workflow`, `check:workflow` and `openspec validate --specs --strict`.
+
+## 7. Review round 1
+
+- [x] 7.1 Assert that 600 messages in one turn reach history in a few grouped commits while a timer runs between them (`tracker.test.ts`), that a service process at the default lag limit stays up through the same burst (`process.test.ts`), that each message keeps its verdict within a group, that a part failing on one outcome refuses it alone, that an overflow logs `operation.failed` with `capacity`, and that a refused intake on a full disk is WARN.
+- [x] 7.2 Commit the intake in bounded groups with a turn between them, retry a group that fails for anything but a full disk one message at a time, log refusals at their code's level and record an intake queue overflow; update the runtime spec, the design and the runtime README.

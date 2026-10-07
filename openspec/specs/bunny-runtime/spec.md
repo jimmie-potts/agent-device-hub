@@ -944,9 +944,9 @@ The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `
 
 ### Requirement: Outcome intake and acknowledgment
 
-The core SHALL take every state, removal, occurrence and outcome another participant publishes, on one subscription to every published key, so history keeps each participant's messages in order; it SHALL leave a hook's lifecycle observation to its reducer and keep no acknowledgment. It SHALL drop a duplicate removal, occurrence or outcome by `(source, id)` durably, since history keeps each whole message once, across restarts. It SHALL refuse the same `(source, id)` with other content as `duplicate-conflict`, record it at WARN, keep the message apart for diagnosis, the latest 1,000, and change no operation, open no inbox item and send no acknowledgment. An outcome SHALL advance the operation whose request ID it names, when its subject is the operation's target, its type the command's outcome type and, once the owner replied, its source the owner; any other outcome SHALL be kept in history only.
+The core SHALL take every state, removal, occurrence and outcome another participant publishes, on one subscription to every published key, so history keeps each participant's messages in order; it SHALL leave a hook's lifecycle observation to its reducer and keep no acknowledgment. The intake SHALL commit in bounded groups, at most 100 messages or about 50 ms of its own work each, with a turn of the event loop between groups, so a burst never holds the runtime for one commit per message; within a group each message SHALL keep its own verdict, as below, and a full disk SHALL refuse the whole group. Only a full intake queue SHALL lose a message: the bus drops what the subscription's bounded queue cannot hold, and the core SHALL record each such gap as `operation.failed` with `capacity` and the dropped count. A dropped outcome is not lost, since it stays unacknowledged in its module's outbox and comes again at the module's next start; a dropped occurrence or removal is, and a dropped state's change shows in its entity's next state. It SHALL drop a duplicate removal, occurrence or outcome by `(source, id)` durably, since history keeps each whole message once, across restarts. It SHALL refuse the same `(source, id)` with other content as `duplicate-conflict`, record it at WARN, keep the message apart for diagnosis, the latest 1,000, and change no operation, open no inbox item and send no acknowledgment. An outcome SHALL advance the operation whose request ID it names, when its subject is the operation's target, its type the command's outcome type and, once the owner replied, its source the owner; any other outcome SHALL be kept in history only.
 
-Once a new outcome commits with its history rows and its operation's change, the core SHALL acknowledge it to its module with `outcome-recorded` (`bunny-message-profile`, "Outcome acknowledgment"), added in that transaction so it goes out after the commit. It SHALL acknowledge an exact duplicate again, with no durable work and no second change, so a lost acknowledgment recovers at the module's next start. A commit the store refuses SHALL send no acknowledgment, so the module keeps the outcome and sends it again. Every intake record SHALL be `message.received`, carrying the incoming message's trace and span: INFO for an outcome, occurrence or removal taken and for a duplicate outcome, which recovers an acknowledgment, DEBUG for any other duplicate, WARN for a conflict, and the refusal's code for one the store refused. Each module shipped with the runtime SHALL forget an acknowledged outcome through its outbox (`bunny-sdk`, "Per-module outbox").
+Once a new outcome commits with its history rows and its operation's change, the core SHALL acknowledge it to its module with `outcome-recorded` (`bunny-message-profile`, "Outcome acknowledgment"), added in that transaction so it goes out after the commit. It SHALL acknowledge an exact duplicate again, with no durable work and no second change, so a lost acknowledgment recovers at the module's next start. A commit the store refuses SHALL send no acknowledgment, so the module keeps the outcome and sends it again. Every intake record SHALL be `message.received`, carrying the incoming message's trace and span: INFO for an outcome, occurrence or removal taken and for a duplicate outcome, which recovers an acknowledgment, DEBUG for any other duplicate, WARN for a conflict, and, for one the store refused, its code at that code's level, so a full disk's `unavailable` is WARN. Each module shipped with the runtime SHALL forget an acknowledged outcome through its outbox (`bunny-sdk`, "Per-module outbox").
 
 #### Scenario: A module's crash between saving and reporting
 - **WHEN** a module saves an outcome and the runtime stops before it goes out, and the runtime starts again
@@ -962,7 +962,19 @@ Once a new outcome commits with its history rows and its operation's change, the
 
 #### Scenario: A full disk
 - **WHEN** an outcome arrives while the core store is full, and is sent again once there is room
-- **THEN** the first is refused and not acknowledged, its operation stays pending, and the second completes it and is acknowledged
+- **THEN** the first is refused at WARN with `unavailable` and not acknowledged, its operation stays pending, and the second completes it and is acknowledged
+
+#### Scenario: A burst
+- **WHEN** a module publishes 600 occurrences in one turn
+- **THEN** history takes all 600 in a few grouped commits, a timer set after the burst runs between two of them, and a service process at the default lag limit stays up
+
+#### Scenario: Verdicts within a group
+- **WHEN** one group holds a copy of a message history holds, the same `(source, id)` with other content, a new occurrence with its copy and a conflicting one, a duplicate outcome and a new outcome with its copy
+- **THEN** each copy is a duplicate, each conflict is refused and kept, the duplicate outcome is acknowledged again, the new outcome completes its action and is acknowledged once, and the group commits once
+
+#### Scenario: An intake queue overflow
+- **WHEN** a module publishes more messages in one turn than the intake's queue holds
+- **THEN** the core records one `operation.failed` with `capacity` and the dropped count, and history takes every message that was not dropped
 
 #### Scenario: Trace context on the intake record
 - **WHEN** the core takes an outcome, and a disposable run's follow query asks for that outcome's trace

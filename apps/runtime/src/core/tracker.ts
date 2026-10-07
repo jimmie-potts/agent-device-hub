@@ -12,12 +12,16 @@
 //   other content as `duplicate-conflict`, kept for diagnosis. An outcome that matches a tracked action by its request ID
 //   advances that action (operations.ts). Once the outcome commits, the core acknowledges it to its module, and it
 //   acknowledges an exact duplicate again, so a lost acknowledgment recovers at the module's next start.
+// - The intake commits in groups: what the bus delivered by the next turn of the event loop, up to 100 messages or about
+//   50 ms of work, in one transaction, with a turn between groups, so a burst neither holds the event loop for one
+//   commit per message nor delays other work for long ("a slow consumer lags only itself"). Each message keeps its own
+//   verdict within its group.
 // - Deadlines: one timer for the earliest pending action. A restart loads every pending action and lets its deadline
 //   pass: it ends uncertain, and a late outcome still completes it.
 // - Every step is logged once, in the action's trace, and `message.received` carries the incoming message's trace.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   acknowledgmentOf, levelOf, startSpan, type Cancel, type Clock, type CommandDraft, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing,
@@ -100,6 +104,14 @@ const REQUEST_FIELD = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const RESULTS: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
 const EVIDENCE: readonly unknown[] = ['transmitted', 'observed', 'none'];
 const MAX_DELAY_MS = 2_147_483_647;
+/** The intake's one subscription: every published key. */
+const INTAKE = 'bunny.*.*.*';
+/** An intake group takes at most this many messages into one transaction, */
+const GROUP_MESSAGES = 100;
+/** and no more once its own work has taken this long, so one group holds the event loop only briefly. */
+const GROUP_BUDGET_MS = 50;
+/** One turn of the event loop: timers, I/O and the rest of the runtime's work run before the intake goes on. */
+const nextTurn = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
 /** After a failed sweep, the first wait before the next; each further failure doubles it, up to a minute. */
 const SWEEP_RETRY_MS = 1000;
 const SWEEP_RETRY_MAX_MS = 60_000;
@@ -120,6 +132,10 @@ const messageFields = (message: Message<unknown>): LogFields => ({
   ...(SOURCE.test(message.source) && message.source.length <= 256 ? {'bunny.participant': message.source} : {}),
   ...(ID.test(message.id) ? {'bunny.message.id': message.id} : {}),
   'bunny.message.kind': message.kind,
+});
+/** An intake record's fields for a received message: its own, and an outcome's request ID. */
+const intakeFields = (message: Message<unknown>): LogFields => ({
+  ...messageFields(message), ...message.kind === 'outcome' && isOutcome(message.data) ? requestField(message.data.requestId) : {},
 });
 /** Whether a message's envelope has what history keys it by. The bus checks no payload; a remote edge has checked everything. */
 const wellFormed = (message: Message<unknown>): boolean =>
@@ -145,6 +161,8 @@ class Refused extends Error {
 }
 
 type Statements = {read: StatementSync; insert: StatementSync; update: StatementSync; due: StatementSync; next: StatementSync};
+/** What one message of an intake group records once its group's transaction commits, or is refused with `refusal`. */
+type Settle = (refusal: Refused | undefined) => void | Promise<void>;
 
 export class Tracker {
   readonly #options: TrackerOptions;
@@ -152,8 +170,14 @@ export class Tracker {
   #timer: Cancel | undefined;
   #stopped = false;
   #retry = SWEEP_RETRY_MS;
-  /** The dispatches and intakes under way, which a stop lets finish. */
+  /** The dispatches and the intake's drain under way, which a stop lets finish. */
   readonly #working = new Set<Promise<unknown>>();
+  /** Messages the bus delivered that wait for the intake's next group, in delivery order. */
+  #waiting: Message<unknown>[] = [];
+  /** The intake's drain, while it runs. */
+  #draining: Promise<void> | undefined;
+  /** Lets the bus deliver again: set while a full group waits, so the bus's own bounded queue holds the rest. */
+  #room: (() => void) | undefined;
 
   constructor(options: TrackerOptions) {
     this.#options = options;
@@ -176,10 +200,10 @@ export class Tracker {
   /**
    * Starts the intake on the core's participant: every published key, states and events in one subscription, so history
    * keeps each participant's messages in the order they were published. The core takes it before its first await, so
-   * a module that starts after it and republishes finds it listening.
+   * a module that starts after it and republishes finds it listening. A queue that overflows is recorded.
    */
   start(): Promise<unknown>[] {
-    return [this.#options.sdk.subscribe('bunny.*.*.*', message => this.#work(this.#take(message)))];
+    return [this.#options.sdk.subscribe(INTAKE, message => this.#enqueue(message), {onOverflow: ({dropped}) => { this.#overflowed(dropped); }})];
   }
 
   /**
@@ -190,7 +214,7 @@ export class Tracker {
     this.#schedule();
   }
 
-  /** Stops the deadline timer and lets the dispatches and intakes under way finish. */
+  /** Stops the deadline timer and lets the dispatches and the intake's group under way finish; messages still waiting are dropped. */
   async stop(): Promise<void> {
     this.#stopped = true;
     this.#timer?.();
@@ -298,101 +322,195 @@ export class Tracker {
     return errorBody('uncertain-result', {requestId, detail: 'the action with this request ID has no known reply; it is never sent again'});
   }
 
-  /** Takes one message into history. The intake never fails the core: what it cannot take is recorded and dropped. */
-  async #take(message: Message<unknown>): Promise<void> {
+  /**
+   * Hands one delivered message to the intake, which takes it in its next group. While a full group waits, the bus
+   * waits too, so its own bounded queue holds the rest and reports an overflow.
+   */
+  #enqueue(message: Message<unknown>): Promise<void> | undefined {
+    if (this.#stopped || message.source === this.#options.sdk.source || !wellFormed(message) || !kept(message)) return undefined;
+    this.#waiting.push(message);
+    if (this.#draining === undefined) this.#draining = this.#work(this.#drain());
+    if (this.#waiting.length < GROUP_MESSAGES) return undefined;
+    return new Promise(resolve => { this.#room = resolve; });
+  }
+
+  /** Takes the waiting messages into history, a group at a time with a turn of the event loop before each, until none wait. */
+  async #drain(): Promise<void> {
+    const {ready, store} = this.#options;
     try {
-      await this.#intake(message);
+      await ready;
+      while (this.#waiting.length > 0) {
+        // What the bus delivers until the next turn joins this group, and between groups the event loop runs.
+        await nextTurn();
+        if (this.#stopped || this.#statements === undefined || !store.open) break;
+        await this.#group();
+        this.#makeRoom();
+      }
     } catch {
-      this.#record('error', 'message.received', {...messageFields(message), 'bunny.outcome': 'rejected', 'bunny.code': 'internal'}, message);
+      // A core that failed to start takes nothing; its failure is recorded where it happened.
+    } finally {
+      // Empty unless the intake stopped, the store is not open or the core failed: what still waits is dropped.
+      this.#waiting = [];
+      this.#makeRoom();
+      this.#draining = undefined;
+    }
+  }
+
+  /** Lets the bus deliver to the intake again, if it waits. */
+  #makeRoom(): void {
+    const room = this.#room;
+    this.#room = undefined;
+    room?.();
+  }
+
+  /**
+   * Takes one group into history in one transaction: the waiting messages, up to `GROUP_MESSAGES` or `GROUP_BUDGET_MS`
+   * of work, or `only` alone. Each message keeps its own verdict and records it once the transaction ends. A full disk
+   * refuses the whole group, as it would each message; any other failure takes the group's messages again one at a
+   * time, so a faulty one is refused alone.
+   */
+  async #group(only?: Message<unknown>): Promise<void> {
+    const taken: Message<unknown>[] = [];
+    const settles: Settle[] = [];
+    let refusal: Refused | undefined;
+    try {
+      await this.#transaction(tx => {
+        const began = performance.now();
+        const next = (): Message<unknown> | undefined => {
+          if (only !== undefined) return taken.length === 0 ? only : undefined;
+          if (taken.length >= GROUP_MESSAGES || (taken.length > 0 && performance.now() - began >= GROUP_BUDGET_MS)) return undefined;
+          return this.#waiting.shift();
+        };
+        // The group's own new messages, by (source, id): history holds them only once the group commits.
+        const group = new Map<string, Message<unknown>>();
+        for (let message = next(); message !== undefined; message = next()) {
+          taken.push(message);
+          settles.push(this.#verdict(tx, message, group));
+        }
+      });
+    } catch (error) {
+      refusal = error instanceof Refused ? error : new Refused('internal', 'the core store failed');
+    }
+    if (refusal !== undefined && refusal.code === 'internal' && taken.length > 1) {
+      for (const message of taken) {
+        if (this.#stopped) return;
+        await nextTurn();
+        await this.#group(message);
+      }
+      return;
+    }
+    for (const [index, message] of taken.entries()) {
+      const settle = settles[index];
+      // A message whose own work failed has no verdict: it is refused with its group.
+      if (settle === undefined) this.#refused(message, intakeFields(message), refusal?.code ?? 'internal');
+      else await settle(refusal);
     }
   }
 
   /**
-   * One message another participant published, into history: an outcome, occurrence or removal once by `(source, id)`,
-   * and a state as what changed.
+   * One message's verdict, in its group's transaction: what it writes there, and what it records once the transaction
+   * commits or is refused. An outcome, occurrence or removal is taken once by `(source, id)`; a state is recorded as what
+   * changed.
    */
-  async #intake(message: Message<unknown>): Promise<void> {
-    const {sdk, store, ready, log} = this.#options;
-    if (message.source === sdk.source || !wellFormed(message) || !kept(message)) return;
-    await ready;
-    if (this.#stopped || this.#statements === undefined || !store.open) return;
+  #verdict(tx: CoreTransaction, message: Message<unknown>, group: Map<string, Message<unknown>>): Settle {
+    const {store} = this.#options;
     if (message.kind === 'state') {
-      // A state needs no duplicate check: history keeps only what changed, so a copy adds nothing.
-      await this.#transaction(tx => { tx.record(message); }).catch(() => {});
-      return;
+      // A state needs no duplicate check: history keeps only what changed, so a copy adds nothing. It has no record.
+      tx.record(message);
+      return () => {};
     }
-    const verdict = store.history.received(message);
-    const fields: LogFields = {...messageFields(message), ...message.kind === 'outcome' && isOutcome(message.data) ? requestField(message.data.requestId) : {}};
+    const fields = intakeFields(message);
+    const key = `${message.source} ${message.id}`;
+    const earlier = group.get(key);
+    const verdict = earlier === undefined ? store.history.received(message) : compareDelivery(earlier, message);
     if (verdict === 'duplicate') {
-      // A duplicate outcome is acknowledged again, so a lost acknowledgment recovers: a recovery, at INFO. Any other
-      // duplicate, as a crash's resend, is a duplicate observation, at DEBUG. Neither needs durable work.
-      if (message.kind !== 'outcome') {
-        log.debug('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
-        return;
-      }
-      log.info('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
-      const {key, draft} = acknowledgmentOf(message);
-      await sdk.publish(key, draft, {parent: message}).catch(() => {});
-      return;
+      // A copy of a message this group takes stands or falls with it, and the first one's acknowledgment covers both.
+      if (earlier !== undefined) return refusal => { if (refusal === undefined) this.#duplicate(message, fields); else this.#refused(message, fields, refusal.code); };
+      // One that history holds needs no durable work, and an outcome is acknowledged again, so a lost acknowledgment recovers.
+      return async () => {
+        this.#duplicate(message, fields);
+        if (message.kind === 'outcome') await this.#acknowledge(message);
+      };
     }
     if (verdict === 'conflict') {
       // A faulty message, never a conflicting outcome: refused, kept for diagnosis, with no acknowledgment and no change.
-      log.warn('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, message);
-      await this.#transaction(tx => { store.history.refuse(message, tx.atMs); }).catch(() => {});
-      return;
+      store.history.refuse(message, tx.atMs);
+      return () => { this.#refused(message, fields, 'duplicate-conflict'); };
     }
+    if (message.kind === 'outcome' && !isOutcome(message.data)) return () => { this.#refused(message, fields, 'invalid-message'); };
+    group.set(key, message);
     if (message.kind !== 'outcome') {
-      // An occurrence or removal taken once is accepted work, at INFO; a state's change is recorded without a record.
-      await this.#transaction(tx => { tx.record(message); }).then(() => {
-        log.info('message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
-      }, (error: unknown) => {
-        log.info('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(error instanceof Refused ? error.code : 'internal')}, message);
-      });
-      return;
+      tx.record(message);
+      return refusal => { this.#settled(message, fields, refusal); };
     }
-    await this.#outcome(message, fields);
+    const outcome = message as Message<CompletedOutcome>;
+    const advanced = this.#outcome(tx, outcome);
+    return refusal => {
+      this.#settled(message, fields, refusal);
+      if (refusal === undefined && advanced !== undefined) this.#completed(advanced, outcome.data);
+    };
   }
 
   /**
-   * A new outcome: history keeps it, the action it completes advances, and the core acknowledges it, all in one
-   * transaction. A refused commit sends no acknowledgment, so the module keeps the outcome and sends it again.
+   * A new outcome, in its group's transaction: history keeps it, the action it completes advances, and the core's
+   * acknowledgment is added, to go out once the transaction commits. A refused commit sends none, so the module keeps
+   * the outcome and sends it again. Returns the action it advanced, if any.
    */
-  async #outcome(message: Message<unknown>, fields: LogFields): Promise<void> {
-    const {log} = this.#options;
-    if (!isOutcome(message.data)) {
-      log.info('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('invalid-message')}, message);
-      return;
+  #outcome(tx: CoreTransaction, outcome: Message<CompletedOutcome>): Operation | undefined {
+    const {data} = outcome;
+    tx.record(outcome);
+    const operation = this.#read(data.requestId);
+    let advanced: Operation | undefined;
+    if (operation !== undefined && completes(operation, outcome)) {
+      const taken: TakenOutcome = {
+        source: outcome.source, id: outcome.id, result: data.result, evidence: data.evidence, atMs: tx.atMs, ...(data.error === undefined ? {} : {error: data.error}),
+      };
+      advanced = advance(operation, {type: 'outcome', outcome: taken});
+      if (advanced !== undefined) {
+        this.#write(advanced);
+        this.#changed(tx, 'outcome', {operation: advanced, previous: operation, outcome}, {source: outcome.source, id: outcome.id});
+      }
     }
-    const data = message.data;
-    const outcome = message as Message<CompletedOutcome>;
-    let change: {previous: Operation; next: Operation} | undefined;
-    try {
-      change = await this.#transaction(tx => {
-        tx.record(outcome);
-        const operation = this.#read(data.requestId);
-        let advanced: {previous: Operation; next: Operation} | undefined;
-        if (operation !== undefined && completes(operation, outcome)) {
-          const taken: TakenOutcome = {
-            source: outcome.source, id: outcome.id, result: data.result, evidence: data.evidence, atMs: tx.atMs, ...(data.error === undefined ? {} : {error: data.error}),
-          };
-          const next = advance(operation, {type: 'outcome', outcome: taken});
-          if (next !== undefined) {
-            this.#write(next);
-            this.#changed(tx, 'outcome', {operation: next, previous: operation, outcome}, {source: outcome.source, id: outcome.id});
-            advanced = {previous: operation, next};
-          }
-        }
-        // Acknowledged once the outcome commits: the acknowledgment goes out after the commit, from the core.
-        const {key, draft} = acknowledgmentOf(outcome);
-        tx.add(key, draft, {parent: outcome});
-        return advanced;
-      });
-    } catch (error) {
-      log.info('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(error instanceof Refused ? error.code : 'internal')}, message);
-      return;
-    }
-    log.info('message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
-    if (change !== undefined) this.#completed(change.next, data);
+    const {key, draft} = acknowledgmentOf(outcome);
+    tx.add(key, draft, {parent: outcome});
+    return advanced;
+  }
+
+  /** An outcome, occurrence or removal the group took: accepted work at INFO once it commits, or refused with the commit. */
+  #settled(message: Message<unknown>, fields: LogFields, refusal: Refused | undefined): void {
+    if (refusal === undefined) this.#record('info', 'message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
+    else this.#refused(message, fields, refusal.code);
+  }
+
+  /**
+   * A duplicate's intake record: a duplicate outcome is a recovery of its acknowledgment, at INFO; any other duplicate,
+   * as a crash's resend, is a duplicate observation, at DEBUG.
+   */
+  #duplicate(message: Message<unknown>, fields: LogFields): void {
+    this.#record(message.kind === 'outcome' ? 'info' : 'debug', 'message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
+  }
+
+  /** Acknowledges an outcome history already holds again, directly, with no durable work. */
+  async #acknowledge(outcome: Message<unknown>): Promise<void> {
+    const {key, draft} = acknowledgmentOf(outcome);
+    await this.#options.sdk.publish(key, draft, {parent: outcome}).catch(() => {});
+  }
+
+  /** A refused message's intake record, at its code's level. */
+  #refused(message: Message<unknown>, fields: LogFields, code: ErrorCode): void {
+    this.#record(levelOf(code), 'message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(code)}, message);
+  }
+
+  /**
+   * The bus dropped messages for the intake, whose queue was full, so history misses them. An outcome is not lost: its
+   * module's outbox keeps it until acknowledged and sends it again at its next start. An occurrence or a removal is, and
+   * a state's change shows in its entity's next one.
+   */
+  #overflowed(dropped: number | undefined): void {
+    this.#record(levelOf('capacity'), 'operation.failed', {
+      'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
+      ...(dropped === undefined ? {} : {'bunny.delivery.dropped_count': dropped}),
+    });
   }
 
   /** The record of an outcome that advanced an action: INFO for success, WARN for a failed, uncertain or conflicting result. */

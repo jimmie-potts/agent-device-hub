@@ -3,10 +3,11 @@
 // outcomes, the outcome acknowledgment, a full disk, and history rows written in each step's own transaction. A scripted
 // gadget module (fixtures/gadget.ts) plays the device and reports through its own outbox.
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {BunnyModule} from '@jimmie-potts/sdk';
+import type {BunnyModule, Sdk} from '@jimmie-potts/sdk';
 import {
   DEADLINES, createCoreModule, type ActionAnswer, type CoreHandle, type CoreModule, type LogRecord, type Operation, type OperationChange,
   type OperationStep, type Runtime,
@@ -33,6 +34,8 @@ async function trackerRun(context: TestContext, options: {
   gadget?: Gadget; dir?: string; manual?: boolean; extra?: readonly BunnyModule[];
   /** The spans the runtime may lose, such as a publish that a crash left unfinished. */
   lostSpans?: number;
+  /** A request ID whose outcome the recording part fails on, as a faulty part would. */
+  failOutcomeOf?: string;
 } = {}): Promise<TrackerRun> {
   const changes: OperationChange[] = [];
   let database: DatabaseSync | undefined;
@@ -40,7 +43,10 @@ async function trackerRun(context: TestContext, options: {
   const core = createCoreModule({parts: [{
     open: db => { database = db; },
     start: given => { handle = given; return Promise.resolve(); },
-    tracked: change => { changes.push(change); },
+    tracked: change => {
+      if (change.outcome !== undefined && change.operation.requestId === options.failOutcomeOf) throw new Error('the part failed');
+      changes.push(change);
+    },
   }]});
   const gadget = options.gadget ?? new Gadget();
   const clock = options.manual === true ? manualClock(Date.now()) : undefined;
@@ -306,7 +312,8 @@ it('the dispatcher refuses what is no tracked action before anything is recorded
 });
 
 it('a full disk refuses an action with unavailable and storage-full before anything is sent, and an outcome is not acknowledged until it commits', async context => {
-  const t = await trackerRun(context);
+  const sender = fixture('sender');
+  const t = await trackerRun(context, {extra: [sender]});
   await t.dispatch('req-before');
   await waitFor(() => t.operation('req-before')?.status === 'completed', 5000, 'the first action');
   t.gadget.script({outcome: 'none'});
@@ -324,6 +331,16 @@ it('a full disk refuses an action with unavailable and storage-full before anyth
     5000, 'the refused intake');
   assert.equal(t.gadget.acknowledged.includes(outcome.id), false, 'no acknowledgment before the commit');
   assert.equal(t.operation('req-outcome-later')?.status, 'accepted');
+  // Each refused intake is logged at its code's level: `unavailable` is WARN, for an outcome and an occurrence alike.
+  const occurred = await contextOf(sender).sdk.publish('bunny.event.thing.t1', {
+    kind: 'occurrence', type: 'org.bunny.thing.switched', subject: 't1', dataschema: 'https://bunny.invalid/events/thing-switched/2.0', data: {thing: 't1'},
+  });
+  const refusalOf = (id: string): LogRecord | undefined => t.logs.find(record => record.event_name === 'message.received' && record.attributes['bunny.message.id'] === id &&
+    record.attributes['bunny.outcome'] === 'rejected');
+  await waitFor(() => refusalOf(occurred.id) !== undefined, 5000, 'the refused occurrence');
+  for (const id of [outcome.id, occurred.id]) {
+    assert.deepEqual([refusalOf(id)?.severity_text, refusalOf(id)?.attributes['bunny.code'], refusalOf(id)?.attributes['bunny.reason']], ['WARN', 'unavailable', 'unavailable']);
+  }
   // An outcome no action awaits changes no operation row; its history row alone would commit, and still it is not
   // acknowledged while the commit is refused.
   const untracked = await t.gadget.report('req-untracked', {result: 'succeeded', evidence: 'observed'});
@@ -369,4 +386,118 @@ it('history keeps every occurrence and removal another module publishes, once, a
   ], 'what changed, not a snapshot: a repeat, a stale state and a state at the removal\'s revision add nothing');
   assert.deepEqual(rows().map(row => row.kind), ['change', 'change', 'change', 'occurrence', 'removal'], 'the resent occurrence is taken once');
   assert.deepEqual(rows()[3]?.record, occurred, 'an occurrence is kept whole');
+});
+
+const THING_SWITCHED = {type: 'org.bunny.thing.switched', dataschema: 'https://bunny.invalid/events/thing-switched/2.0'};
+/** How many occurrences from `source` history holds. */
+const occurrences = (t: TrackerRun, source: string): number =>
+  (t.database().prepare('SELECT COUNT(*) AS n FROM core_history WHERE kind = \'occurrence\' AND source = ?').get(source) as {n: number}).n;
+/** How many transactions the core store has committed. */
+const commits = (t: TrackerRun): number => (t.database().prepare('SELECT commits FROM core_revision').get() as {commits: number}).commits;
+/** The core's intake records of one message. */
+const intakeOf = (t: TrackerRun, id: string): string[] => t.logs
+  .filter(record => record.event_name === 'message.received' && record.attributes['bunny.module'] === 'core' && record.attributes['bunny.message.id'] === id)
+  .map(record => `${String(record.attributes['bunny.outcome'])} ${record.severity_text}${record.attributes['bunny.code'] === undefined ? '' : ` ${String(record.attributes['bunny.code'])}`}`);
+
+/** Publishes `count` occurrences from `sdk` in one turn, round robin over ten things; resolves once each went out. */
+function burst(sdk: Sdk, count: number): Promise<unknown> {
+  const sent: Promise<unknown>[] = [];
+  for (let n = 0; n < count; n += 1) sent.push(sdk.publish(`bunny.event.thing.t${n % 10}`, {kind: 'occurrence', ...THING_SWITCHED, subject: `t${n % 10}`, data: {n}}));
+  return Promise.all(sent);
+}
+
+it('a burst of 600 messages in one turn reaches history in a few grouped commits, and the event loop turns between them', async context => {
+  const sender = fixture('burst');
+  const t = await trackerRun(context, {extra: [sender]});
+  const before = commits(t);
+  const began = performance.now();
+  const sent = burst(contextOf(sender).sdk, 600);
+  // A timer set right after the burst runs between two of the intake's commits, not once all of them are done.
+  const timer = await new Promise<{afterMs: number; taken: number}>(resolve => {
+    setTimeout(() => { resolve({afterMs: performance.now() - began, taken: occurrences(t, 'bunny/modules/burst')}); }, 0);
+  });
+  await sent;
+  assert.ok(timer.afterMs < 1000, `the timer ran ${Math.round(timer.afterMs)} ms after the burst`);
+  assert.ok(timer.taken < 600, `the intake yields between its commits: ${timer.taken} of 600 were in history when the timer ran`);
+  await waitFor(() => occurrences(t, 'bunny/modules/burst') === 600, 15_000, 'all 600 in history');
+  const used = commits(t) - before;
+  assert.ok(used <= 30, `the intake groups its commits: ${used} for 600 messages`);
+});
+
+it('each message in a group keeps its own verdict: a copy is a duplicate, other content a conflict, and an outcome is acknowledged once', async context => {
+  const sender = fixture('sender');
+  const t = await trackerRun(context, {extra: [sender]});
+  const {sdk} = contextOf(sender);
+  // An occurrence and an outcome that history already holds.
+  const held = await sdk.publish('bunny.event.thing.t1', {kind: 'occurrence', ...THING_SWITCHED, subject: 't1', data: {n: 1}});
+  await t.dispatch('req-held');
+  await waitFor(() => t.operation('req-held')?.status === 'completed', 5000, 'the first outcome');
+  const [heldOutcome] = t.gadget.published;
+  assert.ok(heldOutcome);
+  await waitFor(() => t.gadget.acknowledged.includes(heldOutcome.id) && intakeOf(t, held.id).length === 1, 5000, 'the first intake');
+  t.gadget.script({outcome: 'none'});
+  await t.dispatch('req-new');
+  const before = commits(t);
+  // All in one turn, so one group takes them: each message's verdict is its own.
+  const fresh = {...held, id: randomUUID(), data: {n: 2}};
+  const outcome = {...heldOutcome, id: randomUUID(), data: {requestId: 'req-new', result: 'succeeded', evidence: 'observed'}};
+  await Promise.all([
+    sdk.publishMessage('bunny.event.thing.t1', held),
+    sdk.publishMessage('bunny.event.thing.t1', {...held, data: {n: 9}}),
+    sdk.publishMessage('bunny.event.thing.t1', fresh),
+    sdk.publishMessage('bunny.event.thing.t1', fresh),
+    sdk.publishMessage('bunny.event.thing.t1', {...fresh, data: {n: 8}}),
+    t.gadget.forge(heldOutcome, heldOutcome.data),
+    t.gadget.forge(outcome, outcome.data),
+    t.gadget.forge(outcome, outcome.data),
+  ]);
+  await waitFor(() => t.operation('req-new')?.status === 'completed', 5000, 'the new outcome');
+  await waitFor(() => t.gadget.acknowledged.filter(id => id === heldOutcome.id).length === 2 && t.gadget.acknowledged.includes(outcome.id), 5000, 'the acknowledgments');
+  await new Promise(resolve => { setTimeout(resolve, 50); });
+  assert.equal(commits(t) - before, 1, 'one group, one commit');
+  assert.deepEqual(intakeOf(t, held.id), ['accepted INFO', 'rejected WARN duplicate-conflict'], 'a copy of a held message is a duplicate at DEBUG, other content a conflict');
+  assert.deepEqual(intakeOf(t, fresh.id), ['accepted INFO', 'rejected WARN duplicate-conflict'], 'within the group too');
+  assert.deepEqual(intakeOf(t, outcome.id), ['accepted INFO', 'duplicate INFO']);
+  const rows = (id: string): number => (t.database().prepare('SELECT COUNT(*) AS n FROM core_history WHERE message_id = ?').get(id) as {n: number}).n;
+  assert.deepEqual([rows(held.id), rows(fresh.id), rows(outcome.id)], [1, 1, 1], 'history holds each message once');
+  const kept = t.database().prepare('SELECT message FROM core_refused ORDER BY seq').all() as {message: string}[];
+  assert.deepEqual(kept.map(row => (JSON.parse(row.message) as Message<{n: number}>).data.n), [9, 8], 'both conflicts are kept for diagnosis');
+  assert.equal(t.operation('req-new')?.outcomes.length, 1);
+  assert.deepEqual(t.gadget.acknowledged.filter(id => id === outcome.id), [outcome.id], 'the new outcome and its copy are acknowledged once, after their commit');
+});
+
+it('a part that fails on one outcome refuses that outcome alone: the rest of its group still reaches history', async context => {
+  const sender = fixture('sender');
+  const t = await trackerRun(context, {extra: [sender], failOutcomeOf: 'req-boom'});
+  t.gadget.script({outcome: 'none'});
+  await t.dispatch('req-boom');
+  const {sdk} = contextOf(sender);
+  const [first, outcome, second] = await Promise.all([
+    sdk.publish('bunny.event.thing.t1', {kind: 'occurrence', ...THING_SWITCHED, subject: 't1', data: {n: 1}}),
+    t.gadget.report('req-boom', {result: 'succeeded', evidence: 'observed'}),
+    sdk.publish('bunny.event.thing.t2', {kind: 'occurrence', ...THING_SWITCHED, subject: 't2', data: {n: 2}}),
+  ]);
+  await waitFor(() => intakeOf(t, outcome.id).length === 1 && occurrences(t, 'bunny/modules/sender') === 2, 5000, 'the intake');
+  assert.deepEqual(intakeOf(t, outcome.id), ['rejected ERROR internal'], 'the faulty outcome is refused, at ERROR');
+  assert.deepEqual([intakeOf(t, first.id), intakeOf(t, second.id)], [['accepted INFO'], ['accepted INFO']]);
+  assert.equal(t.operation('req-boom')?.status, 'accepted', 'its action is unchanged');
+  await flush();
+  assert.equal(t.gadget.acknowledged.includes(outcome.id), false, 'and it is not acknowledged');
+});
+
+it('an intake queue that overflows logs what it dropped as operation.failed with capacity, and takes the rest', async context => {
+  const sender = fixture('burst');
+  const t = await trackerRun(context, {extra: [sender]});
+  // The core's subscription holds 1,024 waiting messages, the bus's default; a burst past that loses the rest.
+  const sent = burst(contextOf(sender).sdk, 1300);
+  const overflows = (): LogRecord[] => t.logs.filter(record => record.event_name === 'operation.failed' && record.attributes['bunny.module'] === 'core' &&
+    record.attributes['bunny.code'] === 'capacity');
+  await waitFor(() => overflows().length > 0, 5000, 'the overflow record');
+  await sent;
+  const dropped = overflows().reduce((sum, record) => sum + Number(record.attributes['bunny.delivery.dropped_count']), 0);
+  assert.ok(dropped > 0);
+  await waitFor(() => occurrences(t, 'bunny/modules/burst') + dropped === 1300, 15_000, 'every message not dropped in history');
+  assert.deepEqual(overflows().map(record => [
+    record.severity_text, record.attributes['bunny.operation'], record.attributes['bunny.outcome'], record.attributes['bunny.reason'], record.attributes['bunny.pattern'],
+  ]), [['WARN', 'storage', 'failed', 'busy', 'bunny.*.*.*']], 'one record for the gap');
 });

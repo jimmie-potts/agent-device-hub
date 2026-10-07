@@ -78,7 +78,20 @@ const listener = module('listener', async ({sdk, log}) => {
   });
 });
 
+/** Publishes 600 occurrences in one turn, shortly after the modules have started, as a module catching up at its start might. */
+const burster = module('burster', ({sdk, scheduler}) => {
+  scheduler.after(200, () => {
+    for (let n = 0; n < 600; n += 1) {
+      void sdk.publish(`bunny.event.thing.t${n % 10}`, {
+        kind: 'occurrence', type: 'org.bunny.thing.switched', subject: `t${n % 10}`, dataschema: 'https://bunny.invalid/events/thing-switched/2.0', data: {n},
+      }).catch(() => {});
+    }
+  });
+});
+
 const scenarios: Record<string, readonly BunnyModule[]> = {
+  // A burst the core's history takes at the default lag limit (Hub #782).
+  burst: [createRealCore(), burster],
   // The process dies between the core's commit and its publish (Hub #831): its outbox holds the session's messages.
   'core-crash': [createRealCore({beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), listener, hook],
   // The next start, with no hook: the core sends what it stored, once.

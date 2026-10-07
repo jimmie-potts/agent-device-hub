@@ -185,7 +185,14 @@ and exits 1, and the service manager restarts it whole.
   a refused commit sends none, so the module keeps the outcome. Each intake's
   `message.received` record carries the incoming message's trace and span: INFO
   for an outcome, occurrence or removal taken, and for a duplicate outcome,
-  which recovers an acknowledgment.
+  which recovers an acknowledgment; a refusal at its code's level, so a full
+  disk's `unavailable` is WARN. The intake commits in groups, at most 100
+  messages or about 50 ms of its own work each, with a turn of the event loop
+  between groups, so a burst never holds the runtime for a commit per message.
+  Each message keeps its own verdict in its group, and a full disk refuses the
+  group. A full intake queue loses what the bus drops, logged as
+  `operation.failed` with `capacity`: an outcome comes again from its module's
+  outbox, but an occurrence or removal is gone.
 - **History** (`src/core/history.ts`). Private rows in the core store, with no
   time limit, written in the transaction that commits what they record: every
   removal, occurrence and outcome whole; each state change, the core's own and
