@@ -38,6 +38,14 @@ test('the strict rules cover new code and skip old and staged code', async () =>
   }
 });
 
+// The profile block's reach is fixed: the strict globs and module JavaScript, minus staged code and the test globs that
+// docs/development.md "Safe-error rules" lists. Widening `ignores` or narrowing `files` needs this test changed too.
+test('the safe-error profile block covers exactly the documented files', () => {
+  const profile = config.find(block => block.name === 'bunny/safe-errors');
+  assert.deepEqual(profile.files, [...strictGlobs, 'modules/**/*.{js,mjs}']);
+  assert.deepEqual(profile.ignores, [...stagedGlobs, '**/tests/**', '**/*.test.{ts,tsx,js,mjs}']);
+});
+
 test('the safe-error rules cover production code under the profile, not its tests', async () => {
   const eslint = new ESLint({cwd: root});
   const production = ['apps/runtime/src/a.ts', 'apps/runtime/verify/a.ts', 'packages/sdk/src/a.ts', 'packages/sdk/src/testing/a.ts',
@@ -378,6 +386,11 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     {code: 'function fail(r) { return r?.reason instanceof Error ? r.reason.message : "failed"; }', errors: rawText('message')},
     {code: 'function fail(task) { if (!(task.state.error instanceof Error)) return; write(task.state.error.cause); }', errors: rawText('cause')},
     {code: 'class Job { #failure = null; report() { if (this.#failure instanceof Error) write(this.#failure.message); } }', errors: rawText('message')},
+    // `this` in an arrow function is its enclosing method's, so the method's test reaches it.
+    {code: 'class Job { #failure = null; report() { if (this.#failure instanceof Error) setTimeout(() => write(this.#failure.message)); } }', errors: rawText('message')},
+    // A test on another chain proves nothing about this one, even with the same root.
+    {code: "import {UsageError} from './u.js'; export function f(r) { if (r.reason instanceof Error) { if (r.other instanceof UsageError) write(r.reason.message); } }",
+      errors: rawText('message')},
   ]),
 });
 
