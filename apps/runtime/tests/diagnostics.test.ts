@@ -10,7 +10,7 @@ import {DeviceAvailability, connectRemote, traceFields, type Command, type Reply
 import {diagnosticWriter} from '../src/diagnostics.js';
 import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
-import {RUNTIME_SCOPE} from '../src/record.js';
+import {MODULE_SCOPE, RUNTIME_SCOPE} from '../src/record.js';
 import {contextOf, deferred, fixture, it, manualClock, run, setMode, stateDir} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
@@ -195,4 +195,15 @@ it('an edge\'s summary of a repeated refusal is one valid record with the count 
   assert.deepEqual(written.map(record => [record.event_name, record.severity_text, record.attributes]), [['runtime.edge.refused', 'WARN', {
     'bunny.route': 'stream', 'bunny.code': 'unauthenticated', 'bunny.reason': 'unauthorized', 'bunny.attempt_count': 4, 'bunny.provenance': 'source',
   }]]);
+});
+
+it('a device whose ID the contract refuses still writes its records, without the ID', () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', {now: () => Date.parse('2026-10-07T12:00:00.000Z')});
+  const devices = new DeviceAvailability({log: writer.logger(MODULE_SCOPE, {'bunny.module': 'lamp'}), clock: {now: () => Date.parse('2026-10-07T12:00:00.000Z')}});
+  devices.unreachable('http://192.0.2.7/?token=tok_SYNTHETIC123', 'unavailable');
+  devices.reached('http://192.0.2.7/?token=tok_SYNTHETIC123');
+  assert.deepEqual(writer.counts(), {written: 2, dropped: 0, failed: 0}, 'kept, not dropped');
+  assert.deepEqual(written.map(record => [record.event_name, 'bunny.device.id' in record.attributes]), [['device.unavailable', false], ['device.available', false]]);
+  assert.equal(JSON.stringify(written).includes(SECRET), false);
 });

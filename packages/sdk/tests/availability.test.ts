@@ -55,3 +55,17 @@ it('a logger that throws never reaches the module', () => {
     devices.reached('lamp-1');
   });
 });
+
+it('a device ID the contract\'s pattern refuses is left out, and its records are kept', () => {
+  const {devices, entries} = polled();
+  const address = 'http://192.0.2.7/?token=tok_SYNTHETIC123';
+  devices.unreachable(address, 'unavailable');
+  devices.unreachable('lamp-1', 'unavailable');
+  devices.reached(address);
+  assert.deepEqual(entries, [
+    {level: 'warn', event: 'device.unavailable', fields: {'bunny.code': 'unavailable', 'bunny.attempt_count': 1}},
+    {level: 'warn', event: 'device.unavailable', fields: {'bunny.device.id': 'lamp-1', 'bunny.code': 'unavailable', 'bunny.attempt_count': 1}},
+    {level: 'info', event: 'device.available', fields: {'bunny.attempt_count': 1, 'bunny.duration_ms': 0}},
+  ], 'each device is still tracked apart');
+  assert.equal(JSON.stringify(entries).includes('tok_SYNTHETIC123'), false);
+});

@@ -630,7 +630,8 @@ per poll. `unreachable(device, code, trace?)` logs the first failure as one
 `device.unavailable` summary at DEBUG at most once a minute. `reached(device,
 trace?)` after failures logs one `device.available` record with
 `bunny.attempt_count` and `bunny.duration_ms`; while the device is available it
-logs nothing.
+logs nothing. A device ID that the contract's `bunny.device.id` pattern refuses,
+such as an address with a path, is left out of its records, which are kept.
 
 ## Remote transport
 

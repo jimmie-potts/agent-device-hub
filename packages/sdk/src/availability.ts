@@ -9,6 +9,14 @@ import type {Clock, TraceContext} from './sdk.js';
 export const SUMMARY_MS = 60_000;
 // The diagnostic contract's bound on a duration.
 const MAX_DURATION_MS = 86_400_000;
+// The diagnostic contract's `bunny.device.id` pattern.
+const DEVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/**
+ * The device's ID as a record's field, or nothing for an ID the contract's pattern refuses, such as an address with a
+ * path: the record keeps the rest rather than be dropped whole, as a request ID that its pattern refuses is left out.
+ */
+const deviceOf = (device: string): LogFields => DEVICE_ID.test(device) ? {'bunny.device.id': device} : {};
 
 export type AvailabilityOptions = {
   /** The module's logger. */
@@ -39,13 +47,13 @@ export class DeviceAvailability {
     const outage = this.#outages.get(device);
     if (outage === undefined) {
       this.#outages.set(device, {sinceMs: now, failed: 1, unsummarized: 0, summarizedAtMs: now});
-      this.#write('warn', 'device.unavailable', {'bunny.device.id': device, 'bunny.code': code, 'bunny.attempt_count': 1}, trace);
+      this.#write('warn', 'device.unavailable', {...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': 1}, trace);
       return;
     }
     outage.failed += 1;
     outage.unsummarized += 1;
     if (now - outage.summarizedAtMs < SUMMARY_MS) return;
-    this.#write('debug', 'device.unavailable', {'bunny.device.id': device, 'bunny.code': code, 'bunny.attempt_count': outage.unsummarized}, trace);
+    this.#write('debug', 'device.unavailable', {...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': outage.unsummarized}, trace);
     outage.unsummarized = 0;
     outage.summarizedAtMs = now;
   }
@@ -59,7 +67,7 @@ export class DeviceAvailability {
     if (outage === undefined) return;
     this.#outages.delete(device);
     const duration = Math.min(MAX_DURATION_MS, Math.max(0, this.#clock.now() - outage.sinceMs));
-    this.#write('info', 'device.available', {'bunny.device.id': device, 'bunny.attempt_count': outage.failed, 'bunny.duration_ms': duration}, trace);
+    this.#write('info', 'device.available', {...deviceOf(device), 'bunny.attempt_count': outage.failed, 'bunny.duration_ms': duration}, trace);
   }
 
   /** Whether `device` is unreachable now. */

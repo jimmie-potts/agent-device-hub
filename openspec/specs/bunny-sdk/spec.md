@@ -670,11 +670,15 @@ An `Outbox` given the module's `log` SHALL record an outcome's first publication
 
 ### Requirement: Device availability
 
-The SDK SHALL offer `DeviceAvailability`, which takes a module's `log` and clock. `unreachable(device, code, trace?)` SHALL log a device's first failure as one `device.unavailable` record at WARN, and SHALL count later failures and log them as one `device.unavailable` summary at DEBUG with `bunny.attempt_count` at most once a minute. `reached(device, trace?)` after failures SHALL log one `device.available` record at INFO with the count of failed attempts and the outage's duration; while the device is available it SHALL log nothing.
+The SDK SHALL offer `DeviceAvailability`, which takes a module's `log` and clock. `unreachable(device, code, trace?)` SHALL log a device's first failure as one `device.unavailable` record at WARN, and SHALL count later failures and log them as one `device.unavailable` summary at DEBUG with `bunny.attempt_count` at most once a minute. `reached(device, trace?)` after failures SHALL log one `device.available` record at INFO with the count of failed attempts and the outage's duration; while the device is available it SHALL log nothing. A device ID that the contract's `bunny.device.id` pattern refuses SHALL be left out of these records, which SHALL be kept, as a request ID that its pattern refuses is.
 
 #### Scenario: A polled device that stays offline
 - **WHEN** a device fails 200 polls over ten minutes and then answers
 - **THEN** at INFO and above there is one `device.unavailable` warning and one `device.available` record that counts 200 failures, and at DEBUG at most one summary a minute
+
+#### Scenario: A device ID outside the pattern
+- **WHEN** a module reports a device whose ID is an address with a path and a token
+- **THEN** its `device.unavailable` and `device.available` records are written without `bunny.device.id`, and the ID appears in none of them
 
 ### Requirement: Safe default error report
 
