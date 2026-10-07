@@ -54,17 +54,30 @@ export function assertContractRecords(records: readonly LogRecord[]): void {
 }
 
 /**
- * A runtime on a free loopback port with a fresh state directory, collecting its log records. It stops after the test,
- * and every record it wrote must then pass the diagnostic contract's validator.
+ * Fails unless the writer dropped exactly `dropped` records and its sink lost none, as `runtime.stopped` counts them. A
+ * record the contract refuses never reaches the sink, so only these counts show it.
+ */
+export function assertNoLostRecords(records: readonly LogRecord[], dropped = 0): void {
+  const stopped = records.find(record => record.event_name === 'runtime.stopped');
+  assert.ok(stopped, 'the runtime wrote runtime.stopped');
+  assert.equal(stopped.attributes['bunny.telemetry.dropped_count'], dropped, 'records the contract refused');
+  assert.equal(stopped.attributes['bunny.telemetry.failure_count'], 0, 'records the sink lost');
+}
+
+/**
+ * A runtime on a free loopback port with a fresh state directory, collecting its log records. It stops after the test.
+ * Then every record it wrote must pass the diagnostic contract's validator, and, unless the test passes its own sink, the
+ * writer must have dropped none, or exactly `expected.dropped` for a test that logs refused records on purpose.
  */
 export async function run(
-  context: TestContext, options: Partial<RuntimeOptions> & {modules: readonly BunnyModule[]},
+  context: TestContext, options: Partial<RuntimeOptions> & {modules: readonly BunnyModule[]}, expected: {dropped?: number} = {},
 ): Promise<{runtime: Runtime; logs: LogRecord[]}> {
   const logs: LogRecord[] = [];
   const runtime = await startRuntime({port: 0, stateDir: await stateDir(context), log: record => { logs.push(record); }, ...options});
   context.after(async () => {
     await runtime.stop();
     assertContractRecords(logs);
+    if (options.log === undefined) assertNoLostRecords(logs, expected.dropped);
   });
   return {runtime, logs};
 }

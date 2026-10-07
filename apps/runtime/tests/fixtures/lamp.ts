@@ -147,7 +147,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       await followStandInAcks(sdk, acknowledgments, id => { log.info('outbox.acknowledged', {'bunny.message.id': id}); });
       // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.
       const count = await outbox.republish();
-      log.info('outbox.republished', {'bunny.message.count': count});
+      log.info('outbox.republished', {'bunny.outbox.republished_count': count});
 
       // The core's mode and sessions: quiet mode keeps the lamps off, and the indicator shows a session that waits.
       let mode = 'work';

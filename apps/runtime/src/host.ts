@@ -263,7 +263,7 @@ export class ModuleHost {
       return;
     }
     if (slot === undefined) {
-      this.#log.error('runtime.handler.failed', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, ...errorFields(error)});
+      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...errorFields(error)});
       return;
     }
     this.#fail(slot, {code: 'internal', detail: 'a handler threw', phase: 'handler'}, error);
@@ -276,7 +276,7 @@ export class ModuleHost {
       open.count += 1;
       return;
     }
-    this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': 1});
+    this.#log.warn('runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': 1});
     const drops: Drops = {scope, count: 0, cancel: () => {}};
     this.#drops.set(key, drops);
     this.#openWindow(key, drops);
@@ -301,7 +301,7 @@ export class ModuleHost {
   #logDrops(drops: Drops): void {
     const {scope, count} = drops;
     drops.count = 0;
-    if (count > 0) this.#log.warn('runtime.delivery.dropped', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, 'bunny.dropped.count': count});
+    if (count > 0) this.#log.warn('runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': count});
   }
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */

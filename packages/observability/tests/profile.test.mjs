@@ -15,26 +15,54 @@ const runtime = {...hub, schema_version: '1.2', event_name: 'runtime.started', b
 const module = {...hub, schema_version: '1.2', event_name: 'command.completed', body: 'Command completed',
   resource: runtimeResource, scope: {name: 'bunny.module', version: '1.0.0'},
   attributes: {'bunny.provenance': 'source', 'bunny.module': 'lamp', 'bunny.outcome': 'succeeded'}};
+/**
+ * Profile 1.0's vocabulary, pinned here: each later profile is the one before plus its `additions`, so a name the catalog
+ * registers without listing it as an addition fails this test instead of silently joining every profile.
+ */
+const PROFILE_1_0 = {
+  services: ['hub', 'hub-dashboard', 'local-controllers', 'tidbyt', 'lifx', 'pixoo', 'pixoo-web', 'pixoo-media-worker', 'nanoleaf-controller',
+    'nanoleaf-worker', 'nanoleaf-wall', 'nanoleaf-wall-ui', 'nanoleaf-mcp', 'bunny-tool'],
+  scopes: ['bunny.host', 'bunny.http', 'bunny.mcp', 'bunny.state', 'bunny.provider', 'bunny.controller', 'bunny.queue', 'bunny.status', 'bunny.feed',
+    'bunny.automation', 'bunny.playback', 'bunny.media', 'bunny.storage', 'bunny.browser', 'bunny.helper', 'bunny.verification', 'bunny.telemetry'],
+  events: ['process.started', 'process.stopped', 'process.failed', 'command.admitted', 'command.rejected', 'command.queued', 'command.executing',
+    'command.completed', 'command.cancelled', 'lifecycle.observed', 'feed.changed', 'operation.completed', 'operation.failed', 'telemetry.dropped'],
+  attributes: ['bunny.controller.id', 'bunny.device.id', 'bunny.source.id', 'bunny.request.id', 'bunny.ticket.epoch', 'bunny.operation.id',
+    'bunny.task.epoch', 'bunny.effect.epoch', 'bunny.clock.epoch', 'bunny.ticket.sequence', 'bunny.state.revision', 'bunny.source.revision',
+    'bunny.generation', 'bunny.telemetry.dropped_count', 'bunny.telemetry.failure_count', 'bunny.duration_ms', 'bunny.queue.wait_ms',
+    'bunny.execution.duration_ms', 'bunny.operation', 'bunny.outcome', 'bunny.reason', 'bunny.provenance', 'bunny.observed.service',
+    'bunny.write.possible', 'bunny.build.revision'],
+};
+const KINDS = ['services', 'scopes', 'events', 'attributes'];
+/** Each profile's vocabulary: profile 1.0's, then each later profile's additions on top of the one before. */
+function profiles() {
+  const result = {'1.0': PROFILE_1_0};
+  for (const [index, version] of versions.entries()) {
+    if (index === 0) continue;
+    const previous = result[versions[index - 1]], addition = catalog.additions[version] ?? {};
+    result[version] = Object.fromEntries(KINDS.map(kind => [kind, [...previous[kind], ...(addition[kind] ?? [])]]));
+  }
+  return result;
+}
 /** A valid value for each attribute that a profile after 1.0 adds. Adding an attribute needs an example here. */
 const examples = {
   'bunny.queue.depth': 2,
   'bunny.module': 'lamp',
-  'bunny.source': 'bunny/modules/lamp',
+  'bunny.participant': 'bunny/modules/lamp',
   'bunny.pattern': 'bunny.event.*.*',
   'bunny.code': 'internal',
   'bunny.phase': 'handler',
-  'bunny.modules': 2,
+  'bunny.module_count': 2,
   'bunny.timeout_ms': 5000,
   'bunny.exit_code': 1,
-  'bunny.lag.ms': 10250,
+  'bunny.lag.duration_ms': 10250,
   'bunny.lag.limit_ms': 10000,
-  'bunny.dropped.count': 3,
+  'bunny.delivery.dropped_count': 3,
   'bunny.message.id': '6f1c2d4e-8a9b-4c3d-9e2f-0a1b2c3d4e5f',
   'bunny.message.kind': 'outcome',
-  'bunny.message.count': 3,
+  'bunny.outbox.republished_count': 3,
   'bunny.simulate': true,
   'bunny.edge': true,
-  'bunny.grants': 1,
+  'bunny.grant_count': 1,
   'bunny.route': 'stream',
   'server.port': 41000,
   'error.type': 'RuntimeError',
@@ -65,6 +93,15 @@ test('the schema and the catalog register the same vocabulary', () => {
   same(properties.scope.properties.name.enum, catalog.scopes, 'scopes');
   assert.deepEqual(properties.attributes.properties, catalog.attributes);
   assert.equal(new Set(Object.values(catalog.events)).size, Object.keys(catalog.events).length, 'every body is distinct');
+});
+
+test('the catalog registers exactly profile 1.0\'s vocabulary plus each later profile\'s additions', () => {
+  const latest = profiles()[versions.at(-1)];
+  const registered = {services: catalog.services, scopes: catalog.scopes, events: Object.keys(catalog.events), attributes: Object.keys(catalog.attributes)};
+  for (const kind of KINDS) {
+    assert.deepEqual([...registered[kind]].sort(), [...latest[kind]].sort(), `${kind}: every name after profile 1.0 is some profile's addition`);
+    assert.equal(new Set(latest[kind]).size, latest[kind].length, `${kind}: no name is added twice`);
+  }
 });
 
 test('each profile\'s additions are registered, and every earlier profile rejects them', () => {
@@ -136,12 +173,24 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   assert.equal(projectRecord(hub, '1.3').ok, false);
 });
 
+test('construction keeps only the attributes the record\'s own profile registers', () => {
+  const later = {...hub.attributes, 'error.type': 'TypeError', 'bunny.queue.depth': 2};
+  const defaulted = {...hub, attributes: later};
+  delete defaulted.schema_version;
+  const built = createRecord(defaulted);
+  assert.equal(built.ok, true, 'a default profile 1.1 record leaves out a profile 1.2 attribute rather than fail');
+  assert.equal(built.value.schema_version, '1.1');
+  assert.deepEqual(built.value.attributes, {'bunny.provenance': 'source', 'bunny.queue.depth': 2});
+  assert.deepEqual(createRecord(at({...hub, attributes: later}, '1.0')).value.attributes, {'bunny.provenance': 'source'});
+  assert.deepEqual(createRecord(at({...hub, attributes: later}, '1.2')).value.attributes, later);
+});
+
 test('construction keeps an explicit profile 1.2 and discards what the catalog does not register', () => {
   const built = createRecord({...module, attributes: {...module.attributes, 'error.message': 'SECRET token=abc', detail: 'SECRET'}});
   assert.equal(built.ok, true);
   assert.equal(built.value.schema_version, '1.2');
   assert.equal(JSON.stringify(built.value).includes('SECRET'), false);
   assert.equal(validateRecord({...module, attributes: {...module.attributes, 'error.message': 'SECRET'}}).ok, false);
-  assert.equal(createRecord({...module, attributes: {...module.attributes, 'bunny.source': 'https://example.invalid/?token=SECRET'}}).ok, false,
+  assert.equal(createRecord({...module, attributes: {...module.attributes, 'bunny.participant': 'https://example.invalid/?token=SECRET'}}).ok, false,
     'a registered attribute never carries a URL or a token');
 });

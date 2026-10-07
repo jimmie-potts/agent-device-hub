@@ -126,7 +126,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   }
   // The ready line is machine-readable stdout with its own contract, which readiness checks parse; the record is the
   // journal's.
-  log.info('runtime.ready', {'bunny.modules': options.modules.length});
+  log.info('runtime.ready', {'bunny.module_count': options.modules.length});
   process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtime.url})}\n`);
 }
 

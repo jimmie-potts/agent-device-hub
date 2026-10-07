@@ -34,7 +34,7 @@ while (Atomics.load(view, STOP) === 0) {
   const now = performance.now();
   const lagMs = observe(state, Atomics.load(view, BEATS), now, now - before, intervalMs);
   if (lagMs >= limitMs && Atomics.load(view, STOP) === 0) {
-    const attributes = {'bunny.lag.limit_ms': Math.min(limitMs, MAX_MS), 'bunny.lag.ms': Math.min(Math.round(lagMs), MAX_MS)};
+    const attributes = {'bunny.lag.limit_ms': Math.min(limitMs, MAX_MS), 'bunny.lag.duration_ms': Math.min(Math.round(lagMs), MAX_MS)};
     const stuck = record('fatal', RUNTIME_SCOPE, 'runtime.stuck', attributes, Date.now(), resource);
     try {
       if (stuck !== undefined) writeSync(2, `${JSON.stringify(stuck)}\n`);

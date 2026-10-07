@@ -2223,7 +2223,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2
+          "bunny.module_count": 2
         }
       }
     },
@@ -2279,7 +2279,7 @@
         "attributes": {
           "bunny.provenance": "source",
           "bunny.lag.limit_ms": 10000,
-          "bunny.lag.ms": 10250
+          "bunny.lag.duration_ms": 10250
         }
       }
     },
@@ -2336,9 +2336,9 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.source": "bunny/modules/lamp",
+          "bunny.participant": "bunny/modules/lamp",
           "bunny.pattern": "bunny.event.*.*",
-          "bunny.dropped.count": 3
+          "bunny.delivery.dropped_count": 3
         }
       }
     },
@@ -2365,7 +2365,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.source": "bunny/kit",
+          "bunny.participant": "bunny/kit",
           "bunny.pattern": "sync mode,session",
           "error.type": "Error"
         }
@@ -2429,7 +2429,7 @@
         "attributes": {
           "bunny.provenance": "source",
           "bunny.module": "core",
-          "bunny.source": "bunny/modules/lamp",
+          "bunny.participant": "bunny/modules/lamp",
           "bunny.message.id": "6f1c2d4e-8a9b-4c3d-9e2f-0a1b2c3d4e5f",
           "bunny.message.kind": "outcome",
           "bunny.outcome": "accepted",
@@ -2461,7 +2461,7 @@
         "attributes": {
           "bunny.provenance": "source",
           "bunny.module": "lamp",
-          "bunny.message.count": 3
+          "bunny.outbox.republished_count": 3
         }
       }
     },
@@ -2488,7 +2488,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2
+          "bunny.module_count": 2
         }
       }
     },
@@ -2779,7 +2779,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2
+          "bunny.module_count": 2
         }
       }
     },
@@ -2805,7 +2805,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2
+          "bunny.module_count": 2
         }
       }
     },
@@ -2831,7 +2831,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2
+          "bunny.module_count": 2
         }
       }
     },
@@ -2915,8 +2915,8 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2,
-          "bunny.source": "http://127.0.0.1:8791/?token=SECRET"
+          "bunny.module_count": 2,
+          "bunny.participant": "http://127.0.0.1:8791/?token=SECRET"
         }
       }
     },
@@ -2972,7 +2972,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2,
+          "bunny.module_count": 2,
           "server.port": 41000,
           "bunny.simulate": true,
           "bunny.edge": true
@@ -3003,7 +3003,7 @@
         "attributes": {
           "bunny.provenance": "source",
           "server.port": 41000,
-          "bunny.grants": 2
+          "bunny.grant_count": 2
         }
       }
     },
@@ -3031,7 +3031,7 @@
         "attributes": {
           "bunny.provenance": "source",
           "bunny.route": "stream",
-          "bunny.source": "bunny/parts/reader"
+          "bunny.participant": "bunny/parts/reader"
         }
       }
     },
@@ -3061,7 +3061,7 @@
           "bunny.route": "publish",
           "bunny.code": "forbidden",
           "bunny.reason": "unauthorized",
-          "bunny.source": "bunny/parts/reader"
+          "bunny.participant": "bunny/parts/reader"
         }
       }
     },
@@ -3200,7 +3200,7 @@
         },
         "attributes": {
           "bunny.provenance": "source",
-          "bunny.modules": 2,
+          "bunny.module_count": 2,
           "bunny.url": "http://127.0.0.1:41000"
         }
       }
@@ -3315,6 +3315,97 @@
         "attributes": {
           "bunny.provenance": "source",
           "bunny.route": "stream"
+        }
+      }
+    },
+    {
+      "name": "default-profile-later-attribute",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "TypeError"
+        }
+      }
+    },
+    {
+      "name": "module-message-id-2.0-form",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "message.received",
+        "body": "Message received",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.message.id": "_outcome.7-a",
+          "bunny.message.kind": "outcome",
+          "bunny.outcome": "accepted",
+          "bunny.request.id": "req-1"
+        }
+      }
+    },
+    {
+      "name": "module-message-id-colon",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "message.received",
+        "body": "Message received",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.message.id": "urn:outcome:7",
+          "bunny.message.kind": "outcome",
+          "bunny.outcome": "accepted",
+          "bunny.request.id": "req-1"
         }
       }
     }

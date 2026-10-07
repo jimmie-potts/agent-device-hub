@@ -73,7 +73,8 @@ it('a module\'s record with an unregistered event or an invalid value is not wri
     log.warn('operation.failed', {'bunny.device.id': 'lamp-1', 'bunny.reason': 'unavailable', 'error.message': leak, detail: leak, stack: leak});
     log.error('operation.failed', {'bunny.device.id': leak});
   });
-  const {logs} = await run(context, {modules: [careless]});
+  // The unregistered event, the runtime's own event and the URL: three records the writer drops and counts.
+  const {logs} = await run(context, {modules: [careless]}, {dropped: 3});
   const records = logs.filter(record => record.scope.name === 'bunny.module');
   assert.deepEqual(records.map(record => record.event_name), ['operation.failed'], 'only the record with a registered event and valid values');
   assert.deepEqual(records[0]?.attributes, {'bunny.module': 'careless', 'bunny.provenance': 'source', 'bunny.device.id': 'lamp-1', 'bunny.reason': 'unavailable'});

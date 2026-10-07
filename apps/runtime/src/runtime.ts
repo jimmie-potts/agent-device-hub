@@ -143,14 +143,15 @@ function close(server: Server): Promise<void> {
 const EDGE_ROUTES: ReadonlySet<string> = new Set(['stream', 'publish', 'subscribe', 'request', 'respond', 'reply', 'sync', 'serve', 'answer', 'close']);
 
 /**
- * Each 2.0 registry code's fixed meaning as the diagnostic contract's registered `bunny.reason`. `internal` has none;
- * its record carries only the code. A test keeps this in step with the registry and the catalog.
+ * Each 2.0 registry code's fixed meaning as the diagnostic contract's registered `bunny.reason`. `internal` has none, and
+ * neither has `uncertain-result`, whose effect may have happened, which no transport failure explains; such a record
+ * carries only the code. A test keeps this in step with the registry and the catalog.
  */
 export const REGISTRY_REASONS: Readonly<Record<string, string | undefined>> = {
   'invalid-request': 'invalid-input', 'invalid-message': 'invalid-input', 'too-large': 'oversize', 'unsupported-version': 'unsupported-version',
   'unknown-schema': 'invalid-input', 'unsupported-capability': 'invalid-input', 'unauthenticated': 'unauthorized', 'forbidden': 'unauthorized',
   'not-found': 'invalid-input', 'invalid-state': 'invalid-input', 'revision-conflict': 'stale', 'duplicate-conflict': 'duplicate',
-  'expired': 'timeout', 'cancelled': 'cancelled', 'capacity': 'busy', 'unavailable': 'unavailable', 'uncertain-result': 'transport-error',
+  'expired': 'timeout', 'cancelled': 'cancelled', 'capacity': 'busy', 'unavailable': 'unavailable', 'uncertain-result': undefined,
   'internal': undefined,
 };
 
@@ -168,7 +169,7 @@ function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
       'bunny.route': EDGE_ROUTES.has(route) ? route : 'other',
       ...(known === undefined ? {} : {'bunny.code': known}),
       ...(reason === undefined ? {} : {'bunny.reason': reason}),
-      ...(source === undefined ? {} : {'bunny.source': source}),
+      ...(source === undefined ? {} : {'bunny.participant': source}),
     };
     switch (event) {
       case 'edge.refused':
@@ -240,7 +241,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   }
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   // A record carries the listener's port, never its URL.
-  log.info('runtime.started', {'server.port': bound, 'bunny.modules': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
+  log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
   await host.start();
   if (grants !== undefined && validator !== undefined) {
     let mounted: RemoteEdge;
@@ -253,7 +254,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
     }
     edge = {state: 'serving', edge: mounted};
-    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grants': grants.length});
+    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': grants.length});
     options.edge?.onServing?.(mounted);
   }
   let stopping: Promise<void> | undefined;

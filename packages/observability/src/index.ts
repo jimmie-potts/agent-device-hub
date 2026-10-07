@@ -25,6 +25,13 @@ const failure = ():Result<never> => ({ok:false,code:'invalid-record'});
 const events:Record<string,string> = catalogData.events;
 const severities:Record<string,number> = catalogData.severities;
 export const catalog = Object.freeze(structuredClone(catalogData));
+const additions:Record<string,{attributes?:string[]}> = catalogData.additions;
+/** The attributes a profile registers: every attribute but those a later profile adds. An unknown profile keeps all. */
+function profileAttributes(version:unknown):string[] {
+  const index=typeof version==='string'?catalogData.schema_versions.indexOf(version):-1;
+  const later=new Set(index<0?[]:catalogData.schema_versions.slice(index+1).flatMap(next=>additions[next]?.attributes??[]));
+  return Object.keys(catalogData.attributes).filter(name=>!later.has(name));
+}
 
 // Only bounded JSON data is accepted. Do not call getters or toJSON methods.
 function snapshot(input:unknown, depth=0, budget={nodes:0}):unknown {
@@ -73,7 +80,8 @@ function own(input:unknown,key:string):unknown {
   const descriptor=Object.getOwnPropertyDescriptor(input,key);
   return descriptor && 'value' in descriptor ? descriptor.value : undefined;
 }
-// Projection precedes any serialization. Unknown keys and raw errors are never read.
+// Projection precedes any serialization. Unknown keys and raw errors are never read, and an attribute the record's own
+// profile does not register is left out, as an unknown one is.
 export function createRecord(input:unknown):Result<DiagnosticRecord> {
   try {
     const value:Record<string,unknown>={};
@@ -86,7 +94,7 @@ export function createRecord(input:unknown):Result<DiagnosticRecord> {
     value.body=events[value.event_name];
     value.severity_number=severities[value.severity_text];
     for(const [key,keys] of [
-      ['attributes',Object.keys(catalogData.attributes)],
+      ['attributes',profileAttributes(value.schema_version)],
       ['resource',Object.keys(schema.properties.resource.properties)],
       ['scope',['name','version']],
     ] as const) {

@@ -72,7 +72,7 @@ it('a remote part with a run grant connects and syncs the stand-in core\'s sessi
   assert.equal(((await bare.json()) as {error: {code: string}}).error.code, 'unauthenticated');
 
   const connected = logs.filter(record => record.event_name === 'runtime.edge.connected');
-  assert.deepEqual(connected.map(record => record.attributes['bunny.source']), [reader.source]);
+  assert.deepEqual(connected.map(record => record.attributes['bunny.participant']), [reader.source]);
   assert.equal(JSON.stringify(logs).includes(reader.token), false, 'no token reaches a log record');
 });
 
@@ -190,7 +190,7 @@ it('runtime.started says whether modules are simulated and the edge is configure
   assert.ok(order.indexOf('runtime.edge.serving') > order.lastIndexOf('runtime.module.started'), `the edge serves after every module started: ${order.join(', ')}`);
   const serving = simulated.logs.find(record => record.event_name === 'runtime.edge.serving');
   const port = Number(new URL(simulated.runtime.url).port);
-  assert.deepEqual(serving?.attributes, {'server.port': port, 'bunny.grants': 1, 'bunny.provenance': 'source'}, 'the port, never the URL');
+  assert.deepEqual(serving?.attributes, {'server.port': port, 'bunny.grant_count': 1, 'bunny.provenance': 'source'}, 'the port, never the URL');
   assert.equal(started(simulated.logs)?.['server.port'], port);
   assert.equal(JSON.stringify(simulated.logs).includes(simulated.runtime.url), false);
 });
@@ -235,17 +235,18 @@ it('an edge refusal is logged with a known route, its registry code and that cod
     assert.equal(record.attributes['bunny.reason'], REGISTRY_REASONS[code], 'the reason is the code\'s registered reason');
     assert.equal('bunny.detail' in record.attributes, false, 'no detail');
   }
-  assert.deepEqual(refusals.map(record => record.attributes['bunny.source']), [part.source, part.source, undefined]);
+  assert.deepEqual(refusals.map(record => record.attributes['bunny.participant']), [part.source, part.source, undefined]);
   assert.equal(JSON.stringify(logs).includes(marker), false, 'nothing the caller sent reaches a log record');
 });
 
-it('every registry code has a fixed registered reason, except internal, which carries only its code', () => {
+it('every registry code has a fixed registered reason, except internal and uncertain-result, which carry only their code', () => {
   assert.deepEqual(Object.keys(REGISTRY_REASONS).sort(), Object.keys(errorCodes).sort());
   const reasons: readonly unknown[] = catalog.attributes['bunny.reason'].enum;
   for (const [code, reason] of Object.entries(REGISTRY_REASONS)) {
-    if (code === 'internal') assert.equal(reason, undefined);
+    if (code === 'internal' || code === 'uncertain-result') assert.equal(reason, undefined, `${code} has no reason: its effect is unknown`);
     else assert.ok(reasons.includes(reason), `${code}: ${String(reason)}`);
   }
+  assert.equal(REGISTRY_REASONS['duplicate-conflict'], 'duplicate', 'as the stand-in core logs a conflict');
 });
 
 it('a module factory builds the module with its real transport, or with its simulated one', () => {

@@ -65,7 +65,7 @@ void test('a crash between the lamp\'s commit and its publish restarts the runti
   await until(async () => (await fetch(new URL('/api/runtime/v1/health', run.url)).catch(() => undefined))?.ok === true, 'health on the same port');
   const now = await state(run);
   const republished = now.logs.filter(({generation, record}) => generation === 2 && record.attributes['bunny.module'] === 'lamp' && record.event_name === 'outbox.republished');
-  assert.deepEqual(republished.map(entry => entry.record.attributes['bunny.message.count']), [3]);
+  assert.deepEqual(republished.map(entry => entry.record.attributes['bunny.outbox.republished_count']), [3]);
   // Hub #903: every record of the run is a diagnostic-contract record of a test environment, and the restart is a new process.
   for (const {record} of now.logs) assert.equal(parseRecord(JSON.stringify(record)).ok, true, `${record.event_name} is a contract record`);
   assert.deepEqual([...new Set(now.logs.map(entry => entry.record.resource['deployment.environment.name']))], ['test']);

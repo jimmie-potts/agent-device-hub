@@ -91,6 +91,12 @@ it('the watchdog thread\'s runtime.stuck record is a contract record with the pr
   assert.equal(stuck.attributes['bunny.lag.limit_ms'], 300);
 });
 
+it('the watchdog still kills a stuck process whose stderr is closed, though it cannot write runtime.stuck', async context => {
+  const runtime = start(context, FIXTURE, ['stuck', '--port', '0', '--state-dir', await stateDir(context), '--lag-limit-ms', '300'], true);
+  const stillRunning = new Promise(resolve => { setTimeout(() => { resolve('still running'); }, 10_000).unref(); });
+  assert.deepEqual(await Promise.race([runtime.exited, stillRunning]), {code: null, signal: 'SIGKILL'});
+});
+
 it('a process whose stderr is closed keeps serving, and still stops cleanly on SIGTERM', async context => {
   const runtime = start(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)], true);
   await Promise.race([ready(runtime), runtime.exited.then(exit => assert.fail(`exited: ${JSON.stringify(exit)}`))]);

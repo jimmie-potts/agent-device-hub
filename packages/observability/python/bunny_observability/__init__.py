@@ -125,6 +125,16 @@ def encode_record(value):
     return _encode(result['value']) if result['ok'] else None
 
 
+def _profile_attributes(catalog, version):
+    """The attributes a profile registers: every attribute but those a later profile adds."""
+    versions = catalog['schema_versions']
+    later = set()
+    if type(version) is str and version in versions:
+        for following in versions[versions.index(version) + 1:]:
+            later.update(catalog['additions'].get(following, {}).get('attributes', []))
+    return [name for name in catalog['attributes'] if name not in later]
+
+
 def create_record(value):
     try:
         if type(value) is not dict:
@@ -135,7 +145,7 @@ def create_record(value):
         selected.setdefault('schema_version', SCHEMA_VERSION)
         selected['body'] = catalog['events'].get(selected.get('event_name'))
         selected['severity_number'] = catalog['severities'].get(selected.get('severity_text'))
-        for key, keys in (('attributes', catalog['attributes']),
+        for key, keys in (('attributes', _profile_attributes(catalog, selected.get('schema_version'))),
                           ('resource', schema['properties']['resource']['properties']),
                           ('scope', ('name', 'version'))):
             source = value.get(key)

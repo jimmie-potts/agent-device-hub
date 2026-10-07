@@ -49,22 +49,22 @@
       ],
       "attributes": [
         "bunny.module",
-        "bunny.source",
+        "bunny.participant",
         "bunny.pattern",
         "bunny.code",
         "bunny.phase",
-        "bunny.modules",
+        "bunny.module_count",
         "bunny.timeout_ms",
         "bunny.exit_code",
-        "bunny.lag.ms",
+        "bunny.lag.duration_ms",
         "bunny.lag.limit_ms",
-        "bunny.dropped.count",
+        "bunny.delivery.dropped_count",
         "bunny.message.id",
         "bunny.message.kind",
-        "bunny.message.count",
+        "bunny.outbox.republished_count",
         "bunny.simulate",
         "bunny.edge",
-        "bunny.grants",
+        "bunny.grant_count",
         "bunny.route",
         "server.port",
         "error.type",
@@ -366,7 +366,7 @@
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])",
       "maxLength": 64
     },
-    "bunny.source": {
+    "bunny.participant": {
       "type": "string",
       "pattern": "^bunny(?:/[a-z0-9][a-z0-9-]*)+(?![\\s\\S])",
       "maxLength": 256
@@ -410,7 +410,7 @@
         "stop"
       ]
     },
-    "bunny.modules": {
+    "bunny.module_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
@@ -425,7 +425,7 @@
       "minimum": -2147483648,
       "maximum": 2147483647
     },
-    "bunny.lag.ms": {
+    "bunny.lag.duration_ms": {
       "type": "number",
       "minimum": 0,
       "maximum": 86400000
@@ -435,14 +435,14 @@
       "minimum": 0,
       "maximum": 86400000
     },
-    "bunny.dropped.count": {
+    "bunny.delivery.dropped_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
     },
     "bunny.message.id": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+      "pattern": "^[A-Za-z0-9_.-]{1,128}(?![\\s\\S])"
     },
     "bunny.message.kind": {
       "enum": [
@@ -456,7 +456,7 @@
         "sync-completed"
       ]
     },
-    "bunny.message.count": {
+    "bunny.outbox.republished_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
@@ -467,7 +467,7 @@
     "bunny.edge": {
       "type": "boolean"
     },
-    "bunny.grants": {
+    "bunny.grant_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

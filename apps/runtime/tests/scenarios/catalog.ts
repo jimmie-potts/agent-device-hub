@@ -233,7 +233,7 @@ const received = (h: Harness, requestId: string): number =>
   commands(h).filter(entry => entry.record.attributes['bunny.request.id'] === requestId).length;
 const acknowledgments = (h: Harness, from = 1): number => logged(h, 'lamp', 'outbox.acknowledged', from).length;
 const republished = (h: Harness, from: number): unknown[] =>
-  logged(h, 'lamp', 'outbox.republished', from).map(entry => entry.record.attributes['bunny.message.count']);
+  logged(h, 'lamp', 'outbox.republished', from).map(entry => entry.record.attributes['bunny.outbox.republished_count']);
 async function running(h: Harness, names: readonly string[]): Promise<Outcome> {
   const report = await h.health();
   const states = names.map(name => `${name} ${report.find(module => module.name === name)?.state ?? 'missing'}`);

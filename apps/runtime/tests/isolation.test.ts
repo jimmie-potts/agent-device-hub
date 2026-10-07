@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
 import {SdkError, type Reply} from '@jimmie-potts/sdk';
+import {ModuleHost} from '../src/host.js';
 import {contain, type LogRecord, type Runtime} from '../src/index.js';
-import {contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, turnEnded, waitFor, type Fixture} from './support.js';
+import {LogWriter} from '../src/log.js';
+import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
 
 const WORKERS = new URL('./fixtures/', import.meta.url);
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
@@ -145,6 +147,45 @@ it('an error that escapes a module\'s own async flow stops only that module', as
   await stillWorks(probe);
 });
 
+it('a later error from a module that has already failed is logged as runtime.module.error-after-stop, with where it arose', async context => {
+  const trigger = deferred<undefined>();
+  const twice = fixture('twice', () => {
+    void trigger.promise.then(() => {
+      contain(new Error('the first escaped'));
+      contain(new TypeError('the second escaped'));
+    });
+  });
+  const {runtime, logs} = await run(context, {modules: [twice, steady()]});
+  trigger.resolve(undefined);
+  await failed(runtime, 'twice');
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.module.error-after-stop'), 5000, 'the later error');
+  assert.equal(logs.filter(record => record.event_name === 'runtime.module.failed').length, 1, 'the module fails once');
+  assert.deepEqual(logs.find(record => record.event_name === 'runtime.module.error-after-stop')?.attributes, {
+    'bunny.module': 'twice', 'bunny.phase': 'async', 'error.type': 'TypeError', 'bunny.provenance': 'source',
+  }, 'a stop problem names where it arose, with no registry code');
+});
+
+it('a handler outside every module that throws is logged as runtime.handler.failed, naming its participant and pattern', async context => {
+  const logs: LogRecord[] = [];
+  const writer = new LogWriter(record => { logs.push(record); }, 'info', {now: () => Date.now()});
+  const host = new ModuleHost([], {
+    clock: {now: () => Date.now()}, scheduler: {after: (delayMs, callback) => { const timer = setTimeout(callback, delayMs); return () => { clearTimeout(timer); }; }},
+    stateDir: await stateDir(context), logs: writer, startTimeoutMs: 1000, stopTimeoutMs: 1000,
+  });
+  await host.start();
+  const part = host.bus.connect('bunny/parts/probe');
+  const publisher = host.bus.connect('bunny/parts/publisher');
+  context.after(async () => { await Promise.all([part.close(), publisher.close()]); await host.stop(); });
+  await part.subscribe('bunny.event.session.*', () => { throw new Error('the part failed'); });
+  await publisher.publish('bunny.event.session.s1', turnEnded);
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.handler.failed'), 5000, 'the handler failure');
+  assert.deepEqual(logs.find(record => record.event_name === 'runtime.handler.failed')?.attributes, {
+    'bunny.participant': 'bunny/parts/probe', 'bunny.pattern': 'bunny.event.session.*', 'error.type': 'Error', 'bunny.provenance': 'source',
+  });
+  assertContractRecords(logs);
+  assert.deepEqual(writer.counts(), {written: logs.length, dropped: 0, failed: 0}, 'no record was refused');
+});
+
 it('a module\'s stop never waits on another module\'s handler', async context => {
   const stuck = deferred<Reply>();
   // Registered before the runtime's stop, so a failed assertion cannot leave the stop waiting on this handler.
@@ -246,11 +287,11 @@ it('dropped deliveries are logged once at once, then at most once a minute while
     }
   };
   const drops = (): LogRecord[] => logs.filter(record => record.event_name === 'runtime.delivery.dropped');
-  const counts = (): unknown[] => drops().map(record => record.attributes['bunny.dropped.count']);
+  const counts = (): unknown[] => drops().map(record => record.attributes['bunny.delivery.dropped_count']);
   await burst(1100);
   assert.equal(drops().length, 1, 'the first drop is logged at once');
   assert.deepEqual(drops()[0]?.attributes, {
-    'bunny.source': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.dropped.count': 1, 'bunny.provenance': 'source',
+    'bunny.participant': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.delivery.dropped_count': 1, 'bunny.provenance': 'source',
   });
   clock.advance(60_000);
   assert.equal(drops().length, 2, 'the rest of the first minute is one record');

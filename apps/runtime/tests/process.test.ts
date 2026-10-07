@@ -219,7 +219,7 @@ it('an outcome committed before a kill between commit and publish is taken exact
   assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');
 
   const restarted = await launch(context, FIXTURE, ['lamp-restart', ...args]);
-  assert.equal(of(restarted, 'lamp', 'outbox.republished')[0]?.attributes['bunny.message.count'], 3, 'the state, the occurrence and the outcome');
+  assert.equal(of(restarted, 'lamp', 'outbox.republished')[0]?.attributes['bunny.outbox.republished_count'], 3, 'the state, the occurrence and the outcome');
   await waitFor(() => of(restarted, 'lamp', 'outbox.acknowledged').length > 0, 10_000, 'the core\'s acknowledgment');
   restarted.child.kill('SIGTERM');
   assert.deepEqual(await restarted.exited, {code: 0, signal: null});
@@ -233,7 +233,7 @@ it('an outcome committed before a kill between commit and publish is taken exact
   const again = await launch(context, FIXTURE, ['lamp-restart', ...args]);
   again.child.kill('SIGTERM');
   assert.deepEqual(await again.exited, {code: 0, signal: null});
-  assert.equal(of(again, 'lamp', 'outbox.republished')[0]?.attributes['bunny.message.count'], 0);
+  assert.equal(of(again, 'lamp', 'outbox.republished')[0]?.attributes['bunny.outbox.republished_count'], 0);
   assert.equal(of(again, 'core', 'message.received').length, 0, 'exactly once across all three runs');
   assert.equal(of(again, 'lamp', 'command.executing').length, 0);
 });

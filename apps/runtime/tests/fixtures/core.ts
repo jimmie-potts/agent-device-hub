@@ -120,8 +120,9 @@ export function createCoreModule({mode = 'work'}: CoreOptions = {}): BunnyModule
         const verdict = compareDelivery(row === undefined ? undefined : JSON.parse(row.message) as Message, message);
         const requestId = (message.data as {requestId?: unknown}).requestId;
         log.info('message.received', {
-          'bunny.source': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.outcome': TAKEN[verdict],
-          ...(verdict === 'conflict' ? {'bunny.reason': 'invalid-input'} : {}), ...(typeof requestId === 'string' ? {'bunny.request.id': requestId} : {}),
+          'bunny.participant': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.outcome': TAKEN[verdict],
+          // A conflict is `duplicate-conflict` in the registry; its registered reason is `duplicate`, as in the edge's records.
+          ...(verdict === 'conflict' ? {'bunny.reason': 'duplicate'} : {}), ...(typeof requestId === 'string' ? {'bunny.request.id': requestId} : {}),
         });
         if (verdict === 'conflict' || (verdict === 'duplicate' && message.kind !== 'outcome')) return;
         await outbox.transaction(add => {
