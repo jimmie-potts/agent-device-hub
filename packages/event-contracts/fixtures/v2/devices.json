@@ -1,0 +1,1103 @@
+{
+ "description": "The 2.0 device families (Hub #918): the `device` state family and the general command families mapped from controller contract v1. `valid` holds one message for every device family, a removal, and a reply and an outcome for each command family. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails, and `expect` is its registry code. tests/devices.test.mjs runs them, and checks each command against its target device's capabilities.",
+ "valid": {
+  "device-nanoleaf": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-wall",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.device.updated",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "wall",
+    "revision": 41,
+    "kind": "nanoleaf",
+    "label": "Office wall",
+    "availability": "available",
+    "configurationRevision": 7,
+    "generation": {
+     "epoch": "generation-3",
+     "sequence": 12
+    },
+    "capabilities": {
+     "power": {
+      "supported": true
+     },
+     "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+     },
+     "modes": {
+      "supported": true,
+      "values": [
+       "work",
+       "quiet",
+       "free"
+      ]
+     },
+     "moments": {
+      "supported": false
+     },
+     "media": {
+      "supported": false
+     },
+     "scenes": {
+      "supported": true,
+      "sceneIds": [
+       "scene-sunrise",
+       "scene-forest"
+      ]
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": false
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "known",
+      "value": 60
+     },
+     "mode": {
+      "status": "known",
+      "value": "work"
+     }
+    },
+    "observed": {
+     "status": "known",
+     "observedAtMs": 1791287998000,
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "known",
+      "value": 45
+     }
+    },
+    "pending": 1,
+    "lastOutcome": {
+     "status": "known",
+     "outcome": {
+      "requestId": "req-wall-6",
+      "result": "succeeded",
+      "evidence": "transmitted"
+     }
+    },
+    "externalControl": {
+     "status": "known",
+     "owner": "module",
+     "observedAtMs": 1791287998000
+    }
+   }
+  },
+  "device-pixoo": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-pixoo-desk",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.device.updated",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "pixoo-desk",
+    "revision": 9,
+    "kind": "pixoo",
+    "label": "Desk display",
+    "availability": "degraded",
+    "configurationRevision": 3,
+    "generation": {
+     "epoch": "generation-1",
+     "sequence": 4
+    },
+    "capabilities": {
+     "power": {
+      "supported": true
+     },
+     "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+     },
+     "modes": {
+      "supported": true,
+      "values": [
+       "monitor",
+       "media"
+      ]
+     },
+     "moments": {
+      "supported": true,
+      "moods": [
+       "celebrate",
+       "setback",
+       "reminder",
+       "cozy"
+      ],
+      "maxDurationMs": 60000,
+      "coversStatus": true
+     },
+     "media": {
+      "supported": true,
+      "actions": [
+       "pause",
+       "resume",
+       "stop",
+       "next",
+       "previous",
+       "restart-with-changes",
+       "clear"
+      ],
+      "playlistIds": [
+       "playlist-1"
+      ],
+      "renditionIds": [
+       "rendition-1"
+      ]
+     },
+     "scenes": {
+      "supported": false
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": true,
+      "profiles": [
+       {
+        "profileId": "pixoo-64",
+        "profileVersion": "1.0.0"
+       }
+      ]
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "unknown"
+     },
+     "mode": {
+      "status": "known",
+      "value": "monitor"
+     }
+    },
+    "observed": {
+     "status": "unknown"
+    },
+    "pending": 0,
+    "lastOutcome": {
+     "status": "unknown"
+    },
+    "externalControl": {
+     "status": "unknown"
+    }
+   }
+  },
+  "device-lifx-unavailable": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-beam-1",
+   "source": "bunny/modules/lifx",
+   "type": "org.bunny.device.updated",
+   "subject": "beam-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "beam-1",
+    "revision": 3,
+    "kind": "lifx",
+    "availability": "unavailable",
+    "configurationRevision": 0,
+    "generation": {
+     "epoch": "generation-1",
+     "sequence": 0
+    },
+    "capabilities": {
+     "power": {
+      "supported": true
+     },
+     "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+     },
+     "modes": {
+      "supported": false
+     },
+     "moments": {
+      "supported": false
+     },
+     "media": {
+      "supported": false
+     },
+     "scenes": {
+      "supported": false
+     },
+     "zones": {
+      "supported": true,
+      "zoneIds": [
+       "zone-1",
+       "zone-2"
+      ]
+     },
+     "preview": {
+      "supported": false
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "unknown"
+     },
+     "brightness": {
+      "status": "unknown"
+     },
+     "mode": {
+      "status": "unknown"
+     }
+    },
+    "observed": {
+     "status": "known",
+     "observedAtMs": 1791287400000,
+     "power": {
+      "status": "known",
+      "value": false
+     },
+     "brightness": {
+      "status": "unknown"
+     }
+    },
+    "pending": 0,
+    "lastOutcome": {
+     "status": "known",
+     "outcome": {
+      "requestId": "req-beam-2",
+      "result": "uncertain",
+      "evidence": "none",
+      "error": {
+       "code": "uncertain-result",
+       "retryable": false
+      }
+     }
+    },
+    "externalControl": {
+     "status": "known",
+     "owner": "external",
+     "observedAtMs": 1791287100000
+    }
+   }
+  },
+  "device-removed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-removed",
+   "source": "bunny/modules/lifx",
+   "type": "org.bunny.device.removed",
+   "subject": "beam-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "device",
+     "id": "beam-1"
+    },
+    "revision": 4,
+    "reason": "deleted"
+   }
+  },
+  "power-set": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-power-set",
+   "source": "bunny/core",
+   "type": "org.bunny.power.set.requested",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/power-set/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-power-1",
+    "on": false,
+    "expectedConfigurationRevision": 7,
+    "expectedGeneration": {
+     "epoch": "generation-3",
+     "sequence": 12
+    }
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "power-set-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-power-set-replied",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.power.set.replied",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-power-1",
+    "status": "accepted"
+   }
+  },
+  "power-set-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-power-set-completed",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.power.set.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-power-1",
+    "result": "succeeded",
+    "evidence": "observed"
+   }
+  },
+  "brightness-set": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-brightness-set",
+   "source": "bunny/core",
+   "type": "org.bunny.brightness.set.requested",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/brightness-set/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-brightness-1",
+    "percent": 40
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "brightness-set-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-brightness-set-replied",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.brightness.set.replied",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-brightness-1",
+    "status": "accepted"
+   }
+  },
+  "brightness-set-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-brightness-set-completed",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.brightness.set.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-brightness-1",
+    "result": "succeeded",
+    "evidence": "transmitted"
+   }
+  },
+  "scene-activate": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-scene-activate",
+   "source": "bunny/core",
+   "type": "org.bunny.scene.activate.requested",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/scene-activate/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-scene-1",
+    "sceneId": "scene-sunrise",
+    "expectedConfigurationRevision": 7,
+    "expectedGeneration": {
+     "epoch": "generation-3",
+     "sequence": 12
+    }
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "scene-activate-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-scene-activate-replied",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.scene.activate.replied",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-scene-1",
+    "error": {
+     "code": "invalid-state",
+     "retryable": false,
+     "requestId": "req-scene-1",
+     "detail": "scenes play only in free"
+    }
+   }
+  },
+  "scene-activate-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-scene-activate-completed",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.scene.activate.completed",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-scene-2",
+    "result": "failed",
+    "evidence": "none",
+    "error": {
+     "code": "unavailable",
+     "retryable": true
+    }
+   }
+  },
+  "zone-power-set": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-zone-power-set",
+   "source": "bunny/core",
+   "type": "org.bunny.zone-power.set.requested",
+   "subject": "beam-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/zone-power-set/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-zone-1",
+    "zoneId": "zone-2",
+    "on": true
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "zone-power-set-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-zone-power-set-replied",
+   "source": "bunny/modules/lifx",
+   "type": "org.bunny.zone-power.set.replied",
+   "subject": "beam-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-zone-1",
+    "status": "accepted"
+   }
+  },
+  "zone-power-set-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-zone-power-set-completed",
+   "source": "bunny/modules/lifx",
+   "type": "org.bunny.zone-power.set.completed",
+   "subject": "beam-1",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-zone-1",
+    "result": "uncertain",
+    "evidence": "transmitted",
+    "error": {
+     "code": "uncertain-result",
+     "retryable": false
+    }
+   }
+  },
+  "media-start": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-start",
+   "source": "bunny/core",
+   "type": "org.bunny.media.start.requested",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/media-start/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-1",
+    "playlistId": "playlist-1"
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "media-start-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-start-replied",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.media.start.replied",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-1",
+    "status": "accepted"
+   }
+  },
+  "media-start-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-start-completed",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.media.start.completed",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-1",
+    "result": "succeeded",
+    "evidence": "transmitted"
+   }
+  },
+  "media-control": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-control",
+   "source": "bunny/core",
+   "type": "org.bunny.media.control.requested",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/media-control/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-2",
+    "action": "pause"
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "media-control-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-control-replied",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.media.control.replied",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-2",
+    "status": "accepted"
+   }
+  },
+  "media-control-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-media-control-completed",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.media.control.completed",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-media-2",
+    "result": "succeeded",
+    "evidence": "transmitted"
+   }
+  },
+  "device-mode-set": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-mode-set",
+   "source": "bunny/core",
+   "type": "org.bunny.device-mode.set.requested",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device-mode-set/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-device-mode-1",
+    "mode": "media"
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "device-mode-set-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-mode-set-replied",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.device-mode.set.replied",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-device-mode-1",
+    "status": "accepted"
+   }
+  },
+  "device-mode-set-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-mode-set-completed",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.device-mode.set.completed",
+   "subject": "pixoo-desk",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-device-mode-1",
+    "result": "succeeded",
+    "evidence": "transmitted"
+   }
+  }
+ },
+ "invalid": [
+  {
+   "name": "a missing capability",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/capabilities/moments": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities required moments"
+  },
+  {
+   "name": "an absent modes capability",
+   "base": "device-lifx-unavailable",
+   "set": {
+    "/data/capabilities/modes": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities required modes"
+  },
+  {
+   "name": "an unsupported capability with constraints",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/capabilities/zones": {
+     "supported": false,
+     "zoneIds": [
+      "zone-1"
+     ]
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities/zones oneOf"
+  },
+  {
+   "name": "moments without the core moods",
+   "base": "device-pixoo",
+   "set": {
+    "/data/capabilities/moments/moods": [
+     "cozy",
+     "calm",
+     "party"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities/moments oneOf"
+  },
+  {
+   "name": "a native mode in 1.x spelling",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/capabilities/modes/values": [
+     "Work",
+     "Quiet",
+     "Free"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities/modes oneOf"
+  },
+  {
+   "name": "a desired mode the device does not advertise",
+   "base": "device-pixoo",
+   "set": {
+    "/data/desired/mode": {
+     "status": "known",
+     "value": "work"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /desired/mode not an advertised mode"
+  },
+  {
+   "name": "a desired mode without the modes capability",
+   "base": "device-lifx-unavailable",
+   "set": {
+    "/data/desired/mode": {
+     "status": "known",
+     "value": "work"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /desired/mode not an advertised mode"
+  },
+  {
+   "name": "a desired brightness over 100",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/desired/brightness": {
+     "status": "known",
+     "value": 101
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /desired/brightness oneOf"
+  },
+  {
+   "name": "an unknown desired value carrying a value",
+   "base": "device-pixoo",
+   "set": {
+    "/data/desired/brightness": {
+     "status": "unknown",
+     "value": 0
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /desired/brightness oneOf"
+  },
+  {
+   "name": "missing observation written as off",
+   "base": "device-pixoo",
+   "set": {
+    "/data/observed": {
+     "status": "unknown",
+     "power": {
+      "status": "known",
+      "value": false
+     }
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /observed oneOf"
+  },
+  {
+   "name": "an observation without its evidence time",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/observed/observedAtMs": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /observed oneOf"
+  },
+  {
+   "name": "an observation after the message time",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/observed/observedAtMs": 1791288000001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /observed/observedAtMs after time"
+  },
+  {
+   "name": "external control after the message time",
+   "base": "device-lifx-unavailable",
+   "set": {
+    "/data/externalControl/observedAtMs": 1791288000001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /externalControl/observedAtMs after time"
+  },
+  {
+   "name": "external control owned by a controller",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/externalControl/owner": "controller"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /externalControl oneOf"
+  },
+  {
+   "name": "a 1.x service health",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/availability": "ready"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /availability enum"
+  },
+  {
+   "name": "a succeeded last outcome without evidence",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/lastOutcome/outcome/evidence": "none"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /lastOutcome oneOf"
+  },
+  {
+   "name": "a pending list instead of a count",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/pending": [
+     {
+      "requestId": "req-wall-7"
+     }
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pending type"
+  },
+  {
+   "name": "a device address",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/address": "192.168.1.20"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties address"
+  },
+  {
+   "name": "a device token",
+   "base": "device-lifx-unavailable",
+   "set": {
+    "/data/token": "secret"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties token"
+  },
+  {
+   "name": "a credential in a label",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/label": "token: abc123"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /label pattern"
+  },
+  {
+   "name": "a device under another subject",
+   "base": "device-nanoleaf",
+   "set": {
+    "/subject": "pixoo-desk"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "a device record sent as an occurrence",
+   "base": "device-nanoleaf",
+   "set": {
+    "/kind": "occurrence"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /kind device is a state family"
+  },
+  {
+   "name": "a device record under another type",
+   "base": "device-nanoleaf",
+   "set": {
+    "/type": "org.bunny.device.changed"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type device uses org.bunny.device.updated"
+  },
+  {
+   "name": "a command naming a device",
+   "base": "power-set",
+   "set": {
+    "/data/deviceId": "wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / unevaluatedProperties deviceId"
+  },
+  {
+   "name": "a command naming a controller",
+   "base": "brightness-set",
+   "set": {
+    "/data/controllerId": "wall-controller"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / unevaluatedProperties controllerId"
+  },
+  {
+   "name": "a raw protocol command",
+   "base": "scene-activate",
+   "set": {
+    "/data/raw": "PUT /api/v1/effects"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / unevaluatedProperties raw"
+  },
+  {
+   "name": "a power request without a value",
+   "base": "power-set",
+   "set": {
+    "/data/on": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required on"
+  },
+  {
+   "name": "a brightness over 100",
+   "base": "brightness-set",
+   "set": {
+    "/data/percent": 101
+   },
+   "expect": "invalid-message",
+   "detail": "payload /percent maximum"
+  },
+  {
+   "name": "a fractional brightness",
+   "base": "brightness-set",
+   "set": {
+    "/data/percent": 40.5
+   },
+   "expect": "invalid-message",
+   "detail": "payload /percent type"
+  },
+  {
+   "name": "a zone request without its zone",
+   "base": "zone-power-set",
+   "set": {
+    "/data/zoneId": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required zoneId"
+  },
+  {
+   "name": "a playlist named by a path",
+   "base": "media-start",
+   "set": {
+    "/data/playlistId": "/home/owner/media/playlist.gif"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /playlistId pattern"
+  },
+  {
+   "name": "a media action outside the union",
+   "base": "media-control",
+   "set": {
+    "/data/action": "play"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /action enum"
+  },
+  {
+   "name": "a device mode in 1.x spelling",
+   "base": "device-mode-set",
+   "set": {
+    "/data/mode": "Monitor"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /mode pattern"
+  },
+  {
+   "name": "a 1.x ticket as the request ID",
+   "base": "power-set",
+   "set": {
+    "/data/requestId": {
+     "epoch": "requests-1",
+     "sequence": 1
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /requestId type"
+  },
+  {
+   "name": "a generation guard that is not a ticket",
+   "base": "power-set",
+   "set": {
+    "/data/expectedGeneration": 12
+   },
+   "expect": "invalid-message",
+   "detail": "payload /expectedGeneration type"
+  },
+  {
+   "name": "a general command under the old union kind",
+   "base": "power-set",
+   "set": {
+    "/type": "org.bunny.device.power.set.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /type power-set uses org.bunny.power.set.requested"
+  },
+  {
+   "name": "a general command sent as state",
+   "base": "device-mode-set",
+   "set": {
+    "/kind": "state",
+    "/expiresat": null,
+    "/type": "org.bunny.device-mode.updated"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /kind device-mode-set is a command family"
+  }
+ ]
+}

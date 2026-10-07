@@ -1,18 +1,21 @@
-// The 1.x to 2.0 mapping (Hub #842): MAPPING.md names every 1.x field, and the 1.x corpora and a real agent-state
-// owner convert into valid 2.0 messages. The converters below follow MAPPING.md; the runtime's owners (#831) publish
-// 2.0 directly, so none of this ships.
+// The 1.x to 2.0 mapping (Hub #842, #918): MAPPING.md names every 1.x field, and the 1.x corpora and a real
+// agent-state owner convert into valid 2.0 messages. The converters below follow MAPPING.md; the runtime's owners
+// (#831) and the device modules publish 2.0 directly, so none of this ships.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {createAgentState, MemoryStorage} from '@jimmie-potts/agent-state';
+import * as legacyStatus from '@jimmie-potts/agent-status';
 import {validate as validateController} from '@jimmie-potts/device-contracts';
 import {MessageValidator} from '../dist/v2/index.js';
+import {commandSupported, deviceFamilies, registerDeviceFamilies} from '../dist/v2/devices.js';
 import {registerCoreFamilies, sessionEntityId} from '../dist/v2/families.js';
 import {consumerCopy} from './consumer.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const validator = new MessageValidator();
 registerCoreFamilies(validator);
+registerDeviceFamilies(validator);
 const valid = message => {
   const result = validator.validate(message);
   assert.equal(result.ok, true, JSON.stringify([result.error, message.data]));
@@ -47,14 +50,21 @@ function fieldPaths(document, start) {
   return paths;
 }
 
+const sections = readFileSync(new URL('../MAPPING.md', import.meta.url), 'utf8').split(/^## /m);
+const rows = heading => {
+  const section = sections.find(part => part.startsWith(heading));
+  assert.ok(section, `MAPPING.md has a "${heading}" section`);
+  return section.split('\n').filter(line => line.startsWith('| `')).map(line => line.split(' | '));
+};
+// The backticked names in a row's first column.
+const names = row => [...row[0].matchAll(/`([^`]+)`/g)].map(match => match[1]);
+const named = heading => new Set(rows(heading).flatMap(names));
+const controller = read('../../contracts/schemas/controller-v1.schema.json');
+
 test('MAPPING.md names every field of the session record, lifecycle observation, controller receipt and moment command', () => {
-  const sections = readFileSync(new URL('../MAPPING.md', import.meta.url), 'utf8').split(/^## /m);
-  const named = heading => new Set(sections.find(section => section.startsWith(heading)).split('\n')
-    .filter(line => line.startsWith('| `')).flatMap(line => [...line.split(' | ')[0].matchAll(/`([^`]+)`/g)].map(match => match[1])));
   const snapshot = read('../../agent-state/schemas/snapshot-v1.3.schema.json');
   const durable = read('../../agent-state/schemas/durable-v2.1.schema.json');
   const lifecycle = read('../../lifecycle-contracts/schemas/lifecycle-v1.2.schema.json');
-  const controller = read('../../contracts/schemas/controller-v1.schema.json');
   const expected = [
     ['Agent-state session record', [...fieldPaths(snapshot, snapshot.$defs.snapshotSession), ...fieldPaths(durable, durable.$defs.storedSession)]],
     ['Agent-state snapshot', Object.keys(snapshot.properties)],
@@ -68,9 +78,54 @@ test('MAPPING.md names every field of the session record, lifecycle observation,
   }
 });
 
+// Hub #918: the controller snapshot, its capabilities and the general command union.
+test('MAPPING.md names every field of the controller snapshot and its capabilities, 1.0 and 1.1', () => {
+  const paths = [
+    ...fieldPaths(controller, controller.$defs.snapshot),
+    ...fieldPaths(controller, controller.$defs.snapshotV1_1),
+    ...fieldPaths(controller, controller.$defs.capabilitiesV1_1).map(path => `capabilities.${path}`),
+  ];
+  const listed = named('Controller snapshot');
+  assert.deepEqual([...new Set(paths)].filter(path => !listed.has(path)), [], 'Controller snapshot misses fields');
+  assert.ok(paths.length > 140, `${paths.length} snapshot paths`);
+});
+
+test('MAPPING.md maps the request and each kind of the general command union to one family, with every field', () => {
+  const request = fieldPaths(controller, controller.$defs.request).filter(path => !path.startsWith('command.') || path === 'command.kind');
+  const listed = named('General commands');
+  assert.deepEqual(request.filter(path => !listed.has(path)), [], 'General commands misses request fields');
+  const families = new Set(deviceFamilies.map(({family}) => family));
+  const mapped = new Map();
+  for (const branch of controller.$defs.command.oneOf) {
+    const kind = branch.properties.kind.const, fields = Object.keys(branch.properties).filter(name => name !== 'kind');
+    const row = rows('General commands').find(candidate => names(candidate)[0] === kind);
+    assert.ok(row, `${kind} has a row`);
+    assert.deepEqual(fields.filter(field => !names(row).includes(field)), [], `${kind}'s row names every field`);
+    const family = row[1].match(/`([a-z-]+) \//)?.[1];
+    assert.ok(families.has(family), `${kind} maps to a device family, not ${family}`);
+    mapped.set(kind, family);
+  }
+  assert.equal(new Set(mapped.values()).size, mapped.size, 'each kind has its own family');
+  assert.deepEqual([...families].filter(family => family !== 'device' && ![...mapped.values()].includes(family)), [], 'every command family has a 1.x kind');
+});
+
+test('MAPPING.md maps every export of the 1.x status helper', () => {
+  const listed = named('Agent status');
+  for (const name of ['sessionState', 'highestStatus', 'STATUS_COLORS']) {
+    assert.notEqual(legacyStatus[name], undefined, `${name} is a 1.x export`);
+    assert.ok(listed.has(name), name);
+  }
+  for (const name of ['HighestStatusOptions.feedAvailable', 'HighestStatusOptions.acknowledgingConsumers', 'Snapshot.collector']) assert.ok(listed.has(name), name);
+});
+
 const ordering = (order, identity) => order.status === 'known' ? {status: 'known', authority: identity.sourceId, epoch: order.epoch, sequence: order.sequence} : order;
 function observation(envelope) {
   const {apiVersion: _version, eventId, event, ordering: order, ...rest} = envelope;
+  // A consumer's acknowledgment is a notice-acknowledge command to the core in 2.0 (Hub #918), not a hook observation.
+  if (event.kind === 'notice.acknowledged') {
+    return {...message('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', sessionEntityId(envelope.identity),
+      {requestId: `req-${sent + 1}`, consumerId: event.consumerId, noticeId: event.noticeId}), expiresat: new Date(AT + 5000).toISOString()};
+  }
   return message('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', sessionEntityId(envelope.identity), {
     ...rest, ...(eventId === undefined ? {} : {nativeEventId: eventId}), event: {...event, kind: event.kind.replace('.', '-')},
     ordering: ordering(order, envelope.identity),
@@ -129,11 +184,23 @@ const REFUSED_RECORDS = {
   'host-session-malformed': 'payload /hostSessionId pattern',
 };
 
+// Valid 1.x observations that 2.0 refuses, and why. 1.x accepted any neutral notice ID in an acknowledgment, but the
+// owner names every notice by a SHA-256 hash, so one naming anything else could only ever be stale (Hub #918).
+const NARROWED = {'monitor-only-acknowledgment': 'payload /noticeId pattern'};
+
 test('every valid lifecycle 1.x observation converts to a valid 2.0 observation, and per-observation refusals stay refused', () => {
   const cases = ['lifecycle-v1', 'lifecycle-v1.1', 'lifecycle-v1.2'].flatMap(name => read(`../../lifecycle-contracts/fixtures/${name}.json`).cases);
   for (const {id, input} of cases.filter(item => item.valid)) {
     const converted = observation(input);
-    assert.equal(validator.validate(converted).ok, true, `${id}: ${JSON.stringify(validator.validate(converted).error)}`);
+    const result = validator.validate(converted);
+    if (NARROWED[id] === undefined) assert.equal(result.ok, true, `${id}: ${JSON.stringify(result.error)}`);
+    else assert.equal(result.error?.detail, NARROWED[id], `${id} is narrowed in 2.0`);
+  }
+  const acknowledged = cases.filter(item => item.valid && item.input.event.kind === 'notice.acknowledged');
+  assert.ok(acknowledged.length > 0, 'the corpus has an acknowledgment');
+  for (const {input} of acknowledged) {
+    const converted = observation({...input, event: {...input.event, noticeId: 'a'.repeat(64)}});
+    assert.deepEqual([validator.validate(converted).ok, converted.kind, converted.type], [true, 'command', 'org.bunny.notice.acknowledge.requested']);
   }
   for (const [id, detail] of Object.entries(REFUSED_OBSERVATIONS)) {
     const item = cases.find(candidate => candidate.id === id);
@@ -371,4 +438,130 @@ test('the owner retirement scenario removes a subtree, and a consumer that misse
   } finally {
     await owner.shutdown();
   }
+});
+
+// The controller snapshot and general commands (Hub #918), converted by MAPPING.md's rules. A device module publishes
+// device/2.0 directly; these converters only check that the table is complete and keeps each 1.x meaning.
+const lower = value => value.toLowerCase();
+const tagged = (value, map = same => same) => value.status === 'known' ? {status: 'known', value: map(value.value)} : {status: 'unknown'};
+const AVAILABILITY = {unknown: 'unknown', ready: 'available', degraded: 'degraded', unavailable: 'unavailable'};
+const COMMANDS = {'power.set': 'power-set', 'brightness.set': 'brightness-set', 'scene.activate': 'scene-activate', 'zone.power.set': 'zone-power-set',
+  'media.start': 'media-start', 'media.control': 'media-control', 'mode.set': 'device-mode-set'};
+function capabilities(v1) {
+  const {modes, moments, ...rest} = v1;
+  return {...rest, modes: modes?.supported === true ? {supported: true, values: modes.values.map(lower)} : {supported: false}, moments: moments ?? {supported: false}};
+}
+function deviceRecord(snapshot, revision = 1) {
+  const {state} = snapshot;
+  const last = state.lastOutcome.status === 'known' ? receiptMessage(state.lastOutcome.receipt) : undefined;
+  const external = state.externalControl;
+  return {
+    id: snapshot.identity.deviceId, revision, kind: 'light', ...(snapshot.identity.label === undefined ? {} : {label: snapshot.identity.label}),
+    availability: AVAILABILITY[snapshot.serviceHealth], configurationRevision: snapshot.configurationRevision, generation: snapshot.generation,
+    capabilities: capabilities(snapshot.capabilities),
+    desired: {power: tagged(state.desired.power), brightness: tagged(state.desired.brightness), mode: tagged(state.desired.mode, lower)},
+    observed: state.observation.status === 'known' ?
+      {status: 'known', observedAtMs: AT - Math.round(state.observation.evidenceAgeMs), power: state.observation.power, brightness: state.observation.brightness} :
+      {status: 'unknown'},
+    pending: state.pending.length,
+    // A receipt the receipt rule turns into a reply refused its request; it is not a completed outcome.
+    lastOutcome: last?.kind === 'outcome' ? {status: 'known', outcome: last.data} : {status: 'unknown'},
+    externalControl: external.status === 'known' ? {status: 'known', owner: external.owner === 'controller' ? 'module' : 'external',
+      observedAtMs: AT - Math.max(0, snapshot.sampleClock.sampledAtMs - external.clock.sampledAtMs)} : {status: 'unknown'},
+  };
+}
+const deviceState = record => ({...message('device', 'state', 'org.bunny.device.updated', record.id, record), source: 'bunny/modules/light'});
+function deviceCommand(command, request = {}) {
+  const {kind, ...fields} = command, family = COMMANDS[kind];
+  const {type} = deviceFamilies.find(each => each.family === family);
+  const guards = {
+    ...(request.requestId === undefined ? {} : {requestId: `${request.requestId.epoch}.${request.requestId.sequence}`}),
+    ...(request.expectedConfigurationRevision === undefined ? {} : {expectedConfigurationRevision: request.expectedConfigurationRevision}),
+    ...(request.expectedGeneration === undefined ? {} : {expectedGeneration: request.expectedGeneration}),
+  };
+  const data = {requestId: `req-${sent + 1}`, ...guards, ...fields, ...(kind === 'mode.set' ? {mode: lower(fields.mode)} : {})};
+  return {...message(family, 'command', type, request.deviceId ?? 'light', data), expiresat: new Date(AT + 5000).toISOString()};
+}
+// Every controller snapshot in the 1.x corpus: the valid schema cases, feeds included, and the semantic cases' inputs.
+function controllerSnapshots() {
+  const corpus = read('../../contracts/fixtures/controller-v1.json'), found = [];
+  const collect = value => {
+    if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === 'object') {
+      if (['identity', 'sampleClock', 'capabilities', 'state'].every(key => key in value)) found.push(value);
+      Object.values(value).forEach(collect);
+    }
+  };
+  collect([...corpus.schemaCases.filter(item => item.valid), ...corpus.semanticCases]);
+  return found;
+}
+
+test('every controller snapshot in the 1.x corpus converts to a valid device record that keeps desired and observed apart', () => {
+  const snapshots = controllerSnapshots();
+  assert.ok(snapshots.length > 50, `${snapshots.length} snapshots`);
+  let differ = 0, unobserved = 0;
+  for (const snapshot of snapshots) {
+    const record = deviceRecord(snapshot);
+    valid(deviceState(record));
+    const {desired, observation} = snapshot.state;
+    // Desired comes only from desired, and observed only from the observation: missing evidence stays unknown.
+    assert.deepEqual(record.desired, {power: desired.power, brightness: desired.brightness, mode: tagged(desired.mode, lower)});
+    assert.equal(record.observed.status, observation.status);
+    if (observation.status === 'known') {
+      assert.deepEqual([record.observed.power, record.observed.brightness], [observation.power, observation.brightness]);
+      if (JSON.stringify(observation.power) !== JSON.stringify(desired.power) || JSON.stringify(observation.brightness) !== JSON.stringify(desired.brightness)) differ++;
+    } else {
+      unobserved++;
+      if (snapshot.serviceHealth === 'ready') assert.equal(record.availability, 'available', 'a healthy service is no observation');
+    }
+  }
+  assert.ok(differ > 0 && unobserved > 0, `${differ} snapshots whose desired and observed values differ, ${unobserved} unobserved`);
+});
+
+test('every service health, external control owner and capability shape the 1.x schema accepts has a 2.0 home', () => {
+  const [base] = controllerSnapshots();
+  for (const health of controller.$defs.snapshot.properties.serviceHealth.enum) {
+    const record = deviceRecord({...base, serviceHealth: health});
+    valid(deviceState(record));
+    assert.equal(record.availability, AVAILABILITY[health]);
+  }
+  for (const owner of controller.$defs.externalControl.oneOf[1].properties.owner.enum) {
+    const snapshot = structuredClone(base);
+    snapshot.state.externalControl = {status: 'known', owner, clock: snapshot.sampleClock};
+    valid(deviceState(deviceRecord(snapshot)));
+  }
+  const corpus = read('../../contracts/fixtures/controller-v1.json');
+  const shapes = corpus.schemaCases.filter(item => item.valid && ['capabilities', 'capabilitiesV1_1'].includes(item.definition));
+  assert.ok(shapes.length >= 5);
+  for (const {id, value} of shapes) valid(deviceState({...deviceRecord(base), capabilities: capabilities(value)}), id);
+});
+
+test('every 1.x general command converts to its 2.0 family, and the capability rule agrees with 1.x admission', () => {
+  const corpus = read('../../contracts/fixtures/controller-v1.json');
+  const commands = [];
+  for (const item of corpus.schemaCases.filter(each => each.valid)) {
+    if (['command', 'commandV1_1'].includes(item.definition)) commands.push([item.value, {}]);
+    if (['request', 'requestV1_1'].includes(item.definition)) commands.push([item.value.command, item.value]);
+  }
+  for (const snapshot of controllerSnapshots()) for (const pending of snapshot.state.pending) commands.push([pending.command, {requestId: pending.requestId}]);
+  const kinds = new Set();
+  for (const [command, request] of commands.filter(([each]) => each.kind !== 'moment')) {
+    valid(deviceCommand(command, request));
+    kinds.add(command.kind);
+  }
+  assert.deepEqual([...kinds].sort(), Object.keys(COMMANDS).sort(), 'the corpus covers every kind of the union');
+  // 1.x admission refuses an unsupported or unadvertised operation with unsupported-capability; 2.0 modules ask
+  // commandSupported. Moments carry their 1.x clock, so only their mood and duration are taken here.
+  let compared = 0;
+  for (const {id, input, expected} of corpus.semanticCases.filter(item => item.input.operation === 'admit')) {
+    if (!['queued', 'unsupported-capability'].includes(expected.decision)) continue;
+    const {command} = input.request, caps = capabilities(input.state.capabilities);
+    const converted = command.kind === 'moment' ?
+      {family: 'moment-play', data: {requestId: 'req-1', momentId: command.momentId, mood: command.mood, durationMs: command.durationMs,
+        priorityClass: command.priorityClass, coversStatus: command.coversStatus, startAtMs: AT, toleranceMs: command.start.toleranceMs}} :
+      {family: COMMANDS[command.kind], data: deviceCommand(command).data};
+    assert.equal(commandSupported(caps, converted), expected.decision === 'queued', id);
+    compared++;
+  }
+  assert.ok(compared >= 20, `${compared} admission cases compared`);
 });
