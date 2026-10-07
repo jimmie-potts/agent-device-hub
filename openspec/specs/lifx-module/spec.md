@@ -1,4 +1,9 @@
-## ADDED Requirements
+# lifx-module Specification
+
+## Purpose
+Define the LIFX runtime module under ADR 0012 (Hub #928): its configured bulbs and qualified controls, the cutover's conversion of the old host's configuration and modes, its device and color records, commands answered with stored outcomes that are never sent again, one queue and writer lease per bulb, automatic agent status from the core's sessions, policy A for bulbs it cannot reach, its diagnostics, and the simulated bulbs that its tests, catalog scenario and disposable runs use. It is source verified with simulated bulbs; installation and the physical check belong to the cutover (#840).
+
+## Requirements
 
 ### Requirement: Configured bulbs and qualified controls
 
@@ -51,6 +56,10 @@ Each bulb SHALL answer `power-set`, `brightness-set`, `device-mode-set`, `lifx-c
 #### Scenario: An outcome stored before a crash
 - **WHEN** the module crashes after storing an outcome and before publishing it, and starts again twice
 - **THEN** the outcome goes out once at the first restart, its publication is recorded once, nothing goes out at the second, and the bulb got the write once
+
+#### Scenario: An outcome the store could not keep
+- **WHEN** the disk fills while a write is out, so its outcome cannot be stored, and the module starts again twice once the disk has room
+- **THEN** the records keep the command pending, the first start reports it `uncertain` with `uncertain-result`, the second reports nothing more, and the bulb got the write and its one retry only
 
 #### Scenario: A stop that cuts work short
 - **WHEN** the module stops while a power write is in flight and a color command waits behind it
