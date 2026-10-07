@@ -21,3 +21,15 @@
 - [x] 4.1 Document the module, the conversion and the expected webcam result for #840 in its README; update the runtime and verify READMEs, the old controller's README and `docs/development.md`, and add `test:lifx-module:built` to CI.
 - [x] 4.2 Run build, typecheck, lint, the module, SDK, runtime, scenario, verify, event, LIFX controller and workflow checks, and OpenSpec validation.
 - [x] 4.3 Synchronize the affected specifications and archive the change.
+
+## 5. Review fixes (PR #965)
+
+- [x] 5.1 Configure every shipped module in the maintenance intake test's clean run and the `shipped` disposable run from the factory's `simulatedSection` (#968's field), with the LIFX factory's simulated pendant and Beam.
+- [x] 5.2 Assert, red before the fix, that a job past its command's deadline sends nothing and ends `failed` with `expired`, that a write after a read that outlasted the deadline is never sent, and that a mode change past its deadline changes nothing; check the deadline before every packet and before the write.
+- [x] 5.3 Assert, red before the fix, that after a crash a command still waiting in the queue is reported `failed` with `cancelled`; mark the work begun inside the job, just before the write, and fail the command with no effect when the store cannot mark it.
+- [x] 5.4 Assert, red before the fix, that a second instance on the same state directory reports none of the live one's commands; settle only the commands of bulbs whose lease the instance holds.
+- [x] 5.5 Hold a bulb's lease in a child process and in the same process, and give each lease refusal its own reason and refusal text.
+- [x] 5.6 Test a refused command's rollback, a mode change whose outcome cannot be stored, a session copy that ends after it synced, a bulb that comes back while a reader syncs, and a stop with a call in flight; read an unavailable bulb on demand, and end a call only when its transport says it ended.
+- [x] 5.7 Look for every simulated bulb's address in the catalog's leak check.
+- [x] 5.8 Show each fix's mutant fails its named tests, synchronize the specifications and rerun the gate.
+

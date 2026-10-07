@@ -1843,7 +1843,9 @@ outcomes, refusals and restarts, a full store, an unreachable bulb, the writer
 lease, the on-demand read, the cutover's conversion, and the
 [module test kit](../packages/sdk/README.md#module-test-kit) with policy A's
 check. It uses `SimulatedLifx`, fake sockets, a manual clock and SQLite files
-under the system temporary directory, and opens no socket. The runtime's catalog
+under the system temporary directory, and opens no socket. One test starts a Node
+child process that holds a bulb's lease. The maintenance intake test's clean run
+configures every shipped module from its factory's `simulatedSection`. The runtime's catalog
 scenario `lifx-bulbs` runs the module in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical check
 belong to the cutover (#840).

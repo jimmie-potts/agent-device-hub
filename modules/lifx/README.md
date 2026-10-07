@@ -16,7 +16,10 @@ The runtime ships it after the core (`apps/runtime/src/modules.ts`), through
 `lifxModuleFactory`: `udpNetwork` for real bulbs, or `SimulatedLifx` under
 `--simulate`. A runtime without a `lifx` section in its
 [configuration file](../../apps/runtime/README.md#configuration) refuses the module
-with `not-found` and runs on.
+with `not-found` and runs on. The factory's `simulatedSection`,
+`LIFX_SIMULATED_SECTION`, configures the simulated build with `pendant-1` and the
+Beam at documentation addresses; the maintenance intake test and the `shipped`
+disposable run use it.
 
 ## Provenance
 
@@ -114,7 +117,7 @@ A command is checked, then stored, then accepted. These refusals prove no effect
 | `invalid-message`, `invalid-request` | The command fails its family's schema, uses another family than its key, or names another bulb in its subject. |
 | `revision-conflict` | `expectedConfigurationRevision` or `expectedGeneration` is stale; the generation's epoch changes at every start. |
 | `unsupported-capability` | The bulb does not offer the operation (`commandSupported`), as for every command to an unqualified bulb. |
-| `unavailable` | Another holder has the bulb's writer lease, or the module is stopping. |
+| `unavailable` | The module does not hold the bulb's writer lease: another holder has it ("another writer holds the bulb"), its folder or file is not private ("the bulb's lease is not private"), or it could not be opened ("the module could not open the bulb's lease"). Or the module is stopping: a command that arrives then is refused by the bus or the module. |
 | `capacity` | The bulb's queue is full, or the module's store is full. |
 | `internal` | The store refused the command for another reason. |
 | `duplicate-conflict` | The source already used this `requestId` for another command. |
@@ -132,15 +135,24 @@ by MAPPING.md's receipt rule:
   `uncertain-result`;
 - a failure before any write, as a LightGet the bulb does not answer, is `failed`
   with `none` and `unavailable`;
+- a command whose own deadline (`expiresat`) passed before it sent its first packet
+  or its write, as one that waited in the bulb's queue, is `failed` with `none` and
+  `expired`, and sends nothing; a mode change past its deadline changes nothing;
+- a command whose work the store could not mark begun, just before its write, is
+  `failed` with `none` and the store's `capacity` or `internal`, and sends nothing;
 - a command that the module's stop retired before it reached the bulb is `failed`
   with `cancelled`.
 
 Each packet gets at most `retries` more attempts with the same absolute payload
-inside its queue turn, and no retry starts after the command's own deadline. After
-that nothing sends a command again: not the module, a restart or the outbox. At a
-start, a command the records show accepted without an outcome is reported
-`uncertain` when its write had begun and `failed` with `cancelled` when it never
-had. The outbox sends a stored outcome again at each start until the core
+inside its queue turn. No attempt starts after the command's own deadline, the
+first included, and the deadline is checked again just before a read-modify-write's
+write. After that nothing sends a command again: not the module, a restart or the
+outbox. The module marks a command's work begun inside its turn, just before its
+write. At a start, a command the records show accepted without an outcome is
+reported `uncertain` when its write had begun and `failed` with `cancelled` when it
+never had, as one that still waited in the queue. The start reports only the
+commands of bulbs whose lease it holds: another instance on the same state
+directory that holds a bulb's lease still has that bulb's commands in hand. The outbox sends a stored outcome again at each start until the core
 acknowledges it; until [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)
 defines that acknowledgment, tests and the fixture core pass the kit's stand-in
 through the `acknowledgments` option, and the shipped module keeps its outcomes.
@@ -176,16 +188,26 @@ writes nothing.
 
 - A bulb that does not answer is `unavailable`, never a module failure. The module
   reads it again after 30 s, doubling to 5 minutes, until it answers.
-- Reading the records through sync starts one LightGet for a bulb whose reading is
-  missing or at least 30 s old, at most one per bulb every 30 s, as the old host's
-  on-demand read did (#330). Nothing reads a bulb while nothing reads its records.
+- Each sync of the records starts one LightGet for a qualified bulb whose reading is
+  missing or at least 30 s old, an unavailable one included, at most one per bulb
+  every 30 s counting the probe's reads, as the old host's on-demand read did
+  (#330). A bulb that came back therefore shows `available` within 30 s of a
+  reader's sync, rather than at its next probe. The read follows each sync request,
+  not a follower that stays subscribed: a page that keeps a copy sees a bulb come
+  back at its next sync or the bulb's next probe. Apart from the start's read and
+  the probe of an unavailable bulb, nothing reads a bulb while nothing reads its
+  records.
 - An unqualified bulb is never reached; its availability stays `unknown`.
-- A held writer lease makes the bulb `unavailable` and its commands `unavailable`,
-  and the module runs on.
+- A lease the module cannot take makes the bulb `unavailable` and its commands
+  `unavailable` until the next start, and the module runs on. The start logs one
+  `operation.failed` with the reason: `busy` for another holder, `unauthorized` for
+  a lease folder or file that is not private, and `unavailable` for one that could
+  not be opened.
 - Stopping the module closes each queue: what waits resolves `cancelled` without
   sending anything, and the call in flight is aborted, so its outcome is
-  `uncertain`. The outcomes commit before the database closes and go out at the
-  next start.
+  `uncertain`. An aborted call ends when its transport says it ended, and the stop
+  waits for it. The outcomes commit before the database closes and go out at the
+  next start, and only then are the leases released.
 
 ## Diagnostics
 
@@ -197,7 +219,7 @@ The module logs registered `bunny.module` records (ADR 0012, "Observability"):
 | `outcome.published`, `outbox.deferred` | INFO or WARN, WARN | The outbox's records of an outcome's first publication and of a deferred publish. |
 | `device.unavailable`, `device.available` | WARN, then DEBUG summaries; INFO | `DeviceAvailability`: one degradation and one recovery per outage, not one warning per read. |
 | `feed.changed` | INFO | A bulb's shown status key changes. |
-| `operation.failed`, `operation.completed` | WARN or ERROR, INFO | Once per run of store failures (`storage`) or of lost session syncs (`feed`), and at their recovery; a held lease at start (`startup`, `busy`). |
+| `operation.failed`, `operation.completed` | WARN or ERROR, INFO | Once per run of store failures (`storage`) or of lost session syncs (`feed`), and at their recovery; a lease the start could not take (`startup`, with `busy`, `unauthorized` or `unavailable`). |
 | `outbox.republished`, `outbox.acknowledged` | INFO | At start, and for each acknowledged outcome. |
 
 Each call to a bulb is a `bunny.device.call` span: a command's is in the command's
@@ -232,7 +254,8 @@ From the repository root, with Node 24: `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:lifx-module`, which runs the compiled tests in
 `modules/lifx/dist/tests/`. The core CI job runs `npm run test:lifx-module:built`
 after its fresh build. The tests use `SimulatedLifx`, fake sockets and a manual
-clock, and open no socket. `kit.test.ts` runs the
+clock, and open no socket. `lease.test.ts` starts a Node child process that holds a
+bulb's lease, to show another process keeps the module off that bulb. `kit.test.ts` runs the
 [module test kit](../../packages/sdk/README.md#module-test-kit), policy A's check
 included. The runtime's catalog scenario `lifx-bulbs` runs the module in the
 in-memory harness and in [disposable runs](../../apps/runtime/verify/README.md).

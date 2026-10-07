@@ -25,7 +25,7 @@
 ## Impact
 
 - **Code:** `modules/lifx` (new); `apps/runtime/src` (`modules.ts`, `runtime.ts`); `apps/runtime/tests/scenarios` (`catalog.ts`, `memory.ts`, `parts.ts`); `apps/runtime/verify` (`child.ts`, `supervisor.ts`, `protocol.ts`, `adapter.ts`, `plugin.ts`, `seed.ts`).
-- **Tests:** the module's protocol, queue, status, module, configuration and kit tests; the runtime's process, log, catalog and build tests.
+- **Tests:** the module's protocol, queue, status, module, lease, configuration and kit tests; the runtime's process, log, catalog and build tests; the maintenance intake test's clean run, which configures each shipped module from its factory's `simulatedSection`.
 - **Docs:** the module README, with the expected webcam result for #840; the runtime and verify READMEs; the old controller's README; `docs/development.md` ("LIFX module checks" and the test layers).
 - **Coordinator-owned files:** the root `package.json` (workspace, build, typecheck and `test:lifx-module` scripts), the lockfile (the new workspace), CI (`test:lifx-module:built`) and `docs/development.md`.
 - **Unchanged:** `controllers/lifx`'s code and tests, the local controller host, `packages/sdk/src/module.ts` (#835 owns it), the observability catalog and released 1.x contracts.

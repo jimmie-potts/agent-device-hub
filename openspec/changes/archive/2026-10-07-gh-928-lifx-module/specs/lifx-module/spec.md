@@ -34,7 +34,7 @@ For each configured bulb the module SHALL publish a `device/2.0` record of kind 
 
 ### Requirement: Commands with outcomes
 
-Each bulb SHALL answer `power-set`, `brightness-set`, `device-mode-set`, `lifx-color-set` and `lifx-temperature-set` on `bunny.cmd.<family>.<id>`. Before anything is stored or sent the module SHALL refuse a command that fails its family's schema (`invalid-message`), uses another family than its key or names another bulb (`invalid-request`), carries a stale configuration revision or generation (`revision-conflict`), asks for an operation the bulb does not offer (`unsupported-capability`), targets a bulb whose writer lease another holder has (`unavailable`), finds the bulb's queue full (`capacity`), or reuses a `requestId` from the same source for another command (`duplicate-conflict`). It SHALL store its record of an accepted command, never the command message, in its own SQLite file before it replies `accepted`, and a store that refuses SHALL refuse the command with `capacity` for a full disk or `internal`, with no effect. A repeat of an accepted command SHALL be accepted again with no second effect. The outcome SHALL go through the module's outbox, stored with the records it changes: an acknowledged write and a committed mode change `succeeded` with `transmitted` evidence; a write without an acknowledgment `uncertain` with `none` and `uncertain-result`; a failure before any write `failed` with `none` and `unavailable`; work the module's stop retired before it reached the bulb `failed` with `cancelled`. A mode change SHALL send nothing to the bulb. Color and temperature SHALL read the bulb and keep the fields they do not change, and SHALL never turn the bulb on. Each packet SHALL get at most `retries` more attempts with the same absolute payload, and none after the command's own deadline; nothing SHALL send a command again afterwards. At each start the module SHALL report each accepted command its records show without an outcome: `uncertain` when its write had begun, `failed` with `cancelled` when it never had, and it SHALL never run it again.
+Each bulb SHALL answer `power-set`, `brightness-set`, `device-mode-set`, `lifx-color-set` and `lifx-temperature-set` on `bunny.cmd.<family>.<id>`. Before anything is stored or sent the module SHALL refuse a command that fails its family's schema (`invalid-message`), uses another family than its key or names another bulb (`invalid-request`), carries a stale configuration revision or generation (`revision-conflict`), asks for an operation the bulb does not offer (`unsupported-capability`), targets a bulb whose writer lease it does not hold (`unavailable`, with fixed text naming another holder, a lease that is not private or one that could not be opened), arrives while the module stops (`unavailable`, from the bus or the module), finds the bulb's queue full (`capacity`), or reuses a `requestId` from the same source for another command (`duplicate-conflict`). It SHALL store its record of an accepted command, never the command message, in its own SQLite file before it replies `accepted`, and a store that refuses SHALL refuse the command with `capacity` for a full disk or `internal`, with no effect. A repeat of an accepted command SHALL be accepted again with no second effect. The outcome SHALL go through the module's outbox, stored with the records it changes: an acknowledged write and a committed mode change `succeeded` with `transmitted` evidence; a write without an acknowledgment `uncertain` with `none` and `uncertain-result`; a failure before any write `failed` with `none` and `unavailable`; a command whose own deadline passed before its first packet or its write `failed` with `none` and `expired`, having sent nothing; a command whose work the store could not mark begun `failed` with `none` and `capacity` for a full disk or `internal`, having sent nothing; work the module's stop retired before it reached the bulb `failed` with `cancelled`. A mode change SHALL send nothing to the bulb, and one whose turn comes after its deadline SHALL change nothing. Color and temperature SHALL read the bulb and keep the fields they do not change, and SHALL never turn the bulb on. Each packet SHALL get at most `retries` more attempts with the same absolute payload, and no attempt, the first included, SHALL start after the command's own deadline, which the module SHALL check again just before a read-modify-write's write; nothing SHALL send a command again afterwards. The module SHALL mark a command's work begun inside its turn, just before its write. At each start the module SHALL report each accepted command its records show without an outcome, for the bulbs whose lease it holds only: `uncertain` when its write had begun, `failed` with `cancelled` when it never had, as for a command that still waited in the queue, and it SHALL never run it again.
 
 #### Scenario: A mode command
 - **WHEN** the operator sets the pendant to `quiet`
@@ -60,9 +60,33 @@ Each bulb SHALL answer `power-set`, `brightness-set`, `device-mode-set`, `lifx-c
 - **WHEN** the module stops while a power write is in flight and a color command waits behind it
 - **THEN** after the next start the write is `uncertain` and the color command `failed` with `cancelled`, each reported once, and the color command never read the bulb
 
+#### Scenario: A command past its deadline
+- **WHEN** a power command and a mode change with 300 ms deadlines wait behind a write to an unreachable pendant, and a color command's LightGet is answered only after its deadline
+- **THEN** each ends `failed` with `none` and `expired`, the waiting commands send nothing and the mode stays `free`, and the color command never sends its write
+
+#### Scenario: A crash with work in the queue
+- **WHEN** the runtime dies while a power write waits for its answer and a color command waits behind it, and the module starts from the database as the crash left it
+- **THEN** the power write is reported `uncertain` and the color command `failed` with `cancelled`
+
+#### Scenario: Work the store cannot mark begun
+- **WHEN** the store refuses to mark a power command's work begun
+- **THEN** the command ends `failed` with `none` and `internal`, the bulb gets no packet, and one storage record is logged
+
+#### Scenario: A second instance on the same state directory
+- **WHEN** a second instance starts on the module's state directory while the first has a write in flight to a bulb whose lease it holds
+- **THEN** the second reports none of the first's commands, and the first reports its own command once
+
+#### Scenario: A command while the module stops
+- **WHEN** a command arrives once the module's stop has begun
+- **THEN** it is refused `unavailable` and has no outcome
+
 #### Scenario: A full store
 - **WHEN** the module's SQLite file cannot grow and the operator switches the pendant
-- **THEN** the command is refused with `capacity`, no packet goes out, there is no outcome, one storage record is logged, and once the file can grow the next command is accepted and one recovery record is logged
+- **THEN** the command is refused with `capacity`, no packet goes out, there is no outcome, one storage record is logged, the bulb's next record shows the configuration revision, desired values and pending commands as before, and once the file can grow the next command is accepted and one recovery record is logged
+
+#### Scenario: A mode change whose outcome cannot be stored
+- **WHEN** the disk fills while a mode change to `work` waits behind a write, so neither outcome can be stored
+- **THEN** the bulb's record still shows `free`, and a later status change paints nothing
 
 #### Scenario: Refusals before any change
 - **WHEN** commands carry a stale revision or generation, a malformed body, another bulb's subject, a reused `requestId` with another body, or arrive at a full queue
@@ -70,11 +94,23 @@ Each bulb SHALL answer `power-set`, `brightness-set`, `device-mode-set`, `lifx-c
 
 ### Requirement: One queue and one writer lease per bulb
 
-Each qualified bulb whose writer lease the module holds SHALL have one queue, the only path to it: one job at a time, at most `maxPending` jobs waiting or running, reservations included, and a LightGet before every brightness, color or temperature write. The module SHALL take each bulb's lease at start as an exclusive transaction on its own file in the module's private folder, and release it at stop. A bulb whose lease another holder has SHALL be `unavailable`, refuse its commands and never be reached, while the module runs on. Stopping the module SHALL close each queue: what waits resolves `cancelled` without sending anything, the call in flight is aborted, and the outcomes commit before the database closes.
+Each qualified bulb whose writer lease the module holds SHALL have one queue, the only path to it: one job at a time, at most `maxPending` jobs waiting or running, reservations included, and a LightGet before every brightness, color or temperature write. The module SHALL take each bulb's lease at start as an exclusive transaction on its own file in the module's private folder, refusing a second holder in another process or in the same one, and release it at stop. A bulb whose lease it cannot take SHALL be `unavailable` until the next start, refuse its commands and never be reached, while the module runs on, and the start SHALL log the reason: `busy` for another holder, `unauthorized` for a lease folder or file that is not private, `unavailable` for one that could not be opened. An attempt's deadline and the queue's close SHALL abort the transport's call and wait for the transport to end it. Stopping the module SHALL close each queue: what waits resolves `cancelled` without sending anything, the call in flight is aborted, and the stop SHALL wait for it to end and for the outcomes to commit before the database closes, and only then release the leases.
 
 #### Scenario: A held lease
-- **WHEN** another holder has the pendant's lease while the module starts
-- **THEN** the module runs, logs one startup record with reason `busy`, refuses a command to the pendant with `unavailable`, reports it `unavailable` and never reaches it; after the lease is released, the next start takes it
+- **WHEN** another holder in the same process, or a child process, has the pendant's lease while the module starts
+- **THEN** the module runs, logs one startup record with reason `busy`, refuses a command to the pendant with `unavailable` and "another writer holds the bulb", reports it `unavailable` and never reaches it; after the holder releases the lease or its process is killed, the next start takes it
+
+#### Scenario: A second take in the same process
+- **WHEN** the module holds a bulb's lease and the same process tries to take it again
+- **THEN** that take is refused `busy`, and a child process still cannot take the lease
+
+#### Scenario: A lease that is not private or cannot be opened
+- **WHEN** the lease folder is group-readable, or a directory stands in the lease file's place
+- **THEN** the bulb is `unavailable`, its commands are refused with "the bulb's lease is not private" or "the module could not open the bulb's lease", and the start logs the reason `unauthorized` or `unavailable`
+
+#### Scenario: A stop with a call in flight
+- **WHEN** the module stops while a write is in flight and its transport ends the call only later
+- **THEN** the bulb's lease stays held until the call ended, and the write's `uncertain` outcome, stored during the stop, goes out at the next start
 
 #### Scenario: The queue's bounds
 - **WHEN** a write is in flight with retries pending, more jobs queue behind it, and the queue closes
@@ -100,6 +136,10 @@ The module SHALL sync the core's `session` family and paint each qualified bulb 
 - **WHEN** the core does not serve sessions while the pendant is in Work, and later serves them
 - **THEN** nothing paints while the status is unknown, one record marks the lost feed, and once synced the current status paints and one record marks the recovery
 
+#### Scenario: A copy that ends after it synced
+- **WHEN** the module's copy of the sessions overflows and the core refuses its new sync, and the pendant then enters Work
+- **THEN** nothing paints from the sessions the copy last held, one record marks the lost feed, and once the core serves again the current status paints
+
 #### Scenario: A restart
 - **WHEN** the runtime restarts while the status stands, and again after it changed while the module was stopped
 - **THEN** the first restart writes nothing to the bulb, and the second paints once
@@ -110,7 +150,7 @@ The module SHALL sync the core's `session` family and paint each qualified bulb 
 
 ### Requirement: Reaching bulbs under policy A
 
-The module's start SHALL open only local resources and SHALL NOT wait on a bulb. It SHALL then read each qualified bulb once with a LightGet, which never changes the bulb, and SHALL never write to a bulb at start. A bulb that does not answer SHALL be `unavailable`, never a module failure, and the module SHALL read it again after 30 s, doubling to 5 minutes, until it answers. A sync of the module's records SHALL start one LightGet for a qualified, reachable bulb whose reading is missing or at least 30 s old, at most one per bulb every 30 s, and nothing SHALL read a bulb while nothing reads its records. An outage SHALL log one `device.unavailable` warning and one `device.available` recovery, with later failures summarized at DEBUG at most once a minute, and repeated reads of an offline bulb SHALL publish no record that changed nothing.
+The module's start SHALL open only local resources and SHALL NOT wait on a bulb. It SHALL then read each qualified bulb once with a LightGet, which never changes the bulb, and SHALL never write to a bulb at start. A bulb that does not answer SHALL be `unavailable`, never a module failure, and the module SHALL read it again after 30 s, doubling to 5 minutes, until it answers. Each sync of the module's records SHALL start one LightGet for a qualified bulb whose reading is missing or at least 30 s old, an unavailable bulb included, at most one per bulb every 30 s counting the probe's reads, so a bulb that came back shows `available` within 30 s of a reader's sync. Apart from the start's read and the probe of an unavailable bulb, nothing SHALL read a bulb while nothing reads its records. An outage SHALL log one `device.unavailable` warning and one `device.available` recovery, with later failures summarized at DEBUG at most once a minute, and repeated reads of an offline bulb SHALL publish no record that changed nothing.
 
 #### Scenario: A bulb unreachable at start
 - **WHEN** the module starts while the pendant never answers, and the pendant comes back after half an hour
@@ -119,6 +159,10 @@ The module's start SHALL open only local resources and SHALL NOT wait on a bulb.
 #### Scenario: Reading on demand
 - **WHEN** a part syncs the records while the reading is fresh, twice once it is stale, and again after five idle minutes
 - **THEN** a fresh reading starts no read, a stale one starts one read however often it is read, nothing reads the pendant while nothing reads its records, and the Beam is never read
+
+#### Scenario: A bulb that comes back
+- **WHEN** the pendant comes back ten minutes into an outage, and a reader syncs the records every 10 s
+- **THEN** the pendant shows `available` within 30 s of the first sync, before its next probe
 
 #### Scenario: The kit's policy A check
 - **WHEN** the module test kit starts the module with bulbs that never answer
