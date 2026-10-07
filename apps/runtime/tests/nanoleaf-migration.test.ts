@@ -116,7 +116,7 @@ it('migrates and verifies, each with one JSON line of counts and hashes and exit
 it('keeps every token, address, path and name out of its lines, the section and the module\'s store', async context => {
   const p = await paths(context);
   const lines = [await tool(args('migrate', p)), await tool(args('verify', p)), await tool(args('migrate', p))].map(result => result.text);
-  for (const marker of [SYNTHETIC_TOKEN, LINES_ADDRESS, PANELS_ADDRESS, 'Marker', p.root, '/home/fixture']) {
+  for (const marker of [SYNTHETIC_TOKEN, LINES_ADDRESS, PANELS_ADDRESS, 'Marker', p.root, '/home/fixture', 'wall', 'panels', 'project-']) {
     for (const text of lines) assert.ok(!text.includes(marker), `a line holds ${marker}`);
   }
   const stored = [await readFile(p.section, 'utf8'), (await readFile(join(p.state, 'modules', 'nanoleaf.sqlite'))).toString('latin1')];
