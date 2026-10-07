@@ -34,4 +34,4 @@ The module SHALL serve, through sync as one of the owners of the shared family `
 
 #### Scenario: A held wall in its device record
 - **WHEN** a brightness write's answer is lost, an explicit mode command releases the hold, a later write's answer is lost and a fresh brightness command releases that hold, and, in another run, the module restarts before a write's answer comes
-- **THEN** while each hold lasts the device record is `degraded` and its `held` names the held write's request and the time the hold began, the wall view shows `held`, and each record after a release has no `held`; after the restart, `held` names the write the restart found without a result
+- **THEN** while each hold lasts the device record is `degraded` and its `held` names the held write's request and the time the hold began, the wall view shows `held`, and each record after a release has no `held`; after the restart, `held` still names the write whose answer never came, from when it ended uncertain

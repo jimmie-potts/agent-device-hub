@@ -119,7 +119,7 @@ suite('expiry and holds', () => {
     assert.equal((await outcomeOf(world, 'out')).result, 'uncertain');
     await world.until(() => world.wall()?.held === true && availability(world) === 'degraded', 10_000, 'the hold shown');
     assert.deepEqual(world.query("SELECT value FROM meta WHERE key LIKE 'control_error%'"), [], 'only the hold makes the device degraded');
-    // The restart found the write without a result: the hold names it, from the moment the restart ended it uncertain.
+    // The write's answer never came: after the restart the hold still names it, from the moment it ended uncertain.
     assert.deepEqual(heldOf(world), {requestId: 'out', heldAtMs: endedAtMs(world, 'out')});
     world.verify();
   });

@@ -17,4 +17,4 @@
 ## 4. Docs and checks
 
 - [x] 4.1 Document `held` and `device/2.1` in the package README and MAPPING.md's `device` rows, and the record's `held` in the Nanoleaf README, PORTING.md and the runtime README.
-- [x] 4.2 Run the gate and the negative controls; sync and archive this change.
+- [x] 4.2 Run the gate and the negative controls; sync and archive this change. Evidence: eleven negative controls each fail a named test (devices, journal, module-faults, module-kit or the `nanoleaf-wall` scenario), and the gate exits zero.
