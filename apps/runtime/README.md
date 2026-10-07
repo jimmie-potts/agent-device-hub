@@ -94,7 +94,7 @@ the caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
 the diagnostic contract's registered reason for that code. `internal` and
 `uncertain-result`, whose effect may have happened, have none. It never holds
 the edge's detail, which may quote what the caller sent; the edge answers an
-exception with the fixed detail `the edge failed`. Token rotation and grant
+exception with fixed text, never its message. Token rotation and grant
 permissions belong to #835.
 
 `runMain`'s `onEdge` option hands the caller the edge once it serves. A

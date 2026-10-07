@@ -144,7 +144,7 @@ straight back to the requester, never to subscribers.
 | `rejected` | The responder's queue is full. | `capacity` |
 | `rejected` | The deadline passed before the responder's handler started the command. | `expired` |
 | `rejected` | The requester closed before the responder's handler started the command. | `cancelled` |
-| `uncertain` | The handler threw, or answered with something other than a reply. The error also goes to `onError`. | `uncertain-result` |
+| `uncertain` | The handler threw, or answered with something other than a valid reply. The error also goes to `onError`. | `uncertain-result` |
 | `uncertain` | The handler had the command when the deadline passed or the requester closed. | `uncertain-result` |
 
 As ADR 0012's "Errors, effects and outcomes" says, `rejected` proves that the
@@ -154,6 +154,12 @@ come after an effect, so the request is `uncertain`, never a refusal. This holds
 for an `SdkError` from a call the handler makes, and for a throw before the
 handler acted: the SDK cannot tell a throw before an effect from one after it.
 A responder that can refuse should return its error body instead of throwing.
+
+A refusal is valid only with a registered code and that code's `retryable`
+flag, as `errorBody` builds it. The SDK rebuilds it with at most 1024
+characters of detail and nothing else. An error body with an unregistered code,
+the wrong flag or no code is not a reply, so its request is `uncertain`, on both
+transports.
 
 The SDK never sends a command twice, and a reply that arrives after the
 deadline is ignored. Error bodies carry the `requestId` and the command's trace
@@ -392,6 +398,17 @@ async start({sdk, database, clock}) {
   again. If publishing is refused, for example because the module is stopping,
   the messages stay stored, unpublished, and the next transaction or start
   sends them unchanged. Nothing sends them again on its own.
+- A refused publish is reported to the `onError` option, with the bus's
+  signature: an `SdkError` with the refusal's registry code (`internal` for an
+  error without one) and the fixed detail `committed, awaiting publication`,
+  with the refusal as its `cause`, and the scope
+  `{source, pattern: 'outbox'}`. It is reported once per run of refusals, and
+  again only after a send goes through or the code changes. Without an
+  `onError`, it becomes a `BunnySdkWarning` process warning.
+- The `validator` option checks each message as `add` stores it, so a message
+  it refuses throws `SdkError` with the validator's code and rolls the
+  transaction back. A remote part passes the validator its edge uses, with the
+  same schemas, so a message the edge would refuse never waits in the outbox.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One
@@ -415,6 +432,10 @@ Known limits:
   it should sync. A dropped outcome goes out again at the module's next start.
 - An outcome waits for the module's next start to go out again. A core that
   fails and recovers while the module keeps running gets it at that start.
+- A refusal that lasts, such as a schema the edge does not accept from an
+  outbox without a validator, holds back every later message, which waits
+  behind the refused one in commit order. Each send tries the oldest first, and
+  the report names the code. Hub #949 owns the diagnostic record for it.
 - The [outbox decisions](../../openspec/changes/archive/2026-10-06-gh-882-module-kit/design.md)
   record the reasons and what the core must do.
 
@@ -552,14 +573,24 @@ HTTP status that fits its code.
   edge as the shared error body: its registered code, and at most 1024
   characters of detail. Anything else it carried is dropped.
 - **A remote responder that fails.** When a remote handler throws, or answers
-  with something other than a reply, the client reports the error to its
+  with something other than a valid reply, the client reports the error to its
   `onError` and answers the `reply` call with `{"status": "uncertain"}`. The edge
   settles the request `uncertain` with `uncertain-result`, as the bus does in
   process, and sends no reply message.
 - **Safe errors.** An exception that the edge did not expect is answered with
   `internal` and the fixed detail `the edge failed`, in the response and in the
-  edge's log record. Its message, stack and cause stay in memory. Refusals that
-  the edge or the SDK raises keep their own fixed text.
+  edge's log record. Once the edge has handed a command to its bus, it answers
+  one with `uncertain-result` and the fixed detail
+  `the edge failed after it sent the command` instead, because a handler may
+  have run it. The exception's message, stack and cause stay in memory. The
+  edge's and the SDK's own refusals keep their text, which may quote what the
+  caller sent, such as a path, a claimed source, an id or an attribute the
+  validator refused.
+- **Edge answers at the client.** The client takes an edge refusal only with a
+  registered code and that code's flag, and reports any other body as
+  `internal`. A command whose request call the edge answers with `internal` or
+  `uncertain-result` is `uncertain`, because the edge may have failed after the
+  command reached a handler. Any other refusal of the call stays `rejected`.
 - **Subscriptions.** `subscribe` resolves once the edge has registered the
   subscription, so nothing published after it is missed. Messages come down the
   stream in order.

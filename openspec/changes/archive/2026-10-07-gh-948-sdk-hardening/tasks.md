@@ -26,3 +26,11 @@
 - [x] 5.2 Run build, typecheck, lint, the SDK, event, runtime, scenario, app-verify, maintenance and workflow checks, and OpenSpec validation.
 - [x] 5.3 Show negative controls fail named tests: the old edge detail, responder throws refused again, the outbox rejecting after commit, a flipped `retryable` flag, an unknown code, and `tracestate` forwarded again.
 - [x] 5.4 Synchronize the affected specifications and archive the change.
+
+## 6. Review fixes (PR #956)
+
+- [x] 6.1 Cover a nested `SdkError`, a non-reply and malformed refusals on both transports, passing every deadline on an injected scheduler; show mutants M7 and M8 killed.
+- [x] 6.2 Accept a refusal only with a registered code and that code's flag, in process, at the edge and at the client; show mutant M9 killed.
+- [x] 6.3 Answer an edge failure after dispatch with `uncertain-result`, settle a command whose request call is answered `internal` as `uncertain`, and encode an answer before writing its headers.
+- [x] 6.4 Report a refused outbox publish once per run of refusals, take an optional validator in `add`, and document the refusal that lasts.
+- [x] 6.5 Say that a refusal's detail may quote what the caller sent, and record that the change has observable behavior through the runtime's edge.
