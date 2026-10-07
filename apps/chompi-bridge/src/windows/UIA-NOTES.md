@@ -388,10 +388,11 @@ counts, indexes and booleans only. Names are compared inside the helper only to 
   text, or only one trailing line break. Claude's empty composer read as one `\n` (length 1) in the qualification, and
   ghost text never shows in the Value.
 - **Where the band sits (observed 2026-10-07).** On Claude `2.19675.0.0`, with the band showing, the composer `Edit`
-  ("Prompt") is the child of its group at depth 15 under a common ancestor at depth 14. The band's group, which
-  directly holds the `Text` "next:", the suggestion buttons and "dismiss" (depth 18), sits two `Group`s below the
-  common ancestor's other child: depth 15 (class `min-h-0 min-w-0 text-body text-primary ...`), 16 (class
-  `pointer-events-auto isolate -mx-1 min-h-...`), 17 (no class). The first locator, which checked only the direct
+  ("Prompt") is the child of its group at depth 15 under a common ancestor at depth 14. The band's group is at depth
+  17 (no class), and its children at depth 18 are the `Text` "next:", the suggestion buttons and "dismiss". It sits two
+  `Group`s below the common ancestor's other child: that child at depth 15 (class `min-h-0 min-w-0 text-body
+  text-primary ...`), then a group at depth 16 (class `pointer-events-auto isolate -mx-1 min-h-...`), then the band's
+  group at 17. The first locator, which checked only the direct
   children of groups beside the composer's ancestors, read no band there (native check, fix round 1 on
   [#943](https://github.com/jimmie-potts/agent-device-hub/pull/943)).
 - **The band.** The helper takes the chain of the composer's 8 nearest ancestors (the same bound as Codex's picker

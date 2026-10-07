@@ -526,11 +526,21 @@ test('the helper\'s band locator and the simulation\'s reference locator share o
   assert.equal(locateBand(window, composer), null, 'deeper than the bound is no band');
   ({ window, composer } = claudeWindowTree([]));
   assert.equal(locateBand(window, composer), null);
-  // Inside the composer's own branch, or a "next:" text without "dismiss", is never the band.
-  const band = (n = 2) => node('Group', [node('Text', [], { name: 'next:' }), ...Array.from({ length: n }, (_, i) => node('Button', [], { name: `S${i}` })), node('Button', [], { name: 'dismiss' })]);
+  // A band beside the composer counts; a band-shaped group in the composer's own branch (one of the composer's
+  // ancestors, reached through chain[j - 1]) never does; nor does a "next:" text without "dismiss".
+  const bandChildren = (n = 2) => [node('Text', [], { name: 'next:' }), ...Array.from({ length: n }, (_, i) => node('Button', [], { name: `S${i}` })), node('Button', [], { name: 'dismiss' })];
+  const band = (n = 2) => node('Group', bandChildren(n));
   let edit = node('Edit');
   let win = node('Window', [node('Group', [node('Group', [edit, band()])])]);
   assert.equal(locateBand(win, edit)?.level, 0, 'a band beside the composer itself is level 0');
+  // The composer's own group holds a full band shape beside the Edit: it is the composer's branch, so it is ignored.
+  edit = node('Edit');
+  win = node('Window', [node('Group', [node('Group', [node('Group', [edit, ...bandChildren()])])])]);
+  assert.equal(locateBand(win, edit), null, 'a band shape in the composer\'s own branch is no band');
+  edit = node('Edit');
+  const other = band(3);
+  win = node('Window', [node('Group', [node('Group', [node('Group', [edit, ...bandChildren()]), node('Group', [other])])])]);
+  assert.equal(locateBand(win, edit)?.buttons.length, 3, 'the band in the other branch is found, not the composer\'s own');
   edit = node('Edit');
   win = node('Window', [node('Group', [node('Group', [node('Group', [edit]), node('Group', [node('Text', [], { name: 'next:' }), node('Button', [], { name: 'Copy' })])])])]);
   assert.equal(locateBand(win, edit), null, 'a "next:" message without "dismiss" is not a band');
