@@ -6,7 +6,9 @@ import type {InboxItem, SessionRecord} from '@jimmie-potts/event-contracts/v2/fa
 import type {CommandDraft, Participant} from '@jimmie-potts/sdk';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
-import {SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted} from '../fixtures/agents.js';
+import {
+  OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, runtimeEnded, sessionStarted, turnEnded, turnStarted, type ObservationOptions,
+} from '../fixtures/agents.js';
 import type {ChimeDeviceState} from '../fixtures/chime.js';
 import type {HistoryEntry} from '../fixtures/core.js';
 import {switchLamp, type Lamp, type LampDeviceState, type Power} from '../fixtures/lamp.js';
@@ -21,7 +23,7 @@ export type Role = (typeof ROLES)[number];
 export type ModuleName = 'core' | 'lamp' | 'chime';
 
 export type Seed = {
-  /** The modules the runtime starts with, in order. The stand-in core comes first, as the real core will (#831). */
+  /** The modules the runtime starts with, in order. The core comes first (#831). */
   readonly modules: readonly ModuleName[];
   /** The families the reader keeps a copy of, one list per owner. */
   readonly follows: readonly (readonly string[])[];
@@ -190,13 +192,13 @@ const sendOnce = async (h: Harness, role: Role, label: string, command: {key: st
   const answer = await h.send(role, label, command, {timeoutMs: 5000, requestId});
   if (answer !== 'accepted') throw new Error(`${label} is ${answer}`);
 };
-const publish = async (h: Harness, event: Parameters<typeof observation>[0]): Promise<void> => {
-  const {key, draft} = observation(event, h.now());
+const publish = async (h: Harness, event: Parameters<typeof observation>[0], options: ObservationOptions = {}): Promise<void> => {
+  const {key, draft} = observation(event, h.now(), options);
   await h.sdk('hook').publish(key, draft);
 };
 
-const session = (h: Harness): SessionRecord | undefined =>
-  h.reader.states<SessionRecord>('session').find(state => state.data.id === SESSION_ID)?.data;
+const session = (h: Harness, id = SESSION_ID): SessionRecord | undefined =>
+  h.reader.states<SessionRecord>('session').find(state => state.data.id === id)?.data;
 const waiting = (h: Harness, approvals: readonly string[]): Outcome => {
   const record = session(h);
   if (record === undefined) return 'the reader holds no session';
@@ -415,11 +417,84 @@ const zeroModules: Scenario = {
   ],
 };
 
+/** The occurrences of `type` the reader heard from the core. */
+const occurrences = (h: Harness, type: string): Message[] => h.reader.heard().filter(message => message.source === 'bunny/core' && message.type === type);
+/** The `notice-acknowledge` command for the session's first notice, for `consumerId`. */
+const acknowledgment = (h: Harness, consumerId: string): {key: string; draft: CommandDraft<object>} => ({
+  key: `bunny.cmd.notice-acknowledge.${SESSION_ID}`,
+  draft: {
+    type: 'org.bunny.notice.acknowledge.requested', subject: SESSION_ID, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0',
+    data: {consumerId, noticeId: session(h)?.notices[0]?.id ?? ''},
+  },
+});
+const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
+  const held = session(h)?.notices[0]?.acknowledgedBy;
+  return show(held) === show(consumers) || `the notice is acknowledged by ${show(held)}`;
+};
+
+/**
+ * The agent-session core with zero device modules (Hub #831): hook observations become sessions, an approval prompt is
+ * raised and cleared, a finished turn stays on its session record and never becomes an inbox item, a consumer
+ * acknowledges a notice for itself only, a runtime end removes its session, and a restart leaves the sessions uncertain
+ * until fresh evidence.
+ */
+const agentSessions: Scenario = {
+  id: 'agent-sessions',
+  title: 'the core alone turns hook observations into the sessions every reader syncs',
+  seed: {modules: ['core'], follows: [CORE_FAMILIES]},
+  steps: [
+    expect('health lists the core running, and no device module', async h => {
+      const report = await h.health();
+      const devices = report.filter(module => module.name === 'lamp' || module.name === 'chime');
+      return (report.find(module => module.name === 'core')?.state === 'running' && devices.length === 0) || show(report.map(module => [module.name, module.state]));
+    }),
+    act('the hook observes two sessions start, and a turn in the first', async h => {
+      await publish(h, sessionStarted);
+      await publish(h, sessionStarted, {identity: OTHER});
+      await publish(h, turnStarted);
+    }),
+    expect('the reader holds both sessions, the first active', h =>
+      (session(h)?.activity === 'active' && session(h, OTHER_ID) !== undefined) || `sessions ${show(h.reader.states('session').length)}, first ${String(session(h)?.activity)}`),
+    act('the hook observes an approval prompt in the first', h => publish(h, approvalPrompt('approval-1'))),
+    expect('the session waits for approval-1, and the reader heard it raised', h =>
+      waiting(h, ['approval-1']) === true ? occurrences(h, 'org.bunny.attention.raised').length === 1 || 'no attention.raised' : waiting(h, ['approval-1'])),
+    act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
+    expect('the session no longer waits, and the reader heard it cleared as resolved', h => {
+      const cleared = occurrences(h, 'org.bunny.attention.cleared').map(message => (message.data as {cause: string}).cause);
+      return waiting(h, []) === true ? show(cleared) === show(['resolved']) || `cleared ${show(cleared)}` : waiting(h, []);
+    }),
+    act('the hook observes the turn end', h => publish(h, turnEnded)),
+    expect('the finished turn stays on the session record as one unread notice, and the reader heard turn.ended name it', h => {
+      const record = session(h);
+      const ended = occurrences(h, 'org.bunny.turn.ended').map(message => (message.data as {noticeId?: string}).noticeId);
+      return (record?.activity === 'idle' && record.notices.length === 1 && record.notices[0]?.acknowledgedBy.length === 0 && show(ended) === show([record.notices[0]?.id])) ||
+        `activity ${String(record?.activity)}, notices ${show(record?.notices)}, turn.ended ${show(ended)}`;
+    }),
+    holds('it is no inbox item', h => (h.reader.states('inbox-item').length === 0 && !h.reader.heard().some(message => message.dataschema.includes('/inbox-item/'))) ||
+      `inbox ${show(h.reader.states('inbox-item').map(state => state.data))}`, 300),
+    act('the panel acknowledges the notice for itself', h => sendOnce(h, 'panel', 'acknowledge', acknowledgment(h, 'panel'), 'req-acknowledge')),
+    expect('the notice is acknowledged by the panel only', h => acknowledgedBy(h, ['panel'])),
+    act('the operator tries to acknowledge it as the panel', h => h.send('operator', 'impersonate', acknowledgment(h, 'panel'), {timeoutMs: 5000, requestId: 'req-impersonate'})),
+    expect('that is forbidden', h => answered(h, 'impersonate', 'forbidden')),
+    act('the hook observes the second session\'s runtime end', h => publish(h, runtimeEnded, {identity: OTHER})),
+    expect('the reader no longer holds it, and heard it end', h =>
+      (session(h, OTHER_ID) === undefined && occurrences(h, 'org.bunny.session.ended').length === 1) || `second session ${show(session(h, OTHER_ID)?.activity)}`),
+    act('the runtime restarts cleanly', h => h.restart()),
+    expect('the reader synced again: the session is uncertain after the restart, its notice and acknowledgment kept', h => {
+      const record = session(h);
+      return (record?.restartUncertain === true && record.freshness === 'uncertain' && acknowledgedBy(h, ['panel']) === true) ||
+        `restartUncertain ${String(record?.restartUncertain)}, freshness ${String(record?.freshness)}`;
+    }),
+    act('the hook observes a new turn', h => publish(h, turnStarted, {turn: 'turn-2'})),
+    expect('fresh evidence makes it current again', h => (session(h)?.restartUncertain === false && session(h)?.freshness === 'current') || show(session(h)?.freshness)),
+  ],
+};
+
 /**
  * The early end-to-end path (#827's plan): a hook observation, the committed session, the simulated device's update, a
  * command, its outcome, history and inbox rows, then sync and read, with a duplicate command, the deadline answers, a
  * disconnect, a crash-restart on the same state directory, a failed command and a lost acknowledgment. Stand-ins play
- * the session owner until #831, history until #782 and the inbox items until #923.
+ * history until #782 and the inbox items until #923; the core owns the sessions (#831).
  */
 const endToEnd: Scenario = {
   id: 'end-to-end',
@@ -546,7 +621,7 @@ const endToEnd: Scenario = {
 
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
-  approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, endToEnd,
+  approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

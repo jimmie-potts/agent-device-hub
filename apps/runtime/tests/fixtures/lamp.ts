@@ -143,7 +143,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
         }},
         database: db, clock, log, trace,
       });
-      // Until Hub #782 defines the core's acknowledgment, the stand-in core's lets the outbox forget a recorded outcome.
+      // Until Hub #782 defines the core's acknowledgment, the core's stand-in history's lets the outbox forget a recorded outcome.
       const acknowledgments = {acknowledge: (id: string): boolean => onAcknowledgment?.() !== 'lose' && outbox.acknowledge(id)};
       await followStandInAcks(sdk, acknowledgments, id => { log.info('outbox.acknowledged', {'bunny.message.id': id}); });
       // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.

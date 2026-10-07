@@ -54,7 +54,8 @@ it('every stderr line of a runtime process is a contract record carrying the run
     runtime.child.kill('SIGTERM');
     assert.deepEqual(await runtime.exited, {code: 0, signal: null});
     const records = parsed(runtime.lines());
-    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.ready', 'runtime.stopped']);
+    // The shipped list holds the core (Hub #831), whose start and stop the runtime records.
+    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
     for (const record of records) {
       assert.equal(record.schema_version, '1.3');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
@@ -64,7 +65,7 @@ it('every stderr line of a runtime process is a contract record carrying the run
       assert.match(record.resource['service.instance.id'] ?? '', UUID);
     }
     assert.equal(records[0]?.attributes['server.port'], Number(new URL(url(runtime)).port));
-    assert.deepEqual(records[2]?.attributes, {'bunny.telemetry.dropped_count': 0, 'bunny.telemetry.failure_count': 0, 'bunny.provenance': 'source'},
+    assert.deepEqual(records.find(record => record.event_name === 'runtime.stopped')?.attributes, {'bunny.telemetry.dropped_count': 0, 'bunny.telemetry.failure_count': 0, 'bunny.provenance': 'source'},
       'runtime.stopped counts the records the writer dropped or lost');
     assert.equal(new Set(records.map(record => record.resource['service.instance.id'])).size, 1, 'one instance ID per process');
     instances.push(records[0]?.resource['service.instance.id'] ?? '');

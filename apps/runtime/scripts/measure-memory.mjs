@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Measures the runtime's memory with zero modules for #123. Each run starts a runtime on port 0 with a temporary state
+// Measures the shipped runtime's memory for #123: the core and no device module (#831). Each run starts a runtime on port 0 with a temporary state
 // directory, samples it at fixed times after its ready line and stops it with SIGTERM.
 //   node apps/runtime/scripts/measure-memory.mjs [--variant shipped|no-lag-check] [--at 5,15,30,60] [--runs 3]
 // `shipped` runs the entry point, `apps/runtime/dist/src/main.js`; `no-lag-check` runs the runtime without its watchdog
@@ -26,8 +26,8 @@ if (!['shipped', 'no-lag-check'].includes(values.variant) || times.some(at => !(
 }
 const MAIN = fileURLToPath(new URL('../dist/src/main.js', import.meta.url));
 const INDEX = new URL('../dist/src/index.js', import.meta.url).href;
-const BARE = `const {startRuntime} = await import(${JSON.stringify(INDEX)});
-const runtime = await startRuntime({modules: [], port: 0, stateDir: process.argv[1], log: () => {}});
+const BARE = `const {buildModules, shippedModules, startRuntime} = await import(${JSON.stringify(INDEX)});
+const runtime = await startRuntime({modules: buildModules(shippedModules, false), port: 0, stateDir: process.argv[1], log: () => {}});
 process.on('SIGTERM', () => { void runtime.stop().then(() => process.exit(0)); });
 process.stdout.write(JSON.stringify({event: 'runtime.ready', url: runtime.url}) + '\\n');`;
 const HEALTH = '/api/runtime/v1/health';
