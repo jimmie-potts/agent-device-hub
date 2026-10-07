@@ -1,11 +1,10 @@
 # Nanoleaf port
 
 This package is the TypeScript port of the Nanoleaf domain logic for
-[#26](https://github.com/jimmie-potts/agent-device-hub/issues/26). It is staging:
-nothing runs it yet. The Nanoleaf module story
-([#844](https://github.com/jimmie-potts/agent-device-hub/issues/844)) wires it into
-the runtime. The installed Python runtime keeps running unchanged until the cutover.
-GitHub issues own the delivery status of each slice.
+[#26](https://github.com/jimmie-potts/agent-device-hub/issues/26). The Nanoleaf module story
+([#844](https://github.com/jimmie-potts/agent-device-hub/issues/844)) runs it as the runtime
+module `nanoleaf` ([README.md](README.md), `src/module/`). The installed Python runtime keeps
+running unchanged until the cutover. GitHub issues own the delivery status of each slice.
 
 ## Provenance
 
@@ -91,7 +90,7 @@ Slices 2 and 3 translate their tests first.
 | `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`). These are domain rules and stay in the module; #844's command schema checks message shape and does not take them over. 3d: animation admission's domain checks (`admitCommand`), `geometry` (`savedGeometry`), `queued_animations` (`queuedContent`), `retire` (`retireQueued`), `recover_attempts` (`recoverAttempts`), `attempt` and `play` (`playAnimation`), and the animation expiry of `recover` and `process` (`expireQueued`) | The rest of the integration extension API (runtime commands, #844) |
 | `controller_server.py`, `controller_contract.py` | 3d: `admit`'s domain checks and desired state (`admitCommand`, `controls.ts`) | The HTTP controller, credentials and the contract's request checks (runtime commands and replies, and the core's credentials) |
 | `codex_hooks.py` | | Codex hook registration, retired (owner decision, 2026-10-05) |
-| `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | The web server is replaced by the runtime; the wall pages, their view and assets move with #844 |
+| `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | The web server is replaced by the runtime. #844 publishes the wall view as `nanoleaf-wall` from saved geometry only; the wall pages and their assets move with #934. The wall server's geometry discovery (`ensure_geometry`, its connector layout and cache) is not ported |
 | `launcher.py` | | Process launch (runtime module host) |
 | `diagnostics.py` | | Runtime observability |
 | `install_*.py`, `runtime_*.py` | | Install and packaging (the extended installer, #840) |
@@ -116,11 +115,11 @@ such test says so in a comment. [Dropped assertions](#dropped-assertions) and
 | `test_controller_controls.py` | 20 | 16 in 3d (`controls.test.ts`): all but the four below. Partly: `test_brightness_executes_once_through_worker_and_governs_work_indicators`, `test_discovery_is_bounded_named_only_in_extension_and_quiet_between_changes`, `test_control_admitted_after_observation_is_seen_by_the_same_pass_guards` | Not ported (ledger snapshot and admission): `test_capabilities_declare_power_brightness_and_scenes_with_constraints`, `test_admission_replays_power_and_reports_desired_state_before_send`, `test_ledger_without_scene_key_publishes_new_ids_with_an_event`, `test_scene_ids_are_not_recoverable_from_published_snapshot_fields` |
 | `test_controller_worker.py` | 10 | 7 in 3d (`controls.test.ts`): `test_machine_quiet_records_actual_transmission`, `test_same_free_noop_never_sends`, `test_uncertain_transport_is_not_retried_by_worker`, `test_worker_restart_marks_attempt_uncertain`, `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries`, `test_partial_failure_retains_completed_operations`, `test_expiry_during_unread_cannot_fall_back_to_legacy_send`. Partly: the last two. `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries` was partly translated in 3d and is translated fully in 3e, through `superviseWorker` | Not ported (credentials stay with the core, coordinator decision 2026-10-06): `test_revoked_unsent_mode_cannot_run_as_legacy_work`, `test_revocation_during_observe_cannot_fall_back_to_legacy_send`, `test_disable_during_observe_cannot_fall_back_to_legacy_send` |
 | `test_panels_controller.py` | 28 | 11 in 3e (`device-worker.test.ts`): `WorkerOwnershipTest` (10), all but the revocation case below, and `LedgerTest.test_local_mode_change_cancels_only_that_devices_controls`. Partly: `test_a_command_runs_only_on_its_own_devices_worker`, `test_commands_admitted_mid_pass_stay_with_their_own_device`, `test_panels_mode_command_is_journaled_by_the_panels_worker`, `test_each_worker_discovers_only_its_own_scenes`, `test_panels_scene_follows_the_panels_mode`, `test_panels_instance_still_owns_no_shared_ingestion`, `test_local_mode_change_cancels_only_that_devices_controls` | Not ported: `test_revoke_or_disable_that_missed_the_panels_ledger_ends_its_request` (credentials), the other eleven `LedgerTest` cases, `IntegrationTest` (3), `HttpTest` (1) and `CompatibilityTest` (1) (the ledger, integration API and HTTP routes) |
-| `test_wall_devices.py` | 9 | 4 in 3b (`edits.test.ts`): `test_actions_address_the_named_device`, `test_mode_changes_address_the_named_device_and_leave_the_other_scene_alone`, `test_one_zone_elements_reject_coverage_and_half_swaps`, `test_eviction_is_routed_to_the_named_device`. Partly: all but `test_one_zone_elements_reject_coverage_and_half_swaps` | Not ported (the wall server and its view, #844): `test_untargeted_state_addresses_lines_and_lists_registered_devices`, `test_targeted_panels_state_uses_cached_triangle_geometry`, `test_registered_device_without_saved_layout_reports_an_error_without_contact`, `test_unknown_device_is_rejected_without_fallback_or_change`, `test_http_state_query_rejections_and_privacy` |
+| `test_wall_devices.py` | 9 | 4 in 3b (`edits.test.ts`): `test_actions_address_the_named_device`, `test_mode_changes_address_the_named_device_and_leave_the_other_scene_alone`, `test_one_zone_elements_reject_coverage_and_half_swaps`, `test_eviction_is_routed_to_the_named_device`. Partly: all but `test_one_zone_elements_reject_coverage_and_half_swaps` | Not ported (the wall server and its pages, #934): `test_untargeted_state_addresses_lines_and_lists_registered_devices`, `test_targeted_panels_state_uses_cached_triangle_geometry`, `test_registered_device_without_saved_layout_reports_an_error_without_contact`, `test_unknown_device_is_rejected_without_fallback_or_change`, `test_http_state_query_rejections_and_privacy` |
 | `test_integration_api.py` | 15 | 2 in 3b (`edits.test.ts`), each partly: `test_all_operations_preserve_unrelated_state_and_scene`, `test_shared_mapping_source_and_notices_survive_edits` | Not ported (integration admission, processing, snapshot, receipts and HTTP): the other 13, including `test_actual_worker_applies_configuration` and `test_concurrent_wall_edit_wins_without_overwrite` |
 | `test_controller_animations.py` | 19 | 14 in 3d (`controls.test.ts`): 8 of `WorkerTest`, all but the two below, and 6 of `AdmissionTest` through `admitCommand`. Partly: `test_plays_once_after_the_free_handoff_and_never_again`, `test_cancel_revocation_and_expiry_retire_before_send`, `test_unsent_animation_restores_the_hold_like_unsent_v1_work`, and every `AdmissionTest` translation: they drop request tickets, the receipt's replay and the join of a repeated request, the conflict of a changed one, `revision-conflict` for a stale expected revision, and the receipt's shape and launch (the runtime's requests and replies and the module host, #844); `test_invalid_stale_oversized_and_unplaced_requests_consume_no_ticket` refuses a wall too wide for the animation instead of patching `MAX_BYTES` | Not ported: `WorkerTest.test_mode_committed_while_the_attempt_is_recorded_prevents_the_send` (in one process nothing commits between the recorded attempt and its write, which follow each other with no wait), `WorkerTest.test_revocation_or_disable_while_the_attempt_is_recorded_prevents_the_send` (credentials stay with the core), `AdmissionTest.test_remembered_scene_id_is_read_only_and_null_when_unavailable` and `AdmissionTest.test_options_route_is_pure_and_the_snapshot_shape_is_unchanged` (the animation options view, #844) and `HTTPTest` (1) |
 | `test_palette.py` | 16 | 14: 8 in 2a (`renderer.test.ts`), `test_upgrade_keeps_preferences_and_adopts_defaults`, `test_damaged_rows_fall_back_to_defaults` and the six `PaletteFrameTest` cases; `test_defaults_partial_update_reset_and_restart` and `test_invalid_palette_requests_apply_nothing` in 3b; `PaletteWorkerTest` (4) in 3c (`scenes.test.ts`). Partly: `test_upgrade_keeps_preferences_and_adopts_defaults`, `test_off_base_keeps_unused_lines_dark_and_restores_scene` | Not ported: `test_palette_write_requires_origin_and_token` (wall server), `test_integration_settings_api_offers_no_palette` (integration API) |
-| `test_connector_geometry.py` | 13 | 3 in 2a (`geometry.test.ts`): `test_actual_layout_preserves_identity_and_reported_housings`, `test_graph_is_allowlisted_and_rejects_invalid_geometry`, `test_synthetic_topologies_and_orientation_preserve_zone_ownership` | Not ported: the other 10 test the wall server's geometry enrichment, its connector cache file and its state (#844) |
+| `test_connector_geometry.py` | 13 | 3 in 2a (`geometry.test.ts`): `test_actual_layout_preserves_identity_and_reported_housings`, `test_graph_is_allowlisted_and_rejects_invalid_geometry`, `test_synthetic_topologies_and_orientation_preserve_zone_ownership` | Not ported: the other 10 test the wall server's geometry enrichment, its connector cache file and its state, which #934 owns with the wall pages; geometry discovery is not ported, and the module draws only saved geometry |
 | `test_comets.py` | 16 | 13: 2 in 2a (`renderer.test.ts`), `test_geometry_head_tail_duration_and_zone_pairs`, `test_protect_red_yellow_lines_and_outward_waves`; 3 in 3b (`comets.test.ts`), `test_completion_without_slot_waits_for_assignment`, `test_free_quiet_clear_queue_and_do_not_accumulate`, `test_expired_comet_not_replayed_after_restart`; 8 in 3c (`comets.test.ts`), the rest but three. Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported (shared input only): `test_historical_unread_reconciliation_does_not_enqueue`, `test_read_active_source_is_reserved_until_finish`, `test_scene_end_after_read_keeps_active_source_until_finish` |
 | `test_modes.py` | 15 | 15: 1 in 2a (`renderer.test.ts`), `test_quiet_frames_are_steady_paired_colors`; the other 14 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
 | `test_effects.py` | 18 | 18: 1 in 2a, `EncoderTest.test_display_encodes_zone_frames`, with the display encoder; 17 in 2b. All in `effects.test.ts`. Partly: `test_presets_resolve_to_identical_bounded_explicit_frames` | |
@@ -128,12 +127,12 @@ such test says so in a comment. [Dropped assertions](#dropped-assertions) and
 | `test_device_worker.py` | 40 | 36: 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order`, whose mode command 3b restored; 33 in 3e (`device-worker.test.ts`), all the rest but four. Partly: `test_launch_starts_one_instance_per_registered_device`, `test_unreadable_registry_launches_the_original_device`, `test_cli_mode_and_status_accept_a_device_target`, `test_unknown_target_is_rejected_without_state_change`, `test_panels_preview_is_scoped_to_panels`, `test_panels_never_runs_controller_integration_or_scene_discovery`, `test_lines_outage_keeps_panels_comets_in_shared_input`, `test_panels_outage_leaves_lines_update_and_outcome`, and the 3e cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported: `test_uninstall_frees_every_device_and_rejects_a_target` (installer), `test_refresh_clears_only_its_target_display_cache` and `test_reset_says_it_resets_every_device` (the setup command line), `test_panels_instance_never_polls_the_shared_feed` (the feed poller: the runtime delivers sessions to the module, and no worker polls) |
 | `test_edit_parity.py` | 4 | 3 in 3b (`edits.test.ts`), each partly: `test_equivalent_edits_save_equivalent_state`, `test_active_comet_defers_browser_edit_and_holds_machine_edit`, `test_browser_only_edits_keep_their_ledger_scope` | Not ported: `test_browser_edit_after_admission_is_a_machine_revision_conflict` (integration admission) |
 | `test_scene_restore.py` | 13 | 13 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
-| `test_controller_state.py`, `test_controller_api.py`, `test_controller_cli.py`, `test_controller_contracts.py`, `test_integration_geometry.py`, `test_codex_links.py`, `test_prism_assets.py` | | | Not ported: the controller ledger, HTTP controller, integration API and wall server. Wall view and link behavior moves with #844 |
+| `test_controller_state.py`, `test_controller_api.py`, `test_controller_cli.py`, `test_controller_contracts.py`, `test_integration_geometry.py`, `test_codex_links.py`, `test_prism_assets.py` | | | Not ported: the controller ledger, HTTP controller, integration API and wall server. #844 publishes the wall view; the wall pages and link behavior move with #934 |
 | `test_hook_management.py` | | | Not ported: hook registration is retired |
 | `test_linux_runtime.py`, `test_runtime_install.py`, `test_runtime_adapter.py`, `test_cli_compatibility.py`, `test_observability.py`, `test_measure_shared.py`, `test_verify_vendor.py`, `test_module_dependencies.py` | | | Not ported: install, packaging, CLI, diagnostics, tooling and vendored copies. The module boundary lint replaces the import-direction checks |
 | `test_demo_fixture.py`, `test_demo_runs.py`, `verify_*.mjs` | | | Not ported: #844 replaces the demo and verification adapter with simulated transport and scenarios |
 | `mcp/tests/*.test.mjs` | | | Not ported: the Node MCP host's tests, 11 files (the MCP host is not ported; Nanoleaf MCP animation tools are codex-nanoleaf#159) |
-| `*_checks.cjs`, `wall_options.cjs` | | | Wall page browser checks move with the pages (#844); `workflow_checks.cjs` is the old repository's |
+| `*_checks.cjs`, `wall_options.cjs` | | | Wall page browser checks move with the pages (#934); `workflow_checks.cjs` is the old repository's |
 
 The port adds tests of its own:
 
@@ -225,9 +224,9 @@ as counts and the outcome's evidence reports. They also drop:
   first request instead.
 - `test_plays_once_after_the_free_handoff_and_never_again`: the animation options view's mode.
 - `test_cancel_revocation_and_expiry_retire_before_send`: the integration API's cancel route and
-  revocation. The expiry is translated.
+  revocation. The expiry is translated, without Python's hold (see [The runtime module](#the-runtime-module-844)).
 - `test_unsent_animation_restores_the_hold_like_unsent_v1_work`: the failed worker launch after
-  admission, which #844's module host replaces. The expiry is translated.
+  admission, which #844's module host replaces. The expiry is translated, without Python's hold.
 - The six `AdmissionTest` translations: request tickets and their consumption, the receipt's replay,
   the join of a repeated request and the `request-conflict` of a changed one, `revision-conflict` for
   a stale expected revision, the pending list and the receipt's shape, the worker launch, and the
@@ -348,15 +347,22 @@ unread-file reader cases in [Shared input only](#shared-input-only).
 
 ## Port input
 
-The port still takes the 1.x monitor envelope: an owner snapshot with revisions, `lossCount` and
-`admissionRejected`. It resyncs on a revision gap or a change in either count, keeps a stored copy
-of the core's session state in `shared_input.envelope`, and `validateConfig` still requires the
-feed's `endpoint` and `tokenFile`. #844 replaces this input with the SDK's sync, and the module
-then saves only the state it owns.
+The projection still reads an owner snapshot in the 1.x envelope's shape, with revisions,
+`lossCount` and `admissionRejected`, and its translated tests feed it such envelopes. The runtime
+module (#844) feeds it the core's `session/2.0` records from the SDK's sync instead
+(`src/module/feed.ts`): a completed sync, the first or one after an overflow, is projected as a
+resync, and each live change as the next local revision, with `lossCount` and
+`admissionRejected` 0, so the projection's own gap rules never fire. The previous envelope lives
+in the module's in-memory `SharedCopy`, rebuilt by sync after a restart; `shared_input.envelope`
+stays NULL, so the module saves only the state it owns. `validateConfig` no longer requires the
+1.x feed's `endpoint` and `tokenFile`, and still checks them when a saved configuration names
+them.
 
 Two feed duties have other owners:
 
-- Notice acknowledgment: #844, which sends it to the core as a command.
+- Notice acknowledgment: the module's `nanoleaf-notice-acknowledge` command, which sends the
+  core's `notice-acknowledge` for a task the wall shows and refuses a skipped session without a
+  request.
 - The snapshot schema check, including the rejection of cross-source parentage: #842's core
   payload families, validated before the module sees them.
 
@@ -600,7 +606,7 @@ retires with codex-nanoleaf (#839). It writes:
 `sessions`, `activity`, `task_info`, `slots`, `comets`, `waits`, `receipts`, `shared_stale`,
 `shared_suppressed_waves`, `shared_evictions`, `projects`, `line_prefs`, `map_settings`, `meta`
 and `display_v3`. From `shared_input` it compares `source`, `generation`, `received`,
-`connection` and `error`, and the envelope by hash. The `palette`, `map_pending`,
+`connection` and `error`, and, by hash, the envelope Python saved there, which the port keeps in its in-memory copy (#844). The `palette`, `map_pending`,
 `locate` and `shared_ack` tables and `shared_input`'s `config` and `backup` are not compared.
 
 To re-record, run from the repository root with a codex-nanoleaf checkout at the provenance commit:
@@ -756,6 +762,13 @@ on a read-only export of that commit, since the Python tests import from their o
     write. Python cancelled both. A native command that expires unsent fails `expired`, where
     Python's listener wrote `transport-failure`. The mode-dependent refusals keep Python's
     `unsupported-capability`, which the table maps to itself.
+
+    The runtime module goes further for mode commands (review of PR #968): it completes every
+    `device-mode-set` `succeeded` with observed evidence as its mode commits, in the admission's
+    transaction, and does not journal it, so it never ends `sent`, uncertain or `expired`. Python's
+    receipt for a mode set was `sent` with confirmed transmission once the worker wrote it, and
+    `transport-failure` if it expired unsent. The port's own `admitCommand` still journals mode
+    commands as Python did, so the recorded parity tests keep Python's receipts.
   - Animation admission refuses in `integration_api.admit`'s order: another device, another waiting
     animation, a layout that cannot be read, a mode other than Free, then an animation the saved Lines
     cannot play.
@@ -843,26 +856,60 @@ on a read-only export of that commit, since the Python tests import from their o
   - The display cache's text keeps Python's encoding of infinities (`-Infinity`) for an unset wave
     cutoff, so it reads back as Python's did.
 
-## Known limits
+## The runtime module (#844)
 
-- The tests read task rows through `wallView`, a test helper that mirrors
-  `wall_server.App.state`. No Python recording checks that helper; #844 ports the real view.
-- The worker's per-device lock is Python's lock file in the state directory, which also excludes a
-  second process. #844 may replace it with an in-process guard.
-- Nothing starts `superviseWorker` yet. #844's module host starts one for each registered device and
-  for a newly enrolled one, wires `onFailure` to the runtime's observability (Python emitted
-  `process.failed`), and maps a recorded `control_error` to the device's `unavailable` availability
-  in its `device/2.0` state (#918); a successful pass clears it. A supervisor ends
-  `paused` when a new configuration pauses shared input, so the configuration wiring that selects
-  shared input again also starts the supervisors again. `locked` means another instance holds the
-  device, so one process starts one supervisor per device.
-- A queued command fails `expired` only when the worker next checks after its `expiresat`: at its
-  start, in a pass, or while it waits on a hold. While no supervisor runs the device's worker, because
-  it has not started or ended on a hold with shared input not selected, nothing expires that device's
-  queued commands. #844's host must expire journaled commands while no supervisor runs, on a timer or
-  at start. Whether a later
-  definitive `expired` replaces the tracker's earlier uncertain result is open with #782.
-- Nothing publishes the control journal's messages yet. #844 runs `admitCommand` and the mode
-  commands inside its outbox's transaction, gives the worker a `transact` backed by the same outbox,
-  publishes the device's state when a scene list change is reported, and after an accepted command
-  starts the device's supervisor if none is running. The tests use a plain transaction that collects the messages.
+`src/module/` wraps the port as the module `nanoleaf`; [README.md](README.md) describes it. What it
+settles of the limits this port left:
+
+- The real wall view is `wallView` in `src/module/views.ts`, published as `nanoleaf-wall` from saved
+  state only. The translated tests still read task rows through their own `wallView` helper, which
+  mirrors `wall_server.App.state`; no Python recording checks either.
+- The worker's per-device lock stays Python's lock file, now in the module's private folder, which
+  also excludes a second runtime on the same state.
+- The module starts one `superviseWorker` per configured device, and again after an accepted command
+  when none runs and when shared input is selected again. A newly enrolled device appears at the next
+  start, since enrollment is offline (#933) and the configuration file has no reload. `onFailure`
+  logs a failed pass once per run of failures; a recorded `control_error` makes the device
+  `degraded` in its `device/2.0` record until a successful pass clears it, and a link that does not
+  answer makes it `unavailable`. A supervisor that ends `locked` or `unrecorded`, or rejects, starts
+  again after a wait that doubles from 1 s to 30 s.
+- Each accepted command's expiry runs `expireQueued` on a timer, so a command expires on time while
+  no worker checks. Its `failed` outcome with `expired` is published as any outcome is; the tracker's
+  handling of a late definitive outcome after `uncertain` is #782's (ADR 0012, "Late and conflicting
+  outcomes").
+- Admission and mode commands run inside the module's outbox transaction, and the worker's
+  `transact` is backed by the same outbox, so each outcome commits with the change it reports; a
+  scene list change publishes the device's state. All of them are synchronous transactions on the
+  module's one connection, so they take turns by construction.
+
+The module's own differences from Python:
+
+- At a restart, each command accepted before it with no outcome ends and never runs: an attempt
+  without a result is uncertain (`recoverAttempts`), and a queued command fails `cancelled` and leaves
+  no desired power or brightness of its own. Python's worker ran queued commands after a restart.
+  Saved comets are dropped, so a restart replays none.
+- A mode command completes `succeeded`, observed, as its mode commits, since the mode is the
+  module's own state; the worker's paints that follow belong to no command, so they record no span
+  and show in `lastTransmission` without a request ID. Python's mode set was a journaled device
+  write (see the outcome table in slice 3d).
+- Only a write that may have reached the device holds it. Python also held the device when a queued
+  command expired unsent; that command proves no effect (ADR 0012), so `expireQueued` holds nothing.
+  The recorded cases that showed the hold (`a command that expires during observation never sends`,
+  `an expired command never sends`, `an expired animation never plays`, `an expired animation holds
+  the device` and `the worker command runs a worker that ended at a hold again`) run as steps with the
+  port's outcomes instead of being replayed, and the port's tests of a hold's effect on a pass set
+  the hold directly, as an uncertain write sets it. A power or brightness command that fails takes
+  its desired value with it.
+- A device that answers a write with an HTTP error status heard it: the command fails with
+  `transmitted` evidence and the status's code (`answerCode`), and nothing holds the device. Python
+  took any failed write as uncertain and held the device.
+- Machine edits keep wall-editor ownership through a per-device configuration revision in the
+  module's state, in place of the controller ledger's view revision (see the README). One waits at a
+  time, on the Lines only, as Python's integration queue held one.
+- Outcome errors are the registry's error detail, with each code's `retryable` flag.
+- The runtime's scheduler takes whole milliseconds, so the module rounds each worker wait up to the
+  next one. The port's own arithmetic, which the recorded worker runs compare, is unchanged.
+- Observed power comes from a `GET /state` poll of each device, every 5 s while it answers; Python's
+  worker read `/state` only while a saved scene played, and its ledger had no observation. A poll
+  that reads the same power and brightness publishes nothing.
+- The port's lock files are created with mode 600 (`privateDatabase`); Python's took the umask.

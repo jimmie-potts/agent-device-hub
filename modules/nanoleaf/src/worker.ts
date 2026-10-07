@@ -4,7 +4,6 @@
 // accepted controls and requested animations, journaled with their outcomes (controls.ts); the runtime launches and
 // restarts the worker (PORTING.md).
 import {join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
 import {followRegistry, loadConfig, readRegisteredDevices, registeredDevices} from './configuration.js';
@@ -17,7 +16,7 @@ import type {AnimationCommand, Display} from './effects.js';
 import {ANIMATION, expireQueued, finish, held, journalRow, recoverAttempts, type ErrorCode, type Transact} from './journal.js';
 import {SceneRestorer, type Sender} from './scenes.js';
 import {selected, sharedRenderConfig} from './shared-input.js';
-import {execute, first, transaction, type Db, type Row} from './sqlite.js';
+import {execute, first, privateDatabase, transaction, type Db, type Row} from './sqlite.js';
 import {controlState, markApplied, markDirty, overrides as overridesOf, type Overrides} from './store.js';
 import {lightRequest, type LightAddress, type LightRequest} from './transport.js';
 
@@ -258,7 +257,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
     signal.addEventListener('abort', onAbort, {once: true});
   });
   // One locked instance per device; the lock file lives in the module's private state directory.
-  const guard = new DatabaseSync(join(directory, lockFile(device)), {timeout: 0});
+  const guard = privateDatabase(join(directory, lockFile(device)), {timeout: 0});
   try {
     guard.exec('BEGIN EXCLUSIVE');
   } catch (error) {

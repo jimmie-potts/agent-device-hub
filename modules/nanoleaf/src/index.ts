@@ -1,4 +1,4 @@
-// The ported Nanoleaf domain (Hub #26). Runtime wiring belongs to the Nanoleaf module story (Hub #844); PORTING.md maps the port.
+// The ported Nanoleaf domain (Hub #26) and its runtime module (Hub #844); PORTING.md maps the port.
 export * from './comets.js';
 export * from './compat.js';
 export * from './configuration.js';
@@ -25,3 +25,5 @@ export * from './sqlite.js';
 export * from './store.js';
 export * from './transport.js';
 export * from './worker.js';
+// The runtime module (Hub #844): its factory, configuration, families and simulated controllers.
+export * from './module/index.js';

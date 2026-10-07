@@ -14,8 +14,8 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
 | Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
 | Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
-| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), and a harness module that reports what the bus publishes |
-| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
+| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), the shipped Nanoleaf module (#844) with a simulated Lines controller, and a harness module that reports what the bus publishes |
+| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx`, the Tidbyt module's `SimulatedCloud` and the Nanoleaf module's `SimulatedNanoleaf`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
@@ -24,7 +24,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. A simulation that names an unknown device, action or field is refused with 400 and changes nothing. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. A simulation that names an unknown device, action or field is refused with 400 and changes nothing. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -35,8 +35,8 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, and the Pixoo's simulated device `pixoo-1`) |
-| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), and the four Pixoo scenarios below |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, the Pixoo's simulated device `pixoo-1`, and the Nanoleaf module's simulated Lines) |
+| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), the four Pixoo scenarios below, and `nanoleaf-wall` (the core and the Nanoleaf module with a simulated Lines controller) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
 ## Capture steps
@@ -238,6 +238,25 @@ npm run -s verify:runtime -- start --scenario pixoo-now-playing    # a song's ca
 npm run -s verify:runtime -- capture <run-id> scenario-pixoo-now-playing
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+To use the Nanoleaf module (#844) as a person would, start its scenario: the core and the Nanoleaf module, configured
+with a simulated Lines controller. Its capture follows an agent session onto the wall, sets Work, Quiet and Free,
+switches the wall off from its app, takes it offline, sets Quiet meanwhile, which succeeds as observed, and brings the
+wall back at the Quiet level, shows a second session on a Line, then loses a brightness write's answer so the wall shows
+held and degraded until a Work command:
+
+```bash
+npm run -s verify:runtime -- start --scenario nanoleaf-wall
+npm run -s verify:runtime -- capture <run-id> scenario-nanoleaf-wall
+npm run -s verify:runtime -- stop <run-id>
+```
+
+By hand, a remote part with the run's operator grant sends `device-mode-set` to `bunny.cmd.device-mode-set.wall`, and
+one with the reader's grant syncs `device`, `nanoleaf-wall` and `nanoleaf-animations` from the owner
+`bunny/modules/nanoleaf`; the harness API's `state` shows
+the simulated controller under `devices.nanoleaf`, and `simulate` takes `{"device": "nanoleaf", "action": "offline"}`,
+`online`, `power-off`, `power-on` or `lose-next-answer` (the next power or brightness write reaches the wall and its
+answer is lost).
 
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.

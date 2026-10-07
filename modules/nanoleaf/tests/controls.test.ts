@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
+import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {admitCommand, MAX_QUEUED, Refused, sceneList} from '../src/controls.js';
 import {PRESETS, render, type ExplicitAnimation, type PresetName} from '../src/effects.js';
 import {transactWith, type Outcome as ControlOutcome} from '../src/journal.js';
@@ -34,7 +35,7 @@ function scheduled(replay: ControlReplay, index = 0): unknown[] {
 }
 
 function outcome(id: string, result: ControlOutcome['result'], evidence: ControlOutcome['evidence'], code?: string): ControlOutcome {
-  return {type: 'outcome', device: 'wall', requestId: id, result, evidence, ...(code === undefined ? {} : {error: {code}})} as ControlOutcome;
+  return {type: 'outcome', device: 'wall', requestId: id, result, evidence, ...(code === undefined ? {} : {error: errorBody(code as ErrorCode).error})};
 }
 
 const outcomeOf = (replay: ControlReplay, id: string): ControlOutcome | undefined => replay.run.outcomes().get(id);
@@ -257,16 +258,19 @@ suite('ControllerWorkerTest', () => {
   });
 
   test('test_expiry_during_unread_cannot_fall_back_to_legacy_send', async context => {
-    // The expiry runs during the observation: the legacy unread read is not ported (shared input only).
-    const replay = await replayControls(context, 'a command that expires during observation never sends');
-    assert.deepEqual(puts(replay.run.device.calls), []);
-    assert.deepEqual(outcomeOf(replay, 'q'), outcome('q', 'failed', 'none', 'expired'));
-    assert.deepEqual(holdOf(replay.run), [['1']]);
-    // As Python's, the pass ends at the hold before it records the scene list it observed.
-    assert.equal(replay.run.reported.filter(message => message.type === 'scenes').length, 0);
-    const before = await replayControls(context, 'an expired command never sends');
-    assert.deepEqual(before.run.device.calls, []);
-    assert.deepEqual(outcomeOf(before, 'q'), outcome('q', 'failed', 'none', 'expired'));
+    // The expiry runs during the observation: the legacy unread read is not ported (shared input only). Python's
+    // recording also held the device at the expiry; an unsent command proves no effect, so the port holds nothing
+    // (ADR 0012; Hub #844 review), and these steps run without the recording's replay.
+    const {run} = await steps(context, [['controller'], ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}],
+      ['hook', {endpoint: '/effects', method: 'GET', step: ['expireAll']}], ['run', 1004]]);
+    assert.deepEqual(run.outcomes().get('q'), outcome('q', 'failed', 'none', 'expired'));
+    assert.deepEqual(holdOf(run), []);
+    // The mode the command set stays the device's own, which the pass shows as its own state: Quiet's level, once.
+    assert.equal(run.device.brightness, 10);
+    assert.equal(run.reported.filter(message => message.type === 'outcome').length, 1);
+    const before = await steps(context, [['controller'], ['command', 'q', {kind: 'mode.set', mode: 'Quiet'}], ['sleep', 31], ['run', 1033]]);
+    assert.deepEqual(before.run.outcomes().get('q'), outcome('q', 'failed', 'none', 'expired'));
+    assert.deepEqual(holdOf(before.run), []);
   });
 });
 
@@ -316,9 +320,12 @@ suite('WorkerTest', () => {
 
   test('test_cancel_revocation_and_expiry_retire_before_send', async context => {
     // Partly: the integration cancel and revocation are not ported (the runtime's requests and the core's credentials).
-    const replay = await replayControls(context, 'an expired animation never plays');
-    assert.deepEqual(outcomeOf(replay, 'w'), outcome('w', 'failed', 'none', 'expired'));
-    assert.deepEqual(animationWrites(replay.run.device.calls), []);
+    // Python's recording held the device at the expiry, which the port does not (ADR 0012; Hub #844 review).
+    const {run} = await steps(context, [['controller'], ['mode', 'free'], ['run', 1002], ['device', 'clearCalls'],
+      ['play', 'w', {colors: ['#0044aa', '#00aa66'], kind: 'animation.play', pattern: 'wave', speed: 'slow'}], ['sleep', 31], ['run', 1035]]);
+    assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
+    assert.deepEqual(animationWrites(run.device.calls), []);
+    assert.deepEqual(holdOf(run), []);
   });
 
   test('test_admission_clears_a_transport_hold_like_a_fresh_native_request', async context => {
@@ -330,13 +337,14 @@ suite('WorkerTest', () => {
     assert.ok(!puts(replay.run.device.calls).some(([, payload]) => (payload as {select?: string}).select === 'Cotton Candy'));
   });
 
-  test('test_unsent_animation_restores_the_hold_like_unsent_v1_work', async context => {
-    // Partly: the failed worker launch belongs to the runtime; the expiry part is translated.
-    const replay = await replayControls(context, 'an expired animation holds the device');
-    const [hold, revision] = results(replay, 'query');
-    assert.deepEqual(hold, revision);
-    assert.deepEqual(outcomeOf(replay, 'w'), outcome('w', 'failed', 'none', 'expired'));
-    assert.deepEqual(animationWrites(replay.run.device.calls), []);
+  test('test_unsent_animation_restores_the_hold_like_unsent_v1_work, without the hold', async context => {
+    // Partly: the failed worker launch belongs to the runtime. Python held the device when an unsent animation expired;
+    // it never reached the device, so the port holds nothing (ADR 0012; Hub #844 review).
+    const {run} = await steps(context, [['controller'], ['mode', 'free'], ['run', 1002], ['device', 'clearCalls'],
+      ['play', 'w', {colors: ['#0044aa', '#00aa66'], kind: 'animation.play', pattern: 'wave', speed: 'slow'}], ['sleep', 31], ['expire'], ['run', 1036]]);
+    assert.deepEqual(holdOf(run), []);
+    assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
+    assert.deepEqual(animationWrites(run.device.calls), []);
   });
 });
 
@@ -420,13 +428,16 @@ async function steps(context: TestContext, list: readonly Step[]): Promise<{run:
 
 suite('control checks the port adds', () => {
   test('the worker command runs a worker that ended at a hold again', async context => {
-    // Recorded from Python: a hold set as a write completes ends the pass; the worker command runs the worker again 1 s
-    // later, and the fresh brightness admitted meanwhile, which released the hold, is written then.
-    const replay = await replayControls(context, 'the worker command runs a worker that ended at a hold again');
-    assert.deepEqual(puts(replay.run.device.calls), [['/state', {brightness: {value: 42, duration: 0}}], ['/state', {brightness: {value: 30, duration: 0}}]]);
-    assert.equal(replay.run.device.calls.at(-1)?.[0], 1003);
-    assert.deepEqual(outcomeOf(replay, 'p'), outcome('p', 'failed', 'none', 'expired'));
-    assert.deepEqual(outcomeOf(replay, 'b2'), outcome('b2', 'succeeded', 'transmitted'));
+    // As recorded from Python: a hold set as a write completes ends the pass; the worker command runs the worker again
+    // 1 s later, and the fresh brightness admitted meanwhile, which released the hold, is written then. Python's
+    // recording set the hold through an unsent command's expiry, which holds nothing in the port, so the hold is set
+    // as an uncertain write sets it.
+    const {run} = await steps(context, [['controller'], ['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
+      ['hook', {complete: true, step: ['hold']}], ['supervise', 1006, [[1002.5, ['command', 'b2', {kind: 'brightness.set', percent: 30}]]]]]);
+    assert.deepEqual(puts(run.device.calls), [['/state', {brightness: {value: 42, duration: 0}}], ['/state', {brightness: {value: 30, duration: 0}}]]);
+    assert.equal(run.device.calls.at(-1)?.[0], 1003);
+    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'succeeded', 'transmitted'));
+    assert.deepEqual(run.outcomes().get('b2'), outcome('b2', 'succeeded', 'transmitted'));
   });
 
   test('a saved layout too large refuses an animation before the Free gate', async context => {
@@ -557,37 +568,39 @@ suite('control checks the port adds', () => {
   });
 
   test('a hold during a preview ends the preview', async context => {
-    // The brightness expires during the preview's first write, as the listener's expiry did in Python, and holds the
-    // device. The preview's next send stops there, as Python's preview send checked the hold.
+    // A hold, as an uncertain write leaves, comes during the preview's first write. The preview's next send stops there,
+    // as Python's preview send checked the hold; the brightness waits behind the hold.
     const {run} = await steps(context, [['command', 'b', {kind: 'brightness.set', percent: 60}],
       ['sql', "INSERT OR REPLACE INTO meta VALUES ('preview', 'working')"],
-      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'write', step: ['expireAll']}], ['run', 1006]]);
+      ['hook', {method: 'PUT', endpoint: '/effects', payload: 'write', step: ['hold']}], ['run', 1006]]);
     assert.deepEqual(run.hookResults, [[{result: null}]]);
     assert.equal(puts(run.device.calls).filter(([endpoint, payload]) => endpoint === '/effects' && 'write' in (payload as object)).length, 1);
-    assert.deepEqual(run.outcomes().get('b'), outcome('b', 'failed', 'none', 'expired'));
+    assert.equal(run.outcomes().get('b'), undefined);
   });
 
-  test('a hold the pass sets stops it before its writes', async context => {
-    // The animation expires in the pass that would hand the Lines over to Free; that pass ends at the hold, as
-    // Python's did, without the handoff's writes.
-    const {run, results: values} = await steps(context, [['feed', 'prompt', 'a'], ['run', 1002], ['mode', 'free'],
+  test('an animation that expires in the pass that would hand the Lines over to Free never plays', async context => {
+    // Python held the device there, so the pass ended without the handoff's writes. The animation never reached the
+    // device, so the port holds nothing (ADR 0012; Hub #844 review): the handoff goes on, and the animation is not played.
+    const {run} = await steps(context, [['feed', 'prompt', 'a'], ['run', 1002], ['mode', 'free'],
       ['play', 'w', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}], ['sleep', 31],
       ['device', 'clearCalls'], ['run', 1036]]);
-    assert.deepEqual((values[6] as {outcome: unknown}).outcome, {result: null});
-    assert.deepEqual(puts(run.device.calls), []);
+    assert.deepEqual(animationWrites(run.device.calls), []);
+    assert.ok(puts(run.device.calls).some(([endpoint, payload]) => endpoint === '/effects' && (payload as {select?: string}).select === 'Beach Waves'),
+      'the Free handoff restored the scene');
     assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
+    assert.deepEqual(holdOf(run), []);
   });
 
   test('a hold set during a control\'s write stops the Work display write', async context => {
-    // During the brightness write a second control is admitted and then expires, as an outside expiry may do (#844's
-    // host, while a worker is stopped), and holds the device. The pass's Work display write is refused at the hold.
+    // During the brightness write a second control is admitted, and then a hold comes, as an uncertain write leaves
+    // one. The pass's Work display write is refused at the hold, and the second control waits behind it.
     const {run} = await steps(context, [['feed', 'prompt', 'a'], ['command', 'b', {kind: 'brightness.set', percent: 60}],
       ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['command', 'b2', {kind: 'brightness.set', percent: 30}]}],
-      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['expireAll']}], ['run', 1004]]);
+      ['hook', {method: 'PUT', endpoint: '/state', payload: 'brightness', step: ['hold']}], ['run', 1004]]);
     assert.deepEqual(run.hookResults, [[{result: 'accepted'}], [{result: null}]]);
     assert.deepEqual(puts(run.device.calls), [['/state', {brightness: {value: 60, duration: 0}}]]);
     assert.deepEqual(run.outcomes().get('b'), outcome('b', 'succeeded', 'transmitted'));
-    assert.deepEqual(run.outcomes().get('b2'), outcome('b2', 'failed', 'none', 'expired'));
+    assert.equal(run.outcomes().get('b2'), undefined);
   });
 
   test('a held worker ends once shared input is no longer selected', async context => {
@@ -644,16 +657,16 @@ suite('control checks the port adds', () => {
     assert.equal(run.device.calls[0]?.[0], 1004);
   });
 
-  test('a hold that comes during a pass\'s writes ends the worker', async context => {
-    // The animation expires during the brightness write, as the listener's expiry did in Python, and holds the device:
-    // it is not played, and the pass ends at the hold.
-    const {run, results: values} = await steps(context, [['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
+  test('an animation that expires during a pass\'s writes is not played', async context => {
+    // The animation expires during the brightness write, as the listener's expiry did in Python: it is not played. Python
+    // also held the device, which ended the pass; an unsent animation holds nothing in the port (ADR 0012; Hub #844).
+    const {run} = await steps(context, [['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
       ['play', 'w', {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66'], speed: 'slow'}],
       ['hook', {method: 'PUT', endpoint: '/state', step: ['expireAll']}], ['run', 1006]]);
-    assert.deepEqual((values[5] as {outcome: unknown}).outcome, {result: null});
     assert.deepEqual(run.outcomes().get('b'), outcome('b', 'succeeded', 'transmitted'));
     assert.deepEqual(run.outcomes().get('w'), outcome('w', 'failed', 'none', 'expired'));
     assert.deepEqual(animationWrites(run.device.calls), []);
+    assert.deepEqual(holdOf(run), []);
   });
 
   test('a mode command committed during a control\'s write stops that pass\'s display writes', async context => {

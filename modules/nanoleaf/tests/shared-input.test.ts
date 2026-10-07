@@ -14,7 +14,7 @@ import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRe
   type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
 import {transactWith} from '../src/journal.js';
 import {execute, rows, transaction, type Db, type Row} from '../src/sqlite.js';
-import {accept, clone, configure, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
+import {accept, clone, configure, copyOf, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
   query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
   type WallTask} from './support.js';
 
@@ -630,7 +630,7 @@ suite('ChildSessionTest', () => {
           c.key, c.root.turn.status === 'known' ? c.root.turn.id : '', 1000, 0, 1000, device);
       }
     });
-    const before = clone(sharedState(c.path).envelope);
+    const before = clone(copyOf(c.path).envelope);
     const task = c.wall()[0];
     assert.ok(task?.evictionToken !== undefined);
     const payload = {id: task.id, evictionToken: task.evictionToken};
@@ -639,7 +639,7 @@ suite('ChildSessionTest', () => {
     evictTask(c.path, 'wall', payload);
     assert.deepEqual(c.wall(), []);
     assert.deepEqual(c.tasks(1000), {});
-    assert.deepEqual(sharedState(c.path).envelope, before);
+    assert.deepEqual(copyOf(c.path).envelope, before);
     assert.deepEqual(query(c.path, 'SELECT device FROM slots'), [['panels']]);
     assert.deepEqual(query(c.path, 'SELECT device FROM comets'), [['panels']]);
     assert.equal(c.wall('panels').length, 1);
@@ -1217,7 +1217,7 @@ suite('UndeclaredSourceTest', () => {
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['unread', 100, 'current']});
     assert.deepEqual(query(c.path, 'SELECT id FROM sessions'), [[c.key]]);
-    assert.deepEqual(sharedState(c.path).envelope?.skipped, {sessions: 1, sources: [CLAUDE]});
+    assert.deepEqual(copyOf(c.path).envelope?.skipped, {sessions: 1, sources: [CLAUDE]});
     // The declared task keeps updating while the undeclared one changes beside it.
     c.root.activity = 'active';
     const claude = c.value.snapshot.sessions[1];
@@ -1225,7 +1225,7 @@ suite('UndeclaredSourceTest', () => {
     c.advance(1001);
     assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'current']});
     assert.equal(sharedState(c.path).connection, 'current');
-    assert.deepEqual(sharedState(c.path).envelope?.snapshot.sessions.map(session => session.identity.provider), ['codex']);
+    assert.deepEqual(copyOf(c.path).envelope?.snapshot.sessions.map(session => session.identity.provider), ['codex']);
     assert.deepEqual(query(c.path, 'SELECT * FROM comets'), []);
   });
 
@@ -1239,8 +1239,8 @@ suite('UndeclaredSourceTest', () => {
     assert.deepEqual(query(c.path, 'SELECT * FROM sessions'), []);
     assert.deepEqual(query(c.path, 'SELECT * FROM slots'), []);
     const current = sharedState(c.path);
-    assert.deepEqual([current.connection, current.error, current.envelope?.snapshot.sessions], ['current', null, []]);
-    assert.deepEqual(current.envelope?.skipped, {sessions: 2, sources: [CLAUDE]});
+    assert.deepEqual([current.connection, current.error, copyOf(c.path).envelope?.snapshot.sessions], ['current', null, []]);
+    assert.deepEqual(copyOf(c.path).envelope?.skipped, {sessions: 2, sources: [CLAUDE]});
   });
 
   test('test_skipped_sessions_take_no_part_in_grouping_or_acknowledgment', context => {
@@ -1254,7 +1254,7 @@ suite('UndeclaredSourceTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['idle', 100, 'current']});
-    assert.equal(sharedState(c.path).envelope?.skipped?.sessions, 2);
+    assert.equal(copyOf(c.path).envelope?.skipped?.sessions, 2);
   });
 
   test('test_declared_subagent_of_an_undeclared_parent_follows_the_missing_parent_rule', context => {
@@ -1301,7 +1301,7 @@ suite('UndeclaredSourceTest', () => {
     assert.equal(c.tasks(1003)[claudeKey]?.[0], 'unread');
     assert.deepEqual(query(c.path, 'SELECT * FROM comets'), []);
     assert.deepEqual(query(c.path, 'SELECT started FROM activity WHERE session=?', claudeKey), [[993]]);
-    assert.deepEqual(sharedState(c.path).envelope?.skipped, {sessions: 0, sources: []});
+    assert.deepEqual(copyOf(c.path).envelope?.skipped, {sessions: 0, sources: []});
   });
 });
 
@@ -1429,5 +1429,35 @@ suite('transaction helpers', () => {
     await assert.rejects(transactWith(db, () => {})(outside(db)), TypeError);
     assert.equal(db.isTransaction, false);
     assert.deepEqual(query(path, "SELECT * FROM meta WHERE key='x'"), []);
+  });
+});
+
+// The runtime module's input (Hub #844): the SDK's session sync replaces the 1.x feed, so a configuration names no feed
+// endpoint or token file, and the module keeps its copy of the core's sessions in memory, rebuilt by sync, never saved
+// (ADR 0012, "Ownership and publication").
+suite('module input', () => {
+  test('a configuration needs no 1.x feed endpoint or token file', () => {
+    const config = {version: 1, ownerId: 'bunny-core', consumerId: 'nanoleaf', clearOnNewTurn: true,
+      qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}]};
+    assert.deepEqual(validateConfig(config), config);
+    // A 1.x configuration that still names them is checked as before.
+    throwsFeed(() => validateConfig({...config, endpoint: 'http://example.com/api/monitor/v1'}), 'invalid-config');
+    throwsFeed(() => validateConfig({...config, tokenFile: 'relative/token'}), 'invalid-config');
+    for (const key of ['ownerId', 'consumerId', 'qualifiedSources'] as const) {
+      const {[key]: _left, ...rest} = config;
+      throwsFeed(() => validateConfig(rest), 'invalid-config');
+    }
+  });
+
+  test('the core\'s sessions stay in memory: no saved row holds a copy of them', context => {
+    const {path} = selectionSetup(context);
+    selectShared(path);
+    assert.deepEqual(query(path, 'SELECT envelope FROM shared_input'), [[null]], 'selection saves no copy');
+    const next = envelope();
+    next.snapshot.revision = 2;
+    firstSession(next).activity = 'active';
+    assert.equal(accept(path, next, 1001), true);
+    assert.deepEqual(query(path, 'SELECT envelope FROM shared_input'), [[null]], 'acceptance saves no copy');
+    assert.deepEqual(query(path, 'SELECT id,status FROM sessions'), [[KEY, 'working']], 'the projection still follows the copy');
   });
 });

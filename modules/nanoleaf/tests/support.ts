@@ -14,8 +14,8 @@ import {readJson} from '../src/jsonfile.js';
 import type {Report} from '../src/journal.js';
 import {setMode as commandMode} from '../src/modes.js';
 import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
-import {evictionToken, presented, selected, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession, type SharedState,
-  type Snapshot} from '../src/shared-input.js';
+import {evictionToken, presented, selected, SharedCopy, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession,
+  type SharedState, type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
 import {execute, rows, transaction, type Db, type Row, type SqlValue, type Synchronous} from '../src/sqlite.js';
 import {controlState, markDirty} from '../src/store.js';
@@ -113,12 +113,26 @@ export function selectionConfig(directory: string): JsonObject {
     qualifiedSources: [{provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source'}]};
 }
 
-export const configure = (directory: string, config: unknown): SharedConfig => write(directory, db => configureSource(db, config));
+/**
+ * Each state directory's in-memory copy of the core's sessions, as one running module keeps it (SharedCopy). Python saved
+ * it in the state; the tests keep one per directory for the test's life, as one process would.
+ */
+const copies = new Map<string, SharedCopy>();
+export function copyOf(directory: string): SharedCopy {
+  let copy = copies.get(directory);
+  if (copy === undefined) {
+    copy = new SharedCopy();
+    copies.set(directory, copy);
+  }
+  return copy;
+}
+
+export const configure = (directory: string, config: unknown): SharedConfig => write(directory, db => configureSource(db, copyOf(directory), config));
 
 /** shared_source.select_source(directory, 'shared', fetch=...): the envelope stands in for a successful preflight. */
 export function selectShared(directory: string, value: Envelope = envelope(), instant = 1000): void {
   const metadata = metadataReader(directory);
-  write(directory, db => select(db, {envelope: value, instant, targets: registeredDevices(directory), metadata}));
+  write(directory, db => select(db, {copy: copyOf(directory), envelope: value, instant, targets: registeredDevices(directory), metadata}));
 }
 
 export interface Accept {
@@ -129,10 +143,10 @@ export interface Accept {
 /** shared_source.accept with a fresh metadata reader and the registered devices. */
 export function accept(directory: string, value: Envelope, instant: number, options: Accept = {}): boolean {
   const metadata = metadataReader(directory);
-  return write(directory, db => acceptEnvelope(db, value, {instant, targets: registeredDevices(directory), metadata, ...options}));
+  return write(directory, db => acceptEnvelope(db, value, {copy: copyOf(directory), instant, targets: registeredDevices(directory), metadata, ...options}));
 }
 
-export const failed = (directory: string, generation: number): void => write(directory, db => markFailed(db, generation));
+export const failed = (directory: string, generation: number): void => write(directory, db => markFailed(db, copyOf(directory), generation));
 
 export const sharedState = (directory: string): SharedState => withState(directory, db => state(db));
 
@@ -317,8 +331,9 @@ export function wallView(directory: string, config: DeviceConfig, now: number): 
     const tokens = new Map<string, string>();
     if (shared) {
       const current = state(db);
-      if (current.envelope !== null) {
-        for (const [key, [root]] of presented(current.envelope.snapshot)) tokens.set(key, evictionToken(current, root));
+      const saved = copyOf(directory).envelope;
+      if (saved !== null) {
+        for (const [key, [root]] of presented(saved.snapshot)) tokens.set(key, evictionToken(current, root));
       }
       const received = current.received;
       const sessions = rows(db, current.connection !== 'current' || typeof received !== 'number' || now - received > 4
@@ -348,7 +363,7 @@ export function wallView(directory: string, config: DeviceConfig, now: number): 
 
 /** The wall's evict action on one device: edits.evict in its own transaction. */
 export const evictTask = (directory: string, device: string, payload: unknown): void =>
-  write(directory, db => edits.evict(db, {device}, payload));
+  write(directory, db => edits.evict(db, copyOf(directory), {device}, payload));
 
 /** test_bridge.decode: each panel's frames ([r, g, b, w, transition]) from a display payload's animData. */
 export function decode(payload: {write: {animData: string}}): Map<number, number[][]> {

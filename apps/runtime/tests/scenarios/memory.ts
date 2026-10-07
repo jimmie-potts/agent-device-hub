@@ -11,6 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
+import {SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
 import {SimulatedPixoo, createPixooModule} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
 import {connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
@@ -107,6 +108,7 @@ class Memory implements MemoryHarness {
   /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
   readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
   readonly #pixoo = new SimulatedPixoo();
+  readonly #nanoleaf = new SimulatedNanoleaf({now: () => this.#clock.now()});
   readonly #parts: ReadonlyMap<Role, Part>;
   readonly #tokens = partTokens();
   readonly #client: GatewayClient;
@@ -203,7 +205,7 @@ class Memory implements MemoryHarness {
   devices(): DeviceStates {
     return {
       lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state(),
-      pixoo: this.#pixoo.state(),
+      pixoo: this.#pixoo.state(), nanoleaf: this.#nanoleaf.state(),
     };
   }
 
@@ -229,6 +231,9 @@ class Memory implements MemoryHarness {
       case 'tidbyt':
         if (simulation.action === 'online') this.#cloud.online();
         else this.#cloud.offline();
+        return;
+      case 'nanoleaf':
+        this.#nanoleaf.act(simulation.action);
         return;
       case 'lamp':
         break;
@@ -420,6 +425,8 @@ class Memory implements MemoryHarness {
       case 'pixoo':
         // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
         return createPixooModule({transport: this.#pixoo, acknowledgments: followStandInAcks});
+      case 'nanoleaf':
+        return createNanoleafModule({transport: this.#nanoleaf.request});
     }
   }
 

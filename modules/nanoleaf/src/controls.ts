@@ -11,11 +11,12 @@ import {DEFAULT, ID, layoutDevices, metaKey} from './devices.js';
 import {Rejected, render, valid, type AnimationCommand, type Display} from './effects.js';
 import {ValueError} from './errors.js';
 import {resolveAnimation} from './favorites.js';
-import {ANIMATION, CONTROLS, MODE, finish, hold, held, journal, journalRow, outcomeOf, release, type ErrorCode, type JournalRow,
+import {ANIMATION, CONTROLS, MODE, answerCode, finish, hold, held, journal, journalRow, outcomeOf, release, type ErrorCode, type JournalRow,
   type Report, type Transact} from './journal.js';
 import {changeMode, isMode, type Mode} from './modes.js';
 import {execute, first, text, transaction, type Db} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
+import {HttpError} from './transport.js';
 
 /** Unfinished native commands one device may hold (the controller's maxPending). */
 export const MAX_QUEUED = 32;
@@ -240,7 +241,9 @@ export function controlPayload(db: Db, device: string, command: unknown): [strin
 /**
  * Journal each device write of one command for one worker pass (controller_state.Execution). Each write is refused once
  * a hold or a mode command has overtaken the pass. With a command, the attempt is recorded before the write and its
- * result after: a failed write ends the command uncertain and holds the device, since it may have reached the device.
+ * result after: a write without an answer ends the command uncertain and holds the device, since it may have reached
+ * the device. A device that answers with an HTTP error heard the write and refused it: the command fails with that
+ * evidence and the mapped code, nothing holds, and the pass starts again without it (`Cancelled`).
  */
 export class Execution {
   #count = 0;
@@ -264,12 +267,18 @@ export class Execution {
     try {
       result = await send();
     } catch (error) {
+      const answered = error instanceof HttpError ? answerCode(error.status) : undefined;
       await this.transact(report => {
         const row = this.id === null ? undefined : journalRow(db, this.id);
         if (row === undefined) return;
+        if (answered !== undefined) {
+          finish(db, row, {kind: 'answered', code: answered}, report);
+          return;
+        }
         finish(db, row, {kind: 'uncertain'}, report);
         hold(db, this.device, row.revision);
       });
+      if (answered !== undefined) throw new Cancelled('The device refused the write.', {cause: error});
       throw error;
     }
     transaction(db, () => execute(db, 'UPDATE control_journal SET uncertain=uncertain-1, completed=completed+1 WHERE seq=?', seq));
@@ -289,7 +298,8 @@ export class Execution {
 
 /**
  * Play a queued animation as one write (integration_api.attempt and play): record the attempt, send, then end it sent,
- * or uncertain if the write failed. False when a mode command retired it first.
+ * uncertain if the write had no answer, or failed with its code if the device answered with an HTTP error. False when a
+ * mode command retired it first.
  */
 export async function playAnimation(db: Db, id: string, send: () => Promise<unknown>, transact: Transact): Promise<boolean> {
   const started = transaction(db, () => execute(db, "UPDATE control_journal SET phase='attempting', uncertain=1 WHERE id=? AND phase='queued'", id) > 0);
@@ -297,10 +307,12 @@ export async function playAnimation(db: Db, id: string, send: () => Promise<unkn
   try {
     await send();
   } catch (error) {
+    const answered = error instanceof HttpError ? answerCode(error.status) : undefined;
     await transact(report => {
       const row = journalRow(db, id);
-      if (row !== undefined) finish(db, row, {kind: 'uncertain'}, report);
+      if (row !== undefined) finish(db, row, answered === undefined ? {kind: 'uncertain'} : {kind: 'answered', code: answered}, report);
     });
+    if (answered !== undefined) return true;
     throw error;
   }
   await transact(report => {

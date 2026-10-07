@@ -20,6 +20,7 @@ void test('a newer source of the runtime, its run or a workspace package it load
       'apps/runtime/src/runtime.ts', 'apps/runtime/verify/supervisor.ts', 'apps/runtime/tests/fixtures/lamp.ts', 'apps/runtime/tests/scenarios/catalog.ts',
       'packages/sdk/src/index.ts', 'packages/app-verify/src/index.ts', 'packages/event-contracts/src/v2/index.ts',
       'packages/observability/src/catalog.json', 'modules/playback/src/module.ts', 'modules/lifx/src/module.ts', 'modules/tidbyt/src/module.ts',
+      'modules/nanoleaf/src/index.ts',
     ];
     for (const file of [...sources, ...BUILD_OUTPUTS]) {
       await mkdir(dirname(join(repo, file)), {recursive: true});
@@ -64,7 +65,8 @@ void test('build-current watches every source the run loads, and the served cand
     else if (!watched.has(path)) unwatched.push(path);
   }
   assert.deepEqual(unwatched, [], 'every runtime source the run loads is a build source');
-  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'modules/playback', 'modules/lifx', 'modules/tidbyt', 'modules/pixoo']) {
+  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'modules/playback', 'modules/lifx', 'modules/tidbyt', 'modules/pixoo',
+    'modules/nanoleaf']) {
     assert.ok(packages.has(name), `the run loads ${name}: ${[...packages].join(', ')}`);
   }
   const candidate = artifactFiles();

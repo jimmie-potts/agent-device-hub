@@ -7,6 +7,7 @@ import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-c
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {registerLifxFamilies} from '@jimmie-potts/lifx';
+import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
 import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import type {SimulatedSpeakers} from '@jimmie-potts/playback';
 import type {Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
@@ -20,8 +21,10 @@ import {GRANTS, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type Gatew
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
 
-/** Every fixture family's payload schema, and the Pixoo's own, that the catalog's messages use, by `dataschema`. */
-export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas};
+/** Every fixture family's payload schema, and the Pixoo's and the Nanoleaf module's own, that the catalog's messages use, by `dataschema`. */
+export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {
+  ...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas,
+};
 
 /** Profile 2.0 with the core and device families, and every module and fixture family the catalog's messages use. */
 export function scenarioValidator(): MessageValidator {

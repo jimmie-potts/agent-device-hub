@@ -492,7 +492,6 @@ name or this listing, and on a file exception that no longer hides a finding.
 | `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
 | `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), at its pickup |
 | `bunny/safe-errors/verification-harness` | `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, at its pickup |
-| `bunny/safe-errors/nanoleaf-outcomes` | `modules/nanoleaf/src/journal.ts` | `error-body-from-registry` | The staged port's outcome drafts carry a bare `{code}` error block without the registry's `retryable` flag, because the module does not depend on the contracts package yet. | [#844](https://github.com/jimmie-potts/agent-device-hub/issues/844), when it publishes them through the SDK's outbox |
 
 The table understates what the verification harness quotes.
 `apps/runtime/verify/adapter.ts` also turns exceptions into text, through
@@ -1941,16 +1940,23 @@ check belong to the cutover (#840).
 ## Nanoleaf port
 
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
-the strict profile. Nothing runs it yet; the Nanoleaf module story (#844) wires it.
+the strict profile, and Hub #844 runs it as the runtime's shipped module
+`nanoleaf` ([README](../modules/nanoleaf/README.md)).
 [`modules/nanoleaf/PORTING.md`](../modules/nanoleaf/PORTING.md) records the
 provenance, maps every Python module and test file to a slice, and lists the known
-differences.
+differences, the module's included. The package builds and typechecks before the
+runtime, which imports its factory.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:nanoleaf` from the worktree root. The core CI job runs
 `npm run test:nanoleaf:built` after its fresh build. The suite needs no device,
 Hub or Python; the HTTP client's tests use stub servers on the loopback
-interface.
+interface. It includes the module's own tests on a manual clock against
+simulated controllers (`module.test.ts`, and `module-faults.test.ts` for its faults
+and recoveries) and its module test kit run in real time (`module-kit.test.ts`). Under the runtime, `test:runtime:built` runs
+`nanoleaf.test.ts` with the lag check on, and the catalog's `nanoleaf-wall`
+scenario runs in `test:runtime:scenarios:built` and in a disposable run
+(`npm run -s verify:runtime -- start --scenario nanoleaf-wall`).
 
 The port is split into slices by area:
 
@@ -1977,8 +1983,8 @@ recorded Python sequences compares, after every step, the results and the rows o
 `sessions`, `activity`, `task_info`, `slots`, `comets`, `waits`, `receipts`,
 `shared_stale`, `shared_suppressed_waves`, `shared_evictions`, `projects`,
 `line_prefs`, `map_settings`, `meta` and `display_v3`, plus the `shared_input`
-row's `source`, `generation`, `received`, `connection` and `error`, and its
-envelope by hash. `palette`, `map_pending`, `locate`, `shared_ack` and the
+row's `source`, `generation`, `received`, `connection` and `error`, and, by
+hash, the envelope Python saved there, which the port keeps in memory. `palette`, `map_pending`, `locate`, `shared_ack` and the
 `shared_input` row's `config` and `backup` are not compared.
 
 Recorded Python outputs also check Line pairing, map geometry, configuration
@@ -1990,6 +1996,9 @@ controls, holds and requested animations on a fake device, and on the Lines and
 NL22 Panels as two devices with the worker command's retry loop. The colors, payloads,
 effects, pairing, edits and worker runs match exactly; the worker runs on a
 manual millisecond clock, as the runtime's is, so its instants match Python's.
+The five recorded cases that showed Python's hold after an unsent command's
+expiry run as steps instead, because the port holds only after a write that may
+have reached the device (PORTING.md, "The runtime module").
 Each command's Python receipt is compared, through the controller receipt rule in
 `packages/event-contracts/MAPPING.md`, with the outcome the port reported. A map geometry number may
 differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1, because

@@ -9,8 +9,9 @@ shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-c
 and, after it, the device modules: the
 [playback module](../../modules/playback/README.md) (#929), the
 [LIFX module](../../modules/lifx/README.md) (#928), the
-[Tidbyt module](../../modules/tidbyt/README.md) (#930) and the
-[Pixoo module](../../modules/pixoo/README.md) (#843) so far. Module stories
+[Tidbyt module](../../modules/tidbyt/README.md) (#930), the
+[Pixoo module](../../modules/pixoo/README.md) (#843) and the
+[Nanoleaf module](../../modules/nanoleaf/README.md) (#844) so far. Module stories
 add theirs after the core, and the runtime also runs with no module at all.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
@@ -28,7 +29,7 @@ A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
 reads no secret, such as the playback, LIFX and Pixoo modules, omits `secrets`; the Tidbyt module names
-`token`, its API key's file. One helper,
+`token`, its API key's file, and the Nanoleaf module names `token`. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -992,7 +993,17 @@ The catalog holds:
     over Monitor without dimming, then holding a whole takeover of Media for
     more than 30 s while the song plays on unchanged (`pixoo-now-playing`);
   - a start while the device is offline, with one degradation and one recovery
-    (`pixoo-offline`).
+    (`pixoo-offline`);
+- the Nanoleaf wall (#844): the core and the Nanoleaf module with a simulated
+  Lines controller, read by owner, `device` alone included, following an agent
+  session onto a Line and its finished turn,
+  taking Work, Quiet and Free with tracked outcomes, refusing a moment and an
+  animation outside Free, showing the power the wall reports, and showing the
+  wall unavailable while it does not answer, logged once each way. Quiet sent
+  meanwhile succeeds as observed, since a mode is the module's own state, and holds
+  nothing, so once the wall answers it shows Quiet and a second session takes a
+  Line; a write whose answer is lost is uncertain and shows the wall held and
+  degraded until the next mode command.
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

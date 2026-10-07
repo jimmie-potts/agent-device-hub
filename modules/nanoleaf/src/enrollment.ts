@@ -3,7 +3,7 @@
 import {existsSync, lstatSync, readlinkSync, unlinkSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import type {DatabaseSync} from 'node:sqlite';
 import {setTimeout as wait} from 'node:timers/promises';
 import {isObject, parseJson, sameValue, type JsonObject} from './compat.js';
 import {withState} from './database.js';
@@ -12,7 +12,7 @@ import {credential, DEFAULT, DEVICE_TABLES, ID, layoutDevices, lockFile, metaKey
 import {Partial, ValueError} from './errors.js';
 import {readJson, writeJson} from './jsonfile.js';
 import {readLayout} from './panels.js';
-import {execute, first, transaction} from './sqlite.js';
+import {execute, first, privateDatabase, transaction} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
 import {HttpError, nodeTransport, PORT, privateAddress, type HttpTransport, type LightRequest} from './transport.js';
 
@@ -112,7 +112,7 @@ export const REGISTRY_WAIT_SECONDS = 5;
 async function takeLock(path: string, seconds: number, sleep: (seconds: number) => Promise<void>): Promise<DatabaseSync | Error> {
   const deadline = performance.now() + seconds * 1000;
   for (;;) {
-    const lock = new DatabaseSync(path, {timeout: 0});
+    const lock = privateDatabase(path, {timeout: 0});
     try {
       lock.exec('BEGIN EXCLUSIVE');
       return lock;

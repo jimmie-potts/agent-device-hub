@@ -2,7 +2,10 @@
 // uncertain one, and the outcome each command ends with (controller_state.py's request rows, hold, release and finish,
 // and integration_api.py's animation queue, in the module's own database). Every function runs inside the caller's
 // synchronous transaction; none waits or contacts a device. A row is deleted when its command ends: its outcome then
-// lives in the runtime's outbox until the core acknowledges it.
+// lives in the runtime's outbox until the core acknowledges it. Only an uncertain write holds a device (ADR 0012): a
+// command that ends without reaching it proves no effect, so Python's hold after an unsent command's expiry is not
+// ported (Hub #844 review).
+import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 
@@ -13,19 +16,37 @@ export const CONTROLS = ['power.set', 'brightness.set', 'scene.activate'] as con
 export const ANIMATION = 'animation.play';
 export const MODE = 'mode.set';
 
-/** The profile 2.0 error codes the module's outcomes and refusals use (event-contracts errors.json). */
-export type ErrorCode = 'invalid-request' | 'unsupported-capability' | 'not-found' | 'capacity' | 'cancelled' | 'expired' | 'uncertain-result';
+/** The profile 2.0 error codes the module's outcomes and refusals use, from the registry (event-contracts errors.json). */
+export type ErrorCode = 'invalid-request' | 'unsupported-capability' | 'not-found' | 'capacity' | 'cancelled' | 'expired' | 'uncertain-result'
+  | 'unauthenticated' | 'forbidden' | 'invalid-state' | 'unavailable';
+
+/**
+ * The registry code for a device that answered a request with an HTTP error status: it heard the request and refused
+ * it (MAPPING.md's receipt rule 3, an error after a confirmed transmission).
+ */
+export function answerCode(status: number): ErrorCode {
+  if (status === 401) return 'unauthenticated';
+  if (status === 403) return 'forbidden';
+  if (status === 404) return 'not-found';
+  if (status === 409) return 'invalid-state';
+  if (status === 429) return 'capacity';
+  if (status >= 500) return 'unavailable';
+  return 'invalid-request';
+}
 export type Result = 'succeeded' | 'failed' | 'uncertain';
 export type Evidence = 'transmitted' | 'observed' | 'none';
 
-/** A command's outcome (ADR 0012): the runtime publishes it with the device as subject and `requestId` from the command. */
+/**
+ * A command's outcome (ADR 0012): the runtime publishes it with the device as subject and `requestId` from the command.
+ * Its error is the registry's error detail, built by `errorBody`, so it carries the code's fixed `retryable` flag.
+ */
 export interface Outcome {
   type: 'outcome';
   device: string;
   requestId: string;
   result: Result;
   evidence: Evidence;
-  error?: {code: ErrorCode};
+  error?: ErrorDetail;
 }
 
 /** The device's discovered scene list changed; the runtime publishes the device's state again. */
@@ -64,7 +85,9 @@ export type End =
   | {kind: 'uncertain'}
   | {kind: 'retired'}
   | {kind: 'expired'}
-  | {kind: 'refused'; code: ErrorCode};
+  | {kind: 'refused'; code: ErrorCode}
+  /** The device answered the command's write with an error status: it heard the write and refused it. */
+  | {kind: 'answered'; code: ErrorCode};
 
 export function initJournal(db: Db): void {
   db.exec(`CREATE TABLE IF NOT EXISTS control_journal (
@@ -115,15 +138,17 @@ export function outcomeOf(row: Pick<JournalRow, 'device' | 'id' | 'completed' | 
   const base = {type: 'outcome' as const, device: row.device, requestId: row.id};
   const evidence: Evidence = row.completed > 0 ? 'transmitted' : 'none';
   const possible = row.completed === 0 && row.uncertain > 0;
+  const error = (code: ErrorCode): ErrorDetail => errorBody(code).error;
   switch (end.kind) {
     case 'sent': return {...base, result: 'succeeded', evidence: 'transmitted'};
     case 'unchanged': return {...base, result: 'succeeded', evidence: 'observed'};
-    case 'uncertain': return {...base, result: 'uncertain', evidence, error: {code: 'uncertain-result'}};
+    case 'uncertain': return {...base, result: 'uncertain', evidence, error: error('uncertain-result')};
     case 'retired':
-      return possible ? {...base, result: 'uncertain', evidence: 'none', error: {code: 'uncertain-result'}}
-        : {...base, result: 'failed', evidence, error: {code: 'cancelled'}};
-    case 'expired': return {...base, result: 'failed', evidence: 'none', error: {code: 'expired'}};
-    case 'refused': return {...base, result: 'failed', evidence: 'none', error: {code: end.code}};
+      return possible ? {...base, result: 'uncertain', evidence: 'none', error: error('uncertain-result')}
+        : {...base, result: 'failed', evidence, error: error('cancelled')};
+    case 'expired': return {...base, result: 'failed', evidence: 'none', error: error('expired')};
+    case 'refused': return {...base, result: 'failed', evidence: 'none', error: error(end.code)};
+    case 'answered': return {...base, result: 'failed', evidence: 'transmitted', error: error(end.code)};
   }
 }
 
@@ -139,10 +164,21 @@ export function transactWith(db: Db, report: Report): Transact {
   };
 }
 
-/** End a command: delete its row and report its outcome in the same transaction. */
+/** The desired-state override a power or brightness command sets as it is admitted, by command kind. */
+const OVERRIDES: Readonly<Record<string, string>> = {'power.set': 'controller_power', 'brightness.set': 'controller_brightness'};
+
+/**
+ * End a command: delete its row and report its outcome in the same transaction. A power or brightness command that
+ * failed had no effect, so the desired state it set goes with it, unless another of its kind still waits on the device.
+ */
 export function finish(db: Db, row: JournalRow, end: End, report: Report): void {
   execute(db, 'DELETE FROM control_journal WHERE seq=?', row.seq);
-  report(outcomeOf(row, end));
+  const outcome = outcomeOf(row, end);
+  const override = OVERRIDES[row.kind];
+  if (outcome.result === 'failed' && override !== undefined && journal(db, row.device, 'AND kind=?', row.kind).length === 0) {
+    execute(db, 'DELETE FROM meta WHERE key=?', metaKey(override, row.device));
+  }
+  report(outcome);
 }
 
 /**
@@ -167,15 +203,12 @@ export function recoverAttempts(db: Db, device: string, report: Report): void {
 }
 
 /**
- * A queued command still unsent at its expiry fails, and holds the device at its revision: the admission's
- * authorization does not outlive the command (controller_state.recover, integration_api.recover). With `nativeOnly`,
- * animations wait for the pass.
+ * A queued command still unsent at its expiry fails `expired` (controller_state.recover, integration_api.recover). It
+ * never reached the device, so it proves no effect and holds nothing, where Python held the device at its revision
+ * (ADR 0012; Hub #844 review). With `nativeOnly`, animations wait for the pass.
  */
 export function expireQueued(db: Db, device: string, now: number, report: Report, nativeOnly = false): void {
   for (const row of journal(db, device, "AND phase='queued' AND expires<=? AND (kind<>? OR ?)", now, ANIMATION, nativeOnly ? 0 : 1)) {
     finish(db, row, {kind: 'expired'}, report);
-    // Python held an animation at the current revision; a queued animation's is the current one, since any mode command
-    // retires it.
-    hold(db, device, row.revision);
   }
 }

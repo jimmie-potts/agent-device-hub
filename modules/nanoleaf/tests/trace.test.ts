@@ -20,7 +20,7 @@ import {evict, evictionToken, presented, state, visibleTasks, type Envelope, typ
 import {acceptEnvelope, markFailed, selectShared} from '../src/shared-source.js';
 import {execute, rows, transaction, type SqlValue, type Synchronous} from '../src/sqlite.js';
 import {markDirty} from '../src/store.js';
-import {fixtureJson, loadDump, metadataReader, suite, temporary, test, type Dump} from './support.js';
+import {copyOf, fixtureJson, loadDump, metadataReader, suite, temporary, test, type Dump} from './support.js';
 
 const TABLES = ['sessions', 'activity', 'task_info', 'slots', 'comets', 'waits', 'receipts', 'shared_stale', 'shared_suppressed_waves',
   'shared_evictions', 'projects', 'line_prefs', 'map_settings', 'meta', 'display_v3'];
@@ -60,8 +60,10 @@ function savedState(directory: string): Record<string, unknown> {
     const saved: Record<string, unknown> = {};
     for (const table of TABLES) saved[table] = rows(db, `SELECT * FROM ${table} ORDER BY rowid`);
     const current = state(db);
+    // Python saved the envelope; the port keeps it in the module's in-memory copy, whose text it compares (Hub #844).
+    const copied = copyOf(directory).envelope;
     saved.shared_input = {source: current.source, generation: current.generation, received: current.received, connection: current.connection,
-      error: current.error, envelope: current.envelope === null ? null : sha256Hex(dumps(current.envelope))};
+      error: current.error, envelope: copied === null ? null : sha256Hex(dumps(copied))};
     return saved;
   });
 }
@@ -73,16 +75,17 @@ function apply(directory: string, trace: Trace, operation: Operation): unknown {
       case 'select': {
         const metadata = metadataReader(directory);
         const value = expand(trace, operation.envelope);
-        write(db => selectShared(db, {envelope: value, instant: operation.instant, targets: registeredDevices(directory), metadata}));
+        write(db => selectShared(db, {copy: copyOf(directory), envelope: value, instant: operation.instant, targets: registeredDevices(directory), metadata}));
         return null;
       }
       case 'accept': {
         const metadata = metadataReader(directory);
         const value = expand(trace, operation.envelope);
-        return write(db => acceptEnvelope(db, value, {instant: operation.instant, resync: operation.resync, targets: registeredDevices(directory), metadata}));
+        return write(db => acceptEnvelope(db, value, {copy: copyOf(directory), instant: operation.instant, resync: operation.resync,
+          targets: registeredDevices(directory), metadata}));
       }
       case 'failed':
-        write(db => markFailed(db, state(db).generation));
+        write(db => markFailed(db, copyOf(directory), state(db).generation));
         return null;
       case 'dashboard': {
         const layout = trace.layouts[operation.device];
@@ -92,14 +95,15 @@ function apply(directory: string, trace: Trace, operation: Operation): unknown {
       case 'evict':
         return write(db => {
           const current = state(db);
+          const copied = copyOf(directory).envelope;
           const visible = visibleTasks(db, operation.device).map(row => row[0]);
-          const tasks = current.envelope === null ? new Map<string, PresentedTask>() : presented(current.envelope.snapshot);
+          const tasks = copied === null ? new Map<string, PresentedTask>() : presented(copied.snapshot);
           const candidates = visible.filter(key => tasks.has(key));
           if (candidates.length === 0) return 'none';
           const key = candidates[Math.floor(operation.pick * candidates.length)] ?? '';
           const root = tasks.get(key)?.[0];
           if (root === undefined) throw new Error('No task.');
-          evict(db, operation.device, {id: key, evictionToken: evictionToken(current, root)});
+          evict(db, copyOf(directory), operation.device, {id: key, evictionToken: evictionToken(current, root)});
           markDirty(db);
           return key;
         });
