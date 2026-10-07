@@ -23,7 +23,7 @@ None.
 ## Impact
 
 - **Code:** `packages/event-contracts` (`schemas/v2/families/device.2.1.schema.json`, `src/v2/devices.ts`, `src/v2/registry.ts`); `modules/nanoleaf` (`src/journal.ts`, `src/controls.ts`, `src/worker.ts`, `src/module/views.ts`, `src/module/runtime.ts`).
-- **Tests:** `packages/event-contracts` (`fixtures/v2/devices.json`, `tests/devices.test.mjs`); `modules/nanoleaf` (`journal.test.ts`, `module-faults.test.ts`, the test support that reads device records by version, and the port's direct holds); the runtime's `nanoleaf-wall` catalog scenario.
-- **Docs:** the event-contracts README and MAPPING.md (the `device` rows only), the Nanoleaf README and PORTING.md.
+- **Tests:** `packages/event-contracts` (`fixtures/v2/devices.json`, `tests/devices.test.mjs`); `modules/nanoleaf` (`journal.test.ts`, `module-faults.test.ts`, the test support that reads device records by version, and the port's direct holds); the runtime's `nanoleaf-wall` catalog scenario, and the scenario harness's reader, which takes any version of a family (`tests/scenarios/parts.ts`).
+- **Docs:** the event-contracts README and MAPPING.md (the `device` rows only), the Nanoleaf README and PORTING.md, and the runtime README's catalog entry.
 - **Unchanged:** the SDK, the runtime host, the other modules, the package version and its exact pins (the private source package keeps 1.0.0, as when #918 added the device families), coordinator-owned files and the released 1.x contracts.
 - **Delivery:** source-only.
