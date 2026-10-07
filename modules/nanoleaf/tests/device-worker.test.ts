@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {BASELINE, COLORS, COMET_SECONDS} from '../src/renderer.js';
+import type {LightRequest} from '../src/transport.js';
 import {superviseWorker} from '../src/worker.js';
 import type {Outcome as ControlOutcome} from '../src/journal.js';
 import {puts} from './control-support.js';
@@ -498,6 +499,19 @@ suite('supervisor checks the port adds', () => {
     const result = await run.drive(1010, [], signal => superviseWorker(run.options(signal, {device: 'panels'})));
     assert.deepEqual(result.outcome, {result: 'locked'});
     assert.deepEqual(run.panels.calls, []);
+  });
+
+  test('a failure as the supervisor stops is not recorded', async context => {
+    // The stop signal comes while a request fails: the supervisor ends without recording a failure for the device.
+    const run = new DeviceCase(context);
+    await run.apply(['feed', 'prompt', 'a']);
+    const controller = new AbortController();
+    const request: LightRequest = () => {
+      controller.abort();
+      return Promise.reject(new Error('Device unavailable'));
+    };
+    assert.equal(await superviseWorker({...run.options(controller.signal, {device: 'panels'}), request}), 'stopped');
+    assert.deepEqual(run.query("SELECT key FROM meta WHERE key LIKE 'control_error%'"), []);
   });
 
   test('a supervisor that cannot record a failure ends', async context => {

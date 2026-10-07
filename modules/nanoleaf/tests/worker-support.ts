@@ -50,7 +50,18 @@ interface Timer {
 export class ManualClock {
   ms = 1_000_000;
   readonly timers = new Set<Timer>();
-  readonly now = (): number => this.ms;
+  #readAt = this.ms;
+  #reads = 0;
+  /**
+   * The time now. A worker that loops without waiting would hang the suite instead of failing, so reading the same
+   * instant very many times fails, as DeviceWorkerTest.run_worker's read count did.
+   */
+  readonly now = (): number => {
+    if (this.ms !== this.#readAt) [this.#readAt, this.#reads] = [this.ms, 0];
+    this.#reads += 1;
+    if (this.#reads > 10_000) throw new Error('The worker looped without waiting.');
+    return this.ms;
+  };
   readonly scheduler = {after: (delayMs: number, callback: () => void): (() => void) => {
     const timer = {at: this.ms + delayMs, callback};
     this.timers.add(timer);
