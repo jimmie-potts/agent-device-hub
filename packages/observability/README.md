@@ -20,7 +20,8 @@ in `CONTRACT.md`). The catalog's `additions` lists what each profile adds, and
 `scope_rules` lists the service and events each runtime scope allows. Producers
 still default to profile 1.1; a 1.2 producer sets `schema_version` itself.
 
-`createRecord` / `create_record` selects registered fields before serialization.
+`createRecord` / `create_record` selects registered fields before serialization,
+keeping only the attributes the record's own profile registers.
 `validateRecord` / `validate_record` strictly rejects unknown fields.
 `toOtlp` / `to_otlp` converts a valid record to an OTLP JSON logs request.
 `projectRecord` / `project_record` explicitly targets a supported schema profile;

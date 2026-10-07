@@ -145,11 +145,12 @@ so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
   pattern or `sync <families>`), `bunny.code` (a code from the 2.0 error
   registry), `bunny.phase` (where a module's refusal, failure or stop problem
   arose), counts (`bunny.module_count`, `bunny.delivery.dropped_count`,
-  `bunny.outbox.republished_count`), durations (`bunny.timeout_ms`, `bunny.lag.duration_ms`,
-  `bunny.lag.limit_ms`), `bunny.exit_code`, `bunny.message.id`,
-  `bunny.message.kind`, `bunny.simulate` and `bunny.edge` (whether modules are
-  simulated and the edge configured), `bunny.grant_count` (a count), `bunny.route`
-  (one of the edge's routes, or `other`), the OpenTelemetry `server.port`, and
+  `bunny.outbox.republished_count`, `bunny.grant_count`), durations
+  (`bunny.timeout_ms`, `bunny.lag.duration_ms`, `bunny.lag.limit_ms`),
+  `bunny.exit_code`, `bunny.message.id` (the 2.0 message id), `bunny.message.kind`,
+  `bunny.simulate` and `bunny.edge` (whether modules are simulated and the edge
+  configured), `bunny.route` (one of the edge's routes, or `other`), the
+  OpenTelemetry `server.port`, and
   the OpenTelemetry `error.type` with its plain `error.code`. `error.type` and
   `error.code` are identifiers of at most 64 characters, never a message. A
   record carries a listener's port, never its URL. An edge refusal carries its
@@ -158,9 +159,11 @@ so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
 
 A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
-checks. The Python helpers validate and convert profile 1.2 records from the
-schema and catalog; they still produce and project only 1.0 and 1.1, since
-Python producers stay on 1.1.
+checks. Building a record keeps only the attributes its own profile registers,
+so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
+validate and convert profile 1.2 records from the schema and catalog; they
+produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
+producers stay on 1.1.
 
 ## Traces and context
 
