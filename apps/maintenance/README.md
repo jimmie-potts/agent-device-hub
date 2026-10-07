@@ -45,6 +45,73 @@ Missing, rotated, rejected, capped or interrupted input is partial/unavailable
 coverage. A successful query is never proof that all observations were retained
 by journald or that a service is healthy.
 
+### Refusal error body
+
+A `blocked` response also carries `error`, the shared 2.0 error body of
+[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)
+([Hub #921](https://github.com/jimmie-potts/agent-device-hub/issues/921)).
+`schemaVersion`, `status`, `selections` and `reason` do not change, and
+`complete` and `uncertain` responses are unchanged, so a caller that reads only
+those fields sees no difference. The authority and stdin are unchanged, and
+stdout gains only this field.
+
+```json
+{"schemaVersion":1,"status":"blocked","selections":[],"reason":"expired-deadline","error":{"code":"expired","retryable":false,"detail":"expired-deadline"}}
+```
+
+- `code` is the registry code for the reason in the table below, and
+  `retryable` is that code's registry flag. One reason has two codes:
+  `invalid-or-unavailable-intake` is `invalid-request` for a malformed
+  invocation, an oversized stdin or a request that is not JSON, and
+  `invalid-state` when the `--config` file is missing or invalid, or a pinned
+  file no longer matches its fingerprint. The reason stays the same.
+- `detail` is the reason, so the body still names it after
+  [#839](https://github.com/jimmie-potts/agent-device-hub/issues/839) removes
+  the old fields.
+- The packaged intake bundles no contracts package. It copies the registry
+  codes it uses and their flags from `@jimmie-potts/event-contracts`, and
+  `tests/error-body.test.mjs` checks that each body equals that package's
+  `errorBody`.
+
+| `reason` | 2.0 `code` | Retryable |
+| --- | --- | --- |
+| `invalid-or-unavailable-intake` | `invalid-request` | no |
+| `invalid-request` | `invalid-request` | no |
+| `invalid-operation` | `invalid-request` | no |
+| `invalid-run` | `invalid-request` | no |
+| `invalid-evidence-directory` | `invalid-request` | no |
+| `unauthorized-maintenance` | `forbidden` | no |
+| `expired-deadline` | `expired` | no |
+| `unknown-run` | `not-found` | no |
+| `run-identity-mismatch` | `duplicate-conflict` | no |
+| `interrupted-run-needs-reconciliation` | `invalid-state` | no |
+| `interrupted-before-evidence` | `invalid-state` | no |
+| `missing-retained-evidence` | `invalid-state` | no |
+| `invalid-finding-state` | `invalid-state` | no |
+| `missing-selected-issue` | `invalid-state` | no |
+| `trusted-file-drift` | `invalid-state` | no |
+| `unsafe-file` | `invalid-state` | no |
+| `unsafe-directory` | `invalid-state` | no |
+| `unsafe-name` | `invalid-state` | no |
+| `unsafe-evidence-entry` | `invalid-state` | no |
+| `source-repository-mismatch` | `invalid-state` | no |
+| `issue-is-pr` | `invalid-state` | no |
+| `issue-inventory-capped` | `invalid-state` | no |
+| `source-not-current` | `revision-conflict` | no |
+| `publication-inventory-changed` | `revision-conflict` | no |
+| `evidence-capacity` | `invalid-state` | no |
+| `process-output-limit` | `invalid-state` | no |
+| `process-deadline` | `unavailable` | yes |
+| `process-unavailable` | `unavailable` | yes |
+| `process-failed` | `unavailable` | yes |
+| `invalid-issue-inventory` | `unavailable` | yes |
+| `invalid-issue-response` | `unavailable` | yes |
+| `invalid-source-revision` | `unavailable` | yes |
+| `intake-unavailable` | `internal` | no |
+| `invalid-query-bounds` | `internal` | no |
+| `invalid-issue` | `internal` | no |
+| Any other | `internal` | no |
+
 ## Configuration
 
 Trusted fingerprint entries use streaming SHA256 with a 512 MiB per-file limit.

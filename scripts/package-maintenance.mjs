@@ -50,7 +50,7 @@ try{
   assert.deepEqual((await readdir(installed)).sort(),['manifest.json',...Object.keys(manifest.files)].sort());
   for(const [name,digest] of Object.entries(manifest.files))assert.equal(hash(await readFile(join(installed,name))),digest);
   const invalid=spawnSync(process.execPath,[join(installed,'maintenance.mjs')],{cwd:consumer,input:'{}',encoding:'utf8'});
-  assert.equal(invalid.status,0);assert.equal(JSON.parse(invalid.stdout).status,'blocked');
+  assert.equal(invalid.status,0);assert.deepEqual(JSON.parse(invalid.stdout),{schemaVersion:1,status:'blocked',selections:[],reason:'invalid-or-unavailable-intake',error:{code:'invalid-request',retryable:false,detail:'invalid-or-unavailable-intake'}});
   const {largeTrustedFile}=await import('../apps/maintenance/tests/fingerprint-fixture.mjs');
   const {fixture}=await import('../apps/maintenance/tests/fixture.mjs');const f=await fixture({parent:scratch});
   try{

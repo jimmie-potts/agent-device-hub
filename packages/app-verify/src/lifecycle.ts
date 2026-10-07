@@ -4,6 +4,7 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, open, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {delimiter, dirname, join} from 'node:path';
 import {card, windowsLoopback} from './card.js';
+import {refusalBody} from './error-body.js';
 import {latestFrozen, recoverOnStop, uncommitted} from './handoff.js';
 import {declaresInputs, NAME, resolveInputs} from './inputs.js';
 import {LockedError, ProofStore, validateReceipt} from './receipt.js';
@@ -679,7 +680,7 @@ export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined)
     } catch (error) {
       // The cleanup already happened; report it with the refusal instead of hiding it.
       if (!(error instanceof LockedError)) throw error;
-      return {code: EXIT.failed, value: {operation: 'stop', runId: run.runId, state, cleanup: cleaned, error: 'receipt-locked', detail: error.message}};
+      return {code: EXIT.failed, value: {operation: 'stop', runId: run.runId, state, cleanup: cleaned, error: 'receipt-locked', detail: error.message, errorBody: refusalBody('receipt-locked', error.message)}};
     }
     if (proof.proof === 'committed') await run.store.event('frozen-committed', {manifest: proof.digest});
     if (proof.proof === 'conflict') io.progress(`${run.runId}: proof-conflict: ${proof.reason}; the files are left for inspection`);

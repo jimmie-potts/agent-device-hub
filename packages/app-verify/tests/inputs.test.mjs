@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import {runCaptureStep, validateReceipt, VERSION} from '@jimmie-potts/app-verify';
 import {createPlugin} from './fixture-app/plugin.mjs';
-import {sandbox, supervisorSkipReason, units} from './helpers.mjs';
+import {assertRefusal, sandbox, supervisorSkipReason, units} from './helpers.mjs';
 
 const skip = supervisorSkipReason();
 const server = fileURLToPath(new URL('fixture-app/server.mjs', import.meta.url));
@@ -67,12 +67,13 @@ test('bad inputs are usage errors that create nothing', async () => {
     for (const [args, pattern] of refusals) {
       const refused = await box.cli(args);
       assert.equal(refused.code, 2, `${args.join(' ')}: ${refused.stdout}`);
-      assert.equal(refused.result.error, 'usage');
+      assertRefusal(refused.result, 'usage');
       assert.match(refused.result.detail, pattern, args.join(' '));
     }
     // A 1.0-style plug-in declares no inputs, so any input is refused.
     const plain = await box.cli(['start', '--input', 'label=a'], {entry: await box.wrapper(box.repo, 'verify-plain.mjs', {})});
     assert.equal(plain.code, 2);
+    assertRefusal(plain.result, 'usage');
     assert.match(plain.result.detail, /label is not an input of this plug-in/);
     assert.equal(existsSync(box.proofRoot), false, 'no proof directory was created');
     assert.equal(existsSync(box.stateRoot), false, 'no runtime directory was created');
@@ -87,7 +88,7 @@ test('a scenario that requires an input refuses to start without it, before the 
   try {
     const refused = await box.cli(['start', '--scenario', 'paired', '--input', 'label=a']);
     assert.equal(refused.code, 2, refused.stdout);
-    assert.equal(refused.result.error, 'usage');
+    assertRefusal(refused.result, 'usage');
     assert.equal(refused.result.detail, 'scenario paired requires input feed; give it with --input feed=<value>');
     const help = await box.cli(['help']);
     assert.deepEqual(help.result.scenarioInputs, {paired: ['feed']});
@@ -104,7 +105,7 @@ test('a plug-in that declares a secret-like or malformed input is refused before
     for (const [inputs, pattern] of [[{apiKey: {description: 'no'}}, /apiKey looks like a secret/], [{'two words': {description: 'no'}}, /input name two words/], [{label: {}}, /input label needs a description/], [{label: {description: 'a label'}}, /scenario paired requires feed, which is not a declared input/]]) {
       const refused = await box.cli(['help'], {entry: await box.wrapper(box.repo, 'verify-bad.mjs', {inputs})});
       assert.equal(refused.code, 1);
-      assert.equal(refused.result.error, 'internal');
+      assertRefusal(refused.result, 'internal');
       assert.match(refused.result.detail, pattern);
     }
   } finally {
@@ -201,11 +202,13 @@ test('inputs reach seed, launch, checks and captures, and persist across reseed,
     const plain = await box.wrapper(box.repo, 'verify-plain.mjs', {});
     const refused = await box.cli(['restart', runId], {entry: plain});
     assert.equal(refused.code, 2);
+    assertRefusal(refused.result, 'usage');
     assert.match(refused.result.detail, /label is not an input of this plug-in/);
     // A plug-in that now requires an input the run never recorded names the operations that take --input.
     const stricter = await box.wrapper(box.repo, 'verify-stricter.mjs', {inputs: {...INPUTS, extra: {description: 'Added later', required: true}}});
     const hinted = await box.cli(['restart', runId], {entry: stricter});
     assert.equal(hinted.code, 2);
+    assertRefusal(hinted.result, 'usage');
     assert.equal(hinted.result.detail, 'input extra is required and this run has not recorded it; reseed it with scenario <run-id> second --input extra=<value>, or stop it and start a new run with --input extra=<value>');
     assert.equal((await box.receipt(runId)).state, 'running');
     // restart reuses them.
@@ -251,6 +254,7 @@ test('a scenario-specific input missing on scenario, a fresh step or handoff --r
     for (const [args, detail] of refusals) {
       const refused = await box.cli(args);
       assert.equal(refused.code, 2, `${args.join(' ')}: ${refused.stdout}`);
+      assertRefusal(refused.result, 'usage');
       assert.equal(refused.result.detail, detail);
     }
     assert.deepEqual(await box.receipt(runId), before, 'the receipt is unchanged: nothing was stopped, captured or frozen');

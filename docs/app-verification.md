@@ -57,6 +57,16 @@ Actual Windows-host qualification belongs to
 ## Operations
 
 Every operation prints one JSON result line on stdout and progress on stderr.
+A refusal line that the core prints keeps its `error` and `detail` and also
+carries `errorBody`, the shared 2.0 error body of
+[ADR 0012](decisions/0012-bunny-event-platform.md); the
+[core README](../packages/app-verify/README.md#refusal-error-body) maps each
+refusal to its registry code. Refusals that adapters and wrappers print
+themselves keep their 1.x shape until
+[#839](https://github.com/jimmie-potts/agent-device-hub/issues/839): the
+CHOMPI adapter's `start-only-scenario`, the Hub composition's own usage,
+failure and internal lines, the missing-build results of `scripts/verify.mjs`
+and `scripts/verify-chompi.mjs`, and `scripts/verify-host.mjs`'s own refusals.
 No operation prints a token, a private path outside the receipt's two declared
 roots, or personal data. For lifecycle operations, exit status 0 means the
 outcome was verified, not merely requested; 1 is a failed outcome, 2 a usage

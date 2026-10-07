@@ -2,6 +2,7 @@
 // a runtime root outside it, and a CLI runner that executes the real wrapper in
 // a child process so tests can interrupt it. Every unit a test creates carries
 // the sandbox's unique app name, and `close()` stops exactly those units.
+import assert from 'node:assert/strict';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
@@ -14,6 +15,45 @@ const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 const plugin = join(packageRoot, 'tests/fixture-app/plugin.mjs');
 /** The core as this test resolves it: the workspace build, or the installed archive in the package check. */
 const core = import.meta.resolve('@jimmie-potts/app-verify');
+
+/**
+ * The 2.0 registry code for each 1.x refusal (Hub #921), as the README's table lists them. Any other refusal is
+ * `internal`. Of these codes, only `capacity` and `unavailable` are retryable.
+ */
+export const REFUSAL_CODES = {
+  usage: 'invalid-request',
+  'unknown-scenario': 'invalid-request',
+  'unknown-run': 'not-found',
+  'invalid-receipt': 'invalid-state',
+  'run-not-running': 'invalid-state',
+  'scenario-mismatch': 'invalid-state',
+  'already-frozen': 'invalid-state',
+  'proof-conflict': 'invalid-state',
+  'proof-irregular': 'invalid-state',
+  'proof-root-unusable': 'invalid-state',
+  'runtime-root-unusable': 'invalid-state',
+  'capture-in-progress': 'capacity',
+  'receipt-locked': 'capacity',
+  'lease-failed': 'unavailable',
+  internal: 'internal',
+};
+
+/** The shared 2.0 body a refusal line carries beside its 1.x `error` and `detail`. */
+export function expectedBody(error, detail) {
+  const code = Object.hasOwn(REFUSAL_CODES, error) ? REFUSAL_CODES[error] : 'internal';
+  return {error: {code, retryable: code === 'capacity' || code === 'unavailable', detail: `${error}: ${detail}`.slice(0, 1024)}};
+}
+
+/**
+ * A refusal line keeps its 1.x `error` and `detail` and adds `errorBody`, the shared 2.0 body (Hub #921). `fields`
+ * names the line's other keys, which stay as they were.
+ */
+export function assertRefusal(result, error, fields = ['operation']) {
+  assert.equal(result?.error, error, JSON.stringify(result));
+  assert.equal(typeof result.detail, 'string');
+  assert.deepEqual(Object.keys(result).sort(), [...fields, 'error', 'detail', 'errorBody'].sort());
+  assert.deepEqual(result.errorBody, expectedBody(error, result.detail));
+}
 
 /** Whether this host has a user systemd manager. Returns a skip reason, or undefined when available. */
 export function supervisorSkipReason() {

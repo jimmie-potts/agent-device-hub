@@ -7,7 +7,7 @@ import {chmod, readdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/pr
 import {join} from 'node:path';
 import test from 'node:test';
 import {validateReceipt} from '@jimmie-potts/app-verify';
-import {sandbox, supervisorSkipReason, until} from './helpers.mjs';
+import {assertRefusal, sandbox, supervisorSkipReason, until} from './helpers.mjs';
 
 const skip = supervisorSkipReason();
 const magic = async (path, bytes) => (await readFile(path)).subarray(0, bytes.length).equals(Buffer.from(bytes));
@@ -68,19 +68,20 @@ test('a stateful step passes with screenshot, video and assertion log; known-wro
 
     const unknown = await box.cli(['capture', runId, 'nope']);
     assert.equal(unknown.code, 2);
+    assertRefusal(unknown.result, 'usage');
     // Inherited object keys name no step or scenario: usage errors that leave the run and its receipt alone.
     const before = await box.receipt(runId);
     for (const args of [['capture', runId, 'constructor'], ['scenario', runId, 'toString'], ['handoff', runId, '--reset', '__proto__']]) {
       const refused = await box.cli(args);
       assert.equal(refused.code, 2, args.join(' '));
-      assert.equal(refused.result.error, 'usage');
+      assertRefusal(refused.result, 'usage');
     }
     assert.deepEqual(await box.receipt(runId), before);
     assert.equal((await box.cli(['doctor', runId])).result.runs[0].state, 'running');
     await box.cli(['stop', runId]);
     const stopped = await box.cli(['capture', runId, 'count-twice']);
     assert.equal(stopped.code, 1);
-    assert.equal(stopped.result.error, 'run-not-running');
+    assertRefusal(stopped.result, 'run-not-running');
   } finally {
     await box.close();
   }
@@ -201,7 +202,7 @@ test('handoff freezes the verified set; reset, extend and later captures never c
     assert.equal(again.result.frozenAt, handoff.result.frozenAt);
     const resetAgain = await box.cli(['handoff', runId, '--reset', 'reference']);
     assert.equal(resetAgain.code, 1);
-    assert.equal(resetAgain.result.error, 'already-frozen');
+    assertRefusal(resetAgain.result, 'already-frozen');
     assert.equal(await readFile(join(verified, 'SHA256SUMS'), 'utf8'), manifest);
 
     // Tampering shows in doctor.
@@ -411,7 +412,7 @@ test('an uncommitted verified set is refused as a conflict unless it is exactly 
       const before = snapshot(join(box.proofRoot, runId));
       const result = await box.cli(['handoff', runId]);
       assert.equal(result.code, 1, why);
-      assert.equal(result.result.error, 'proof-conflict', why);
+      assertRefusal(result.result, 'proof-conflict');
       assert.equal(snapshot(join(box.proofRoot, runId)), before, `${why}: nothing changed`);
       assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'conflict', why);
       assert.equal((await box.receipt(runId)).proof.frozenAt, null, why);
@@ -517,14 +518,14 @@ test('a dead lock holder never blocks the next operation, a live one is named, a
     await writeFile(join(proof, '.receipt.lock', 'holder'), await holderRecord({dead: false}));
     const blocked = await box.cli(['extend', runId, '--lease', '10']);
     assert.equal(blocked.code, 1);
-    assert.equal(blocked.result.error, 'receipt-locked');
+    assertRefusal(blocked.result, 'receipt-locked');
     assert.match(blocked.result.detail, new RegExp(`pid ${process.pid}`));
     const {units} = await import('./helpers.mjs');
     assert.deepEqual(units(box.app).filter(name => name.endsWith('.timer')), [(await box.receipt(runId)).owned.leaseTimer], 'the refused extend left no unrecorded timer armed');
     // A stop under the same live lock still cleans up, and says what it did.
     const lockedStop = await box.cli(['stop', runId]);
     assert.equal(lockedStop.code, 1);
-    assert.equal(lockedStop.result.error, 'receipt-locked');
+    assertRefusal(lockedStop.result, 'receipt-locked', ['operation', 'runId', 'state', 'cleanup']);
     assert.deepEqual(lockedStop.result.cleanup.items.map(i => [i.kind, i.outcome]), [['lease-timer', 'removed'], ['unit', 'removed'], ['runtime-dir', 'removed']]);
     assert.deepEqual(units(box.app), []);
     await rm(join(proof, '.receipt.lock'), {recursive: true});
@@ -660,6 +661,34 @@ test('a supervised capture log, which handoff freezes, records assertion errors 
     assert.equal(log.assertions[0].error, 'ENOENT: no such file or directory, open `<path>`');
     assert.match(log.notes[0], /^\S+ reading <path>$/);
     assert.equal((await readFile(leaky.result.log, 'utf8')).includes('/srv/private'), false);
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
+test('handoff refuses a capture in progress and a capture holding a link, each with the shared error body', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    const capture = join(box.proofRoot, runId, 'capture-1');
+    const {holderRecord} = await import('./lock-holder.mjs');
+    // A live capture's marker: this test process holds it, so handoff must wait.
+    await writeFile(join(capture, '.in-progress'), await holderRecord({dead: false}));
+    const busy = await box.cli(['handoff', runId]);
+    assert.equal(busy.code, 1);
+    assertRefusal(busy.result, 'capture-in-progress');
+    assert.match(busy.result.detail, /wait for capture-1 to finish before handoff/);
+    await rm(join(capture, '.in-progress'));
+    // A link could change what a frozen sum covers, so the set is refused before anything moves.
+    await symlink('/etc/hostname', join(capture, 'link'));
+    const linked = await box.cli(['handoff', runId]);
+    assert.equal(linked.code, 1);
+    assertRefusal(linked.result, 'proof-irregular');
+    assert.equal((await box.receipt(runId)).proof.frozenAt, null, 'nothing was frozen');
+    assert.ok(existsSync(join(capture, 'after.png')), 'the capture stayed in place');
+    await rm(join(capture, 'link'));
     assert.equal((await box.cli(['stop', runId])).code, 0);
   } finally {
     await box.close();

@@ -6,7 +6,7 @@ import {readFile, stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
 import {validateReceipt} from '@jimmie-potts/app-verify';
-import {alive, refused, sandbox, show, supervisorSkipReason, units, until} from './helpers.mjs';
+import {alive, assertRefusal, refused, sandbox, show, supervisorSkipReason, units, until} from './helpers.mjs';
 
 const skip = supervisorSkipReason();
 const sha256 = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
@@ -111,7 +111,7 @@ test('help lists operations, scenarios and capture steps', async () => {
     assert.equal(help.result.steps['count-twice'], 'Two clicks advance the counter by two');
     const usage = await box.cli(['launch']);
     assert.equal(usage.code, 2);
-    assert.equal(usage.result.error, 'usage');
+    assertRefusal(usage.result, 'usage');
   } finally {
     await box.close();
   }
@@ -274,10 +274,11 @@ test('two concurrent runs share nothing, and a reseed changes only its own run',
 
     const unknown = await box.cli(['scenario', a.result.runId, 'nope']);
     assert.equal(unknown.code, 2);
+    assertRefusal(unknown.result, 'usage');
     for (const run of [a, b]) assert.equal((await box.cli(['stop', run.result.runId])).code, 0);
     const refusedReseed = await box.cli(['scenario', a.result.runId, 'reference']);
     assert.equal(refusedReseed.code, 1);
-    assert.equal(refusedReseed.result.error, 'run-not-running');
+    assertRefusal(refusedReseed.result, 'run-not-running');
   } finally {
     await box.close();
   }
@@ -316,7 +317,7 @@ test('extend replaces the lease, and an expired lease stops the unit and reads a
     assert.deepEqual(units(box.app), []);
     const late = await box.cli(['extend', runId]);
     assert.equal(late.code, 1, 'an expired run cannot be extended');
-    assert.equal(late.result.error, 'run-not-running');
+    assertRefusal(late.result, 'run-not-running');
   } finally {
     await box.close();
   }
@@ -494,7 +495,7 @@ test('a failed extend leaves the old lease in force, and a stray lease timer nev
     await chmod(join(shim, 'systemd-run'), 0o755);
     const refused = await box.cli(['extend', runId, '--lease', '20'], {extraEnv: {PATH: `${shim}:${process.env.PATH}`}});
     assert.equal(refused.code, 1);
-    assert.equal(refused.result.error, 'lease-failed');
+    assertRefusal(refused.result, 'lease-failed');
     assert.deepEqual(await box.receipt(runId), before, 'the receipt is unchanged');
     assert.equal(show(before.owned.leaseTimer, 'ActiveState').ActiveState, 'active', 'the old lease still holds');
     assert.equal(Number(show(before.owned.leaseTimer, 'NextElapseUSecRealtime').NextElapseUSecRealtime.slice(1)), Date.parse(before.preview.expiresAt) / 1000);
