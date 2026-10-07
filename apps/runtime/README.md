@@ -471,7 +471,8 @@ outside the runtime can read the spans, and a crash keeps those it had finished
 
 - `spans.ndjson` is the segment being written and `spans.previous.ndjson` the one
   before it. Each segment holds at most 512 spans or 2 MiB, so the pair holds the
-  latest 512 to 1,024 spans, within the contract's 4 MiB queue bound. The next
+  latest spans, up to 1,024 (at least 512 unless spans are large, since each segment also rotates at 2 MiB),
+  within the contract's 4 MiB queue bound. The next
   segment replaces the segment before it.
 - A segment starts with one header line, `{"schema":"runtime-spans/1.0","evicted":N}`,
   that counts the spans let go before it. A reader can tell a span that was let go

@@ -4,10 +4,11 @@
 //
 // The pair is `spans.ndjson`, the segment being written, and `spans.previous.ndjson`, the one before it. A segment ends
 // at `SEGMENT_SPANS` spans or `SEGMENT_BYTES`, whichever comes first, and the next one replaces the segment before it,
-// so the pair holds the latest 512 to 1,024 spans, at most the contract's 1,024 records or 4 MiB. Each segment starts
-// with one header line that says how many spans were let go before it, or that the count is unknown, as when a runtime
-// was killed between starting a segment and writing its header. A runtime that restarts on the same state directory
-// continues the same files, and one that cannot start a segment tries again with the next span.
+// so the pair holds the latest spans: up to 1,024, and at least 512 unless spans are large, since each segment also
+// rotates at 2 MiB. That is within the contract's 1,024 records and 4 MiB. Each segment starts with one header line that
+// says how many spans were let go before it, or that the count is unknown, as when a runtime was killed between starting
+// a segment and writing its header. A runtime that restarts on the same state directory continues the same files, and
+// one that cannot start a segment tries again with the next span.
 import {closeSync, constants, fstatSync, openSync, readSync, renameSync, writeSync} from 'node:fs';
 import {join} from 'node:path';
 import {MAX_QUEUE_BYTES, MAX_QUEUE_RECORDS, MAX_RECORD_BYTES} from '@jimmie-potts/bunny-observability';

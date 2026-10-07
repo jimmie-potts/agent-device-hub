@@ -257,7 +257,7 @@ const MEANINGS: Readonly<Record<Gap['kind'], string>> = {
   'spans-truncated': 'A span file was longer than its bound, so the read stopped there and later spans were not read.',
   'spans-not-recorded': 'This run has no span file, so no span is evidence either way.',
   'spans-unreadable': 'The run\'s span file could not be read, so no span is evidence either way.',
-  'losses-uncounted': 'This runtime has not stopped. It counts the records and spans that its queues dropped or its sinks lost, and says so in runtime.stopped, only when it stops, so those losses are not shown yet.',
+  'losses-uncounted': 'This runtime has not recorded its stop: while it runs, its losses are counted only when it stops, and if it ended abruptly they are lost. It counts the records and spans that its queues dropped or its sinks lost in runtime.stopped, so those losses are not shown.',
   'unreadable': 'Some lines of the journal and some spans were not valid contract records. They are counted and not shown.',
   'parent-missing': 'These spans continue a parent that is not in the evidence: it was evicted, lost or never ended.',
   'capped': 'The query left out records, spans or endings beyond its limits, or trace IDs beyond the 16 it names. Raise a limit, or query by trace.',

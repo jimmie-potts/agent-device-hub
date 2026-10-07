@@ -31,10 +31,10 @@
 - [x] 5.2 Count the trace IDs and endings an answer leaves out in `omitted`, name them in the `capped` gap, and bound `endings` by the record limit (`follow.test.ts`).
 - [x] 5.3 Write an unknown count, never 0, when a restart finds no current segment or an empty one beside a previous one, and report it as unknown (`span-file.test.ts`).
 - [x] 5.4 Let a test rotate between the reader's two reads, so that the re-read cannot be removed (`span-file.test.ts`).
-- [x] 5.5 Name a runtime that has not stopped as a standing gap, and give a `none-found` answer the caveats of a `found` one (`follow.test.ts`, `supervisor.test.ts`).
+- [x] 5.5 Name a runtime that has not recorded its stop as a standing gap, and give a `none-found` answer the caveats of a `found` one (`follow.test.ts`, `supervisor.test.ts`).
 - [x] 5.6 Check the previous segment for the same privacy as the current one at open (`span-file.test.ts`).
 - [x] 5.7 Refuse a repeated `request`, `trace`, `records` or `spans` (`follow.test.ts`, `supervisor.test.ts`).
 - [x] 5.8 Start a segment again with the next span after a failed rotation, with the count the rotation worked out (`span-file.test.ts`).
 - [x] 5.9 Count the stderr lines the journal does not take, and include them in the `unreadable` gap (`journal.test.ts`, `follow.test.ts`).
-- [x] 5.10 Say 512 to 1,024 spans, "no parent missing", and link the verify README from the contract and `docs/development.md`.
+- [x] 5.10 Say up to 1,024 spans (at least 512 unless they are large), "no parent missing", and link the verify README from the contract and `docs/development.md`.
 - [x] 5.11 Show that named tests fail under each fix's negative control, and rerun the full gate.

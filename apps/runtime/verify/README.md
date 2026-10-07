@@ -91,8 +91,8 @@ text reaches it, and a record or span the contract refuses is counted in `search
 | --- | --- |
 | `generation-ended-without-stop` | A runtime ended without writing `runtime.stopped`, as after a crash or kill: its last records, its counts of lost telemetry and the spans it had not written are unknown |
 | `telemetry-lost` | A runtime said at its stop that its queues or the contract refused this many records and spans |
-| `losses-uncounted` | A runtime has not stopped: it counts the records and spans that its queues dropped or its sinks lost, with its minimum level's absences, only when it stops, so those losses are not shown yet. Every answer about a live runtime has this gap |
-| `spans-evicted`, `spans-eviction-unknown` | The span file keeps the latest 512 to 1,024 spans and let this many go, or does not say, as after a runtime was killed between starting a segment and writing its header |
+| `losses-uncounted` | A runtime has not recorded its stop: while it runs, its losses are counted only when it stops, in `runtime.stopped`, and if it ended abruptly they are lost, so the records and spans that its queues dropped or its sinks lost are not shown. Every answer about the current runtime has this gap, whether it is live or was killed and not yet restarted |
+| `spans-evicted`, `spans-eviction-unknown` | The span file keeps the latest spans (up to 1,024, at least 512 unless spans are large, since each segment also rotates at 2 MiB) and let this many go, or does not say, as after a runtime was killed between starting a segment and writing its header |
 | `spans-truncated` | A span file was longer than its bound, so the read stopped |
 | `spans-not-recorded`, `spans-unreadable` | The run has no span file, or it could not be read |
 | `unreadable` | Journal lines that were not records, records the contract refused and spans that were not valid, counted and not shown |
