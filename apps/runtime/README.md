@@ -275,10 +275,13 @@ Device grants narrow reads as well as commands, as the old Hub did. Every
 device an admitted module names that a caller's grant does not is excluded
 (`EdgePermissions.excluded`, `bunny.*.*.<device>`): the edge leaves its records
 out of the caller's sync answers and their membership, never queues a message
-on its keys for the caller's subscriptions, and refuses its commands. A family
+on its keys for the caller's subscriptions, and refuses its commands. A record's
+key is `bunny.state.<family>.<subject>`, so the edge and `/api/v2` both judge a
+record by its subject. A family
 no device keys, such as `session` or `inbox-item`, stays readable under
 `read`. A device module keys its records and messages by the device's routing
-ID, which ADR 0012's routing-ID rule makes the last token of each key.
+ID, which the profile's routing-ID rule (ADR 0012's key shape) makes the last
+token of each key.
 
 That rule binds a message to its key: a command's `subject` must be its key's
 last token, which the SDK's bus checks on every transport and refuses with
@@ -297,8 +300,9 @@ remote part may still request once its dispatcher lands. The edge also:
   cannot make a responder run it twice. It remembers a command while its bus
   has it, and once settled until its `expiresat`, at most 10 minutes; one the
   bus refused before any responder had it is forgotten at once, since sending
-  it again is safe. Each source may have 1,024 remembered at once, and all
-  sources 65,536; past either, that source's next command is `capacity` while
+  it again is safe. Each credential and each browser session may have 1,024
+  remembered at once, though the sessions share one source, and all of them
+  65,536; past either, that caller's next command is `capacity` while
   another's still goes through. A runtime restart forgets them;
 - writes a heartbeat comment on each stream every 15 s, and ends a stream whose
   socket stays full for 30 s, its reader having stopped: its subscriptions free
@@ -317,8 +321,8 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 
 | Route | Scope | Answers |
 | --- | --- | --- |
-| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core, device or module state family the caller may see, not those of a device its grant does not name, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`, and an owner's refusal its code without its detail. |
-| `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept, narrowed as a family read is. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
+| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core, device or module state family the caller may see, not those of a device its grant does not name, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no module in this runtime serves `not-found` too, which a retry does not change, and an owner's refusal its code with fixed text for that code, never the owner's detail. |
+| `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept, narrowed as a family read is. Families of more than one owner are `invalid-request`, which says to name families of one module. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
 | `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, and its pages, MCP tools and whether it shows settings when the caller may use them. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the caller's devices and the place links, from the edge section. |
@@ -336,8 +340,8 @@ the module list shows the module without them. A module that names no device is
 every reader's. A module is called only while it runs (otherwise
 `unavailable`), within 5 s (otherwise `unavailable`). A contribution that throws
 fails its module, as a handler that throws does, and answers `internal`. A page,
-settings, text or JSON content, or tool answer that holds a secret a module
-read is never served: `internal`. A tool's refusal is checked too, its detail
+settings, content of any type, image bytes included, or tool answer that holds
+a secret a module read is never served: `internal`. A tool's refusal is checked too, its detail
 included.
 
 The `/api/v2` documents have no published JSON schemas yet; #922, their first
@@ -432,8 +436,10 @@ whole and owner-only, as a producer's setup does (#926), and
 writer holds the file's lock, `<file>.lock`, which names its process: writers in
 one process take turns, so a grant and a revocation made at once both take
 effect, and a writer in another process is refused with
-`edge-credentials-busy`. A lock whose process has gone, and the temporary files
-a crashed writer left, are taken over. A writer reads the file, writes its new
+`edge-credentials-busy`. A writer creates the lock with its content in one step
+and removes only a lock it created. A lock whose process has gone is taken over
+in one step that moves it aside and never takes another writer's fresh lock, and
+the temporary files a crashed writer left are removed. A writer reads the file, writes its new
 one beside it under a name of its own and renames it over the file only if the
 file still holds what it read; a change made meanwhile, such as an edit by hand,
 refuses the write with `configuration-changed` and stands. A grant of a

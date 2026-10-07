@@ -341,20 +341,31 @@ export class Gateway {
   }
 
   /**
-   * Whether a caller may see a record of a family: not when its `id`, the last token of its key, is a device its grant
-   * does not name, as the edge leaves those out of what the caller syncs (Hub #835).
+   * Whether a caller may see a record of a family: not when its subject, which the routing-ID rule makes the last token
+   * of its key, is a device its grant does not name, as the edge leaves those out of what the caller syncs (Hub #835).
    */
-  #visible(principal: Principal): (record: Record<string, unknown>) => boolean {
+  #visible(principal: Principal): (state: {subject: string}) => boolean {
     const hidden = new Set(hiddenDevices(principal, this.#devices()));
-    return record => typeof record.id !== 'string' || !hidden.has(record.id);
+    return state => !hidden.has(state.subject);
+  }
+
+  /**
+   * Refuses, before any sync, a family no owner serves, which a retry will not change (`not-found`), and families of
+   * more than one owner, which one sync cannot cover (`invalid-request`). Each refusal is fixed text.
+   */
+  #served(families: readonly string[]): void {
+    const owners = families.map(family => this.#options.bus.syncOwners(family));
+    if (owners.some(found => found.length === 0)) throw refuse('not-found', 'no module in this runtime serves a named family');
+    if (new Set(owners.flat()).size > 1) throw refuse('invalid-request', 'one snapshot reads the families of one owner; name families that one module serves');
   }
 
   /** The records of one family that the caller may see, from the gateway's kept copy of it, synced on the first read. */
   async #family(family: string, principal: Principal): Promise<Answer> {
     if (!FAMILY.test(family) || family.length > 64) throw refuse('invalid-request', 'a family name is lowercase letters and digits with single hyphens');
     if (!this.#options.families.has(family)) throw refuse('not-found', 'no such family');
+    this.#served([family]);
     const copy = await this.#copy(family);
-    return json(200, {schema: 'family-read/2.0', family, records: copy.states().map(state => state.data).filter(this.#visible(principal))});
+    return json(200, {schema: 'family-read/2.0', family, records: copy.states().filter(this.#visible(principal)).map(state => state.data)});
   }
 
   /**
@@ -374,7 +385,7 @@ export class Gateway {
       if (result.status === 'synced') return result.copy;
       this.#copies.delete(family);
       // The owner's own detail is not served: it may say anything, a secret included. Its code stands.
-      throw new Refused(result.error.error.code, 'the owner refused the sync');
+      throw syncRefusal(result.error.error.code);
     }, (error: unknown) => {
       this.#copies.delete(family);
       throw error;
@@ -398,13 +409,14 @@ export class Gateway {
       throw refuse('invalid-request', 'the families are distinct family names, at most 32');
     }
     if (families.some(family => !this.#options.families.has(family))) throw refuse('not-found', 'a named family does not exist');
+    this.#served(families);
     const own = this.#own;
     if (own === undefined) throw refuse('unavailable', 'the gateway has not started');
     const result = await own.sync<Record<string, unknown>>(families, () => {}, {timeoutMs: SYNC_TIMEOUT_MS});
-    if (result.status === 'rejected') throw refuse(result.error.error.code, 'the owner refused the sync');
+    if (result.status === 'rejected') throw syncRefusal(result.error.error.code);
     const visible = this.#visible(principal);
     // A record belongs to the family its schema names, at whatever version.
-    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).map(state => state.data).filter(visible)]));
+    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).filter(visible).map(state => state.data)]));
     await result.copy.close();
     return json(200, {schema: 'snapshot-read/2.0', families, revision: result.message.data.revision, records});
   }
@@ -447,8 +459,8 @@ export class Gateway {
     if (!CONTENT_TYPES.has(found.type) || !(found.bytes instanceof Uint8Array) || found.bytes.byteLength > MAX_CONTENT_BYTES) {
       throw refuse('internal', 'the module\'s content is not an image, text or JSON of at most 16 MiB');
     }
-    // Text and JSON are checked for a secret the module read, as a page is; an image is bytes no secret check can read.
-    if (!found.type.startsWith('image/') && this.#options.redactions.holds(Buffer.from(found.bytes).toString('utf8'))) {
+    // The bytes are checked for a secret the module read, whatever their type: an image's metadata can carry text too.
+    if (this.#options.redactions.holdsBytes(found.bytes)) {
       throw refuse('internal', 'the module\'s content holds a secret, which the gateway never serves');
     }
     return {status: 200, body: found.bytes, headers: {'content-type': found.type, ...PAGE_HEADERS}};
@@ -634,6 +646,16 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw refuse('invalid-request', 'the body is a JSON object');
   return parsed as Record<string, unknown>;
+}
+
+/**
+ * An owner's sync refusal as the gateway serves it: its code, with fixed text for that code, never the owner's detail,
+ * which may say anything.
+ */
+function syncRefusal(code: ErrorCode): Refused {
+  const detail = code === 'unavailable' ? 'the family\'s owner did not answer the sync'
+    : code === 'capacity' ? 'the family\'s owner is busy; try again' : 'the family\'s owner refused the sync';
+  return refuse(code, detail);
 }
 
 /** The family a `dataschema` names, `https://bunny.invalid/events/<family>/<major>.<minor>`, or undefined. */

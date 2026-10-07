@@ -46,3 +46,9 @@
 - [x] 7.5 Lock credential writes, refuse changed files and other owners' grants, refuse duplicate and dashboard sources, queue SIGHUP during start, carry `mcp` and check links at conversion, and name #922 for the label command.
 - [x] 7.6 Show negative controls fail named tests for each protection, and rerun the gate on the rebased head.
 
+## 8. Review fix round 2
+
+- [x] 8.1 Keep a source's command memory reachable when a sweep empties it, with every count right; count each principal's commands against its own quota.
+- [x] 8.2 State the routing-ID rule in `bunny-message-profile`, and bring the LIFX and playback modules' specifications and READMEs in line with the bus's `invalid-message`.
+- [x] 8.3 Answer a family no module serves with `not-found`, and a snapshot of two owners' families with `invalid-request`, each with text that says why; key narrowing on the subject in the edge and the gateway; check content bytes for secrets; take a crashed writer's lock over atomically and remove only a writer's own lock.
+

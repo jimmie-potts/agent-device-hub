@@ -60,8 +60,8 @@ export type EdgeOptions = {
   authenticate?: (request: IncomingMessage) => EdgePrincipal | undefined;
   /** How often an open stream gets a comment line, so that its reader can tell a live stream from a lost one. Defaults to 15 s. */
   heartbeatMs?: number;
-  /** The command memory's bounds, for tests: `MAX_REMEMBERED_PER_SOURCE`, `MAX_REMEMBERED_COMMANDS` and `REMEMBER_MS` by default. */
-  commandMemory?: {perSource?: number; total?: number; rememberMs?: number};
+  /** The command memory's bounds, for tests: `MAX_REMEMBERED_PER_PRINCIPAL`, `MAX_REMEMBERED_COMMANDS` and `REMEMBER_MS` by default. */
+  commandMemory?: {perPrincipal?: number; total?: number; rememberMs?: number};
   /**
    * Runs the heartbeats and stall limits. They concern real sockets, so they default to the global `setTimeout`, whatever
    * `scheduler` is, and never keep the process alive.
@@ -101,11 +101,12 @@ export const HEARTBEAT_MS = 15_000;
 export const STALL_MS = 30_000;
 /**
  * How many commands the edge remembers, so that a raw HTTP client that sends one again is refused (Hub #835): at most
- * `MAX_REMEMBERED_PER_SOURCE` for one source and `MAX_REMEMBERED_COMMANDS` in all. Past either, that source's next
- * command is refused with the retryable `capacity` until older ones are forgotten; another source still gets through.
+ * `MAX_REMEMBERED_PER_PRINCIPAL` for one principal, the credential or browser session the host names or else the
+ * source, and `MAX_REMEMBERED_COMMANDS` in all. Past either, that principal's next command is refused with the
+ * retryable `capacity` until older ones are forgotten; another principal still gets through, even of the same source.
  */
 export const MAX_REMEMBERED_COMMANDS = 65_536;
-export const MAX_REMEMBERED_PER_SOURCE = 1024;
+export const MAX_REMEMBERED_PER_PRINCIPAL = 1024;
 /**
  * How long the edge remembers a command once its bus settled it: until its expiry, and at most this long. One the bus
  * refused before any responder had it is forgotten at once, since sending it again is safe.
@@ -162,8 +163,11 @@ type Repeats = {first: Diagnostic; count: number; cancel: Cancel};
 type Dispatched = {key: string; command: Command<object>};
 /** Where a call stands: `dispatched` once its command is with the bus. */
 type Progress = {dispatched?: Dispatched};
-/** A remembered command: until when, and whether its bus has not settled it yet, which keeps it whatever its time. */
-type Remembered = {untilMs: number; pending: boolean};
+/**
+ * A remembered command: until when, whether its bus has not settled it yet, which keeps it whatever its time, and the
+ * principal whose quota it counts against.
+ */
+type Remembered = {untilMs: number; pending: boolean; holder: string};
 
 /**
  * What a failure's record names of the command it may have left uncertain: its routing key, request ID, message ID and
@@ -324,8 +328,10 @@ export class RemoteEdge {
    * Each source has its own quota, so one cannot lock the others out.
    */
   readonly #sent = new Map<string, Map<string, Remembered>>();
+  /** How many remembered commands count against each principal's quota, and against the total. */
+  readonly #held = new Map<string, number>();
   #remembered = 0;
-  readonly #memory: {perSource: number; total: number; rememberMs: number};
+  readonly #memory: {perPrincipal: number; total: number; rememberMs: number};
   /**
    * Forwarded commands and sync requests waiting for an answer, by source, responder or owner id and the forwarded
    * message's own id, so a retry that reuses a requestId has its own entry. They outlive a connection, so a reply that
@@ -372,7 +378,7 @@ export class RemoteEdge {
     this.#heartbeatMs = limit(options.heartbeatMs, HEARTBEAT_MS, 'heartbeatMs');
     const memory = options.commandMemory ?? {};
     this.#memory = {
-      perSource: limit(memory.perSource, MAX_REMEMBERED_PER_SOURCE, 'commandMemory.perSource'), total: limit(memory.total, MAX_REMEMBERED_COMMANDS, 'commandMemory.total'),
+      perPrincipal: limit(memory.perPrincipal, MAX_REMEMBERED_PER_PRINCIPAL, 'commandMemory.perPrincipal'), total: limit(memory.total, MAX_REMEMBERED_COMMANDS, 'commandMemory.total'),
       rememberMs: limit(memory.rememberMs, REMEMBER_MS, 'commandMemory.rememberMs'),
     };
     this.#stallMs = limit(options.stallMs, STALL_MS, 'stallMs');
@@ -587,7 +593,7 @@ export class RemoteEdge {
         const command = this.#inbound(source, body.command) as Command<object>;
         const key = text(body, 'key');
         allowKey(principal, key, {exact: true});
-        const remembered = this.#remember(source, command);
+        const remembered = this.#remember(principal, command);
         // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal, and the
         // command is forgotten, since nothing had it.
         progress.dispatched = {key, command};
@@ -674,64 +680,78 @@ export class RemoteEdge {
   }
 
   /**
-   * Remembers a command as it goes to the bus, and refuses one this source already sent with the same ID (Hub #835):
-   * commands are never sent twice (ADR 0012, "Retries"), so a raw HTTP client that repeats one, even after the first
-   * settled, cannot make a responder run it again. The first command's own refusal or reply is not repeated; the repeat
-   * is refused before anything happens. A command is remembered while its bus has it, and once settled until its
-   * expiry, at most `rememberMs`; one the bus refused before any responder had it is forgotten at once, since sending it
-   * again is safe. Returns what the caller calls with the bus's result, or undefined when the bus threw.
+   * Remembers a command as it goes to the bus, and refuses one its source already sent with the same ID, whichever of
+   * the source's principals sent it (Hub #835): commands are never sent twice (ADR 0012, "Retries"), so a raw HTTP
+   * client that repeats one, even after the first settled, cannot make a responder run it again. The first command's own
+   * refusal or reply is not repeated; the repeat is refused before anything happens. A command is remembered while its
+   * bus has it, and once settled until its expiry, at most `rememberMs`; one the bus refused before any responder had it
+   * is forgotten at once, since sending it again is safe. It counts against its principal's quota, so one credential or
+   * browser session cannot take another's room. Returns what the caller calls with the bus's result, or undefined when
+   * the bus threw.
    */
-  #remember(source: string, command: Message): (result: RequestResult | undefined) => void {
+  #remember(principal: EdgePrincipal, command: Message): (result: RequestResult | undefined) => void {
+    const {source} = principal;
+    const holder = principal.id === undefined ? `source\n${source}` : `principal\n${principal.id}`;
     const now = this.#now();
+    const remembered = this.#sent.get(source)?.get(command.id);
+    if (remembered !== undefined && (remembered.pending || remembered.untilMs > now)) throw refuse('duplicate-conflict', 'this command was sent already; a command is never sent twice');
+    if ((this.#held.get(holder) ?? 0) >= this.#memory.perPrincipal) this.#forget(source, now);
+    if (this.#remembered >= this.#memory.total) for (const other of [...this.#sent.keys()]) this.#forget(other, now);
+    // A principal at its quota waits for its own commands to be forgotten; it never takes another's room.
+    if ((this.#held.get(holder) ?? 0) >= this.#memory.perPrincipal || this.#remembered >= this.#memory.total) {
+      throw refuse('capacity', 'the edge remembers as many of this part\'s commands as it can; try again later');
+    }
+    // Looked up after the sweeps, which drop a source's memory once they empty it.
     let sent = this.#sent.get(source);
     if (sent === undefined) {
       sent = new Map();
       this.#sent.set(source, sent);
     }
-    const remembered = sent.get(command.id);
-    if (remembered !== undefined && (remembered.pending || remembered.untilMs > now)) throw refuse('duplicate-conflict', 'this command was sent already; a command is never sent twice');
-    if (sent.size >= this.#memory.perSource) this.#forget(source, sent, now);
-    if (this.#remembered >= this.#memory.total) for (const [other, entries] of [...this.#sent]) this.#forget(other, entries, now);
-    // A source at its quota waits for its own commands to be forgotten; it never takes another source's room.
-    if (sent.size >= this.#memory.perSource || this.#remembered >= this.#memory.total) {
-      throw refuse('capacity', 'the edge remembers as many of this part\'s commands as it can; try again later');
-    }
-    const entry: Remembered = {untilMs: Date.parse(command.expiresat ?? ''), pending: true};
+    const entry: Remembered = {untilMs: Date.parse(command.expiresat ?? ''), pending: true, holder};
     sent.set(command.id, entry);
+    this.#held.set(holder, (this.#held.get(holder) ?? 0) + 1);
     this.#remembered += 1;
-    const entries = sent;
     return result => {
       entry.pending = false;
-      // Only a refusal the bus made itself, with no reply, proves that no responder had the command.
+      // Only a refusal the bus made itself, with no reply, proves that no responder had the command. A pending entry
+      // is never swept, so its source's memory still holds it here.
       if (result === undefined || (result.status === 'rejected' && result.reply === undefined)) {
-        if (entries.get(command.id) === entry) {
-          entries.delete(command.id);
-          this.#remembered -= 1;
-        }
+        this.#unremember(source, command.id, entry);
         return;
       }
       entry.untilMs = Math.min(entry.untilMs, this.#now() + this.#memory.rememberMs);
     };
   }
 
-  /** Forgets one source's settled commands whose time has passed. */
-  #forget(source: string, entries: Map<string, Remembered>, now: number): void {
-    for (const [id, entry] of entries) {
-      if (entry.pending || entry.untilMs > now) continue;
-      entries.delete(id);
-      this.#remembered -= 1;
+  /** Forgets one source's settled commands whose time has passed, and its memory once that is empty. */
+  #forget(source: string, now: number): void {
+    for (const [id, entry] of [...this.#sent.get(source) ?? []]) {
+      if (!entry.pending && entry.untilMs <= now) this.#unremember(source, id, entry);
     }
-    if (entries.size === 0) this.#sent.delete(source);
+  }
+
+  /** Forgets one remembered command, and its source's memory once that is empty, keeping every count right. */
+  #unremember(source: string, id: string, entry: Remembered): void {
+    const sent = this.#sent.get(source);
+    if (sent?.get(id) !== entry) return;
+    sent.delete(id);
+    if (sent.size === 0) this.#sent.delete(source);
+    const held = (this.#held.get(entry.holder) ?? 1) - 1;
+    if (held > 0) this.#held.set(entry.holder, held);
+    else this.#held.delete(entry.holder);
+    this.#remembered -= 1;
   }
 
   /**
    * A sync answer as this part may see it: without the records, and their members, whose state keys its grant excludes,
-   * as for a device its grant does not name (Hub #835). The owner's revision stands, so the part's copy stays consistent.
+   * as for a device its grant does not name (Hub #835). A record's key is `bunny.state.<family>.<subject>`: the
+   * routing-ID rule makes its subject its key's last token. The owner's revision stands, so the part's copy stays
+   * consistent.
    */
   #narrowed(principal: EdgePrincipal, answer: Extract<SyncAnswer, {status: 'served'}>): Extract<SyncAnswer, {status: 'served'}> {
     if (principal.excluded === undefined || principal.excluded.length === 0) return answer;
     const visible = (key: string | undefined): boolean => key !== undefined && !excludes(principal, key);
-    const states = answer.states.filter(state => visible(stateKey(schemaFamily(state.dataschema), (state.data as {id?: unknown} | null)?.id)));
+    const states = answer.states.filter(state => visible(stateKey(schemaFamily(state.dataschema), state.subject)));
     const {data} = answer.completed;
     const members = data.members.filter(member => visible(stateKey(member.family, member.id)));
     return {...answer, states, completed: {...answer.completed, data: {...data, members}}};

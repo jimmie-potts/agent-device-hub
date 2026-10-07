@@ -92,9 +92,10 @@ function decisionOf(result: RequestResult): Decision {
 // Refusals never quote what the caller sent, such as a key or a source, since a remote edge serves them to the caller.
 const foreign = (): SdkError => new SdkError(body('forbidden', 'a participant sends only messages from its own source'));
 /**
- * The routing-ID rule (ADR 0012): a command's `subject` is the entity it is for, whose routing ID is the last token of
- * its routing key, so a responder that acts on the subject acts on the key's entity, and a grant of the key covers it
- * (Hub #835). The bus refuses any other command, on every transport, before it reaches a responder.
+ * The profile's routing-ID rule (bunny-message-profile, from ADR 0012's key shape): a command's `subject` is the entity
+ * it is for, whose routing ID is the last token of its routing key, so a responder that acts on the subject acts on the
+ * key's entity, and a grant of the key covers it (Hub #835). The bus refuses any other command, on every transport,
+ * before it reaches a responder.
  */
 const misrouted = (): SdkError => new SdkError(body('invalid-message', 'a command\'s subject is the last token of its routing key'));
 
@@ -248,6 +249,14 @@ export class InProcessBus {
       const request = startSpan(this.#spans, 'bunny.command.request', {parent: command, kind: 'server', attributes: spanFields(source, key, requestId)});
       return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs, request, signal);
     });
+  }
+
+  /**
+   * The sources that serve a family's sync now, none when nobody does. A host's read routes use it to tell a family no
+   * module serves, which a retry will not change, from an owner's own refusal (Hub #835).
+   */
+  syncOwners(family: string): string[] {
+    return this.#sync.owners(family);
   }
 
   /**

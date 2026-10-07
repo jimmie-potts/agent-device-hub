@@ -176,7 +176,8 @@ speaker:
 
 | Answer | When |
 | --- | --- |
-| `invalid-request` | The subject is not the record's `id`, the action is not `play`, `pause`, `next` or `previous`, or `expectedRevision` is not an integer. |
+| `invalid-message` | The subject is not the record's `id`, the last token of the command's key: the SDK's bus refuses it before the module has it (the profile's routing-ID rule, Hub #835). |
+| `invalid-request` | The action is not `play`, `pause`, `next` or `previous`, or `expectedRevision` is not an integer. |
 | `unavailable` | The module is stopping. |
 | `accepted`, nothing sent | The same requester sent the same `requestId` and command before: its outcome went out once. |
 | `duplicate-conflict` | The same `requestId` came with another command. |

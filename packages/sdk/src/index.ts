@@ -25,7 +25,7 @@ export {
 export {WorkerCalls, type WorkerCallsOptions} from './workers.js';
 export {childOf, traceFields} from './trace.js';
 export {
-  HEARTBEAT_MS, MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_SOURCE, REFUSAL_WINDOW_MS, REMEMBER_MS, RemoteEdge, STALL_MS, type EdgeOptions, type EdgePermissions, type EdgePrincipal, type RemoteGrant,
+  HEARTBEAT_MS, MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, REFUSAL_WINDOW_MS, REMEMBER_MS, RemoteEdge, STALL_MS, type EdgeOptions, type EdgePermissions, type EdgePrincipal, type RemoteGrant,
 } from './remote-edge.js';
 export {IDLE_MS, connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
 export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';

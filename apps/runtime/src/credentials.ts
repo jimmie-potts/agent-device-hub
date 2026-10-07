@@ -4,7 +4,7 @@
 // document or error body names one. The runtime reads the file at its start and again when asked to reload it, so a
 // credential is granted, revoked or rotated by changing the file.
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
-import {chmod, open, readdir, readFile, rename, rm, stat} from 'node:fs/promises';
+import {chmod, link, open, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
 import {PrivateFileError, RuntimeError, readPrivateFile} from './state.js';
 
@@ -144,41 +144,83 @@ function running(pid: number): boolean {
   }
 }
 
+/** Whether an error is the file system's `code`. */
+const isCode = (error: unknown, code: string): boolean => error instanceof Error && 'code' in error && error.code === code;
+const busy = (): RuntimeError => new RuntimeError('edge-credentials-busy', 'another writer holds the edge\'s credentials file; try again');
+
 /**
- * Runs `change` while this process holds the credentials file's lock, `<file>.lock`, which names its process: writers
- * in one process wait for each other, and one in another process is refused with `edge-credentials-busy`. A lock whose
- * process has gone, or an empty one older than a minute, is a crashed writer's and is taken over. Temporary files a
- * crashed writer left beside the file are removed first.
+ * Creates the lock with its content in one step: the content goes to a private file of this writer's own, which is
+ * then linked as the lock, so another writer never finds the lock empty, and a lock already there is never replaced.
+ * Returns whether this writer now holds it.
+ */
+async function createLock(lock: string, mine: string, nonce: string): Promise<boolean> {
+  const fresh = `${lock}.${nonce}.new`;
+  await writeFile(fresh, mine, {mode: 0o600, flag: 'wx'});
+  try {
+    await link(fresh, lock);
+    return true;
+  } catch (error) {
+    if (isCode(error, 'EEXIST')) return false;
+    throw error;
+  } finally {
+    await rm(fresh, {force: true});
+  }
+}
+
+/**
+ * Takes over a lock that a crashed writer left, which held `judged` when this writer found it so: the lock is moved
+ * aside in one step, and if what was moved is not what this writer judged, another writer took the lock over first
+ * and this one moved that writer's fresh lock, so it puts it back, unless a lock is there again, and gives up.
+ */
+async function takeOver(lock: string, judged: string, nonce: string): Promise<void> {
+  const aside = `${lock}.${nonce}.stale`;
+  try {
+    await rename(lock, aside);
+  } catch (error) {
+    // Gone already: another writer took it over, or its holder finished. Trying to create it again decides.
+    if (isCode(error, 'ENOENT')) return;
+    throw error;
+  }
+  try {
+    if (await readFile(aside, 'utf8').catch(() => '') === judged) return;
+    await link(aside, lock).catch(() => {});
+    throw busy();
+  } finally {
+    await rm(aside, {force: true});
+  }
+}
+
+/**
+ * Runs `change` while this process holds the credentials file's lock, `<file>.lock`, which names its process and this
+ * writer: writers in one process wait for each other, and one in another process is refused with
+ * `edge-credentials-busy`. A lock whose process has gone, or an empty or unreadable one older than a minute, is a
+ * crashed writer's, and is taken over in one step that never takes another writer's fresh lock. A writer removes only a
+ * lock that it created. Temporary files a crashed writer left beside the file are removed first.
  */
 async function locked<T>(file: string, change: () => Promise<T>): Promise<T> {
   const previous = queues.get(file) ?? Promise.resolve();
   const turn = previous.catch(() => {}).then(async () => {
     const lock = `${file}.lock`;
-    let handle: Awaited<ReturnType<typeof open>> | undefined;
-    for (let attempt = 0; handle === undefined; attempt += 1) {
-      try {
-        handle = await open(lock, 'wx', 0o600);
-      } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST') || attempt > 0) {
-          throw new RuntimeError('edge-credentials-busy', 'another writer holds the edge\'s credentials file; try again');
-        }
-        const owner = Number((await readFile(lock, 'utf8').catch(() => '')).trim());
-        const age = Date.now() - ((await stat(lock).catch(() => undefined))?.mtimeMs ?? Date.now());
-        const crashed = Number.isSafeInteger(owner) && owner > 0 ? !running(owner) : age > EMPTY_LOCK_MS;
-        if (!crashed) throw new RuntimeError('edge-credentials-busy', 'another writer holds the edge\'s credentials file; try again');
-        await rm(lock, {force: true});
-      }
+    const nonce = randomUUID();
+    const mine = `${process.pid} ${nonce}\n`;
+    for (let attempt = 0; !await createLock(lock, mine, nonce); attempt += 1) {
+      if (attempt > 0) throw busy();
+      const judged = await readFile(lock, 'utf8').catch(() => '');
+      const owner = Number(judged.trim().split(' ')[0]);
+      const age = Date.now() - ((await stat(lock).catch(() => undefined))?.mtimeMs ?? Date.now());
+      const crashed = Number.isSafeInteger(owner) && owner > 0 ? !running(owner) : age > EMPTY_LOCK_MS;
+      if (!crashed) throw busy();
+      await takeOver(lock, judged, nonce);
     }
     try {
-      await handle.writeFile(`${process.pid}\n`, 'utf8');
-      await handle.close();
       const prefix = `.${basename(file)}.`;
       for (const name of await readdir(dirname(file))) {
         if (name.startsWith(prefix) && name.endsWith('.tmp')) await rm(join(dirname(file), name), {force: true});
       }
       return await change();
     } finally {
-      await rm(lock, {force: true});
+      // Only this writer's own lock: one another writer holds now is not this writer's to remove.
+      if (await readFile(lock, 'utf8').catch(() => '') === mine) await rm(lock, {force: true});
     }
   });
   queues.set(file, turn);

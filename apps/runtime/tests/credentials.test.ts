@@ -84,3 +84,13 @@ it('a writer in another process holds the file; a lock or temporary file a crash
   assert.deepEqual(await ids(file), ['a', 'b']);
   assert.deepEqual((await readdir(dir)).filter(name => name.endsWith('.tmp') || name.endsWith('.lock')), [], 'nothing left behind');
 });
+
+it('a writer removes only the lock it created, never one another writer holds when it finishes', async context => {
+  const {credentials: file} = await edgeConfig(context, []);
+  await writeEdgeCredentials(file, [credential('a')]);
+  const other = `${String(process.pid)} another-writer\n`;
+  // While this writer holds the lock, the lock comes to be another writer's, as after a takeover it lost.
+  await grantCredential(file, credential('b'), {beforeReplace: () => writeFile(`${file}.lock`, other, {mode: 0o600})});
+  assert.equal(await readFile(`${file}.lock`, 'utf8'), other, 'the other writer\'s lock stands');
+  assert.deepEqual(await ids(file), ['a', 'b']);
+});

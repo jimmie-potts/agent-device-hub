@@ -221,7 +221,7 @@ it('a grant\'s exclusions leave a device\'s messages and records out of what the
   }));
 
 it('one source at its quota of remembered commands is refused with capacity, and another source still gets through', () => withEdge(
-  {commandMemory: {perSource: 2}}, async edge => {
+  {commandMemory: {perPrincipal: 2}}, async edge => {
     await checked(edge.bus.connect('bunny/second')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
     const send = (source: 'bunny/core' | 'bunny/wall', requestId: string): Promise<{status: number; body: unknown}> =>
       call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: command(source, requestId)}, tokenOf(edge, source));
@@ -248,6 +248,47 @@ it('a command the bus refused before any responder had it is forgotten, and a se
     now += 1;
     assert.equal(((await send()).body as {result: {status: string}}).result.status, 'accepted', 'past rememberMs it is forgotten, though it has not expired');
     assert.deepEqual(runs, ['req-later', 'req-later']);
+  });
+});
+
+it('a part whose remembered commands have all expired keeps its memory: its next command is remembered, and the count stays right', async () => {
+  let now = Date.now();
+  await withEdge({now: () => now, commandMemory: {perPrincipal: 1, total: 1, rememberMs: 1000}}, async edge => {
+    const runs: string[] = [];
+    await checked(edge.bus.connect('bunny/second')).respond<Mode>('bunny.cmd.mode.*', received => { runs.push(received.data.requestId); return {status: 'accepted'}; });
+    const send = (source: 'bunny/core' | 'bunny/wall', sent: Command<Mode>): Promise<{status: number; body: unknown}> =>
+      call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: sent}, tokenOf(edge, source));
+    const status = (answer: {status: number; body: unknown}): string =>
+      answer.status === 200 ? (answer.body as {result: {status: string}}).result.status : (answer.body as ErrorBody).error.code;
+    assert.equal(status(await send('bunny/core', command('bunny/core', 'a', 60_000, 'wall', now))), 'accepted');
+    now += 2000;
+    // The part is at its quota, so its memory is swept, which empties it; the next command must still be remembered.
+    const again = command('bunny/core', 'c', 60_000, 'wall', now);
+    assert.equal(status(await send('bunny/core', again)), 'accepted');
+    assert.equal(status(await send('bunny/core', again)), 'duplicate-conflict', 'the repeat is refused');
+    now += 2000;
+    // Every remembered command has expired, so the memory, at its total, has room for another part's.
+    assert.equal(status(await send('bunny/wall', command('bunny/wall', 'd', 60_000, 'wall', now))), 'accepted', 'the count went down when c was forgotten');
+    assert.deepEqual(runs, ['a', 'c', 'd']);
+  });
+});
+
+it('each principal has its own quota of remembered commands, though principals share a source, and a repeat is refused across them', async () => {
+  await withEdge({
+    commandMemory: {perPrincipal: 2},
+    authenticate: request => ({source: 'bunny/core', id: String(request.headers['x-test-principal'])}),
+  }, async edge => {
+    await checked(edge.bus.connect('bunny/second')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+    const send = (principal: string, sent: Command<Mode>): Promise<{status: number; body: unknown}> =>
+      call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: sent}, 'unused', {'x-test-principal': principal});
+    const shared = command('bunny/core', 'req-1');
+    assert.equal((await send('session-a', shared)).status, 200);
+    assert.equal((await send('session-a', command('bunny/core', 'req-2'))).status, 200);
+    const full = await send('session-a', command('bunny/core', 'req-3'));
+    assert.deepEqual([full.status, (full.body as ErrorBody).error.code], [429, 'capacity']);
+    assert.equal((await send('session-b', command('bunny/core', 'req-4'))).status, 200, 'another principal of the same source still gets through');
+    const replayed = await send('session-b', shared);
+    assert.deepEqual([replayed.status, (replayed.body as ErrorBody).error.code], [409, 'duplicate-conflict'], 'a source\'s message is one message, whoever sends it');
   });
 });
 

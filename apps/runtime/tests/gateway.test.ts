@@ -329,7 +329,8 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
       settings: {schema: {type: 'object'}, show: config => ({token: config.token})},
       content: ref => ref === 'odd' ? {type: 'text/html', bytes: new Uint8Array([60])}
         : ref === 'note' ? {type: 'text/plain; charset=utf-8', bytes: new TextEncoder().encode(`the token is ${SYNTHETIC_TOKEN}`)}
-          : ref === 'data' ? {type: 'application/json', bytes: new TextEncoder().encode(JSON.stringify({token: SYNTHETIC_TOKEN}))} : undefined,
+          : ref === 'data' ? {type: 'application/json', bytes: new TextEncoder().encode(JSON.stringify({token: SYNTHETIC_TOKEN}))}
+            : ref === 'image' ? {type: 'image/png', bytes: new Uint8Array([137, 80, 78, 71, ...new TextEncoder().encode(`tEXt${SYNTHETIC_TOKEN}`)])} : undefined,
       tools: [
         {name: 'peek', description: 'Answers with what it should not.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'},
           read: () => ({token: SYNTHETIC_TOKEN})},
@@ -365,8 +366,8 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
   const odd = await call(url, '/modules/leaky/content/odd', {token: reader.token});
   assert.deepEqual([odd.status, codeOf(odd)], [500, 'internal'], 'content of a type the gateway does not serve');
   assert.deepEqual([(await call(url, '/modules/leaky/content/none', {token: reader.token})).status, (await call(url, '/modules/nobody/page', {token: reader.token})).status], [404, 404]);
-  // Text and JSON content are checked for a secret too.
-  for (const ref of ['note', 'data']) {
+  // Text, JSON and image content are checked for a secret too: an image's metadata can carry one.
+  for (const ref of ['note', 'data', 'image']) {
     const leaked = await call(url, `/modules/leaky/content/${ref}`, {token: reader.token});
     assert.deepEqual([leaked.status, codeOf(leaked), leaked.text.includes(SYNTHETIC_TOKEN)], [500, 'internal', false], ref);
   }
@@ -545,6 +546,8 @@ function gadgetModule(): BunnyModule & {publish: (id: string, revision: number) 
   const revisions = new Map([['gadget-1', 1], ['gadget-2', 1]]);
   const state = (id: string): {type: string; subject: string; dataschema: string; data: {id: string; revision: number}} =>
     ({type: 'org.bunny.gadget.updated', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision: revisions.get(id) ?? 0}});
+  // A record about gadget-2 whose own ID is no device: the routing-ID rule keys it by its subject, gadget-2.
+  const note = {type: 'org.bunny.gadget.updated', subject: 'gadget-2', dataschema: GADGET_SCHEMA, data: {id: 'gadget-2-note', revision: 1}};
   return {
     manifest: {
       name: 'gadget', apiVersion: '1.2', configure: () => ({config: undefined, devices: ['gadget-1', 'gadget-2']}),
@@ -555,7 +558,7 @@ function gadgetModule(): BunnyModule & {publish: (id: string, revision: number) 
     },
     async start(context) {
       sdk = context.sdk;
-      await sdk.serveSync(['gadget'], () => ({revision: Math.max(...revisions.values()), states: [...revisions.keys()].map(state)}));
+      await sdk.serveSync(['gadget'], () => ({revision: Math.max(...revisions.values()), states: [...[...revisions.keys()].map(state), note]}));
     },
     stop: () => {},
     publish: async (id, revision) => {
@@ -576,7 +579,7 @@ it('a reader sees only the devices its grant names: records in families and snap
   const ids = (answer: Answer, path: (body: never) => {id: string}[]): string[] => path(answer.body as never).map(record => record.id);
   const family = (part: EdgePart): Promise<Answer> => call(url, '/api/v2/families/gadget', {token: part.token});
   assert.deepEqual(ids(await family(narrow), (body: {records: {id: string}[]}) => body.records), ['gadget-1']);
-  assert.deepEqual(ids(await family(wide), (body: {records: {id: string}[]}) => body.records), ['gadget-1', 'gadget-2']);
+  assert.deepEqual(ids(await family(wide), (body: {records: {id: string}[]}) => body.records), ['gadget-1', 'gadget-2', 'gadget-2-note']);
   // The snapshot reads the family's records at any version of its schema, and leaves out the same device.
   const snapshot = await call(url, '/api/v2/snapshot?families=gadget', {token: narrow.token});
   assert.deepEqual(ids(snapshot, (body: {records: {gadget: {id: string}[]}}) => body.records.gadget), ['gadget-1']);
@@ -599,7 +602,7 @@ it('a reader sees only the devices its grant names: records in families and snap
   const copy = await remote.sync<{id: string; revision: number}>(['gadget'], () => {}, {timeoutMs: 5000});
   assert.equal(copy.status, 'synced');
   if (copy.status !== 'synced') return;
-  assert.deepEqual(copy.copy.states().map(state => state.data.id), ['gadget-1']);
+  assert.deepEqual(copy.copy.states().map(state => state.data.id), ['gadget-1'], 'the edge leaves out what the gateway does, gadget-2\'s note included');
   const heard: string[] = [];
   await remote.subscribe('bunny.event.gadget.*', (message, key) => { heard.push(`${String(key)} ${message.subject}`); });
   await gadget.publish('gadget-2', 2);
@@ -684,6 +687,20 @@ it('MCP is off unless the edge section turns it on, and a browser session on /mc
   const session = await on.ask(on.url, '/mcp', {method: 'POST', body: {jsonrpc: '2.0', id: 1, method: 'initialize'}, headers: {cookie, origin: on.url}});
   assert.deepEqual([session.status, codeOf(session)], [403, 'forbidden']);
   assert.match((session.body as {error: {detail: string}}).error.detail, /client credential/);
+});
+
+it('a family no module serves is not-found, and a snapshot across two owners is invalid-request, each with text that says why', async context => {
+  const reader = READER(['sign-1']);
+  const g = await gateway(context, [reader]);
+  for (const path of ['/api/v2/families/device', '/api/v2/snapshot?families=device']) {
+    const nobody = await g.ask(g.url, path, {token: reader.token});
+    assert.deepEqual([nobody.status, codeOf(nobody), (nobody.body as {error: {retryable: boolean}}).error.retryable], [404, 'not-found', false], path);
+    assert.match((nobody.body as {error: {detail: string}}).error.detail, /no module in this runtime serves/, path);
+  }
+  const mixed = await g.ask(g.url, '/api/v2/snapshot?families=session,sign', {token: reader.token});
+  assert.deepEqual([mixed.status, codeOf(mixed)], [400, 'invalid-request']);
+  assert.match((mixed.body as {error: {detail: string}}).error.detail, /families that one module serves/);
+  assert.equal((await g.ask(g.url, '/api/v2/snapshot?families=sign', {token: reader.token})).status, 200);
 });
 
 it('the gateway\'s refusals never quote what the caller sent, and its JSON answers forbid sniffing', async context => {

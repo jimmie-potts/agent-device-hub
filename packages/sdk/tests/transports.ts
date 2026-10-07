@@ -6,7 +6,7 @@ import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
-  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type EdgePermissions, type ErrorScope, type Participant,
+  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type EdgeOptions, type EdgePermissions, type ErrorScope, type Participant,
   type RemoteParticipant, type Scheduler, type SpanRecorder,
 } from '../src/index.js';
 import {checked, flush, until, validator} from './support.js';
@@ -115,13 +115,15 @@ export type EdgeSetup = {
   liveness?: Scheduler;
   /** The edge's clock and its command memory's bounds. */
   now?: () => number;
-  commandMemory?: {perSource?: number; total?: number; rememberMs?: number};
+  commandMemory?: {perPrincipal?: number; total?: number; rememberMs?: number};
+  /** The host's own authentication, in place of the sources' grants. */
+  authenticate?: EdgeOptions['authenticate'];
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
   maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
-  heartbeatMs, stallMs, liveness, now, commandMemory,
+  heartbeatMs, stallMs, liveness, now, commandMemory, authenticate,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const diagnostics: Diagnostic[] = [];
@@ -136,6 +138,7 @@ export async function startEdge({
     bus, validator, grants: [...tokens].map(([source, token]) => ({source, token, ...permissions[source]})), onDiagnostic: diagnose,
     ...(scheduler === undefined ? {} : {scheduler}), ...(heartbeatMs === undefined ? {} : {heartbeatMs}), ...(stallMs === undefined ? {} : {stallMs}),
     ...(liveness === undefined ? {} : {liveness}), ...(now === undefined ? {} : {now}), ...(commandMemory === undefined ? {} : {commandMemory}),
+    ...(authenticate === undefined ? {} : {authenticate}),
   });
   const received = new Map<string, number>();
   const dropped = new Map<string, number>();

@@ -127,7 +127,8 @@ Each kind has its own key class:
 - occurrence and outcome messages use `bunny.event` keys;
 - commands use `bunny.cmd` keys, through `request` and `respond` only.
 
-The routing-ID rule (ADR 0012) makes an entity's ID the last token of its keys.
+ADR 0012's key shape ends each key in an entity's routing ID, and the profile makes that rule explicit
+(`bunny-message-profile`, "A message's subject is its key's routing ID").
 A command's `subject` is the entity it is for, so it must be its key's last
 token: on every transport the bus refuses any other command with
 `invalid-message` before a responder has it (Hub #835). A responder that acts on
@@ -933,7 +934,8 @@ HTTP status that fits its code.
   does not name: a key it publishes or requests, or a pattern it responds to,
   that meets one is `forbidden`, and the edge leaves out of what it receives
   every message whose key one matches, through a subscription's `accept`, and
-  every record of a sync answer, with its membership.
+  every record of a sync answer, with its membership. A record's key is
+  `bunny.state.<family>.<subject>`, which the routing-ID rule makes its own.
 - **Declared source.** The client names the source it acts as in every call's
   `bunny-source` header (`SOURCE_HEADER`), and the edge refuses a token used
   under another source with `forbidden` at once, before the stream opens.
@@ -944,11 +946,14 @@ HTTP status that fits its code.
   responder run it twice. It remembers a command while its bus has it, and once
   settled until its `expiresat`, at most `REMEMBER_MS` (10 minutes). A command
   refused before it reached the bus, or one the bus refused before any responder
-  had it, is forgotten, since sending it again is safe. One source may have
-  `MAX_REMEMBERED_PER_SOURCE` (1,024) remembered at once and all sources
-  `MAX_REMEMBERED_COMMANDS` (65,536); past either, that source's next command is
-  refused with the retryable `capacity`, while another source's still goes
-  through. A new edge, as after a restart, remembers none.
+  had it, is forgotten, since sending it again is safe. A command counts against
+  its principal's quota: the credential or session the host's `authenticate`
+  names by `id`, or else its source. One principal may have
+  `MAX_REMEMBERED_PER_PRINCIPAL` (1,024) remembered at once and all of them
+  `MAX_REMEMBERED_COMMANDS` (65,536); past either, that principal's next command
+  is refused with the retryable `capacity`, while another's still goes through,
+  even of the same source. A repeat is a duplicate whichever principal of the
+  source sends it. A new edge, as after a restart, remembers none.
 - **Liveness.** The edge writes a heartbeat comment line on each stream every
   `heartbeatMs` (`HEARTBEAT_MS`, 15 s). A stream whose socket stays full for
   `stallMs` (`STALL_MS`, 30 s), its reader having stopped, is ended: its
