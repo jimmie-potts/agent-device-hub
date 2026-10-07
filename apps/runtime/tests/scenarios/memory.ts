@@ -11,6 +11,7 @@ import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
 import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
 import {diagnosticWriter} from '../../src/diagnostics.js';
 import {ModuleHost} from '../../src/host.js';
@@ -25,7 +26,7 @@ import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
 import {ROLES, type DeviceStates, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation, type TransportName} from './catalog.js';
-import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf, writeConfiguration} from './parts.js';
+import {Reader, answerOf, describe, follow, scenarioValidator, simulatePlayback, sourceOf, writeConfiguration} from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
@@ -91,6 +92,7 @@ class Memory implements MemoryHarness {
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
   readonly #signs = new SimulatedSigns();
+  readonly #speakers = new SimulatedSpeakers();
   readonly #parts: ReadonlyMap<Role, Part>;
   /** The seed's configuration file, read as the runtime reads it, if it has one. */
   #config: RuntimeConfig | undefined;
@@ -180,7 +182,7 @@ class Memory implements MemoryHarness {
   }
 
   devices(): DeviceStates {
-    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state()};
+    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state()};
   }
 
   simulate(simulation: Simulation): void {
@@ -191,6 +193,9 @@ class Memory implements MemoryHarness {
       case 'sign':
         if (simulation.action === 'online') this.#signs.online();
         else this.#signs.offline();
+        return;
+      case 'playback':
+        simulatePlayback(this.#speakers, simulation);
         return;
       case 'lamp':
         break;
@@ -363,6 +368,9 @@ class Memory implements MemoryHarness {
         return createChimeModule({transport: this.#chime});
       case 'sign':
         return createSignModule({transport: this.#signs});
+      case 'playback':
+        // Freshness follows the harness's manual clock, so a silent speaker ages in virtual time.
+        return createPlaybackModule({transport: this.#speakers, monotonic: this.#clock.now});
     }
   }
 

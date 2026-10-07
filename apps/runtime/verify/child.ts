@@ -6,6 +6,7 @@
 // its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
 // stream at the edge, which `runMain` hands over once it serves.
 import http from 'node:http';
+import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
@@ -25,6 +26,7 @@ const take = (control: Control): boolean => {
 
 const switches = new Map<number, {resolve: (power: Power) => void; reject: (error: Error) => void}>();
 const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
+const speakerCalls = new Map<number, {resolve: (reply: SonyReply | SonosReply) => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -47,6 +49,14 @@ process.on('message', (value: unknown) => {
     case 'sign.failed':
       shows.get(message.id)?.reject(new Error('the sign refused the frame'));
       shows.delete(message.id);
+      return;
+    case 'speaker.replied':
+      speakerCalls.get(message.id)?.resolve(message.reply);
+      speakerCalls.delete(message.id);
+      return;
+    case 'speaker.failed':
+      speakerCalls.get(message.id)?.reject(new Error('the speaker did not answer'));
+      speakerCalls.delete(message.id);
       return;
     case 'control':
       flags[message.control] = true;
@@ -96,6 +106,34 @@ const signs: SignTransport = {
   }),
 };
 
+/**
+ * One call to the supervisor's simulated speakers (Hub #929). A speaker that does not answer never replies, so the
+ * playback module's deadline aborts the call, which then tells the supervisor's speaker to stop waiting.
+ */
+function speakerCall(signal: AbortSignal, message: (id: number) => ChildMessage): Promise<SonyReply | SonosReply> {
+  return new Promise((resolve, reject) => {
+    next += 1;
+    const id = next;
+    const abandon = (): void => {
+      if (!speakerCalls.delete(id)) return;
+      send({type: 'speaker.abandon', id});
+      reject(new Error('the speaker did not answer'));
+    };
+    speakerCalls.set(id, {
+      resolve: reply => { signal.removeEventListener('abort', abandon); resolve(reply); },
+      reject: error => { signal.removeEventListener('abort', abandon); reject(error); },
+    });
+    signal.addEventListener('abort', abandon, {once: true});
+    if (signal.aborted) abandon();
+    else send(message(id));
+  });
+}
+/** The speakers, reached over the IPC channel; the supervisor's simulated speakers answer. Their addresses stay here. */
+const speakers: SpeakerTransport = {
+  sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
+  sonos: async (_endpoint, action, args, signal) => await speakerCall(signal, id => ({type: 'speaker.sonos', id, action, args})) as SonosReply,
+};
+
 /** The chime, reached over the IPC channel. A fault the supervisor set throws here, inside the chime's handler. */
 const chime: ChimeTransport = {
   ring: (ring: ChimeRing) => {
@@ -128,6 +166,7 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   }), lampSchemas),
   chime: fixture('chime', () => createChimeModule({transport: chime})),
   sign: fixture('sign', () => createSignModule({transport: signs}), signSchemas),
+  playback: fixture('playback', () => createPlaybackModule({transport: speakers})),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({

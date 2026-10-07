@@ -4,13 +4,14 @@ import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import type {SimulatedSpeakers} from '@jimmie-potts/playback';
 import type {Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {standInAckSchemas} from '@jimmie-potts/sdk/testing';
 import {CONFIG_SCHEMA} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
-import type {ReaderView, Role, Seed} from './catalog.js';
+import type {ReaderView, Role, Seed, Simulation} from './catalog.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
@@ -45,6 +46,36 @@ export async function writeConfiguration(dir: string, config: NonNullable<Seed['
   await writeFile(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules}, null, 2)}\n`, {mode: 0o600});
   await chmod(file, 0o600);
   return file;
+}
+
+/** Makes the playback module's simulated speakers do what a scenario asks (Hub #929), in either harness. */
+export function simulatePlayback(speakers: SimulatedSpeakers, {speaker, action, title}: Extract<Simulation, {device: 'playback'}>): void {
+  switch (action) {
+    case 'play':
+      speakers.play(speaker, title === undefined ? undefined : {title});
+      return;
+    case 'pause':
+      speakers.pause(speaker);
+      return;
+    case 'stop':
+      speakers.stop(speaker);
+      return;
+    case 'other-input':
+      speakers.otherInput(speaker);
+      return;
+    case 'silent':
+      speakers.silent(speaker);
+      return;
+    case 'answer':
+      speakers.answer(speaker);
+      return;
+    case 'refuse-next':
+      speakers.nextCommand(speaker, 'refuse');
+      return;
+    case 'hang-next':
+      speakers.nextCommand(speaker, 'hang');
+      return;
+  }
 }
 
 /** A request's answer as the catalog reads it: `accepted`, or the refusal's or uncertain result's error code. */
