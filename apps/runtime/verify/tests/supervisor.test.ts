@@ -3,13 +3,16 @@
 // harness API answers only local JSON requests that name its listener.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {stat} from 'node:fs/promises';
 import {request} from 'node:http';
-import {test} from 'node:test';
+import {join} from 'node:path';
+import {test, type TestContext} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {readGrants} from '../adapter.js';
+import type {Followed} from '../follow.js';
 import {HARNESS_PATH, type HarnessState} from '../protocol.js';
 import {BurstLimit} from '../restarts.js';
 import {alive, base, listening, startRun, type Started} from './support.js';
@@ -27,6 +30,10 @@ async function until(condition: () => boolean | Promise<boolean>, what: string, 
 async function state(run: Started): Promise<HarnessState> {
   return await (await fetch(new URL(`${HARNESS_PATH}/state`, run.harness))).json() as HarnessState;
 }
+const follow = async (run: Started, query: string): Promise<{status: number; body: Followed}> => {
+  const response = await fetch(new URL(`${HARNESS_PATH}/follow?${query}`, run.harness));
+  return {status: response.status, body: await response.json() as Followed};
+};
 const post = (run: Started, route: string, body: object = {}): Promise<Response> =>
   fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
 
@@ -100,6 +107,12 @@ void test('the harness answers only local JSON requests that name its listener',
   assert.equal(await raw(stateUrl, 'GET', {'sec-fetch-site': 'cross-site'}), 403);
   assert.equal(await raw(new URL(`${HARNESS_PATH}/arm-crash`, run.harness).href, 'POST', {'content-type': 'text/plain'}), 415);
   assert.equal(await raw(new URL(`${HARNESS_PATH}/nothing`, run.harness).href, 'GET', {}), 404);
+  const followUrl = new URL(`${HARNESS_PATH}/follow?request=req-1`, run.harness).href;
+  assert.equal(await raw(followUrl, 'GET', {}), 200);
+  assert.equal(await raw(followUrl, 'GET', {host: 'evil.invalid'}), 403);
+  assert.equal(await raw(followUrl, 'GET', {origin: 'http://evil.invalid'}), 403);
+  assert.equal(await raw(followUrl, 'GET', {'sec-fetch-site': 'cross-site'}), 403);
+  assert.equal(await raw(followUrl, 'POST', {'content-type': 'application/json'}), 404, 'the query only reads');
 });
 
 void test('a run\'s ready line links the runtime\'s health, so the preview card opens a page that answers', {timeout: 60_000}, async context => {
@@ -143,4 +156,85 @@ void test('a burst limit allows its count within a window, and allows again once
   assert.equal(limit.allow(), false, 'still inside the window of the first');
   now = 60_001;
   assert.equal(limit.allow(), true, 'the first fell out of the window');
+});
+
+/** Sends one lamp command from the run's operator part and waits for its answer. */
+async function send(context: TestContext, run: Started, requestId: string, timeoutMs = 5000): Promise<string> {
+  const grants = await readGrants(run.dataDir);
+  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
+  context.after(() => operator.close());
+  const {key, draft} = switchLamp('lamp-1', 'on');
+  const result = await operator.request(key, draft, {timeoutMs, requestId});
+  await operator.close();
+  return result.status === 'accepted' ? 'accepted' : result.error.error.code;
+}
+
+void test('a run follows one request: its decisions, its module\'s records and its spans, from the journal and the span file', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'command-tracked-outcome');
+  assert.equal(await send(context, run, 'req-follow'), 'accepted');
+  await until(async () => (await follow(run, 'request=req-follow')).body.records.some(entry => entry.event === 'outcome.published'), 'the lamp\'s outcome');
+  const {status, body} = await follow(run, 'request=req-follow');
+  assert.equal(status, 200);
+  assert.equal(body.result, 'found');
+  assert.deepEqual(body.decision.endings.map(ending => [ending.event, ending.level]), [['replied', 'INFO']]);
+  assert.deepEqual(Object.keys(body.names).sort(), ['bunny.command.execute', 'bunny.command.queue', 'bunny.command.request', 'bunny.device.call', 'bunny.outcome.publish']);
+  assert.ok(body.spans.every(span => span.generation === 1 && span.parent?.state !== 'missing'), 'each span is from the first runtime and has its parent');
+  assert.equal(body.traces.length, 1);
+  const byTrace = await follow(run, `trace=${body.traces[0]}`);
+  assert.deepEqual(byTrace.body.spans.map(span => span.spanId).sort(), body.spans.map(span => span.spanId).sort(), 'the trace holds the same spans');
+  const unknown = await follow(run, 'request=req-never');
+  assert.equal(unknown.status, 200);
+  assert.equal(unknown.body.result, 'none-found', 'an absent request is reported absent');
+  assert.deepEqual(body.gaps.map(gap => gap.kind), ['losses-uncounted'], 'a clean first runtime has only the gap that it has not stopped');
+});
+
+void test('the shipped runtime of a run records spans too: its span file is there, and the query reports no gap for it', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'shipped');
+  const answer = await follow(run, 'request=req-none');
+  assert.equal(answer.status, 200);
+  assert.deepEqual([answer.body.result, answer.body.gaps.map(gap => gap.kind)], ['none-found', ['losses-uncounted']], 'a live runtime is a standing gap: its losses are counted at its stop');
+  assert.equal(((await stat(join(run.dataDir, 'state/spans.ndjson'))).mode & 0o777), 0o600);
+});
+
+void test('a follow query that names no selector, two, or a malformed one is refused with 400 and never echoed', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'fixtures');
+  const repeated = ['request=req-1&request=req-2', 'request=req-1&records=1&records=2', 'request=req-1&spans=1&spans=2', 'trace=' + 'a'.repeat(32) + '&trace=' + 'b'.repeat(32)];
+  for (const query of ['', 'request=req-1&trace=' + 'a'.repeat(32), 'request=tok_SYNTHETIC950%2F..%2Fx', 'trace=short', 'request=req-1&records=0', 'request=req-1&spans=1000', ...repeated]) {
+    const response = await fetch(new URL(`${HARNESS_PATH}/follow?${query}`, run.harness));
+    assert.equal(response.status, 400, query);
+    const text = await response.text();
+    assert.equal((JSON.parse(text) as {error: {code: string}}).error.code, 'invalid-request');
+    assert.equal(text.includes('tok_SYNTHETIC950'), false, 'the refusal never echoes the query');
+  }
+  // A parameter the query does not know is ignored, and the answer is the one without it.
+  const ignored = await fetch(new URL(`${HARNESS_PATH}/follow?request=req-1&nothing=1&nothing=2`, run.harness));
+  assert.equal(ignored.status, 200);
+  assert.deepEqual(((await ignored.json()) as Followed).query, {request: 'req-1'});
+});
+
+void test('after a clean restart the first runtime has its stop record, and after a crash it shows as ended without one, with its spans kept', {timeout: 90_000}, async context => {
+  const run = await startRun(context, await base(context), 'command-tracked-outcome');
+  assert.equal(await send(context, run, 'req-before'), 'accepted');
+  for (let restarts = 0; restarts < 3; restarts += 1) assert.equal((await post(run, 'restart')).status, 200);
+  const restarted = (await follow(run, 'request=req-before')).body;
+  assert.equal(restarted.searched.generations, 4);
+  assert.deepEqual(restarted.gaps.map(gap => gap.kind), ['losses-uncounted'], 'every earlier runtime stopped cleanly, and its stop record is in the journal; only the live one is a gap');
+
+  assert.equal((await post(run, 'arm-crash')).status, 200);
+  assert.equal(await send(context, run, 'req-crash'), 'uncertain-result', 'the remote requester cannot know the fate');
+  await until(async () => (await state(run)).generation === 5, 'the runtime after the crash');
+  await until(async () => (await fetch(new URL(HEALTH_PATH, run.url)).catch(() => undefined))?.ok === true, 'health on the same port');
+  await until(async () => (await follow(run, 'request=req-crash')).body.records.some(entry => entry.event === 'outcome.published'), 'the replayed outcome');
+  const crashed = (await follow(run, 'request=req-crash')).body;
+  // The kill came before the request settled, so the request and execute spans never ended; the queue and device spans did,
+  // and the query names each of them as continuing a parent that is not kept.
+  assert.deepEqual(crashed.gaps.map(({meaning: _meaning, ...gap}) => gap),
+    [{kind: 'generation-ended-without-stop', generation: 4}, {kind: 'losses-uncounted', generation: 5}, {kind: 'parent-missing', spans: 2}],
+    'the killed runtime lacks its stop record, the live one has not stopped, and two spans lack parents');
+  assert.deepEqual(crashed.decision, {admitted: 1, unended: 1, ended: false, endings: []}, 'the killed runtime recorded no ending, and the query says none is recorded');
+  assert.deepEqual(crashed.spans.filter(span => span.generation === 4).map(span => [span.name, span.parent?.state]).sort(),
+    [['bunny.command.queue', 'missing'], ['bunny.device.call', 'missing']], 'the spans it finished before the kill are in the file, whose parents never ended');
+  assert.deepEqual([crashed.names['bunny.command.request'], crashed.names['bunny.command.execute']], [undefined, undefined], 'unfinished spans are not reported');
+  const replay = crashed.spans.find(span => span.name === 'bunny.outcome.publish');
+  assert.deepEqual([replay?.generation, replay?.parent, replay?.links.length], [5, undefined, 1], 'the outcome went out in the next runtime, a new root linked to the stored context');
 });

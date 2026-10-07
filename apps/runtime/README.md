@@ -121,6 +121,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
+| `--record-spans` | Write each finished span to a [bounded, private span file](#the-span-file) in the state directory. Disposable verification runs use it; the installed runtime does not, and keeps its spans in memory. |
 
 Malformed arguments exit with status 2 and a usage line. Once the modules have
 started, the process writes one line to stdout, `{"event":"runtime.ready","url":...}`.
@@ -459,6 +460,40 @@ count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts s
 lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
 records. If the adapter cannot start, the runtime runs without recorded spans
 and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
+
+### The span file
+
+With `--record-spans`, or `spans: 'state-file'` in `RuntimeOptions`, each finished
+span goes to a file pair in the state directory instead of memory, so a process
+outside the runtime can read the spans, and a crash keeps those it had finished
+(#950; a disposable run's supervisor reads them for its
+[follow query](verify/README.md#follow-one-request)).
+
+- `spans.ndjson` is the segment being written and `spans.previous.ndjson` the one
+  before it. Each segment holds at most 512 spans or 2 MiB, so the pair holds the
+  latest spans, up to 1,024 (at least 512 unless spans are large, since each segment also rotates at 2 MiB),
+  within the contract's 4 MiB queue bound. The next
+  segment replaces the segment before it.
+- A segment starts with one header line, `{"schema":"runtime-spans/1.0","evicted":N}`,
+  that counts the spans let go before it. A reader can tell a span that was let go
+  from one that never arrived, as `runtime.spans()` does for memory. A runtime
+  that restarts on the same state directory continues the same files. If a kill
+  came between starting a segment and writing its header, so that the current
+  segment is missing or empty beside a previous one, the next header says
+  `"evicted":null`: the count is unknown, never 0, and it stays unknown for the
+  files' life.
+- Both files are owner-only (mode 600), opened without following a link, and must
+  be regular files with one link; any other file, the previous segment included, is
+  refused with `span-file-not-private`, and the runtime does not start.
+- A span that cannot start a segment, because the rename or the open fails, is lost
+  and counted. The next span tries again, so recording resumes once the cause has
+  gone.
+- A span the file cannot take, because it is closed or the disk refuses it, is
+  lost and counted in `runtime.stopped` like any other span the sink fails to
+  take. A reader returns each complete line that is a span and counts a complete
+  line that is not. A last line with no newline is a write in flight, or one that a
+  kill cut short; it is never returned, a runtime that continues the file ends it
+  first, and the reader then counts it as not a span.
 
 ## Memory
 

@@ -16,12 +16,15 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
+import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
+import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
+import {Journal} from './journal.js';
 import {
   HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type HarnessState,
   type SimulateRequest, type SupervisorMessage,
@@ -40,6 +43,8 @@ const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 const STOP_MS = 8000;
 /** How long a flush or control waits for the child's answer. */
 const ANSWER_MS = 3000;
+/** The lowest level the run's runtime writes, which the run states instead of leaving to the runtime's default. */
+const LOG_LEVEL = 'info';
 
 const {values} = parseArgs({options: {data: {type: 'string'}, port: {type: 'string'}, 'harness-port': {type: 'string'}}, strict: true});
 if (values.data === undefined) throw new Error('usage: supervisor.js --data <dir> --port <port> --harness-port <port>');
@@ -51,14 +56,14 @@ const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
-const logs: Generational<{record: LogRecord}>[] = [];
+const journal = new Journal();
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
 const guardReport = join(dataDir, 'guard-report.jsonl');
 const waiting = new Map<number, () => void>();
 /** The newest log record of one runtime with this event name. */
 const newest = (number: number, event: string): LogRecord | undefined =>
-  [...logs].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
+  [...journal.entries].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
 let runtimePort = Number(values.port ?? '0');
 let generation = 0;
 const crashes = new BurstLimit(MAX_CRASHES, CRASH_WINDOW_MS);
@@ -84,9 +89,11 @@ function queue(task: () => Promise<void>): Promise<void> {
 function runtimeArgs(): string[] {
   return [
     // A disposable run's records are a test environment's (Hub #903).
-    '--port', String(runtimePort), '--environment', 'test', ...(run.fault === 'real-transports' ? [] : ['--simulate']),
+    '--port', String(runtimePort), '--environment', 'test', '--log-level', LOG_LEVEL, ...(run.fault === 'real-transports' ? [] : ['--simulate']),
     ...(run.fault === 'default-state' ? [] : ['--state-dir', stateDirOf(dataDir), '--edge']),
     ...(run.config === undefined ? [] : ['--config', run.config]),
+    // Its spans go to a bounded private file in the state directory, which outlives a crash and which the follow query reads (Hub #950).
+    '--record-spans',
   ];
 }
 
@@ -159,12 +166,7 @@ function spawnRuntime(): Promise<string> {
   current = child;
   lines(child.stderr, line => {
     process.stderr.write(`${line}\n`);
-    try {
-      const record = JSON.parse(line) as LogRecord;
-      if (typeof record.event_name === 'string') logs.push({generation: number, record});
-    } catch {
-      // Not a log record, such as a usage line.
-    }
+    journal.take(number, line);
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
   child.once('exit', () => {
@@ -231,10 +233,14 @@ async function stopRuntime(): Promise<void> {
   const child = current;
   if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, 'exit');
+  // Its stderr may hold records still to be read, `runtime.stopped` the last: wait for them before anything starts again,
+  // so the journal shows a clean stop as one.
+  const flushed = drained(child, DRAIN_MS);
   child.kill('SIGTERM');
   const timer = setTimeout(() => { child.kill('SIGKILL'); }, STOP_MS);
   await exited;
   clearTimeout(timer);
+  await flushed;
 }
 
 /** Stops the runtime and starts it again, after any start or restart before it. A runtime that cannot start ends the run. */
@@ -314,6 +320,20 @@ function report(): BoundaryReport {
   };
 }
 
+/** What the follow query reads: the journal's records, with the runtime that wrote each, and the span file. */
+function evidence(): Evidence {
+  let spans: SpanEvidence;
+  try {
+    const read = readSpanFile(stateDirOf(dataDir));
+    spans = read.present
+      ? {recorded: true, lines: read.lines, evicted: read.evicted, unreadable: read.unreadable, truncated: read.truncated}
+      : {recorded: false, reason: 'not-recorded'};
+  } catch {
+    spans = {recorded: false, reason: 'unreadable'};
+  }
+  return {generation, minimumLevel: LOG_LEVEL, journal: journal.entries.map(entry => ({generation: entry.generation, record: entry.record})), skippedLines: journal.skipped, spans};
+}
+
 const answer = (response: ServerResponse, status: number, body: object): void => {
   response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
 };
@@ -369,12 +389,24 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       await flush();
       const state: HarnessState = {
         generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state()},
-        logs: logs.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
+        logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);
     }
     case 'GET /boundaries':
       return answer(response, 200, report());
+    case 'GET /follow': {
+      let query;
+      try {
+        query = queryOf(url.searchParams);
+      } catch (error) {
+        if (error instanceof FollowRefusal) return answer(response, 400, refusal('invalid-request', error.message));
+        throw error;
+      }
+      // The runtime has written every record and span it finished before it answers its flush.
+      await flush();
+      return answer(response, 200, follow(evidence(), query.selector, query.limits));
+    }
     case 'POST /simulate':
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no simulated devices'));
       await simulate(await body(request) as SimulateRequest);

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {randomBytes} from 'node:crypto';
-import {access, chmod, mkdir, readFile, symlink, writeFile} from 'node:fs/promises';
+import {access, chmod, mkdir, readFile, stat, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
@@ -13,7 +13,8 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, parseArguments, type LogRecord} from '../src/index.js';
+import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
@@ -382,4 +383,27 @@ it('an error that escapes every module carrying a secret a module read leaves th
   assert.deepEqual(fatal?.attributes, {'error.type': 'Error', 'bunny.provenance': 'source'}, 'the record is written, without the code that holds the secret');
   assert.equal(runtime.records().some(record => JSON.stringify(record).includes(secret)), false, 'no record holds the secret');
   assert.equal(runtime.stdout().includes(secret), false);
+});
+
+it('--record-spans keeps the runtime\'s spans in a private file of the state directory, and without it there is none', async context => {
+  for (const record of [true, false]) {
+    const dir = await stateDir(context);
+    const runtime = await launch(context, FIXTURE, ['lamp-driven', '--port', '0', '--state-dir', dir, ...(record ? ['--record-spans'] : [])]);
+    await waitFor(() => runtime.records().some(entry => entry.event_name === 'command.completed' && entry.attributes['bunny.request.id'] === 'req-crash'), 10_000, 'the driver\'s command');
+    runtime.child.kill('SIGTERM');
+    assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+    if (record) {
+      assert.equal((await stat(join(dir, SPANS_FILE))).mode & 0o777, 0o600);
+      const names = readSpanFile(dir).lines.map(line => (JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string}[]}[]}[]}).resourceSpans[0]?.scopeSpans[0]?.spans[0]?.name);
+      assert.ok(['bunny.command.request', 'bunny.command.execute', 'bunny.device.call'].every(name => names.includes(name)), `the spans are in the file: ${names.join(',')}`);
+    } else {
+      await assert.rejects(stat(join(dir, SPANS_FILE)), 'the installed default writes no span file');
+    }
+  }
+});
+
+it('--record-spans is a flag with no value, and the usage line names it', () => {
+  assert.equal(parseArguments(['--port', '0']).recordSpans, false);
+  assert.equal(parseArguments(['--port', '0', '--record-spans']).recordSpans, true);
+  assert.throws(() => parseArguments(['--port', '0', '--record-spans', 'yes']), /unexpected argument|positional/i);
 });

@@ -35,7 +35,7 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
 void test('the edge-grants step and every catalog scenario pass in a run; the negative control fails', {timeout: 600_000}, async context => {
   const at = await base(context);
   const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
-  assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`)]);
+  assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
   for (const step of reference) {
     const result = await judge(context, at, step);
     assert.equal(result.outcome, 'passed', `${step}: ${result.reason ?? ''}`);
@@ -50,4 +50,27 @@ void test('the edge-grants step and every catalog scenario pass in a run; the ne
   const control = await judge(context, at, 'control-scenario-fails');
   assert.equal(control.outcome, 'failed');
   assert.ok((control.reason ?? '').startsWith('assertion failed: the scenario passed'), control.reason);
+  const absent = await judge(context, at, 'control-follow-fails');
+  assert.equal(absent.outcome, 'failed');
+  assert.ok((absent.reason ?? '').startsWith('assertion failed: the run found a request that was never sent'), absent.reason);
+});
+
+void test('the follow step attaches one answer for each case it judges, and each holds only registered, validated values', {timeout: 300_000}, async context => {
+  const at = await base(context);
+  const result = await judge(context, at, 'follow-one-request');
+  assert.equal(result.outcome, 'passed', result.reason ?? '');
+  const names = result.attachments.map(file => file.slice(file.lastIndexOf('/') + 1)).sort();
+  assert.deepEqual(names, ['follow-capped.json', 'follow-crash.json', 'follow-missing.json', 'follow-refusal.json', 'follow-replayed.json',
+    'follow-success.json', 'follow-trace.json', 'follow-uncertain.json']);
+  const answers = new Map<string, {synthetic: boolean; physical: boolean; followed: {schema: string; result: string; gaps: {kind: string; meaning: string}[]}}>();
+  for (const file of result.attachments) {
+    answers.set(file.slice(file.lastIndexOf('/') + 1), JSON.parse(await readFile(file, 'utf8')) as never);
+    const text = await readFile(file, 'utf8');
+    assert.equal(/tok_|token|secret|Error:|\bat \w+ \(/i.test(text), false, `${file} holds no token, secret or stack`);
+  }
+  for (const answer of answers.values()) assert.deepEqual([answer.synthetic, answer.physical, answer.followed.schema], [true, false, 'runtime-follow/1.0']);
+  assert.equal(answers.get('follow-missing.json')?.followed.result, 'none-found');
+  assert.equal(answers.get('follow-crash.json')?.followed.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), true);
+  assert.equal(answers.get('follow-capped.json')?.followed.gaps.some(gap => gap.kind === 'capped'), true);
+  assert.equal(result.assertions.length, 9, 'each of the eight cases is judged, and the run\'s boundaries');
 });

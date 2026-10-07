@@ -21,11 +21,16 @@ export type ProcessOptions = {
   environment: Environment;
   /** The private configuration file with each module's section (#919), or undefined to run without one. */
   config?: string;
+  /**
+   * Write each finished span to the state directory's bounded, private span file, for a disposable run to read (#950).
+   * The installed runtime does not pass it, and keeps its spans in memory.
+   */
+  recordSpans: boolean;
 };
 
 export const DEFAULT_STATE_DIR = join(homedir(), '.local/state/agent-device-hub/runtime');
 export const DEFAULT_LAG_LIMIT_MS = 10_000;
-const USAGE = 'usage: main.js --port <0-65535> [--state-dir <absolute path>] [--config <absolute path>] [--lag-limit-ms <1-3600000>] [--log-level debug|info|warn|error] [--environment development|test|production] [--simulate] [--edge]';
+const USAGE = 'usage: main.js --port <0-65535> [--state-dir <absolute path>] [--config <absolute path>] [--lag-limit-ms <1-3600000>] [--log-level debug|info|warn|error] [--environment development|test|production] [--simulate] [--edge] [--record-spans]';
 const INTEGER = /^(0|[1-9]\d*)$/;
 
 /** Arguments the entry point cannot run with. */
@@ -45,14 +50,14 @@ function integer(value: string | undefined, name: string, min: number, max: numb
 export function parseArguments(argv: readonly string[]): ProcessOptions {
   let values: {
     port?: string; 'state-dir'?: string; config?: string; 'lag-limit-ms'?: string; 'log-level'?: string; environment?: string; simulate?: boolean;
-    edge?: boolean;
+    edge?: boolean; 'record-spans'?: boolean;
   };
   try {
     ({values} = parseArgs({
       args: [...argv], strict: true, allowPositionals: false,
       options: {
         'port': {type: 'string'}, 'state-dir': {type: 'string'}, 'config': {type: 'string'}, 'lag-limit-ms': {type: 'string'}, 'log-level': {type: 'string'},
-        'environment': {type: 'string'}, 'simulate': {type: 'boolean'}, 'edge': {type: 'boolean'},
+        'environment': {type: 'string'}, 'simulate': {type: 'boolean'}, 'edge': {type: 'boolean'}, 'record-spans': {type: 'boolean'},
       },
     }));
   } catch (error) {
@@ -71,6 +76,7 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
     edge: values.edge === true,
     environment,
     ...(values.config === undefined ? {} : {config: values.config}),
+    recordSpans: values['record-spans'] === true,
   };
 }
 
@@ -125,6 +131,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,
       // The runtime cannot continue without the one owner of agent sessions: the service manager restarts it whole.
       onCoreFailure: () => { fail(new RuntimeError('core-failed', 'the core failed')); },
+      ...(options.recordSpans ? {spans: 'state-file' as const} : {}),
       ...(options.edge ? {edge: {
         schemas: {...options.schemas, ...moduleSchemas(options.modules)}, ...(options.onEdge === undefined ? {} : {onServing: options.onEdge}),
       }} : {}),
