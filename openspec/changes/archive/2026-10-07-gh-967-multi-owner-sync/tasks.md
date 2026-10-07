@@ -18,3 +18,11 @@
 - [x] 3.2 Show negative controls fail named tests: ownership keyed by family again (9 SDK and runtime tests and `device-owners` on both transports), a sync with no owner spread across every owner (the no-owner suite on both transports, the edge test, the runtime test and `device-owners` on both), a named copy that follows every owner's live messages (the two-owner suite on both transports, the buffer test and `device-owners` on both), an edge that drops the owner (four remote tests, the runtime test and `device-owners` over remote), and a kit that does not check the named owner (the kit's named-owner test).
 - [x] 3.3 Run build, typecheck, lint, the SDK, runtime, scenario, verification, event, maintenance and workflow checks, and OpenSpec validation, on a committed head.
 - [x] 3.4 Synchronize the affected specifications and archive the change.
+
+## 4. Fix round (PR #970)
+
+- [x] 4.1 Assert, red against `e374ec49`, that a copy without an owner follows only the owner that served it once a second owner serves `device` (both transports), drops another owner's buffered messages from its first sync, and that a named copy refuses an answer from another owner; pin the copy to its `sync.completed` source and check a named copy's answer.
+- [x] 4.2 Assert, red against `e374ec49`, that another source serving a family that is not shared is refused with `invalid-state` while `device` keeps several owners (both transports, and `sync.test.ts`'s original cross-source assertions); add `SHARED_FAMILIES`.
+- [x] 4.3 Assert, red against `e374ec49`, that the bus names each source's served families and health lists them as `serves`, in the runtime test and the `device-owners` scenario; add `InProcessBus.served` and the health field.
+- [x] 4.4 Document the rules, the consumer guidance, the owners from health and the change `type` in the READMEs, rewrap the long lines, and update the design, both specifications and the archived deltas.
+- [x] 4.5 Show mutants fail named tests, and run the gate on a committed head.

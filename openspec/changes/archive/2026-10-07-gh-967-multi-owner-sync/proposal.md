@@ -4,10 +4,11 @@
 
 ## What Changes
 
-- **Ownership by source and family.** Several participants may serve one family, each for its own entities. A participant still serves each family once: a second `serveSync` from the same source naming a family it serves is refused with `invalid-state`.
+- **Ownership by source and family.** Several participants may serve a shared family, today `device`, each for its own entities. Every other family keeps one owner, and a participant still serves each family once: both are refused with `invalid-state`.
 - **Owner-addressed sync.** `sync` takes an optional `owner`, the owning participant's source, such as `bunny/modules/lifx`. Every request of the copy goes to that owner, and the copy follows only the live messages that owner publishes. A named owner that does not serve the family is refused with `unavailable`.
-- **Existing calls keep working.** A sync that names no owner goes to the family's only owner, as before. While several owners serve a family, it is refused with `invalid-request`, saying to name the owner, and it is never spread across owners. "One sync covers one owner's families" stays.
+- **Existing calls keep working.** A sync that names no owner goes to the family's only owner, as before, and its copy follows the owner that served it. While several owners serve a family, it is refused with `invalid-request`, saying to name the owner, and it is never spread across owners. "One sync covers one owner's families" stays.
 - **Over the remote edge.** The owner travels beside the request, in the transport's sync call, as a routing key travels beside a command; the `sync-request` message is unchanged. The edge refuses an owner that is not a participant source with `invalid-request` and passes a valid one to its bus.
+- **Owners in health.** Each module's health entry lists the families it serves in `serves`, so a consumer syncs a shared family only from its owners.
 - **Kit, harness and catalog.** The module test kit syncs a module's served families from the module by name, its stand-in owner can serve as the owner a module names (`copies.owner`), and its copies check then requires that name. `ModuleHarness` keeps the owner a module's sync names. The runtime's fixture lamp and sign also serve their own devices' `device/2.0` records; the scenario catalog's seed can name a copy's owner; and a new `device-owners` scenario runs both in both tiers.
 - **Docs.** The SDK README states the rule and how a consumer of a shared family syncs each owner; the runtime README says where a module's owner source comes from.
 

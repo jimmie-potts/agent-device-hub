@@ -71,6 +71,9 @@ if (synced.status === 'synced') render(synced.copy.states());
   copy's sync, with the copy's source and `sync <families>` as its pattern. The
   runtime counts these per module in health, so a restart loop shows.
 
+`bus.served(source)` lists the families a source serves through sync now, in the
+order it registered them; the runtime's health shows it for each module.
+
 `bus.connect(source)` returns a `Participant`: the `Sdk` calls for one
 participant, plus [`close()`](#closing-a-participant). `source` is its
 CloudEvents source, such as `bunny/core`; a malformed source throws `SdkError`
@@ -89,7 +92,7 @@ The `Sdk` calls:
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
 | `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
-| `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. |
+| `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. Only a shared family, `device`, may have other owners too. See [Owners](#owners). |
 
 `subscribe` also takes `{onOverflow}`; see [Delivery](#delivery).
 
@@ -227,9 +230,9 @@ An entity is its schema family, from `dataschema`, and `data.id`; a removal
 names it in `data.entity`. Both carry `data.revision`, which the owner raises
 with every change.
 
-`handler` hears of each change in order:
+`handler` hears of each change in order. Its `type` tells them apart:
 
-| Change | Meaning |
+| `type` | Meaning |
 | --- | --- |
 | `updated` | An entity's new current record, with its state `message`. |
 | `removed` | An entity is gone, with its removal `message`, or with none when a sync dropped it. |
@@ -243,8 +246,8 @@ first sync gets only the time left, and a first sync that runs out of time names
 the last request it sent. The copy's `get(entity)`
 and `states()` return current state messages, and `close()` stops it; a copy
 closed while its handler runs hears no further change. A handler that throws is
-reported to `onError`, and so is a live message that names no entity of the
-synced families, which the copy ignores.
+reported to `onError`, and so is a live message from the copy's owner that names
+no entity of the synced families, which the copy ignores.
 
 If the buffer overflows, or a subscription's queue drops a message, the copy
 wants a new sync. It never combines partial state: a served answer to a request
@@ -257,31 +260,51 @@ each one.
 
 ### Owners
 
-Sync ownership is keyed by source and family. Several participants may serve
-one family, each for its own entities: every device module serves `device` for
-its own devices. A participant serves each family once; a second `serveSync`
-from the same source that names a family it serves is refused with
-`invalid-state`. An owner may serve any number of families, but one sync names
-at most 32 of them, in at most 256 characters joined by commas, because the
-request's subject names them.
+Sync ownership is keyed by source and family. Only a shared family may have
+several owners, each for its own entities. Today that is `device`, which every
+device module serves for its own devices; the SDK exports the list as
+`SHARED_FAMILIES`. Every other family keeps one owner: a `serveSync` from
+another source that names it is refused with `invalid-state`. A faulty
+participant that serves the core's `session` is refused itself, so every
+consumer that syncs `session` without an owner still reaches the core. A
+participant serves each family once, shared or not. An owner may serve any
+number of families, but one sync names at most 32 of them, in at most 256
+characters joined by commas, because the request's subject names them.
 
-A sync goes to one owner:
+A copy follows one owner:
 - With `owner`, the owner's source such as `bunny/modules/lifx`, every request
   of the copy goes to that owner, and the copy follows only the live messages
   that owner publishes. Another owner's messages on the same family, its
-  removals included, never enter the copy, its buffer or `onError`.
-- Without `owner`, the request goes to the families' only owner, as before.
-  While several owners serve one of the families, it is refused with
-  `invalid-request`, saying to name the owner. It is never spread across them.
+  removals included, never enter the copy, its buffer or `onError`. An answer
+  from another owner, as a transport that ignored `owner` could give, is no
+  answer: it is refused as `unavailable`, which ends a first sync or the copy.
+- Without `owner`, each request goes to the families' only owner, as before,
+  and the copy follows the owner that served it, the source of its
+  `sync.completed`, as a named copy does. While several owners serve one of the
+  families, a request is refused with `invalid-request`, saying to name the
+  owner, and it is never spread across them; a copy whose later request is
+  refused so ends with `failed`.
 
-A consumer of a shared family, such as the dashboard or a display module, syncs
-it from each owner it knows and keeps one copy per owner. Nothing merges the
-owners' records, so each copy recovers on its own. A module's source is
-`bunny/modules/<name>`, the name the runtime's shipped module list and health
-give it; the core's is `bunny/core`.
+A consumer of a shared family always names its owner, even while only one owner
+serves it: another may start at any time, and a sync that names none is then
+refused. It syncs the family from each owner and keeps one copy per owner.
+Nothing merges the owners' records, so each copy recovers on its own.
+
+To learn the owners, a remote part, such as the dashboard, reads the runtime's
+health: each module's entry lists the families it serves now in `serves`, and
+a module's source is `bunny/modules/<name>`. It syncs only from those, so it
+asks no module that serves nothing, which would only be refused as
+`unavailable`. A module inside the runtime knows the device modules it shows,
+from its code or its configuration. `bus.served(source)` gives the same list on
+the bus.
 
 ```ts
-const owners = ['bunny/modules/lifx', 'bunny/modules/nanoleaf'];
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {SyncedCopy} from '@jimmie-potts/sdk';
+
+type Health = {modules: {name: string; serves?: string[]}[]};
+const {modules} = await (await fetch(new URL('/api/runtime/v1/health', runtimeUrl))).json() as Health;
+const owners = modules.filter(module => module.serves?.includes('device') === true).map(module => `bunny/modules/${module.name}`);
 const copies = new Map<string, SyncedCopy<DeviceRecord>>();
 for (const owner of owners) {
   const synced = await sdk.sync<DeviceRecord>(['device'], change => show(owner, change), {timeoutMs: 5000, owner});
@@ -300,7 +323,7 @@ and trace ID, and no `sync.completed` follows:
 | --- | --- |
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
-| `unavailable` | No owner serves a family, or the named owner does not serve it; the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
+| `unavailable` | No owner serves a family, or the named owner does not serve it or did not answer; the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
 | `cancelled` | The copy closed, or its participant closed, before the answer came. |
 | `capacity` | The owner's queue is full. |
 | `invalid-request` | Several owners serve a family and the sync names none, or the families do not all come from one `serveSync` of one owner. |
@@ -649,25 +672,25 @@ directory, with a stand-in owner serving the families it copies, and the spec's
 stand-in is `bunny/core`, or `copies.owner` for a module that copies a family
 that several modules serve, such as one device module's `device` records:
 `copies: {families: ['device'], owner: 'bunny/modules/lifx', snapshot}`. The kit
-syncs a module's own families from the module by name, as a consumer of a
-shared family does. Under ADR 0012's failure isolation (policy A), a device's errors
+syncs a module's own families from the module by name, as a consumer of a shared
+family does. Under ADR 0012's failure isolation (policy A), a device's errors
 and timeouts become outcomes and an `unavailable` device state, never a module
 failure, and only an error that escapes the module stops it. The kit fails a
-module whose handler, timer or worker fails. With `spec.offline`, it also
-starts an instance whose simulated device never answers, and fails the module
-when that start does not finish within `offline.startWithinMs` (1000 ms by
-default), because start opens only local resources and the module reaches its
-device later, or when the module never publishes a state that
-`offline.unavailable` recognizes as the device's `unavailable` report.
-Every message the check sees must follow profile 2.0, with the core families,
-the stand-in acknowledgment and `spec.schemas` registered. Every record the
-module logs must be one the runtime writes whole as a
-[diagnostic-contract](../../docs/observability-contract.md) record (#903): an
-event the catalog registers for the `bunny.module` scope, and only registered
-attributes with values of their registered types. No message, command or sync
-request the module sends, log record, span, reply or synced state may carry one
-of `spec.secrets`, and a failure names where one appeared, never the secret. No handler, timer or worker of the module
-may fail, and its stop may not throw or outlast its deadline.
+module whose handler, timer or worker fails. With `spec.offline`, it also starts
+an instance whose simulated device never answers, and fails the module when that
+start does not finish within `offline.startWithinMs` (1000 ms by default),
+because start opens only local resources and the module reaches its device
+later, or when the module never publishes a state that `offline.unavailable`
+recognizes as the device's `unavailable` report. Every message the check sees
+must follow profile 2.0, with the core families, the stand-in acknowledgment and
+`spec.schemas` registered. Every record the module logs must be one the runtime
+writes whole as a [diagnostic-contract](../../docs/observability-contract.md)
+record (#903): an event the catalog registers for the `bunny.module` scope, and
+only registered attributes with values of their registered types. No message,
+command or sync request the module sends, log record, span, reply or synced
+state may carry one of `spec.secrets`, and a failure names where one appeared,
+never the secret. No handler, timer or worker of the module may fail, and its
+stop may not throw or outlast its deadline.
 
 `checkModuleRecord(name, record)` is that record check on its own. It returns
 why the runtime would not write one of the module's records whole, naming the
@@ -942,5 +965,6 @@ is refused with `invalid-state`.
 From the repository root, with Node 24, run `npm run test:sdk`. It builds and
 runs the compiled tests in `dist/tests/`. `conformance.test.ts` runs one suite
 against both transports, `owners.test.ts` runs several owners of one family on
-both, and `remote.test.ts` covers what only the remote transport has. Remote tests bind 127.0.0.1 on a free port. See
-[SDK checks](../../docs/development.md#sdk-checks).
+both, and `remote.test.ts` covers what only the remote transport has. Remote
+tests bind 127.0.0.1 on a free port. See [SDK
+checks](../../docs/development.md#sdk-checks).
