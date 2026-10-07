@@ -311,18 +311,25 @@ void describe('the device', () => {
 });
 
 void describe('another module\'s devices', () => {
-  void it('keeps the Pixoo running when another module already serves the device family, with one ERROR record', async () => {
+  void it('serves its own device records beside another module that serves device, to a reader that names it', async () => {
     const world = await World.open();
     const lifx = world.bus.connect('bunny/modules/lifx');
-    await lifx.serveSync(['device'], () => ({revision: 1, states: []}));
+    const bulb = {type: 'org.bunny.device.updated', subject: 'pendant-1', dataschema: 'https://bunny.invalid/events/device/2.0', data: {id: 'pendant-1', revision: 1}};
+    await lifx.serveSync(['device'], () => ({revision: 1, states: [bulb]}));
     await within(world, async () => {
       await world.start();
-      assert.equal(world.logs().filter(entry => entry.event === 'operation.failed' && entry.level === 'error').length, 1);
-      // Its own families still sync, and its device record still goes out live.
-      const synced = await world.probe.sync([FAMILIES.display, FAMILIES.rendition, FAMILIES.playlist], () => {}, {timeoutMs: 2000});
-      assert.equal(synced.status, 'synced');
-      if (synced.status === 'synced') await synced.copy.close();
       await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the live device record');
+      assert.equal(world.logs().some(entry => entry.level === 'error'), false, 'no ERROR record: device is a shared family');
+      // A reader names the owner it syncs device from, and gets that owner's devices only.
+      const synced = await world.probe.sync<{id: string}>(['device', FAMILIES.display], () => {}, {timeoutMs: 2000, owner: 'bunny/modules/pixoo'});
+      assert.equal(synced.status, 'synced');
+      if (synced.status === 'synced') {
+        assert.deepEqual(synced.copy.states().filter(state => state.dataschema.endsWith('/device/2.0')).map(state => state.data.id), [DEVICE]);
+        await synced.copy.close();
+      }
+      // Without an owner, a sync of device is refused, since two modules serve it.
+      const unnamed = await world.probe.sync(['device'], () => {}, {timeoutMs: 2000});
+      assert.equal(unnamed.status === 'rejected' && unnamed.error.error.code, 'invalid-request');
     });
     await lifx.close();
   });

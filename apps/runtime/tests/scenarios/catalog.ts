@@ -1411,19 +1411,18 @@ const moduleContributions: Scenario = {
 const PIXOO_ID = PIXOO_SIMULATED.config.device.id;
 /** The Pixoo's section: the module's simulated section, which names the observed GIF profile, with a label. */
 export const PIXOO_SECTION = {device: {...PIXOO_SIMULATED.config.device, label: 'Desk Pixoo'}} as const;
-/**
- * The Pixoo's families, which the reader copies from the Pixoo. Once sync is owner-addressed (Hub #967), the reader names
- * the Pixoo, `bunny/modules/pixoo`, as this group's owner, since every device module serves `device`.
- */
-const PIXOO_FAMILIES = ['device', PIXOO.display, PIXOO.rendition, PIXOO.playlist] as const;
+/** The Pixoo module's source: `device` is a shared family, so its reader names the owner it syncs from (Hub #967). */
+const PIXOO_OWNER = 'bunny/modules/pixoo';
+/** The Pixoo's families, which the reader copies from the Pixoo by name. */
+const PIXOO_FAMILIES: Follow = {owner: PIXOO_OWNER, families: ['device', PIXOO.display, PIXOO.rendition, PIXOO.playlist]};
 /** A 1x1 red PNG, which the module renders to 64x64 in its media child process. */
 const RED_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const pixooCommand = (family: string, verb: string, data: object): {key: string; draft: CommandDraft<object>} => ({
   key: `bunny.cmd.${family}.${PIXOO_ID}`, draft: {type: `org.bunny.${verb}.requested`, subject: PIXOO_ID, dataschema: schemaOf(family), data},
 });
 const pixooMode = (mode: 'monitor' | 'media'): {key: string; draft: CommandDraft<object>} => pixooCommand('device-mode-set', 'device-mode.set', {mode});
-const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device').find(state => state.data.id === PIXOO_ID)?.data;
-const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display).find(state => state.data.id === PIXOO_ID)?.data;
+const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device', PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
+const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display, PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
 /** The reader heard the request's outcome as `result` with `evidence`. */
 const completedAs = (h: Harness, requestId: string, result: string, evidence: string): Outcome => {
   const outcome = h.reader.heard().find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId);

@@ -121,12 +121,10 @@ if its colors or timing do not fit. Later reads of the catalog, later starts
 and playlist starts use the kept checks. With 32 hosted 500-frame renditions,
 the start went from 10.9 s to 0.4 s and a playlist edit from 11.4 s to 0.3 s.
 Every record carries the revision of its last change, from one stored counter;
-a change that alters nothing publishes nothing. Today the SDK lets one owner
-serve a family, so if another module already serves `device`, the Pixoo serves
-only its own families, keeps publishing its device record and logs one ERROR
-record. Hub #967 makes sync owner-addressed: every device module then serves
-`device`, and a reader syncs the Pixoo's by naming `bunny/modules/pixoo` as the
-owner.
+a change that alters nothing publishes nothing. `device` is a shared family:
+every device module serves it for its own devices, so a reader syncs the
+Pixoo's by naming `bunny/modules/pixoo` as the owner (#967); a sync of `device`
+that names no owner is refused while several modules serve it.
 
 ### Commands
 

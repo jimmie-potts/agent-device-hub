@@ -310,28 +310,16 @@ class PixooRuntime {
   }
 
   /**
-   * Serves the Pixoo's records through sync: the general `device` family (#918) with its own families. Today the SDK lets
-   * one owner serve each family, so while another module already serves `device`, the Pixoo serves only its own
-   * families, still publishes its device record live, and logs one ERROR record. Hub #967 makes sync owner-addressed,
-   * keyed by source and family; then every device module serves `device`, a reader names `bunny/modules/pixoo` as the
-   * owner, and this fallback never runs.
+   * Serves the Pixoo's records through sync: the general `device` family (#918), which every device module serves for its
+   * own devices, so a reader syncs it naming `bunny/modules/pixoo` (Hub #967), with the Pixoo's own families.
    */
   async #serve(): Promise<void> {
-    const {sdk, log} = this.#context;
-    const own = [FAMILIES.display, FAMILIES.rendition, FAMILIES.playlist];
     const catalog: readonly string[] = [FAMILIES.rendition, FAMILIES.playlist];
     // A sync that names the catalog's families waits until the catalog has been read the first time.
-    const provider = async (request: Message<{families: string[]}>): Promise<Snapshot> => {
+    await this.#context.sdk.serveSync(['device', FAMILIES.display, ...catalog], async request => {
       if (request.data.families.some(family => catalog.includes(family))) await this.#catalogRead.promise;
       return this.#snapshot(request.data.families);
-    };
-    try {
-      await sdk.serveSync(['device', ...own], provider);
-    } catch (error) {
-      if (!(error instanceof SdkError) || error.body.error.code !== 'invalid-state' || this.#stopping) throw error;
-      log.error('operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'snapshot', 'bunny.code': 'invalid-state'});
-      await sdk.serveSync(own, provider);
-    }
+    });
   }
 
   // Timers
