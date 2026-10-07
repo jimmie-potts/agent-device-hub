@@ -33,3 +33,4 @@ export {
 } from './remote-edge.js';
 export {IDLE_MS, connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
 export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';
+export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
