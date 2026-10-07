@@ -154,9 +154,10 @@ const secretError = (name: string, [code, what]: readonly [ErrorCode, string], c
 
 /**
  * Reads a module's secret file, named `name` in its section, as a private file of at most 64 KiB, and returns its UTF-8
- * text without trailing line breaks. Throws an `SdkError` with a registry code and a fixed detail, never the text.
+ * text without trailing line breaks. Throws an `SdkError` with a registry code and a fixed detail, never the text. The
+ * Nanoleaf migration's verifier (#933) reads each secret file it wrote through it, as the module will.
  */
-async function loadSecret(name: string, path: string): Promise<string> {
+export async function loadSecret(name: string, path: string): Promise<string> {
   let bytes: Buffer;
   try {
     bytes = await readPrivateFile(path, MAX_SECRET_BYTES);

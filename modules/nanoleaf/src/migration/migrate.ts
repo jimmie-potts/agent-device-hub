@@ -3,7 +3,7 @@
 // copied by SQL from the source attached read-only, so each value keeps its storage class; and the layout and scene files
 // are written as new files private to their owner, never through a link. Nothing else is written: tasks, reservations,
 // epochs, caches, the ledger and the legacy backup start fresh, and the module writes its own rows at its first start.
-import {closeSync, constants, fsyncSync, openSync, writeSync} from 'node:fs';
+import {closeSync, constants, fsyncSync, openSync, rmSync, writeSync} from 'node:fs';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {pyJsonIndented} from '../compat.js';
@@ -70,15 +70,22 @@ export function migrateNanoleaf(source: InstalledState, destination: Destination
   };
 }
 
-/** Writes a new file private to its owner, which must not exist and is never reached through a link, and syncs it. */
+/**
+ * Writes a new file private to its owner, which must not exist and is never reached through a link, and syncs it. A write
+ * that fails part of the way removes the file it created.
+ */
 export function writePrivate(path: string, text: string): void {
   const descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  let whole = false;
   try {
     const bytes = Buffer.from(text, 'utf8');
     for (let offset = 0; offset < bytes.length;) offset += writeSync(descriptor, bytes, offset, bytes.length - offset);
     fsyncSync(descriptor);
+    whole = true;
   } finally {
     closeSync(descriptor);
+    // A file this call created and could not finish is its own to remove.
+    if (!whole) rmSync(path, {force: true});
   }
 }
 
