@@ -473,21 +473,30 @@ class LifxRun {
     if (family === 'device-mode-set') {
       attempt = await reservation.run({kind: 'turn'}, within);
     } else {
-      // Mark the work begun before anything is sent, so a crash after this point is reported uncertain, never failed.
-      try {
-        store.setState(command.source, requestId, 'started');
-      } catch (error) {
-        reservation.release();
-        const code = storageCode(error);
-        this.#storageFailed(code);
-        await this.#complete(bulb, family, command, {requestId, result: 'failed', evidence: 'none', error: errorBody(code, {detail: 'the module could not record the work before it began'}).error}, false);
-        return;
-      }
+      // The work is marked begun in its turn, just before its write goes out, so after a crash a command still waiting in
+      // the queue, or one that only read the bulb, is reported failed, and only one whose write may have gone out is
+      // uncertain. A store that cannot mark it ends the command with no effect.
+      let unrecorded: ErrorCode = 'internal';
+      const beforeWrite = (): boolean => {
+        try {
+          store.setState(command.source, requestId, 'started');
+          return true;
+        } catch (error) {
+          unrecorded = storageCode(error);
+          this.#storageFailed(unrecorded);
+          return false;
+        }
+      };
       log.info('command.executing', fields, command);
       const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
-      attempt = await reservation.run(operationOf(family, command.data), within);
+      attempt = await reservation.run(operationOf(family, command.data), {...within, beforeWrite});
       call.end(attempt.failure === undefined ? 'unset' : 'error');
       this.#observe(bulb, attempt, spec.sent, requestId, call.context);
+      if (attempt.failure === 'unrecorded') {
+        const error = errorBody(unrecorded, {detail: 'the module could not record the work before it began'}).error;
+        await this.#complete(bulb, family, command, {requestId, result: 'failed', evidence: 'none', error}, attempt.observed !== undefined);
+        return;
+      }
     }
     if (family === 'device-mode-set' && attempt.failure === undefined) {
       log.info('command.executing', fields, command);

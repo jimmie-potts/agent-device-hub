@@ -230,6 +230,54 @@ it('an outcome the store could not keep is reported at the next start: uncertain
   assert.equal(world.packets(PENDANT.address, PACKET.setPower), 2, 'the write and its one retry, never again');
 });
 
+it('after a crash, a command still waiting for its bulb is reported failed with cancelled, and one whose write went out uncertain', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-flight'}));
+  accepted(await world.send(command.color(PENDANT.id, 10, 10), {requestId: 'req-waiting'}));
+  // The runtime dies here, while the power write waits for its answer and the color command waits behind it.
+  const after = await open({dir: await world.crashCopy(), network: world.network});
+  await after.clock.advance(1);
+  assert.deepEqual(outcome(after, 'req-flight'), {
+    requestId: 'req-flight', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the runtime stopped while the write was under way'},
+  });
+  assert.deepEqual(outcome(after, 'req-waiting'), {
+    requestId: 'req-waiting', result: 'failed', evidence: 'none',
+    error: {code: 'cancelled', retryable: false, detail: 'the runtime stopped before the command reached the bulb'},
+  });
+});
+
+it('a store that cannot record the work before its write fails the command with no effect', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  const db = world.db;
+  assert.ok(db);
+  // The store refuses only the mark that the work began, as a full or failing disk could.
+  db.exec(`CREATE TRIGGER refuse_started BEFORE UPDATE OF state ON lifx_requests WHEN NEW.state = 'started'
+    BEGIN SELECT RAISE(ABORT, 'refused'); END`);
+  const writes = world.packets(PENDANT.address, PACKET.setPower);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-unrecorded'}));
+  await world.clock.advance(1);
+  assert.deepEqual(outcome(world, 'req-unrecorded'), {
+    requestId: 'req-unrecorded', result: 'failed', evidence: 'none',
+    error: {code: 'internal', retryable: false, detail: 'the module could not record the work before it began'},
+  });
+  assert.equal(world.packets(PENDANT.address, PACKET.setPower), writes, 'nothing reached the bulb');
+  assert.equal(world.logs('operation.failed').filter(entry => entry.fields['bunny.operation'] === 'storage').length, 1);
+});
+
+it('a command that arrives while the module stops is refused unavailable', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  const stopping = world.harness.stop();
+  const refused = await world.send(command.power(PENDANT.id, false), {requestId: 'req-stopping'});
+  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable');
+  await stopping;
+  assert.equal(world.outcomes('req-stopping').length, 0);
+});
+
 it('a store that cannot write refuses the command before it is accepted, with no effect', async () => {
   const world = await open();
   await world.clock.advance(1);

@@ -2,7 +2,7 @@
 // `ModuleHarness` on its own bus with simulated bulbs, a stand-in core that serves sessions and acknowledges outcomes,
 // and builders for sessions and commands. Every message the bus carries is checked against profile 2.0 with the core,
 // device and LIFX families.
-import {mkdtemp, rm} from 'node:fs/promises';
+import {copyFile, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
@@ -128,6 +128,8 @@ export type CommandDraftFor = {key: string; draft: CommandDraft<object>};
 
 export type WorldOptions = {
   section?: unknown;
+  /** The state directory to start in, such as a copy of another world's taken as a crash would leave it. */
+  dir?: string;
   network?: SimulatedLifx;
   /** Whether the module follows the stand-in core's acknowledgments. Defaults to true. */
   acknowledged?: boolean;
@@ -172,7 +174,7 @@ export class World {
 
   /** Opens a world and starts the module in it. */
   static async open(options: WorldOptions = {}): Promise<World> {
-    const world = new World(await mkdtemp(join(tmpdir(), 'lifx-module-')), options);
+    const world = new World(options.dir ?? await mkdtemp(join(tmpdir(), 'lifx-module-')), options);
     const watcher = world.#connect('bunny/test/watcher');
     await watcher.subscribe('bunny.*.*.*', message => {
       const result = world.#validator.validate(message);
@@ -243,6 +245,16 @@ export class World {
     const result = await this.send(command.mode(id, mode));
     if (result.status !== 'accepted') throw new Error(`the mode command was ${result.status}`);
     await this.clock.advance(1);
+  }
+
+  /**
+   * A new state directory holding the module's SQLite file as it is on disk now, as the runtime would find it after a
+   * crash at this point. The module's private folder, with its leases, is not copied: a crash releases them.
+   */
+  async crashCopy(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'lifx-crash-'));
+    await copyFile(join(this.dir, 'lifx.sqlite'), join(dir, 'lifx.sqlite'));
+    return dir;
   }
 
   /** The module's published records of one bulb, of one family, oldest first. */
