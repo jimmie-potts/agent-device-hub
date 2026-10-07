@@ -29,6 +29,11 @@ const DRIVERS = {
       selectClaude(localId) { adapter.claudeSelected = localId; },
       pickers: adapter.pickers,
       typed: () => adapter.clientTaps.length,
+      suggestions: adapter.suggestions,
+      showSuggestions(labels, ghost) { adapter.suggestions.show(labels, ghost); },
+      type(text) { adapter.claudeDraft += text; adapter.composer.claude = true; },
+      draft: () => adapter.claudeDraft,
+      composerFocused: () => adapter.composer.claude,
     };
   },
   'simulated desktop': clock => {
@@ -45,18 +50,24 @@ const DRIVERS = {
       selectClaude(localId) { desktop.select('claude', localId); },
       pickers: desktop.pickers,
       typed: () => desktop.log.filter(e => e.kind === 'key').length,
+      suggestions: desktop.suggestions,
+      showSuggestions(labels, ghost) { desktop.showSuggestions(labels, ghost); },
+      type(text) { desktop.typeText('claude', text); },
+      draft: () => desktop.snapshot().windows.claude.composer.text,
+      composerFocused: () => desktop.snapshot().windows.claude.composer.focused,
     };
   },
 };
 
 for (const [name, make] of Object.entries(DRIVERS)) {
-  test(`${name}: version 5 shape and the foreground window by package identity`, async () => {
+  test(`${name}: version 6 shape and the foreground window by package identity`, async () => {
     const d = make(new ManualClock(1_000));
     assert.equal(d.adapter.version, OS_ADAPTER_VERSION);
     assert.equal(typeof d.adapter.platform, 'string');
     for (const method of ['clientVersions', 'foregroundWindow', 'openUri', 'sendKeys', 'sendVolumeKey', 'releaseAll', 'scrollClient', 'codexSelectedThread', 'composerFocused',
       'approvalVisible', 'cardButtons', 'focusCardButton', 'invokeCardButton', 'tapInClient', 'pickerState', 'expandSetting', 'collapseSetting', 'invokeSelectModel',
-      'focusMenuEntry', 'selectMenuOption', 'setSliderValue', 'focusComposer', 'claudeSettings', 'codexArchived', 'claudeSessions', 'close']) {
+      'focusMenuEntry', 'selectMenuOption', 'setSliderValue', 'focusComposer', 'claudeSettings', 'suggestionState', 'focusSuggestion', 'invokeSuggestion', 'codexArchived',
+      'claudeSessions', 'close']) {
       assert.equal(typeof d.adapter[method], 'function', method);
     }
     const versions = await d.adapter.clientVersions();
@@ -264,6 +275,62 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     await d.adapter.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
     await assert.rejects(d.adapter.tapInClient('codex', ['Escape'], 1), /keys-held/);
     await d.adapter.releaseAll();
+  });
+
+  test(`${name}: Claude's next-step band reports counts only, moves focus, fills only an empty composer from the focused suggestion, and a Right arrow accepts the ghost text (#907)`, async () => {
+    const d = make(new ManualClock(1_000));
+    const labels = ['Synthetic next step A', 'Synthetic next step B', 'Synthetic next step C'];
+    d.claudeSession(lid(1));
+    d.selectClaude(lid(1));
+    d.front('claude');
+    d.focusComposer('claude');
+    const state = async () => (await d.adapter.suggestionState('claude')).value;
+    assert.deepEqual(await state(), { count: 0, focused: null, composer: { focused: true, empty: true } }, 'no band');
+    assert.deepEqual(await d.adapter.suggestionState('codex'), { status: 'unknown', reason: 'invalid-client' }, 'Codex has no next-step band (#908)');
+    d.showSuggestions(labels, labels[0]);
+    assert.deepEqual(await state(), { count: 3, focused: null, composer: { focused: true, empty: true } });
+    assert.ok(!JSON.stringify(await d.adapter.suggestionState('claude')).includes('Synthetic'), 'no suggestion text crosses the adapter');
+    assert.deepEqual(await d.adapter.invokeSuggestion('claude', 1, 3), known(false), 'a suggestion without focus is not invoked');
+    assert.equal((await d.adapter.focusSuggestion('claude', 1, 2)).status, 'unknown', 'a changed count is refused');
+    assert.equal((await d.adapter.focusSuggestion('claude', 3, 3)).status, 'unknown', 'an index past the suggestions is refused');
+    assert.deepEqual(await d.adapter.focusSuggestion('claude', 1, 3), known(1));
+    assert.deepEqual(await state(), { count: 3, focused: 1, composer: { focused: false, empty: true } }, 'focus left the composer for the suggestion');
+    assert.deepEqual(await d.adapter.invokeSuggestion('claude', 1, 3), known(true));
+    assert.equal(d.draft(), labels[1], 'the suggestion is the draft; nothing was sent');
+    assert.deepEqual(await d.adapter.focusComposer('claude'), known(true));
+    assert.deepEqual(await state(), { count: 3, focused: null, composer: { focused: true, empty: false } });
+    await d.adapter.focusSuggestion('claude', 0, 3);
+    assert.deepEqual(await d.adapter.invokeSuggestion('claude', 0, 3), known(false), 'a composer holding a draft is never filled');
+    assert.equal(d.draft(), labels[1]);
+    await d.adapter.focusComposer('claude');
+    assert.deepEqual(await d.adapter.tapInClient('claude', ['Right'], 1), known(true));
+    assert.equal(d.draft(), labels[1], 'Right in a composer with text changes nothing');
+    // The ghost text: with the composer focused and empty, one Right arrow accepts it.
+    const fresh = make(new ManualClock(1_000));
+    fresh.front('claude');
+    fresh.focusComposer('claude');
+    fresh.showSuggestions(labels, labels[2]);
+    assert.deepEqual(await fresh.adapter.tapInClient('claude', ['Right'], 1), known(true));
+    assert.equal(fresh.draft(), labels[2], 'the ghost text is the draft');
+    assert.deepEqual((await fresh.adapter.suggestionState('claude')).value.composer, { focused: true, empty: false });
+    // The band is found as nested on the live client (two groups below the branch beside the composer's group), and in
+    // the direct-sibling shape; one group deeper than the locator's bound is no band (#907, 2026-10-07).
+    assert.equal(fresh.suggestions.nesting, 'observed');
+    fresh.suggestions.nesting = 'sibling';
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.count, 3);
+    fresh.suggestions.nesting = 'too-deep';
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.count, 0);
+    assert.equal((await fresh.adapter.focusSuggestion('claude', 0, 3)).status, 'unknown', 'no band, no focus');
+    fresh.suggestions.nesting = 'observed';
+    // A lagging read shows the state from before the last change, once.
+    fresh.suggestions.lag = true;
+    await fresh.adapter.focusSuggestion('claude', 2, 3);
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.focused, null, 'the first read lags');
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.focused, 2, 'the next one does not');
+    fresh.front('other');
+    for (const call of [fresh.adapter.suggestionState('claude'), fresh.adapter.focusSuggestion('claude', 0, 3), fresh.adapter.invokeSuggestion('claude', 0, 3)]) {
+      assert.deepEqual(await call, { status: 'unknown', reason: 'claude-not-foreground' });
+    }
   });
 }
 

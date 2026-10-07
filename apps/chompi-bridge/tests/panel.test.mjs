@@ -65,10 +65,10 @@ test('a black key mapped to attention and the volume knob have light roles; knob
 test('knob 1 and knob 2 have light roles that name an open control, a confirmed or unconfirmed change and a refusal (#906)', async () => {
   const { CONTROL, KNOB_LEDS } = await import('../dist/sim/panel.js');
   const { DEFAULT_APPLIED_COLOR } = await import('../dist/routing/profile.js');
-  assert.deepEqual(KNOB_LEDS, { model: 26, effort: 27 });
-  assert.deepEqual([CONTROL.modelTurn, CONTROL.modelClick, CONTROL.effortTurn, CONTROL.effortClick], [44, 32, 41, 29]);
+  assert.deepEqual(KNOB_LEDS, { model: 26, effort: 27, next: 28 });
+  assert.deepEqual([CONTROL.modelTurn, CONTROL.modelClick, CONTROL.effortTurn, CONTROL.effortClick, CONTROL.nextTurn, CONTROL.nextClick], [44, 32, 41, 29, 42, 30]);
   const roles = lightRoles(profile);
-  assert.deepEqual([roles[26], roles[27], roles[28]], ['knob', 'knob', 'unused'], 'knob 3 has no light');
+  assert.deepEqual([roles[26], roles[27], roles[28]], ['knob', 'knob', 'knob'], 'knob 3 lights for next steps (#907)');
   const leds = off();
   leds[26] = profile.colors.active;
   leds[27] = [...DEFAULT_APPLIED_COLOR];
@@ -76,6 +76,8 @@ test('knob 1 and knob 2 have light roles that name an open control, a confirmed 
   leds[26] = profile.colors.unknown;
   leds[27] = profile.colors.error;
   assert.deepEqual(describeLights(profile, leds).slice(26, 28), ['unknown', 'error']);
+  leds[28] = profile.colors.active;
+  assert.equal(describeLights(profile, leds)[28], 'active', 'knob 3 with a suggestion highlighted');
   leds[27] = [9, 9, 9];
   assert.equal(describeLights({ ...profile, colors: { ...profile.colors, applied: [9, 9, 9] } }, leds)[27], 'applied', 'a profile\'s own applied color');
 });

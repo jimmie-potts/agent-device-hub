@@ -1,8 +1,8 @@
 import { win32 as winPath } from 'node:path';
 import {
-  MAX_PICKER_ITEMS, MAX_PICKER_LABEL, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type ClaudeSettings, type Client, type ClientVersions,
-  type ForegroundWindow, type KeyName, type KeyRequest, type MenuKind, type Observation, type OsAdapter, type PickerAnnouncement, type PickerItem,
-  type PickerSlider, type PickerState, type SettingButton, type SettingControl, type VolumeKey,
+  MAX_PICKER_ITEMS, MAX_PICKER_LABEL, MAX_SUGGESTIONS, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type ClaudeSettings, type Client,
+  type ClientVersions, type ForegroundWindow, type KeyName, type KeyRequest, type MenuKind, type NextSteps, type Observation, type OsAdapter,
+  type PickerAnnouncement, type PickerItem, type PickerSlider, type PickerState, type SettingButton, type SettingControl, type VolumeKey,
 } from '../os-adapter.js';
 import { claudeSessions, claudeSettings, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
@@ -89,6 +89,19 @@ const isSettingControl = (client: Client, control: unknown): control is SettingC
 const validMenuIndex = (index: unknown, count: unknown): boolean =>
   isCount(count, MAX_PICKER_ITEMS) && count >= 1 && isCount(index, MAX_PICKER_ITEMS) && index < count;
 
+/** A valid suggestion index into a band of `count` suggestions. */
+const validSuggestionIndex = (index: unknown, count: unknown): boolean =>
+  isCount(count, MAX_SUGGESTIONS) && count >= 1 && isCount(index, MAX_SUGGESTIONS) && index < count;
+
+/** Parses the helper's `suggestionState` reply (#907): counts and booleans only; null when anything is out of shape. */
+function parseNextSteps(value: unknown): NextSteps | null {
+  const { suggestions, focused, composerFocused, composerEmpty } = record(value);
+  if (!isCount(suggestions, MAX_SUGGESTIONS) || typeof composerFocused !== 'boolean' || typeof composerEmpty !== 'boolean') return null;
+  const index = focused === -1 ? null : isCount(focused, MAX_SUGGESTIONS) && focused < suggestions ? focused : undefined;
+  if (index === undefined) return null;
+  return { count: suggestions, focused: index, composer: { focused: composerFocused, empty: composerEmpty } };
+}
+
 /** Parses the helper's `pickerState` reply; null when anything is out of shape. */
 function parsePickerState(client: Client, value: unknown): PickerState | null {
   const { menu, slider, model, effort, announcement } = record(value);
@@ -134,13 +147,14 @@ function parsePickerState(client: Client, value: unknown): PickerState | null {
 }
 
 /**
- * The Windows OS adapter (interface version 5). Keystrokes, the system volume keys (#865), foreground identity and
+ * The Windows OS adapter (interface version 6). Keystrokes, the system volume keys (#865), foreground identity and
  * deep links use Win32 through koffi; UI checks go to a UI Automation helper scoped to the client's foreground
  * top-level window, which changes UI state only to focus or press one button of an open card (#821); the Codex archive
  * and Claude Desktop records are read by name and by allowlisted key, and Codex thread names come from
  * `session_index.jsonl` (`id`, `thread_name` and `updated_at` only) and stay inside the adapter. The model and effort
- * operations (#906) type keys only into the named client in front and read model and effort labels only. Nothing here
- * logs.
+ * operations (#906) type keys only into the named client in front and read model and effort labels only. The next-step
+ * operations (#907) read Claude's suggestion band and composer as counts and booleans and act on the band only. Nothing
+ * here logs.
  */
 export function createWindowsAdapter(options: WindowsAdapterOptions = {}): WindowsOsAdapter {
   const env = options.env ?? process.env;
@@ -426,6 +440,35 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       const root = claudeRoot();
       if (!root) return unknown('claude-store-unset');
       return claudeSettings(root, localId);
+    },
+
+    /** The band's selectors, the empty-composer rule and their qualification are in UIA-NOTES.md ("Next-step suggestions"). */
+    async suggestionState(client: Client): Promise<Observation<NextSteps>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'claude') return unknown('invalid-client');
+      return windowQuery('claude', 'suggestionState', { client }, parseNextSteps, unknown('claude-not-foreground'));
+    },
+
+    async focusSuggestion(client: Client, index: number, count: number): Promise<Observation<number | null>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'claude') return unknown('invalid-client');
+      if (!validSuggestionIndex(index, count)) return unknown('invalid-suggestion-index');
+      const reply = await windowQuery<{ focused: number | null }>('claude', 'focusSuggestion', { client, index, count }, value => {
+        const { focused } = record(value);
+        if (focused === -1) return { focused: null };
+        return isCount(focused, MAX_SUGGESTIONS) && focused < count ? { focused } : null;
+      }, unknown('claude-not-foreground'));
+      return reply.status === 'unknown' ? reply : known(reply.value.focused);
+    },
+
+    async invokeSuggestion(client: Client, index: number, count: number): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'claude') return unknown('invalid-client');
+      if (!validSuggestionIndex(index, count)) return unknown('invalid-suggestion-index');
+      return windowQuery('claude', 'invokeSuggestion', { client, index, count }, value => {
+        const { invoked } = record(value);
+        return typeof invoked === 'boolean' ? invoked : null;
+      }, unknown('claude-not-foreground'));
     },
 
     async releaseAll(): Promise<void> {

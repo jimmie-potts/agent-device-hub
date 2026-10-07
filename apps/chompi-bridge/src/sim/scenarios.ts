@@ -2,8 +2,8 @@ import type { Client } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { Activity, AttentionKind } from '../routing/feed.js';
 import {
-  DEFAULT_APPLIED_COLOR, DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MENU_TIMEOUT_MS, DEFAULT_MODEL_SETTINGS, DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS,
-  DEFAULT_VOLUME_SETTINGS,
+  DEFAULT_APPLIED_COLOR, DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MENU_TIMEOUT_MS, DEFAULT_MODEL_SETTINGS, DEFAULT_NEXT_STEP_SETTINGS, DEFAULT_PAGE_COLORS,
+  DEFAULT_PAGE_SETTINGS, DEFAULT_VOLUME_SETTINGS,
 } from '../routing/profile.js';
 import { PULSE_LOW } from '../routing/lights.js';
 import { SLOT_COUNT } from '../routing/slots.js';
@@ -51,6 +51,10 @@ export interface DesktopSeed {
   pickers?: PickerSeed;
   /** Whether the clients' UI Automation view lags one change behind (#906): each read after a change shows the state before it, once. */
   pickerLag?: boolean;
+  /** Claude's next-step band (#907): synthetic suggestions and its ghost text (by default the first suggestion). */
+  suggestions?: { labels: readonly string[]; ghost?: string | null };
+  /** Whether reads of Claude's next-step band lag one change behind, as `pickerLag` does for the model and effort controls. */
+  suggestionLag?: boolean;
 }
 export interface RunSeed { tasks: readonly TaskSeed[]; desktop?: DesktopSeed }
 
@@ -90,6 +94,8 @@ export function seedDesktop(desktop: SimulatedDesktop, seed: RunSeed): void {
   for (const [client, card] of Object.entries(d.cards ?? {}) as [Client, CardSeed][]) desktop.openCard(client, card);
   if (d.pickers) desktop.seedPickers(d.pickers);
   desktop.pickers.lag = d.pickerLag === true;
+  if (d.suggestions) desktop.showSuggestions(d.suggestions.labels, d.suggestions.ghost);
+  desktop.suggestions.lag = d.suggestionLag === true;
   desktop.bringToFront(d.foreground === undefined ? 'other' : d.foreground);
 }
 
@@ -213,7 +219,10 @@ const clientsUntouched = (h: Harness): true | string => {
 };
 
 /** The model and effort knobs (#906): the profile fields the scenarios read, the clients' controls and the knob LEDs. */
-interface KnobProfile { model?: { stepCounts?: number }; effort?: { stepCounts?: number }; timing?: { menuTimeoutMs?: number }; colors: Record<string, readonly number[]> }
+interface KnobProfile {
+  model?: { stepCounts?: number }; effort?: { stepCounts?: number }; nextSteps?: { stepCounts?: number }; timing?: { menuTimeoutMs?: number };
+  colors: Record<string, readonly number[]>;
+}
 const knobProfile = (h: Harness) => h.profile() as KnobProfile;
 const modelStep = (h: Harness): number => knobProfile(h).model?.stepCounts ?? DEFAULT_MODEL_SETTINGS.stepCounts;
 const effortStep = (h: Harness): number => knobProfile(h).effort?.stepCounts ?? DEFAULT_EFFORT_SETTINGS.stepCounts;
@@ -223,10 +232,10 @@ const pickerIs = (h: Harness, client: Client, expected: Partial<ReturnType<typeo
   const now = picker(h, client);
   return Object.entries(expected).every(([key, value]) => now[key as keyof typeof now] === value) || `${client} ${show(now)}`;
 };
-const knobLed = (h: Harness, knob: 'model' | 'effort') => h.simulator.leds[KNOB_LEDS[knob]];
-const knobShows = (h: Harness, knob: 'model' | 'effort', name: 'active' | 'applied' | 'unknown' | 'error'): true | string => {
+const knobLed = (h: Harness, knob: keyof typeof KNOB_LEDS) => h.simulator.leds[KNOB_LEDS[knob]];
+const knobShows = (h: Harness, knob: keyof typeof KNOB_LEDS, name: 'active' | 'applied' | 'unknown' | 'error'): true | string => {
   const expected = name === 'applied' ? knobProfile(h).colors.applied ?? DEFAULT_APPLIED_COLOR : knobProfile(h).colors[name] ?? [];
-  return same(knobLed(h, knob), expected) || `knob ${knob === 'model' ? 1 : 2} LED ${show(knobLed(h, knob))}`;
+  return same(knobLed(h, knob), expected) || `knob ${{ model: 1, effort: 2, next: 3 }[knob]} LED ${show(knobLed(h, knob))}`;
 };
 /** The picker changes the clients logged (opened, focused, picked, stepped, closed, split pane). */
 const pickerActions = (h: Harness, client: Client) => h.desktop.log.flatMap(e => e.kind === 'picker' && e.client === client ? [e.action] : []);
@@ -238,6 +247,20 @@ const noPrompt = (h: Harness): true | string => {
   const split = ['codex', 'claude'].some(client => pickerActions(h, client as Client).includes('split-pane'));
   return (sent.length === 0 && !split) || `submitted ${show(sent)}${split ? ', a pane split' : ''}`;
 };
+/** Knob 3 and Claude's next-step band (#907): synthetic suggestions, the band and composer as the window shows them. */
+const nextStep = (h: Harness): number => knobProfile(h).nextSteps?.stepCounts ?? DEFAULT_NEXT_STEP_SETTINGS.stepCounts;
+const SYNTHETIC_STEPS: readonly string[] = Object.freeze(['Synthetic next step A', 'Synthetic next step B', 'Synthetic next step C']);
+const nextBand = (h: Harness) => h.desktop.snapshot().windows.claude.suggestions;
+const claudeComposer = (h: Harness) => h.desktop.snapshot().windows.claude.composer;
+const bandFocus = (h: Harness, index: number | null): true | string => nextBand(h).focused === index || `band ${show({ count: nextBand(h).labels.length, focused: nextBand(h).focused })}`;
+/** No bridge log line holds suggestion text: the bridge never reads or logs it. */
+const noSuggestionText = (h: Harness): true | string => {
+  const leaked = h.logs().filter(line => SYNTHETIC_STEPS.some(label => JSON.stringify(line).includes(label)));
+  return leaked.length === 0 || `logged ${show(leaked.map(line => line.type))}`;
+};
+const nextRefused = (h: Harness, reason: string, count = 1): true | string =>
+  logged(h, 'knob-refused', { knob: 'next', reason }).length === count || show(logged(h, 'knob-refused', { knob: 'next' }).map(line => line.reason));
+
 /** Claude in front on its task (task 2 of `DESK_BASIC`) with its composer focused. */
 const CLAUDE_IN_FRONT: DesktopSeed = { foreground: 'claude', selected: { claude: 2 }, composers: { claude: { focused: true } } };
 const CODEX_IN_FRONT: DesktopSeed = { foreground: 'codex', selected: { codex: 1 }, composers: { codex: { focused: true } } };
@@ -644,6 +667,85 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
       expect('the bridge collapses the menu and refocuses the composer first, then Send submits the draft', h => (show(submitted(h, 'claude')) === show(['synthetic draft'])
         && logged(h, 'knob-menu', { knob: 'model', action: 'closed', reason: 'other-control', method: 'collapse' }).length === 1) || `submitted ${show(submitted(h, 'claude'))}, ${show(logged(h, 'knob-menu'))}`),
       holds('the menu picked nothing: Claude still uses Sonnet 5.5', h => pickerIs(h, 'claude', { model: 'Sonnet 5.5', open: null }), 500),
+    ],
+  },
+  {
+    id: 'claude-next-step-pick',
+    title: 'Knob 3 highlights Claude\'s next-step suggestions one per detent, stopping at the ends, and a still click fills the highlighted one into the composer as a draft; Play then sends it',
+    seed: { ...DESK_BASIC, desktop: { ...CLAUDE_IN_FRONT, suggestions: { labels: SYNTHETIC_STEPS } } },
+    steps: [
+      expect('Claude shows three next steps above its focused, empty composer', h => (nextBand(h).labels.length === 3 && claudeComposer(h).focused && claudeComposer(h).text === '')
+        || `${show(nextBand(h))}, ${show(claudeComposer(h))}`),
+      act('turn knob 3 one step clockwise', h => h.simulator.turn(CONTROL.nextTurn, nextStep(h))),
+      expect('the first suggestion has focus', h => bandFocus(h, 0)),
+      expect('the bridge logs the highlight and knob 3 shows the active color', h => (logged(h, 'knob-menu', { knob: 'next', client: 'claude', action: 'opened', count: 3 }).length === 1
+        && knobShows(h, 'next', 'active') === true) || `${show(logged(h, 'knob-menu'))}, ${show(knobShows(h, 'next', 'active'))}`),
+      act('turn knob 3 three more steps clockwise', h => h.simulator.turn(CONTROL.nextTurn, 3 * nextStep(h))),
+      expect('the third suggestion, the last, has focus: "dismiss" is never a stop', h => (bandFocus(h, 2) === true && logged(h, 'suggestion-step', { clamped: true }).length >= 1)
+        || `${show(bandFocus(h, 2))}, ${show(logged(h, 'suggestion-step'))}`),
+      act('turn knob 3 one step counter-clockwise', h => h.simulator.turn(CONTROL.nextTurn, -nextStep(h))),
+      expect('the second suggestion has focus', h => bandFocus(h, 1)),
+      act('hold knob 3 still for 300 ms, then click it', async h => { await h.wait(300); h.simulator.click(CONTROL.nextClick); }),
+      expect('the second suggestion is the draft, and Claude\'s composer has focus again', h => (claudeComposer(h).text === SYNTHETIC_STEPS[1] && claudeComposer(h).focused)
+        || show(claudeComposer(h))),
+      expect('the bridge logs `next-step` filled from suggestion 2 of 3, without its text', h => (logged(h, 'next-step', { client: 'claude', route: 'suggestion', outcome: 'filled', index: 1, count: 3 }).length === 1
+        && noSuggestionText(h) === true) || `${show(logged(h, 'next-step'))}, ${show(noSuggestionText(h))}`),
+      expect('knob 3 flashes the applied color', h => knobShows(h, 'next', 'applied'), 1000),
+      holds('no key reached Claude and nothing was sent', h => (keysInto(h, 'claude').length === 0 && noPrompt(h) === true) || `keys ${show(keysInto(h, 'claude'))}, ${show(noPrompt(h))}`, 500),
+      act('press Play', h => h.simulator.click(CONTROL.play)),
+      expect('Send submits the draft, and the band hides as the turn starts', h => (show(submitted(h, 'claude')) === show([SYNTHETIC_STEPS[1]]) && nextBand(h).labels.length === 0)
+        || `submitted ${show(submitted(h, 'claude'))}, ${show(nextBand(h))}`),
+    ],
+  },
+  {
+    id: 'claude-ghost-accept',
+    title: 'With no suggestion highlighted, a knob 3 click accepts Claude\'s ghost text with one Right arrow into its focused, empty composer and sends nothing',
+    seed: { ...DESK_BASIC, desktop: { ...CLAUDE_IN_FRONT, suggestions: { labels: SYNTHETIC_STEPS, ghost: SYNTHETIC_STEPS[0] } } },
+    steps: [
+      expect('Claude shows ghost text in its focused, empty composer', h => (nextBand(h).ghost !== null && claudeComposer(h).focused && claudeComposer(h).text === '')
+        || `${show(nextBand(h))}, ${show(claudeComposer(h))}`),
+      act('click knob 3', h => h.simulator.click(CONTROL.nextClick)),
+      expect('the ghost text is the draft', h => claudeComposer(h).text === SYNTHETIC_STEPS[0] || show(claudeComposer(h))),
+      expect('the bridge logs `next-step` filled through the ghost text, and knob 3 flashes the applied color', h => (logged(h, 'next-step', { client: 'claude', route: 'ghost', outcome: 'filled' }).length === 1
+        && knobShows(h, 'next', 'applied') === true) || `${show(logged(h, 'next-step'))}, ${show(knobShows(h, 'next', 'applied'))}`, 1500),
+      holds('Claude received exactly one Right arrow, no suggestion was invoked and nothing was sent', h => (show(keysInto(h, 'claude')) === show(['Right']) && noPrompt(h) === true
+        && noSuggestionText(h) === true && !h.desktop.log.some(e => e.kind === 'suggestion' && e.action === 'fill-suggestion')) || `keys ${show(keysInto(h, 'claude'))}, ${show(noPrompt(h))}`, 500),
+    ],
+  },
+  {
+    id: 'next-step-refusals',
+    title: 'Knob 3 refuses with a red flash and types nothing with Codex in front, a draft in Claude\'s composer, a card open or no next steps showing',
+    seed: {
+      ...DESK_BASIC,
+      desktop: {
+        foreground: 'codex', selected: { codex: 1, claude: 2 }, composers: { codex: { focused: true }, claude: { focused: true } }, suggestions: { labels: SYNTHETIC_STEPS },
+      },
+    },
+    steps: [
+      act('note the desktop: Codex in front, Claude showing next steps', markDesktop),
+      act('click knob 3, then turn it one step', async h => { h.simulator.click(CONTROL.nextClick); await h.wait(600); h.simulator.turn(CONTROL.nextTurn, nextStep(h)); }),
+      expect('both are refused with `codex-no-next-steps`: Codex next steps are a separate story', h => nextRefused(h, 'codex-no-next-steps', 2)),
+      expect('knob 3 flashes the error color', h => knobShows(h, 'next', 'error'), 1000),
+      holds('nothing reached Codex or Claude', desktopUntouched, 500),
+      act('bring Claude to the front and type a draft into its composer', h => { h.desktop.bringToFront('claude'); h.desktop.typeText('claude', 'synthetic draft'); }),
+      act('note the desktop: Claude in front with a draft', markDesktop),
+      act('turn knob 3 one step, then hold it still and click it', async h => { h.simulator.turn(CONTROL.nextTurn, nextStep(h)); await h.wait(800); h.simulator.click(CONTROL.nextClick); }),
+      expect('both are refused with `draft-present`', h => nextRefused(h, 'draft-present', 2)),
+      holds('the draft is unchanged and nothing reached Claude', h => (claudeComposer(h).text === 'synthetic draft' && desktopUntouched(h) === true) || `${show(claudeComposer(h))}, ${show(desktopUntouched(h))}`, 500),
+      act('clear the draft and open an approval card in Claude', h => {
+        h.desktop.clearComposer('claude');
+        h.desktop.openCard('claude', { kind: 'approval', stops: ['Synthetic allow', 'Synthetic deny'] });
+      }),
+      act('note the desktop: a card open', markDesktop),
+      act('turn knob 3 one step', h => h.simulator.turn(CONTROL.nextTurn, nextStep(h))),
+      expect('it is refused with `card-open`', h => nextRefused(h, 'card-open')),
+      holds('nothing reached Claude and the card stays open', h => (desktopUntouched(h) === true && card(h, 'claude') !== null) || show(desktopUntouched(h)), 500),
+      act('close the card and dismiss the next steps', h => { h.desktop.closeCard('claude'); h.desktop.hideSuggestions(); }),
+      act('note the desktop: no next steps', markDesktop),
+      act('turn knob 3 one step', h => h.simulator.turn(CONTROL.nextTurn, nextStep(h))),
+      expect('it is refused with `no-suggestions`', h => nextRefused(h, 'no-suggestions')),
+      holds('nothing reached Claude, nothing was filled and nothing was sent', h => (desktopUntouched(h) === true && claudeComposer(h).text === '' && noPrompt(h) === true)
+        || `${show(desktopUntouched(h))}, ${show(claudeComposer(h))}`, 500),
     ],
   },
 ] satisfies Scenario[]);

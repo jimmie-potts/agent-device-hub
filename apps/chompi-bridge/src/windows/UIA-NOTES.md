@@ -342,10 +342,81 @@ action, and is about one helper round trip: typically tens of milliseconds, at m
   that opens inside that window would receive the chord.
 - **Right and Left on Power (no chords):** sent only while a fresh read shows Power focused. If focus moves inside
   that window, the arrow reaches the newly focused element in Codex.
+- **Knob 3's Right arrow (#907):** sent only after a fresh read shows Claude in front with its composer focused and
+  empty and no card or menu open, through `tapInClient`. If the owner types or moves focus inside that window, the
+  arrow reaches whatever has focus in Claude: in a composer with text it moves the caret, and in an open menu or on a
+  focused button it moves within that control. It never sends, and no card is open at the read.
 - **UI Automation actions:** inside the helper, the gap between the fresh read and the pattern call is a few
-  milliseconds, and the call acts on the element itself, not on whatever has focus.
+  milliseconds, and the call acts on the element itself, not on whatever has focus. `invokeSuggestion` checks focus
+  and the empty composer in the same helper call, just before `Invoke`.
 
 The knobs send no Enter, and none of these keys can send a prompt.
+
+## Next-step suggestions
+
+Added for [#907](https://github.com/jimmie-potts/agent-device-hub/issues/907). Knob 3 picks Claude's suggested next
+step through UI Automation, and accepts Claude's ghost text with one Right arrow.
+
+### Live qualification (2026-10-06)
+
+Read-only snapshots and one focus-only test the owner watched, on Claude Desktop `2.19675.0.0`
+([comments on #907](https://github.com/jimmie-potts/agent-device-hub/issues/907)):
+
+- **The band.** After a turn in a session that loads the `next-steps` mod, a `Group` sits directly above the composer's
+  group. It holds a `Text` `next:`, one `Button` per suggestion, named with the suggestion's label (three seen), and a
+  `Button` `dismiss`. A short or finished exchange showed no band. Sending a message hides it (the mod hides it on
+  `turn.start`).
+- **Focus.** A suggestion button reported `IsKeyboardFocusable` and, after `SetFocus`, `HasKeyboardFocus`; the owner saw
+  it highlighted. Returning focus to the `Prompt` editor worked, and the caret came back. Nothing was invoked or typed.
+- **Ghost text.** Claude's prompt suggestion is dim ghost text in the composer and is not exposed to UI Automation:
+  with a suggestion showing, the `Prompt` editor's Value and Text read as empty (one trailing line break). A Right arrow
+  accepts it into the composer without sending (owner check). Tab also accepts, but with no ghost text it can move
+  focus out of the composer; a Right arrow in an empty composer does nothing.
+- **Owner decision (2026-10-06).** A knob 3 click invokes the suggestion knob 3 highlighted; otherwise it accepts the
+  ghost text with a Right arrow, only when Claude's composer is confirmed focused and empty. Either way it fills a
+  draft only, and Play sends.
+
+### Operations
+
+Three helper operations serve the adapter's `suggestionState`, `focusSuggestion` and `invokeSuggestion`, Claude only
+(Codex is `invalid-client`). Each runs against Claude's own foreground window and process (`TargetWindow`) and returns
+counts, indexes and booleans only. Names are compared inside the helper only to find the band ("next:") and its
+"dismiss" button; the composer's Value is compared only with the empty forms. No suggestion text leaves the helper.
+
+- **The composer** is the window's one `Edit` with the `ProseMirror` class token (none or several is `composer-count`).
+  Its focus is `HasKeyboardFocus`. It is **empty** when its `ValuePattern` Value is `""`, `"\n"` or `"\r\n"`: no
+  text, or only one trailing line break. Claude's empty composer read as one `\n` (length 1) in the qualification, and
+  ghost text never shows in the Value.
+- **Where the band sits (observed 2026-10-07).** On Claude `2.19675.0.0`, with the band showing, the composer `Edit`
+  ("Prompt") is the child of its group at depth 15 under a common ancestor at depth 14. The band's group is at depth
+  17 (no class), and its children at depth 18 are the `Text` "next:", the suggestion buttons and "dismiss". It sits two
+  `Group`s below the common ancestor's other child: that child at depth 15 (class `min-h-0 min-w-0 text-body
+  text-primary ...`), then a group at depth 16 (class `pointer-events-auto isolate -mx-1 min-h-...`), then the band's
+  group at 17. The first locator, which checked only the direct
+  children of groups beside the composer's ancestors, read no band there (native check, fix round 1 on
+  [#943](https://github.com/jimmie-potts/agent-device-hub/pull/943)).
+- **The band.** The helper takes the chain of the composer's 8 nearest ancestors (the same bound as Codex's picker
+  button) and reads the window's `Text` elements named `next:` (more than 32 is `suggestion-band-ambiguous`). For each,
+  its parent `Group` is a candidate when it hangs under one of those ancestors at most 3 `Group`s below the ancestor's
+  child that is not the composer's own branch (`BandLevel`; the observed band is 2 below), and it directly holds
+  exactly one `Text` named `next:` and exactly one `Button` named `dismiss` (names trimmed, ordinal). Its other direct
+  `Button` children, in tree order, are the suggestions: 1-8 of them, each enabled, keyboard-focusable and invokable,
+  or the read fails (`suggestion-band-unqualified`). The candidate under the nearest ancestor is the band; two there is
+  `suggestion-band-ambiguous`, and none is no band (count 0). The read reports that ancestor's level (1 for the
+  observed layout), which the native check records. `src/sim/band-tree.ts` is the same rule over a synthetic tree in
+  the observed layout, which the simulated desktop and the test fake use; a static test holds the bounds equal.
+- **`suggestionState`** returns `{ suggestions, focused, level, composerFocused, composerEmpty }`; `focused` is the
+  suggestion equal to `AutomationElement.FocusedElement`, or -1.
+- **`focusSuggestion(index, count)`** refuses an invalid index (`invalid-suggestion-index`), no band (`band-absent`)
+  and another suggestion count (`band-changed`), then calls `SetFocus` on that suggestion and reads focus back every
+  25 ms for at most 400 ms.
+- **`invokeSuggestion(index, count)`** runs the same checks, then invokes the suggestion only when it equals the
+  focused element and the composer is empty, and answers `{ invoked: false }` otherwise. The mod then writes the
+  suggestion into the composer as a draft; nothing is sent.
+
+These two are the only next-step operations that change UI state; a static test pins one `SetFocus` to the first and
+one `Invoke` to the second. Knob 3's only key is the Right arrow, typed by the adapter's `tapInClient`, never by the
+helper.
 
 ## Not established
 
@@ -375,6 +446,19 @@ The knobs send no Enter, and none of these keys can send a prompt.
   - Claude's composer takes focus from `SetFocus` after a Collapse or a pick.
   
   Any of these failing makes a knob refuse or report `unverified`, rather than act.
+- **The next-step band with the helper (#907).** The band's nesting is observed (above), and the native check on
+  2026-10-07 read an empty composer as empty. The qualification focused a suggestion by hand, not through the helper.
+  Still to observe in #745's installed checks:
+  - the revised locator's read of the showing band (the native check's `claudeSuggestions`, level 1 expected);
+  - that `Invoke` on a suggestion writes it into the composer as a draft, as pressing it does (the mod's
+    `$.prompt.fill`), and where focus is afterwards;
+  - that the composer's Value reads the draft afterwards.
+
+  Any of these failing makes knob 3 refuse or report `unverified`, never send.
+- **Whether ghost text is showing.** The bridge cannot see ghost text, so a ghost click reads `unverified`
+  (`composer-empty`) when none was showing. A small owner-approved mod that reports the `prompt.suggest` presence to
+  the bridge could light knob 3 when a suggestion is ready; it would change the owner's Claude setup and is not part of
+  #907.
 - **Codex's level range with chords.** Codex's picker button carries no range, so a chord at an end reads as
   `mismatch` (`unchanged`), which an unbound chord would also give. The Power fallback reads the range from its
   announcement.

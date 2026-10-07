@@ -153,15 +153,18 @@ test('requests after close are refused without spawning', async () => {
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
 const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'WindowFocus', 'MenuEntries', 'SettingButtons', 'ButtonExpanded', 'PrefixedButton', 'CodexPickerButton', 'CodexPickerName', 'SettingButton', 'QualifiedMenu', 'EntryIndex', 'EffortSlider', 'SliderRange', 'PickerAnnouncement', 'PickerClient', 'PickerState'];
+const SUGGESTION_FUNCTIONS = ['ClaudeComposer', 'ComposerEmpty', 'BandSuggestions', 'BandLevel', 'SuggestionBand', 'SuggestionState', 'SuggestionRequest', 'FocusSuggestion', 'InvokeSuggestion'];
 const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
-test('the shipped helper script changes UI state only inside the card operations and the setting actions, one kind of change each', () => {
+test('the shipped helper script changes UI state only inside the card operations, the setting actions and the two suggestion actions, one kind of change each', () => {
   // #821 narrowed the old "never focuses or invokes" rule to the two card operations; #906 adds the seven setting
-  // actions on the model and effort controls. Everything else stays read-only, and nothing in the helper types.
+  // actions on the model and effort controls, and #907 the two on Claude's next-step suggestions. Everything else stays
+  // read-only, and nothing in the helper types.
   const script = readFileSync(helperScriptPath(), 'utf8');
   const actions = {
     FocusCardButton: /\.SetFocus\(\)/g, InvokeCardButton: /\.Invoke\(\)/g, ExpandSetting: /\.Expand\(\)/g, CollapseSetting: /\.Collapse\(\)/g,
     InvokeSelectModel: /\.Invoke\(\)/g, InvokeCurrentOption: /\.Invoke\(\)/g, FocusMenuEntry: /\.SetFocus\(\)/g, SelectMenuOption: /\.Select\(\)/g, SetSliderValue: /\.SetValue\(/g, FocusComposer: /\.SetFocus\(\)/g,
+    FocusSuggestion: /\.SetFocus\(\)/g, InvokeSuggestion: /\.Invoke\(\)/g,
   };
   let rest = script;
   for (const [name, own] of Object.entries(actions)) {
@@ -451,4 +454,103 @@ test('Codex\'s picker button is identified by its name among all expandable butt
   assert.match(body, /if \(\$pickers\.Count -eq 0\) \{ return \$null \}/);
   assert.equal(/Count -eq 1 -and/.test(body), false, 'no lone-button shortcut');
   assert.match(functionBody(script, 'CodexPickerName'), /\[string\]::Equals\(\$name, \$CodexPickerName, \$Ordinal\)/);
+});
+
+test('the next-step band is read and acted on only in its qualified shape, returns counts and booleans only, and invokes only a focused suggestion into an empty composer (#907)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  for (const op of ['suggestionState', 'focusSuggestion', 'invokeSuggestion']) {
+    const name = op[0].toUpperCase() + op.slice(1);
+    assert.match(script, new RegExp(`'${op}' \\{ \\$value = ${name} \\$request \\}`), `${op} is dispatched`);
+    assert.match(functionBody(script, name), /^\s+\$window = TargetWindow \$request$/m, `${name} refuses a window that is not the requested process`);
+  }
+  for (const name of SUGGESTION_FUNCTIONS) {
+    const body = functionBody(script, name);
+    assert.ok(body, `${name} is a top-level function`);
+    assert.equal(/Current\.Name\s*\}|Cached\.Name\s*\}|label\s*=|Name\s*=/.test(body), false, `${name} returns no name`);
+    for (const forbidden of [/TextPattern/, /DocumentRange/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /\.Collapse\(/, /SetValue/]) assert.equal(forbidden.test(body), false, `${name} must not use ${forbidden}`);
+  }
+  // Claude only: Codex next steps are #908's.
+  for (const name of ['SuggestionState', 'SuggestionRequest']) assert.match(functionBody(script, name), /\(PickerClient \$request\) -ne 'claude'\) \{ Fail 'invalid-client' \}/);
+  // The band: a Group holding "next:", "dismiss" and 1-8 suggestions, in a branch beside one of the composer's 8 nearest
+  // ancestors, at most 3 Groups below that branch (two on the live client, 2026-10-07).
+  assert.match(script, /^\$BandLabel = 'next:'$/m);
+  assert.match(script, /^\$BandDismiss = 'dismiss'$/m);
+  assert.match(script, /^\$MaxSuggestions = 8$/m);
+  const band = functionBody(script, 'SuggestionBand');
+  assert.match(band, /\$depth -le \$MaxComposerAncestors/, 'a bounded chain of the composer\'s ancestors');
+  assert.match(band, /Condition \$AE::NameProperty \$BandLabel/, 'candidates come from the Text elements named "next:"');
+  assert.match(band, /\$labels\.Count -gt \$MaxBandLabels\) \{ Fail 'suggestion-band-ambiguous' \}/);
+  assert.match(band, /\$level = BandLevel \$group \$chain \$walker/);
+  assert.match(band, /if \(\$tied -gt 1\) \{ Fail 'suggestion-band-ambiguous' \}/, 'two bands at the lowest level are refused');
+  const level = functionBody(script, 'BandLevel');
+  assert.match(level, /for \(\$step = 0; \$step -le \$BandSearchDepth; \$step\+\+\)/, 'at most $BandSearchDepth groups below the branch');
+  assert.match(level, /Compare\(\$at, \$chain\[\$j - 1\]\)\) \{ return -1 \}/, 'never inside the composer\'s own branch');
+  const shape = functionBody(script, 'BandSuggestions');
+  for (const property of ['IsEnabledProperty', 'IsKeyboardFocusableProperty', 'IsInvokePatternAvailableProperty']) assert.match(shape, new RegExp(`\\$AE::${property}`), property);
+  assert.match(shape, /Fail 'suggestion-band-unqualified'/);
+  assert.match(shape, /\$Scope::Children/, 'only the band\'s own children');
+  // The composer's Value is only compared with the empty forms: '', one "\n" or one "\r\n".
+  const empty = functionBody(script, 'ComposerEmpty');
+  assert.match(empty, /\$value\.Length -eq 0 -or \[string\]::Equals\(\$value, "`n", \$Ordinal\) -or \[string\]::Equals\(\$value, "`r`n", \$Ordinal\)/);
+  const rest = SUGGESTION_FUNCTIONS.filter(name => name !== 'ComposerEmpty').map(name => functionBody(script, name)).join('\n');
+  assert.equal(/ValuePattern|\.Value\b/.test(rest), false, 'only ComposerEmpty reads the composer\'s Value');
+  // Fresh-read checks before each action.
+  const request = functionBody(script, 'SuggestionRequest');
+  assert.match(request, /Fail 'invalid-suggestion-index'/);
+  assert.match(request, /if \(\$null -eq \$band\) \{ Fail 'band-absent' \}/);
+  assert.match(request, /\$band\.buttons\.Count -ne \[int\]\$count\) \{ Fail 'band-changed' \}/);
+  const invoke = functionBody(script, 'InvokeSuggestion');
+  const compare = invoke.indexOf('[System.Windows.Automation.Automation]::Compare($band.buttons[$index], $focused)');
+  const emptyCheck = invoke.indexOf('ComposerEmpty $band.composer');
+  assert.ok(compare > 0 && compare < invoke.indexOf('.Invoke()'), 'only the suggestion holding keyboard focus is invoked');
+  assert.ok(emptyCheck > 0 && emptyCheck < invoke.indexOf('.Invoke()'), 'only into an empty composer');
+  assert.match(invoke, /return @\{ invoked = \$false \}/);
+  const focus = functionBody(script, 'FocusSuggestion');
+  assert.ok(focus.indexOf('Settle {') > focus.indexOf('.SetFocus()'), 'focus is read back after the one SetFocus');
+});
+
+test('the helper\'s band locator and the simulation\'s reference locator share one rule, which finds the band as nested on the live client (#907, 2026-10-07)', async () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  const tree = await import('../dist/sim/band-tree.js');
+  const constant = name => Number(new RegExp(`^\\$${name} = (\\d+)$`, 'm').exec(script)?.[1]);
+  assert.deepEqual([constant('MaxComposerAncestors'), constant('BandSearchDepth'), constant('MaxBandLabels'), constant('MaxSuggestions'), constant('MaxBandChildren')],
+    [tree.MAX_COMPOSER_ANCESTORS, tree.BAND_SEARCH_DEPTH, tree.MAX_BAND_LABELS, tree.MAX_BAND_SUGGESTIONS, tree.MAX_BAND_CHILDREN]);
+  const { node, locateBand, claudeWindowTree, BandRefusal } = tree;
+  const labels = ['Synthetic next step A', 'Synthetic next step B', 'Synthetic next step C'];
+  // The live layout: band two Groups below the branch beside the composer's group (depth 15 -> 16 -> 17).
+  let { window, composer } = claudeWindowTree(labels, 'observed');
+  assert.deepEqual([locateBand(window, composer)?.buttons.length, locateBand(window, composer)?.level], [3, 1], 'the observed nesting, found at level 1');
+  ({ window, composer } = claudeWindowTree(labels, 'sibling'));
+  assert.deepEqual([locateBand(window, composer)?.buttons.length, locateBand(window, composer)?.level], [3, 1], 'the direct-sibling shape still passes');
+  ({ window, composer } = claudeWindowTree(labels, 'too-deep'));
+  assert.equal(locateBand(window, composer), null, 'deeper than the bound is no band');
+  ({ window, composer } = claudeWindowTree([]));
+  assert.equal(locateBand(window, composer), null);
+  // A band beside the composer counts; a band-shaped group in the composer's own branch (one of the composer's
+  // ancestors, reached through chain[j - 1]) never does; nor does a "next:" text without "dismiss".
+  const bandChildren = (n = 2) => [node('Text', [], { name: 'next:' }), ...Array.from({ length: n }, (_, i) => node('Button', [], { name: `S${i}` })), node('Button', [], { name: 'dismiss' })];
+  const band = (n = 2) => node('Group', bandChildren(n));
+  let edit = node('Edit');
+  let win = node('Window', [node('Group', [node('Group', [edit, band()])])]);
+  assert.equal(locateBand(win, edit)?.level, 0, 'a band beside the composer itself is level 0');
+  // The composer's own group holds a full band shape beside the Edit: it is the composer's branch, so it is ignored.
+  edit = node('Edit');
+  win = node('Window', [node('Group', [node('Group', [node('Group', [edit, ...bandChildren()])])])]);
+  assert.equal(locateBand(win, edit), null, 'a band shape in the composer\'s own branch is no band');
+  edit = node('Edit');
+  const other = band(3);
+  win = node('Window', [node('Group', [node('Group', [node('Group', [edit, ...bandChildren()]), node('Group', [other])])])]);
+  assert.equal(locateBand(win, edit)?.buttons.length, 3, 'the band in the other branch is found, not the composer\'s own');
+  edit = node('Edit');
+  win = node('Window', [node('Group', [node('Group', [node('Group', [edit]), node('Group', [node('Text', [], { name: 'next:' }), node('Button', [], { name: 'Copy' })])])])]);
+  assert.equal(locateBand(win, edit), null, 'a "next:" message without "dismiss" is not a band');
+  // Two bands at the lowest level are ambiguous; a band with a disabled suggestion is unqualified.
+  edit = node('Edit');
+  win = node('Window', [node('Group', [node('Group', [edit]), node('Group', [band()]), node('Group', [band()])])]);
+  assert.throws(() => locateBand(win, edit), error => error instanceof BandRefusal && error.message === 'suggestion-band-ambiguous');
+  edit = node('Edit');
+  const disabled = band(1);
+  disabled.children[1].actionable = false;
+  win = node('Window', [node('Group', [node('Group', [edit]), node('Group', [disabled])])]);
+  assert.throws(() => locateBand(win, edit), error => error instanceof BandRefusal && error.message === 'suggestion-band-unqualified');
 });

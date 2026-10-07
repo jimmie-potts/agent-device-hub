@@ -142,6 +142,23 @@ try {
     assert.deepEqual((await state()).desktop.windows.claude.composer.submitted, [], 'nothing was sent');
   });
 
+  await check('knob 3 highlights a Claude next step and its still click fills the draft without sending; the window, its light and the desktop log show it (#907)', async () => {
+    assert.equal(await page.getByLabel('Counts per turn').nth(2).inputValue(), '6', 'knob 3 starts at one suggestion step');
+    const claude = page.locator('[data-window="claude"]');
+    await claude.getByRole('button', { name: 'Show next steps' }).click();
+    await claude.locator('dd').filter({ hasText: /^3 suggestions, none focused; ghost text shown$/ }).waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Knob 3 turn right' }).click();
+    await claude.locator('dd').filter({ hasText: /^3 suggestions, suggestion 1 focused; ghost text shown$/ }).waitFor({ timeout: 5000 });
+    await page.locator('[data-encoder="knob-3"] > .light').filter({ hasText: /^active$/ }).waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.getByRole('button', { name: 'Knob 3 click' }).click();
+    await claude.locator('dd.composer-text').filter({ hasText: /^Synthetic next step A$/ }).waitFor({ timeout: 5000 });
+    await page.locator('[data-encoder="knob-3"] > .light').filter({ hasText: /^applied$/ }).waitFor({ timeout: 5000 });
+    await page.locator('#desktop-log li').filter({ hasText: 'Claude next step 1 of 3 filled the draft' }).first().waitFor({ timeout: 5000 });
+    await claude.locator('dd').filter({ hasText: /^focused$/ }).first().waitFor({ timeout: 5000 });
+    assert.deepEqual((await state()).desktop.windows.claude.composer.submitted, [], 'nothing was sent');
+  });
+
   await check('the Hub controls change a slot light: attention on the Codex task', async () => {
     await page.getByLabel('Attention of Synthetic Codex task 1').selectOption('approval');
     const slot = (await state()).slots.find(s => s.client === 'codex').slot;

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_APPLIED_COLOR, DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_CARD_STEP_COUNTS, DEFAULT_EFFORT_SETTINGS, DEFAULT_KEY_ACTIONS, DEFAULT_MENU_TIMEOUT_MS, DEFAULT_MODEL_SETTINGS,
-  DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS, EFFORT_CLICK, EFFORT_TURN, KEY_NAMES, MODEL_CLICK, MODEL_TURN, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile,
+  DEFAULT_NEXT_STEP_SETTINGS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS, EFFORT_CLICK, EFFORT_TURN, KEY_NAMES, MODEL_CLICK, MODEL_TURN, NEXT_CLICK, NEXT_TURN, ProfileError, ProfileWatcher,
+  loadProfile, parseProfile, validateProfile,
 } from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
 import { advance, onCleanup, settle, tempDir } from './routing-helpers.mjs';
@@ -291,6 +292,28 @@ test('an older profile that maps a knob\'s turn or click elsewhere keeps the map
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, scroll: 44 }, model: {} })), ['profile.controls.scroll: 44 is knob 1\'s turn']);
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, back: 29 }, effort: {} })), ['profile.controls.back: 29 is knob 2\'s click']);
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, send: [32] } })), ['profile.controls.send[0]: 32 is a small-knob click and can never send']);
+});
+
+test('knob 3 picks next steps by default, defaulted in code so the installed profile loads unchanged; an older mapping of its turn or click keeps it (#907)', () => {
+  assert.equal('nextSteps' in shipped(), false, 'the shipped profile gives no nextSteps section');
+  const profile = validateProfile(shipped());
+  assert.equal(profile.schemaVersion, 1);
+  assert.deepEqual(profile.nextSteps, DEFAULT_NEXT_STEP_SETTINGS);
+  assert.deepEqual(DEFAULT_NEXT_STEP_SETTINGS, { stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false, clickStillMs: 250 });
+  assert.deepEqual([NEXT_TURN, NEXT_CLICK], [42, 30], 'knob 3 is ENC_2');
+  assert.deepEqual(validateProfile({ ...shipped(), nextSteps: { stepCounts: 4, invert: true } }).nextSteps, { stepCounts: 4, invert: true, clickStillMs: 250 });
+  const controls = shipped().controls;
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, scroll: 42 } }).nextSteps, null);
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, record: 30 } }).nextSteps, null);
+  assert.notEqual(validateProfile({ ...shipped(), controls: { ...controls, scroll: 42 } }).model, null, 'the other knobs stay on');
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, scroll: 42 }, nextSteps: {} })), ['profile.controls.scroll: 42 is knob 3\'s turn']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, back: 30 }, nextSteps: {} })), ['profile.controls.back: 30 is knob 3\'s click']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, send: [30] } })), ['profile.controls.send[0]: 30 is a small-knob click and can never send']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), nextSteps: { stepCounts: 97, clickStillMs: -1, extra: true } })), ['profile.nextSteps.extra: unknown field']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), nextSteps: { stepCounts: 97, invert: 1, clickStillMs: -1 } })), [
+    'profile.nextSteps.stepCounts: must be an integer 1-96', 'profile.nextSteps.invert: must be true or false', 'profile.nextSteps.clickStillMs: must be an integer 0-2000 ms',
+  ]);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), nextSteps: null })), ['profile.nextSteps: must be an object']);
 });
 
 test('knob sections and the menu timeout reject bad values with a path', () => {

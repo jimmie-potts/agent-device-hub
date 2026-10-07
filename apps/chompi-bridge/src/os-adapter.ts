@@ -14,9 +14,12 @@
  * those controls only (`expandSetting`, `collapseSetting`, `invokeSelectModel`, `focusMenuEntry`, `selectMenuOption`,
  * `invokeCurrentOption`, `setSliderValue`, `focusComposer`), each checked against a fresh read before it acts; `tapInClient`, which types a key
  * only while the named client is in front, for Codex's one closing Escape and the owner's effort chords; and
- * `claudeSettings`, a Claude session record's `model` and `effort`. They return model and effort labels only.
+ * `claudeSettings`, a Claude session record's `model` and `effort`. They return model and effort labels only. Version 6
+ * (#907) adds Claude's next-step suggestions: `suggestionState`, a read of the band above Claude's composer and of the
+ * composer itself as counts and booleans, never the suggestions' text; and `focusSuggestion` and `invokeSuggestion`, UI
+ * Automation actions on the qualified band only, each checked against a fresh read before it acts.
  */
-export const OS_ADAPTER_VERSION = 5;
+export const OS_ADAPTER_VERSION = 6;
 
 export type Client = 'codex' | 'claude';
 
@@ -128,6 +131,25 @@ export type SettingControl = 'claude-model' | 'claude-effort' | 'codex-picker';
 export const MAX_PICKER_ITEMS = 64;
 export const MAX_PICKER_LABEL = 128;
 
+/**
+ * Claude's next-step suggestions (#907) and its composer, as counts and booleans: never the suggestions' text, which is
+ * model output. The band is the qualified shape only: a `Group` beside the composer's group holding a "next:" label,
+ * one button per suggestion and a "dismiss" button, which is never counted.
+ */
+export interface NextSteps {
+  /** Suggestion buttons in the band (0-`MAX_SUGGESTIONS`); 0 when no band shows. */
+  count: number;
+  /** The suggestion holding keyboard focus, or null. */
+  focused: number | null;
+  /**
+   * Claude's one composer: whether it holds keyboard focus, and whether it is empty. Empty means its value is empty or
+   * only one trailing line break: Claude's empty composer reads as one `\n`, and its ghost text never shows there.
+   */
+  composer: { focused: boolean; empty: boolean };
+}
+/** Bound on a band's suggestion buttons (the mod shows up to three). */
+export const MAX_SUGGESTIONS = 8;
+
 /** A Claude Desktop session record's model and effort values, read by allowlisted key; null when absent. */
 export interface ClaudeSettings { model: string | null; effort: string | null }
 
@@ -207,6 +229,25 @@ export interface OsAdapter {
 
   /** Claude Desktop: the named session record's `model` and `effort`, or known null when there is no record. Reads those keys only. */
   claudeSettings(localId: string): Promise<Observation<ClaudeSettings | null>>;
+
+  /*
+   * Claude's next-step suggestions (#907), in Claude's own foreground window only; Codex answers unknown
+   * (`invalid-client`). The actions re-read the band just before acting and refuse (unknown) when it is gone, out of
+   * its qualified shape or no longer has `count` suggestions. None types a key, and none returns text.
+   */
+
+  /** The band and the composer, read without changing anything: unknown when Claude is not in front or either cannot be read. */
+  suggestionState(client: Client): Promise<Observation<NextSteps>>;
+  /**
+   * Moves keyboard focus to suggestion `index` of the band of `count` (`SetFocus`), and reads focus back for a short
+   * bounded time: the focused suggestion then, or null.
+   */
+  focusSuggestion(client: Client, index: number, count: number): Promise<Observation<number | null>>;
+  /**
+   * Invokes suggestion `index` of the band of `count`, which writes it into the composer as a draft, only while it holds
+   * keyboard focus and the composer is empty: known `false`, with nothing done, otherwise. It never sends.
+   */
+  invokeSuggestion(client: Client, index: number, count: number): Promise<Observation<boolean>>;
 
   /** Releases every key this adapter currently holds. Never throws. */
   releaseAll(): Promise<void>;

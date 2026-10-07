@@ -2,8 +2,8 @@ import type { Rgb } from '../protocol.js';
 import { LED_COUNT } from '../protocol.js';
 import { KNOB_LEDS, PAGE_LED, PULSE_LOW, SLOT_STATES, VOLUME_LED, WHEEL_LEDS, keyControls, ledIndex, scale } from '../routing/lights.js';
 import {
-  DEFAULT_APPLIED_COLOR, DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN,
-  type KeyMap,
+  DEFAULT_APPLIED_COLOR, DEFAULT_KEY_ACTIONS, DEFAULT_PAGE_COLORS, EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, NEXT_CLICK, NEXT_TURN, PAGE_CLICK, PAGE_TURN,
+  VOLUME_CLICK, VOLUME_TURN, type KeyMap,
 } from '../routing/profile.js';
 
 export { KNOB_LEDS, PAGE_LED, VOLUME_LED, WHEEL_LEDS };
@@ -39,11 +39,12 @@ export const PANEL_ENCODERS: readonly PanelEncoder[] = Object.freeze([
 
 /**
  * Named controls the shipped profile uses: knob 4's turn, which always pages tasks (#822), knob 4's click, the
- * Attention click, the volume knob (#865), and knob 1 (model) and knob 2 (effort), #906.
+ * Attention click, the volume knob (#865), knob 1 (model) and knob 2 (effort), #906, and knob 3 (next steps), #907.
  */
 export const CONTROL = Object.freeze({
   record: 26, play: 27, loop: 28, wheelClick: 33, wheelTurn: 45, pageTurn: PAGE_TURN, attentionClick: PAGE_CLICK, volumeTurn: VOLUME_TURN,
-  volumeClick: VOLUME_CLICK, modelTurn: MODEL_TURN, modelClick: MODEL_CLICK, effortTurn: EFFORT_TURN, effortClick: EFFORT_CLICK,
+  volumeClick: VOLUME_CLICK, modelTurn: MODEL_TURN, modelClick: MODEL_CLICK, effortTurn: EFFORT_TURN, effortClick: EFFORT_CLICK, nextTurn: NEXT_TURN,
+  nextClick: NEXT_CLICK,
 });
 
 /** Which routing light an LED can show, from the profile's controls. */
@@ -54,8 +55,8 @@ export type LightRole = 'slot' | 'record' | 'wheel' | 'page' | 'attention' | 'vo
  * before any slot state (it overrides one), the Record color, the wheel's error flash, on knob 4's page LED a refused
  * Attention click's error flash and the attention color it alternates with while a hidden page has attention (the page
  * colors are matched separately), a black key mapped to `attention` with its attention color and refusal flash, the
- * volume knob's error flash, and knob 1's and knob 2's open control (`active`), confirmed change (`applied`), unconfirmed
- * change (`unknown`) and refusal (`error`), #906.
+ * volume knob's error flash, and the open control or highlighted next step (`active`), confirmed change or filled draft
+ * (`applied`), unconfirmed change or fill (`unknown`) and refusal (`error`) of knobs 1-3 (#906, #907).
  */
 const ROLE_NAMES: Readonly<Record<LightRole, readonly string[]>> = Object.freeze({
   slot: ['error', ...SLOT_STATES.filter(state => state !== 'empty')],

@@ -131,6 +131,19 @@ const claudeWindow = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive
 let claudeApprovalCount = 'claude-not-running';
 let claudeCardButtons = 'claude-not-running';
 let claudePicker = 'claude-not-running';
+let claudeSuggestions = 'claude-not-running';
+/**
+ * The next-step band read (#907) is read-only: it records the band's shape (how many suggestions, which has focus, the
+ * level above the composer it was found at) and the composer's focus and emptiness, never any text, which the helper
+ * does not return. A refusal, such as an ambiguous or unqualified band, is recorded as evidence, not asserted. Neither
+ * suggestion action is called.
+ */
+const suggestionShape = reply => {
+  if (!reply.ok) return { refused: reply.reason };
+  assert.deepEqual(Object.keys(reply.value).sort(), ['composerEmpty', 'composerFocused', 'focused', 'level', 'suggestions']);
+  for (const value of Object.values(reply.value)) assert.ok(typeof value === 'number' || typeof value === 'boolean', 'counts and booleans only');
+  return { ...reply.value };
+};
 if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
   const approvalStart = Date.now();
   const counted = await helper.request('approvalVisible', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] });
@@ -145,6 +158,8 @@ if (claudeWindow.length === 2 && claudeWindow.every(Number.isInteger)) {
   assert.deepEqual(Object.keys(card.value), ['cards', 'buttons', 'focused', 'cardId']);
   const pickerStart = Date.now();
   claudePicker = { ...pickerShape(await helper.request('pickerState', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] })), ms: Date.now() - pickerStart };
+  const suggestionStart = Date.now();
+  claudeSuggestions = { ...suggestionShape(await helper.request('suggestionState', { client: 'claude', hwnd: claudeWindow[0], processId: claudeWindow[1] })), ms: Date.now() - suggestionStart };
 }
 const foreground = await adapter.foregroundWindow();
 assert.equal(foreground.status, 'known', `foregroundWindow: ${foreground.reason ?? ''}`);
@@ -184,6 +199,9 @@ for (const [client, keys, presses] of [['codex', ['PageDown'], 1], ['codex', ['D
 const pickerCodex = await adapter.pickerState('codex');
 assert.ok(pickerCodex.status === 'known' ? pickerCodex.value.effort === null && pickerCodex.value.slider === null : typeof pickerCodex.reason === 'string', 'Codex has no Effort button or slider');
 assert.deepEqual(await adapter.claudeSettings(`local_${randomUUID()}`), { status: 'known', value: null }, 'a missing record has no settings');
+const suggestions = await adapter.suggestionState('claude');
+assert.ok(suggestions.status === 'known' ? Number.isInteger(suggestions.value.count) && typeof suggestions.value.composer.empty === 'boolean' : typeof suggestions.reason === 'string');
+assert.deepEqual(await adapter.suggestionState('codex'), { status: 'unknown', reason: 'invalid-client' }, 'Codex has no next-step band');
 await adapter.close();
 assert.equal(guarded.calls, 0, 'no keystroke or link was attempted');
 const foregroundPackage = foreground.value?.packageIdentity ?? null;
@@ -221,8 +239,11 @@ console.log(JSON.stringify({
     volumeKeys: { table: 'VolumeUp 0xAF, VolumeDown 0xAE, VolumeMute 0xAD', malformedRefused: true, sent: 0 },
     clientTaps: { table: 'Left 0x25, Right 0x27, Escape 0x1B, Equal 0xBB, Minus 0xBD', malformedRefused: true, sent: 0 },
     settingActions: 'none called: no Expand, Collapse, Invoke, SetFocus, Select or SetValue',
+    suggestionActions: 'none called: no suggestion focused or invoked',
     codexPicker,
     claudePicker,
+    claudeSuggestions,
+    suggestionStateClaude: suggestions.status === 'known' ? { count: suggestions.value.count, focused: suggestions.value.focused, composer: suggestions.value.composer } : suggestions,
     ffiLoaded: true,
     foreground: foreground.value === null ? 'none' : foregroundPackage === CODEX_PACKAGE_FAMILY ? 'codex' : foregroundPackage === CLAUDE_PACKAGE_FAMILY ? 'claude' : foregroundPackage ? 'other-packaged' : 'unpackaged',
     releaseAllNoop: true,

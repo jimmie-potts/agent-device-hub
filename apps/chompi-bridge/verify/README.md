@@ -13,7 +13,7 @@ A run is the real bridge CLI from the checkout, `chompi-bridge run --simulate --
 | Bridge | actual | The CLI with its routing core, slot store, lights, profile watcher and feed client |
 | Control page | actual (test tool) | The loopback page and its harness API on the run's port |
 | Controller | simulated | `ChompiSimulator`, speaking HID protocol v1 to the bridge |
-| Desktop | simulated | `SimulatedDesktop` behind OS adapter interface version 5: Codex, Claude, another app, each client's model and effort controls, and a synthetic system volume |
+| Desktop | simulated | `SimulatedDesktop` behind OS adapter interface version 6: Codex, Claude, another app, each client's model and effort controls, Claude's next-step band and ghost text, and a synthetic system volume |
 | Hub feed | simulated | `SyntheticHub`, serving the sessions snapshot 1.3 and change stream with a run-generated token |
 
 One loopback listener serves the page, its API (`/api/harness/...`) and the synthetic feed (`/api/monitor/v1/...`).
@@ -96,14 +96,19 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   knob starts at one volume key per turn, and its click toggles mute. Knobs 1 and 2 start at one model or effort step
   (6 counts each in the shipped profile, #906): knob 1 opens the model menu on the current model and moves its focus,
   and its click selects the focused model; knob 2 steps the effort, and its click closes the effort control. Their lights read "active" while
-  the control is open, then "applied", "unknown" or "error" for the change. The slot keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
+  the control is open, then "applied", "unknown" or "error" for the change. Knob 3 starts at one suggestion step (6
+  counts, #907): it highlights Claude's next steps, and its click fills the highlighted one into the composer, or with
+  none highlighted accepts Claude's ghost text; its light reads "active" while a suggestion is highlighted, then
+  "applied", "unknown" or "error". The slot keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
   **Unplug controller** unplugs and replugs the simulator. All of these inject protocol input through
   `ChompiSimulator`, so the bridge sees real reports.
 - **Simulated desktop.** For each window: whether it is in front, the selected task, the composer's focus and text,
   the last submitted text, and an open card with its stops and focused stop. It also shows the synthetic system
   volume and mute state that the volume knob changes; no window receives volume keys. Each client window also shows
   its model, its effort level ("none for this model" for Haiku 4.5) and its open model menu, Effort slider, picker or
-  model list with the focused entry (#906). Controls bring a window to the
+  model list with the focused entry (#906). The Claude window shows its next-step band: how many suggestions, which
+  one has focus and whether ghost text shows (#907); **Show next steps** shows three synthetic suggestions, the first
+  also as ghost text, and **Hide next steps** hides them, as the mod's "dismiss" does. Controls bring a window to the
   front, type into or clear a composer, change its focus, open an approval or question card, close a card and select
   a task.
 - **Synthetic Hub.** The sessions with their slots. Controls set activity or attention, end a turn (an
@@ -114,8 +119,9 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   connected, the feed is current, every seeded task holds a slot and the visible page's tasks have lit keys. The run
   also waits for that before the first step. If the run never gets ready, it records a failed readiness step with
   what it saw.
-- **Logs.** The desktop's key, link, card, dictation, system volume key and picker log (a menu opened, an entry
-  focused, a model or level set, a menu closed), and the bridge's JSON log lines.
+- **Logs.** The desktop's key, link, card, dictation, system volume key, picker log (a menu opened, an entry
+  focused, a model or level set, a menu closed) and next-step log (a band shown or hidden, a suggestion focused or
+  filled into the draft, ghost text accepted), and the bridge's JSON log lines.
 
 The page has no external requests. Its API accepts JSON from its own origin and host only, and every value is
 checked. [`tests/page.browser.mjs`](tests/page.browser.mjs) checks keyboard operation, focus kept across refreshes
@@ -134,8 +140,9 @@ The catalog is in [`src/sim/scenarios.ts`](../src/sim/scenarios.ts). Each scenar
 an action, an expectation within a time bound, or an observation that must hold for a while:
 `send-front-window`, `record-dictation`, `claude-question-wheel`, `codex-card-structure`, `reconnect-no-replay`,
 `profile-reload`, `task-pages`, `attention-key`, `volume-knob`, `claude-model-knob`, `claude-effort-knob`,
-`claude-effort-unsupported`, `codex-model-knob`, `codex-effort-chords`, `codex-effort-knob`, `knob-lagging-reads` and
-`knob-refusals`. `task-pages` seeds 18 tasks across two pages
+`claude-effort-unsupported`, `codex-model-knob`, `codex-effort-chords`, `codex-effort-knob`, `knob-lagging-reads`,
+`knob-refusals`, `claude-next-step-pick`, `claude-ghost-accept` and `next-step-refusals`. `task-pages` seeds 18 tasks
+across two pages
 (#822): knob 4 pages only on a deliberate turn, a page-2 task opens with its key, a hidden page's attention shows on
 knob 4's LED without switching pages, a held key's release gesture acts on the slot it showed when pressed though the
 page changed, and paging sends no input and keeps the window in front. `attention-key` (#865) uses the same 18 tasks:
@@ -163,7 +170,16 @@ The eight knob scenarios (#906) turn knobs 1 and 2 with Claude or Codex in front
 - `knob-refusals` refuses both knobs on a Claude card and in another app, then shows that Play with the model menu
   open closes the menu first and Send submits the draft.
 
-None of them sends a prompt. Tier 1 runs the same steps in memory on a manual clock:
+The three next-step scenarios (#907) use knob 3 with Claude's synthetic next-step band:
+- `claude-next-step-pick` highlights the first suggestion, steps to the last (where it stops; "dismiss" is never a
+  stop) and back, and fills the second into the composer with a still click, with no key reaching Claude and no
+  suggestion text in the bridge log; Play then sends the draft, and the band hides.
+- `claude-ghost-accept` clicks knob 3 with nothing highlighted: one Right arrow accepts the ghost text into the empty
+  composer, and nothing is sent.
+- `next-step-refusals` refuses knob 3 with Codex in front, with a draft in Claude's composer, with a card open and with
+  no band showing, each with a red knob 3 and no input.
+
+Apart from the Play presses these scenarios script, none of them sends a prompt. Tier 1 runs the same steps in memory on a manual clock:
 
 ```bash
 npm run -s test:chompi-bridge:scenarios                    # all
