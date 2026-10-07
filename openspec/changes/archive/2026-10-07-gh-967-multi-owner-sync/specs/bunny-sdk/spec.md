@@ -245,8 +245,8 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 - **THEN** the first two are refused with `invalid-state`, each other source's `device` succeeds, the sync resolves as `rejected` with `invalid-request`, and the owner of 38 families and a sync of one owner's families succeed
 
 #### Scenario: A faulty owner of a family that is not shared
-- **WHEN** the core serves its family and `device`, and another participant then serves the core's family, alone or with `mode`, and then `mode` and `device`
-- **THEN** on both transports the first two are refused with `invalid-state` naming the core, the third succeeds, and a sync of the core's family that names no owner is served by the core
+- **WHEN** the core serves its family and `device`, a third participant serves `playback`, `lifx-light` and `device`, and another participant then serves the core's family, alone or with `mode`, `playback`, or `lifx-light` with `mode`, and then `mode` and `device`
+- **THEN** on both transports the first four are refused with `invalid-state` naming the family's owner, the last succeeds, and a sync of the core's family that names no owner is served by the core
 
 #### Scenario: The families a source serves
 - **WHEN** a source serves one family, then two more through another registration, another source serves `device`, the first registration closes, and then the source's participant closes

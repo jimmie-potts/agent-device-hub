@@ -166,12 +166,18 @@ function suite(transport: Transport): void {
   it(name('a family that is not shared keeps one owner: another source that serves it is refused with invalid-state, as before'), () => using(transport, {}, async world => {
     const core = await world.connect('bunny/core');
     await core.serveSync([SESSION_FAMILY, DEVICE_FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
-    // A faulty or misconfigured participant that serves the core's family beside it is refused itself, so every consumer
-    // that syncs the family without naming an owner still reaches the core.
+    // The playback and LIFX modules' own families have one owner each, as the core's do.
+    await world.local('bunny/rogue').serveSync(['playback', 'lifx-light', DEVICE_FAMILY], empty);
+    // A faulty or misconfigured participant that serves one of those families beside its owner is refused itself, so
+    // every consumer that syncs the family without naming an owner still reaches that owner.
     const faulty = await world.connect('bunny/second');
-    for (const families of [[SESSION_FAMILY], ['mode', SESSION_FAMILY]]) {
+    const taken: [readonly string[], string][] = [
+      [[SESSION_FAMILY], 'bunny/core already serves test-session'], [['mode', SESSION_FAMILY], 'bunny/core already serves test-session'],
+      [['playback'], 'bunny/rogue already serves playback'], [['lifx-light', 'mode'], 'bunny/rogue already serves lifx-light'],
+    ];
+    for (const [families, detail] of taken) {
       await assert.rejects(faulty.serveSync(families, empty), (error: unknown) =>
-        refused('invalid-state')(error) && (error as SdkError).body.error.detail === 'bunny/core already serves test-session', JSON.stringify(families));
+        refused('invalid-state')(error) && (error as SdkError).body.error.detail === detail, JSON.stringify(families));
     }
     await faulty.serveSync(['mode', DEVICE_FAMILY], empty);
     const consumer = await world.connect('bunny/wall');
