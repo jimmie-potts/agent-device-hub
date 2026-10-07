@@ -187,7 +187,8 @@ No installed dependencies or compiled output are shared between jobs.
 
 Locally, `tsc` never removes output whose source was deleted, renamed or exists
 only on another branch. The suites that run compiled tests
-(`test:sdk:built`, `test:runtime:built` and `test:nanoleaf:built`) run every
+(`test:sdk:built`, `test:runtime:built`, `test:nanoleaf:built` and
+`test:playback:built`) run every
 file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
@@ -197,7 +198,7 @@ Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one o
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, agent state and status, Hub with its setup and MCP tests, MCP, Tidbyt, LIFX, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest), and the Python consumers, Tidbyt Pillow golden-image check and performance checks |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, agent state and status, Hub with its setup and MCP tests, MCP, Tidbyt, LIFX, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest, the Nanoleaf port and the playback module), and the Python consumers, Tidbyt Pillow golden-image check and performance checks |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
