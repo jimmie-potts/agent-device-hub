@@ -163,6 +163,32 @@ test('a command right after a start waits at most 1.5 s for every speaker\'s fir
   clean(hosted);
 });
 
+test('a stop while a command waits for the first reads after a start ends the wait at once, refuses the command and leaves nothing behind', async context => {
+  // The Move takes 1 s a call, so its first read takes 3 s, and a pause sent at the start waits for it.
+  const clock = manualClock();
+  const speakers = new SimulatedSpeakers({sonos: playing('Move song')}, {scheduler: clock.scheduler});
+  speakers.slow('sonos', 1000);
+  const hosted = await host(context, speakers, {clock});
+  let answered = false;
+  const pause = hosted.send('pause', 'r-stopping').finally(() => { answered = true; });
+  const isAnswered = (): boolean => answered;
+  await hosted.advance(500);
+  assert.equal(isAnswered(), false, 'the pause waits for the Move\'s first read');
+  const started = performance.now();
+  await hosted.stop();
+  assert.ok(performance.now() - started < 2000, 'the stop does not wait for the first reads');
+  assert.deepEqual(hosted.harness.failures, [], 'nothing outlasted its stop deadline');
+  assert.equal(hosted.harness.pendingTimers(), 0, 'no timer is left');
+  await flush();
+  assert.equal(isAnswered(), true, 'the pause is answered at the stop');
+  const result = await pause;
+  assert.deepEqual(result.status === 'accepted' ? result.status : [result.error.error.code, result.error.error.detail],
+    ['unavailable', 'the playback module is stopping'], 'the pause gets the stopping refusal');
+  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [[], []], 'no speaker heard it');
+  assert.deepEqual(storedCommands(hosted.stateDir), [], 'nothing was admitted');
+  clean(hosted);
+});
+
 test('a command whose deadline passes while it waits for the first reads after a start is not sent, and gets a definitive outcome', async context => {
   const clock = manualClock();
   const speakers = new SimulatedSpeakers({sonos: playing('Move song'), sony: playing('Sony song')}, {scheduler: clock.scheduler});

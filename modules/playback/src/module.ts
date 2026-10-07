@@ -249,13 +249,24 @@ BunnyModule<PlaybackConfig> {
         void readNow(index);
       };
 
-      /** Waits for `pending`, at most one call's deadline. */
+      /**
+       * Waits for `pending`, at most one call's deadline, and no longer than the module runs. A stop cancels the module's
+       * timers and refuses new ones, and a read the stop ends never marks its first read settled, so the stop itself
+       * ends the wait; the caller then refuses its command as stopping.
+       */
       const atMostOneCall = async (pending: Promise<void>): Promise<void> => {
+        if (signal.aborted) return;
         let cancel: Cancel = () => {};
-        const late = new Promise<void>(resolve => { cancel = scheduler.after(timeoutMs, resolve); });
+        let stopped: () => void = () => {};
+        const late = new Promise<void>(resolve => {
+          stopped = resolve;
+          cancel = scheduler.after(timeoutMs, resolve);
+        });
+        signal.addEventListener('abort', stopped, {once: true});
         try {
           await Promise.race([pending, late]);
         } finally {
+          signal.removeEventListener('abort', stopped);
           cancel();
         }
       };
