@@ -22,6 +22,8 @@ afterEach(async () => {
     assert.deepEqual(world.invalid, [], 'every message followed profile 2.0');
     assert.deepEqual(world.errors, [], 'no handler of the module failed');
     assert.deepEqual(world.hosted.flatMap(harness => harness.failures), [], 'no timer of the module failed, and its stop finished');
+    const seen = JSON.stringify([world.published, world.hosted.flatMap(harness => harness.logs), world.spans.spans]);
+    assert.ok(!seen.includes('192.0.2.'), 'no message, record or span carries a bulb\'s address');
     await world.close();
   }
 });
@@ -181,6 +183,34 @@ it('a command a stop cut short is reported at the next start: uncertain when its
   assert.equal(world.outcomes('req-flight').length, 1);
   assert.equal(world.outcomes('req-queued').length, 1);
   assert.equal(world.packets(PENDANT.address, PACKET.lightGet) - 2, 0, 'the queued color command never read the bulb');
+});
+
+it('an outcome the store could not keep is reported at the next start: uncertain once its write began, and never sent again', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-lost-row'}));
+  await flush();
+  // The write is out and unanswered when the disk fills, so the outcome cannot be stored.
+  const db = world.db;
+  assert.ok(db);
+  db.exec('PRAGMA page_size = 512; VACUUM');
+  const pages = (db.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
+  db.exec(`PRAGMA max_page_count = ${pages}`);
+  await world.clock.advance(5000);
+  assert.equal(world.outcomes('req-lost-row').length, 0, 'not stored, so not published');
+  assert.equal(world.device(PENDANT.id)?.pending ?? 1, 1, 'the module\'s records still hold it pending');
+  db.exec('PRAGMA max_page_count = 1073741823');
+  await world.restart();
+  await world.clock.advance(1);
+  assert.deepEqual(outcome(world, 'req-lost-row'), {
+    requestId: 'req-lost-row', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the runtime stopped while the write was under way'},
+  });
+  await world.restart();
+  await world.clock.advance(60_000);
+  assert.equal(world.outcomes('req-lost-row').length, 1, 'reported once');
+  assert.equal(world.packets(PENDANT.address, PACKET.setPower), 2, 'the write and its one retry, never again');
 });
 
 it('a store that cannot write refuses the command before it is accepted, with no effect', async () => {

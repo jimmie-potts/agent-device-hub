@@ -20,6 +20,8 @@ afterEach(async () => {
     assert.deepEqual(world.invalid, [], 'every message followed profile 2.0');
     assert.deepEqual(world.errors, [], 'no handler of the module failed');
     assert.deepEqual(world.hosted.flatMap(harness => harness.failures), [], 'no timer of the module failed');
+    const seen = JSON.stringify([world.published, world.hosted.flatMap(harness => harness.logs), world.spans.spans]);
+    assert.ok(!seen.includes('192.0.2.'), 'no message, record or span carries a bulb\'s address');
     await world.close();
   }
 });
