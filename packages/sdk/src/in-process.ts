@@ -2,7 +2,7 @@
 // never copied or serialized; schemas are checked in tests and at remote edges, not here (ADR 0012).
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
-import {reporter, warnSafely, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
+import {levelOf, reporter, warnSafely, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
 import {replyOf} from './refusal.js';
@@ -79,19 +79,14 @@ const spanFields = (source: string, key: string, requestId: string): SpanAttribu
 /** How the bus records a request's end: the owner's reply, its own refusal or cancellation, or an uncertain result. */
 type Decision = Pick<Diagnostic, 'event' | 'level' | 'outcome' | 'code'> & {status: SpanStatus};
 function decisionOf(result: RequestResult): Decision {
-  switch (result.status) {
-    case 'accepted':
-      return {event: 'command.replied', level: 'info', outcome: 'accepted', status: 'unset'};
-    case 'uncertain':
-      return {event: 'command.uncertain', level: 'warn', outcome: 'uncertain', code: result.error.error.code, status: 'error'};
-    case 'rejected': {
-      const {code} = result.error.error;
-      // Only the owner's typed refusal comes with a reply message; it proves no effect, so it is no failure either.
-      if (result.reply !== undefined) return {event: 'command.replied', level: 'info', outcome: 'rejected', code, status: 'unset'};
-      if (code === 'cancelled') return {event: 'command.cancelled', level: 'info', outcome: 'cancelled', code, status: 'unset'};
-      return {event: 'command.refused', level: 'warn', outcome: 'rejected', code, status: 'error'};
-    }
-  }
+  if (result.status === 'accepted') return {event: 'command.replied', level: 'info', outcome: 'accepted', status: 'unset'};
+  const {code} = result.error.error;
+  const level = levelOf(code);
+  if (result.status === 'uncertain') return {event: 'command.uncertain', level, outcome: 'uncertain', code, status: 'error'};
+  // Only the owner's typed refusal comes with a reply message; it proves no effect, so its span is no failure either.
+  if (result.reply !== undefined) return {event: 'command.replied', level, outcome: 'rejected', code, status: 'unset'};
+  if (code === 'cancelled') return {event: 'command.cancelled', level, outcome: 'cancelled', code, status: 'unset'};
+  return {event: 'command.refused', level, outcome: 'rejected', code, status: 'error'};
 }
 
 const foreign = (source: string, message: Message<unknown>): SdkError =>

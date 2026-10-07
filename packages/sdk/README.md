@@ -580,18 +580,27 @@ the runtime connects to its log. A `Diagnostic` is a closed record: `event`,
 payload, an error object, an exception's message or a credential. A callback
 that throws loses its record and changes nothing.
 
+A decision that ends with a registry code takes that code's level from one
+table, the same for the bus, its owners, sync and the edge: INFO for
+validation and domain refusals (`invalid-request`, `invalid-message`,
+`unsupported-version`, `unknown-schema`, `unsupported-capability`,
+`not-found`, `invalid-state`, `revision-conflict`) and `cancelled`; WARN for
+refusals a correct caller should never receive (`unauthenticated`,
+`forbidden`, `too-large`, `duplicate-conflict`), lost capacity (`capacity`,
+`unavailable`), `expired` and `uncertain-result`; ERROR for `internal`.
+
 | Event | Level | Made by |
 | --- | --- | --- |
 | `command.admitted` | INFO | The bus, when it puts a command in its owner's queue. |
-| `command.refused` | WARN | The bus, when a command never reached a handler: no responder, a full queue, its expiry, a closed responder, or a frame the edge could not deliver. |
+| `command.refused` | The code's level, WARN for each code the bus refuses with | The bus, when a command never reached a handler: no responder, a full queue, its expiry, a closed responder, or a frame the edge could not deliver. |
 | `command.cancelled` | INFO | The bus, when the requester closed or stopped waiting before a handler started the command. |
-| `command.replied` | INFO | The bus, at the owner's reply: `accepted`, or its typed refusal with its code. |
+| `command.replied` | INFO; the code's level for a typed refusal | The bus, at the owner's reply: `accepted`, or its typed refusal with its code. |
 | `command.uncertain` | WARN | The bus, when a handler had the command and the request ended `uncertain-result`. |
-| `sync.served`, `sync.refused` | INFO; WARN for a refusal other than the owner's or a cancellation | The bus, at a sync request's answer. |
+| `sync.served`, `sync.refused` | INFO; the code's level for a refusal | The bus, at a sync request's answer, refused by the bus or its owner. |
 | `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
 | `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
-| `edge.refused` | WARN for `unauthenticated`, `forbidden`, `capacity`, `unavailable` and `internal`; INFO otherwise | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. |
-| `edge.failed` | ERROR | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type only. |
+| `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. |
+| `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type only. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
 | `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
 

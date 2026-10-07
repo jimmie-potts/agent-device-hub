@@ -8,6 +8,7 @@ import {START, SESSION_FAMILY, deferred, flush, it, manualClock, peek, session, 
 import {inProcess, remote, using, type Transport, type World} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
+const BLOB = 'test-blob';
 const KEY = 'bunny.cmd.mode.wall';
 const PARENT = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 const OTHER = {traceparent: '00-11111111111111111111111111111111-2222222222222222-01'};
@@ -60,6 +61,21 @@ function suite(transport: Transport): void {
     await flush();
     assert.deepEqual(about(world, 'req-refused'), ['command.admitted info queued', 'command.replied info rejected invalid-state']);
     correlated(world, 'req-refused', commands[0]);
+  }));
+
+  it(name('an owner\'s refusal takes its code\'s level from the one table: domain INFO, misuse WARN, a fault ERROR'), () => using(transport, {}, async world => {
+    const codes = ['invalid-state', 'too-large', 'forbidden', 'internal'] as const;
+    await world.local('bunny/wall').respond<Mode>(KEY, command => errorBody(codes[Number(command.data.requestId.slice(4))] ?? 'internal', {detail: 'refused'}));
+    const core = await world.connect('bunny/core');
+    for (const [index, code] of codes.entries()) {
+      const result = await core.request(KEY, setMode('work'), {timeoutMs: 5000, requestId: `req-${index}`});
+      assert.equal(codeOf(result), code);
+    }
+    await flush();
+    assert.deepEqual(codes.map((_, index) => about(world, `req-${index}`).at(-1)), [
+      'command.replied info rejected invalid-state', 'command.replied warn rejected too-large',
+      'command.replied warn rejected forbidden', 'command.replied error rejected internal',
+    ]);
   }));
 
   it(name('a command with no responder is one refusal at WARN'), () => using(transport, {}, async world => {
@@ -168,6 +184,27 @@ function suite(transport: Transport): void {
       `sync.refused warn rejected unavailable bunny/wall sync ${FAMILY}`,
       `sync.refused info rejected invalid-state bunny/wall sync ${FAMILY}`,
       `sync.served info succeeded bunny/wall sync ${FAMILY}`,
+    ]);
+  }));
+
+  it(name('a sync refusal takes its code\'s level from the same table, the owner\'s or the bus\'s own'), () => using(transport, {}, async world => {
+    const consumer = await world.connect('bunny/wall');
+    let answer: () => ReturnType<typeof errorBody> = () => errorBody('forbidden', {detail: 'not for the wall'});
+    await world.local('bunny/core').serveSync([FAMILY], () => answer());
+    await world.local('bunny/second').serveSync([BLOB], () => ({revision: 0, states: []}));
+    const codes: string[] = [];
+    const sync = async (families: string[]): Promise<void> => {
+      const result = await consumer.sync(families, () => {}, {timeoutMs: 5000});
+      codes.push(result.status === 'rejected' ? result.error.error.code : result.status);
+    };
+    await sync([FAMILY]);
+    answer = () => { throw new Error('the owner failed'); };
+    await sync([FAMILY]);
+    await sync([FAMILY, BLOB]);
+    assert.deepEqual(codes, ['forbidden', 'internal', 'invalid-request']);
+    await flush();
+    assert.deepEqual(world.diagnostics.filter(record => record.event === 'sync.refused').map(record => [record.level, record.code]), [
+      ['warn', 'forbidden'], ['error', 'internal'], ['info', 'invalid-request'],
     ]);
   }));
 }

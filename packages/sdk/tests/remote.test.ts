@@ -73,7 +73,11 @@ it('a remote part needs its own token, and no token ever appears in a message, l
   await until(() => seen.length === 1, 'the message');
   const evidence = JSON.stringify({diagnostics: edge.diagnostics, errors: edge.errors.map(({error}) => error instanceof SdkError ? error.body : String(error)), seen, missing, wrong, foreign});
   for (const token of edge.tokens.values()) assert.equal(evidence.includes(token), false, 'a token leaked');
-  assert.ok(edge.diagnostics.some(record => record.event === 'edge.refused' && record.code === 'forbidden'), 'refusals are reported');
+  // A caller that holds no grant or acts as another source is no correct caller: each refusal is a warning.
+  assert.deepEqual(edge.diagnostics.filter(record => record.event === 'edge.refused').map(record => [record.route, record.code, record.level]), [
+    ['publish', 'unauthenticated', 'warn'], ['publish', 'unauthenticated', 'warn'], ['stream', 'unauthenticated', 'warn'],
+    ['publish', 'forbidden', 'warn'], ['publish', 'forbidden', 'warn'],
+  ]);
 }));
 
 it('the edge refuses an invalid, oversized or unknown message with the error body', () => withEdge({}, async edge => {
@@ -92,6 +96,10 @@ it('the edge refuses an invalid, oversized or unknown message with the error bod
   assert.equal((garbled.body as ErrorBody).error.code, 'invalid-request');
   // A blob under the cap passes.
   await core.publish('bunny.state.test-blob.b2', blob('b2', 1, 100_000));
+  // Validation refusals are INFO; a body a correct caller never sends is a warning.
+  assert.deepEqual(edge.diagnostics.filter(record => record.event === 'edge.refused').map(record => [record.code, record.level]), [
+    ['invalid-message', 'info'], ['too-large', 'warn'], ['unknown-schema', 'info'], ['too-large', 'warn'], ['invalid-request', 'info'],
+  ]);
 }));
 
 it('an edge refuses a sync request that arrives past its expiry with expired', () => withEdge({}, async edge => {

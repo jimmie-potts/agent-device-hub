@@ -6,7 +6,7 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
   MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
-import {errorType, reporter, type DiagnosticLevel, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
+import {errorType, levelOf, reporter, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage, type Content} from './envelope.js';
 import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
@@ -72,9 +72,6 @@ const digest = (token: string): Buffer => createHash('sha256').update(token, 'ut
 const isCall = (value: string): value is Call => (CALLS as readonly string[]).includes(value);
 /** The route a record names: one of the edge's calls or its stream, or `other` for any path the caller chose. */
 const routeOf = (route: string): EdgeRoute => isCall(route) || route === 'stream' ? route : 'other';
-/** A refusal that may mean a misused credential or lost capacity is a warning; validation refusals are expected. */
-const REFUSAL_WARNINGS: ReadonlySet<ErrorCode> = new Set(['unauthenticated', 'forbidden', 'capacity', 'unavailable', 'internal']);
-const refusalLevel = (code: ErrorCode): DiagnosticLevel => REFUSAL_WARNINGS.has(code) ? 'warn' : 'info';
 type Fields = Record<string, unknown>;
 const fields = (value: unknown): Fields | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Fields : undefined;
 
@@ -203,7 +200,7 @@ export class RemoteEdge {
       const refused = known ? error.body : progress.dispatched ? FAILED_AFTER_DISPATCH : FAILED;
       const {code} = refused.error;
       const who = source === undefined ? {} : {source};
-      if (known) this.#diagnose({event: 'edge.refused', level: refusalLevel(code), route: routeOf(route), code, ...who});
+      if (known) this.#diagnose({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
       else this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, errorType: errorType(error)});
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');

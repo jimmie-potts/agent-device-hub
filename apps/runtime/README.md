@@ -93,9 +93,11 @@ A refusal's record holds `bunny.route` (one of the edge's routes, or `other`),
 `bunny.participant` when the caller had a grant, `bunny.code` from the error
 registry and `bunny.reason`, the diagnostic contract's registered reason for
 that code. `internal` and `uncertain-result`, whose effect may have happened,
-have none. A refusal that may mean a misused grant or lost capacity
-(`unauthenticated`, `forbidden`, `capacity`, `unavailable`) is a warning, and a
-validation refusal is INFO. A refusal never holds the edge's detail, which may
+have none. A refusal takes its code's level from the SDK's one table, the
+same as the bus's and its owners': a refusal a correct caller should never
+receive (`unauthenticated`, `forbidden`, `too-large`, `duplicate-conflict`) or
+lost capacity (`capacity`, `unavailable`) is a warning, `internal` is an
+error, and a validation refusal is INFO. A refusal never holds the edge's detail, which may
 quote what the caller sent. The edge answers an exception it did not expect
 with fixed text, never its message: `internal`, or `uncertain-result` once it
 has handed a command to the bus. It logs one `runtime.edge.failed` record at
@@ -244,11 +246,11 @@ SDK set:
 | Record | Level | When |
 | --- | --- | --- |
 | `runtime.command.admitted` | INFO | The bus put a command in its owner's queue. |
-| `runtime.command.refused` | WARN | No responder, a full queue, an expiry in the queue or a closed responder. |
+| `runtime.command.refused` | WARN, its code's level | No responder, a full queue, an expiry in the queue or a closed responder. |
 | `runtime.command.cancelled` | INFO | Its requester closed or stopped waiting before a handler started it. |
-| `runtime.command.replied` | INFO | The owner replied, `accepted` or with its typed refusal. |
+| `runtime.command.replied` | INFO; its code's level for a typed refusal, so ERROR for `internal` | The owner replied, `accepted` or with its typed refusal. |
 | `runtime.command.uncertain` | WARN | A handler had it and the request ended `uncertain-result`. |
-| `runtime.sync.served`, `runtime.sync.refused` | INFO; WARN for a refusal other than the owner's or a cancellation | A sync request's answer. |
+| `runtime.sync.served`, `runtime.sync.refused` | INFO; its code's level for a refusal | A sync request's answer. |
 | `runtime.sync.restarted` | DEBUG | An overflow restarted a copy's sync. |
 
 A command's records carry its requester (`bunny.participant`), its routing key

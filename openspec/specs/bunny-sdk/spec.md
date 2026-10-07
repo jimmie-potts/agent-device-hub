@@ -594,15 +594,15 @@ Until Hub #782 defines the core's acknowledgment, the kit SHALL offer a stand-in
 
 ### Requirement: Decision records at the SDK's boundaries
 
-The bus, the remote edge and the remote client SHALL each take an optional `onDiagnostic(diagnostic)` callback, a no-op by default, and SHALL report each decision they make to it exactly once, at the level ADR 0012 sets. A diagnostic SHALL be a closed record of an event, a level and values the SDK has already validated: the participant's source, the command's routing key or `sync <families>`, the request ID, the message ID, an outcome, a 2.0 registry code, the edge's route, an exception's type and an attempt count, with the trace context of the work. It SHALL NOT hold a payload, an error object, an exception's message or a credential. The events and their levels SHALL be:
+The bus, the remote edge and the remote client SHALL each take an optional `onDiagnostic(diagnostic)` callback, a no-op by default, and SHALL report each decision they make to it exactly once, at the level ADR 0012 sets. A diagnostic SHALL be a closed record of an event, a level and values the SDK has already validated: the participant's source, the command's routing key or `sync <families>`, the request ID, the message ID, an outcome, a 2.0 registry code, the edge's route, an exception's type and an attempt count, with the trace context of the work. It SHALL NOT hold a payload, an error object, an exception's message or a credential. A decision that ends with a registry code SHALL take that code's level from one table that the bus, the edge and sync all use: INFO for validation and domain refusals (`invalid-request`, `invalid-message`, `unsupported-version`, `unknown-schema`, `unsupported-capability`, `not-found`, `invalid-state` and `revision-conflict`) and for `cancelled`; WARN for refusals a correct caller should never receive (`unauthenticated`, `forbidden`, `too-large` and `duplicate-conflict`), lost capacity (`capacity` and `unavailable`), `expired` and `uncertain-result`; ERROR for `internal`. The events and their levels SHALL be:
 - `command.admitted`, INFO: the bus put a command in its owner's queue;
-- `command.refused`, WARN: the bus refused a command that never reached a handler because no responder owns its key, its owner's queue is full, its deadline passed while it waited or it reached the handler past its expiry, its responder closed, or the edge could not deliver it;
+- `command.refused`, at its code's level, which is WARN for each code the bus refuses with: the bus refused a command that never reached a handler because no responder owns its key, its owner's queue is full, its deadline passed while it waited or it reached the handler past its expiry, its responder closed, or the edge could not deliver it;
 - `command.cancelled`, INFO: its requester closed or stopped waiting before a handler started it;
-- `command.replied`, INFO: the owner replied, `accepted` or with its typed refusal and code;
+- `command.replied`, INFO for `accepted` and its code's level for the owner's typed refusal: the owner replied;
 - `command.uncertain`, WARN: the handler had the command and the request ended `uncertain-result`;
-- `sync.served`, INFO, and `sync.refused`, INFO for the owner's typed refusal or a cancellation and WARN otherwise: the bus's answer to a sync request;
+- `sync.served`, INFO, and `sync.refused`, at its code's level whether the owner or the bus refused: the bus's answer to a sync request;
 - `sync.restarted`, DEBUG: an overflow restarted a copy's sync;
-- `edge.connected` and `edge.disconnected`, INFO; `edge.refused`, WARN for `unauthenticated`, `forbidden`, `capacity`, `unavailable` and `internal` and INFO for other validation refusals, and INFO with `cancelled` for a call its caller dropped while the edge read it; `edge.failed`, ERROR, with the code it answered: the edge's own decisions;
+- `edge.connected` and `edge.disconnected`, INFO; `edge.refused`, at its code's level, with `cancelled` for a call its caller dropped while the edge read it; `edge.failed`, ERROR as an internal fault, with the code it answered: the edge's own decisions;
 - `remote.disconnected`, WARN, and `remote.reconnected`, INFO: the remote client's stream;
 - `remote.command.uncertain`, WARN: the remote client settled a request `uncertain-result` itself, because the edge answered `internal` or `uncertain-result`, could not be heard by its deadline and grace, or the requester closed first.
 
@@ -611,6 +611,10 @@ Every record about one request SHALL be made at its admission or inside its one 
 #### Scenario: One record for each command decision, on both transports
 - **WHEN** commands are accepted, refused by their owner, sent with no responder, refused by a full queue, expired in the queue, cancelled while queued, held by a handler past the deadline and failed by a handler that throws, in process and through the edge
 - **THEN** each request makes exactly one admission record when it reached the queue and exactly one ending record at its level, every record carries the request ID, the requester's source, the routing key and the command's trace, and a late reply makes none
+
+#### Scenario: Levels by registry code
+- **WHEN** an owner refuses commands with `invalid-state`, `too-large`, `forbidden` and `internal`, a sync owner refuses with `forbidden` and then fails, a sync covers two owners' families, and the edge refuses an oversized body, a malformed message and another source's call
+- **THEN** each record takes its code's level from the one table: INFO for `invalid-state`, `invalid-message` and `invalid-request`, WARN for `too-large`, `forbidden` and `unauthenticated`, and ERROR for `internal`
 
 #### Scenario: Concurrent requests keep their own trace
 - **WHEN** two requests from different traces wait in the same owner's queue and both end

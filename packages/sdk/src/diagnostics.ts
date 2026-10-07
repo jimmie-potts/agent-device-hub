@@ -61,6 +61,36 @@ export type Diagnostic = {
   readonly trace?: TraceContext;
 };
 
+/**
+ * ADR 0012's level for each registry code: the one table every boundary uses for a refusal, a cancellation, an owner's
+ * typed refusal or an uncertain result. INFO for validation and domain refusals and an expected cancellation; WARN for
+ * refusals a correct caller should never receive, lost capacity, queued expiry and uncertain outcomes; ERROR for an
+ * internal fault. A record type keeps it whole: a code added to the registry fails to compile until it has a level.
+ */
+const LEVELS: Readonly<Record<ErrorCode, DiagnosticLevel>> = {
+  'invalid-request': 'info',
+  'invalid-message': 'info',
+  'too-large': 'warn',
+  'unsupported-version': 'info',
+  'unknown-schema': 'info',
+  'unsupported-capability': 'info',
+  unauthenticated: 'warn',
+  forbidden: 'warn',
+  'not-found': 'info',
+  'invalid-state': 'info',
+  'revision-conflict': 'info',
+  'duplicate-conflict': 'warn',
+  expired: 'warn',
+  cancelled: 'info',
+  capacity: 'warn',
+  unavailable: 'warn',
+  'uncertain-result': 'warn',
+  internal: 'error',
+};
+
+/** The level of a decision that ends with `code`, wherever it is made. */
+export const levelOf = (code: ErrorCode): DiagnosticLevel => LEVELS[code];
+
 /** Receives each diagnostic. It should return promptly; a throw is ignored. */
 export type OnDiagnostic = (diagnostic: Diagnostic) => void;
 

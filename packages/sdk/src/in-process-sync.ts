@@ -1,7 +1,7 @@
 // The owner side of sync on the in-process bus. One owner serves each family. A sync request goes straight to that
 // owner, and its answer goes straight back to the requester, never to subscribers.
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
-import type {Diagnostic, OnDiagnostic} from './diagnostics.js';
+import {levelOf, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Cancel, type Scheduler, type Subscription, type TraceContext} from './sdk.js';
@@ -28,8 +28,7 @@ const SYNC_COMPLETED = `${SCHEMA_BASE}sync-completed/2.0`;
 const MAX_MEMBERS = 4096;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 
-/** `owned` marks the owner's own answer, served or refused, apart from the bus's refusals. */
-type Delivery = {request: Message<SyncRequest>; expiresAtMs: number; settle: (answer: SyncAnswer, owned?: boolean) => void};
+type Delivery = {request: Message<SyncRequest>; expiresAtMs: number; settle: (answer: SyncAnswer) => void};
 type Owner = {families: ReadonlySet<string>; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
 
 /** A refusal of `request` in the shared error body, naming the request and its trace. */
@@ -74,8 +73,7 @@ export class SyncOwners {
     const owner: Owner = {families: new Set(served), scope, queue: new DeliveryQueue(this.#dependencies.maxQueued, async ({request, expiresAtMs, settle}) => {
       // A request past its expiry is ignored: its requester already has an answer, so nothing serves it.
       if (expiresAtMs <= this.#dependencies.now()) return;
-      const {answer, owned} = await this.#answer(source, scope, request, provider);
-      settle(answer, owned);
+      settle(await this.#answer(source, scope, request, provider));
     })};
     this.#owners.add(owner);
     return {close: () => {
@@ -105,8 +103,8 @@ export class SyncOwners {
    */
   dispatch(request: Message<SyncRequest>, expiresAtMs: number, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
     const {families} = request.data;
-    const decided = (answer: SyncAnswer, owned = false): SyncAnswer => {
-      this.#dependencies.diagnose(decisionOf(request, answer, owned));
+    const decided = (answer: SyncAnswer): SyncAnswer => {
+      this.#dependencies.diagnose(decisionOf(request, answer));
       return answer;
     };
     const owners = families.map(family => [...this.#owners].find(owner => owner.families.has(family)));
@@ -120,12 +118,12 @@ export class SyncOwners {
     return new Promise(resolve => {
       let settled = false;
       let cancel: Cancel = () => {};
-      const settle = (answer: SyncAnswer, owned?: boolean): void => {
+      const settle = (answer: SyncAnswer): void => {
         if (settled) return;
         settled = true;
         cancel();
         signal.removeEventListener('abort', withdraw);
-        resolve(decided(answer, owned));
+        resolve(decided(answer));
       };
       const delivery: Delivery = {request, expiresAtMs, settle};
       // A request still waiting leaves the owner's queue, so the owner never serves it and its room is free again.
@@ -146,25 +144,22 @@ export class SyncOwners {
     });
   }
 
-  /**
-   * The owner's states and `sync.completed`, or its refusal, `owned` when the owner answered. A provider that throws or
-   * misfits is refused as internal.
-   */
-  async #answer(source: string, scope: ErrorScope, request: Message<SyncRequest>, provider: SyncProvider): Promise<{answer: SyncAnswer; owned: boolean}> {
+  /** The owner's states and `sync.completed`, or its refusal. A provider that throws or misfits is refused as internal. */
+  async #answer(source: string, scope: ErrorScope, request: Message<SyncRequest>, provider: SyncProvider): Promise<SyncAnswer> {
     const {envelope, report} = this.#dependencies;
     let snapshot: Snapshot;
     try {
       const answer = await provider(request);
       if (isErrorBody(answer)) {
         const {requestId} = request.data;
-        return {owned: true, answer: {status: 'rejected', requestId, error: {error: {...answer.error, requestId, traceId: traceIdOf(request.traceparent)}}}};
+        return {status: 'rejected', requestId, error: {error: {...answer.error, requestId, traceId: traceIdOf(request.traceparent)}}};
       }
       const problem = misfit(answer, request.data.families);
       if (problem !== undefined) throw new TypeError(`a sync snapshot ${problem}`);
       snapshot = answer;
     } catch (error) {
       report(error, scope);
-      return {owned: false, answer: refusal(request, 'internal', 'the owner could not serve the sync')};
+      return refusal(request, 'internal', 'the owner could not serve the sync');
     }
     // Current state only: each entity's state message, never a past occurrence or removal.
     const states = snapshot.states.map(({type, subject, dataschema, data}) => envelope(source, 'state', {type, subject, dataschema, data}, childOf(request)));
@@ -173,21 +168,17 @@ export class SyncOwners {
       type: 'org.bunny.sync.completed', subject: request.subject, dataschema: SYNC_COMPLETED,
       data: {requestId: request.data.requestId, revision: snapshot.revision, members},
     }, childOf(request));
-    return {owned: true, answer: {status: 'served', requestId: request.data.requestId, states, completed}};
+    return {status: 'served', requestId: request.data.requestId, states, completed};
   }
 }
 
-/**
- * The record of a sync request's one answer: served at INFO; the owner's typed refusal or a cancellation at INFO; any
- * other refusal at WARN.
- */
-function decisionOf(request: Message<SyncRequest>, answer: SyncAnswer, owned: boolean): Diagnostic {
+/** The record of a sync request's one answer: served at INFO, a refusal or cancellation at its code's level. */
+function decisionOf(request: Message<SyncRequest>, answer: SyncAnswer): Diagnostic {
   const facts = {
     source: request.source, pattern: `sync ${request.data.families.join(',')}`, requestId: request.data.requestId, messageId: request.id,
     trace: {traceparent: request.traceparent},
   };
   if (answer.status === 'served') return {event: 'sync.served', level: 'info', outcome: 'succeeded', ...facts};
   const {code} = answer.error.error;
-  const expected = owned || code === 'cancelled';
-  return {event: 'sync.refused', level: expected ? 'info' : 'warn', outcome: code === 'cancelled' ? 'cancelled' : 'rejected', code, ...facts};
+  return {event: 'sync.refused', level: levelOf(code), outcome: code === 'cancelled' ? 'cancelled' : 'rejected', code, ...facts};
 }
