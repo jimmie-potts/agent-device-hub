@@ -8,6 +8,11 @@ since #38 a now-playing publisher. The opt-in Linux runner connects them to an
 existing hub; installation and visible-device acceptance remain separate from
 these source tests.
 
+The runtime's [Tidbyt module](../../modules/tidbyt/README.md) (#930), a copy of
+this package converted to ADR 0012, replaces the runner at the cutover (#840).
+This package and its checks stay for the installed local controller host until
+#839 removes them.
+
 This controller displays automatic agent status through Tidbyt's official
 cloud. It consumes the feed of the selected shared agent-state owner. It can
 also show what is playing, from the hub's shared playback snapshot. A later

@@ -31,6 +31,13 @@ export type ChildMessage =
   | {type: 'lifx.exchange'; id: number; address: string; packet: number; payload: string; expected: number}
   /** The LIFX module stopped waiting for that packet's answer, so the simulated bulb stops too. */
   | {type: 'lifx.abandon'; id: number}
+  /**
+   * The Tidbyt module makes one request to the simulated cloud (Hub #930): its method, URL, bearer header with the
+   * synthetic token, and JSON body.
+   */
+  | {type: 'cloud.call'; id: number; method: 'GET' | 'POST' | 'DELETE'; url: string; authorization: string; body?: string}
+  /** The Tidbyt module's deadline for that request passed, or it stopped, so the simulated cloud stops waiting. */
+  | {type: 'cloud.abandon'; id: number}
   | {type: 'published'; message: Message}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
@@ -44,6 +51,9 @@ export type SupervisorMessage =
   | {type: 'speaker.failed'; id: number}
   | {type: 'lifx.answered'; id: number; payload: string}
   | {type: 'lifx.failed'; id: number}
+  | {type: 'cloud.answered'; id: number; status: number; headers: Record<string, string>; body: string}
+  /** The simulated cloud refused the connection before anything was sent, or never answered. */
+  | {type: 'cloud.failed'; id: number; refused: boolean}
   | {type: 'control'; id: number; control: Control}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
@@ -93,4 +103,5 @@ export type SimulateRequest =
   | {device: 'chime'; action: 'fault-next'}
   | {device: 'sign'; action: 'online' | 'offline'}
   | Extract<Simulation, {device: 'playback'}>
-  | {device: 'lifx'; action: 'online' | 'offline'; address: string};
+  | {device: 'lifx'; action: 'online' | 'offline'; address: string}
+  | Extract<Simulation, {device: 'tidbyt'}>;

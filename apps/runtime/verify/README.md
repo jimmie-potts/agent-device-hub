@@ -14,8 +14,8 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory, and `--config` for a configured scenario: the shipped module list, or the fixture modules |
 | SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
 | Configuration | synthetic | For a scenario whose seed configures modules (#919), `<data>/config/runtime-config.json` and one token file per module under `<data>/config/secrets/`, all owner-only, holding the synthetic token `tok_SYNTHETIC919` |
-| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, and a harness module that reports what the bus publishes |
-| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers` and the LIFX module's `SimulatedLifx`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
+| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, and a harness module that reports what the bus publishes |
+| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
@@ -24,7 +24,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop or
 silence either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -35,8 +35,8 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, and the LIFX module's simulated pendant and Beam) |
-| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input) and `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam) |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, and the Tidbyt module's simulated cloud) |
+| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input) `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam) and `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
 ## Capture steps
@@ -201,6 +201,24 @@ npm run -s verify:runtime -- start --scenario lifx-bulbs
 npm run -s verify:runtime -- capture <run-id> scenario-lifx-bulbs
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+To watch the Tidbyt's tiles (#930) follow agent status and what plays, on a simulated cloud, start the Tidbyt scenario.
+Its capture step starts a session and a turn, sends a burst of approval prompts inside the 15-second gate, plays a song
+to the Move, pauses it and stops it, and checks each tile against the frame the reader's own copies call for. Time is
+real, so the step takes about a minute.
+
+```bash
+npm run -s verify:runtime -- start --scenario tidbyt-tiles
+npm run -s verify:runtime -- capture <run-id> scenario-tidbyt-tiles
+npm run -s verify:runtime -- stop <run-id>
+```
+
+By hand, `GET /api/harness/v1/state` shows `devices.tidbyt`: each installation the cloud holds (`agentdevicehub` for
+agent status, `nowplaying` for the card) with its frame as 32 text rows of 64 characters (`.` dark, `A` amber, `B`
+blue, `G` green, `W` white or grey, lower case when dimmed), how often it was pushed and when, and every call the cloud
+heard. `POST /api/harness/v1/simulate` with `{"device": "tidbyt", "action": "offline"}` or `"online"` takes the cloud
+away or brings it back, and the speakers' and the hook's actions above drive what the tiles show. A remote part with the
+reader's grant syncs `device` from the edge and finds the Tidbyt's record from `bunny/modules/tidbyt`.
 
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.
