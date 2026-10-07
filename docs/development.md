@@ -806,7 +806,10 @@ npm run -s verify:runtime -- help
 `test:runtime:verify:built` starts runs without a user manager and judges every
 capture step through `runCaptureStep`: one per catalog scenario, so the same
 scenarios pass in the in-memory harness and in a run. It also starts each
-boundary negative control and shows its check fails. Its lifecycle tests drive
+boundary negative control and shows its check fails, shows the network guard
+refuses `net`, `http`, `https`, `fetch` and `dgram` in a worker thread and a
+child Node process too, and checks that `build-current` watches every source
+the run loads. The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
 real transient units and skip with a printed reason without a user manager; the
 App verification CI job runs the rest. It needs Playwright Chromium and an
 outside-checkout `TMPDIR`, as the app verification tests do.

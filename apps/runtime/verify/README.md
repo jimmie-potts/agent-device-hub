@@ -18,11 +18,13 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
-publish, on the same port and state directory, as the service manager would. Its loopback harness API, the run's
-`harness` endpoint, drives the simulated devices and the run's controls (hold, release, fail the next switch, fault the
-chime, arm a crash, lose an acknowledgment, restart) and reports the run's state: the devices, the runtime's log records
-and everything its bus published, each with the runtime's generation. It answers only local JSON requests that name its
-listener, as the runtime's health does.
+publish, on the same port and state directory, as the service manager would. It gives up and ends the run after five
+such restarts within a minute. Starts and restarts run one after another, so overlapping restart requests never race
+for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
+controls: hold, release, fail the next switch, fault the chime, arm a crash, lose an acknowledgment, end a part's
+stream at the edge, and restart. It also reports the run's state: the devices, the runtime's log records and everything
+its bus published, each with the runtime's generation. It answers only local JSON requests that name its listener, as
+the runtime's health does. Ending a stream takes only a part's source, `bunny/parts/<role>`.
 
 ## Run scenarios
 
@@ -42,8 +44,11 @@ listener, as the runtime's health does.
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
 
 The run adapter implements the catalog's `Harness` in real time. Its parts are remote, so the per-transport
-expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. A step's page
-shows the runtime's health document; there is no dashboard before #922.
+expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its
+`disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
+as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
+step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
+shows health as the step left it. There is no dashboard before #922.
 
 ## Boundaries
 
@@ -53,8 +58,15 @@ and in `doctor`:
 | Check | Passes when | Negative control | What crosses |
 | --- | --- | --- | --- |
 | `simulated-transports` | The runtime's `runtime.started` record says it built its modules with `--simulate` | `control-real-transports` | The shipped runtime runs without `--simulate` |
-| `no-outbound-connections` | A guard loaded before the runtime refused no outbound TCP connection; the runtime only listens | `control-installed-port` | A probe module reaches for the installed Hub's port 8788; the guard refuses it before it connects |
-| `private-state` | The runtime's state directory is the run's own, its home is private to the run, and the grants file is owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it falls back to its default directory, which in a run lies under the run's private home |
+| `no-outbound-connections` | The guard refused no outbound TCP connection or UDP datagram; the runtime only listens | `control-installed-port` | A probe module reaches for the installed Hub's port 8788 with `fetch` and with `node:http`; the guard refuses both before they connect |
+| `private-state` | What the run observes: the runtime's home, read from its environment, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the grants file is owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
+
+The guard loads through `NODE_OPTIONS`, so it runs first in the runtime, in each of its worker threads and in every
+Node process it starts. It refuses every outbound TCP connection made through `net`, `tls`, `http`, `https` or
+`fetch`, and every UDP send or connect through `dgram`, before anything leaves. Each attempt goes to the run's
+`guard-report.jsonl`, which the check reads. It does not cover a native addon, a non-Node binary, a Node process started
+with `NODE_OPTIONS` cleared, or a name lookup through `node:dns`. The runtime uses none of these today. A module story
+that adds a device transport adds its simulated one too.
 
 The controls fail their start with `check-failed` by design, and are start-only: `scenario <run-id> <control>` and
 `handoff <run-id> --reset <control>` are refused with `start-only-scenario` (exit 2) before anything changes. The
@@ -81,12 +93,18 @@ npm run -s verify:runtime -- doctor
 npm run -s verify:runtime -- stop <run-id>
 ```
 
-A reviewer can also use the run by hand: its runtime's URL serves health, and its SDK edge takes a remote part with a
-grant from `<runtime dir>/data/state/edge-grants.json`, which `start` never prints.
+The trusted host route runs the same operations as a transient user unit:
+`npm run -s verify:host -- --host --app runtime --checkout <absolute checkout> -- <operation>`.
+
+A reviewer can also use the run by hand. Its preview URL, which the card links, is the runtime's health page. The
+same origin serves the SDK edge, which takes a remote part with a grant from
+`<runtime dir>/data/state/edge-grants.json`. `start` never prints that grant.
 
 ## Checks
 
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
-manager, starts each negative control, and tests the supervisor's stop, crash restart, orphan handling and harness API.
+manager, and starts each negative control. It tests the supervisor's stop, crash restart, restart serialization, orphan
+handling and harness API. It also tests the guard's reach in every thread and child process, and that `build-current`
+watches every source the run loads.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).

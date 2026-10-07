@@ -58,7 +58,7 @@ A request must name the listener as its host (`127.0.0.1:<port>` or
 `Origin` and no `Sec-Fetch-Site` other than `none`, as the Hub and local controllers require, so a page on a rebinding name
 cannot read module state. Any other request answers 403 with the shared error
 body and `forbidden`. Every other route answers 404 with `not-found`, except the
-[SDK edge](#sdk-edge)'s routes when it serves.
+[SDK edge](#sdk-edge)'s routes when the edge is configured.
 
 ## SDK edge
 
@@ -67,7 +67,10 @@ With `--edge`, remote parts make the SDK calls over SSE and HTTP under
 modules' bus. The listener's local-request rules apply to these routes too. The
 edge serves once every module has started; until then its routes answer 503
 with `unavailable`, so a remote part that reconnects never syncs from a module
-still starting.
+still starting. `runtime.started` says whether the edge is configured
+(`bunny.edge`); `runtime.edge.serving` follows once it serves. From the start
+of a stop until the listener closes, the routes answer 503 with `unavailable`
+again, not 404.
 
 Each remote part has a grant: a source and a bearer token, in
 `edge-grants.json` in the state directory:
@@ -84,8 +87,16 @@ The runtime refuses to start otherwise, with `edge-grants-missing`,
 `runtime.failed`. No refusal or log record quotes a token. The edge checks every
 remote message against profile 2.0, the core families and the modules' own
 schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
-`runtime.edge.disconnected` and `runtime.edge.refused`. Token rotation and grant
+`runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
+`bunny.route` (one of the edge's routes, or `other`), `bunny.source` when the
+caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
+that code's fixed meaning. It never holds the edge's detail, which may quote
+what the caller sent or an exception's message. Token rotation and grant
 permissions belong to #835.
+
+`runMain`'s `onEdge` option hands the caller the edge once it serves. A
+verification run's child uses it to end a part's stream, as a lost connection
+would; the shipped entry point does not pass it.
 
 ## State
 
