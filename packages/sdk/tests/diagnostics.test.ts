@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type Diagnostic, type Reply, type RequestResult} from '../src/index.js';
-import {START, SESSION_FAMILY, deferred, flush, it, manualClock, peek, session, setMode, until, type Mode} from './support.js';
+import {START, SESSION_FAMILY, blob, deferred, flush, it, manualClock, peek, session, setMode, until, type Mode} from './support.js';
 import {inProcess, remote, using, type Transport, type World} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -162,6 +162,43 @@ function suite(transport: Transport): void {
       correlated(world, requestId, commands.get(requestId));
     }
   }));
+
+  it(name('a callback that throws on every record changes no request, sync or edge call, and nothing reports its failure'), async () => {
+    const outcomes = (failingDiagnostics: boolean): Promise<{results: string[]; events: string[]; errors: unknown[]}> =>
+      transport.start({failingDiagnostics}).then(async world => {
+        try {
+          await world.local('bunny/wall').respond<Mode>(KEY, command => command.data.mode === 'quiet' ? errorBody('forbidden', {detail: 'not now'}) : {status: 'accepted'});
+          await world.local('bunny/core').serveSync([FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+          await world.local('bunny/second').serveSync([BLOB], () => errorBody('forbidden', {detail: 'not for the rogue'}));
+          const caller = await world.connect('bunny/rogue');
+          const results = [
+            codeOf(await caller.request(KEY, setMode('work'), {timeoutMs: 5000})),
+            codeOf(await caller.request(KEY, setMode('quiet'), {timeoutMs: 5000})),
+            codeOf(await caller.request('bunny.cmd.mode.none', setMode('work'), {timeoutMs: 5000})),
+          ];
+          for (const families of [[FAMILY], [BLOB], [FAMILY, BLOB]]) {
+            const synced = await caller.sync(families, () => {}, {timeoutMs: 5000});
+            results.push(synced.status === 'rejected' ? synced.error.error.code : synced.status);
+            if (synced.status === 'synced') await synced.copy.close();
+          }
+          // Over the remote cap, so the edge refuses it and records that.
+          if (transport.name === 'remote') {
+            results.push(await caller.publish('bunny.state.test-blob.b1', blob('b1', 1, 300_000)).then(() => 'published', (error: unknown) => String(error)));
+          }
+          await flush();
+          return {results, events: [...new Set(world.diagnostics.map(record => record.event))].sort(), errors: world.errors.map(({error}) => error)};
+        } finally {
+          await world.close();
+        }
+      });
+    const expected = await outcomes(false);
+    const failing = await outcomes(true);
+    assert.deepEqual(failing.results, expected.results, 'every result as without a failing callback');
+    assert.deepEqual(failing.events, expected.events, 'the callback heard every decision');
+    for (const event of ['command.admitted', 'command.replied', 'command.refused', 'sync.served', 'sync.refused']) assert.ok(failing.events.includes(event), event);
+    if (transport.name === 'remote') assert.ok(failing.events.includes('edge.connected') && failing.events.includes('edge.refused'), 'the edge\'s own decisions');
+    assert.deepEqual(failing.errors, expected.errors, 'nothing reported the callback\'s failure');
+  });
 
   it(name('sync decisions: served and refused, each once, at their levels'), () => using(transport, {}, async world => {
     const consumer = await world.connect('bunny/wall');

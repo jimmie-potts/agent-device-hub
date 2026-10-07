@@ -777,3 +777,32 @@ it('a record the edge makes before it authenticates a call carries only the rout
   await response.body?.cancel();
   assert.deepEqual(edge.diagnostics, [{event: 'edge.refused', level: 'warn', route: 'other', code: 'unauthenticated'}], 'no source, trace or anything the caller sent');
 }));
+
+it('a throwing onDiagnostic at the edge and the client changes no reconnect, refusal or failure, and nothing reports it', () =>
+  withEdge({failingDiagnostics: true}, async edge => {
+    const wall = checked(await edge.connect('bunny/wall'));
+    const seen: string[] = [];
+    await wall.subscribe(`bunny.state.${FAMILY}.*`, message => { seen.push(message.id); });
+    // The stream drops: the edge records the disconnect and the reconnect, the client its lost stream and its recovery.
+    edge.edge.disconnect('bunny/wall');
+    await until(() => edge.diagnostics.some(record => record.event === 'remote.reconnected'), 'the reconnect');
+    const core = checked(await edge.connect('bunny/core'));
+    await core.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1));
+    await until(() => seen.length === 1, 'a message on the new stream');
+    // A call with no grant, refused before authentication.
+    const refusedCall = await call(edge, 'publish', {schema: REMOTE_SCHEMA}, 'not-a-granted-token');
+    assert.equal(refusedCall.status, 401);
+    // An exception inside the edge, answered with fixed text.
+    const poisoned = {id: 's1', revision: 1, toJSON: (): never => { throw new Error('cannot encode'); }};
+    await edge.bus.connect('bunny/second').serveSync([FAMILY], () => ({revision: 1, states: [{...session('s1', 1), data: poisoned}]}));
+    const consumer = await edge.connect('bunny/rogue');
+    const synced = await consumer.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(synced.status === 'rejected' && synced.error.error.code, 'internal');
+    const events = new Set<string>(edge.diagnostics.map(record => record.event));
+    for (const event of ['edge.connected', 'edge.disconnected', 'remote.disconnected', 'remote.reconnected', 'edge.refused', 'edge.failed']) {
+      assert.ok(events.has(event), `the callback heard ${event}`);
+    }
+    assert.deepEqual(edge.errors.filter(({error}) => error instanceof Error && error.message === 'the journal is gone'), [],
+      'nothing reported the callback\'s failure');
+    assert.deepEqual(edge.errors.filter(({scope}) => scope.pattern === 'stream'), [], 'and no stream error came of it');
+  }));

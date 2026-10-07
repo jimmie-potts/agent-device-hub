@@ -33,8 +33,8 @@ Every record about one request SHALL be made at its admission or inside its one 
 - **THEN** each makes one record at its level with the copy's source and `sync <families>`
 
 #### Scenario: A failing callback
-- **WHEN** `onDiagnostic` throws on every record
-- **THEN** every request, sync and edge call ends exactly as it does without the callback, and nothing reports the callback's failure
+- **WHEN** the bus's, the edge's and a remote client's `onDiagnostic` throw on every record, in process and through the edge, while requests are accepted, refused and unanswered, syncs are served and refused, the edge refuses calls and fails, and a stream drops and reconnects
+- **THEN** every request, sync and edge call ends exactly as it does without the callback, the callback still hears each decision, and nothing reports the callback's failure
 
 #### Scenario: Before authentication
 - **WHEN** a call reaches the edge without a granted token, from a path that is not one of its calls, with a traceparent in its body
