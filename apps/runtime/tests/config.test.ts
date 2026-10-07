@@ -10,6 +10,7 @@ import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type BunnyModule, type ModuleContext} from '@jimmie-potts/sdk';
 import {CONFIG_SCHEMA, RuntimeError, startRuntime, type LogRecord, type RuntimeHealth} from '../src/index.js';
+import {LogWriter, Redactions} from '../src/log.js';
 import {PrivateFileError, readPrivateFile} from '../src/state.js';
 import {contextOf, entry, fixture, health, it, manualClock, run, stateDir, waitFor, type Fixture} from './support.js';
 
@@ -356,4 +357,19 @@ it('a directory along a private file\'s path swapped for a link after the path\'
   };
   await assert.rejects(readPrivateFile(join(root, 'dir', 'token'), 1024, {beforeOpen: swap}),
     error => error instanceof PrivateFileError && error.problem === 'link' && !error.message.includes('tok_OTHER_FILE'));
+});
+
+it('the log writer drops a record whose attribute holds a read secret as text or as a number\'s digits, and the process\'s record leaves it out', () => {
+  const records: LogRecord[] = [];
+  const redactions = new Redactions();
+  const writer = new LogWriter(record => { records.push(record); }, 'info', {now: () => Date.now()}, undefined, redactions);
+  const log = writer.logger('bunny.module', {'bunny.module': 'keypad'});
+  // A numeric secret, such as a device PIN, read by a module.
+  redactions.add('24680135');
+  log.info('operation.completed', {'bunny.duration_ms': 24_680_135});
+  log.info('operation.completed', {'bunny.message.id': 'pin-24680135'});
+  log.info('operation.completed', {'bunny.duration_ms': 12, 'bunny.outcome': 'succeeded'});
+  assert.deepEqual(records.map(record => record.attributes['bunny.duration_ms']), [12], 'only the record without the secret');
+  assert.deepEqual(writer.counts(), {written: 1, dropped: 2, failed: 0});
+  assert.deepEqual(redactions.without({'error.type': 'Error', 'error.code': 'E24680135'}), {'error.type': 'Error'});
 });
