@@ -205,6 +205,15 @@ npm run -s verify:runtime -- stop <run-id>
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.
 
+To see two device modules serve `device` side by side, each for its own devices (#967), start `device-owners`: the
+lamp and the configured sign both run, and the reader keeps one copy of `device` from each, synced by name:
+
+```bash
+npm run -s verify:runtime -- start --scenario device-owners
+npm run -s verify:runtime -- capture <run-id> scenario-device-owners
+npm run -s verify:runtime -- stop <run-id>
+```
+
 The trusted host route runs the same operations as a transient user unit:
 `npm run -s verify:host -- --host --app runtime --checkout <absolute checkout> -- <operation>`.
 

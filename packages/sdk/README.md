@@ -88,8 +88,8 @@ The `Sdk` calls:
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
-| `sync(families, handler, {timeoutMs, maxBuffered?, parent?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. See [Sync](#sync). |
-| `serveSync(families, provider)` | Answers sync requests for `families` from the owner's current state. `provider` returns a snapshot or an error body. |
+| `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
+| `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. |
 
 `subscribe` also takes `{onOverflow}`; see [Delivery](#delivery).
 
@@ -122,8 +122,8 @@ Each kind has its own key class:
 - commands use `bunny.cmd` keys, through `request` and `respond` only.
 
 Replies go straight back to their requester. Sync messages use no routing key:
-a sync request goes to the one owner of its families, and the answer goes
-straight back to the requester, never to subscribers.
+a sync request goes to the owner it names, or to the one owner of its families,
+and the answer goes straight back to the requester, never to subscribers.
 
 ## Requests
 
@@ -255,21 +255,55 @@ time. The buffer also holds live messages while the handler catches up, so a
 handler that falls `maxBuffered` messages behind resyncs instead of hearing
 each one.
 
-One owner serves each family; a `serveSync` that names a served family is
-refused with `invalid-state`. An owner may serve any number of families, but one
-sync names at most 32 of them, in at most 256 characters joined by commas,
-because the request's subject names them. A sync request is refused with the
-shared error body, naming its `requestId` and trace ID, and no `sync.completed`
-follows:
+### Owners
+
+Sync ownership is keyed by source and family. Several participants may serve
+one family, each for its own entities: every device module serves `device` for
+its own devices. A participant serves each family once; a second `serveSync`
+from the same source that names a family it serves is refused with
+`invalid-state`. An owner may serve any number of families, but one sync names
+at most 32 of them, in at most 256 characters joined by commas, because the
+request's subject names them.
+
+A sync goes to one owner:
+- With `owner`, the owner's source such as `bunny/modules/lifx`, every request
+  of the copy goes to that owner, and the copy follows only the live messages
+  that owner publishes. Another owner's messages on the same family, its
+  removals included, never enter the copy, its buffer or `onError`.
+- Without `owner`, the request goes to the families' only owner, as before.
+  While several owners serve one of the families, it is refused with
+  `invalid-request`, saying to name the owner. It is never spread across them.
+
+A consumer of a shared family, such as the dashboard or a display module, syncs
+it from each owner it knows and keeps one copy per owner. Nothing merges the
+owners' records, so each copy recovers on its own. A module's source is
+`bunny/modules/<name>`, the name the runtime's shipped module list and health
+give it; the core's is `bunny/core`.
+
+```ts
+const owners = ['bunny/modules/lifx', 'bunny/modules/nanoleaf'];
+const copies = new Map<string, SyncedCopy<DeviceRecord>>();
+for (const owner of owners) {
+  const synced = await sdk.sync<DeviceRecord>(['device'], change => show(owner, change), {timeoutMs: 5000, owner});
+  if (synced.status === 'synced') copies.set(owner, synced.copy);
+}
+```
+
+The owner travels beside the request, as a routing key travels beside a
+command: the `sync-request` message itself is unchanged. A malformed `owner`
+rejects the call with `SdkError` and `invalid-request` before anything is sent.
+
+A sync request is refused with the shared error body, naming its `requestId`
+and trace ID, and no `sync.completed` follows:
 
 | Code | When |
 | --- | --- |
 | the provider's | The provider returned an error body from `errorBody`. |
 | `internal` | The provider threw, or its snapshot does not fit the request. The error also goes to `onError`. |
-| `unavailable` | No owner serves a family, the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
+| `unavailable` | No owner serves a family, or the named owner does not serve it; the owner closed before serving it, no answer came by the deadline, the transport rejected or threw on it (also reported to `onError`), or the first sync ran out of time. |
 | `cancelled` | The copy closed, or its participant closed, before the answer came. |
 | `capacity` | The owner's queue is full. |
-| `invalid-request` | The families belong to more than one owner. |
+| `invalid-request` | Several owners serve a family and the sync names none, or the families do not all come from one `serveSync` of one owner. |
 
 A request still waiting in the owner's queue at its deadline leaves the queue,
 so the owner never serves it and its room is free for another. It is still
@@ -610,9 +644,13 @@ moduleConformance({
 is the only part of the kit that loads `node:test`. `conformanceChecks(spec)`
 returns the same checks as `{name, run}` for another runner, such as Vitest.
 Each check hosts a fresh instance of the module on its own bus and state
-directory, with a stand-in owner, `bunny/core`, serving the families it copies,
-and the spec's `config` as the module's section and `secrets` as its secret
-files' text. Under ADR 0012's failure isolation (policy A), a device's errors
+directory, with a stand-in owner serving the families it copies, and the spec's
+`config` as the module's section and `secrets` as its secret files' text. The
+stand-in is `bunny/core`, or `copies.owner` for a module that copies a family
+that several modules serve, such as one device module's `device` records:
+`copies: {families: ['device'], owner: 'bunny/modules/lifx', snapshot}`. The kit
+syncs a module's own families from the module by name, as a consumer of a
+shared family does. Under ADR 0012's failure isolation (policy A), a device's errors
 and timeouts become outcomes and an `unavailable` device state, never a module
 failure, and only an error that escapes the module stops it. The kit fails a
 module whose handler, timer or worker fails. With `spec.offline`, it also
@@ -644,10 +682,10 @@ A module that reaches a device gives `offline`. The checks:
 | Check | Runs | What passes |
 | --- | --- | --- |
 | `declares a manifest the runtime accepts` | always | `checkManifest` finds nothing to refuse, and `checkConfiguration` accepts `spec.config`. |
-| `starts, and stops leaving nothing behind` | always | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command, if any, is refused as `unavailable`, a sync of the served families, if any, is refused as `unavailable`, and no timer, worker or open database is left. |
+| `starts, and stops leaving nothing behind` | always | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command, if any, is refused as `unavailable`, a sync of the served families from the module, if any, is refused as `unavailable`, and no timer, worker or open database is left. |
 | `starts while its device never answers, and reports it unavailable` | with `offline` | Policy A: `offline.create()`'s start finishes within `offline.startWithinMs`, and the module then publishes a state that `offline.unavailable` accepts within `timeoutMs`. |
-| `serves its families through sync` | with `serves` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
-| `copies the families it follows` | with `copies` | The module's start syncs them, asking for nothing else. |
+| `serves its families through sync` | with `serves` | A sync of `serves` that names the module as its owner completes, and every state belongs to a served family and comes from the module. |
+| `copies the families it follows` | with `copies` | The module's start syncs them, asking for nothing else. With `copies.owner`, each sync of them names that owner, because in the runtime another owner may serve them too, and a sync that names none would then be refused. |
 | `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. The bus records one `command.admitted` and one `command.replied` in the command's trace, and its request span has one queue and one execute span as children, all ended without an error; the reply carries the execute span's context. |
 | `refuses a command with the shared error body` | with `refused` | The refused command comes back `rejected` in the module's own reply, with `refused.code`, with the same records and spans. |
 | `keeps the outcome in its outbox and sends it again after a restart` | with `accepted` | The accepted command's outcome is published, and after a restart on the same database, with no acknowledgment, it is published again, unchanged. Its publication is recorded once, in the command's trace, and the replay's publish span links to the stored context without being its child. |
@@ -664,8 +702,8 @@ way is beyond it.
 
 `ModuleHarness` is what the checks host a module with, as the runtime would:
 - its own participant on a given bus, which the module gets without `close`,
-  and whose commands and syncs it keeps in `sent`, since no subscriber sees
-  them;
+  and whose commands and syncs it keeps in `sent`, a sync with the owner it
+  names, since no subscriber sees them;
 - its `section`, checked with `checkConfiguration` before start, which throws
   the refusal's `SdkError` and never starts a module the runtime would refuse;
 - a context whose SQLite file and private folder, `<name>/`, live in a given
@@ -862,6 +900,10 @@ HTTP status that fits its code.
   `uncertain` with `uncertain-result`, and no reply message. A command whose
   frame never reached the socket is refused as `unavailable`, and so is a
   forwarded sync request, since a sync only reads.
+- **Sync owners.** A remote part's `sync` call carries the `owner` it names
+  beside the request message, and the edge passes it to its bus, which routes
+  the request as it does in process. An `owner` that is not a participant
+  source is refused with `invalid-request`.
 - **Sync answers.** A sync answer whose `sync.completed` or a state is over
   256 KiB is refused at the edge with `too-large` and reported. A first sync
   resolves `rejected` with that code, and a later one ends the copy with
@@ -899,6 +941,6 @@ is refused with `invalid-state`.
 
 From the repository root, with Node 24, run `npm run test:sdk`. It builds and
 runs the compiled tests in `dist/tests/`. `conformance.test.ts` runs one suite
-against both transports, and `remote.test.ts` covers what only the remote
-transport has. Remote tests bind 127.0.0.1 on a free port. See
+against both transports, `owners.test.ts` runs several owners of one family on
+both, and `remote.test.ts` covers what only the remote transport has. Remote tests bind 127.0.0.1 on a free port. See
 [SDK checks](../../docs/development.md#sdk-checks).
