@@ -471,10 +471,20 @@ test('the standalone wrapper runs its payload only after a successful build', (t
 // Hub #862: a fake runner for scripts/apt-retry.sh. Every apt-get starts in a session of its own, as Playwright's
 // --with-deps and sudo start it on a hosted runner, so an attempt's timeout stops the command but not apt-get, which keeps
 // holding apt's lock; a later apt-get fails at once on that lock. Each apt-get's plan letter makes it hang (h), fail (f)
-// or succeed (s). The fake sudo accepts only the commands the script and the hook step use and refuses anything else, so
-// no test runs a real machine-wide command. Its pkill and the fake pgrep see only this run's fake apt-get processes, so
-// overlapping test runs never stop each other's, and a run as root never signals the host's apt-get.
+// or succeed (s). Like apt's mirror method, an apt-get starts on the mirror list's entry with the lowest priority number,
+// and it hangs whatever its letter when that mirror is one of STALLED_MIRRORS. The fake sudo accepts only the commands the
+// script and the hook step use and refuses anything else, so no test runs a real machine-wide command. Its pkill and the
+// fake pgrep see only this run's fake apt-get processes, so overlapping test runs never stop each other's, and a run as
+// root never signals the host's apt-get.
 const npxInstall = ['npx', 'playwright', 'install', '--with-deps', 'chromium'];
+// The runner image's /etc/apt/apt-mirrors.txt, as runner-images' configure-apt-sources.sh writes it; job logs fetch it as
+// "Mirrorlist [144 B]". mirrorLists[n] is the list after n failed attempts: each moves the first mirror after the others.
+const azure = 'http://azure.archive.ubuntu.com/ubuntu/', archive = 'https://archive.ubuntu.com/ubuntu/';
+const security = 'https://security.ubuntu.com/ubuntu/';
+const mirrorList = priorities => [azure, archive, security].map((uri, i) => `${uri}\tpriority:${priorities[i]}\n`).join('');
+const mirrorLists = [mirrorList([1, 2, 3]), mirrorList([4, 2, 3]), mirrorList([4, 5, 3]), mirrorList([4, 5, 6])];
+const firstMirror = 'NF && !/^[[:space:]]*#/ { p = match($0, /priority:[0-9]+/) ? substr($0, RSTART + 9, RLENGTH - 9) + 0 : 1e9; '
+  + 'if (!n++ || p < low) { low = p; uri = $1 } } END { print uri }';
 function fakeRunner(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-install-'));
   const bin = path.join(directory, 'bin');
@@ -492,7 +502,7 @@ function fakeRunner(t) {
     `  [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = apt-get ] && ${action}`, 'done'];
   const files = {
     sudo: ['case "$*" in',
-      '  "tee /etc/apt/apt.conf.d/80-ci-apt-retry") echo "$2" > "$FAKE/apt-conf-path"; cat > "$FAKE/apt-conf";;',
+      '  "tee $FAKE/apt-mirrors.txt") cat > "$FAKE/apt-mirrors.txt";;',
       '  "dpkg --configure -a") echo "$*" >> "$FAKE/dpkg";;',
       '  "pkill -x apt-get")', ...each('kill "$pid"').map(line => `    ${line}`), '    ;;',
       '  "apt-get update"|"apt-get install -y bubblewrap apparmor-profiles") exec "$FAKE/bin/launch" "$@";;',
@@ -504,13 +514,17 @@ function fakeRunner(t) {
       'setsid "$FAKE/bin/apt-get" "${PLAN:n-1:1}" &', 'wait $! || exit', 'echo "installed $*"'],
     'apt-get': ['echo "$$" >> "$FAKE/pids"', 'exec 9>"$FAKE/lock"',
       'flock -n 9 || { echo "E: Could not get lock $FAKE/lock"; exit 100; }',
+      `mirror=$(awk '${firstMirror}' "$FAKE/apt-mirrors.txt" 2>/dev/null)`, 'echo "$mirror" >> "$FAKE/first-mirrors"',
+      '[ -n "$mirror" ] && case " ${STALLED_MIRRORS:-} " in *" $mirror "*) set -- h;; esac',
       // On the runner a hung apt-get keeps writing to the step's log. Here it drops its output, because spawnSync waits
       // for the pipes to close.
       'case "$1" in h) exec >/dev/null 2>&1; read -t 30 <> "$FAKE/fifo"; exit 100;; f) exit 100;; esac'],
   };
   for (const [name, lines] of Object.entries(files)) fs.writeFileSync(path.join(bin, name), ['#!/bin/bash', ...lines, ''].join('\n'), { mode: 0o755 });
   // The script runs only where GITHUB_ACTIONS is "true"; runs opt in unless `env` overrides it (null unsets a variable).
-  const run = (script, plan, { args = ['1', ...npxInstall], env: overrides = {} } = {}) => {
+  // The mirror list starts as the runner image's unless `mirrorList` replaces it (null removes it).
+  const run = (script, plan, { args = ['1', ...npxInstall], env: overrides = {}, mirrorList: list = mirrorLists[0] } = {}) => {
+    if (list !== null) fs.writeFileSync(path.join(directory, 'apt-mirrors.txt'), list);
     const started = Date.now();
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan, GITHUB_ACTIONS: 'true', ...overrides };
     for (const [name, value] of Object.entries(env)) if (value === null) delete env[name];
@@ -518,16 +532,24 @@ function fakeRunner(t) {
     assert.ifError(result.error);
     const read = name => fs.existsSync(path.join(directory, name)) ? fs.readFileSync(path.join(directory, name), 'utf8') : '';
     return { ...result, seconds: (Date.now() - started) / 1000, launches: Number(read('count')), commands: read('commands'),
-      dpkg: read('dpkg'), aptConf: read('apt-conf'), aptConfPath: read('apt-conf-path').trim(), left: pids().filter(alive) };
+      dpkg: read('dpkg'), firstMirrors: read('first-mirrors'), mirrorList: read('apt-mirrors.txt'), left: pids().filter(alive) };
   };
   return { run };
 }
 
+// The real script with the lock wait shortened to 2 s and the mirror list in the fake runner's directory. Tests limit each
+// attempt to 1 s through the script's first argument.
+function fastAptRetry() {
+  let script = fs.readFileSync(path.join(root, 'scripts/apt-retry.sh'), 'utf8');
+  for (const [from, to] of [['lock_wait_seconds=60', 'lock_wait_seconds=2'], ['mirror_list=/etc/apt/apt-mirrors.txt', 'mirror_list=$FAKE/apt-mirrors.txt']]) {
+    assert.ok(script.includes(from), `apt-retry.sh sets ${from}`);
+    script = script.replace(from, to);
+  }
+  return script;
+}
+
 test('an apt command whose apt-get outlives a timed-out attempt recovers on the next attempt', (t) => {
-  const script = fs.readFileSync(path.join(root, 'scripts/apt-retry.sh'), 'utf8');
-  // Run the real script with each attempt limited to 1 s (its first argument) and the lock wait to 2 s.
-  const fast = script.replace('lock_wait_seconds=60', 'lock_wait_seconds=2');
-  assert.notEqual(fast, script);
+  const fast = fastAptRetry();
   // The #987 loop, shortened the same way, fails on this runner: apt-get keeps the lock and every retry fails on it.
   const old = 'for attempt in 1 2 3; do\n  if timeout --kill-after=10 1 "$@"; then exit 0; fi\n  sleep 0\ndone\nexit 1\n';
   const stuck = fakeRunner(t).run(old, 'hs', { args: npxInstall });
@@ -551,30 +573,74 @@ test('an apt command whose apt-get outlives a timed-out attempt recovers on the 
     assert.equal(result.stdout.includes('Could not get lock'), false, `${name}: a retry never meets a held lock`);
     assert.equal(result.stderr, '', name);
     assert.equal((result.stdout.match(/::warning::Attempt \d of 3 failed or ran past 1 s/g) ?? []).length, failures, name);
-    // After each failed attempt: stop the leftover apt-get, then finish any interrupted dpkg run.
+    // After each failed attempt: stop the leftover apt-get, finish any interrupted dpkg run and demote the first mirror.
     assert.equal(result.dpkg, 'dpkg --configure -a\n'.repeat(failures), name);
+    assert.equal(result.mirrorList, mirrorLists[failures], name);
     assert.deepEqual(result.left, [], `${name}: no apt-get outlives the step`);
-    assert.equal(result.aptConfPath, '/etc/apt/apt.conf.d/80-ci-apt-retry');
-    assert.equal(result.aptConf, 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n');
     assert.ok(result.seconds < 15, `${name}: took ${result.seconds} s`);
   }
 
-  // Outside GitHub Actions, or without a whole number of seconds and a command, the script refuses before it touches
-  // apt's configuration or any apt-get.
+  // Outside GitHub Actions, or without a positive whole number of seconds and a command, the script refuses before it
+  // touches apt's mirror list or any apt-get.
   for (const [options, message] of [[{ env: { GITHUB_ACTIONS: null } }, /runs only on a GitHub Actions runner/],
     [{ env: { GITHUB_ACTIONS: 'false' } }, /runs only on a GitHub Actions runner/], [{ env: { GITHUB_ACTIONS: '' } }, /runs only on a GitHub Actions runner/],
-    [{ args: npxInstall }, /^Usage: /], [{ args: ['1'] }, /^Usage: /], [{ args: ['5m', ...npxInstall] }, /^Usage: /]]) {
+    [{ args: npxInstall }, /^Usage: /], [{ args: ['1'] }, /^Usage: /], [{ args: ['5m', ...npxInstall] }, /^Usage: /],
+    [{ args: ['0', ...npxInstall] }, /^Usage: /]]) {
     const refused = fakeRunner(t).run(fast, 's', options);
     assert.equal(refused.status, 2, JSON.stringify(options));
     assert.match(refused.stderr, message);
     assert.equal(refused.launches, 0);
-    assert.equal(refused.aptConf, '');
+    assert.equal(refused.mirrorList, mirrorLists[0]);
     assert.equal(refused.dpkg, '');
   }
 
   // A changed privileged command fails loudly at the fake sudo instead of running machine-wide.
   const widened = fakeRunner(t).run(fast.replace('sudo pkill -x apt-get', 'sudo pkill apt-get'), 'fs');
   assert.match(widened.stderr, /fake sudo refused: pkill apt-get/);
+});
+
+test('an attempt that stalls on one mirror is retried from the next mirror', (t) => {
+  const fast = fastAptRetry();
+  // PR #974's App verification job 113041549305: three attempts resumed one download from the Azure mirror, which sent
+  // data too slowly to finish and too steadily to time out. Without the write of the demoted list, so does this runner.
+  const unchanged = fast.replace('| sudo tee "$mirror_list" ', '');
+  assert.notEqual(unchanged, fast);
+  const stuck = fakeRunner(t).run(unchanged, 'sss', { env: { STALLED_MIRRORS: azure } });
+  assert.equal(stuck.status, 1);
+  assert.equal(stuck.firstMirrors, `${azure}\n`.repeat(3));
+
+  const moved = fakeRunner(t).run(fast, 'sss', { env: { STALLED_MIRRORS: azure } });
+  assert.equal(moved.status, 0, moved.stdout + moved.stderr);
+  assert.equal(moved.firstMirrors, `${azure}\n${archive}\n`);
+  assert.equal(moved.mirrorList, mirrorLists[1]);
+  assert.match(moved.stdout, /^apt now tries http:\/\/azure\.archive\.ubuntu\.com\/ubuntu\/ after its other mirrors$/m);
+  assert.equal(moved.stderr, '');
+
+  // #989's hook step stalled on archive.ubuntu.com, apt's fallback while the Azure mirror failed: a third attempt starts
+  // on the third mirror, and the step's update and install both use it.
+  const hookArgs = ['1', 'bash', '-c', hookAptScript];
+  const third = fakeRunner(t).run(fast, 'ssss', { args: hookArgs, env: { STALLED_MIRRORS: `${azure} ${archive}` } });
+  assert.equal(third.status, 0, third.stdout + third.stderr);
+  assert.equal(third.firstMirrors, `${azure}\n${archive}\n${security}\n${security}\n`);
+  assert.equal(third.mirrorList, mirrorLists[2]);
+
+  // The demoted mirror is the one with the lowest number wherever it sits; comments, blank lines, other metadata and
+  // mirrors without a priority, which apt tries last, stay as they are.
+  const custom = '# local\n\nhttps://b.example/ubuntu/\tpriority:7 arch:amd64\nhttp://a.example/ubuntu/\tpriority:5\nhttp://c.example/ubuntu/\n';
+  const reordered = fakeRunner(t).run(fast, 'ss', { env: { STALLED_MIRRORS: 'http://a.example/ubuntu/' }, mirrorList: custom });
+  assert.equal(reordered.status, 0, reordered.stdout + reordered.stderr);
+  assert.equal(reordered.firstMirrors, 'http://a.example/ubuntu/\nhttps://b.example/ubuntu/\n');
+  assert.equal(reordered.mirrorList, custom.replace('priority:5', 'priority:8'));
+
+  // Without a list, or with fewer than two prioritized mirrors, the script leaves the list alone and still retries.
+  for (const list of [null, `${azure}\tpriority:1\n${archive}\n`]) {
+    const kept = fakeRunner(t).run(fast, 'hs', { mirrorList: list });
+    assert.equal(kept.status, 0, kept.stdout + kept.stderr);
+    assert.equal(kept.launches, 2);
+    assert.equal(kept.mirrorList, list ?? '');
+    assert.equal(kept.stdout.includes('apt now tries'), false);
+    assert.equal(kept.stderr, '');
+  }
 });
 
 // Keep guide build, browser and retained review evidence under regression coverage.
