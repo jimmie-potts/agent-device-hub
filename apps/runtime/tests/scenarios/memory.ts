@@ -11,11 +11,14 @@ import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type EdgeLogRecord, type Participant} from '@jimmie-potts/sdk';
+import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
+import {diagnosticWriter} from '../../src/diagnostics.js';
 import {ModuleHost} from '../../src/host.js';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
-import {LogWriter} from '../../src/log.js';
+import {INSTANCE_ID, LogWriter} from '../../src/log.js';
+import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
 import {prepareStateDirectory} from '../../src/state.js';
+import {startTracing, type RuntimeTracing} from '../../src/tracing.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
 import {createCoreModule} from '../fixtures/core.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
@@ -37,7 +40,13 @@ export interface MemoryHarness extends Harness {
   readonly url: string | undefined;
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part or the runtime reported. */
   problems(): readonly string[];
-  edgeLog(): readonly EdgeLogRecord[];
+  /** The edge's own diagnostics: its parts' connections and disconnections, its refusals and its failures. */
+  edgeLog(): readonly Diagnostic[];
+  /**
+   * The finished spans of every runtime the harness started, as projected OTLP documents, in the order they finished.
+   * One recorder serves every generation, so a restart's spans follow the crashed runtime's.
+   */
+  spans(): Promise<readonly string[]>;
   /** The run-generated tokens, one per part, so a test can show they never leak. */
   tokens(): readonly string[];
   /** Stops everything the harness started and removes its state directory. */
@@ -84,7 +93,9 @@ class Memory implements MemoryHarness {
   readonly #generations: Generation[] = [];
   readonly #logs: Generational<{record: LogRecord}>[] = [];
   readonly #published: Generational<{message: Message}>[] = [];
-  readonly #edgeLog: EdgeLogRecord[] = [];
+  readonly #edgeLog: Diagnostic[] = [];
+  readonly #spans: string[] = [];
+  #tracing: RuntimeTracing | undefined;
   readonly #problems: string[] = [];
   readonly #answers = new Map<string, string>();
   /** Participants that died with a crashed runtime: their requests are `lost`, whatever the old bus answers. */
@@ -111,6 +122,7 @@ class Memory implements MemoryHarness {
 
   async open(): Promise<void> {
     await prepareStateDirectory(this.stateDir);
+    this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); });
     if (this.transport === 'remote') {
       const server = createServer((request, response) => { this.#serve(request, response); });
       // The edge never closes an idle connection under a remote part that is about to reuse it.
@@ -191,8 +203,14 @@ class Memory implements MemoryHarness {
     return this.#published;
   }
 
-  edgeLog(): readonly EdgeLogRecord[] {
+  edgeLog(): readonly Diagnostic[] {
     return this.#edgeLog;
+  }
+
+  async spans(): Promise<readonly string[]> {
+    // The bounded queue hands each finished span to the sink a few turns after it ends.
+    await settle();
+    return this.#spans;
   }
 
   tokens(): readonly string[] {
@@ -275,6 +293,7 @@ class Memory implements MemoryHarness {
       }
       for (const generation of this.#generations) await Promise.all([generation.watcher.close(), generation.host.stop()]);
       await Promise.allSettled(this.#retiring);
+      await this.#tracing?.shutdown();
       await rm(this.stateDir, {recursive: true, force: true});
     })();
     return this.#closing;
@@ -286,7 +305,11 @@ class Memory implements MemoryHarness {
     const clock = {now: this.#clock.now};
     const logs = new LogWriter(record => { this.#logs.push({generation: number, record}); }, 'info', clock);
     const modules = this.#seed.modules.map(name => this.#build(name));
-    const host = new ModuleHost(modules, {clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000});
+    const host = new ModuleHost(modules, {
+      clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000,
+      ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
+    });
+    const written = diagnosticWriter(logs.logger(RUNTIME_SCOPE));
     const watcher = host.bus.connect('bunny/harness/watcher');
     await watcher.subscribe('bunny.*.*.*', message => {
       this.#check(message, 'a published message');
@@ -295,7 +318,12 @@ class Memory implements MemoryHarness {
     await host.start();
     const edge = this.transport === 'remote' ? new RemoteEdge({
       bus: host.bus, validator: this.#validator, grants: [...this.#parts.values()].map(({source, token}) => ({source, token})),
-      log: record => { this.#edgeLog.push(record); }, now: this.#clock.now, scheduler: this.#clock.scheduler,
+      // As the runtime does, the edge's decisions become its records.
+      onDiagnostic: diagnostic => {
+        this.#edgeLog.push(diagnostic);
+        written(diagnostic);
+      },
+      now: this.#clock.now, scheduler: this.#clock.scheduler,
     }) : undefined;
     this.#generations.push({host, edge, watcher, logs});
     if (edge !== undefined) this.#edgeReady(edge);

@@ -6,19 +6,26 @@
 // Under ADR 0012's failure isolation (policy A), a device's errors and timeouts are not module failures: a module turns
 // them into outcomes and an `unavailable` device state. Only an error that escapes the module, from its start, a
 // handler, a responder, a timer or a worker, stops it, so the kit fails a module whose handler, timer or worker fails.
+//
+// The kit also checks the baseline records and spans (Hub #949): the bus's records of the accepted and refused commands,
+// with the command's trace; their request, queue and execute spans and their parents; and the outcome's publication,
+// recorded once, with its replay linked to the stored context. No span may lose its parent.
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MessageValidator, compareDelivery, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import type {Diagnostic} from '../diagnostics.js';
 import {InProcessBus} from '../in-process.js';
 import {checkManifest, type BunnyModule} from '../module.js';
-import type {CommandDraft, Participant, RequestResult} from '../sdk.js';
+import type {CommandDraft, Participant, RequestResult, TraceContext} from '../sdk.js';
 import {schemaFamily, type Snapshot} from '../sync.js';
+import {traceFields} from '../trace.js';
 import {standInAckSchemas} from './acknowledge.js';
 import {ModuleHarness} from './harness.js';
 import {checkModuleRecord} from './records.js';
+import {RecordedSpans, lostParents, type RecordedSpan} from './spans.js';
 
 export type ConformanceSpec = {
   /** A fresh instance of the module. The kit calls it again to restart the module on the same database. */
@@ -86,6 +93,12 @@ class World {
   readonly seen: Message[] = [];
   /** The sync requests the stand-in owner served. */
   readonly syncRequests: Message[] = [];
+  /** What the bus reported to `onDiagnostic`, in order. */
+  readonly diagnostics: Diagnostic[] = [];
+  /** The bus's spans and the hosted module's. */
+  readonly spans = new RecordedSpans();
+  /** The trace contexts of the replies the kit's requests got. */
+  readonly #replies: TraceContext[] = [];
   readonly #invalid: string[] = [];
   readonly #errors: unknown[] = [];
   readonly #validator = new MessageValidator();
@@ -105,7 +118,10 @@ class World {
     this.timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     registerCoreFamilies(this.#validator);
     for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...spec.schemas})) this.#validator.register(dataschema, schema);
-    this.bus = new InProcessBus({onError: (error, {source}) => { if (source === this.harness.source) this.#errors.push(error); }});
+    this.bus = new InProcessBus({
+      onError: (error, {source}) => { if (source === this.harness.source) this.#errors.push(error); },
+      onDiagnostic: diagnostic => { this.diagnostics.push(diagnostic); }, spans: this.spans,
+    });
     this.probe = this.#connect('bunny/kit');
     this.harness = this.fresh();
   }
@@ -130,7 +146,7 @@ class World {
 
   /** A new instance of the module on this world's bus and state directory. */
   fresh(): ModuleHarness {
-    const harness = new ModuleHarness(this.#spec.create(), {bus: this.bus, stateDir: this.#dir, stopTimeoutMs: this.timeoutMs});
+    const harness = new ModuleHarness(this.#spec.create(), {bus: this.bus, stateDir: this.#dir, stopTimeoutMs: this.timeoutMs, spans: this.spans});
     this.#hosted.push(harness);
     return harness;
   }
@@ -144,17 +160,58 @@ class World {
     await within(this.harness.start(), this.timeoutMs, 'the module\'s start');
   }
 
-  request(command: {key: string; draft: CommandDraft<object>}): Promise<RequestResult> {
-    return this.probe.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
+  async request(command: {key: string; draft: CommandDraft<object>}): Promise<RequestResult> {
+    const result = await this.probe.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
+    if (result.status !== 'uncertain' && result.reply !== undefined) this.#replies.push({traceparent: result.reply.traceparent});
+    return result;
+  }
+
+  /** The bus's records about one request, as `<event> <level> <outcome> [<code>]`. */
+  decisions(requestId: string): string[] {
+    return this.diagnostics.filter(record => record.requestId === requestId)
+      .map(record => [record.event, record.level, record.outcome, record.code].filter(part => part !== undefined).join(' '));
+  }
+
+  /**
+   * The request's span, with its queue and execute spans, after checking that every record about the request carries the
+   * command's trace, that the queue and execute spans are children of the request span, and that each one ended without
+   * an error: an accepted command and a typed refusal are no failures.
+   */
+  commandSpans(requestId: string): {request: RecordedSpan; queue: RecordedSpan; execute: RecordedSpan} {
+    const [request, ...others] = this.spans.named('bunny.command.request').filter(span => span.attributes['bunny.request.id'] === requestId);
+    assert.ok(request !== undefined && others.length === 0, 'the bus recorded one request span for the command');
+    for (const record of this.diagnostics.filter(entry => entry.requestId === requestId)) {
+      const ids = record.trace === undefined ? undefined : traceFields(record.trace);
+      assert.deepEqual([ids?.traceId, ids?.spanId], [request.traceId, request.spanId], `${record.event} carries the command's trace`);
+    }
+    const child = (name: RecordedSpan['name']): RecordedSpan => {
+      const found = this.spans.named(name).filter(span => span.traceId === request.traceId && span.parentSpanId === request.spanId);
+      assert.equal(found.length, 1, `one ${name} span, the request span's child`);
+      return found[0] as RecordedSpan;
+    };
+    const queue = child('bunny.command.queue'), execute = child('bunny.command.execute');
+    for (const span of [request, queue, execute]) {
+      assert.ok(span.endedAtMs !== undefined, `${span.name} ended`);
+      assert.equal(span.status, 'unset', `${span.name}'s status`);
+    }
+    return {request, queue, execute};
+  }
+
+  /** The `outcome.published` records of every instance of the module this world hosted, for one request. */
+  publications(requestId: string): ModuleHarness['logs'] {
+    return this.#hosted.flatMap(harness => harness.logs).filter(entry => entry.event === 'outcome.published' && entry.fields['bunny.request.id'] === requestId);
   }
 
   /**
    * Every message the world saw followed profile 2.0, every record the module logged is one the runtime writes whole as a
-   * diagnostic-contract record, and no handler, timer or worker of the module failed.
+   * diagnostic-contract record, no span lost its parent, and no handler, timer or worker of the module failed.
    */
   async verify(): Promise<void> {
     await flush();
     assert.deepEqual(this.#invalid, [], 'every message follows profile 2.0');
+    const contexts = [...this.seen, ...this.syncRequests, ...this.#replies, ...this.#hosted.flatMap(harness => harness.received)];
+    const lost = lostParents(this.spans.spans, contexts).map(span => span.name);
+    assert.deepEqual(lost, [], 'every span\'s parent is a recorded span or a message\'s own span');
     const unwritten = this.#hosted.flatMap(harness => harness.logs.map(entry => checkModuleRecord(harness.name, entry)))
       .filter(problem => problem !== undefined);
     assert.deepEqual(unwritten, [], 'every log record is a registered module record');
@@ -237,7 +294,12 @@ const accepts = (spec: ConformanceSpec, command: Command): Promise<void> => inWo
   await world.start();
   const result = await world.request(command);
   assert.equal(result.status, 'accepted');
-  if (result.status === 'accepted') world.check(result.reply, 'the reply');
+  if (result.status !== 'accepted') return;
+  world.check(result.reply, 'the reply');
+  await flush();
+  assert.deepEqual(world.decisions(result.requestId), ['command.admitted info queued', 'command.replied info accepted'], 'the bus\'s records');
+  const {execute} = world.commandSpans(result.requestId);
+  assert.equal(traceFields(result.reply)?.spanId, execute.spanId, 'the reply carries the execute span\'s context');
 });
 
 const refuses = (spec: ConformanceSpec, command: Command & {code: string}): Promise<void> => inWorld(spec, async world => {
@@ -248,6 +310,9 @@ const refuses = (spec: ConformanceSpec, command: Command & {code: string}): Prom
   assert.ok(result.reply, 'the module itself refused it, in a reply');
   world.check(result.reply, 'the reply');
   assert.equal(result.error.error.code, command.code);
+  await flush();
+  assert.deepEqual(world.decisions(result.requestId), ['command.admitted info queued', `command.replied info rejected ${command.code}`], 'the bus\'s records');
+  world.commandSpans(result.requestId);
 });
 
 const outbox = (spec: ConformanceSpec, command: Command): Promise<void> => inWorld(spec, async world => {
@@ -269,6 +334,18 @@ const outbox = (spec: ConformanceSpec, command: Command): Promise<void> => inWor
     return copies.length > 1 ? copies : undefined;
   }, world.timeoutMs, 'the outcome again after the restart');
   for (const copy of sent.slice(1)) assert.equal(compareDelivery(outcome, copy), 'duplicate', 'the resent outcome is the stored one');
+  // Its publication is recorded once, in its own trace, and the replay is linked to the stored context, never its child.
+  await flush();
+  const records = world.publications(result.requestId);
+  assert.equal(records.length, 1, 'the outcome\'s first publication is recorded once: pass the module\'s log and trace to its Outbox');
+  const stored = traceFields(outcome);
+  assert.equal(records[0]?.trace === undefined ? undefined : traceFields(records[0].trace)?.traceId, stored?.traceId, 'in the outcome\'s own trace');
+  const publishes = world.spans.named('bunny.outcome.publish').filter(span => span.attributes['bunny.message.id'] === outcome.id);
+  assert.equal(publishes.length, 2, 'a publish span for the first publication and for the replay');
+  const [first, replay] = publishes;
+  assert.equal(first?.parentSpanId, stored?.spanId, 'the first publication continues the stored context');
+  assert.equal(replay?.parentSpanId, undefined, 'the replay is never reparented');
+  assert.deepEqual(replay?.links, [{traceId: stored?.traceId, spanId: stored?.spanId}], 'the replay links to the stored context');
 });
 
 /** The conformance checks that apply to one module, in the order of `CHECKS`, to run under any test runner. */

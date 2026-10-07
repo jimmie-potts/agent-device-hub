@@ -1,5 +1,6 @@
 // Per-subscriber delivery queues: a slow consumer lags only itself and cannot block the bus (ADR 0012).
 import assert from 'node:assert/strict';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, SdkError} from '../src/index.js';
 import {bus, checked, deferred, flush, it, peek, session, setMode, settled, turnEnded} from './support.js';
 
@@ -99,17 +100,22 @@ it('closing a subscription waits for its running handler and drops what is queue
   assert.deepEqual(handled, [1]);
 });
 
-it('without an error handler, a handler error becomes a process warning naming its source and pattern', async () => {
+it('without an error handler, a handler error becomes a process warning naming its source, pattern and type, never its message', async () => {
   const created = new InProcessBus();
   const core = checked(created.connect('bunny/core'));
-  const failure = new Error('bad handler');
+  const failure = new TypeError('GET http://192.0.2.7/?token=tok_SYNTHETIC123 refused');
   const warned = new Promise<Error>(resolve => { process.once('warning', resolve); });
   await core.subscribe('bunny.state.session.*', () => { throw failure; });
   await core.publish('bunny.state.session.s1', session('s1', 1));
   const warning = await warned;
   assert.equal(warning.name, 'BunnySdkWarning');
-  assert.equal(warning.message, 'bunny/core on bunny.state.session.*: bad handler');
-  assert.equal(warning.cause, failure);
+  assert.equal(warning.message, 'bunny/core on bunny.state.session.*: TypeError');
+  assert.equal(String(warning.stack).includes('tok_SYNTHETIC123'), false, 'not even with --trace-warnings');
+  assert.equal(warning.cause, failure, 'the error stays in memory');
+  const refused = new Promise<Error>(resolve => { process.once('warning', resolve); });
+  await core.subscribe('bunny.state.mode.*', () => { throw new SdkError(errorBody('invalid-state', {detail: 'tok_SYNTHETIC123'})); });
+  await core.publish('bunny.state.mode.wall', session('s1', 1));
+  assert.equal((await refused).message, 'bunny/core on bunny.state.mode.*: SdkError invalid-state', 'an SdkError names its code, not its detail');
 });
 
 it('a handler that closes its own subscription finishes, and nothing more reaches it', async () => {

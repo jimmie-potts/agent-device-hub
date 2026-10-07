@@ -1,6 +1,7 @@
 // Safe errors at the runtime's edge (Hub #948, ADR 0012 "Errors, effects and outcomes"): an exception inside the edge
-// reaches a remote part, the runtime's log and its health only as a registry code and fixed text. Its message, which
-// here carries a synthetic secret, stays in memory.
+// reaches a remote part and its health only as a registry code and fixed text, and the runtime's log as one
+// `runtime.edge.failed` record with the exception's type (Hub #949). Its message, which here carries a synthetic
+// secret, stays in memory.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {chmod, writeFile} from 'node:fs/promises';
@@ -12,7 +13,7 @@ import {entry, fixture, health, it, run, stateDir} from './support.js';
 
 const SECRET = 'tok_SYNTHETIC123';
 
-it('an exception inside the edge reaches the remote part, the log and health only as its code and fixed text', async context => {
+it('an exception inside the edge reaches the remote part and health only as its code and fixed text, and the log only as its type', async context => {
   const dir = await stateDir(context);
   const reader = {source: 'bunny/parts/reader', token: randomBytes(32).toString('base64url')};
   const grants = join(dir, EDGE_GRANTS_FILE);
@@ -34,8 +35,11 @@ it('an exception inside the edge reaches the remote part, the log and health onl
   if (synced.status !== 'rejected') return;
   assert.deepEqual(synced.error, errorBody('internal', {detail: 'the edge failed', requestId: synced.requestId, traceId: synced.error.error.traceId ?? ''}));
 
-  const refused = logs.filter(record => record.event_name === 'runtime.edge.refused');
-  assert.deepEqual(refused.map(record => [record.attributes['bunny.route'], record.attributes['bunny.code']]), [['sync', 'internal']]);
+  assert.deepEqual(logs.filter(record => record.event_name === 'runtime.edge.refused'), [], 'an exception is no refusal');
+  const failed = logs.filter(record => record.event_name === 'runtime.edge.failed');
+  assert.deepEqual(failed.map(record => [record.severity_text, record.attributes]), [['ERROR',
+    {'bunny.provenance': 'source', 'bunny.route': 'sync', 'bunny.code': 'internal', 'bunny.participant': reader.source, 'error.type': 'Error'}]],
+  'one internal fault, with the code it answered and the exception\'s type only');
   const served = await health(runtime.url);
   assert.equal(entry(served.body, 'vault').healthy, true, 'an exception at the edge is no module failure');
   const evidence = JSON.stringify({synced, logs, served, health: runtime.health()});

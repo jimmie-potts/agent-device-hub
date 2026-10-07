@@ -36,12 +36,16 @@ export function artifactFiles(at = root): string[] {
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
+    // The host adapter that records the runtime's spans (Hub #949), which the package ships as source.
+    ...(existsSync(join(at, 'packages/observability/runtime')) ? readdirSync(join(at, 'packages/observability/runtime')) : [])
+      .filter(file => file.endsWith('.mjs')).sort().map(file => `packages/observability/runtime/${file}`),
   ];
 }
 
 export const BUILD_SOURCES = [
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
+  ':(glob)packages/observability/runtime/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',

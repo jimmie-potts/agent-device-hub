@@ -6,6 +6,7 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
   MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
+import {errorType, reporter, type DiagnosticLevel, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage, type Content} from './envelope.js';
 import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
@@ -16,19 +17,20 @@ import {childOf} from './trace.js';
 
 /** One remote participant's credential: a bearer token that lets it act as `source`. */
 export type RemoteGrant = {source: string; token: string};
-/**
- * What the edge logs. It never carries a credential. Its `detail` is the refusal's own text, which may quote what the
- * caller sent, such as a path, a claimed source, an id or the attribute a validator refused, and never an exception's
- * message.
- */
-export type EdgeLogRecord = {event: 'edge.refused' | 'edge.connected' | 'edge.disconnected'; route: string; code?: ErrorCode; source?: string; detail?: string};
 export type EdgeOptions = {
   bus: InProcessBus;
   /** Validates every inbound message: profile 2.0, the registered payload schemas and the 256 KiB cap. */
   validator: MessageValidator;
   /** One per remote source. A token may appear once; a source may hold several, as during a rotation. */
   grants: readonly RemoteGrant[];
-  log?: (record: EdgeLogRecord) => void;
+  /**
+   * Hears the edge's own decisions: a part connected or disconnected, a call refused, and an exception it did not
+   * expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and
+   * the exception's type (ADR 0012, "Observability"). A record never carries a credential, a payload, a refusal's
+   * detail or an exception's message; before authentication it carries only the route and the code. A no-op by
+   * default; a throw is ignored.
+   */
+  onDiagnostic?: OnDiagnostic;
   now?: () => number;
   /** Runs the edge's own waits for forwarded commands and sync requests. Defaults to the global `setTimeout`. */
   scheduler?: Scheduler;
@@ -68,6 +70,11 @@ const FAILED: ErrorBody = errorBody('internal', {detail: 'the edge failed'});
 const FAILED_AFTER_DISPATCH: ErrorBody = errorBody('uncertain-result', {detail: 'the edge failed after it sent the command'});
 const digest = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 const isCall = (value: string): value is Call => (CALLS as readonly string[]).includes(value);
+/** The route a record names: one of the edge's calls or its stream, or `other` for any path the caller chose. */
+const routeOf = (route: string): EdgeRoute => isCall(route) || route === 'stream' ? route : 'other';
+/** A refusal that may mean a misused credential or lost capacity is a warning; validation refusals are expected. */
+const REFUSAL_WARNINGS: ReadonlySet<ErrorCode> = new Set(['unauthenticated', 'forbidden', 'capacity', 'unavailable', 'internal']);
+const refusalLevel = (code: ErrorCode): DiagnosticLevel => REFUSAL_WARNINGS.has(code) ? 'warn' : 'info';
 type Fields = Record<string, unknown>;
 const fields = (value: unknown): Fields | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Fields : undefined;
 
@@ -109,7 +116,7 @@ export class RemoteEdge {
   readonly #bus: InProcessBus;
   readonly #validator: MessageValidator;
   readonly #grants: {source: string; digest: Buffer}[];
-  readonly #log: (record: EdgeLogRecord) => void;
+  readonly #diagnose: OnDiagnostic;
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #connections = new Map<string, Connection>();
@@ -135,14 +142,7 @@ export class RemoteEdge {
       throw new SdkError(errorBody('invalid-request', {detail: 'two grants share a token'}));
     }
     this.#grants = grants;
-    const log = options.log ?? (() => {});
-    this.#log = record => {
-      try {
-        log(record);
-      } catch {
-        // A failing log must not fail the call.
-      }
-    };
+    this.#diagnose = reporter(options.onDiagnostic);
     this.#now = options.now ?? (() => Date.now());
     this.#scheduler = options.scheduler ?? timers;
   }
@@ -195,11 +195,16 @@ export class RemoteEdge {
       if (response.closed) dropped.abort();
       this.#write(response, 200, {schema: REMOTE_SCHEMA, ...await this.#call(source, route, body, dropped.signal, progress)});
     } catch (error) {
-      // The edge's and the SDK's own refusals keep their text, which may quote what the caller sent. Anything else gets
-      // fixed text: `internal`, or `uncertain-result` once a command was handed to the bus.
-      const refused = error instanceof Refusal || error instanceof SdkError ? error.body : progress.dispatched ? FAILED_AFTER_DISPATCH : FAILED;
-      const {code, detail} = refused.error;
-      this.#log({event: 'edge.refused', route, code, ...(source === undefined ? {} : {source}), ...(detail === undefined ? {} : {detail})});
+      // The edge's and the SDK's own refusals keep their text, which may quote what the caller sent, and are recorded as
+      // refusals, without that text. Anything else gets fixed text, `internal`, or `uncertain-result` once a command was
+      // handed to the bus, and is recorded once as a failure with that code and the exception's type. The exception
+      // itself stays in memory.
+      const known = error instanceof Refusal || error instanceof SdkError;
+      const refused = known ? error.body : progress.dispatched ? FAILED_AFTER_DISPATCH : FAILED;
+      const {code} = refused.error;
+      const who = source === undefined ? {} : {source};
+      if (known) this.#diagnose({event: 'edge.refused', level: refusalLevel(code), route: routeOf(route), code, ...who});
+      else this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, errorType: errorType(error)});
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');
     }
@@ -236,7 +241,8 @@ export class RemoteEdge {
       };
       request.on('data', take);
       request.once('end', resolve);
-      request.once('error', reject);
+      // A stream error while the body is read means the caller's connection went: it dropped the call, which is no fault.
+      request.once('error', () => { reject(refuse('cancelled', 'the caller closed the call')); });
     });
     let parsed: unknown;
     try {
@@ -416,7 +422,7 @@ export class RemoteEdge {
     response.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive'});
     response.on('close', () => { this.#drop(connection); });
     response.write(frame('ready', {connection: connection.id}));
-    this.#log({event: 'edge.connected', route: 'stream', source});
+    this.#diagnose({event: 'edge.connected', level: 'info', route: 'stream', source});
   }
 
   /**
@@ -436,7 +442,7 @@ export class RemoteEdge {
       opened.close().catch(() => {});
     }
     connection.opened.clear();
-    this.#log({event: 'edge.disconnected', route: 'stream', source: connection.source});
+    this.#diagnose({event: 'edge.disconnected', level: 'info', route: 'stream', source: connection.source});
   }
 
   /**

@@ -2,6 +2,7 @@
 // never copied or serialized; schemas are checked in tests and at remote edges, not here (ADR 0012).
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
+import {reporter, warnSafely, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
 import {replyOf} from './refusal.js';
@@ -11,6 +12,7 @@ import {
   type Cancel, type Participant, type RequestResult, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
   type TraceContext,
 } from './sdk.js';
+import {noSpans, startSpan, type Span, type SpanAttributes, type SpanRecorder, type SpanStatus} from './spans.js';
 import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
@@ -25,8 +27,18 @@ export type BusOptions = {
    * the request with `capacity`.
    */
   maxQueued?: number;
-  /** Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` process warning. */
+  /**
+   * Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` process warning that names the
+   * source, the pattern and the error's type, never its message.
+   */
   onError?: (error: unknown, scope: ErrorScope) => void;
+  /**
+   * Hears each decision the bus makes about a command or a sync, once, at its level (ADR 0012, "Observability"). A
+   * no-op by default; a throw is ignored and changes nothing.
+   */
+  onDiagnostic?: OnDiagnostic;
+  /** Records each command's request, queue and execute spans. By default nothing is recorded. */
+  spans?: SpanRecorder;
   /** Runs request deadlines. Defaults to the global `setTimeout`. The runtime passes the scheduler its modules use. */
   scheduler?: Scheduler;
   /** Hears of each overflow that restarts a copy's sync, with the copy's source and families. */
@@ -60,6 +72,28 @@ const FAILED_DETAIL = 'the responder failed after it started';
 /** Whether a message of this kind travels through publish. */
 const isPublished = (kind: MessageKind): kind is PublishedKind => keyClassOf(kind) !== undefined;
 
+/** A command span's registered attributes: the requester, the routing key and the request ID. */
+const spanFields = (source: string, key: string, requestId: string): SpanAttributes =>
+  ({'bunny.participant': source, 'bunny.routing.key': key, 'bunny.request.id': requestId});
+
+/** How the bus records a request's end: the owner's reply, its own refusal or cancellation, or an uncertain result. */
+type Decision = Pick<Diagnostic, 'event' | 'level' | 'outcome' | 'code'> & {status: SpanStatus};
+function decisionOf(result: RequestResult): Decision {
+  switch (result.status) {
+    case 'accepted':
+      return {event: 'command.replied', level: 'info', outcome: 'accepted', status: 'unset'};
+    case 'uncertain':
+      return {event: 'command.uncertain', level: 'warn', outcome: 'uncertain', code: result.error.error.code, status: 'error'};
+    case 'rejected': {
+      const {code} = result.error.error;
+      // Only the owner's typed refusal comes with a reply message; it proves no effect, so it is no failure either.
+      if (result.reply !== undefined) return {event: 'command.replied', level: 'info', outcome: 'rejected', code, status: 'unset'};
+      if (code === 'cancelled') return {event: 'command.cancelled', level: 'info', outcome: 'cancelled', code, status: 'unset'};
+      return {event: 'command.refused', level: 'warn', outcome: 'rejected', code, status: 'error'};
+    }
+  }
+}
+
 const foreign = (source: string, message: Message<unknown>): SdkError =>
   new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
 
@@ -74,7 +108,8 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
 
 /** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
 type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
-type Delivery = {command: Command<object>; expiresAtMs: number; settle: (result: RequestResult) => void};
+/** A command on its way to a handler: its request span, and its queue span while it waits. */
+type Delivery = {command: Command<object>; key: string; expiresAtMs: number; settle: (result: RequestResult) => void; request: Span; queue: Span | undefined};
 type Owner = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
 /** What one participant opened, so that its close can undo all of it. */
 type Member = {
@@ -93,6 +128,8 @@ export class InProcessBus {
   readonly #scheduler: Scheduler;
   readonly #sync: SyncOwners;
   readonly #onSyncRestart: (scope: ErrorScope) => void;
+  readonly #diagnose: OnDiagnostic;
+  readonly #spans: SpanRecorder;
 
   constructor(options: BusOptions = {}) {
     const maxQueued = options.maxQueued ?? 1024;
@@ -100,17 +137,14 @@ export class InProcessBus {
     this.#now = options.now ?? (() => Date.now());
     this.#maxQueued = maxQueued;
     this.#scheduler = options.scheduler ?? timers;
-    this.#onError = options.onError ?? ((error, scope) => {
-      // An Error warning prints its own name and message, so they carry the scope; the original is its cause.
-      const reason = error instanceof Error ? error.message : 'a non-Error value was thrown';
-      const warning = new Error(`${scope.source} on ${scope.pattern}: ${reason}`, {cause: error});
-      warning.name = 'BunnySdkWarning';
-      process.emitWarning(warning);
-    });
+    this.#onError = options.onError ?? warnSafely;
     this.#onSyncRestart = options.onSyncRestart ?? (() => {});
+    this.#diagnose = reporter(options.onDiagnostic);
+    this.#spans = options.spans ?? noSpans;
     this.#sync = new SyncOwners({
       now: this.#now, scheduler: this.#scheduler, maxQueued, report: (error, scope) => { this.#report(error, scope); },
       envelope: (source, kind, draft, trace, deadline) => this.#envelope(source, kind, draft, trace, deadline),
+      diagnose: this.#diagnose,
     });
   }
 
@@ -144,6 +178,7 @@ export class InProcessBus {
           request: outgoing => this.#sync.request(source, outgoing),
           report: error => { this.#report(error, scope); },
           restarted: () => {
+            this.#diagnose({event: 'sync.restarted', level: 'debug', source, pattern: scope.pattern});
             try {
               this.#onSyncRestart(scope);
             } catch {
@@ -197,7 +232,9 @@ export class InProcessBus {
       const expiresAtMs = Date.parse(command.expiresat ?? '');
       if (Number.isNaN(expiresAtMs)) throw invalid('a command carries expiresat');
       if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
-      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs, signal);
+      // The edge authenticated and validated the command, so its context is trusted: the server span continues it.
+      const request = startSpan(this.#spans, 'bunny.command.request', {parent: command, kind: 'server', attributes: spanFields(source, key, requestId)});
+      return this.#dispatch(undefined, key, route, command, expiresAtMs, waitMs, request, signal);
     });
   }
 
@@ -287,24 +324,36 @@ export class InProcessBus {
     if (!ID.test(requestId)) throw invalid('requestId is not an identifier');
     const sentAtMs = this.#now(), expiresAtMs = sentAtMs + timeoutMs;
     const data = {...draft.data, requestId};
-    const command = this.#envelope(member.source, 'command', {...draft, data}, childOf(options.parent), {sentAtMs, expiresAtMs});
-    return this.#dispatch(member, key, route, command, expiresAtMs, timeoutMs);
+    // The command carries its request span's context, so the owner's spans and records join that span.
+    const request = startSpan(this.#spans, 'bunny.command.request', {parent: options.parent, kind: 'client', attributes: spanFields(member.source, key, requestId)});
+    const command = this.#envelope(member.source, 'command', {...draft, data}, request.context, {sentAtMs, expiresAtMs});
+    return this.#dispatch(member, key, route, command, expiresAtMs, timeoutMs, request);
   }
 
   /**
    * Hands a command to the responder that owns `route`, and settles at its reply or after `waitMs`. A participant's
-   * own requests settle when it closes; a remote edge's have no participant and settle by their wait.
+   * own requests settle when it closes; a remote edge's have no participant and settle by their wait. The admission and
+   * the one settlement are each recorded once, with the command's own trace, and end the request's spans.
    */
   #dispatch(
-    member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number, signal?: AbortSignal,
+    member: Member | undefined, key: string, route: RoutingKey, command: Command<object>, expiresAtMs: number, waitMs: number, request: Span,
+    signal?: AbortSignal,
   ): Promise<RequestResult> {
     const {requestId} = command.data;
     const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+    const facts = {source: command.source, key, requestId, messageId: command.id, trace: {traceparent: command.traceparent}};
+    const decided = (result: RequestResult, queue?: Span): RequestResult => {
+      const {status, ...decision} = decisionOf(result);
+      queue?.end(status);
+      request.end(status);
+      this.#diagnose({...decision, ...facts});
+      return result;
+    };
     // Refusals name the command's own deadline, which the remote requester chose, not what was left of it here.
     const timeoutMs = Math.round(expiresAtMs - Date.parse(command.time));
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
-      return Promise.resolve({status: 'rejected', requestId, error: body('unavailable', `no responder for ${key}`, ids)});
+      return Promise.resolve(decided({status: 'rejected', requestId, error: body('unavailable', `no responder for ${key}`, ids)}));
     }
     return new Promise(resolve => {
       let settled = false;
@@ -315,9 +364,9 @@ export class InProcessBus {
         cancel();
         member?.requests.delete(abandon);
         signal?.removeEventListener('abort', abandon);
-        resolve(result);
+        resolve(decided(result, delivery.queue));
       };
-      const delivery: Delivery = {command, expiresAtMs, settle};
+      const delivery: Delivery = {command, key, expiresAtMs, settle, request, queue: undefined};
       // A command still waiting in the responder's queue never reached its handler, so it is taken out and nothing
       // can have happened. One the handler has may have taken effect, and it is never sent again.
       const end = (unsent: RequestResult, sent: RequestResult): void => { settle(owner.queue.remove(delivery) ? unsent : sent); };
@@ -338,7 +387,10 @@ export class InProcessBus {
       }
       if (!owner.queue.push(delivery)) {
         settle({status: 'rejected', requestId, error: body('capacity', 'the responder\'s queue is full', ids)});
+        return;
       }
+      delivery.queue = startSpan(this.#spans, 'bunny.command.queue', {parent: request.context, attributes: spanFields(command.source, key, requestId)});
+      this.#diagnose({event: 'command.admitted', level: 'info', outcome: 'queued', ...facts});
     });
   }
 
@@ -352,7 +404,8 @@ export class InProcessBus {
     }
     const {source} = member;
     const scope = {source, pattern};
-    const owner: Owner = {pattern: parsed, scope, queue: new DeliveryQueue(this.#maxQueued, async ({command, expiresAtMs, settle}) => {
+    const owner: Owner = {pattern: parsed, scope, queue: new DeliveryQueue(this.#maxQueued, async delivery => {
+      const {command, expiresAtMs, settle} = delivery;
       // A command past its expiry is ignored and never answered. It did not reach the handler, so its requester learns
       // that it expired, unless the deadline already settled the request.
       if (expiresAtMs <= this.#now()) {
@@ -363,6 +416,8 @@ export class InProcessBus {
       }
       const {requestId} = command.data;
       const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+      delivery.queue?.end();
+      const execute = startSpan(this.#spans, 'bunny.command.execute', {parent: delivery.request.context, attributes: spanFields(command.source, delivery.key, requestId)});
       // The handler has started, so an exception may come after an effect: the request is uncertain, never a refusal.
       // Only a typed refusal, an error body the responder returns, proves that nothing happened (ADR 0012).
       const uncertain = (detail: string): RequestResult => ({status: 'uncertain', requestId, error: body('uncertain-result', detail, ids)});
@@ -370,14 +425,17 @@ export class InProcessBus {
       try {
         const given: unknown = await responder(command as Command<T>);
         if (given === unanswered) {
+          execute.end('error');
           settle(uncertain('the responder gave no reply'));
           return;
         }
         if (given === failed) {
+          execute.end('error');
           settle(uncertain(FAILED_DETAIL));
           return;
         }
         if (given === undelivered) {
+          execute.end('error');
           settle({status: 'rejected', requestId, error: body('unavailable', 'the command never reached the responder', ids)});
           return;
         }
@@ -386,11 +444,13 @@ export class InProcessBus {
         if (reply === undefined) throw new TypeError('a responder returned something other than a reply');
         answer = reply;
       } catch (error) {
+        execute.end('error');
         this.#report(error, scope);
         settle(uncertain(FAILED_DETAIL));
         return;
       }
-      settle(this.#reply(source, command, answer));
+      execute.end();
+      settle(this.#reply(source, command, answer, execute.context));
     })};
     this.#owners.add(owner);
     const subscription: Subscription = {close: () => {
@@ -406,10 +466,10 @@ export class InProcessBus {
     return subscription;
   }
 
-  #reply(source: string, command: Command<object>, answer: Reply): RequestResult {
+  /** The reply message to `command`, in the context of the execute span that answered it. */
+  #reply(source: string, command: Command<object>, answer: Reply, trace: TraceContext): RequestResult {
     const {requestId} = command.data;
     const base = {type: command.type.replace(/\.requested$/, '.replied'), subject: command.subject, dataschema: REPLY_SCHEMA};
-    const trace = childOf(command);
     if ('error' in answer) {
       const error: ErrorBody = {error: {...answer.error, requestId, traceId: traceIdOf(trace.traceparent)}};
       const reply = this.#envelope(source, 'reply', {...base, data: {requestId, error: error.error}}, trace);

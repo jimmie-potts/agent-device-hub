@@ -3,7 +3,7 @@
 // event contracts' own tests keep the typed table equal to the registry file, code for code and flag for flag.
 import assert from 'node:assert/strict';
 import {RETRYABLE, errorBody, errorCodes, isErrorCode, type ErrorCode, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
-import type {EdgeLogRecord} from '../src/index.js';
+import type {Diagnostic} from '../src/index.js';
 import type {ConformanceSpec} from '../src/testing/index.js';
 import {it} from './support.js';
 
@@ -16,7 +16,7 @@ type TakesAnyString<T> = string extends T ? true : false;
 const unknownCode: 'not-a-code' extends ErrorCode ? true : false = false;
 const errorBodyCode: TakesAnyString<Parameters<typeof errorBody>[0]> = false;
 const detailCode: TakesAnyString<ErrorDetail['code']> = false;
-const edgeLogCode: TakesAnyString<NonNullable<EdgeLogRecord['code']>> = false;
+const diagnosticCode: TakesAnyString<NonNullable<Diagnostic['code']>> = false;
 const kitCode: TakesAnyString<NonNullable<ConformanceSpec['refused']>['code']> = false;
 // The union is exactly the table's keys, and each flag is a literal the compiler knows.
 const tableKeys: Same<ErrorCode, keyof typeof RETRYABLE> = true;
@@ -25,7 +25,7 @@ const uncertain: Same<typeof RETRYABLE['uncertain-result'], false> = true;
 
 it('a code outside the registry fails to compile where a code is expected, and fails at run time from an untyped caller', () => {
   assert.deepEqual(
-    [unknownCode, errorBodyCode, detailCode, edgeLogCode, kitCode, tableKeys, capacity, uncertain],
+    [unknownCode, errorBodyCode, detailCode, diagnosticCode, kitCode, tableKeys, capacity, uncertain],
     [false, false, false, false, false, true, true, true],
   );
   const untyped = String('not-a-code');
