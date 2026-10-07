@@ -873,7 +873,7 @@ job judges the fourth layer's capture steps without a user manager.
 
 | Layer | Command | What it runs |
 | --- | --- | --- |
-| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built` | The package's and its modules' own tests, moved tests included |
+| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built` | The package's and its modules' own tests, moved tests included |
 | Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
 | End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
 | Acceptance | `npm run -s verify:runtime -- <operation>`, with `npm run test:runtime:verify:built` in CI | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
@@ -1824,6 +1824,29 @@ so it reports the same pairing any completed write does. Painting never
 changes power. No test contacts a bulb, and every test that constructs a
 controller, publisher or host passes its own temporary mode/lease directory,
 never the real default under a developer's home.
+
+## LIFX module checks
+
+Hub #928 copies the LIFX controller into the runtime module `modules/lifx`, under
+the [strict profile](#strict-profile-for-new-code) and the module boundary. Its
+[README](../modules/lifx/README.md) records the provenance and maps each copied
+test. The runtime ships it after the core. `controllers/lifx` stays unchanged for
+the installed service until #839, and keeps its own
+[checks](#lifx-controller-checks).
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:lifx-module` from the worktree root. `test:lifx-module` builds, then
+runs `test:lifx-module:built`: the compiled tests in `modules/lifx/dist/tests/`.
+The core CI job runs `npm run test:lifx-module:built` after its fresh build. The
+suite covers the copied protocol, queue and status cases, the module's commands,
+outcomes, refusals and restarts, a full store, an unreachable bulb, the writer
+lease, the on-demand read, the cutover's conversion, and the
+[module test kit](../packages/sdk/README.md#module-test-kit) with policy A's
+check. It uses `SimulatedLifx`, fake sockets, a manual clock and SQLite files
+under the system temporary directory, and opens no socket. The runtime's catalog
+scenario `lifx-bulbs` runs the module in `test:runtime:scenarios:built` and in
+[disposable runs](#runtime-verification-runs). Installation and the physical check
+belong to the cutover (#840).
 
 ## Nanoleaf port
 

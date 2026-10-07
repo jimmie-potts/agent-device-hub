@@ -229,8 +229,8 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --environment test and the run\'s state directory'},
     {id: 'sdk-edge', kind: 'actual', note: 'the runtime\'s SDK edge on its listener; each part has a run-generated grant in the state directory'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp and chime, and a harness module that reports what the bus publishes'},
-    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps and SimulatedChime in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and sign, the shipped LIFX module, and a harness module that reports what the bus publishes'},
+    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns and SimulatedLifx in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
     {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step'},
   ],
   checks: [
