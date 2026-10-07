@@ -11,10 +11,11 @@ import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contr
 import {
   InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
   type Clock, type CommandDraft, type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder,
-  type Scheduler, type Sdk, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider, type WorkerCallOptions,
+  type Scheduler, type Sdk, type SendOptions, type SpanRecorder, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  type WorkerCallOptions,
 } from '@jimmie-potts/sdk';
 import {diagnosticWriter} from './diagnostics.js';
-import {errorFields, type LogWriter, type RuntimeLogger} from './log.js';
+import {errorFields, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
 import {
   MAX_SECRET_BYTES, PrivateFileError, openModuleDatabase, openModuleFolder, readPrivateFile, sectionOf, type FileProblem, type RuntimeConfig,
@@ -149,6 +150,14 @@ function keepNodeOptions(options: WorkerOptions | undefined): WorkerOptions | un
   if (own !== undefined && own.includes(inherited)) return options;
   return {...options, env: {...env, NODE_OPTIONS: own === undefined || own === '' ? inherited : `${inherited} ${own}`}};
 }
+
+/**
+ * A module's span recorder that leaves out each attribute holding a secret a module read, as the log writer does for
+ * records (Hub #919). The span itself is kept, so its children keep their parent.
+ */
+const redactedSpans = (recorder: SpanRecorder, redactions: Redactions): SpanRecorder => ({
+  start: (name, options = {}) => recorder.start(name, options.attributes === undefined ? options : {...options, attributes: redactions.without(options.attributes)}),
+});
 
 /** Why a manifest is refused, or undefined when the module may start. `taken` holds the names already in use. */
 function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
@@ -325,7 +334,7 @@ export class ModuleHost {
     const {clock, scheduler, stateDir} = this.#options;
     const live = (): void => { if (slot.stopping !== undefined) throw stopped(); };
     const inFlow = <T>(call: () => T): T => running.run(slot.flow, call);
-    const spans = this.#options.tracing?.recorder(MODULE_SCOPE, {'bunny.module': slot.name}) ?? noSpans;
+    const spans = redactedSpans(this.#options.tracing?.recorder(MODULE_SCOPE, {'bunny.module': slot.name}) ?? noSpans, this.#options.logs.redactions);
     const sdk: Sdk = {
       source: participant.source,
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),

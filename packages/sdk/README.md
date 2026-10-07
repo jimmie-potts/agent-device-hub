@@ -441,10 +441,10 @@ named file before it starts the module, and refuses the module when one fails.
 
 No detail quotes the file. A secret never goes into a message, a log field, an
 error body or health. The runtime drops, and counts, any log record whose
-attribute holds a secret a module read, as text or as a number's digits, and
-its `runtime.failed` record leaves such an attribute out. The module test kit
-fails a module whose message, command, sync request, log record, reply or synced
-state holds one of its secrets. A very short secret makes the runtime drop every
+attribute holds a secret a module read, as text or as a number's digits; its
+`runtime.failed` record and a module's spans leave such an attribute out. The
+module test kit fails a module whose message, command, sync request, log record,
+span, reply or synced state holds one of its secrets. A very short secret makes the runtime drop every
 record that contains it.
 
 These are boundaries of the module API, not a sandbox. A module's code runs in
@@ -627,8 +627,8 @@ module logs must be one the runtime writes whole as a
 [diagnostic-contract](../../docs/observability-contract.md) record (#903): an
 event the catalog registers for the `bunny.module` scope, and only registered
 attributes with values of their registered types. No message, command or sync
-request the module sends, log record, reply or synced state may carry one of
-`spec.secrets`, and a failure names where one appeared, never the secret. No handler, timer or worker of the module
+request the module sends, log record, span, reply or synced state may carry one
+of `spec.secrets`, and a failure names where one appeared, never the secret. No handler, timer or worker of the module
 may fail, and its stop may not throw or outlast its deadline.
 
 `checkModuleRecord(name, record)` is that record check on its own. It returns

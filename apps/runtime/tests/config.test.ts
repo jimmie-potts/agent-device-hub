@@ -373,3 +373,20 @@ it('the log writer drops a record whose attribute holds a read secret as text or
   assert.deepEqual(writer.counts(), {written: 1, dropped: 2, failed: 0});
   assert.deepEqual(redactions.without({'error.type': 'Error', 'error.code': 'E24680135'}), {'error.type': 'Error'});
 });
+
+it('a span a module records leaves out an attribute that holds a secret the module read, and keeps the rest', async context => {
+  const token = await tokenFile(context);
+  const spans: string[] = [];
+  const caller = configured('caller', async ({secrets, trace}) => {
+    const value = await secrets.read('token');
+    // A module bug: its token in a registered span attribute (Hub #949's spans, #919's secrets).
+    trace.start('bunny.device.call', {attributes: {'bunny.message.id': value, 'bunny.device.id': 'sign-1'}}).end();
+  });
+  const file = await configFile(context, {caller: {secrets: {token}}});
+  const {runtime} = await run(context, {modules: [caller], configFile: file, spans: line => { spans.push(line); }});
+  await runtime.stop();
+  const call = spans.find(line => line.includes('bunny.device.call'));
+  assert.ok(call !== undefined, 'the span is recorded');
+  assert.ok(call.includes('sign-1'), 'with its other attributes');
+  assert.equal(spans.some(line => line.includes(SECRET)), false, 'no span holds the secret');
+});

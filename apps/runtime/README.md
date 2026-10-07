@@ -268,9 +268,10 @@ No secret reaches a log record, health or an error body. The runtime logs no
 part of the file and no secret, and refusals carry fixed text. One registry of
 the secrets modules read serves every writer in the process: the runtime's
 writer drops, and counts in `runtime.stopped`, any record whose attribute holds
-one, as text or as a number's digits, and the process's `runtime.failed` record
+one, as text or as a number's digits; the process's `runtime.failed` record
 leaves such an attribute out, so an error that escapes every module carrying a
-module's token is still recorded, without it. Its tests and every disposable run
+module's token is still recorded, without it; and a module's span leaves it out
+too, keeping the span for its children. Its tests and every disposable run
 scan records, health, error bodies and proof for the synthetic token
 `tok_SYNTHETIC919`.
 

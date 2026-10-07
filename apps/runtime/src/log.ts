@@ -72,7 +72,7 @@ export class Redactions {
   }
 
   /** `attributes` without those that hold a secret. */
-  without(attributes: Readonly<Record<string, string>>): Record<string, string> {
+  without<T extends string | number | boolean>(attributes: Readonly<Record<string, T>>): Record<string, T> {
     return Object.fromEntries(Object.entries(attributes).filter(([, value]) => !this.holds(value)));
   }
 }
@@ -116,6 +116,11 @@ export class LogWriter {
    */
   redact(secret: string): void {
     this.#redactions.add(secret);
+  }
+
+  /** The registry this writer checks, which the module host also applies to its modules' span attributes. */
+  get redactions(): Redactions {
+    return this.#redactions;
   }
 
   /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
