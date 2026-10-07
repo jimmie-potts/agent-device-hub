@@ -362,5 +362,6 @@ export const playbackFactory = {
   name: PLAYBACK_MODULE,
   create: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: httpSpeakers()}),
   simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers()}),
-  simulatedSection: SIMULATED_SECTION,
+  // The speakers take no credential, so the section names no secret.
+  simulatedSection: {config: SIMULATED_SECTION},
 } as const;

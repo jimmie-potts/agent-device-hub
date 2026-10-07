@@ -15,6 +15,7 @@ import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
+import {writeSimulatedConfiguration} from './fixtures/simulated.js';
 import {entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
@@ -64,6 +65,17 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
+});
+
+it('the shipped runtime runs every shipped module with --simulate and each factory\'s simulated section', async context => {
+  const dir = await stateDir(context);
+  const config = await writeSimulatedConfiguration(join(dir, 'config'), shippedModules);
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', join(dir, 'state'), '--simulate', '--config', config]);
+  const {body} = await health(runtime.url);
+  assert.deepEqual(body.modules.map(module => [module.name, module.state]), shippedModules.map(({name}) => [name, 'running']));
+  assert.equal(body.status, 'ok');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
 });
 
 it('the entry point refuses missing or malformed arguments', async context => {

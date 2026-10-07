@@ -16,10 +16,18 @@ Modules are written against the [module API](../../packages/sdk/README.md#module
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
 subscription: adding or removing a module is a code change in `src/modules.ts`.
 Each entry there is the module's factory, which creates it with its real device
-transport, or with its simulated one under `--simulate`. A factory whose module
-takes a configuration also gives a `simulatedSection`, which configures its
-simulated build; tests and the `shipped` disposable run use it. Each module's settings
+transport, or with its simulated one under `--simulate`. Each module's settings
 and secrets come from one private [configuration file](#configuration).
+
+A factory whose module takes a configuration also gives a `simulatedSection`:
+`{config, secrets?}`, the module's section for simulated runs without its
+`secrets` member, and the names of the secrets that section needs. A module that
+reads no secret, such as the playback module, omits `secrets`. One helper,
+`tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
+<file>}}`, with one private file holding the synthetic token for each declared
+name, and writes the configuration file. The `shipped` disposable run, the
+runtime's process tests and the maintenance journal test configure the shipped
+modules with it.
 
 ## Agent-session core
 

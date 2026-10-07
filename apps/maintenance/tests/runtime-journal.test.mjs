@@ -4,17 +4,16 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, realpath, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {collectJournal} from '../dist/journal.js';
 import {shippedModules} from '../../runtime/dist/src/index.js';
+import {writeSimulatedConfiguration} from '../../runtime/dist/tests/fixtures/simulated.js';
 
 const MAIN = fileURLToPath(new URL('../../runtime/dist/src/main.js', import.meta.url));
-/** The synthetic token each simulated module's secret files hold; no credential. */
-const SYNTHETIC_TOKEN = 'tok_SYNTHETIC919';
 const UNIT = 'bunny-runtime.service';
 
 /** Runs the runtime with `args` and returns its exit code and stderr lines; `stop` sends SIGTERM once it is ready. */
@@ -42,32 +41,13 @@ const window = lines => {
 };
 const options = (lines, services = ['runtime']) => ({units: [UNIT], services, ...window(lines), maxRows: 100, maxBytes: 1024 * 1024});
 
-/**
- * A private configuration file, as the installer writes one, that gives every shipped module that takes one its
- * simulated section, with its secrets in private token files. Without it the runtime refuses such a module at an
- * ERROR, which intake would rightly take as a finding.
- */
-async function configuration(dir) {
-  const secrets = join(dir, 'secrets');
-  await mkdir(secrets, {recursive: true, mode: 0o700});
-  await chmod(dir, 0o700);
-  const modules = {};
-  for (const {name, simulatedSection} of shippedModules) {
-    if (simulatedSection === undefined) continue;
-    const token = join(secrets, `${name}-token`);
-    await writeFile(token, `${SYNTHETIC_TOKEN}\n`, {mode: 0o600});
-    modules[name] = {...simulatedSection, secrets: {token}};
-  }
-  const file = join(dir, 'runtime-config.json');
-  await writeFile(file, JSON.stringify({schema: 'runtime-config/1.0', modules}), {mode: 0o600});
-  return file;
-}
-
 /** A clean run of every shipped module, simulated, that stops on SIGTERM, then a start refused for a relative state directory. */
 async function journal() {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-intake-runtime-')));
   try {
-    const config = await configuration(join(dir, 'config'));
+    // Every shipped module that takes a configuration gets its simulated section. Without it the runtime refuses such a
+    // module at ERROR, which intake would rightly take as a finding.
+    const config = await writeSimulatedConfiguration(join(dir, 'config'), shippedModules);
     const clean = await runtime(['--state-dir', join(dir, 'state'), '--simulate', '--config', config], true);
     assert.equal(clean.code, 0);
     const refused = await runtime(['--state-dir', 'relative/state'], false);
