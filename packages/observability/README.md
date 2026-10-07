@@ -13,10 +13,20 @@ build time and works without `unsafe-eval`. Python 3.14 consumers add the
 artifact's `python` directory to their module path and install the pinned
 `requirements-contracts.txt` in their own environment.
 
-`createRecord` / `create_record` selects registered fields before serialization.
+Artifact 1.2.0 holds profiles 1.0, 1.1 and 1.2. Profile 1.2 registers the
+B.U.N.N.Y. runtime: the `runtime` service, its `bunny.runtime` and
+`bunny.module` scopes, their events and attributes (see "The runtime's records"
+in `CONTRACT.md`). The catalog's `additions` lists what each profile adds, and
+`scope_rules` lists the service and events each runtime scope allows. Producers
+still default to profile 1.1; a 1.2 producer sets `schema_version` itself.
+
+`createRecord` / `create_record` selects registered fields before serialization,
+keeping only the attributes the record's own profile registers.
 `validateRecord` / `validate_record` strictly rejects unknown fields.
 `toOtlp` / `to_otlp` converts a valid record to an OTLP JSON logs request.
-`projectRecord` / `project_record` explicitly targets a supported schema profile.
+`projectRecord` / `project_record` explicitly targets a supported schema profile;
+a record that uses a later profile's vocabulary fails the projection. Python's
+helpers validate and convert 1.2 records but project only to 1.0 and 1.1.
 Invalid input returns a fixed failure code or no output; never log rejected input.
 Both languages expose a no-op emitter. Executable hosts explicitly create a sink;
 libraries accept an injected emitter and default to no-op.
@@ -59,7 +69,7 @@ checks against the installed bytes. Browser verification has its own command,
 `npm run test:observability:browser`; the package test also bundles the installed
 pure entrypoint to verify it has no Node-only dependencies.
 
-## Explicit host runtime (artifact 1.1.0)
+## Explicit host runtime (since artifact 1.1.0)
 
 Node hosts import `createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`.
 Pass `enabled: true`, a contract-valid `resource`, a bounded `localSink` (stderr
@@ -88,4 +98,4 @@ and expose safe counts. Local sinks must return promptly (Node may return a
 promise); shutdown cancels owned transports but cannot interrupt arbitrary host
 callback code. Python queue workers are daemon threads. Slow or absent collection
 never retries a domain command. Manual tracing sends no context to device/vendor
-endpoints. Schema versions 1.0/1.1 and the OTel semantic-convention pin are unchanged.
+endpoints. The host runtime adds no schema version, and the OTel semantic-convention pin is unchanged.

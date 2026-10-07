@@ -66,7 +66,7 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
   throw new Error('found no free loopback port outside the installed services\' ports');
 }
 
-type Generation = {host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant};
+type Generation = {host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant; logs: LogWriter};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
 
 class Memory implements MemoryHarness {
@@ -201,7 +201,12 @@ class Memory implements MemoryHarness {
 
   problems(): readonly string[] {
     const failed = this.#logs.filter(({record}) => record.event_name === 'runtime.handler.failed').map(({record}) => `runtime.handler.failed ${JSON.stringify(record.attributes)}`);
-    return [...this.#problems, ...failed];
+    // A record the contract refuses never reaches the log, so only the writer's counts show it (Hub #903).
+    const lost = this.#generations.flatMap(({logs}, index) => {
+      const {dropped, failed: sinkFailed} = logs.counts();
+      return dropped + sinkFailed === 0 ? [] : [`runtime ${index + 1} dropped ${dropped} and lost ${sinkFailed} log records`];
+    });
+    return [...this.#problems, ...failed, ...lost];
   }
 
   async wait(ms: number): Promise<void> {
@@ -292,7 +297,7 @@ class Memory implements MemoryHarness {
       bus: host.bus, validator: this.#validator, grants: [...this.#parts.values()].map(({source, token}) => ({source, token})),
       log: record => { this.#edgeLog.push(record); }, now: this.#clock.now, scheduler: this.#clock.scheduler,
     }) : undefined;
-    this.#generations.push({host, edge, watcher});
+    this.#generations.push({host, edge, watcher, logs});
     if (edge !== undefined) this.#edgeReady(edge);
   }
 

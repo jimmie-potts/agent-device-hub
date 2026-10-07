@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.2",
+      "name": "unsupported-1.3",
       "valid": false,
       "record": {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -2197,6 +2197,1215 @@
           "bunny.queue.wait_ms": 12.5,
           "bunny.outcome": "queued",
           "bunny.operation": "brightness"
+        }
+      }
+    },
+    {
+      "name": "runtime-started",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2
+        }
+      }
+    },
+    {
+      "name": "runtime-failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "state-dir-relative"
+        }
+      }
+    },
+    {
+      "name": "runtime-stuck",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.stuck",
+        "body": "Runtime event loop stuck",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.lag.limit_ms": 10000,
+          "bunny.lag.duration_ms": 10250
+        }
+      }
+    },
+    {
+      "name": "runtime-module-failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError"
+        }
+      }
+    },
+    {
+      "name": "runtime-delivery-dropped",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.delivery.dropped",
+        "body": "Deliveries dropped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.pattern": "bunny.event.*.*",
+          "bunny.delivery.dropped_count": 3
+        }
+      }
+    },
+    {
+      "name": "runtime-handler-failed-sync",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.handler.failed",
+        "body": "Handler failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.participant": "bunny/kit",
+          "bunny.pattern": "sync mode,session",
+          "error.type": "Error"
+        }
+      }
+    },
+    {
+      "name": "module-command-completed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-message-received",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "message.received",
+        "body": "Message received",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.message.id": "6f1c2d4e-8a9b-4c3d-9e2f-0a1b2c3d4e5f",
+          "bunny.message.kind": "outcome",
+          "bunny.outcome": "accepted",
+          "bunny.request.id": "req-1"
+        }
+      }
+    },
+    {
+      "name": "module-outbox-republished",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "outbox.republished",
+        "body": "Outbox republished",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.outbox.republished_count": 3
+        }
+      }
+    },
+    {
+      "name": "runtime-under-1.1",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2
+        }
+      }
+    },
+    {
+      "name": "module-under-1.0",
+      "valid": false,
+      "record": {
+        "schema_version": "1.0",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "runtime-attribute-under-1.1",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "Error"
+        }
+      }
+    },
+    {
+      "name": "module-unregistered-event",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "lamp.switched",
+        "body": "Lamp switched",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-raw-message",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded",
+          "error.message": "connect ECONNREFUSED http://192.0.2.1/?token=SECRET"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-missing-name",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-wrong-scope",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-runtime-event",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.module.started",
+        "body": "Module started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-other-service",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "command.completed",
+        "body": "Command completed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lamp",
+          "bunny.device.id": "lamp-1",
+          "bunny.request.id": "req-1",
+          "bunny.operation": "power",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "runtime-missing-version",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2
+        }
+      }
+    },
+    {
+      "name": "runtime-missing-instance",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2
+        }
+      }
+    },
+    {
+      "name": "runtime-missing-environment",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2
+        }
+      }
+    },
+    {
+      "name": "runtime-error-code-text",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "connect failed: token=SECRET"
+        }
+      }
+    },
+    {
+      "name": "runtime-error-stack",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "state-dir-relative",
+          "error.stack": "Error: SECRET\n    at main (/home/private/runtime.js:1:1)"
+        }
+      }
+    },
+    {
+      "name": "runtime-source-url",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2,
+          "bunny.participant": "http://127.0.0.1:8791/?token=SECRET"
+        }
+      }
+    },
+    {
+      "name": "runtime-module-name-text",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "state-dir-relative",
+          "bunny.module": "Kitchen Lamp"
+        }
+      }
+    },
+    {
+      "name": "runtime-started-edge",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2,
+          "server.port": 41000,
+          "bunny.simulate": true,
+          "bunny.edge": true
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-serving",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.serving",
+        "body": "Edge serving",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "server.port": 41000,
+          "bunny.grant_count": 2
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-connected",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.connected",
+        "body": "Edge part connected",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "stream",
+          "bunny.participant": "bunny/parts/reader"
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-refused",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "publish",
+          "bunny.code": "forbidden",
+          "bunny.reason": "unauthorized",
+          "bunny.participant": "bunny/parts/reader"
+        }
+      }
+    },
+    {
+      "name": "runtime-failed-edge-grants-missing",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "edge-grants-missing"
+        }
+      }
+    },
+    {
+      "name": "runtime-failed-edge-grants-not-private",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "edge-grants-not-private"
+        }
+      }
+    },
+    {
+      "name": "runtime-failed-edge-grants-invalid",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "edge-grants-invalid"
+        }
+      }
+    },
+    {
+      "name": "runtime-failed-edge-grant-source",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 21,
+        "severity_text": "FATAL",
+        "event_name": "runtime.failed",
+        "body": "Runtime failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "RuntimeError",
+          "error.code": "edge-grant-source"
+        }
+      }
+    },
+    {
+      "name": "runtime-started-url",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.started",
+        "body": "Runtime started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module_count": 2,
+          "bunny.url": "http://127.0.0.1:41000"
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-route-path",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "/api/sdk/v1/x?token=SECRET",
+          "bunny.code": "not-found"
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-reason-sentence",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "publish",
+          "bunny.code": "unauthenticated",
+          "bunny.reason": "The caller has no valid credential."
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-detail",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "publish",
+          "bunny.code": "internal",
+          "bunny.detail": "the edge failed: ECONNRESET token=SECRET"
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-event-under-1.1",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.connected",
+        "body": "Edge part connected",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "stream"
+        }
+      }
+    },
+    {
+      "name": "default-profile-later-attribute",
+      "valid": false,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "process.started",
+        "body": "Process started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "TypeError"
+        }
+      }
+    },
+    {
+      "name": "module-message-id-2.0-form",
+      "valid": true,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "message.received",
+        "body": "Message received",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.message.id": "_outcome.7-a",
+          "bunny.message.kind": "outcome",
+          "bunny.outcome": "accepted",
+          "bunny.request.id": "req-1"
+        }
+      }
+    },
+    {
+      "name": "module-message-id-colon",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "message.received",
+        "body": "Message received",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/lamp",
+          "bunny.message.id": "urn:outcome:7",
+          "bunny.message.kind": "outcome",
+          "bunny.outcome": "accepted",
+          "bunny.request.id": "req-1"
         }
       }
     }

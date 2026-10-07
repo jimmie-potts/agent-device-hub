@@ -28,6 +28,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
 | `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
+| `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
 
@@ -88,9 +89,11 @@ The runtime refuses to start otherwise, with `edge-grants-missing`,
 remote message against profile 2.0, the core families and the modules' own
 schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
 `runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
-`bunny.route` (one of the edge's routes, or `other`), `bunny.source` when the
-caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
-that code's fixed meaning. It never holds the edge's detail, which may quote
+`bunny.route` (one of the edge's routes, or `other`), `bunny.participant` when
+the caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
+the diagnostic contract's registered reason for that code. `internal` and
+`uncertain-result`, whose effect may have happened, have none. It never holds
+the edge's detail, which may quote
 what the caller sent or an exception's message. Token rotation and grant
 permissions belong to #835.
 
@@ -170,24 +173,52 @@ main thread is still caught once the watchdog has been awake for the limit. A
 watchdog thread that ends without being asked logs `runtime.watchdog.stopped`,
 and health shows `lagCheck.status` `stopped` and `degraded`.
 
-The worker costs about 13 MiB of resident memory: the zero-module runtime's
+The worker costs about 14 MiB of resident memory: the zero-module runtime's
 VmRSS with and without it, from `scripts/measure-memory.mjs`.
 
 ## Logs
 
-Each record is one JSON line on stderr with OpenTelemetry field names:
-`timestamp`, `severity_text`, `severity_number`, `event_name`, `resource`,
-`scope` and `attributes`, plus `trace_id`, `span_id` and `trace_flags` when the
-record has a trace. A module's records have scope `bunny.modules.<name>` and the
-attribute `bunny.module`. A failure record names the error's type
-(`error.type`) and, when it has one, its code (`error.code`). As the
-[diagnostic contract](../../docs/observability-contract.md) requires, it never
-holds the raw message or stack, which may quote a URL with a token in it.
+Each record is one JSON line on stderr and a
+[diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
+record of profile 1.2, built by the contract's `createRecord`: `schema_version`,
+`timestamp`, the severity pair, a registered `event_name` with its static
+`body`, the resource, the scope and its version (`1.0.0`), and registered
+`attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
+`trace_flags` when the record has a trace. The resource is service `runtime`
+in namespace `bunny`, `service.version` (the package's version), a
+`service.instance.id` that each process draws once and shares with its
+watchdog thread, and `deployment.environment.name` from `--environment`.
+Maintenance intake reads these lines with the contract's validator. Beside the
+stdout ready line, which keeps its own contract, the process writes a
+`runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
+listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
+records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
+(`bunny.telemetry.failure_count`).
 
-These are not yet diagnostic-contract records. They lack `schema_version`,
-`body`, a scope version and the resource's `service.version`,
-`service.instance.id` and `deployment.environment.name`, and the contract's
-catalog does not register the runtime's service, scopes, events or attributes.
+The runtime's own records have scope `bunny.runtime`. A module's records have
+the one scope `bunny.module` and the attribute `bunny.module`, which names the
+module and which the module's own fields cannot replace. A module may log only
+the events the catalog registers for modules, with registered attributes: the
+runtime drops a record with another event or a value outside its registered
+type, and leaves out fields the catalog does not register. The
+[module test kit](../../packages/sdk/README.md#module-test-kit) fails a module
+that logs either, and a new event goes through a catalog change. A dropped
+record is counted, never truncated.
+
+A failure record names the error's type (`error.type`) and, when it is an
+identifier, its code (`error.code`). As the contract requires, it never holds
+the raw message or stack, which may quote a URL with a token in it. A module's
+refusal or failure carries its 2.0 registry code in `bunny.code` and where it
+arose in `bunny.phase`: `manifest`, `start`, `handler`, `timer`, `worker` or
+`async` (its own async flow). A problem in its stop carries `bunny.phase` and no
+code: `handlers` (its participant's close) or `stop`, or, for an error after it
+stopped, where that error arose. A refusal of a malformed name leaves the name
+out.
+
+A sink that fails never changes what the runtime does: a sink that throws loses
+the record, and a closed stderr, which reports EPIPE, is ignored. The watchdog
+thread writes its `runtime.stuck` record with the runtime's resource, and still
+kills the process when stderr is closed.
 
 A subscription whose full queue drops deliveries gets one
 `runtime.delivery.dropped` warning at once. While drops go on, one more

@@ -7,7 +7,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import {RuntimeError} from '../../src/index.js';
-import {it, stateDir} from '../support.js';
+import {assertContractRecords, it, stateDir} from '../support.js';
 import {act, expect, holds, runScenario, scenario, type Scenario} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
 
@@ -122,5 +122,22 @@ it('each harness generates its own tokens, and none appears in a log record, an 
     for (const token of tokens) assert.equal(seen.includes(token), false);
   } finally {
     await Promise.all([first.close(), second.close()]);
+  }
+});
+
+it('every record the end-to-end scenario writes is a diagnostic-contract record, and the modules\' records are written, on both transports', async () => {
+  for (const transport of ['in-process', 'remote'] as const) {
+    const h = await startMemoryHarness(named('end-to-end').seed, transport);
+    try {
+      assert.equal((await runScenario(named('end-to-end'), h)).outcome, 'passed', transport);
+      const records = h.logs().map(({record}) => record);
+      assertContractRecords(records);
+      const written = new Set(records.map(record => `${String(record.attributes['bunny.module'])} ${record.scope.name} ${record.event_name}`));
+      for (const expected of ['lamp bunny.module command.completed', 'lamp bunny.module outbox.republished', 'core bunny.module message.received']) {
+        assert.ok(written.has(expected), `${transport}: ${expected}`);
+      }
+    } finally {
+      await h.close();
+    }
   }
 });

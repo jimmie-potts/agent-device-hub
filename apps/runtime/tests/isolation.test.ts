@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
 import {SdkError, type Reply} from '@jimmie-potts/sdk';
+import {ModuleHost} from '../src/host.js';
 import {contain, type LogRecord, type Runtime} from '../src/index.js';
-import {contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, turnEnded, waitFor, type Fixture} from './support.js';
+import {LogWriter} from '../src/log.js';
+import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
 
 const WORKERS = new URL('./fixtures/', import.meta.url);
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
@@ -43,7 +45,9 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   });
   assert.equal(runtime.health().status, 'degraded');
   await waitFor(() => failing.stops === 1, 5000, 'the failed module\'s stop');
-  assert.deepEqual(failure(logs, 'failing')?.attributes, {'bunny.module': 'failing', 'bunny.reason': 'a handler threw', 'error.type': 'Error'});
+  assert.deepEqual(failure(logs, 'failing')?.attributes, {
+    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source',
+  });
 
   await sdk.publish('bunny.state.session.s1', session(2));
   await flush();
@@ -65,7 +69,8 @@ it('a module whose responder throws refuses that request with internal and is st
   assert.equal(result.error.error.code, 'internal');
   await failed(runtime, 'failing');
   assert.deepEqual(failure(logs, 'failing')?.attributes, {
-    'bunny.module': 'failing', 'bunny.reason': 'a handler threw', 'error.type': 'Error', 'error.code': 'ECONNREFUSED',
+    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'error.code': 'ECONNREFUSED',
+    'bunny.provenance': 'source',
   });
   assert.equal(JSON.stringify(logs).includes('secret-token'), false, 'the diagnostic contract keeps raw exception messages out');
   await stillWorks(probe);
@@ -80,6 +85,7 @@ it('a module whose start rejects or throws is stopped and shown unhealthy, while
     assert.deepEqual(entry(runtime.health(), name).reason, {code: 'internal', detail: 'start failed'}, name);
   }
   assert.equal(failure(logs, 'throwing')?.attributes['error.type'], 'TypeError');
+  assert.deepEqual([failure(logs, 'rejecting')?.attributes['bunny.code'], failure(logs, 'rejecting')?.attributes['bunny.phase']], ['internal', 'start']);
   await waitFor(() => rejecting.stops === 1 && throwing.stops === 1, 5000, 'stop after a failed start');
   await stillWorks(probe);
 });
@@ -87,12 +93,13 @@ it('a module whose start rejects or throws is stopped and shown unhealthy, while
 it('a module whose start outlasts the start deadline, as when its device never answers, is stopped', async context => {
   const silent = fixture('silent', () => deferred<undefined>().promise);
   const probe = fixture('probe');
-  const {runtime} = await run(context, {modules: [silent, steady(), probe], startTimeoutMs: 50});
+  const {runtime, logs} = await run(context, {modules: [silent, steady(), probe], startTimeoutMs: 50});
   assert.deepEqual(entry(runtime.health(), 'silent'), {
     name: 'silent', apiVersion: '1.0', state: 'failed', healthy: false, syncRestarts: 0,
     reason: {code: 'unavailable', detail: 'start did not finish within 50 ms'},
   });
   await waitFor(() => silent.stops === 1, 5000, 'stop after a start timeout');
+  assert.deepEqual(failure(logs, 'silent')?.attributes, {'bunny.module': 'silent', 'bunny.code': 'unavailable', 'bunny.phase': 'start', 'bunny.provenance': 'source'});
   await stillWorks(probe);
 });
 
@@ -108,14 +115,16 @@ it('a module whose scheduled device call times out is stopped', async context =>
   await failed(runtime, 'polling');
   assert.deepEqual(entry(runtime.health(), 'polling').reason, {code: 'internal', detail: 'a scheduled callback failed'});
   assert.equal(failure(logs, 'polling')?.attributes['error.type'], 'TimeoutError');
+  assert.equal(failure(logs, 'polling')?.attributes['bunny.phase'], 'timer');
   await stillWorks(probe);
 });
 
 it('a module whose worker thread throws is stopped', async context => {
   const crunching = fixture('crunching', ({workers}) => { workers.start(new URL('throwing-worker.js', WORKERS)); });
   const probe = fixture('probe');
-  const {runtime} = await run(context, {modules: [crunching, steady(), probe]});
+  const {runtime, logs} = await run(context, {modules: [crunching, steady(), probe]});
   await failed(runtime, 'crunching');
+  assert.equal(failure(logs, 'crunching')?.attributes['bunny.phase'], 'worker');
   assert.deepEqual(entry(runtime.health(), 'crunching').reason, {code: 'internal', detail: 'a worker failed'});
   await stillWorks(probe);
 });
@@ -128,13 +137,53 @@ it('an error that escapes a module\'s own async flow stops only that module', as
     void trigger.promise.then(() => { contained = contain(new Error('escaped')); });
   });
   const probe = fixture('probe');
-  const {runtime} = await run(context, {modules: [leaking, steady(), probe]});
+  const {runtime, logs} = await run(context, {modules: [leaking, steady(), probe]});
   assert.equal(contain(new Error('not from a module')), false, 'an error from outside every module is not contained');
   trigger.resolve(undefined);
   await failed(runtime, 'leaking');
   assert.equal(contained, true);
   assert.deepEqual(entry(runtime.health(), 'leaking').reason, {code: 'internal', detail: 'an error escaped the module'});
+  assert.equal(failure(logs, 'leaking')?.attributes['bunny.phase'], 'async');
   await stillWorks(probe);
+});
+
+it('a later error from a module that has already failed is logged as runtime.module.error-after-stop, with where it arose', async context => {
+  const trigger = deferred<undefined>();
+  const twice = fixture('twice', () => {
+    void trigger.promise.then(() => {
+      contain(new Error('the first escaped'));
+      contain(new TypeError('the second escaped'));
+    });
+  });
+  const {runtime, logs} = await run(context, {modules: [twice, steady()]});
+  trigger.resolve(undefined);
+  await failed(runtime, 'twice');
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.module.error-after-stop'), 5000, 'the later error');
+  assert.equal(logs.filter(record => record.event_name === 'runtime.module.failed').length, 1, 'the module fails once');
+  assert.deepEqual(logs.find(record => record.event_name === 'runtime.module.error-after-stop')?.attributes, {
+    'bunny.module': 'twice', 'bunny.phase': 'async', 'error.type': 'TypeError', 'bunny.provenance': 'source',
+  }, 'a stop problem names where it arose, with no registry code');
+});
+
+it('a handler outside every module that throws is logged as runtime.handler.failed, naming its participant and pattern', async context => {
+  const logs: LogRecord[] = [];
+  const writer = new LogWriter(record => { logs.push(record); }, 'info', {now: () => Date.now()});
+  const host = new ModuleHost([], {
+    clock: {now: () => Date.now()}, scheduler: {after: (delayMs, callback) => { const timer = setTimeout(callback, delayMs); return () => { clearTimeout(timer); }; }},
+    stateDir: await stateDir(context), logs: writer, startTimeoutMs: 1000, stopTimeoutMs: 1000,
+  });
+  await host.start();
+  const part = host.bus.connect('bunny/parts/probe');
+  const publisher = host.bus.connect('bunny/parts/publisher');
+  context.after(async () => { await Promise.all([part.close(), publisher.close()]); await host.stop(); });
+  await part.subscribe('bunny.event.session.*', () => { throw new Error('the part failed'); });
+  await publisher.publish('bunny.event.session.s1', turnEnded);
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.handler.failed'), 5000, 'the handler failure');
+  assert.deepEqual(logs.find(record => record.event_name === 'runtime.handler.failed')?.attributes, {
+    'bunny.participant': 'bunny/parts/probe', 'bunny.pattern': 'bunny.event.session.*', 'error.type': 'Error', 'bunny.provenance': 'source',
+  });
+  assertContractRecords(logs);
+  assert.deepEqual(writer.counts(), {written: logs.length, dropped: 0, failed: 0}, 'no record was refused');
 });
 
 it('a module\'s stop never waits on another module\'s handler', async context => {
@@ -173,7 +222,8 @@ it('stopping the runtime is bounded when a module\'s own handler never finishes'
   assert.equal(stateOf(runtime, 'hung'), 'stopped');
   assert.equal(stateOf(runtime, 'steady'), 'stopped');
   assert.equal(hung.stops, 1);
-  assert.ok(logs.some(record => record.event_name === 'runtime.module.stop-timed-out' && record.attributes['bunny.module'] === 'hung'));
+  const timedOut = logs.find(record => record.event_name === 'runtime.module.stop-timed-out' && record.attributes['bunny.module'] === 'hung');
+  assert.deepEqual(timedOut?.attributes, {'bunny.module': 'hung', 'bunny.timeout_ms': 100, 'bunny.phase': 'handlers', 'bunny.provenance': 'source'});
 });
 
 it('a stopped module leaves nothing behind', async context => {
@@ -211,8 +261,8 @@ it('a stopped module leaves nothing behind', async context => {
   assert.throws(() => workers.start(new URL('idle-worker.js', WORKERS)), refused('invalid-state'));
   assert.throws(() => open(), refused('invalid-state'));
   // The logger, tracing and clock keep working, so a module's stop can still log.
-  log.info('stopped.cleanly', {}, trace.span());
-  assert.ok(logs.some(record => record.event_name === 'stopped.cleanly' && record.trace_id !== undefined));
+  log.info('operation.completed', {'bunny.operation': 'shutdown'}, trace.span());
+  assert.ok(logs.some(record => record.event_name === 'operation.completed' && record.attributes['bunny.module'] === 'leaky' && record.trace_id !== undefined));
   assert.equal(moduleClock.now(), clock.now());
 });
 
@@ -237,10 +287,12 @@ it('dropped deliveries are logged once at once, then at most once a minute while
     }
   };
   const drops = (): LogRecord[] => logs.filter(record => record.event_name === 'runtime.delivery.dropped');
-  const counts = (): unknown[] => drops().map(record => record.attributes['bunny.dropped.count']);
+  const counts = (): unknown[] => drops().map(record => record.attributes['bunny.delivery.dropped_count']);
   await burst(1100);
   assert.equal(drops().length, 1, 'the first drop is logged at once');
-  assert.deepEqual(drops()[0]?.attributes, {'bunny.source': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.dropped.count': 1});
+  assert.deepEqual(drops()[0]?.attributes, {
+    'bunny.participant': 'bunny/modules/slow', 'bunny.pattern': 'bunny.state.session.*', 'bunny.delivery.dropped_count': 1, 'bunny.provenance': 'source',
+  });
   clock.advance(60_000);
   assert.equal(drops().length, 2, 'the rest of the first minute is one record');
   await burst(10);

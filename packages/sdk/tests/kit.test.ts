@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, Outbox, type BunnyModule, type Command, type ModuleContext, type StateDraft} from '../src/index.js';
-import {CHECKS, ModuleHarness, conformanceChecks, moduleConformance, type ConformanceSpec} from '../src/testing/index.js';
+import {CHECKS, ModuleHarness, checkModuleRecord, conformanceChecks, moduleConformance, type ConformanceSpec, type HarnessRecord} from '../src/testing/index.js';
 import {it} from './support.js';
 
 const BASE = 'https://bunny.invalid/events/';
@@ -21,14 +21,18 @@ const schemas = {
 };
 
 /** What a broken bulb gets wrong. */
-type Fault = {apiVersion?: string; plainOutcome?: boolean; refuseWith?: ErrorCode; hangingStop?: boolean; dimState?: boolean};
+type Fault = {
+  apiVersion?: string; plainOutcome?: boolean; refuseWith?: ErrorCode; hangingStop?: boolean; dimState?: boolean;
+  /** A record the bulb writes when it switches, in place of its registered `command.completed`. */
+  switchRecord?: {event: string; fields: Readonly<Record<string, string | number | boolean>>};
+};
 type Switch = {power: 'on' | 'off'};
 
 /** A bulb module: it serves its bulbs through sync, switches one on command and reports the outcome through its outbox. */
 function bulb(fault: Fault = {}): BunnyModule {
   return {
     manifest: {name: 'bulb', apiVersion: fault.apiVersion ?? '1.0'},
-    async start({sdk, database, clock}) {
+    async start({sdk, database, clock, log}) {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS bulbs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL)');
       db.exec('INSERT OR IGNORE INTO bulbs VALUES (\'b1\', 0, \'off\')');
@@ -54,6 +58,8 @@ function bulb(fault: Fault = {}): BunnyModule {
           if (fault.plainOutcome !== true) add(`bunny.event.kit-bulb.${found.id}`, outcome, {parent: command});
         });
         if (fault.plainOutcome === true) await sdk.publish(`bunny.event.kit-bulb.${found.id}`, outcome, {parent: command});
+        const {event, fields} = fault.switchRecord ?? {event: 'command.completed', fields: {'bunny.device.id': found.id, 'bunny.outcome': 'succeeded'}};
+        log.info(event, fields, command);
         return {status: 'accepted'};
       });
     },
@@ -112,6 +118,32 @@ it('the kit catches a stop that never finishes', async () => {
 it('the kit catches a message that breaks its payload schema', async () => {
   // Every state the bulb sends says `dim`, which its schema does not allow: in a sync and in what the command publishes.
   assert.deepEqual(await failing(spec({dimState: true})), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox]);
+});
+
+it('the kit catches a module that logs an event the diagnostic catalog does not register for modules', async () => {
+  // Every check that sees the record fails: the accepted command's and the outbox's.
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'bulb.switched', fields: {}}})), [CHECKS.accepts, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'runtime.module.started', fields: {}}})), [CHECKS.accepts, CHECKS.outbox],
+    'a module cannot write the runtime\'s own events');
+});
+
+it('the kit catches a module record with an unregistered attribute or a value outside its registered type', async () => {
+  const leak = 'GET http://192.0.2.7/api?token=secret-token refused';
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'error.message': leak}}})), [CHECKS.accepts, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'bunny.device.id': leak}}})), [CHECKS.accepts, CHECKS.outbox]);
+});
+
+it('a module record is checked as the runtime writes it: the module scope, its name and the registered vocabulary', () => {
+  const entry = (event: string, fields: Readonly<Record<string, string | number | boolean>> = {}): HarnessRecord => ({level: 'info', event, fields});
+  assert.equal(checkModuleRecord('bulb', entry('command.completed', {'bunny.outcome': 'succeeded'})), undefined);
+  assert.equal(checkModuleRecord('bulb', {...entry('operation.completed'), trace: {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}}), undefined);
+  assert.match(checkModuleRecord('bulb', entry('bulb.switched')) ?? '', /bulb\.switched is not a registered module event/);
+  assert.match(checkModuleRecord('bulb', entry('runtime.failed')) ?? '', /not a registered module event/);
+  assert.match(checkModuleRecord('bulb', entry('command.completed', {detail: 'secret-token'})) ?? '', /unregistered attribute: detail/);
+  const invalid = checkModuleRecord('bulb', entry('command.completed', {'bunny.outcome': 'secret-token'})) ?? '';
+  assert.match(invalid, /outside its registered type/);
+  assert.equal(invalid.includes('secret-token'), false, 'a problem never quotes a value');
+  assert.match(checkModuleRecord('Bad Name', entry('command.completed')) ?? '', /outside its registered type/, 'the module name is a registered attribute too');
 });
 
 it('a module that only consumes runs the checks that apply to it', async () => {

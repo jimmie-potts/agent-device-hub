@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {request} from 'node:http';
 import {test} from 'node:test';
+import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
@@ -63,7 +64,16 @@ void test('a crash between the lamp\'s commit and its publish restarts the runti
   await until(async () => (await state(run)).generation === 2, 'the second runtime');
   await until(async () => (await fetch(new URL('/api/runtime/v1/health', run.url)).catch(() => undefined))?.ok === true, 'health on the same port');
   const now = await state(run);
-  assert.deepEqual(now.logs.filter(entry => entry.generation === 2 && entry.record.event_name === 'lamp.outbox.republished').map(entry => entry.record.attributes.count), [3]);
+  const republished = now.logs.filter(({generation, record}) => generation === 2 && record.attributes['bunny.module'] === 'lamp' && record.event_name === 'outbox.republished');
+  assert.deepEqual(republished.map(entry => entry.record.attributes['bunny.outbox.republished_count']), [3]);
+  // Hub #903: every record of the run is a diagnostic-contract record of a test environment, and the restart is a new process.
+  for (const {record} of now.logs) assert.equal(parseRecord(JSON.stringify(record)).ok, true, `${record.event_name} is a contract record`);
+  assert.deepEqual([...new Set(now.logs.map(entry => entry.record.resource['deployment.environment.name']))], ['test']);
+  const instances = (generation: number): Set<string | undefined> =>
+    new Set(now.logs.filter(entry => entry.generation === generation).map(entry => entry.record.resource['service.instance.id']));
+  assert.equal(instances(1).size, 1);
+  assert.equal(instances(2).size, 1);
+  assert.notDeepEqual(instances(1), instances(2), 'the restarted runtime has its own instance ID');
   assert.deepEqual(now.devices.lamp.power, {'lamp-1': 'on'}, 'the simulated lamp kept its state across the crash');
   assert.equal(before.some(child => alive(child)), false, 'the crashed runtime is gone');
   assert.equal(children(run.supervisor.pid ?? 0).length, 1, 'one runtime again');

@@ -76,7 +76,8 @@ function queue(task: () => Promise<void>): Promise<void> {
 /** The runtime's arguments. A boundary negative control leaves out what keeps its run inside its boundary. */
 function runtimeArgs(): string[] {
   return [
-    '--port', String(runtimePort), ...(run.fault === 'real-transports' ? [] : ['--simulate']),
+    // A disposable run's records are a test environment's (Hub #903).
+    '--port', String(runtimePort), '--environment', 'test', ...(run.fault === 'real-transports' ? [] : ['--simulate']),
     ...(run.fault === 'default-state' ? [] : ['--state-dir', stateDirOf(dataDir), '--edge']),
   ];
 }

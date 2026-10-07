@@ -6,19 +6,19 @@ import {join} from 'node:path';
 import type {Worker} from 'node:worker_threads';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import {startRuntime} from '../src/index.js';
-import {START, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, setMode, stateDir} from './support.js';
+import {RUNTIME_PACKAGE_VERSION, START, UUID, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, setMode, stateDir} from './support.js';
 
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
 
-it('a module\'s logger writes records naming the module, with the trace and span of the work it handles', async context => {
+it('a module\'s logger writes contract records under the module scope, naming the module, with the trace and span of the work it handles', async context => {
   let span: TraceContext | undefined;
   const lights = fixture('lights', ({log, trace}) => {
     span = trace.span(PARENT);
-    log.info('scene.applied', {scene: 'quiet', bulbs: 2, fade: true}, span);
-    log.debug('poll.skipped');
-    log.warn('bulb.slow');
-    log.error('bulb.lost', {bulb: 'pendant-1'});
+    log.info('operation.completed', {'bunny.operation': 'mode', 'bunny.outcome': 'succeeded', 'bunny.device.id': 'pendant-1'}, span);
+    log.debug('feed.changed');
+    log.warn('command.queued', {'bunny.queue.depth': 3});
+    log.error('operation.failed', {'bunny.device.id': 'pendant-1', 'bunny.reason': 'unavailable'});
   });
   const {logs} = await run(context, {modules: [lights]});
   assert.ok(span);
@@ -26,34 +26,61 @@ it('a module\'s logger writes records naming the module, with the trace and span
   assert.equal(ids?.[1], PARENT_TRACE, 'the span joins the parent\'s trace');
   assert.notEqual(ids?.[2], 'b7ad6b7169203331', 'in a new span');
 
-  const records = logs.filter(record => record.scope.name === 'bunny.modules.lights');
-  assert.deepEqual(records.map(record => [record.event_name, record.severity_text, record.severity_number]), [
-    ['scene.applied', 'INFO', 9], ['bulb.slow', 'WARN', 13], ['bulb.lost', 'ERROR', 17],
+  const records = logs.filter(record => record.scope.name === 'bunny.module');
+  assert.deepEqual(records.map(record => [record.event_name, record.body, record.severity_text, record.severity_number]), [
+    ['operation.completed', 'Operation completed', 'INFO', 9], ['command.queued', 'Command queued', 'WARN', 13], ['operation.failed', 'Operation failed', 'ERROR', 17],
   ], 'debug is below the default level');
   const [applied, slow] = records;
   assert.ok(applied && slow);
-  assert.deepEqual(applied.resource, {'service.namespace': 'bunny', 'service.name': 'runtime'});
-  assert.deepEqual(applied.attributes, {'bunny.module': 'lights', scene: 'quiet', bulbs: 2, fade: true});
+  assert.equal(applied.schema_version, '1.2');
+  assert.deepEqual(applied.scope, {name: 'bunny.module', version: '1.0.0'});
+  assert.deepEqual(applied.resource, {
+    'service.namespace': 'bunny', 'service.name': 'runtime', 'service.version': RUNTIME_PACKAGE_VERSION,
+    'service.instance.id': applied.resource['service.instance.id'], 'deployment.environment.name': 'development',
+  });
+  assert.match(applied.resource['service.instance.id'] ?? '', UUID);
+  assert.deepEqual(applied.attributes, {
+    'bunny.module': 'lights', 'bunny.provenance': 'source', 'bunny.operation': 'mode', 'bunny.outcome': 'succeeded', 'bunny.device.id': 'pendant-1',
+  });
   assert.equal(applied.trace_id, PARENT_TRACE);
   assert.equal(applied.span_id, ids?.[2]);
   assert.equal(applied.trace_flags, '01');
-  assert.match(applied.timestamp, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+  assert.match(applied.timestamp ?? '', /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
   assert.equal(slow.trace_id, undefined, 'a record without a trace has no trace fields');
   assert.equal(slow.span_id, undefined);
+  assert.equal(new Set(logs.map(record => record.resource['service.instance.id'])).size, 1, 'one instance ID for the runtime\'s and the module\'s records');
 });
 
-it('a module\'s own fields never replace the module name, and a lower level shows debug records', async context => {
+it('a module\'s own fields never replace the module name or the provenance, and a lower level shows debug records', async context => {
   const chatty = fixture('chatty', ({log, trace}) => {
-    log.debug('poll.skipped', {'bunny.module': 'someone-else'});
+    log.debug('feed.changed', {'bunny.module': 'someone-else', 'bunny.provenance': 'observation'});
     const fresh = trace.span();
-    log.info('started', {}, fresh);
+    log.info('operation.completed', {}, fresh);
   });
   const {logs} = await run(context, {modules: [chatty], logLevel: 'debug'});
-  const records = logs.filter(record => record.scope.name === 'bunny.modules.chatty');
-  assert.equal(records[0]?.event_name, 'poll.skipped');
-  assert.equal(records[0]?.attributes['bunny.module'], 'chatty');
+  const records = logs.filter(record => record.scope.name === 'bunny.module');
+  assert.equal(records[0]?.event_name, 'feed.changed');
+  assert.deepEqual(records[0]?.attributes, {'bunny.module': 'chatty', 'bunny.provenance': 'source'});
   assert.match(records[1]?.trace_id ?? '', /^[0-9a-f]{32}$/, 'a span without a parent starts a new trace');
   assert.ok(logs.some(record => record.scope.name === 'bunny.runtime' && record.severity_text === 'DEBUG'));
+});
+
+it('a module\'s record with an unregistered event or an invalid value is not written, and fields the catalog does not register are left out', async context => {
+  const leak = 'GET http://192.0.2.7/api?token=secret-token refused';
+  const careless = fixture('careless', ({log}) => {
+    log.info('lamp.switched', {'bunny.device.id': 'lamp-1'});
+    log.info('runtime.module.started', {'bunny.module': 'careless'});
+    log.warn('operation.failed', {'bunny.device.id': 'lamp-1', 'bunny.reason': 'unavailable', 'error.message': leak, detail: leak, stack: leak});
+    log.error('operation.failed', {'bunny.device.id': leak});
+  });
+  // The unregistered event, the runtime's own event and the URL: three records the writer drops and counts.
+  const {logs} = await run(context, {modules: [careless]}, {dropped: 3});
+  const records = logs.filter(record => record.scope.name === 'bunny.module');
+  assert.deepEqual(records.map(record => record.event_name), ['operation.failed'], 'only the record with a registered event and valid values');
+  assert.deepEqual(records[0]?.attributes, {'bunny.module': 'careless', 'bunny.provenance': 'source', 'bunny.device.id': 'lamp-1', 'bunny.reason': 'unavailable'});
+  assert.equal(logs.some(record => record.event_name === 'lamp.switched'), false);
+  assert.equal(logs.filter(record => record.event_name === 'runtime.module.started').length, 1, 'a module cannot write the runtime\'s own events');
+  assert.equal(JSON.stringify(logs).includes('secret-token'), false, 'no raw message reaches a record');
 });
 
 it('a module\'s clock, timers and request deadlines all follow the runtime\'s clock and scheduler', async context => {

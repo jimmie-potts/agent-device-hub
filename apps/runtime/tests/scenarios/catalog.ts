@@ -224,10 +224,16 @@ const failedOperation = (h: Harness, requestId: string): Outcome => {
   return (items.length === 1 && item?.kind === 'operation' && item.result === 'failed' && item.error?.code === 'unavailable') || `inbox ${show(items)}`;
 };
 const switches = (h: Harness): number => h.devices().lamp.calls.length;
-const logged = (h: Harness, event: string, from = 1): Generational<{record: LogRecord}>[] =>
-  h.logs().filter(entry => entry.generation >= from && entry.record.event_name === event);
+/** The named module's records of `event`, from the runtime's `from`th start on. */
+const logged = (h: Harness, module: string, event: string, from = 1): Generational<{record: LogRecord}>[] =>
+  h.logs().filter(entry => entry.generation >= from && entry.record.attributes['bunny.module'] === module && entry.record.event_name === event);
+/** The commands the lamp received, from the runtime's `from`th start on: it logs each as it begins to handle it. */
+const commands = (h: Harness, from = 1): Generational<{record: LogRecord}>[] => logged(h, 'lamp', 'command.executing', from);
 const received = (h: Harness, requestId: string): number =>
-  logged(h, 'lamp.command.received').filter(entry => entry.record.attributes.requestId === requestId).length;
+  commands(h).filter(entry => entry.record.attributes['bunny.request.id'] === requestId).length;
+const acknowledgments = (h: Harness, from = 1): number => logged(h, 'lamp', 'outbox.acknowledged', from).length;
+const republished = (h: Harness, from: number): unknown[] =>
+  logged(h, 'lamp', 'outbox.republished', from).map(entry => entry.record.attributes['bunny.outbox.republished_count']);
 async function running(h: Harness, names: readonly string[]): Promise<Outcome> {
   const report = await h.health();
   const states = names.map(name => `${name} ${report.find(module => module.name === name)?.state ?? 'missing'}`);
@@ -307,8 +313,7 @@ const commandWithTrackedOutcome: Scenario = {
     expect('the lamp is on', h => lampPower(h, 'on')),
     expect('history holds one succeeded outcome for req-on, observed on the device', h => recorded(h, 'req-on', 'succeeded', 'observed')),
     expect('the reader\'s copy shows lamp-1 on', h => copied(h, 'on')),
-    expect('the core acknowledged the outcome, and the lamp forgot it', h => logged(h, 'lamp.outcome.acknowledged').length === 1 ||
-      `${logged(h, 'lamp.outcome.acknowledged').length} acknowledgments`),
+    expect('the core acknowledged the outcome, and the lamp forgot it', h => acknowledgments(h) === 1 || `${acknowledgments(h)} acknowledgments`),
     act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-off; the lamp accepts it', h => sendOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-off')),
     expect('history holds a failed outcome for req-off, with no evidence it reached the device', h => recorded(h, 'req-off', 'failed', 'none')),
@@ -404,7 +409,10 @@ const endToEnd: Scenario = {
     act('the operator sends req-1 again, a duplicate; the lamp accepts it', h => sendOnce(h, 'operator', 'again', switchLamp('lamp-1', 'on'), 'req-1')),
     holds('history keeps one outcome for req-1, and the device switched once', h =>
       historyOf(h, 'req-1').length === 1 && switches(h) === 1 ? true : `${historyOf(h, 'req-1').length} outcomes, ${switches(h)} switches`, 500),
-    expect('the lamp knew it for a duplicate', h => logged(h, 'lamp.command.duplicate').length === 1 || `${logged(h, 'lamp.command.duplicate').length} duplicates`),
+    expect('the lamp knew it for a duplicate', h => {
+      const duplicates = logged(h, 'lamp', 'command.completed').filter(entry => entry.record.attributes['bunny.outcome'] === 'duplicate').length;
+      return duplicates === 1 || `${duplicates} duplicates`;
+    }),
 
     act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-fail; the lamp accepts it', h => sendOnce(h, 'operator', 'fail', switchLamp('lamp-1', 'off'), 'req-fail')),
@@ -451,7 +459,7 @@ const endToEnd: Scenario = {
     expect('req-crash ends as the transport allows: its in-process requester died with the runtime, a remote one is uncertain-result',
       h => answered(h, 'crash', byTransport(h, {'in-process': 'lost', remote: 'uncertain-result'})), 5000 + REQUESTER_GRACE_MS),
     expect('at the restart the lamp republished its state, occurrence and outcome, once', h => {
-      const counts = logged(h, 'lamp.outbox.republished', 2).map(entry => entry.record.attributes.count);
+      const counts = republished(h, 2);
       return show(counts) === show([3]) || `republished ${show(counts)}`;
     }),
     expect('history holds one outcome for req-crash, and the reader resynced to see lamp-1 off', h =>
@@ -459,8 +467,8 @@ const endToEnd: Scenario = {
     expect('the session still waits for approval, and the lamp shows attention again', h => waiting(h, ['approval-1']) === true ? indicator(h, 'attention') : waiting(h, ['approval-1'])),
     expect('the inbox still holds req-fail after the restart', h => failedOperation(h, 'req-fail')),
     holds('no command was sent again: the lamp received none after the restart, and switched lamp-1 off once for req-crash', h =>
-      (logged(h, 'lamp.command.received', 2).length === 0 && received(h, 'req-crash') === 1 && switches(h) === 4 && lampPower(h, 'off') === true) ||
-      `${logged(h, 'lamp.command.received', 2).length} commands after the restart, ${switches(h)} switches`, 500),
+      (commands(h, 2).length === 0 && received(h, 'req-crash') === 1 && switches(h) === 4 && lampPower(h, 'off') === true) ||
+      `${commands(h, 2).length} commands after the restart, ${switches(h)} switches`, 500),
     holds('the reader never heard a message twice', h => heardOnce(h), 100),
 
     act('the core\'s next acknowledgment to the lamp is lost on its way', h => { h.loseAcknowledgment(); }),
@@ -468,20 +476,21 @@ const endToEnd: Scenario = {
     expect('history holds req-lost\'s outcome', h => recorded(h, 'req-lost', 'succeeded', 'observed')),
     act('the runtime restarts cleanly', h => h.restart()),
     expect('at the restart the lamp reported req-lost\'s outcome again, and nothing else', h => {
-      const counts = logged(h, 'lamp.outbox.republished', 3).map(entry => entry.record.attributes.count);
+      const counts = republished(h, 3);
       return show(counts) === show([1]) || `republished ${show(counts)}`;
     }),
     expect('the core took it as a duplicate and acknowledged it again, so the lamp forgot it', h => {
-      const duplicates = logged(h, 'core.message.duplicate', 3).filter(entry => entry.record.attributes.requestId === 'req-lost').length;
-      const acknowledged = logged(h, 'lamp.outcome.acknowledged', 3).length;
+      const duplicates = logged(h, 'core', 'message.received', 3)
+        .filter(({record}) => record.attributes['bunny.outcome'] === 'duplicate' && record.attributes['bunny.request.id'] === 'req-lost').length;
+      const acknowledged = acknowledgments(h, 3);
       return (duplicates === 1 && acknowledged === 1) || `${duplicates} duplicates, ${acknowledged} acknowledgments`;
     }),
     holds('history keeps one outcome each for req-crash and req-lost, and no command was sent again', h =>
-      (historyOf(h, 'req-crash').length === 1 && historyOf(h, 'req-lost').length === 1 && logged(h, 'lamp.command.received', 3).length === 0 && switches(h) === 5) ||
+      (historyOf(h, 'req-crash').length === 1 && historyOf(h, 'req-lost').length === 1 && commands(h, 3).length === 0 && switches(h) === 5) ||
       `${historyOf(h, 'req-crash').length} and ${historyOf(h, 'req-lost').length} outcomes, ${switches(h)} switches`, 500),
     act('the runtime restarts cleanly again', h => h.restart()),
     expect('the lamp republished nothing, since the core acknowledged every outcome', h => {
-      const counts = logged(h, 'lamp.outbox.republished', 4).map(entry => entry.record.attributes.count);
+      const counts = republished(h, 4);
       return show(counts) === show([0]) || `republished ${show(counts)}`;
     }),
   ],

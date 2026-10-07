@@ -1,33 +1,58 @@
-// One log record, as both threads build it: the watchdog's thread loads only this file, never the SDK.
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+// One log record as a diagnostic-contract record (docs/observability-contract.md, profile 1.2), as both threads build
+// it: the watchdog's thread loads only this file and the contract's pure entry point, never the SDK.
+import {createRecord, type DiagnosticRecord} from '@jimmie-potts/bunny-observability';
 
-export type LogRecord = {
-  timestamp: string;
-  severity_text: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
-  severity_number: 5 | 9 | 13 | 17 | 21;
-  event_name: string;
-  resource: {'service.namespace': 'bunny'; 'service.name': 'runtime'};
-  /** `bunny.runtime` for the runtime's own records, `bunny.modules.<name>` for a module's. */
-  scope: {name: string};
-  attributes: Record<string, string | number | boolean>;
-  trace_id?: string;
-  span_id?: string;
-  trace_flags?: string;
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+export type LogRecord = DiagnosticRecord;
+/** `deployment.environment.name`: the contract's three environments. */
+export type Environment = 'development' | 'test' | 'production';
+export const ENVIRONMENTS: readonly Environment[] = ['development', 'test', 'production'];
+
+/** The runtime's version, its records' `service.version`. A test keeps it equal to the package's. */
+export const RUNTIME_VERSION = '0.1.0';
+/** The contract profile that registers the runtime's service, scopes, events and attributes (Hub #903). */
+export const SCHEMA_VERSION = '1.2';
+/** The scope of the runtime's own records. */
+export const RUNTIME_SCOPE = 'bunny.runtime';
+/** The one scope of every module's records; the `bunny.module` attribute names the module. */
+export const MODULE_SCOPE = 'bunny.module';
+/** The version of both scopes. */
+export const SCOPE_VERSION = '1.0.0';
+
+export type Resource = {
+  'service.namespace': 'bunny';
+  'service.name': 'runtime';
+  'service.version': string;
+  'service.instance.id': string;
+  'deployment.environment.name': Environment;
 };
 
-const SEVERITY = {
-  debug: ['DEBUG', 5], info: ['INFO', 9], warn: ['WARN', 13], error: ['ERROR', 17], fatal: ['FATAL', 21],
-} as const satisfies Record<LogLevel, readonly [LogRecord['severity_text'], LogRecord['severity_number']]>;
-export const LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error', 'fatal'];
-
-export type TraceIds = {traceId: string; spanId: string; flags: string};
-
-export function record(level: LogLevel, scope: string, event: string, attributes: LogRecord['attributes'], timeMs: number, ids?: TraceIds): LogRecord {
-  const [text, number] = SEVERITY[level];
+/** The runtime's resource: its service and version, the process's neutral instance ID and the environment. */
+export function runtimeResource(environment: Environment, instanceId: string): Resource {
   return {
-    timestamp: new Date(timeMs).toISOString(), severity_text: text, severity_number: number, event_name: event,
-    resource: {'service.namespace': 'bunny', 'service.name': 'runtime'}, scope: {name: scope}, attributes,
-    ...(ids === undefined ? {} : {trace_id: ids.traceId, span_id: ids.spanId, trace_flags: ids.flags}),
+    'service.namespace': 'bunny', 'service.name': 'runtime', 'service.version': RUNTIME_VERSION,
+    'service.instance.id': instanceId, 'deployment.environment.name': environment,
   };
 }
 
+const SEVERITY = {debug: 'DEBUG', info: 'INFO', warn: 'WARN', error: 'ERROR', fatal: 'FATAL'} as const satisfies Record<LogLevel, string>;
+export const LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error', 'fatal'];
+
+export type TraceIds = {traceId: string; spanId: string; flags: string};
+export type Attributes = Readonly<Record<string, string | number | boolean>>;
+
+/**
+ * The contract record, built by the contract's own `createRecord`: the event's registered static body, the severity
+ * pair, the resource, the scope and its version, and `bunny.provenance` `source`. Attributes the catalog does not
+ * register are left out, so no other field reaches a record. Undefined when the contract refuses the record whole, as
+ * for an unregistered event, an event outside its scope, a value outside its registered type or a missing resource
+ * field: an invalid record is dropped, never truncated.
+ */
+export function record(level: LogLevel, scope: string, event: string, attributes: Attributes, timeMs: number, resource: Resource, ids?: TraceIds): LogRecord | undefined {
+  const built = createRecord({
+    schema_version: SCHEMA_VERSION, timestamp: new Date(timeMs).toISOString(), severity_text: SEVERITY[level], event_name: event,
+    resource, scope: {name: scope, version: SCOPE_VERSION}, attributes: {...attributes, 'bunny.provenance': 'source'},
+    ...(ids === undefined ? {} : {trace_id: ids.traceId, span_id: ids.spanId, trace_flags: ids.flags}),
+  });
+  return built.ok ? built.value : undefined;
+}

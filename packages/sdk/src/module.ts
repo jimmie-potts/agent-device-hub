@@ -69,8 +69,11 @@ export interface BunnyModule {
 export type LogFields = Readonly<Record<string, string | number | boolean>>;
 
 /**
- * Writes the module's log records. `event` names what happened, such as `scene.applied`. `trace` is the message or span
- * being handled; the record then carries its trace and span IDs. Never put a secret in a field or an error message.
+ * Writes the module's log records as diagnostic-contract records under the `bunny.module` scope. `event` names what
+ * happened and must be an event the contract's catalog registers for modules, such as `command.completed`; `fields` must
+ * be registered attributes. The runtime drops a record with another event or an invalid value, and leaves out fields the
+ * catalog does not register; the module test kit fails a module that logs either. `trace` is the message or span being
+ * handled; the record then carries its trace and span IDs. Never put a secret, message or personal content in a field.
  */
 export interface Logger {
   debug(event: string, fields?: LogFields, trace?: TraceContext): void;

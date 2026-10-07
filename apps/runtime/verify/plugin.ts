@@ -33,17 +33,20 @@ export function artifactFiles(at = root): string[] {
     ...built('apps/runtime/dist/src'), ...built('apps/runtime/dist/verify', file => !file.startsWith('tests/')),
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
+    // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
+    ...built('packages/observability/dist', file => file !== 'node.js'),
+    ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
   ];
 }
 
 export const BUILD_SOURCES = [
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
-  ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**',
+  ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
-  'packages/event-contracts/dist/v2/index.js',
+  'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -212,7 +215,7 @@ export default definePlugin({
     failureCause: tail => /^runtime-start-failed: [a-z0-9-]+$/m.exec(tail)?.[0],
   },
   components: [
-    {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate and --edge and the run\'s state directory'},
+    {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --environment test and the run\'s state directory'},
     {id: 'sdk-edge', kind: 'actual', note: 'the runtime\'s SDK edge on its listener; each part has a run-generated grant in the state directory'},
     {id: 'fixture-modules', kind: 'simulated', note: 'the stand-in core (session owner, history and inbox until #831, #782 and #923), the fixture lamp and chime, and a harness module that reports what the bus publishes'},
     {id: 'devices', kind: 'simulated', note: 'SimulatedLamps and SimulatedChime in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},

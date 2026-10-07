@@ -17,7 +17,8 @@
     "schema_version": {
       "enum": [
         "1.0",
-        "1.1"
+        "1.1",
+        "1.2"
       ]
     },
     "timestamp": {
@@ -63,7 +64,31 @@
         "feed.changed",
         "operation.completed",
         "operation.failed",
-        "telemetry.dropped"
+        "telemetry.dropped",
+        "runtime.started",
+        "runtime.ready",
+        "runtime.stopped",
+        "runtime.failed",
+        "runtime.stuck",
+        "runtime.watchdog.failed",
+        "runtime.watchdog.stopped",
+        "runtime.module.refused",
+        "runtime.module.starting",
+        "runtime.module.started",
+        "runtime.module.failed",
+        "runtime.module.error-after-stop",
+        "runtime.module.stop-timed-out",
+        "runtime.module.stop-failed",
+        "runtime.module.stopped",
+        "runtime.handler.failed",
+        "runtime.delivery.dropped",
+        "runtime.edge.serving",
+        "runtime.edge.connected",
+        "runtime.edge.disconnected",
+        "runtime.edge.refused",
+        "message.received",
+        "outbox.republished",
+        "outbox.acknowledged"
       ]
     },
     "body": {
@@ -81,7 +106,31 @@
         "Feed state changed",
         "Operation completed",
         "Operation failed",
-        "Diagnostic records dropped"
+        "Diagnostic records dropped",
+        "Runtime started",
+        "Runtime ready",
+        "Runtime stopped",
+        "Runtime failed",
+        "Runtime event loop stuck",
+        "Runtime watchdog failed",
+        "Runtime watchdog stopped",
+        "Module refused",
+        "Module starting",
+        "Module started",
+        "Module failed",
+        "Module error after stop",
+        "Module stop timed out",
+        "Module stop failed",
+        "Module stopped",
+        "Handler failed",
+        "Deliveries dropped",
+        "Edge serving",
+        "Edge part connected",
+        "Edge part disconnected",
+        "Edge call refused",
+        "Message received",
+        "Outbox republished",
+        "Outbox outcome acknowledged"
       ]
     },
     "resource": {
@@ -104,6 +153,7 @@
             "hub-dashboard",
             "local-controllers",
             "tidbyt",
+            "lifx",
             "pixoo",
             "pixoo-web",
             "pixoo-media-worker",
@@ -113,7 +163,7 @@
             "nanoleaf-wall-ui",
             "nanoleaf-mcp",
             "bunny-tool",
-            "lifx"
+            "runtime"
           ]
         },
         "service.version": {
@@ -160,7 +210,9 @@
             "bunny.browser",
             "bunny.helper",
             "bunny.verification",
-            "bunny.telemetry"
+            "bunny.telemetry",
+            "bunny.runtime",
+            "bunny.module"
           ]
         },
         "version": {
@@ -354,6 +406,145 @@
         "bunny.build.revision": {
           "type": "string",
           "pattern": "^[a-f0-9]{40}(?![\\s\\S])"
+        },
+        "bunny.module": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "bunny.participant": {
+          "type": "string",
+          "pattern": "^bunny(?:/[a-z0-9][a-z0-9-]*)+(?![\\s\\S])",
+          "maxLength": 256
+        },
+        "bunny.pattern": {
+          "type": "string",
+          "pattern": "^(?:bunny\\.(?:state|event|cmd|\\*)(?:\\.(?:[a-z0-9]+(?:-[a-z0-9]+)*|\\*)){2}|sync [a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*)(?![\\s\\S])",
+          "maxLength": 512
+        },
+        "bunny.code": {
+          "enum": [
+            "invalid-request",
+            "invalid-message",
+            "too-large",
+            "unsupported-version",
+            "unknown-schema",
+            "unsupported-capability",
+            "unauthenticated",
+            "forbidden",
+            "not-found",
+            "invalid-state",
+            "revision-conflict",
+            "duplicate-conflict",
+            "expired",
+            "cancelled",
+            "capacity",
+            "unavailable",
+            "uncertain-result",
+            "internal"
+          ]
+        },
+        "bunny.phase": {
+          "enum": [
+            "manifest",
+            "start",
+            "handler",
+            "timer",
+            "worker",
+            "async",
+            "handlers",
+            "stop"
+          ]
+        },
+        "bunny.module_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.timeout_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.exit_code": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "bunny.lag.duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.lag.limit_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.delivery.dropped_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.message.id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}(?![\\s\\S])"
+        },
+        "bunny.message.kind": {
+          "enum": [
+            "state",
+            "removal",
+            "occurrence",
+            "command",
+            "reply",
+            "outcome",
+            "sync-request",
+            "sync-completed"
+          ]
+        },
+        "bunny.outbox.republished_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.simulate": {
+          "type": "boolean"
+        },
+        "bunny.edge": {
+          "type": "boolean"
+        },
+        "bunny.grant_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.route": {
+          "enum": [
+            "stream",
+            "publish",
+            "subscribe",
+            "request",
+            "respond",
+            "reply",
+            "sync",
+            "serve",
+            "answer",
+            "close",
+            "other"
+          ]
+        },
+        "server.port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "error.type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
+        },
+        "error.code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
         }
       }
     },
@@ -416,6 +607,261 @@
               "required": [
                 "bunny.queue.depth"
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Profile 1.2 additions are closed to profiles 1.0 and 1.1.",
+      "if": {
+        "properties": {
+          "schema_version": {
+            "enum": [
+              "1.0",
+              "1.1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "not": {
+              "enum": [
+                "runtime.started",
+                "runtime.ready",
+                "runtime.stopped",
+                "runtime.failed",
+                "runtime.stuck",
+                "runtime.watchdog.failed",
+                "runtime.watchdog.stopped",
+                "runtime.module.refused",
+                "runtime.module.starting",
+                "runtime.module.started",
+                "runtime.module.failed",
+                "runtime.module.error-after-stop",
+                "runtime.module.stop-timed-out",
+                "runtime.module.stop-failed",
+                "runtime.module.stopped",
+                "runtime.handler.failed",
+                "runtime.delivery.dropped",
+                "runtime.edge.serving",
+                "runtime.edge.connected",
+                "runtime.edge.disconnected",
+                "runtime.edge.refused",
+                "message.received",
+                "outbox.republished",
+                "outbox.acknowledged"
+              ]
+            }
+          },
+          "resource": {
+            "type": "object",
+            "properties": {
+              "service.name": {
+                "not": {
+                  "enum": [
+                    "runtime"
+                  ]
+                }
+              }
+            }
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "not": {
+                  "enum": [
+                    "bunny.runtime",
+                    "bunny.module"
+                  ]
+                }
+              }
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.module",
+                  "bunny.participant",
+                  "bunny.pattern",
+                  "bunny.code",
+                  "bunny.phase",
+                  "bunny.module_count",
+                  "bunny.timeout_ms",
+                  "bunny.exit_code",
+                  "bunny.lag.duration_ms",
+                  "bunny.lag.limit_ms",
+                  "bunny.delivery.dropped_count",
+                  "bunny.message.id",
+                  "bunny.message.kind",
+                  "bunny.outbox.republished_count",
+                  "bunny.simulate",
+                  "bunny.edge",
+                  "bunny.grant_count",
+                  "bunny.route",
+                  "server.port",
+                  "error.type",
+                  "error.code"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "The bunny.runtime scope belongs to its services and allows only its events.",
+      "if": {
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "bunny.runtime"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "resource": {
+            "type": "object",
+            "properties": {
+              "service.name": {
+                "enum": [
+                  "runtime"
+                ]
+              }
+            }
+          },
+          "event_name": {
+            "enum": [
+              "runtime.started",
+              "runtime.ready",
+              "runtime.stopped",
+              "runtime.failed",
+              "runtime.stuck",
+              "runtime.watchdog.failed",
+              "runtime.watchdog.stopped",
+              "runtime.module.refused",
+              "runtime.module.starting",
+              "runtime.module.started",
+              "runtime.module.failed",
+              "runtime.module.error-after-stop",
+              "runtime.module.stop-timed-out",
+              "runtime.module.stop-failed",
+              "runtime.module.stopped",
+              "runtime.handler.failed",
+              "runtime.delivery.dropped",
+              "runtime.edge.serving",
+              "runtime.edge.connected",
+              "runtime.edge.disconnected",
+              "runtime.edge.refused"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "The bunny.module scope belongs to its services and allows only its events.",
+      "if": {
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "bunny.module"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "resource": {
+            "type": "object",
+            "properties": {
+              "service.name": {
+                "enum": [
+                  "runtime"
+                ]
+              }
+            }
+          },
+          "event_name": {
+            "enum": [
+              "command.admitted",
+              "command.rejected",
+              "command.queued",
+              "command.executing",
+              "command.completed",
+              "command.cancelled",
+              "lifecycle.observed",
+              "feed.changed",
+              "operation.completed",
+              "operation.failed",
+              "message.received",
+              "outbox.republished",
+              "outbox.acknowledged"
+            ]
+          },
+          "attributes": {
+            "type": "object",
+            "properties": {
+              "bunny.module": {}
+            },
+            "required": [
+              "bunny.module"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "The runtime's own events belong to its bunny.runtime scope.",
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "runtime.started",
+              "runtime.ready",
+              "runtime.stopped",
+              "runtime.failed",
+              "runtime.stuck",
+              "runtime.watchdog.failed",
+              "runtime.watchdog.stopped",
+              "runtime.module.refused",
+              "runtime.module.starting",
+              "runtime.module.started",
+              "runtime.module.failed",
+              "runtime.module.error-after-stop",
+              "runtime.module.stop-timed-out",
+              "runtime.module.stop-failed",
+              "runtime.module.stopped",
+              "runtime.handler.failed",
+              "runtime.delivery.dropped",
+              "runtime.edge.serving",
+              "runtime.edge.connected",
+              "runtime.edge.disconnected",
+              "runtime.edge.refused"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "bunny.runtime"
+              }
             }
           }
         }

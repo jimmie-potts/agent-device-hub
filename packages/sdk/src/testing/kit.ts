@@ -14,6 +14,7 @@ import type {CommandDraft, Participant, RequestResult} from '../sdk.js';
 import {schemaFamily, type Snapshot} from '../sync.js';
 import {standInAckSchemas} from './acknowledge.js';
 import {ModuleHarness} from './harness.js';
+import {checkModuleRecord} from './records.js';
 
 export type ConformanceSpec = {
   /** A fresh instance of the module. The kit calls it again to restart the module on the same database. */
@@ -143,10 +144,16 @@ class World {
     return this.probe.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
   }
 
-  /** Every message the world saw followed profile 2.0, and no handler, timer or worker of the module failed. */
+  /**
+   * Every message the world saw followed profile 2.0, every record the module logged is one the runtime writes whole as a
+   * diagnostic-contract record, and no handler, timer or worker of the module failed.
+   */
   async verify(): Promise<void> {
     await flush();
     assert.deepEqual(this.#invalid, [], 'every message follows profile 2.0');
+    const unwritten = this.#hosted.flatMap(harness => harness.logs.map(entry => checkModuleRecord(harness.name, entry)))
+      .filter(problem => problem !== undefined);
+    assert.deepEqual(unwritten, [], 'every log record is a registered module record');
     assert.deepEqual([...this.#errors, ...this.#hosted.flatMap(harness => harness.failures)], [], 'no handler, timer or worker of the module failed');
   }
 

@@ -5,9 +5,9 @@ import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import type {RemoteEdge} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
-import {LogWriter, errorFields, stderrSink} from './log.js';
+import {INSTANCE_ID, LogWriter, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
-import {LEVELS, type LogLevel} from './record.js';
+import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
 
 export type ProcessOptions = {
@@ -16,11 +16,13 @@ export type ProcessOptions = {
   simulate: boolean;
   /** Serve the SDK edge on the health listener, with the grants in the state directory's `edge-grants.json`. */
   edge: boolean;
+  /** Every record's `deployment.environment.name` (#903). The installed runtime runs as `production`. */
+  environment: Environment;
 };
 
 export const DEFAULT_STATE_DIR = join(homedir(), '.local/state/agent-device-hub/runtime');
 export const DEFAULT_LAG_LIMIT_MS = 10_000;
-const USAGE = 'usage: main.js --port <0-65535> [--state-dir <absolute path>] [--lag-limit-ms <1-3600000>] [--log-level debug|info|warn|error] [--simulate] [--edge]';
+const USAGE = 'usage: main.js --port <0-65535> [--state-dir <absolute path>] [--lag-limit-ms <1-3600000>] [--log-level debug|info|warn|error] [--environment development|test|production] [--simulate] [--edge]';
 const INTEGER = /^(0|[1-9]\d*)$/;
 
 /** Arguments the entry point cannot run with. */
@@ -29,6 +31,7 @@ export class UsageError extends Error {
 }
 
 const isLevel = (value: string): value is LogLevel => (LEVELS as readonly string[]).includes(value);
+const isEnvironment = (value: string): value is Environment => (ENVIRONMENTS as readonly string[]).includes(value);
 
 function integer(value: string | undefined, name: string, min: number, max: number): number {
   const parsed = value !== undefined && INTEGER.test(value) ? Number(value) : Number.NaN;
@@ -37,13 +40,15 @@ function integer(value: string | undefined, name: string, min: number, max: numb
 }
 
 export function parseArguments(argv: readonly string[]): ProcessOptions {
-  let values: {port?: string; 'state-dir'?: string; 'lag-limit-ms'?: string; 'log-level'?: string; simulate?: boolean; edge?: boolean};
+  let values: {
+    port?: string; 'state-dir'?: string; 'lag-limit-ms'?: string; 'log-level'?: string; environment?: string; simulate?: boolean; edge?: boolean;
+  };
   try {
     ({values} = parseArgs({
       args: [...argv], strict: true, allowPositionals: false,
       options: {
         'port': {type: 'string'}, 'state-dir': {type: 'string'}, 'lag-limit-ms': {type: 'string'}, 'log-level': {type: 'string'},
-        'simulate': {type: 'boolean'}, 'edge': {type: 'boolean'},
+        'environment': {type: 'string'}, 'simulate': {type: 'boolean'}, 'edge': {type: 'boolean'},
       },
     }));
   } catch (error) {
@@ -51,6 +56,8 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
   }
   const logLevel = values['log-level'] ?? 'info';
   if (!isLevel(logLevel) || logLevel === 'fatal') throw new UsageError('--log-level must be debug, info, warn or error');
+  const environment = values.environment ?? 'development';
+  if (!isEnvironment(environment)) throw new UsageError('--environment must be development, test or production');
   return {
     port: integer(values.port, 'port', 0, 65_535),
     stateDir: values['state-dir'] ?? DEFAULT_STATE_DIR,
@@ -58,6 +65,7 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
     logLevel,
     simulate: values.simulate === true,
     edge: values.edge === true,
+    environment,
   };
 }
 
@@ -76,7 +84,8 @@ export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (
  * once the ready line is on stdout, or once a signal during startup has begun the stop.
  */
 export async function runProcess(options: ProcessOptions & ProcessInputs): Promise<void> {
-  const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}).logger('bunny.runtime');
+  // One resource for the process: these records, the runtime's and the watchdog thread's share its instance ID.
+  const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}, runtimeResource(options.environment, INSTANCE_ID)).logger(RUNTIME_SCOPE);
   const fail = (error: unknown): never => {
     log.fatal('runtime.failed', errorFields(error));
     process.exit(1);
@@ -103,7 +112,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   try {
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
-      logLevel: options.logLevel, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
+      logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
       ...(options.edge ? {edge: {
         schemas: {...options.schemas, ...moduleSchemas(options.modules)}, ...(options.onEdge === undefined ? {} : {onServing: options.onEdge}),
       }} : {}),
@@ -115,6 +124,9 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
     stop();
     return;
   }
+  // The ready line is machine-readable stdout with its own contract, which readiness checks parse; the record is the
+  // journal's.
+  log.info('runtime.ready', {'bunny.module_count': options.modules.length});
   process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtime.url})}\n`);
 }
 

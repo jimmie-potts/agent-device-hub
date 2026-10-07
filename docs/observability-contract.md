@@ -7,12 +7,16 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.1.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.2.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0 and 1.1 are independent of the pinned OpenTelemetry semantic conventions
-1.44.0. Both profiles are introduced together: 1.0 is the minimal compatibility
-profile; 1.1 adds optional `bunny.queue.depth`. This is not a claim that an older
-artifact was deployed. The default producer profile is 1.1.
+1.0, 1.1 and 1.2 are independent of the pinned OpenTelemetry semantic conventions
+1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
+compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
+claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
+runtime ([#903](https://github.com/jimmie-potts/agent-device-hub/issues/903));
+see [The runtime's records](#the-runtimes-records-profile-12). The default
+producer profile stays 1.1: existing producers keep it, and a producer selects
+1.2 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -31,7 +35,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0` or `1.1` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1` or `1.2` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -93,7 +97,7 @@ Approved attributes keep these identities separate:
 - `bunny.operation.id`, task/effect/clock epochs, generation, state/source revision
   retain their owning semantics. Integers are nonnegative safe integers.
 - Duration and queue wait fields are nonnegative milliseconds, bounded to one
-  day. Queue depth is 0–1,024 in profile 1.1 only.
+  day. Queue depth is 0-1,024, from profile 1.1.
 - `bunny.operation`, `bunny.outcome`, `bunny.reason` use registered enums.
   `bunny.write.possible` preserves uncertain side effects.
 - `bunny.provenance=source` describes an emitter's own event. A receiver's
@@ -108,6 +112,58 @@ media, session/project names, raw paths/URLs and raw exception messages/stacks.
 Do not capture arbitrary objects, console output, DOM/text or browser replay.
 Map errors to registered reason codes. Unknown values are not stringified.
 No private data in baggage; baggage and tracestate propagation are disabled.
+
+## The runtime's records (profile 1.2)
+
+Profile 1.2 is profile 1.1 plus the runtime's vocabulary. The catalog's
+`additions` lists what each profile adds, and every earlier profile rejects it,
+so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
+
+- **Service:** `runtime`, the one runtime process of
+  [ADR 0012](decisions/0012-bunny-event-platform.md).
+- **Scopes:** `bunny.runtime` for the runtime's own records, and `bunny.module`
+  for every module's. There is one module scope, not one per module: the
+  `bunny.module` attribute names the module. Both scopes belong to the `runtime`
+  service, and each allows only the events its entry in the catalog's
+  `scope_rules` lists. A `bunny.module` record must name its module. The
+  runtime's own events, `runtime.*`, appear only under `bunny.runtime`.
+- **Runtime events:** start, ready, stop and failure (`runtime.started`,
+  `runtime.ready`, `runtime.stopped`, `runtime.failed`), the event-loop lag check
+  (`runtime.stuck`, `runtime.watchdog.failed`, `runtime.watchdog.stopped`),
+  module lifecycle (`runtime.module.refused`, `.starting`, `.started`,
+  `.failed`, `.error-after-stop`, `.stop-timed-out`, `.stop-failed`,
+  `.stopped`), a failed handler outside every module
+  (`runtime.handler.failed`), dropped deliveries
+  (`runtime.delivery.dropped`) and the SDK edge (`runtime.edge.serving`,
+  `.connected`, `.disconnected`, `.refused`).
+- **Module events:** a module may log the existing command, lifecycle, feed and
+  operation events, and three new ones: `message.received` (a consumer took a
+  message once by `(source, id)`, as a duplicate, or refused a conflict),
+  `outbox.republished` and `outbox.acknowledged`.
+- **Attributes:** `bunny.module` (a module name), `bunny.participant` (an SDK
+  participant source such as `bunny/modules/lamp`), `bunny.pattern` (a routing
+  pattern or `sync <families>`), `bunny.code` (a code from the 2.0 error
+  registry), `bunny.phase` (where a module's refusal, failure or stop problem
+  arose), counts (`bunny.module_count`, `bunny.delivery.dropped_count`,
+  `bunny.outbox.republished_count`, `bunny.grant_count`), durations
+  (`bunny.timeout_ms`, `bunny.lag.duration_ms`, `bunny.lag.limit_ms`),
+  `bunny.exit_code`, `bunny.message.id` (the 2.0 message id), `bunny.message.kind`,
+  `bunny.simulate` and `bunny.edge` (whether modules are simulated and the edge
+  configured), `bunny.route` (one of the edge's routes, or `other`), the
+  OpenTelemetry `server.port`, and
+  the OpenTelemetry `error.type` with its plain `error.code`. `error.type` and
+  `error.code` are identifiers of at most 64 characters, never a message. A
+  record carries a listener's port, never its URL. An edge refusal carries its
+  registry code and, as the existing `bunny.reason`, that code's fixed
+  registered reason, never the refusal's detail.
+
+A new runtime or module event or attribute is a catalog change: a new profile or
+an unreleased one, with fixtures, contract review and the packaged-consumer
+checks. Building a record keeps only the attributes its own profile registers,
+so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
+validate and convert profile 1.2 records from the schema and catalog; they
+produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
+producers stay on 1.1.
 
 ## Traces and context
 
@@ -210,6 +266,12 @@ contract delivery. Ownership means source responsibility, not installation.
 | Nanoleaf | Python controller, CLI/MCP, detached worker and SQLite queue: explicit context/links across process boundaries and a bounded sink despite discarded stdout/stderr. |
 | Nanoleaf | Wall server/browser: authenticated same-origin rate-limited relay preserving CSP/token checks; no visible UI change. |
 | Nanoleaf | Copied runtime/bridge vendor layouts and helper tools: immutable artifact receipt in each packaging boundary; preserve helper output. |
+
+Profile 1.2 adopts the B.U.N.N.Y. runtime in source: its own records and its
+modules' are contract records on stderr. The runtime and its journal intake are
+installed at the cutover
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
+export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).
 
 Generated static documentation/media artifacts emit no runtime diagnostics. Maintained
 helper processes may emit operational metadata on a separate channel; raw compiler,

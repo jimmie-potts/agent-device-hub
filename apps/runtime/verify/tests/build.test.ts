@@ -19,6 +19,7 @@ void test('a newer source of the runtime, its run or a workspace package it load
     const sources = [
       'apps/runtime/src/runtime.ts', 'apps/runtime/verify/supervisor.ts', 'apps/runtime/tests/fixtures/lamp.ts', 'apps/runtime/tests/scenarios/catalog.ts',
       'packages/sdk/src/index.ts', 'packages/app-verify/src/index.ts', 'packages/event-contracts/src/v2/index.ts',
+      'packages/observability/src/catalog.json',
     ];
     for (const file of [...sources, ...BUILD_OUTPUTS]) {
       await mkdir(dirname(join(repo, file)), {recursive: true});
@@ -62,7 +63,8 @@ void test('build-current watches every source the run loads, and the served cand
     else if (!watched.has(path)) unwatched.push(path);
   }
   assert.deepEqual(unwatched, [], 'every runtime source the run loads is a build source');
-  assert.ok(packages.has('event-contracts') && packages.has('sdk') && packages.has('app-verify'), `the run loads its workspace packages: ${[...packages].join(', ')}`);
+  assert.ok(packages.has('event-contracts') && packages.has('sdk') && packages.has('app-verify') && packages.has('observability'),
+    `the run loads its workspace packages: ${[...packages].join(', ')}`);
   const candidate = artifactFiles();
   for (const name of packages) {
     assert.ok([...watched].some(file => file.startsWith(`packages/${name}/src/`)), `${name}'s sources are build sources`);
