@@ -112,7 +112,8 @@ jobs:
           cache: npm
       - run: npm ci
       # Hosted runners sometimes stall in apt downloads during --with-deps until the job's limit (#862). The script gives
-      # each attempt 300 s, above the slowest successful install's 232 s, and retries a stalled or failed attempt twice.
+      # each attempt 300 s, above the slowest successful install so far (293 s, on #987's own run), and retries a stalled
+      # or failed attempt twice. An install that runs past 300 s costs a retry, which resumes from apt's cache, not a failure.
       - name: Install Chromium with its system dependencies
         timeout-minutes: 20
         run: bash scripts/install-browser.sh npx playwright install --with-deps chromium

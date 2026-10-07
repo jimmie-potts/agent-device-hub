@@ -462,7 +462,8 @@ test('the standalone wrapper runs its payload only after a successful build', (t
 // Hub #862: a fake installer that behaves like Playwright's --with-deps on a hosted runner. It starts apt-get through
 // sudo in a session of its own, so the attempt's timeout stops the installer but not apt-get, which keeps holding apt's
 // lock; a later apt-get fails at once on that lock. Each attempt's plan letter makes apt-get hang (h), fail (f) or
-// succeed (s).
+// succeed (s). The fake sudo's pkill and the fake pgrep see only this run's fake apt-get processes, so overlapping test
+// runs never stop each other's, and a run as root never signals the host's apt-get.
 function fakeRunner(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-install-'));
   const bin = path.join(directory, 'bin');
@@ -476,22 +477,31 @@ function fakeRunner(t) {
     fs.rmSync(directory, { recursive: true, force: true });
   });
   assert.equal(spawnSync('mkfifo', [path.join(directory, 'fifo')]).status, 0);
+  const each = action => ['for pid in $(cat "$FAKE/pids" 2>/dev/null); do',
+    `  [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = apt-get ] && ${action}`, 'done'];
   const files = {
-    sudo: ['exec "$@"'],
+    // `sudo pkill -x apt-get` stops only this run's fake apt-get; every other command runs unchanged.
+    sudo: ['if [ "$*" = "pkill -x apt-get" ]; then', ...each('kill "$pid"'), '  exit 0', 'fi', 'exec "$@"'],
+    // `pgrep -x "apt-get|dpkg"` succeeds while one of this run's fake apt-get processes is alive.
+    pgrep: ['[ "$*" = "-x apt-get|dpkg" ] || { echo "unexpected pgrep $*" >&2; exit 2; }', ...each('exit 0'), 'exit 1'],
     tee: ['echo "$1" > "$FAKE/apt-conf-path"', 'cat > "$FAKE/apt-conf"'],
     dpkg: ['echo "$*" >> "$FAKE/dpkg"'],
     npx: ['n=$(( $(cat "$FAKE/count" 2>/dev/null || echo 0) + 1 ))', 'echo "$n" > "$FAKE/count"',
       'setsid "$FAKE/bin/apt-get" "${PLAN:n-1:1}" &', 'wait $! || exit', 'echo "installed $*"'],
     'apt-get': ['echo "$$" >> "$FAKE/pids"', 'exec 9>"$FAKE/lock"',
       'flock -n 9 || { echo "E: Could not get lock $FAKE/lock"; exit 100; }',
-      // A hung apt-get releases the step's output, as on the runner, so only its lock outlives the attempt.
+      // On the runner a hung apt-get keeps writing to the step's log. Here it drops its output, because spawnSync waits
+      // for the pipes to close.
       'case "$1" in h) exec >/dev/null 2>&1; read -t 30 <> "$FAKE/fifo"; exit 100;; f) exit 100;; esac'],
   };
   for (const [name, lines] of Object.entries(files)) fs.writeFileSync(path.join(bin, name), ['#!/bin/bash', ...lines, ''].join('\n'), { mode: 0o755 });
-  const run = (script, plan) => {
+  // The script runs only where GITHUB_ACTIONS is "true"; these runs opt in unless a case says otherwise (null unsets it).
+  const run = (script, plan, githubActions = 'true') => {
     const started = Date.now();
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan, GITHUB_ACTIONS: githubActions };
+    if (githubActions === null) delete env.GITHUB_ACTIONS;
     const result = spawnSync('bash', ['-c', script, 'install', 'npx', 'playwright', 'install', '--with-deps', 'chromium'], {
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan }, encoding: 'utf8', timeout: 30000,
+      env, encoding: 'utf8', timeout: 30000,
     });
     assert.ifError(result.error);
     const read = name => fs.existsSync(path.join(directory, name)) ? fs.readFileSync(path.join(directory, name), 'utf8') : '';
@@ -518,6 +528,7 @@ test('a browser install whose apt-get outlives a timed-out attempt recovers on t
     assert.equal(result.status, status, `${plan}: ${result.stdout}${result.stderr}`);
     assert.equal(result.attempts, attempts, plan);
     assert.equal(result.stdout.includes('Could not get lock'), false, `${plan}: a retry never meets a held lock`);
+    assert.equal(result.stderr.includes('unexpected pgrep'), false, `${plan}: ${result.stderr}`);
     assert.equal(result.stdout.includes('installed playwright install --with-deps chromium'), status === 0, plan);
     assert.equal((result.stdout.match(/::warning::Browser install attempt \d of 3/g) ?? []).length, status ? 3 : attempts - 1, plan);
     // After each failed attempt: stop the leftover apt-get, then finish any interrupted dpkg run.
@@ -526,6 +537,16 @@ test('a browser install whose apt-get outlives a timed-out attempt recovers on t
     assert.equal(result.aptConfPath, '/etc/apt/apt.conf.d/80-browser-install');
     assert.equal(result.aptConf, 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n');
     assert.ok(result.seconds < 15, `${plan}: took ${result.seconds} s`);
+  }
+
+  // Outside GitHub Actions the script refuses before it touches apt's configuration or any apt-get.
+  for (const githubActions of [null, 'false', '']) {
+    const refused = fakeRunner(t).run(fast, 's', githubActions);
+    assert.equal(refused.status, 2, String(githubActions));
+    assert.match(refused.stderr, /runs only on a GitHub Actions runner/);
+    assert.equal(refused.attempts, 0);
+    assert.equal(refused.aptConf, '');
+    assert.equal(refused.dpkg, '');
   }
 });
 

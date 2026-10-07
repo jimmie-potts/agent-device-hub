@@ -159,7 +159,8 @@ still receives data does not time out. Each attempt gets 300 s. After a failed
 one, the script stops the apt-get it left running, waits up to 60 s for apt and
 dpkg to exit, runs `dpkg --configure -a` and retries, three attempts in all
 within a 20-minute step limit. The job limits leave room for two stalled
-attempts.
+attempts. Because it changes apt's configuration and stops every `apt-get`, the
+script refuses to run unless `GITHUB_ACTIONS` is `true`.
 The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
 because GitHub keeps the manually disabled state of the retired `ci.yml` and
 `work-guide.yml` copies, whose earlier billing-blocked runs do not validate a

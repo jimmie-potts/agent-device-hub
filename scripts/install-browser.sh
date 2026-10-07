@@ -1,6 +1,10 @@
 #!/bin/bash
 # Run a Playwright browser install with --with-deps on a hosted runner and retry an attempt that stalls in apt (Hub #862).
 # Usage: bash scripts/install-browser.sh <install command...>
+if [ "${GITHUB_ACTIONS:-}" != true ]; then
+  echo "install-browser.sh changes apt's global configuration and stops every apt-get, so it runs only on a GitHub Actions runner." >&2
+  exit 2
+fi
 attempt_seconds=300 lock_wait_seconds=60
 # apt drops a connection or download that receives nothing for 30 s and retries it. A download that is slow but still
 # receiving data never times out; the attempt limit bounds it, and the packages it finished stay in apt's cache.
