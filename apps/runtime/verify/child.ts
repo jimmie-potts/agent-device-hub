@@ -52,7 +52,8 @@ process.on('message', (value: unknown) => {
       switches.delete(message.id);
       return;
     case 'lamp.failed':
-      switches.get(message.id)?.reject(new Error(message.detail));
+      // The supervisor names no reason: the lamp module reports a failed switch with its own fixed text.
+      switches.get(message.id)?.reject(new Error('the lamp did not answer'));
       switches.delete(message.id);
       return;
     case 'sign.shown':

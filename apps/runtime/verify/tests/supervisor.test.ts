@@ -8,6 +8,7 @@ import {request} from 'node:http';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
+import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {connectRemote, type CommandDraft} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
@@ -151,6 +152,29 @@ void test('the harness answers only local JSON requests that name its listener',
   assert.equal(await raw(followUrl, 'GET', {origin: 'http://evil.invalid'}), 403);
   assert.equal(await raw(followUrl, 'GET', {'sec-fetch-site': 'cross-site'}), 403);
   assert.equal(await raw(followUrl, 'POST', {'content-type': 'application/json'}), 404, 'the query only reads');
+});
+
+// Acceptance reviewers and scenarios read the harness's refusals over HTTP, so they come from the registry, and an
+// unexpected failure, such as a body that is not JSON, is `internal` with fixed text that never quotes it (Hub #954).
+void test('the harness refuses in the registry\'s error body, and answers an unexpected failure with internal, never quoting it', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'fixtures');
+  const raw = (route: string, body: string): Promise<Response> =>
+    fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body});
+  const answers: [Response, number, ErrorCode][] = [
+    [await fetch(new URL(`${HARNESS_PATH}/nothing`, run.harness)), 404, 'not-found'],
+    [await post(run, 'simulate', {device: 'toaster', action: 'tok_SYNTHETIC954'}), 400, 'invalid-request'],
+    [await post(run, 'disconnect', {source: 'tok_SYNTHETIC954'}), 400, 'invalid-request'],
+    // JSON.parse's own message quotes a short body whole.
+    [await raw('simulate', 'tok_SYNTHETIC954'), 500, 'internal'],
+  ];
+  for (const [response, status, code] of answers) {
+    assert.equal(response.status, status, code);
+    const text = await response.text();
+    const body = JSON.parse(text) as ErrorBody;
+    assert.deepEqual(body, errorBody(code, {detail: body.error.detail ?? ''}), `${code}: the code and its retryable flag come from the registry`);
+    assert.equal(text.includes('tok_SYNTHETIC954'), false, `${code}: the answer never quotes the request`);
+    if (status === 500) assert.equal(body.error.detail, 'the harness failed');
+  }
 });
 
 void test('a run\'s ready line links the runtime\'s health, so the preview card opens a page that answers', {timeout: 60_000}, async context => {

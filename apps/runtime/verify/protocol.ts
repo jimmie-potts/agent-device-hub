@@ -58,7 +58,7 @@ export type ChildMessage =
 
 export type SupervisorMessage =
   | {type: 'lamp.switched'; id: number; power: Power}
-  | {type: 'lamp.failed'; id: number; detail: string}
+  | {type: 'lamp.failed'; id: number}
   | {type: 'sign.shown'; id: number}
   | {type: 'sign.failed'; id: number}
   | {type: 'speaker.replied'; id: number; reply: SonyReply | SonosReply}

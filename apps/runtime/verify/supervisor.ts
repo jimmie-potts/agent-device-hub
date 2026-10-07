@@ -16,7 +16,7 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {SimulatedPixoo, type SimulatedPixooState} from '@jimmie-potts/pixoo';
@@ -141,7 +141,7 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
     case 'lamp.switch':
       lamps.switch(message.lamp, message.power).then(
         power => { tell(child, {type: 'lamp.switched', id: message.id, power}); },
-        (error: unknown) => { tell(child, {type: 'lamp.failed', id: message.id, detail: error instanceof Error ? error.message : 'failed'}); },
+        () => { tell(child, {type: 'lamp.failed', id: message.id}); },
       );
       return;
     case 'lamp.show':
@@ -247,6 +247,12 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
   }
 }
 
+/**
+ * Why a runtime did not start: the registry code of its `runtime.failed` record, or how it exited. Fixed text from the
+ * run, never an exception's message, so the start-failure line can name it.
+ */
+class StartFailed extends Error {}
+
 /** Starts the next runtime and resolves with its URL once it is ready. */
 function spawnRuntime(): Promise<string> {
   generation += 1;
@@ -285,7 +291,7 @@ function spawnRuntime(): Promise<string> {
     });
     child.once('exit', (code, signal) => {
       const reason = newest(number, 'runtime.failed')?.attributes['error.code'];
-      failed(new Error(typeof reason === 'string' ? reason : `exited-${String(code ?? signal)}`));
+      failed(new StartFailed(typeof reason === 'string' ? reason : `exited-${String(code ?? signal)}`));
     });
   });
 }
@@ -309,8 +315,11 @@ async function start(): Promise<void> {
   if (typeof producer === 'string') await writeProducer(configDirOf(dataDir), runtimePort, producer);
 }
 
+/** The start-failure line, which the plug-in's `failureCause` matches: the cause a `StartFailed` names, or `unknown`. */
+const startFailureLine = (error: unknown): string => `runtime-start-failed: ${error instanceof StartFailed ? error.message : 'unknown'}\n`;
+
 const startFailed = (error: unknown): void => {
-  process.stderr.write(`runtime-start-failed: ${error instanceof Error ? error.message : 'unknown'}\n`);
+  process.stderr.write(startFailureLine(error));
   void shutdown(1);
 };
 
@@ -441,7 +450,8 @@ function evidence(): Evidence {
 const answer = (response: ServerResponse, status: number, body: object): void => {
   response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
 };
-const refusal = (code: string, detail: string): object => ({error: {code, detail}});
+/** The harness's refusals, in the shared error body from the registry, with fixed text (ADR 0012, "Safe errors"). */
+const refusal = (code: ErrorCode, detail: string): ErrorBody => errorBody(code, {detail});
 
 /** A request body the harness refuses with 400: over 4 KiB, or not JSON. */
 class BodyRefusal extends Error {}
@@ -616,9 +626,11 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 }
 
 const server = createServer((request, response) => {
+  // A caller's body the harness refuses is its refusal. Any other failure is the registry's `internal` with fixed text,
+  // and the error is never quoted.
   handle(request, response).catch((error: unknown) => {
     if (error instanceof BodyRefusal) answer(response, 400, refusal('invalid-request', error.message));
-    else answer(response, 500, refusal('internal', error instanceof Error ? error.message : 'failed'));
+    else answer(response, 500, refusal('internal', 'the harness failed'));
   });
 });
 
@@ -636,7 +648,7 @@ process.on('SIGINT', () => { void shutdown(0); });
 try {
   await queue(start);
 } catch (error) {
-  process.stderr.write(`runtime-start-failed: ${error instanceof Error ? error.message : 'unknown'}\n`);
+  process.stderr.write(startFailureLine(error));
   process.exit(1);
 }
 await new Promise<void>((listening, failed) => {

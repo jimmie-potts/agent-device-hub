@@ -189,19 +189,12 @@ export default defineConfig(
     files: ['packages/event-contracts/**'],
     rules: {'bunny/error-body-from-registry': 'off'},
   },
-  // Code that breaks a safe-error rule until its owner converts it.
   {
-    // A malformed command line's usage error quotes parseArgs's message. #954 converts it at its pickup.
+    // A malformed command line's usage error quotes parseArgs's message, which repeats only the operator's own argument,
+    // in the usage output before the runtime starts; ADR 0012's surfaces do not include usage output. Permanent (Hub #954).
     name: 'bunny/safe-errors/runtime-usage',
     files: ['apps/runtime/src/process.ts'],
     rules: {'bunny/no-raw-error-text': 'off'},
-  },
-  {
-    // The verification run's harness quotes a failure's message in its own refusal body, its lamp failures and its
-    // start-failure lines. #954 converts it at its pickup.
-    name: 'bunny/safe-errors/verification-harness',
-    files: ['apps/runtime/verify/supervisor.ts'],
-    rules: {'bunny/no-raw-error-text': 'off', 'bunny/error-body-from-registry': 'off'},
   },
   {
     name: 'bunny/react-hooks',
