@@ -95,7 +95,8 @@ class Memory implements MemoryHarness {
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
   readonly #signs = new SimulatedSigns();
-  readonly #speakers = new SimulatedSpeakers();
+  /** The simulated speakers, a slow one waiting on the harness's virtual time. */
+  readonly #speakers = new SimulatedSpeakers({}, {scheduler: this.#clock.scheduler});
   readonly #lifx = new SimulatedLifx();
   /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
   readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});

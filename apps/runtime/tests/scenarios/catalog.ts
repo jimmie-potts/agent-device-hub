@@ -83,9 +83,10 @@ export type Simulation =
   | {device: 'sign'; action: 'online' | 'offline'}
   /**
    * The playback module's simulated speakers (Hub #929): the phone plays `title` to one over AirPlay, it pauses, stops or
-   * switches to another input, it stops answering or answers again, or its next command is refused or never answered.
+   * switches to another input, it stops answering, answers each call 400 ms late (#930) or answers again at once, or its
+   * next command is refused or never answered.
    */
-  | {device: 'playback'; speaker: SimulatedKind; action: 'play' | 'pause' | 'stop' | 'other-input' | 'silent' | 'answer' | 'refuse-next' | 'hang-next'; title?: string}
+  | {device: 'playback'; speaker: SimulatedKind; action: 'play' | 'pause' | 'stop' | 'other-input' | 'silent' | 'slow' | 'answer' | 'refuse-next' | 'hang-next'; title?: string}
   /** The simulated LIFX bulb at `address` goes off the network, as one switched off at the wall, or comes back. */
   | {device: 'lifx'; action: 'online' | 'offline'; address: string}
   /** The simulated Tidbyt cloud stops answering, or answers again (Hub #930). */
@@ -1020,6 +1021,11 @@ function cardShown(h: Harness, pushes: number): Outcome {
   if (shown.pushes !== pushes) return `the now-playing tile was pushed ${shown.pushes} times`;
   return show(shown.picture) === show(picture(nowPlayingFrame(view).rgb)) || `the now-playing tile shows ${show(shown.picture)}`;
 }
+/** Whether the now-playing tile was pushed once and never removed: its one write is the first push. */
+function cardStood(h: Harness): Outcome {
+  const writes = h.devices().tidbyt.calls.filter(call => call.installation === CARD_TILE && call.method !== 'GET').map(call => call.method);
+  return (show(writes) === show(['POST']) && tile(h, CARD_TILE)?.pushes === 1) || `the now-playing tile's writes were ${show(writes)}`;
+}
 /** The times between one tile's pushes. */
 const gaps = (h: Harness, installation: string): number[] => {
   const times = tile(h, installation)?.pushedAtMs ?? [];
@@ -1068,6 +1074,15 @@ const tidbytTiles: Scenario = {
     expect('the two pushes are at least 15 seconds apart', h => gaps(h, STATUS_TILE).every(gap => gap >= TILE_GATE_MS) || show(gaps(h, STATUS_TILE))),
     act('the phone plays a song to the Move', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'}); }),
     expect('the now-playing tile shows the song, behind its own gate', h => cardShown(h, 1), 8000),
+    holds('the song plays on past the card\'s 15-second gate, and nothing more is written to it', h => cardStood(h), TILE_GATE_MS + 1000),
+    // A restart while the song plays, with the Move answering late: the HT-A9, on another input, answers first. The
+    // playback record waits for the Move's first read, so nothing tells the Tidbyt module the song stopped.
+    act('the Move answers each call 400 ms late', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'slow'}); }),
+    act('the runtime restarts cleanly while the song plays', h => h.restart()),
+    holds('through the restart and the Move\'s slow first read, the card is never removed or pushed again', h => cardStood(h), 3000),
+    expect('the reader\'s playback record shows the song playing on the Move', h => playbackShows(h, 'available playing "Move Song" [pause,next,previous]')),
+    act('the Move answers at once again', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
+    expect('once its gate opens, the status tile shows the session dimmed as uncertain after the restart', h => statusShown(h, 3), 18_000),
     act('the phone pauses the Move', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'pause'}); }),
     expect('the reader\'s playback record shows the song paused', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 6000),
     expect('once its gate opens, the now-playing tile shows the pause marker', h => cardShown(h, 2), 18_000),

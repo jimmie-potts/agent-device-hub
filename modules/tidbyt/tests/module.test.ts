@@ -188,6 +188,34 @@ test('a start never removes a playing card while the playback module publishes i
   await until(() => calls(fresh).includes('DELETE nowplaying'), 'the removal once the speaker stayed unavailable');
 });
 
+test('a two-speaker restart: the card stands while the record waits for the slower speaker, and the module follows the record it is given', async context => {
+  const h = await host(context, {sessions: [], playback: playback('playing')});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the card');
+  await h.advance(20 * SECOND);
+  // The playback module's start order (Hub #930): `unavailable` until every speaker's first read settles,
+  // here the Move's, which plays and answers 1.2 s after the HT-A9; then the Move's song.
+  await h.stop();
+  await owner(h).set(unavailablePlayback());
+  await h.start();
+  await h.advance(1200, 100);
+  await quiet();
+  await owner(h).set(playback('playing'));
+  await h.advance(20 * SECOND, SECOND);
+  await quiet();
+  assert.deepEqual(calls(h).filter(call => call.endsWith(NOW_PLAYING)), ['POST nowplaying'], 'the card stood, and nothing was pushed');
+
+  // The old order published the HT-A9's other input as soon as it answered, before the Move. The start window does not
+  // hide that record: the module follows what the owner publishes, so it removes the card and pushes it again later.
+  await h.stop();
+  await owner(h).set(unavailablePlayback());
+  await h.start();
+  await owner(h).set(playback('inactive'));
+  await until(() => calls(h).includes('DELETE nowplaying'), 'the removal the HT-A9\'s other input calls for');
+  await owner(h).set(playback('playing'));
+  await h.advance(20 * SECOND, SECOND);
+  await until(() => calls(h).filter(call => call === 'POST nowplaying').length === 2, 'the card pushed again once its gate opened');
+});
+
 test('a stop while a push is in flight leaves the tile\'s presence unknown, so an idle restart lists and removes it', async context => {
   const h = await host(context, {sessions: [], section: STATUS_ONLY});
   await until(() => calls(h).length === 1, 'the idle start\'s listing');

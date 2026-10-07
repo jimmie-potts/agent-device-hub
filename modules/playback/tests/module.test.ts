@@ -13,7 +13,8 @@ import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule} from '../src/mod
 import {SimulatedSpeakers} from '../src/simulated.js';
 import {httpSpeakers, type SpeakerTransport} from '../src/transport.js';
 import {
-  HeldBus, ID, SECTION, airplay, fakeSonos, fakeSony, flush, hooked, host, lockDatabase, playingInfo, reportsUnavailable, storedCommands, test, type Hosted,
+  HeldBus, ID, SECTION, START_MS, airplay, fakeSonos, fakeSony, flush, hooked, host, lockDatabase, manualClock, playingInfo, reportsUnavailable, storedCommands, test,
+  type Hosted,
 } from './support.js';
 
 const playing = (title: string) => ({input: 'airplay', status: 'playing', title, artist: 'Artist'}) as const;
@@ -40,6 +41,12 @@ const shown = (hosted: Hosted) => {
   return playback.status === 'known' ? playback : undefined;
 };
 const answer = (result: Awaited<ReturnType<Hosted['send']>>): string => result.status === 'accepted' ? 'accepted' : result.error.error.code;
+/** Each published record as `[revision, availability, player]`, with `unknown` for unknown playback. */
+const revisions = (hosted: Hosted) => hosted.records().map(({revision, availability, playback}) =>
+  [revision, availability, playback.status === 'known' ? playback.player : 'unknown']);
+/** When the record at `index` was published, in milliseconds after the start. */
+const publishedAt = (hosted: Hosted, index: number): number =>
+  Date.parse(hosted.published.filter(message => message.dataschema === PLAYBACK_SCHEMA)[index]?.time ?? '') - START_MS;
 
 test('the presented source is the playback record, with a new revision only when availability or playback changes', async context => {
   const speakers = new SimulatedSpeakers({sony: playing('First song')});
@@ -112,6 +119,39 @@ test('both speakers offline at start: the module runs, reports unavailable, refu
     status: 'known', player: 'playing', title: 'Song', artist: 'Artist', controls: ['pause', 'next', 'previous'],
   }]);
   assert.equal(hosted.logs().filter(record => record.event === 'device.available').length, 2, 'one recovery each');
+  clean(hosted);
+});
+
+test('after a start, the record stays unavailable until every speaker\'s first read settles, so a fast speaker never stands in for a slow one', async context => {
+  // The Move, configured first, plays; the HT-A9 is on another input and answers at once. The Move takes 400 ms a call,
+  // so its first read, three calls, answers 1.2 s after the start, each call inside its 1.5 s deadline.
+  const clock = manualClock();
+  const speakers = new SimulatedSpeakers({sonos: playing('Move song')}, {scheduler: clock.scheduler});
+  speakers.slow('sonos');
+  const hosted = await host(context, speakers, {clock});
+  await hosted.advance(1000);
+  assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown']], 'the HT-A9 answered, but the record waits for the Move');
+  assert.equal(answer(await hosted.send('pause', 'r-early')), 'unavailable', 'a command waits for every speaker too');
+  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [[], []], 'and reaches no speaker');
+  await hosted.advance(300);
+  assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown'], [2, 'available', 'playing']],
+    'the first read published is the Move\'s song, never the HT-A9\'s other input');
+  assert.equal(publishedAt(hosted, 1), 1200, 'published as the Move\'s first read answered');
+  assert.equal(shown(hosted)?.title, 'Move song');
+  assert.deepEqual(warnings(hosted), [], 'a slow speaker is not an unavailable one');
+  clean(hosted);
+});
+
+test('a speaker that never answers at start releases the record at its read deadline, with what the others report', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song'), sonos: {answering: false}});
+  const hosted = await host(context, speakers);
+  await hosted.advance(1400);
+  assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown']], 'the HT-A9 answered at once, but the Move\'s first read is still running');
+  await hosted.advance(200);
+  assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown'], [2, 'available', 'playing']]);
+  assert.equal(publishedAt(hosted, 1), 1500, 'released exactly at the Move\'s 1.5 s read deadline');
+  assert.equal(shown(hosted)?.title, 'Sony song');
+  assert.deepEqual(warnings(hosted), [`device.unavailable ${ID}.sonos`], 'the Move\'s outage is logged once');
   clean(hosted);
 });
 

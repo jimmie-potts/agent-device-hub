@@ -299,13 +299,14 @@ export class HeldBus extends InProcessBus {
 
 type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {
   section?: unknown; transport?: SpeakerTransport;
+  /** The manual clock to host on, when the speakers wait on it too; a new one by default. */
+  clock?: ReturnType<typeof manualClock>;
   /** Builds the bus from the options the host gives it, such as a `HeldBus`. */
   bus?: (options: BusOptions) => InProcessBus;
 };
 
 export async function host(context: TestContext, speakers: SimulatedSpeakers, options: HostOptions = {}): Promise<Hosted> {
-  const {section = SECTION, bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), ...moduleOptions} = options;
-  const clock = manualClock();
+  const {section = SECTION, clock = manualClock(), bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), ...moduleOptions} = options;
   const thrown: unknown[] = [];
   // The bus stamps `expiresat` and runs request deadlines on the module's manual clock, as the runtime's does.
   const bus = buildBus({
