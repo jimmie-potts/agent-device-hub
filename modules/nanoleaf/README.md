@@ -9,8 +9,8 @@ the runtime's shipped modules under
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md). The module shows agent
 sessions on the Nanoleaf Lines and NL22 Light Panels, takes Work, Quiet and Free and the
 wall's controls as commands, and publishes each controller's state. Nothing installs it
-yet; the cutover (#840) does. The wall pages are #934, and the data migration and
-offline enrollment are #933.
+yet; the cutover (#840) does. The wall pages are #934, and the [migration](#migration) of the
+bridge's state is #933.
 
 ## Factory
 
@@ -46,6 +46,49 @@ the port's registry, `config.json`, to its private folder with each device's sec
 and no token, reads each token with `secrets.read` and keeps it in memory. Its store is
 the runtime's `modules/nanoleaf.sqlite`; its layouts, scene files and worker locks live in
 its private folder.
+
+## Migration
+
+The cutover (#840) carries the codex-nanoleaf bridge's state into the module with an offline tool
+([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933)), which the installer (#935) runs before the
+runtime's first start. The runtime README's
+[Nanoleaf migration](../../apps/runtime/README.md#nanoleaf-migration) gives its command line, exit codes and refusals;
+`src/migration/` holds what it carries and checks. It reads the bridge's private state directory as the installed
+release keeps it (codex-nanoleaf `c711e18`'s model version 4, with each row's device), or the pre-change Linux database
+without device keys (the `linux-state-v4` fixture), whose rows are the Lines'. It never changes it.
+
+What it carries, through SQLite, into the module's store and folder, for each device the registry names:
+
+| Carried | From | Into |
+| --- | --- | --- |
+| The project map and colors | `projects` | `projects` |
+| The palette | `palette` | `palette` |
+| Each element's project and halves | `line_prefs` | `line_prefs` |
+| Map settings (layout style, coverage, rotation and flips) | `map_settings` | `map_settings` |
+| A pending wall edit | `map_pending` | `map_pending`, which the worker applies once no comet runs, as after a restart |
+| Favorites | `animation_favorites` | `animation_favorites` |
+| Each device's desired state: Work, Quiet or Free, a native power or brightness override, and how far its worker applied the mode | `meta`: `mode`, `mode_revision`, `mode_applied`, `controller_power`, `controller_brightness` (with `@<device>`) | `meta` |
+| The layout | `layout.json` | `layout.json`, version 2, each device's elements, zones, positions and geometry |
+| Each device's remembered scene | `scene-state*.json` | the same files |
+| Addresses and tokens | `config.json`'s registry | the module's [section](#configuration), with each token as a private secret file |
+| The qualified agent sources | the shared-input configuration, without `bindings` | the section's `qualifiedSources` |
+| Codex Desktop's metadata paths | `config.json`'s `metadata_path` and `title_index_path` | the section's `codexMetadata` |
+
+What starts fresh and stays only in the backup (owner decision 10, 2026-10-06, and the #26 decision): tasks and what
+follows them (`sessions`, `task_info`, `activity`, `waits`, `receipts` and the shared-input task tables), reservations
+(`slots`), comets, Locate, display caches, task and effect epochs, holds and failures in `meta`, the controller ledger,
+the integration API's requests, the legacy task backup and the shared-input configuration's `bindings`, and the rows,
+layout entries and scene files of a device the registry no longer names. The destination's `shared_input` row is a fresh
+one: `'legacy'`, which the module reads as not selected, until its first sync selects shared input. The tool counts each
+of these in its report.
+
+The verifier compares every carried row by its key, with its SQLite storage class, every file as parsed JSON, the section
+member by member and each secret through the runtime's own reader, and counts what should not be there. The cutover goes
+ahead only on zero mismatches.
+
+There is no enrollment command yet (owner decision, 2026-10-07): it waits until a device is added, and
+`src/enrollment.ts`, the port's enrollment, is ready for it. Until then, a new address is a one-line edit of the
+device's `address` in the module's section; the device keeps its ID, and with it its preferences and scenes.
 
 ## Families
 
@@ -222,6 +265,6 @@ every address a configuration names; the shipped runtime's `--simulate` build us
 From the repository root, with Node 24: `npm run test:nanoleaf`, which builds and runs
 every suite in `dist/tests/`, the port's translated and recorded tests, the module's
 (`module.test.ts`, and `module-faults.test.ts` for its faults and recoveries), its module
-test kit run (`module-kit.test.ts`) and the journal's outcome errors. The runtime's `nanoleaf.test.ts`, the catalog's `nanoleaf-wall` scenario
+test kit run (`module-kit.test.ts`), the journal's outcome errors and the migration (`migration.test.ts`). The runtime's `nanoleaf.test.ts`, the catalog's `nanoleaf-wall` scenario
 and its disposable run cover the module under the runtime. See
 [Nanoleaf port](../../docs/development.md#nanoleaf-port).

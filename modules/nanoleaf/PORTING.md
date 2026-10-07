@@ -867,8 +867,9 @@ settles of the limits this port left:
 - The worker's per-device lock stays Python's lock file, now in the module's private folder, which
   also excludes a second runtime on the same state.
 - The module starts one `superviseWorker` per configured device, and again after an accepted command
-  when none runs and when shared input is selected again. A newly enrolled device appears at the next
-  start, since enrollment is offline (#933) and the configuration file has no reload. `onFailure`
+  when none runs and when shared input is selected again. A device added to the configuration file
+  appears at the next start, since the file has no reload; an enrollment command waits until one is
+  needed (#933, owner decision 2026-10-07). `onFailure`
   logs a failed pass once per run of failures; a recorded `control_error` makes the device
   `degraded` in its `device` record until a successful pass clears it, and a link that does not
   answer makes it `unavailable`. A supervisor that ends `locked` or `unrecorded`, or rejects, starts

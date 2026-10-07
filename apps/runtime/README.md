@@ -634,9 +634,9 @@ to the user. It creates `modules/` and the lock file, owner-only, when they are
 missing, as the core does, and writes nothing to the lock file. A tool holds
 the lease for as long as it runs: a runtime that starts meanwhile waits for it
 until its core's three-second deadline, fails with `core-failed` and is
-restarted by its service manager. The Pixoo library migration takes it, and the
-Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
-is to take it too.
+restarted by its service manager. The Pixoo library migration and the Nanoleaf
+migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+take it.
 
 ### Pixoo library migration
 
@@ -715,6 +715,78 @@ failed `migrate` is run again only into a fresh destination. A `migrate`
 killed with SIGKILL, or by a power loss, leaves an incomplete destination:
 `verify` counts its mismatches and `migrate` refuses it, and the operator
 removes the paths `destination-not-empty` lists.
+
+### Nanoleaf migration
+
+The Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+carries the Nanoleaf bridge's preferences into the
+[Nanoleaf module's](../../modules/nanoleaf/README.md#migration) store and
+folder, and its registry into the module's section of the
+[configuration file](#configuration), with each device's token as a secret
+file. Run it with Node 24 from the repository root, after `npm run build`:
+
+```bash
+node apps/runtime/dist/src/migrate-nanoleaf.js migrate --source <bridge state dir> --state-dir <state dir> --secrets-dir <secrets dir> --section <section file>
+node apps/runtime/dist/src/migrate-nanoleaf.js verify --source <bridge state dir> --state-dir <state dir> --secrets-dir <secrets dir> --section <section or configuration file>
+```
+
+Every path is absolute.
+
+- `--source` is the bridge's private state directory, with its
+  `status.sqlite`, `config.json`, `layout.json` and scene files. The tool only
+  reads it, and holds a read lock on `status.sqlite` and on the bridge's
+  worker, registry and layout locks while it runs, so no bridge process
+  changes it meanwhile.
+- `--state-dir` is the runtime's state directory, which `migrate` creates when
+  it is missing. `migrate` writes the module's `modules/nanoleaf.sqlite` and
+  `modules/nanoleaf/` there, through `openModuleDatabase` and
+  `openModuleFolder`, and closes the database before it reports.
+- `--secrets-dir` is a private directory (mode 700, created when missing) where
+  `migrate` writes each device's token, alone and without a line break, as
+  `nanoleaf-<device>-token`, mode 600.
+- `--section` is the private file where `migrate` writes the module's section,
+  which names those files. The installer puts it under `modules.nanoleaf` in
+  the configuration file. Its directory must be private too. `verify` also
+  takes the configuration file itself and reads the section there.
+
+`verify` compares the store, the folder, the section and every secret file
+with the source, reading each secret through the runtime's own secret reader.
+Both operations hold the runtime's lease and write one JSON line to stdout,
+`{"schema": "nanoleaf-migration/1.0", "operation", "result", ...}`, with counts,
+codes and SHA-256 digests only: never a token, an address, a path, a name or a
+file's content.
+
+| Exit | `result` | Meaning |
+| --- | --- | --- |
+| 0 | `migrated`, `verified` | Done; `verified` has zero mismatches |
+| 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
+| 2 | `refused`, code `usage` | Malformed arguments |
+| 3 | `refused` | Refused before writing anything; `code` and `message` say why |
+| 4 | `failed` | `migrate` stopped after it began to write; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
+
+| Code | Refusal or failure |
+| --- | --- |
+| `runtime-running` | A runtime, or another tool, holds the state directory's lease |
+| `lease-unavailable` | The lease's lock file is not a regular file private to the user |
+| `destination-not-empty` | The module already has a database, a log, a journal or a non-empty folder, or a secret file or the section already exists: migrate into fresh ones |
+| `destination-missing` | `verify` found no module database |
+| `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
+| `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
+| `source-missing` | The source directory holds no `status.sqlite` or no `config.json` |
+| `source-in-use` | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
+| `source-not-clean` | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
+| `source-schema` | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
+| `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json` or a scene file is damaged, too large, a link or not a regular file |
+| `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
+| `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
+| `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows |
+| `disk-short` | The disk filled while `migrate` wrote |
+| `internal` | Anything else |
+
+A refusal and a failure name no path or value. The tool never retries; a
+failed or killed `migrate` is run again only into fresh destinations. Run
+`verify` before the runtime's first start: the module writes its own rows when
+it starts, which `verify` would count.
 
 ## Failure isolation
 

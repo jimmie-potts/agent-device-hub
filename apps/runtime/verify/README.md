@@ -37,6 +37,7 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
 | `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, the Pixoo's simulated device `pixoo-1`, and the Nanoleaf module's simulated Lines) |
 | `pixoo-migrated` | The same shipped runtime on a migrated Pixoo library (#931): the seed writes a synthetic library of the installed schema version 3 to `<data>/pixoo-library`, migrates and verifies it into the run's state directory with the [migration tool](../README.md#pixoo-library-migration), as the installer will at the cutover, keeps each one's JSON line in `<data>/migration/`, and fails the start unless both exit 0 |
+| `nanoleaf-migrated` | The same shipped runtime with the Nanoleaf module on a migrated bridge state (#933): the seed writes a synthetic bridge state of the installed shape, the Lines and NL22 Light Panels at the simulated controllers' addresses, to `<data>/nanoleaf-bridge`, runs the [migration tool](../README.md#nanoleaf-migration)'s `migrate` into the run's state directory, with the tokens in `<data>/config/secrets/` and the section in `<data>/migration/`, puts that section into the run's configuration file in place of the simulated one, runs `verify` against that file, keeps each line in `<data>/migration/`, and fails the start unless both exit 0 |
 | one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), the four Pixoo scenarios below, and `nanoleaf-wall` (the core and the Nanoleaf module with a simulated Lines controller) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
@@ -283,6 +284,37 @@ node apps/runtime/dist/src/migrate-pixoo.js verify --library $data/pixoo-library
 rm -rf $t
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+To check the Nanoleaf migration (#933) as an operator would, start the migrated run, read what the migration reported
+and what the runtime serves, then run the tool by hand in a private folder. Its lines hold counts, codes and hashes
+only:
+
+```bash
+npm run -s verify:runtime -- start --scenario nanoleaf-migrated
+data=<the run's runtime dir>/data; origin=<the run's origin>
+cat $data/migration/nanoleaf-migrate.json $data/migration/nanoleaf-verify.json          # migrated, then verified with every mismatch count 0
+reader=$(node -p "require('$data/config/part-tokens.json').reader")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/nanoleaf-wall"          # the migrated settings, palette, projects and modes
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/nanoleaf-animations"    # the two migrated favorites
+tool=apps/runtime/dist/src/migrate-nanoleaf.js
+node $tool verify --source $data/nanoleaf-bridge --state-dir $data/state --secrets-dir $data/config/secrets --section $data/config/runtime-config.json; echo $?   # runtime-running, 3
+mkdir -p ~/.cache/agent-device-hub && t=$(mktemp -d ~/.cache/agent-device-hub/nl-XXXX)        # a private folder outside every checkout
+to() { echo --source $data/nanoleaf-bridge --state-dir $t/$1 --secrets-dir $t/$1-secrets --section $t/$1-out/section.json; }
+node $tool migrate $(to a); echo $?      # migrated, 0: the run's digests
+node $tool migrate $(to b); echo $?      # the same line again
+node $tool migrate $(to a); echo $?      # destination-not-empty, 3
+node $tool verify $(to a); echo $?       # verified, 0
+printf x >> $t/a-secrets/nanoleaf-wall-token
+node $tool verify $(to a); echo $?       # mismatch with secrets 1, 1
+sed -i 's/192.0.2.11/192.0.2.99/' $t/a-out/section.json
+node $tool verify $(to a); echo $?       # mismatch with configuration 1 too, 1
+grep -rl tok_SYNTHETIC919 $t             # only the secret files hold the token
+rm -rf $t
+npm run -s verify:runtime -- stop <run-id>
+```
+
+The bridge state, its tokens and its names are synthetic. A reviewer can also plant a corruption in a copy of the
+migrated store, such as a changed palette color, and see `verify` count it.
 
 To see two device modules serve `device` side by side, each for its own devices (#967), start `device-owners`: the
 lamp and the configured sign both run, and the reader keeps one copy of `device` from each, synced by name:
