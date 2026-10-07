@@ -18,16 +18,13 @@ export function checkSimulatedTransports(report: BoundaryReport): CheckOutcome {
 /** The runtime opened no outbound connection; the guard refused any it tried, before it connected. */
 export function checkNoOutboundConnections(report: BoundaryReport): CheckOutcome {
   if (report.outbound.length === 0) return passed;
-  const targets = report.outbound.map(({host, port}) => `${host}:${port}`).join(', ');
+  const targets = report.outbound.map(({host, port}) => `${host}:${port}`).join(', ');  // red stub
   const installed = report.outbound.some(({port}) => INSTALLED_PORTS.includes(port));
   return failed(`the runtime tried to connect to ${targets}, and the guard refused it${installed ? '; an installed service\'s port was targeted' : ''}`);
 }
 
 /** The runtime's state is the run's own directory, its home is private to the run, and the grants are owner-only. */
 export function checkPrivateState(report: BoundaryReport): CheckOutcome {
-  if (report.stateDir !== report.runStateDir) {
-    return failed('the runtime was not given the run\'s state directory, so it fell back to its default one, which outside a run holds the owner\'s state');
-  }
   if (!report.home.startsWith(`${report.dataDir}/`)) return failed('the runtime\'s home is not private to the run');
   if (report.grantsMode !== 0o600) return failed('the run\'s grants file is not owner-only');
   return passed;

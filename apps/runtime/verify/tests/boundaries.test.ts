@@ -1,32 +1,37 @@
 // Hub #920: each boundary check of a runtime verification run passes on a correct run and fails when the run crosses
 // its boundary. The crossing runs are real: the shipped runtime without --simulate, a probe module that reaches for the
-// installed Hub's port 8788 (the guard refuses it before it connects), and the runtime left to its default state
-// directory (inside the run's private home, so nothing personal is touched).
+// installed Hub's port 8788 with fetch and with node:http (the guard refuses both before they connect), and the runtime
+// left to its default state directory, which it then creates under the run's private home, so nothing personal is
+// touched. The checks judge what happened, not what the runtime was told.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {ProbeContext} from '@jimmie-potts/app-verify';
 import {checkNoOutboundConnections, checkPrivateState, checkSimulatedTransports} from '../boundaries.js';
 import plugin, {startOnlyRefusal} from '../plugin.js';
-import type {BoundaryReport} from '../protocol.js';
+import {HARNESS_PATH, type BoundaryReport} from '../protocol.js';
 import {START_ONLY} from '../seed.js';
 import {base, startRun, type Started} from './support.js';
 
 const report = (overrides: Partial<BoundaryReport> = {}): BoundaryReport => ({
-  runtime: 'fixtures', simulate: true, stateDir: '/run/data/state', runStateDir: '/run/data/state', dataDir: '/run/data', home: '/run/data/home',
-  grantsMode: 0o600, outbound: [], ...overrides,
+  runtime: 'fixtures', simulate: true, dataDir: '/run/data', home: '/run/data/home', defaultState: false,
+  stateFiles: ['/run/data/state/modules/core.sqlite', '/run/data/state/modules/lamp.sqlite'], grantsMode: 0o600, outbound: [], ...overrides,
 });
 
 void test('each check passes on a clean report and fails on each way of crossing its boundary', () => {
   assert.deepEqual([checkSimulatedTransports(report()), checkNoOutboundConnections(report()), checkPrivateState(report())].map(check => check.outcome),
     ['passed', 'passed', 'passed']);
   for (const simulate of [false, null]) assert.equal(checkSimulatedTransports(report({simulate})).outcome, 'failed', String(simulate));
-  const outbound = checkNoOutboundConnections(report({outbound: [{host: '127.0.0.1', port: 8788}]}));
+  const outbound = checkNoOutboundConnections(report({outbound: [{protocol: 'tcp', host: '127.0.0.1', port: 8788}]}));
   assert.equal(outbound.outcome, 'failed');
-  assert.match(outbound.outcome === 'failed' ? outbound.reason : '', /127\.0\.0\.1:8788.*an installed service's port was targeted/);
-  assert.equal(checkNoOutboundConnections(report({outbound: [{host: 'device.invalid', port: 80}]})).outcome, 'failed');
-  for (const crossing of [{stateDir: null}, {stateDir: '/elsewhere/state'}, {home: '/home/owner'}, {grantsMode: 0o644}, {grantsMode: null}]) {
+  assert.match(outbound.outcome === 'failed' ? outbound.reason : '', /tcp 127\.0\.0\.1:8788.*an installed service's port was targeted/);
+  assert.equal(checkNoOutboundConnections(report({outbound: [{protocol: 'udp', host: '239.255.255.250', port: 1900}]})).outcome, 'failed');
+  for (const crossing of [
+    {defaultState: true}, {stateFiles: ['/run/data/state/modules/core.sqlite', '/home/owner/.local/state/agent-device-hub/runtime/modules/lamp.sqlite']},
+    {stateFiles: ['/run/data/state-elsewhere/modules/core.sqlite']}, {home: '/home/owner'}, {home: ''}, {grantsMode: 0o644}, {grantsMode: null},
+  ]) {
     assert.equal(checkPrivateState(report(crossing)).outcome, 'failed', JSON.stringify(crossing));
   }
+  assert.equal(checkPrivateState(report({stateFiles: []})).outcome, 'passed', 'a run whose modules keep no database has none open');
 });
 
 /** The plug-in's own boundary checks against a run, by id. */
@@ -50,6 +55,14 @@ void test('a correct run passes every check, and each negative control fails exa
     const run = await startRun(context, at, scenario);
     try {
       assert.deepEqual(await checks(run), outcomes, scenario);
+      const seen = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
+      assert.equal(seen.home, `${run.dataDir}/home`, `${scenario}: the runtime's home is observed`);
+      if (scenario === 'fixtures') {
+        assert.deepEqual([...seen.stateFiles].sort(), [`${run.dataDir}/state/modules/core.sqlite`, `${run.dataDir}/state/modules/lamp.sqlite`], 'the databases the runtime has open are observed');
+      }
+      if (scenario === 'control-installed-port') {
+        assert.ok(seen.outbound.filter(attempt => attempt.protocol === 'tcp' && attempt.port === 8788).length >= 2, `fetch and node:http were both refused: ${JSON.stringify(seen.outbound)}`);
+      }
     } finally {
       await run.stop();
     }

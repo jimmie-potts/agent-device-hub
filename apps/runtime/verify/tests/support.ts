@@ -13,7 +13,8 @@ export const SUPERVISOR = fileURLToPath(new URL('../supervisor.js', import.meta.
 export const ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 
 export type Started = {
-  url: string; harness: string; dataDir: string; runtimeDir: string; supervisor: ChildProcess;
+  /** The runtime's origin, `http://127.0.0.1:<port>/`, as `runCaptureStep` takes it; `readyUrl` is what the ready line named. */
+  url: string; readyUrl: string; harness: string; dataDir: string; runtimeDir: string; supervisor: ChildProcess;
   stderr: () => string; stop: () => Promise<{code: number | null; signal: NodeJS.Signals | null}>;
 };
 
@@ -50,7 +51,7 @@ export async function startRun(context: TestContext, at: string, scenario: strin
     void exited.then(exit => { reject(new Error(`the supervisor exited ${JSON.stringify(exit)} before ready: ${stderr.slice(-2000)}`)); });
   });
   return {
-    url: new URL(ready.url).href, harness: ready.endpoints.harness, dataDir, runtimeDir, supervisor, stderr: () => stderr,
+    url: `${new URL(ready.url).origin}/`, readyUrl: ready.url, harness: ready.endpoints.harness, dataDir, runtimeDir, supervisor, stderr: () => stderr,
     stop: async () => {
       if (supervisor.exitCode === null && supervisor.signalCode === null) supervisor.kill('SIGTERM');
       return exited;

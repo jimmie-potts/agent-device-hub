@@ -26,12 +26,13 @@ export const describe = (error: unknown): string => error instanceof Error ? `${
 
 type Copy = SyncedCopy<Record<string, unknown>>;
 
-/** The reader's copies, one per owner, how often each synced, and every occurrence and outcome it heard. */
+/** The reader's copies, one per owner, how often each synced, every occurrence and outcome it heard and its gap notices. */
 export class Reader implements ReaderView {
   readonly groups: readonly (readonly string[])[];
   copies: (Copy | undefined)[] = [];
   readonly counts: number[];
   readonly messages: Message[] = [];
+  gapNotices = 0;
 
   constructor(groups: readonly (readonly string[])[]) {
     this.groups = groups;
@@ -50,6 +51,10 @@ export class Reader implements ReaderView {
   heard(): readonly Message[] {
     return this.messages;
   }
+
+  gaps(): number {
+    return this.gapNotices;
+  }
 }
 
 /** Where a harness sends what it saw: each message to check against profile 2.0, and each problem. */
@@ -60,7 +65,7 @@ export async function follow(participant: Participant, reader: Reader, follows: 
   await participant.subscribe('bunny.event.*.*', message => {
     observer.check(message, 'a message the reader heard');
     reader.messages.push(message);
-  });
+  }, {onOverflow: () => { reader.gapNotices += 1; }});
   for (const [index, families] of follows.entries()) {
     const result = await participant.sync(families, change => { changed(reader, index, change, follows, observer); }, {timeoutMs: 5000});
     if (result.status === 'rejected') observer.problem(`the reader could not sync ${families.join(',')}: ${result.error.error.code}`);

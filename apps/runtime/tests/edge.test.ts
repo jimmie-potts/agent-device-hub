@@ -7,10 +7,11 @@ import {chmod, link, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
+import {errorCodes} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, connectRemote, type BunnyModule} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, RuntimeError, buildModules, moduleSchemas, startRuntime, type LogRecord, type ModuleFactory} from '../src/index.js';
 import {createCoreModule} from './fixtures/core.js';
-import {deferred, fixture, it, run, stateDir} from './support.js';
+import {deferred, fixture, it, run, stateDir, waitFor} from './support.js';
 
 const token = (): string => randomBytes(32).toString('base64url');
 type Grant = {source: string; token: string};
@@ -73,7 +74,7 @@ it('a remote part with a run grant connects and syncs the stand-in core\'s sessi
   assert.equal(JSON.stringify(logs).includes(reader.token), false, 'no token reaches a log record');
 });
 
-it('the edge answers only requests that name the listener, and none before the modules have started', async context => {
+it('the edge answers only requests that name the listener, and one part retrying across the start connects once it settles', async context => {
   const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
   await grant(dir, [part]);
@@ -95,10 +96,30 @@ it('the edge answers only requests that name the listener, and none before the m
   }
   assert.equal(early?.status, 503, 'remote parts wait until every module has started');
   assert.equal(((await early.json()) as {error: {code: string}}).error.code, 'unavailable');
+
+  // One part keeps trying with its grant while the modules start. The listener already answers, so each refusal it
+  // gets is the edge's 503; once the start settles, the same part's next attempt connects.
+  const refusals: string[] = [];
+  let stopTrying = false;
+  context.after(() => { stopTrying = true; });
+  const retrying = (async () => {
+    while (!stopTrying) {
+      try {
+        return await connectRemote({url, source: part.source, token: part.token});
+      } catch (error) {
+        refusals.push(error instanceof SdkError ? error.body.error.code : 'failed');
+        await new Promise(resolve => { setTimeout(resolve, 10); });
+      }
+    }
+    return undefined;
+  })();
+  await waitFor(() => refusals.length >= 2, 5000, 'the part to be refused while the modules start');
   gate.resolve(undefined);
-  await starting;
-  const remote = await connectRemote({url, source: part.source, token: part.token});
+  const remote = await retrying;
+  assert.ok(remote, 'the retrying part connected');
   await remote.close();
+  await starting;
+  assert.deepEqual([...new Set(refusals)], ['unavailable'], 'every refusal before the start settled was unavailable');
   const foreign = await fetch(new URL('/api/sdk/v1/stream', url), {headers: {authorization: `Bearer ${part.token}`, origin: 'http://evil.invalid'}});
   assert.equal(foreign.status, 403);
 });
@@ -150,16 +171,67 @@ it('a grant may not act as the core or as a module', async context => {
   }
 });
 
-it('the runtime.started record says whether modules are simulated and whether the edge serves', async context => {
+it('runtime.started says whether modules are simulated and the edge is configured; runtime.edge.serving follows once it serves', async context => {
   const dir = await stateDir(context);
   await grant(dir, [{source: 'bunny/parts/reader', token: token()}]);
   const started = (logs: readonly LogRecord[]): LogRecord['attributes'] | undefined => logs.find(record => record.event_name === 'runtime.started')?.attributes;
-  const plain = await run(context, {modules: []});
+  const events = (logs: readonly LogRecord[]): string[] => logs.map(record => record.event_name);
+  const plain = await run(context, {modules: [fixture('one')]});
   assert.equal(started(plain.logs)?.['bunny.simulate'], false);
   assert.equal(started(plain.logs)?.['bunny.edge'], false);
-  const simulated = await run(context, {modules: [], stateDir: dir, simulate: true, edge: {schemas: {}}});
+  assert.equal(events(plain.logs).includes('runtime.edge.serving'), false, 'no edge, no serving record');
+  const simulated = await run(context, {modules: [fixture('one'), fixture('two')], stateDir: dir, simulate: true, edge: {schemas: {}}});
   assert.equal(started(simulated.logs)?.['bunny.simulate'], true);
   assert.equal(started(simulated.logs)?.['bunny.edge'], true);
+  const order = events(simulated.logs);
+  assert.equal(order.filter(event => event === 'runtime.edge.serving').length, 1);
+  assert.ok(order.indexOf('runtime.edge.serving') > order.lastIndexOf('runtime.module.started'), `the edge serves after every module started: ${order.join(', ')}`);
+  const serving = simulated.logs.find(record => record.event_name === 'runtime.edge.serving');
+  assert.deepEqual(serving?.attributes, {'bunny.url': simulated.runtime.url, 'bunny.grants': 1});
+});
+
+it('while the runtime stops, the edge answers 503 with unavailable until the listener closes', async context => {
+  const dir = await stateDir(context);
+  const part = {source: 'bunny/parts/hook', token: token()};
+  await grant(dir, [part]);
+  const gate = deferred<undefined>();
+  const stopping: BunnyModule = {manifest: {name: 'stopping', apiVersion: '1.0'}, start: () => {}, stop: () => gate.promise};
+  context.after(() => { gate.resolve(undefined); });
+  const {runtime} = await run(context, {modules: [stopping], stateDir: dir, edge: {schemas: {}}});
+  const stopped = runtime.stop();
+  const during = await fetch(new URL('/api/sdk/v1/stream', runtime.url), {headers: {authorization: `Bearer ${part.token}`}});
+  assert.equal(during.status, 503, 'the edge is stopping, not missing');
+  assert.equal(((await during.json()) as {error: {code: string}}).error.code, 'unavailable');
+  const call = await fetch(new URL('/api/sdk/v1/publish', runtime.url), {method: 'POST', headers: {authorization: `Bearer ${part.token}`}, body: '{}'});
+  assert.equal(call.status, 503);
+  gate.resolve(undefined);
+  await stopped;
+});
+
+it('an edge refusal is logged with a known route, its registry code and that code\'s fixed meaning, never the refusal\'s detail', async context => {
+  const dir = await stateDir(context);
+  const part = {source: 'bunny/parts/hook', token: token()};
+  await grant(dir, [part]);
+  const {runtime, logs} = await run(context, {modules: [], stateDir: dir, edge: {schemas: {}}});
+  const marker = 'caller-sent-7f3a91';
+  const headers = {authorization: `Bearer ${part.token}`, 'content-type': 'application/json'};
+  const unknown = await fetch(new URL(`/api/sdk/v1/${marker}`, runtime.url), {method: 'POST', headers, body: '{}'});
+  assert.equal(unknown.status, 404);
+  const malformed = await fetch(new URL('/api/sdk/v1/publish', runtime.url), {method: 'POST', headers, body: JSON.stringify({key: marker, message: {id: marker}})});
+  assert.ok(malformed.status >= 400 && malformed.status < 500, `a malformed publish is refused: ${malformed.status}`);
+  const anonymous = await fetch(new URL(`/api/sdk/v1/publish?${marker}`, runtime.url), {method: 'POST', body: '{}'});
+  assert.equal(anonymous.status, 401);
+
+  const refusals = logs.filter(record => record.event_name === 'runtime.edge.refused');
+  assert.deepEqual(refusals.map(record => record.attributes['bunny.route']), ['other', 'publish', 'publish']);
+  for (const record of refusals) {
+    const code = record.attributes['bunny.code'];
+    assert.ok(typeof code === 'string' && code in errorCodes, `a registry code: ${String(code)}`);
+    assert.equal(record.attributes['bunny.reason'], errorCodes[code]?.meaning, 'the reason is the code\'s fixed meaning');
+    assert.equal('bunny.detail' in record.attributes, false, 'no detail');
+  }
+  assert.deepEqual(refusals.map(record => record.attributes['bunny.source']), [part.source, part.source, undefined]);
+  assert.equal(JSON.stringify(logs).includes(marker), false, 'nothing the caller sent reaches a log record');
 });
 
 it('a module factory builds the module with its real transport, or with its simulated one', () => {

@@ -35,6 +35,11 @@ export interface ReaderView {
   syncs(family: string): number;
   /** Every occurrence and outcome the reader heard, in order. */
   heard(): readonly Message[];
+  /**
+   * How many gap notices the reader's subscription heard. A remote part's subscription hears one when its stream is
+   * lost and restored; an in-process part that connects anew starts a new subscription, which has heard none.
+   */
+  gaps(): number;
 }
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
@@ -174,7 +179,7 @@ export async function runScenario(scenario: Scenario, h: Harness, onStep?: (resu
 
 const show = (value: unknown): string => JSON.stringify(value);
 /** The expectation for the harness's transport, where the two transports end a case differently. */
-const byTransport = (h: Harness, answers: Readonly<Record<TransportName, string>>): string => answers[h.transport];
+const byTransport = <T>(h: Harness, answers: Readonly<Record<TransportName, T>>): T => answers[h.transport];
 /**
  * How long past its deadline a remote requester waits for the edge before it settles a command itself: the SDK's
  * `REQUESTER_GRACE_MS`, which the package does not export.
@@ -231,6 +236,14 @@ async function running(h: Harness, names: readonly string[]): Promise<Outcome> {
 /** Every reader copy synced at least `times` times. */
 const synced = (h: Harness, times: number): Outcome =>
   (h.reader.syncs('session') >= times && h.reader.syncs('lamp') >= times) || `synced ${h.reader.syncs('session')} and ${h.reader.syncs('lamp')} times`;
+/**
+ * The Harness contract's disconnect: remotely the same subscription heard of the gap once, as the SDK's reconnect tells
+ * it; in process the part connected anew, so its subscription heard of none.
+ */
+const reconnectedAs = (h: Harness): Outcome => {
+  const gaps = byTransport(h, {'in-process': 0, remote: 1});
+  return h.reader.gaps() === gaps || `the reader's subscription heard ${h.reader.gaps()} gap notices, not ${gaps}`;
+};
 /** The reader heard no message twice. */
 const heardOnce = (h: Harness): Outcome => {
   const ids = h.reader.heard().map(message => `${message.source} ${message.id}`);
@@ -344,6 +357,7 @@ const remotePartReconnects: Scenario = {
     }),
     act('and the hook observes an approval prompt', h => publish(h, approvalPrompt('approval-1'))),
     expect('the reader reconnected and synced each copy again', h => synced(h, 2)),
+    expect('remotely its own subscription heard of the gap; in process it connected anew', h => reconnectedAs(h)),
     expect('its copy shows the current state: lamp-1 on', h => copied(h, 'on')),
     expect('and the session waiting for approval', h => waiting(h, ['approval-1'])),
     holds('nothing published while it was away reached it', h => noReplay(h), 500),
@@ -424,6 +438,7 @@ const endToEnd: Scenario = {
       closeGap(h);
     }),
     expect('the reader reconnected and synced each copy again', h => synced(h, 2)),
+    expect('remotely its own subscription heard of the gap; in process it connected anew', h => reconnectedAs(h)),
     expect('its copy shows lamp-1 on, and history holds req-gap', h => copied(h, 'on') === true ? recorded(h, 'req-gap', 'succeeded', 'observed') : copied(h, 'on')),
     holds('nothing published while it was away was replayed to it', h => noReplay(h), 500),
 

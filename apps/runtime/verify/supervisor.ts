@@ -20,7 +20,7 @@ import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
 import {
-  HARNESS_PATH, type BoundaryReport, type ChildMessage, type Control, type HarnessState, type SimulateRequest, type SupervisorMessage,
+  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type HarnessState, type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {RUN_FILE, homeOf, stateDirOf, type RunFile} from './seed.js';
 
@@ -43,7 +43,7 @@ const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const logs: Generational<{record: LogRecord}>[] = [];
 const published: Generational<{message: Message}>[] = [];
-const outbound: {host: string; port: number}[] = [];
+const outbound: Attempt[] = [];
 const waiting = new Map<number, () => void>();
 /** The newest log record of one runtime with this event name. */
 const newest = (number: number, event: string): LogRecord | undefined =>
@@ -99,7 +99,7 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       published.push({generation: number, message: message.message});
       return;
     case 'guard':
-      outbound.push({host: message.host, port: message.port});
+      outbound.push({protocol: 'tcp', host: message.host, port: message.port});
       return;
     case 'applied':
     case 'flushed':
@@ -210,7 +210,7 @@ function report(): BoundaryReport {
   }
   return {
     runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null,
-    stateDir: run.fault === 'default-state' ? null : stateDirOf(dataDir), runStateDir: stateDirOf(dataDir), dataDir, home: homeOf(dataDir), grantsMode,
+    dataDir, home: homeOf(dataDir), defaultState: false, stateFiles: [], grantsMode,
     outbound: [...outbound],
   };
 }

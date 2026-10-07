@@ -39,23 +39,27 @@ export type HarnessState = {
   published: Generational<{message: Message}>[];
 };
 
-/** `GET boundaries`: what the boundary checks judge. */
+/** One outbound connection or datagram the guard refused. */
+export type Attempt = {protocol: 'tcp' | 'udp'; host: string; port: number};
+
+/** `GET boundaries`: what the boundary checks judge, all of it observed rather than taken from the runtime's arguments. */
 export type BoundaryReport = {
   /** `shipped`: the runtime's own entry point with the shipped modules; `fixtures`: the fixture modules. */
   runtime: 'shipped' | 'fixtures';
   /** What the current runtime's `runtime.started` record says of `--simulate`, or null before it said anything. */
   simulate: boolean | null;
-  /** The state directory the runtime was given, or null when it was left to its default. */
-  stateDir: string | null;
-  /** The run's own state directory, `<data>/state`. */
-  runStateDir: string;
-  /** The run's data directory and the runtime's private home in it. */
+  /** The run's data directory. */
   dataDir: string;
+  /** The home the runtime process has, read from its environment once it was ready; empty when it could not be read. */
   home: string;
+  /** Whether anything exists at `<home>/.local/state`, under which the runtime's default state directory lies. */
+  defaultState: boolean;
+  /** The SQLite files the runtime process has open, from its file descriptors: the modules' databases. */
+  stateFiles: string[];
   /** The grants file's permission bits, or null when there is none. */
   grantsMode: number | null;
-  /** Every outbound connection the guard refused. */
-  outbound: {host: string; port: number}[];
+  /** Every outbound connection or datagram the guard refused, from the runtime and every process it started. */
+  outbound: Attempt[];
 };
 
 /** `POST simulate`: what a device should do, as the catalog's `Simulation`. */

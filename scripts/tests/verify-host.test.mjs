@@ -152,17 +152,29 @@ test('process transport preserves literal arguments and enforces its bound', asy
 });
 
 test('all supported applications select their owned wrapper and optional tool paths', async t => {
-  for (const [app, name] of [['hub', 'agent-device-hub'], ['nanoleaf', 'codex-nanoleaf'], ['pixoo', 'divoom-app-upgrade'], ['compose', 'agent-device-hub']]) {
+  const wrappers = {compose: 'apps/hub/verify/compose.mjs', runtime: 'scripts/verify-runtime.mjs'};
+  for (const [app, name] of [['hub', 'agent-device-hub'], ['runtime', 'agent-device-hub'], ['nanoleaf', 'codex-nanoleaf'], ['pixoo', 'divoom-app-upgrade'], ['compose', 'agent-device-hub']]) {
     const root = await checkout(t, name);
-    if (app === 'compose') {
-      await mkdir(join(root, 'apps/hub/verify'), {recursive: true});
-      await writeFile(join(root, 'apps/hub/verify/compose.mjs'), '');
-    }
+    const wrapper = wrappers[app] ?? 'scripts/verify.mjs';
+    await mkdir(join(root, wrapper, '..'), {recursive: true});
+    await writeFile(join(root, wrapper), '');
     const argv = ['--host', '--app', app, '--checkout', root, '--python', '/usr/bin/python3', '--', 'doctor'];
     const plan = await prepare(argv);
     assert.equal(plan.hostEnv.PYTHON, '/usr/bin/python3');
-    assert.equal(plan.adapterArgs[0], join(root, app === 'compose' ? 'apps/hub/verify/compose.mjs' : 'scripts/verify.mjs'));
+    assert.equal(plan.adapterArgs[0], join(root, wrapper));
   }
+});
+
+test('the runtime route needs the runtime adapter\'s own wrapper and takes the single-adapter operations', async t => {
+  const root = await checkout(t);
+  const runtime = ['--host', '--app', 'runtime', '--checkout', root, '--'];
+  await assert.rejects(prepare([...runtime, 'start']), /ENOENT/, 'the Hub\'s wrapper does not stand in for the runtime\'s');
+  await writeFile(join(root, 'scripts/verify-runtime.mjs'), '');
+  for (const operation of ['prerequisites', 'start', 'doctor', 'scenario', 'capture', 'handoff', 'extend', 'stop']) {
+    assert.deepEqual((await prepare([...runtime, operation])).adapterArgs, [join(root, 'scripts/verify-runtime.mjs'), operation]);
+  }
+  await assert.rejects(prepare([...runtime, 'inject']), /operation/);
+  await assert.rejects(prepare(['--host', '--app', 'runtime', '--checkout', await checkout(t, 'codex-nanoleaf'), '--', 'start']), /checkout/);
 });
 
 test('missing adapter and invalid timeout refuse before effects', async t => {

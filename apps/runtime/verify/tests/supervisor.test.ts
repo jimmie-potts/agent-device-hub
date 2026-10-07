@@ -6,9 +6,11 @@ import {execFileSync} from 'node:child_process';
 import {request} from 'node:http';
 import {test} from 'node:test';
 import {connectRemote} from '@jimmie-potts/sdk';
+import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {readGrants} from '../adapter.js';
 import {HARNESS_PATH, type HarnessState} from '../protocol.js';
+import {BurstLimit} from '../restarts.js';
 import {alive, base, listening, startRun, type Started} from './support.js';
 
 const children = (pid: number): number[] =>
@@ -24,6 +26,8 @@ async function until(condition: () => boolean | Promise<boolean>, what: string, 
 async function state(run: Started): Promise<HarnessState> {
   return await (await fetch(new URL(`${HARNESS_PATH}/state`, run.harness))).json() as HarnessState;
 }
+const post = (run: Started, route: string, body: object = {}): Promise<Response> =>
+  fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
 
 void test('stopping a run ends its runtime and both listeners, and leaves no process behind', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'fixtures');
@@ -86,4 +90,47 @@ void test('the harness answers only local JSON requests that name its listener',
   assert.equal(await raw(stateUrl, 'GET', {'sec-fetch-site': 'cross-site'}), 403);
   assert.equal(await raw(new URL(`${HARNESS_PATH}/arm-crash`, run.harness).href, 'POST', {'content-type': 'text/plain'}), 415);
   assert.equal(await raw(new URL(`${HARNESS_PATH}/nothing`, run.harness).href, 'GET', {}), 404);
+});
+
+void test('a run\'s ready line links the runtime\'s health, so the preview card opens a page that answers', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'fixtures');
+  assert.equal(new URL(run.readyUrl).pathname, HEALTH_PATH);
+  assert.equal((await fetch(run.readyUrl)).status, 200);
+});
+
+void test('overlapping restarts run one after another, and the run keeps one healthy runtime on its port', {timeout: 90_000}, async context => {
+  const run = await startRun(context, await base(context), 'fixtures');
+  const answers = await Promise.all([post(run, 'restart'), post(run, 'restart'), post(run, 'restart')]);
+  assert.deepEqual(answers.map(answer => answer.status), [200, 200, 200]);
+  assert.equal((await state(run)).generation, 4, 'three restarts after the first start');
+  assert.equal(children(run.supervisor.pid ?? 0).length, 1, 'one runtime');
+  assert.equal((await fetch(new URL(HEALTH_PATH, run.url))).status, 200);
+  assert.equal(run.supervisor.exitCode, null, 'the run goes on');
+});
+
+void test('the harness drops a part\'s stream at the edge, and the same remote part reconnects and hears of the gap', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'command-tracked-outcome');
+  const grants = await readGrants(run.dataDir);
+  const reader = await connectRemote({url: run.url, source: 'bunny/parts/reader', token: grants.get('bunny/parts/reader') ?? '', reconnectDelayMs: 50});
+  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? ''});
+  context.after(async () => { await reader.close(); await operator.close(); });
+  let gaps = 0;
+  const heard: string[] = [];
+  await reader.subscribe('bunny.event.*.*', message => { heard.push(message.type); }, {onOverflow: () => { gaps += 1; }});
+  assert.equal((await post(run, 'disconnect', {source: 'bunny/parts/reader'})).status, 200);
+  await until(() => gaps === 1, 'the gap notice on the same subscription');
+  const {key, draft} = switchLamp('lamp-1', 'on');
+  assert.equal((await operator.request(key, draft, {timeoutMs: 5000})).status, 'accepted');
+  await until(() => heard.includes('org.bunny.lamp.switch.completed'), 'the outcome on the reconnected subscription');
+  assert.equal((await post(run, 'disconnect', {source: 'bunny/modules/lamp'})).status, 400, 'only a part\'s source can be dropped');
+});
+
+void test('a burst limit allows its count within a window, and allows again once the window has passed', () => {
+  let now = 0;
+  const limit = new BurstLimit(3, 60_000, () => now);
+  assert.deepEqual([limit.allow(), limit.allow(), limit.allow(), limit.allow()], [true, true, true, false]);
+  now = 59_999;
+  assert.equal(limit.allow(), false, 'still inside the window of the first');
+  now = 60_001;
+  assert.equal(limit.allow(), true, 'the first fell out of the window');
 });
