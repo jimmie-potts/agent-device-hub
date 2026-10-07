@@ -436,8 +436,8 @@ profile blocks, never inline comments:
 | Scripts: `**/scripts/**` | `no-console` | Scripts write their results to the terminal. | Permanent |
 | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
 | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
-| `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | #953, once [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919), which changes the file, has merged |
-| `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #953, once #919, which changes the file, has merged |
+| `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), once [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919), which changes the file, has merged |
+| `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, once #919, which changes the file, has merged |
 | `modules/nanoleaf/src/journal.ts` | `error-body-from-registry` | The staged port's outcome drafts carry a bare `{code}` error block without the registry's `retryable` flag, because the module does not depend on the contracts package yet. | [#844](https://github.com/jimmie-potts/agent-device-hub/issues/844), when it publishes them through the SDK's outbox |
 | Staged `modules/pixoo/` | All three | The snapshot keeps its source, as for the strict rules. | #843 |
 

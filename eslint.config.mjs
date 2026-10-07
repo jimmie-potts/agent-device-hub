@@ -185,7 +185,7 @@ export default defineConfig(
   },
   // Code that breaks a safe-error rule until its owner converts it.
   {
-    // A malformed command line's usage error quotes parseArgs's message. Open PR #960 changes the file; #953 converts it
+    // A malformed command line's usage error quotes parseArgs's message. Open PR #960 changes the file; #954 converts it
     // after that merges.
     name: 'bunny/safe-errors/runtime-usage',
     files: ['apps/runtime/src/process.ts'],
@@ -193,7 +193,7 @@ export default defineConfig(
   },
   {
     // The verification run's harness quotes a failure's message in its own refusal body, its lamp failures and its
-    // start-failure lines. Open PR #960 changes the file; #953 converts it after that merges.
+    // start-failure lines. Open PR #960 changes the file; #954 converts it after that merges.
     name: 'bunny/safe-errors/verification-harness',
     files: ['apps/runtime/verify/supervisor.ts'],
     rules: {'bunny/no-raw-error-text': 'off', 'bunny/error-body-from-registry': 'off'},
