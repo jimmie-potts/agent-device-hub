@@ -1,6 +1,7 @@
 // The fixed, shipped module list (ADR 0012). Each entry is a module's factory: it creates the module with its real
 // device transport, or, when the runtime runs with `--simulate`, with its simulated one, so a disposable verification
 // run (#920) touches no device. Adding or removing a module is a code change here; nothing loads modules at run time.
+import {playbackFactory} from '@jimmie-potts/playback';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {CORE_MODULE, createCoreModule} from './core/core.js';
 
@@ -23,7 +24,10 @@ export type ModuleFactory = {
  */
 export const coreFactory: ModuleFactory = {name: CORE_MODULE, create: () => createCoreModule(), simulate: () => createCoreModule()};
 
-export const shippedModules: readonly ModuleFactory[] = [coreFactory];
+export const shippedModules: readonly ModuleFactory[] = [
+  coreFactory,
+  playbackFactory,
+];
 
 /** Each factory's module, with its simulated transport when `simulate` is set and its real one otherwise. */
 export function buildModules(factories: readonly ModuleFactory[], simulate: boolean): BunnyModule[] {

@@ -1,0 +1,274 @@
+// Shared helpers for the playback module's tests: a manual clock, the old Hub's fake Sony and Sonos servers on the
+// loopback interface (copied from `apps/hub/tests/playback.test.mjs` at main 483d3a93), and the module hosted by the
+// module test kit's harness on a manual clock.
+import {mkdtemp, rm} from 'node:fs/promises';
+import {createServer, type IncomingMessage} from 'node:http';
+import type {AddressInfo, Socket} from 'node:net';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {test as nodeTest, type TestContext} from 'node:test';
+import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {registerCoreFamilies, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {InProcessBus, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {ModuleHarness, type HarnessRecord} from '@jimmie-potts/sdk/testing';
+import {CONTROL_PATH} from '../src/sonos.js';
+import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule, type PlaybackModuleOptions} from '../src/module.js';
+import type {PlaybackAction} from '../src/playback.js';
+import type {Deadline} from '../src/sources.js';
+import type {SimulatedSpeakers} from '../src/simulated.js';
+
+/** node:test's test(), whose returned promise the runner awaits itself. */
+export function test(name: string, body: (context: TestContext) => void | Promise<void>): void {
+  void nodeTest(name, body);
+}
+
+export const START_MS = Date.parse('2026-10-07T12:00:00.000Z');
+
+/** A manual wall clock with a scheduler on it. `advance` runs every timer that falls due, in order. */
+export function manualClock(start = START_MS): {now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number} {
+  let now = start;
+  const timers = new Set<{at: number; callback: () => void}>();
+  return {
+    now: () => now,
+    scheduler: {after: (delayMs, callback) => {
+      const timer = {at: now + delayMs, callback};
+      timers.add(timer);
+      return () => { timers.delete(timer); };
+    }},
+    advance: ms => {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers].filter(timer => timer.at <= end).sort((a, b) => a.at - b.at)[0];
+        if (due === undefined) break;
+        now = Math.max(now, due.at);
+        if (timers.delete(due)) due.callback();
+      }
+      now = end;
+    },
+    pending: () => timers.size,
+  };
+}
+
+/** Lets promises and I/O that are already due run. */
+export async function flush(): Promise<void> {
+  for (let turn = 0; turn < 8; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+}
+
+/** A deadline on real time, for a source called outside the module. */
+export const deadlineOf = (ms: number): Deadline => call => call(AbortSignal.timeout(ms));
+
+/** A body, a raw string, or one of the strings 'hang' (never answer) and 'drop' (close the connection). */
+type Reply = string | ({status?: number} & Record<string, unknown>) | undefined;
+type Listening = {endpoint: string; close: () => Promise<void>; peak: () => number};
+
+/** Serves one loopback HTTP server whose handler returns a reply, 'hang' or 'drop'. */
+async function serve(path: string, handle: (request: IncomingMessage, body: string) => Promise<{reply: Reply; render: (reply: Exclude<Reply, undefined>) => {status: number; type: string; body: string}} | undefined>): Promise<Listening> {
+  const sockets = new Set<Socket>();
+  let active = 0, peak = 0;
+  const server = createServer((request, response) => {
+    void (async () => {
+      let text = '';
+      for await (const chunk of request) text += String(chunk);
+      active += 1;
+      peak = Math.max(peak, active);
+      try {
+        const handled = await handle(request, text);
+        if (handled === undefined) return;
+        const {reply, render} = handled;
+        if (reply === 'hang') return;
+        if (reply === 'drop') {
+          request.socket.destroy();
+          return;
+        }
+        if (reply === undefined) return;
+        const {status, type, body} = render(reply);
+        response.writeHead(status, {'content-type': type});
+        response.end(body);
+      } finally {
+        active -= 1;
+      }
+    })();
+  });
+  server.on('connection', socket => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  await new Promise<void>(resolve => { server.listen(0, '127.0.0.1', resolve); });
+  const {port} = server.address() as AddressInfo;
+  return {
+    endpoint: `http://127.0.0.1:${port}${path}`, peak: () => peak,
+    close: () => new Promise(resolve => {
+      for (const socket of sockets) socket.destroy();
+      server.close(() => { resolve(); });
+    }),
+  };
+}
+
+export type SonyCall = {path: string; method: string; id: unknown; params: unknown; version: string};
+export const airplay = (fields: Record<string, unknown> = {}): Record<string, unknown> => ({
+  source: 'extInput:airPlay', uri: 'extInput:airPlay', output: '', stateInfo: {state: 'PLAYING', supplement: ''}, title: 'Song', artist: 'Artist',
+  albumName: 'Album', applicationName: 'app', content: {thumbnailUrl: 'http://192.168.1.20:60200/thumbnail.jpg'}, ...fields,
+});
+export const playingInfo = (entries: unknown[]): {result: unknown[]} => ({result: [entries]});
+
+/** Answers Sony JSON-RPC like the HT-A9. `set` replaces the reply with a body, a raw string, 'hang' or 'drop'. */
+export async function fakeSony(): Promise<Listening & {calls: SonyCall[]; set: (next: (call: SonyCall) => Reply | Promise<Reply>) => void}> {
+  const calls: SonyCall[] = [];
+  let reply: (call: SonyCall) => Reply | Promise<Reply> = () => playingInfo([airplay()]);
+  const listening = await serve('/sony', async (request, text) => {
+    const parsed = JSON.parse(text) as Omit<SonyCall, 'path'>;
+    const call = {path: request.url ?? '', ...parsed};
+    calls.push(call);
+    return {reply: await reply(call), render: value => typeof value === 'string' ? {status: 200, type: 'application/json', body: value} : (() => {
+      const {status = 200, ...body} = value;
+      return {status, type: 'application/json', body: JSON.stringify({id: call.id, ...body})};
+    })()};
+  });
+  return {...listening, calls, set: next => { reply = next; }};
+}
+
+export const DIDL = ({title = 'Move Song', artist = 'Move Artist', album = 'Move Album'}: {title?: string | null; artist?: string | null; album?: string | null} = {}): string =>
+  `<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="-1" parentID="-1" restricted="true"><res protocolInfo="x-sonos-vli:*:*:*">x-sonos-vli:RINCON_000E58FFFFFF01400:2,airplay:1</res><r:streamContent></r:streamContent><upnp:albumArtURI>http://127.0.0.1:1400/getaa?s=1&amp;u=x</upnp:albumArtURI>${title === null ? '' : `<dc:title>${title}</dc:title>`}<upnp:class>object.item.audioItem.musicTrack</upnp:class>${artist === null ? '' : `<dc:creator>${artist}</dc:creator>`}${album === null ? '' : `<upnp:album>${album}</upnp:album>`}</item></DIDL-Lite>`;
+export const escapeXml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const envelope = (inner: string): string =>
+  `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>${inner}</s:Body></s:Envelope>`;
+export const soapFault = (code: number): string =>
+  envelope(`<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>${code}</errorCode></UPnPError></detail></s:Fault>`);
+
+export type SonosCall = {path: string; action: string | undefined; soapaction: string | undefined; contentType: string | undefined; body: string};
+export type SonosState = {transport: string; uri: string; metadata: string; actions: string; duration: string; rel: string};
+
+/** Answers UPnP AVTransport SOAP like the Sonos Move. `state` drives the default replies; `set` overrides them with a body, {status, body}, 'hang' or 'drop'. */
+export async function fakeSonos(): Promise<Listening & {calls: SonosCall[]; state: SonosState; set: (next: ((call: SonosCall) => Reply | Promise<Reply>) | undefined) => void}> {
+  const calls: SonosCall[] = [];
+  let reply: ((call: SonosCall) => Reply | Promise<Reply>) | undefined;
+  const state: SonosState = {
+    transport: 'PLAYING', uri: 'x-sonos-vli:RINCON_000E58FFFFFF01400:2,airplay:1', metadata: DIDL(), actions: 'Set, Stop, Pause, Play, Next, Previous',
+    duration: '0:03:41', rel: '0:01:03',
+  };
+  const responses: Record<string, () => string> = {
+    GetTransportInfo: () => `<u:GetTransportInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><CurrentTransportState>${state.transport}</CurrentTransportState><CurrentTransportStatus>OK</CurrentTransportStatus><CurrentSpeed>1</CurrentSpeed></u:GetTransportInfoResponse>`,
+    GetPositionInfo: () => `<u:GetPositionInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><Track>1</Track><TrackDuration>${state.duration}</TrackDuration><TrackMetaData>${escapeXml(state.metadata)}</TrackMetaData><TrackURI>${escapeXml(state.uri)}</TrackURI><RelTime>${state.rel}</RelTime><AbsTime>NOT_IMPLEMENTED</AbsTime><RelCount>2147483647</RelCount><AbsCount>2147483647</AbsCount></u:GetPositionInfoResponse>`,
+    GetCurrentTransportActions: () => `<u:GetCurrentTransportActionsResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><Actions>${state.actions}</Actions></u:GetCurrentTransportActionsResponse>`,
+  };
+  const xml = 'text/xml; charset="utf-8"';
+  const listening = await serve(CONTROL_PATH, async (request, text) => {
+    const soapaction = request.headers.soapaction;
+    const header = Array.isArray(soapaction) ? soapaction[0] : soapaction;
+    const action = /^"urn:schemas-upnp-org:service:AVTransport:1#(\w+)"$/.exec(header ?? '')?.[1];
+    const call: SonosCall = {path: request.url ?? '', action, soapaction: header, contentType: request.headers['content-type'], body: text};
+    calls.push(call);
+    const given = reply === undefined ? undefined : await reply(call);
+    if (given !== undefined) {
+      return {reply: given, render: value => typeof value === 'string' ? {status: 200, type: xml, body: value} : {status: value.status ?? 200, type: xml, body: String(value.body)}};
+    }
+    if (action === undefined || request.url !== CONTROL_PATH) return {reply: soapFault(401), render: () => ({status: 500, type: xml, body: soapFault(401)})};
+    const inner = responses[action]?.() ?? `<u:${action}Response xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"></u:${action}Response>`;
+    return {reply: inner, render: () => ({status: 200, type: xml, body: envelope(inner)})};
+  });
+  return {...listening, calls, state, set: next => { reply = next; }};
+}
+
+/** The playback section the module tests configure: the Move first, then the HT-A9, at documentation addresses. */
+export const SECTION = {
+  id: 'living-room',
+  sources: [
+    {kind: 'sonos', endpoint: 'http://192.168.1.30:1400/MediaRenderer/AVTransport/Control'},
+    {kind: 'sony', endpoint: 'http://192.168.1.20:10000/sony'},
+  ],
+} as const;
+export const ID = SECTION.id;
+
+/** Whether a message is the playback record reporting `unavailable`. */
+export const reportsUnavailable = (message: Message): boolean =>
+  message.dataschema === PLAYBACK_SCHEMA && (message.data as Partial<PlaybackState>).availability === 'unavailable';
+
+/** The playback module hosted by the kit's harness on a manual clock, with a requester and a watcher on its bus. */
+export type Hosted = {
+  harness: ModuleHarness;
+  clock: ReturnType<typeof manualClock>;
+  requester: Participant;
+  published: Message[];
+  /** The playback records published so far, in order. */
+  records: () => PlaybackState[];
+  /** The last playback record published. */
+  record: () => PlaybackState;
+  outcomes: () => Record<string, unknown>[];
+  /** The current instance's log records. */
+  logs: () => HarnessRecord[];
+  /** Moves the manual clock in steps of at most `stepMs`, letting each step's reads settle. */
+  advance: (ms: number, stepMs?: number) => Promise<void>;
+  send: (action: PlaybackAction, requestId: string, expectedRevision?: number) => Promise<RequestResult>;
+  /** Starts a new instance of the module on the same database, after `stop`. */
+  start: () => Promise<void>;
+  restart: () => Promise<void>;
+  stop: () => Promise<void>;
+  /** Every published message that breaks profile 2.0, and every failure of a module instance's handler, timer or stop. */
+  problems: () => string[];
+  stateDir: string;
+};
+
+export async function host(context: TestContext, speakers: SimulatedSpeakers, options: Omit<PlaybackModuleOptions, 'transport'> & {section?: unknown} = {}): Promise<Hosted> {
+  const {section = SECTION, ...moduleOptions} = options;
+  const clock = manualClock();
+  const stateDir = await mkdtemp(join(tmpdir(), 'playback-module-'));
+  const bus = new InProcessBus();
+  const requester = bus.connect('bunny/parts/operator');
+  const watcher = bus.connect('bunny/parts/watcher');
+  const published: Message[] = [];
+  const validator = new MessageValidator();
+  registerCoreFamilies(validator);
+  await watcher.subscribe('bunny.*.*.*', message => { published.push(message); });
+  const build = (): ModuleHarness => new ModuleHarness(createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions}), {
+    bus, stateDir, clock: {now: clock.now}, scheduler: clock.scheduler, section,
+  });
+  const first = build();
+  const hosted: Hosted & {instances: ModuleHarness[]} = {
+    harness: first, instances: [first], clock, requester, published, stateDir,
+    records: () => published.filter(message => message.dataschema === PLAYBACK_SCHEMA).map(message => message.data as PlaybackState),
+    record: () => {
+      const last = hosted.records().at(-1);
+      if (last === undefined) throw new Error('no playback record was published');
+      return last;
+    },
+    outcomes: () => published.filter(message => message.kind === 'outcome').map(message => message.data),
+    logs: () => hosted.harness.logs,
+    advance: async (ms, stepMs = 100) => {
+      await flush();
+      for (let moved = 0; moved < ms; moved += stepMs) {
+        clock.advance(Math.min(stepMs, ms - moved));
+        await flush();
+      }
+    },
+    send: (action, requestId, expectedRevision) => {
+      const {key, draft} = controlPlayback(ID, action, expectedRevision);
+      return requester.request(key, draft, {timeoutMs: 60_000, requestId});
+    },
+    start: async () => {
+      hosted.harness = build();
+      hosted.instances.push(hosted.harness);
+      await hosted.harness.start();
+      await flush();
+    },
+    restart: async () => {
+      await hosted.harness.stop();
+      await hosted.start();
+    },
+    stop: () => hosted.harness.stop(),
+    problems: () => {
+      const invalid = published.flatMap(message => {
+        const result = validator.validate(message);
+        return result.ok ? [] : [`${message.type}: ${result.error.code} ${result.error.detail ?? ''}`];
+      });
+      return [...invalid, ...hosted.instances.flatMap(instance => instance.failures.map(String))];
+    },
+  };
+  context.after(async () => {
+    await hosted.harness.stop();
+    await Promise.all([requester.close(), watcher.close()]);
+    await rm(stateDir, {recursive: true, force: true});
+  });
+  await hosted.harness.start();
+  await flush();
+  return hosted;
+}

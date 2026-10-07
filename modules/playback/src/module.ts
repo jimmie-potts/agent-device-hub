@@ -1,0 +1,279 @@
+// The playback module (Hub #929): one owner for the Sony HT-A9 and the Sonos Move, because the presented-source rule
+// (#233) needs both sources and modules cannot import each other. It polls each configured speaker about every two
+// seconds, publishes the presented source as the core `playback` record (`playback/2.0`), and answers `playback-control`
+// with a reply and an outcome from its outbox. Under policy A (ADR 0012, "Failure isolation") a speaker's errors and
+// timeouts are outcomes and an `unavailable` record, never a module failure, and start never waits on a speaker.
+import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
+import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {
+  DeviceAvailability, Outbox, SdkError, type BunnyModule, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
+} from '@jimmie-potts/sdk';
+import {configurePlayback, type PlaybackConfig} from './configuration.js';
+import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
+import {SimulatedSpeakers} from './simulated.js';
+import {createSource, type Deadline} from './sources.js';
+import {httpSpeakers, type SpeakerTransport} from './transport.js';
+
+export const PLAYBACK_MODULE = 'playback';
+export const PLAYBACK_SCHEMA = `${SCHEMA_BASE}playback/2.0`;
+export const PLAYBACK_CONTROL_SCHEMA = `${SCHEMA_BASE}playback-control/2.0`;
+const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
+/** How often each speaker is read, as the old Hub did. */
+export const POLL_MS = 2000;
+/** How long one call to a speaker may take: each read call and each command. */
+export const CALL_TIMEOUT_MS = 1500;
+/** How many handled commands the module remembers, so a repeated `requestId` is answered without sending it again. */
+export const RETAINED = 64;
+// The diagnostic contract's `bunny.device.id` pattern.
+const DEVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+export type PlaybackModuleOptions = {
+  /** How the module reaches its speakers: `httpSpeakers()` for the real ones, `SimulatedSpeakers` in tests and runs. */
+  transport: SpeakerTransport;
+  /** How often each speaker is read. Defaults to `POLL_MS`. */
+  pollMs?: number;
+  /** How long one call to a speaker may take. Defaults to `CALL_TIMEOUT_MS`. */
+  timeoutMs?: number;
+  /**
+   * A monotonic clock in milliseconds, so neither a wall-clock step back nor a suspend keeps old data fresh. Defaults to
+   * `performance.now()`; a test on a manual clock passes that clock.
+   */
+  monotonic?: () => number;
+};
+
+/** The routing key of the playback record's state messages. */
+export const playbackKey = (id: string): string => `bunny.state.playback.${id}`;
+/** A `playback-control` command for the playback record `id`. */
+export const controlPlayback = (id: string, action: PlaybackAction, expectedRevision?: number):
+{key: string; draft: CommandDraft<Omit<PlaybackControlRequest, 'requestId'>>} => ({
+  key: `bunny.cmd.playback-control.${id}`,
+  draft: {
+    type: 'org.bunny.playback.control.requested', subject: id, dataschema: PLAYBACK_CONTROL_SCHEMA,
+    data: {action, ...(expectedRevision === undefined ? {} : {expectedRevision})},
+  },
+});
+
+const stateOf = (record: PlaybackState): StateDraft<PlaybackState> =>
+  ({type: 'org.bunny.playback.updated', subject: record.id, dataschema: PLAYBACK_SCHEMA, data: structuredClone(record)});
+/** What a revision says: availability and the presented playback. `observedAtMs` alone never makes a new revision. */
+const content = (record: PlaybackState): string => JSON.stringify([record.availability, record.playback]);
+/** The record for what is presented now. An unavailable source shows no playback, and old metadata is withheld. */
+function recordOf(id: string, revision: number, {availability, observedAtMs, observation}: PresentedView): PlaybackState {
+  const {title, artist, album} = observation ?? {};
+  const playback: PlaybackState['playback'] = availability === 'unavailable' || observation === undefined ? {status: 'unknown'} : {
+    status: 'known', player: observation.status, ...(title === undefined ? {} : {title}), ...(artist === undefined ? {} : {artist}),
+    ...(album === undefined ? {} : {album}), controls: [...observation.controls],
+  };
+  return {id, revision, availability, ...(observedAtMs === undefined ? {} : {observedAtMs}), playback};
+}
+const codeOf = (error: unknown): ErrorCode => error instanceof SdkError ? error.body.error.code : 'internal';
+
+type Handled = {body: string; result: string | null};
+
+/**
+ * The playback module. `configure` takes the playback record's routing ID and one or two speakers in preference order
+ * (see `configurePlayback`); the runtime refuses the module without that section.
+ */
+export function createPlaybackModule({transport, pollMs = POLL_MS, timeoutMs = CALL_TIMEOUT_MS, monotonic = () => performance.now()}: PlaybackModuleOptions):
+BunnyModule<PlaybackConfig> {
+  return {
+    manifest: {name: PLAYBACK_MODULE, apiVersion: '1.1', configure: configurePlayback},
+    async start({sdk, config, database, clock, scheduler, log, trace, signal}) {
+      // The runtime starts a module with `configure` only with what `configure` accepted.
+      if (config === undefined) throw new Error('the playback module started without its configuration');
+      const {id} = config;
+      const db = database();
+      db.exec(`CREATE TABLE IF NOT EXISTS playback_records (id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT;
+        CREATE TABLE IF NOT EXISTS playback_commands (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, request_id TEXT NOT NULL, body TEXT NOT NULL, result TEXT,
+          UNIQUE (source, request_id)) STRICT`);
+      const saveRevision = db.prepare('INSERT INTO playback_records (id, revision) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET revision = excluded.revision');
+      const handled = db.prepare('SELECT body, result FROM playback_commands WHERE source = ? AND request_id = ?');
+      const admit = db.prepare('INSERT INTO playback_commands (source, request_id, body) VALUES (?, ?, ?)');
+      const finish = db.prepare('UPDATE playback_commands SET result = ? WHERE source = ? AND request_id = ?');
+      const unfinished = db.prepare('SELECT seq, request_id FROM playback_commands WHERE result IS NULL ORDER BY seq');
+      const abandon = db.prepare('UPDATE playback_commands SET result = \'uncertain\' WHERE seq = ?');
+      const forget = db.prepare('DELETE FROM playback_commands WHERE result IS NOT NULL AND seq <= (SELECT MAX(seq) FROM playback_commands) - ?');
+      const outbox = new Outbox({sdk, database: db, clock, log, trace});
+
+      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again. The core's
+      // acknowledgment belongs to Hub #782; until then a stored outcome goes out again at every start.
+      const republished = await outbox.republish();
+      log.info('outbox.republished', {'bunny.outbox.republished_count': republished});
+      const outcomeKey = `bunny.event.playback-control.${id}`;
+      const completed = (outcome: CompletedOutcome) => ({
+        kind: 'outcome' as const, type: 'org.bunny.playback.control.completed', subject: id, dataschema: OUTCOME_SCHEMA, data: outcome,
+      });
+      // A command the module admitted before a crash, with no outcome yet, may have reached the speaker: it is reported
+      // uncertain, and never sent again.
+      const lost = unfinished.all() as {seq: number; request_id: string}[];
+      if (lost.length > 0) {
+        await outbox.transaction(add => {
+          for (const {seq, request_id: requestId} of lost) {
+            abandon.run(seq);
+            add(outcomeKey, completed({
+              requestId, result: 'uncertain', evidence: 'none',
+              error: errorBody('uncertain-result', {detail: 'the module restarted before the speaker answered'}).error,
+            }));
+          }
+        });
+      }
+
+      const presentation = new Presentation(config.sources.length, () => clock.now(), monotonic);
+      const deadline: Deadline = async call => {
+        const timer = new AbortController();
+        const cancel = scheduler.after(timeoutMs, () => { timer.abort(); });
+        try {
+          return await call(AbortSignal.any([timer.signal, signal]));
+        } finally {
+          cancel();
+        }
+      };
+      const sources = config.sources.map(source => createSource(source, transport, deadline));
+      // A source has no ID of its own; its records name it by the playback ID and its kind, never by its address.
+      const devices = sources.map(source => `${id}.${source.kind}`);
+      const deviceField = (device: string): LogFields => DEVICE_ID.test(device) ? {'bunny.device.id': device} : {};
+      const reach = new DeviceAvailability({log, clock});
+
+      // The record as last committed. Each start publishes a new revision, unavailable until a speaker answers.
+      const stored = db.prepare('SELECT revision FROM playback_records WHERE id = ?').get(id) as {revision: number} | undefined;
+      let record = recordOf(id, (stored?.revision ?? 0) + 1, presentation.view());
+      /** Whether the last commit failed, so the next evaluation publishes whatever it finds. */
+      let dirty = false;
+      let storageFailing = false;
+      const commit = (next: PlaybackState): Promise<void> => {
+        const previous = record;
+        record = next;
+        return outbox.transaction(add => {
+          saveRevision.run(id, next.revision);
+          add(playbackKey(id), {kind: 'state', ...stateOf(next)});
+        }).then(() => {
+          if (storageFailing) log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+          storageFailing = false;
+        }, (error: unknown) => {
+          // Nothing committed. One record per run of failures, and the next evaluation tries again.
+          if (record === next) {
+            record = previous;
+            dirty = true;
+          }
+          if (!storageFailing) log.warn('operation.failed', {'bunny.operation': 'storage', 'bunny.code': codeOf(error)});
+          storageFailing = true;
+        });
+      };
+      await commit(record);
+
+      /** Publishes a new revision when availability or the presented playback changed. */
+      let freshness: (() => void) | undefined;
+      const evaluate = (): void => {
+        if (signal.aborted) return;
+        const next = recordOf(id, record.revision + 1, presentation.view());
+        if (dirty || content(next) !== content(record)) {
+          dirty = false;
+          void commit(next);
+        }
+        // Wake when a source's last observation crosses the stale or unavailable threshold.
+        freshness?.();
+        freshness = undefined;
+        const wait = presentation.nextChangeInMs();
+        if (wait !== undefined) freshness = scheduler.after(Math.ceil(wait), evaluate);
+      };
+
+      await sdk.serveSync(['playback'], () => ({revision: record.revision, states: [stateOf(record)]}));
+      await sdk.respond<Omit<PlaybackControlRequest, 'requestId'>>(`bunny.cmd.playback-control.${id}`,
+        async (command: Command<Omit<PlaybackControlRequest, 'requestId'>>): Promise<Reply> => {
+          const {requestId, action, expectedRevision} = command.data as Partial<PlaybackControlRequest> & {requestId: string};
+          if (command.subject !== id) return errorBody('invalid-request', {detail: 'the subject must be the playback record\'s id'});
+          if (!isAction(action)) return errorBody('invalid-request', {detail: 'action must be play, pause, next or previous'});
+          if (expectedRevision !== undefined && !Number.isSafeInteger(expectedRevision)) {
+            return errorBody('invalid-request', {detail: 'expectedRevision must be an integer'});
+          }
+          if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
+          const body = JSON.stringify({action, expectedRevision: expectedRevision ?? null});
+          const prior = handled.get(command.source, requestId) as Handled | undefined;
+          if (prior !== undefined) {
+            // The same request again is accepted and sends nothing: its outcome went out once, from the outbox.
+            if (prior.body === body) return {status: 'accepted'};
+            return errorBody('duplicate-conflict', {detail: 'this requestId was used for another playback command'});
+          }
+          if (expectedRevision !== undefined && expectedRevision !== record.revision) {
+            return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
+          }
+          // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
+          const index = presentation.presented();
+          const source = sources[index], device = devices[index];
+          if (source === undefined || device === undefined || presentation.availability(index) !== 'available') {
+            return errorBody('unavailable', {detail: 'the presented speaker has not answered recently'});
+          }
+          if (!(presentation.observation(index)?.controls ?? []).includes(action)) {
+            return errorBody('unsupported-capability', {detail: 'the presented speaker does not offer this action now'});
+          }
+          // The intent is stored before the speaker hears anything, so a crash never leaves a command to send again.
+          try {
+            await outbox.transaction(() => { admit.run(command.source, requestId, body); });
+          } catch (error) {
+            log.warn('operation.failed', {...deviceField(device), 'bunny.operation': 'storage', 'bunny.code': codeOf(error), 'bunny.request.id': requestId}, command);
+            return errorBody('capacity', {detail: 'the playback module could not record the command'});
+          }
+          log.info('command.executing', {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId}, command);
+          // The speaker call has its own span, the command's child; the speaker gets no trace context.
+          const call = trace.start('bunny.device.call', {
+            parent: command, kind: 'client', attributes: {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId},
+          });
+          let outcome: CompletedOutcome;
+          try {
+            // Sent once. A refusal is failed with no effect; no answer, or an answer that is neither, is uncertain. Neither is retried.
+            const sent = await source.command(action);
+            outcome = sent === 'sent' ? {requestId, result: 'succeeded', evidence: 'transmitted'} : {
+              requestId, result: 'failed', evidence: 'none', error: errorBody('invalid-state', {detail: 'the speaker refused the action'}).error,
+            };
+            call.end(sent === 'sent' ? 'unset' : 'error');
+          } catch {
+            outcome = {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
+            call.end('error');
+          }
+          await outbox.transaction(add => {
+            finish.run(outcome.result, command.source, requestId);
+            forget.run(RETAINED);
+            add(outcomeKey, completed(outcome), {parent: command});
+          });
+          return {status: 'accepted'};
+        });
+
+      // Each speaker is read now and then about every `pollMs`, without overlapping reads: a read still in progress when
+      // the next is due is not repeated. Start does not wait for any of them (policy A).
+      const reading = sources.map(() => false);
+      const read = async (index: number): Promise<void> => {
+        const source = sources[index], device = devices[index];
+        if (source === undefined || device === undefined) return;
+        try {
+          const observation = await source.read();
+          if (signal.aborted) return;
+          presentation.report(index, observation);
+          reach.reached(device);
+        } catch {
+          if (signal.aborted) return;
+          // A failed read reports nothing, so the observation ages; one record per outage, not one per poll.
+          reach.unreachable(device, 'unavailable');
+        }
+        evaluate();
+      };
+      const tick = (index: number): void => {
+        if (signal.aborted) return;
+        scheduler.after(pollMs, () => { tick(index); });
+        if (reading[index] === true) return;
+        reading[index] = true;
+        void read(index).finally(() => { reading[index] = false; });
+      };
+      sources.forEach((_, index) => { tick(index); });
+    },
+    stop: () => {},
+  };
+}
+
+/** The shipped list's factory: the real speakers over HTTP, or the simulated ones under `--simulate`. */
+export const playbackFactory = {
+  name: PLAYBACK_MODULE,
+  create: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: httpSpeakers()}),
+  simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers()}),
+} as const;

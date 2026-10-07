@@ -54,8 +54,10 @@ it('every stderr line of a runtime process is a contract record carrying the run
     runtime.child.kill('SIGTERM');
     assert.deepEqual(await runtime.exited, {code: 0, signal: null});
     const records = parsed(runtime.lines());
-    // The shipped list holds the core (Hub #831), whose start and stop the runtime records.
-    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
+    // The shipped list holds the core (Hub #831), whose start and stop the runtime records, and the playback module
+    // (Hub #929), which this process refuses because it has no configuration file.
+    assert.deepEqual(records.map(record => record.event_name),
+      ['runtime.started', 'runtime.module.refused', 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
     for (const record of records) {
       assert.equal(record.schema_version, '1.3');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
