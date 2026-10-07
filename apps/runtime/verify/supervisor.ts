@@ -19,6 +19,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
+import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
 import {guardEnvironment} from './environment.js';
 import {
@@ -47,6 +48,9 @@ const run = JSON.parse(readFileSync(join(dataDir, RUN_FILE), 'utf8')) as RunFile
 const fixtures = run.runtime === 'fixtures';
 const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
+const signs = new SimulatedSigns();
+/** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
+const shows = new Map<string, AbortController>();
 const logs: Generational<{record: LogRecord}>[] = [];
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
@@ -73,12 +77,16 @@ function queue(task: () => Promise<void>): Promise<void> {
   return done;
 }
 
-/** The runtime's arguments. A boundary negative control leaves out what keeps its run inside its boundary. */
+/**
+ * The runtime's arguments, with the run's configuration file when its seed has one (Hub #919). A boundary negative
+ * control leaves out what keeps its run inside its boundary.
+ */
 function runtimeArgs(): string[] {
   return [
     // A disposable run's records are a test environment's (Hub #903).
     '--port', String(runtimePort), '--environment', 'test', ...(run.fault === 'real-transports' ? [] : ['--simulate']),
     ...(run.fault === 'default-state' ? [] : ['--state-dir', stateDirOf(dataDir), '--edge']),
+    ...(run.config === undefined ? [] : ['--config', run.config]),
   ];
 }
 
@@ -112,6 +120,23 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
     case 'chime.ring':
       chime.ring(message.ring);
       return;
+    case 'sign.show': {
+      const key = `${number} ${message.id}`;
+      const controller = new AbortController();
+      shows.set(key, controller);
+      signs.show(message.address, message.token, message.frame, controller.signal).then(
+        () => { shows.delete(key); tell(child, {type: 'sign.shown', id: message.id}); },
+        () => { if (shows.delete(key)) tell(child, {type: 'sign.failed', id: message.id}); },
+      );
+      return;
+    }
+    case 'sign.abandon': {
+      const key = `${number} ${message.id}`;
+      const controller = shows.get(key);
+      shows.delete(key);
+      controller?.abort();
+      return;
+    }
     case 'published':
       published.push({generation: number, message: message.message});
       return;
@@ -142,7 +167,15 @@ function spawnRuntime(): Promise<string> {
     }
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
-  child.once('exit', () => { died(number); });
+  child.once('exit', () => {
+    // A runtime that ended no longer waits on its shows.
+    for (const [key, controller] of shows) {
+      if (!key.startsWith(`${number} `)) continue;
+      shows.delete(key);
+      controller.abort();
+    }
+    died(number);
+  });
   return new Promise((ready, failed) => {
     lines(child.stdout, line => {
       try {
@@ -296,9 +329,16 @@ async function body(request: IncomingMessage): Promise<unknown> {
 }
 
 async function simulate(request: SimulateRequest): Promise<boolean> {
-  if (request.device === 'chime') {
-    await control('chime-fault');
-    return true;
+  switch (request.device) {
+    case 'chime':
+      await control('chime-fault');
+      return true;
+    case 'sign':
+      if (request.action === 'online') signs.online();
+      else signs.offline();
+      return true;
+    case 'lamp':
+      break;
   }
   switch (request.action) {
     case 'hold':
@@ -328,7 +368,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state()},
+        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state()},
         logs: logs.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);

@@ -1,7 +1,8 @@
 // The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> -- <runtime
 // arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
-// whose simulated transport reaches the supervisor's simulated device over the IPC channel. With any module, a harness
-// module reports every message the bus publishes. The supervisor's controls arm a crash between the lamp's commit and
+// whose simulated transport reaches the supervisor's simulated device over the IPC channel; the arguments name the run's
+// configuration file when its seed has one (Hub #919). With any module, a harness module reports every message the bus
+// publishes. The supervisor's controls arm a crash between the lamp's commit and
 // its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
 // stream at the edge, which `runMain` hands over once it serves.
 import http from 'node:http';
@@ -10,6 +11,7 @@ import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
+import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
 
 const send = (message: ChildMessage): void => { if (process.connected) process.send?.(message); };
@@ -22,6 +24,7 @@ const take = (control: Control): boolean => {
 };
 
 const switches = new Map<number, {resolve: (power: Power) => void; reject: (error: Error) => void}>();
+const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -36,6 +39,14 @@ process.on('message', (value: unknown) => {
     case 'lamp.failed':
       switches.get(message.id)?.reject(new Error(message.detail));
       switches.delete(message.id);
+      return;
+    case 'sign.shown':
+      shows.get(message.id)?.resolve();
+      shows.delete(message.id);
+      return;
+    case 'sign.failed':
+      shows.get(message.id)?.reject(new Error('the sign refused the frame'));
+      shows.delete(message.id);
       return;
     case 'control':
       flags[message.control] = true;
@@ -62,6 +73,29 @@ const lamps: LampTransport = {
   }),
   show: (indicator: Indicator) => { send({type: 'lamp.show', indicator}); },
 };
+/**
+ * The signs, reached over the IPC channel. An offline sign never answers, so the sign module's deadline aborts the show,
+ * which then tells the supervisor's sign to stop waiting.
+ */
+const signs: SignTransport = {
+  show: (address, token, frame, signal) => new Promise<void>((resolve, reject) => {
+    next += 1;
+    const id = next;
+    const abandon = (): void => {
+      if (!shows.delete(id)) return;
+      send({type: 'sign.abandon', id});
+      reject(new Error('the sign did not answer'));
+    };
+    shows.set(id, {
+      resolve: () => { signal.removeEventListener('abort', abandon); resolve(); },
+      reject: error => { signal.removeEventListener('abort', abandon); reject(error); },
+    });
+    signal.addEventListener('abort', abandon, {once: true});
+    if (signal.aborted) abandon();
+    else send({type: 'sign.show', id, address, token, frame});
+  }),
+};
+
 /** The chime, reached over the IPC channel. A fault the supervisor set throws here, inside the chime's handler. */
 const chime: ChimeTransport = {
   ring: (ring: ChimeRing) => {
@@ -93,6 +127,7 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
     onAcknowledgment: () => take('lose-acknowledgment') ? 'lose' : 'apply',
   }), lampSchemas),
   chime: fixture('chime', () => createChimeModule({transport: chime})),
+  sign: fixture('sign', () => createSignModule({transport: signs}), signSchemas),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({
@@ -119,4 +154,4 @@ const factories = names.map(name => {
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge still knows the
 // fixture families the scenario's parts use, as the in-memory harness's does.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: lampSchemas, onEdge: served => { edge = served; }});
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: {...lampSchemas, ...signSchemas}, onEdge: served => { edge = served; }});

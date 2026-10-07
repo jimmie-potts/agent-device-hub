@@ -81,7 +81,10 @@ class Run implements RunHarness {
   readonly #held: Part[] = [];
   /** The runtime's origin: the run's URL names its health page. */
   readonly #origin: string;
-  #state: HarnessState = {generation: 0, devices: {lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}}, logs: [], published: []};
+  #state: HarnessState = {
+    generation: 0, devices: {lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0}},
+    logs: [], published: [],
+  };
   /** Actions run one after another in the order the scenario calls them. */
   #actions: Promise<unknown> = Promise.resolve();
   /** Refreshes run one after another, so two never append the same records. */
