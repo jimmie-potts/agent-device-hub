@@ -333,10 +333,10 @@ Read on 2026-10-06 from divoom-app-upgrade:
   Imports of `security.js` point to `errors.ts`, which holds a verbatim copy of
   `ApiError`. The package's `package.json`, `tsconfig.json` and `index.ts` are new.
 - `@pixoo/media` and `@pixoo/presentation` use this repository's workspace
-  packages: `@jimmie-potts/bunny-observability` 1.4.0 (the source used a vendored
-  1.1.0 tarball; 1.2.0, 1.3.0 and 1.4.0 add only profiles 1.2, 1.3 and 1.4 and
-  optional Node host options) and `@jimmie-potts/agent-state` 3.6.0 (the server used
-  3.3.0).
+  packages: `@jimmie-potts/bunny-observability` 1.3.0, raised to 1.4.0 with #835
+  until the module story dropped it (the source used a vendored 1.1.0 tarball;
+  1.2.0, 1.3.0 and 1.4.0 add only profiles 1.2, 1.3 and 1.4 and optional Node
+  host options) and `@jimmie-potts/agent-state` 3.6.0 (the server used 3.3.0).
 - Test imports of the presentation files follow the move.
   `tests/unit/monitor-presentation.test.ts` drops its three cases "immediately
   cancels a pending Media selection on stop, pause or clear with monitoring
