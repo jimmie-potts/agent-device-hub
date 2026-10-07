@@ -314,7 +314,14 @@ contract delivery. Ownership means source responsibility, not installation.
 Profile 1.2 adopts the B.U.N.N.Y. runtime in source: its own records and its
 modules' are contract records on stderr. Profile 1.3 adds its decision records,
 and the runtime records its spans to a bounded local span sink, with no exporter
-(#949). The runtime and its journal intake are
+(#949). A disposable verification run points that sink at a bounded, private file
+in the run's state directory, and the run's query reads that file and the
+journal's records for one request ID or trace, with limits, and reports what it
+could not keep: records and spans the contract refused, spans evicted from the
+file, a runtime that ended without its stop record, and the query's own caps. It
+validates every record and span against this contract before showing it and
+never reads a message or an error, and it reports a missing record as missing,
+never as proof that nothing happened (#950). The runtime and its journal intake are
 installed at the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
 export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).

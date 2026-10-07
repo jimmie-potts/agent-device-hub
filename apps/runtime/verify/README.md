@@ -11,7 +11,7 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 
 | Part | Kind | What it is |
 | --- | --- | --- |
-| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test` and the run's state directory, and `--config` for a configured scenario: the shipped module list, or the fixture modules |
+| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory, and `--config` for a configured scenario: the shipped module list, or the fixture modules |
 | SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
 | Configuration | synthetic | For a scenario whose seed configures modules (#919), `<data>/config/runtime-config.json` and one token file per module under `<data>/config/secrets/`, all owner-only, holding the synthetic token `tok_SYNTHETIC919` |
 | Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, and a harness module that reports what the bus publishes |
@@ -24,8 +24,9 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, arm a crash, lose an acknowledgment, end a part's
 stream at the edge, and restart. It also reports the run's state: the devices, the runtime's log records and everything
-its bus published, each with the runtime's generation. It answers only local JSON requests that name its listener, as
-the runtime's health does. Ending a stream takes only a part's source, `bunny/parts/<role>`.
+its bus published, each with the runtime's generation, and it answers [one request's records and spans](#follow-one-request).
+It answers only local JSON requests that name its listener, as the runtime's health does. Ending a stream takes only a
+part's source, `bunny/parts/<role>`.
 
 ## Run scenarios
 
@@ -42,7 +43,9 @@ the runtime's health does. Ending a stream takes only a part's source, `bunny/pa
 | --- | --- |
 | `edge-grants` | A remote part with the run's reader grant syncs the core's sessions; one with a made-up token is `unauthenticated` |
 | `scenario-<catalog id>` | Runs that catalog scenario through the run adapter on a freshly seeded run, attaches `scenario-result.json`, and expects every step to pass, every message to follow profile 2.0 and the boundaries to hold. The configured scenarios also expect the synthetic token in no log record, message, health entry or reader copy |
+| `follow-one-request` | Follows one request through the run's diagnostics in four cases, then a killed runtime, an absent request and a capped query, and attaches each answer; see [below](#follow-one-request). Seeded fresh with the fixture modules |
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
+| `control-follow-fails` | A negative control: it expects the follow query to find a request that was never sent, so it must fail |
 
 The run adapter implements the catalog's `Harness` in real time. Its parts are remote, so the per-transport
 expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its
@@ -50,6 +53,65 @@ expectations are the remote ones, and every catalog scenario passes as it does i
 as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
 shows health as the step left it. There is no dashboard before #922.
+
+## Follow one request
+
+A run keeps two records of what its runtime did: the log records that the supervisor reads from the runtime's stderr, as
+the service manager's journal would, and the spans, which the runtime writes to a bounded, private
+[span file](../README.md#the-span-file) in its state directory. The harness's `GET /api/harness/v1/follow` reads both for
+one request or one trace (Hub #950):
+
+```bash
+curl -s "<harness endpoint>api/harness/v1/follow?request=<request id>"
+curl -s "<harness endpoint>api/harness/v1/follow?trace=<32 hex digits>&records=20&spans=20"
+```
+
+The `start` result and the preview card name the harness endpoint. Name exactly one of `request` and `trace`; each
+limit is a whole number from 1 to 100 and defaults to 50. A request or limit that is not valid is a `400` with
+`invalid-request` and a fixed message, and the query never echoes it. The answer is JSON (`runtime-follow/1.0`):
+
+| Field | What it says |
+| --- | --- |
+| `result` | `found`, or `none-found`: no record or span carries the ID, which says nothing of what happened. See `gaps` |
+| `records` | The log records, each with the runtime that wrote it (`generation`), its level, event, trace and registered attributes |
+| `spans` | The spans, with kind, status, duration, links and `parent`: `span` (kept), `caller` (the remote part's context, which the run does not record), `stored-message` (the context a stored message carried) or `missing` (not kept) |
+| `decision` | How many commands the bus admitted, each ending it recorded (`replied`, `refused`, `cancelled` or `uncertain`, with level and code), and whether every one has an ending (`ended`) |
+| `names` | How many matched spans have each name. A name no span has is not listed |
+| `matched`, `omitted`, `traces`, `otherOnTrace` | What the query matched, what its limits left out, the traces it touched, and what else those traces hold, such as another request's records |
+| `searched` | How many records and spans it read and how many it could not, the runtimes the run has started, and the lowest level written |
+| `gaps` | Each way the evidence can be incomplete, with its meaning, below |
+
+A request ID takes only the records and spans that carry it, so another request on the same trace never leaks in; a trace
+ID takes everything on it and the spans of other traces that link to it, such as a replay. Every record and span must pass
+the diagnostic contract's validator, and the answer is built from the validated values alone: no payload, message or error
+text reaches it, and a record or span the contract refuses is counted in `searched` and shown nowhere.
+
+| Gap | Meaning |
+| --- | --- |
+| `generation-ended-without-stop` | A runtime ended without writing `runtime.stopped`, as after a crash or kill: its last records, its counts of lost telemetry and the spans it had not written are unknown |
+| `telemetry-lost` | A runtime said at its stop that its queues or the contract refused this many records and spans |
+| `spans-evicted`, `spans-eviction-unknown` | The span file keeps the latest 1,024 spans and let this many go, or does not say |
+| `spans-truncated` | A span file was longer than its bound, so the read stopped |
+| `spans-not-recorded`, `spans-unreadable` | The run has no span file, or it could not be read |
+| `unreadable` | Records or spans that were not valid contract records, counted and not shown |
+| `parent-missing` | Spans continue a parent that is not kept: it was evicted, lost or never ended |
+| `capped` | The query's limits left out matches |
+
+The `follow-one-request` step runs the cases against a freshly seeded run and attaches each answer as
+`follow-<case>.json` in its capture directory: `success` (one trace, every span's parent kept, no gap), `refusal` (the lamp
+refused `lamp-9` with `not-found` at INFO, and no device call), `uncertain` (the device held the switch past the deadline:
+`uncertain-result` at WARN, and the late outcome), `replayed` (a lost acknowledgment and a restart: one publication record,
+two publish spans, the second a new root that links to the stored context, and the core's duplicate), `crash` (the
+runtime was killed between the lamp's commit and its publish: no ending recorded, the runtime named, the spans that never
+ended not reported, and the two that ended with their parents missing), `missing` (a request nothing carries), `capped`
+(a query limited to two records and one span) and `trace` (the success by its trace ID). A reviewer can read one answer to
+follow one command end to end, or run `scenario-end-to-end` and query any of its request IDs, such as `req-held`. The host
+route runs only the core's operations, so a reviewer on it runs the step and reads the attached answers; one who can reach
+the run's loopback harness queries it directly.
+
+The harness's journal is what the supervisor read from the runtime's stderr, and the supervisor waits for a stopped
+runtime's stderr to drain before it starts the next, so a clean stop shows its `runtime.stopped` record. Records below
+`info` are not written, so a DEBUG observation, such as a duplicate that a consumer only counts, is absent by design.
 
 ## Boundaries
 
@@ -91,6 +153,7 @@ npm run -s verify:runtime -- help
 npm run -s verify:runtime -- start                                  # the fixture modules
 npm run -s verify:runtime -- capture <run-id> scenario-end-to-end   # reseeds that scenario first
 npm run -s verify:runtime -- capture <run-id> edge-grants
+npm run -s verify:runtime -- capture <run-id> follow-one-request   # one request, case by case; answers attached
 npm run -s verify:runtime -- scenario <run-id> zero-modules
 npm run -s verify:runtime -- capture <run-id> scenario-zero-modules
 npm run -s verify:runtime -- handoff <run-id>
@@ -124,7 +187,8 @@ same origin serves the SDK edge, which takes a remote part with a grant from
 
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. It tests the supervisor's stop, crash restart, restart serialization, orphan
-handling and harness API. It also tests the guard's reach in every thread and child process, and that `build-current`
-watches every source the run loads.
+handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
+pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process, and
+that `build-current` watches every source the run loads.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).

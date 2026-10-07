@@ -121,6 +121,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
+| `--record-spans` | Write each finished span to a [bounded, private span file](#the-span-file) in the state directory. Disposable verification runs use it; the installed runtime does not, and keeps its spans in memory. |
 
 Malformed arguments exit with status 2 and a usage line. Once the modules have
 started, the process writes one line to stdout, `{"event":"runtime.ready","url":...}`.
@@ -459,6 +460,30 @@ count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts s
 lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
 records. If the adapter cannot start, the runtime runs without recorded spans
 and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
+
+### The span file
+
+With `--record-spans`, or `spans: 'state-file'` in `RuntimeOptions`, each finished
+span goes to a file pair in the state directory instead of memory, so a process
+outside the runtime can read the spans, and a crash keeps those it had finished
+(#950; a disposable run's supervisor reads them for its
+[follow query](verify/README.md#follow-one-request)).
+
+- `spans.ndjson` is the segment being written and `spans.previous.ndjson` the one
+  before it. Each segment holds at most 512 spans or 2 MiB, so the pair holds the
+  latest 1,024 spans within the contract's 4 MiB queue bound. The next segment
+  replaces the segment before it.
+- A segment starts with one header line, `{"schema":"runtime-spans/1.0","evicted":N}`,
+  that counts the spans let go before it. A reader can tell a span that was let go
+  from one that never arrived, as `runtime.spans()` does for memory. A runtime
+  that restarts on the same state directory continues the same files.
+- Both files are owner-only (mode 600), opened without following a link, and must
+  be regular files with one link; any other file is refused with
+  `span-file-not-private`, and the runtime does not start.
+- A span the file cannot take, because it is closed or the disk refuses it, is
+  lost and counted in `runtime.stopped` like any other span the sink fails to
+  take. A line in the file that is cut short, as by a kill, is counted by the
+  reader and never returned.
 
 ## Memory
 
