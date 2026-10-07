@@ -2186,7 +2186,7 @@ def device_cases():
             ('query', 'SELECT device, slot FROM slots ORDER BY device')]),
         case('a Panels scene returns after a recoverable failure', [
             feed('prompt'), on('panels', ('device', 'fail', {'method': 'PUT'})), run(1002.0, device='panels'), feed('stop'),
-            run(1008.0, [(1005.0, feed('read'))], 'panels')]),
+            run(1012.0, [(1005.0, feed('read')), (1008.0, feed('end'))], 'panels')]),
         case('Quiet on one device keeps the other in Work', [
             feed('prompt'), mode('quiet', 'panels'), run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'),
             run(1008.0, [(1007.0, mode('free'))])]),

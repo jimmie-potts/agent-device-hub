@@ -48,15 +48,19 @@ export type Reply = 'accepted' | {refused: ErrorCode};
 const RENAMED: Record<string, ErrorCode | 'revision-conflict'> = {'unknown-device': 'not-found', 'stale-generation': 'revision-conflict',
   'request-order': 'revision-conflict', 'request-expired': 'expired'};
 
+/** The devices the recorded cases register: the Lines, and the Panels in the two-device cases. */
+const REGISTERED = new Set([DEFAULT, 'panels']);
+
 /**
- * The reply for Python's admission: queued is accepted, and so is a mode command that needed no change. Python's
- * credential check refused a target outside the credential's devices as `forbidden`; credentials stay with the core,
- * and the port refuses a device it does not have as `not-found` (PORTING.md).
+ * The reply for Python's admission to `device`: queued is accepted, and so is a mode command that needed no change.
+ * Python's credential check refused a target outside the credential's devices as `forbidden`; credentials stay with
+ * the core, and the port refuses a device it does not have as `not-found` (PORTING.md). A `forbidden` for a registered
+ * device is a credential refusal, which the port never makes, so it stays `forbidden` and fails the comparison.
  */
-export function replyOf(summary: Summary): Reply {
+export function replyOf(summary: Summary, device: string = DEFAULT): Reply {
   if (summary.code === 202 || (summary.code === 200 && summary.outcome === 'cancelled' && summary.failure === null)) return 'accepted';
   assert.ok(summary.failure !== null && summary.code !== null && summary.code >= 400, `Unexpected admission ${JSON.stringify(summary)}.`);
-  if (summary.failure === 'forbidden') return {refused: 'not-found'};
+  if (summary.failure === 'forbidden' && !REGISTERED.has(device)) return {refused: 'not-found'};
   return {refused: (RENAMED[summary.failure] ?? summary.failure) as ErrorCode};
 }
 
@@ -274,8 +278,9 @@ export function translated(step: Step, outcome: Outcome, admissions: Map<string,
   const [op, ...args] = step;
   if (op === 'command' || op === 'play') {
     const summary = outcome.result as Summary;
-    admissions.set(textOf(args[0]), {summary, device: targetOf(args[2])});
-    return {result: replyOf(summary)};
+    const device = targetOf(args[2]);
+    admissions.set(textOf(args[0]), {summary, device});
+    return {result: replyOf(summary, device)};
   }
   if (op === 'on') return translated(args[1] as Step, outcome, admissions);
   if (op === 'run' || op === 'supervise') {
@@ -337,7 +342,7 @@ export function compareOutcomes(name: string, run: ControlCase, receipts: Record
     const admission = admissions.get(id);
     assert.ok(admission !== undefined, `${name}: ${id} has no admission`);
     // A refused request has no receipt and no outcome.
-    assert.equal(summary === null, replyOf(admission.summary) !== 'accepted', `${name}: ${id} receipt`);
+    assert.equal(summary === null, replyOf(admission.summary, admission.device) !== 'accepted', `${name}: ${id} receipt`);
     if (summary === null) continue;
     const outcome = outcomeFor(id, summary, admission.summary, admission.device);
     if (outcome !== null) expected.set(id, outcome);

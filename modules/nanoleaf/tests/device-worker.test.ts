@@ -5,15 +5,19 @@
 // command's outcome; then the test's own assertions follow. Python's hook events become shared feed changes, and its
 // unread set becomes the feed's read evidence (shared input only).
 import assert from 'node:assert/strict';
+import {readFileSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {BASELINE, COLORS, COMET_SECONDS} from '../src/renderer.js';
 import type {LightRequest} from '../src/transport.js';
 import {superviseWorker} from '../src/worker.js';
-import type {Outcome as ControlOutcome} from '../src/journal.js';
+import {hold, type Outcome as ControlOutcome} from '../src/journal.js';
+import {transaction} from '../src/sqlite.js';
+import {controlState} from '../src/store.js';
 import {puts} from './control-support.js';
 import {DeviceCase, replayDevices, type DeviceReplay} from './device-support.js';
 import {suite, test} from './support.js';
-import {effects, type Call} from './worker-support.js';
+import {effects, type Call, type Step} from './worker-support.js';
 
 /** The results of the replay's steps with this op, in order; an `on` step counts as the step inside it. */
 function results(replay: DeviceReplay, op: string): unknown[] {
@@ -197,11 +201,10 @@ suite('ModesTest', () => {
   });
 
   test('test_panels_scene_returns_after_a_recoverable_failure', async context => {
-    // Partly: the comet the completion starts holds the Panels until the run ends, so the scene's return is checked by
-    // the Panels' saved scene and the recorded requests.
+    // A read task stays on its triangle as idle, so the scene returns when the owner ends the session (shared input only).
     const replay = await replayDevices(context, 'a Panels scene returns after a recoverable failure');
     assert.deepEqual(runs(replay)[0], {error: 'OSError', message: 'Device unavailable'});
-    assert.deepEqual((replay.run.scenes().panels as {scene: unknown}).scene, {name: 'Forest', brightness: 64});
+    assert.deepEqual([replay.run.panels.selected, replay.run.panels.brightness], ['Forest', 64]);
     assert.deepEqual(replay.run.lines.calls, []);
   });
 
@@ -512,6 +515,94 @@ suite('supervisor checks the port adds', () => {
     };
     assert.equal(await superviseWorker({...run.options(controller.signal, {device: 'panels'}), request}), 'stopped');
     assert.deepEqual(run.query("SELECT key FROM meta WHERE key LIKE 'control_error%'"), []);
+  });
+
+  test('a failed pass reaches the failure hook, and a failing hook stops nothing', async context => {
+    // #844 logs each failed pass through the runtime's observability, where Python emitted process.failed.
+    const run = new DeviceCase(context);
+    await run.apply(['feed', 'prompt', 'a']);
+    await run.apply(['on', 'panels', ['device', 'fail', {}]]);
+    const seen: [unknown, string][] = [];
+    const onFailure = (error: unknown, device: string): void => {
+      seen.push([error instanceof Error ? error.message : error, device]);
+      throw new Error('the hook failed');
+    };
+    const result = await run.drive(1006, [], signal => superviseWorker({...run.options(signal, {device: 'panels'}), onFailure}));
+    assert.deepEqual(result.outcome, {result: 'stopped'});
+    assert.deepEqual(seen, [['Device unavailable', 'panels']]);
+    // The retry ran 2 s later and drew.
+    assert.ok(effects(run.panels.calls).some(([at]) => at >= 1002));
+  });
+
+  test('a database error after a pass is retried as a failed pass', async context => {
+    // The supervisor's own read of the shared input selection fails once after the worker ended at a hold: as in Python,
+    // where that read was inside the loop's try, the failure is recorded and the worker runs again 2 s later.
+    const run = new DeviceCase(context);
+    const db = run.database();
+    let armed = false;
+    const database = new Proxy(db, {get(target, property): unknown {
+      if (property === 'prepare') {
+        return (sql: string) => {
+          if (armed && sql.includes('FROM shared_input')) {
+            armed = false;
+            throw new Error('database is locked');
+          }
+          return target.prepare(sql);
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    }});
+    for (const step of [['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
+      ['hook', {complete: true, step: ['expireAll']}], ['hook', {complete: true, step: ['command', 'p', {kind: 'power.set', on: false}]}]] as Step[]) {
+      await run.apply(step);
+    }
+    // Set last, so it runs after the hold is set: the next read of the selection is the supervisor's.
+    run.completeHook(() => {
+      armed = true;
+    });
+    const result = await run.drive(1006, [], signal => superviseWorker({...run.options(signal, {}), database: () => database}));
+    assert.deepEqual(result.outcome, {result: 'stopped'});
+    assert.deepEqual(run.query("SELECT key, value FROM meta WHERE key='control_error'"), [['control_error', 'Light update failed; retrying.']]);
+  });
+
+  test('an unreadable configuration is retried, not taken as an unregistered device', async context => {
+    // The configuration cannot be read when the Panels' first pass starts, then can again: only a configuration that
+    // reads and omits the device ends its supervisor.
+    const run = new DeviceCase(context);
+    const config = readFileSync(join(run.directory, 'config.json'), 'utf8');
+    await run.apply(['feed', 'prompt', 'a']);
+    await run.apply(['configText', '{']);
+    const failed: string[] = [];
+    const result = await run.drive(1006, [[1001, ['configText', config]]], signal => superviseWorker({...run.options(signal, {device: 'panels'}),
+      onFailure: (_error, device) => failed.push(device)}));
+    assert.deepEqual(result.outcome, {result: 'stopped'});
+    // One failed pass, recorded and retried 2 s later; the retry's pass clears the recorded failure.
+    assert.deepEqual(failed, ['panels']);
+    assert.ok(effects(run.panels.calls).some(([at]) => at >= 1002));
+    assert.deepEqual(run.query("SELECT key FROM meta WHERE key LIKE 'control_error%'"), []);
+  });
+
+  test('an unreadable configuration after a pass is retried, not taken as an unregistered device', async context => {
+    // The Panels' pass ends at a hold set as its write completes, and the configuration cannot be read then: the
+    // supervisor's read after the pass fails, which is a failed pass, retried once the configuration reads again.
+    const run = new DeviceCase(context);
+    const config = readFileSync(join(run.directory, 'config.json'), 'utf8');
+    for (const step of [['mode', 'free', 'panels'], ['run', 1002, [], {device: 'panels'}],
+      ['command', 'b', {kind: 'brightness.set', percent: 42}, 'panels']] as Step[]) {
+      await run.apply(step);
+    }
+    run.completeHook(() => {
+      const db = run.database();
+      transaction(db, () => hold(db, 'panels', controlState(db, 'panels').revision));
+      writeFileSync(join(run.directory, 'config.json'), '{');
+    });
+    const failed: string[] = [];
+    const result = await run.drive(1008, [[1003, ['configText', config]]], signal => superviseWorker({...run.options(signal, {device: 'panels'}),
+      onFailure: (_error, device) => failed.push(device)}));
+    assert.deepEqual(result.outcome, {result: 'stopped'});
+    assert.deepEqual(failed, ['panels']);
+    assert.deepEqual(puts(run.panels.calls), [['/state', {brightness: {value: 42, duration: 0}}]]);
   });
 
   test('a supervisor that cannot record a failure ends', async context => {
