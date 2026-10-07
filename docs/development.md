@@ -1925,9 +1925,11 @@ The suite has two parts:
   `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
   records them from the owner's WSL host.
 
-The package check installs the packed archive into an isolated consumer that
-supplies its own Playwright, verifies every file hash, runs the packaged suite
-and repeats any skip reason. Neither check touches installed services,
+The package check installs the packed archive into an isolated consumer under
+`TMPDIR`, outside every checkout, that supplies its own Playwright. It verifies
+every file hash, checks that no other `@jimmie-potts` package resolves there,
+runs the packaged suite and repeats any skip reason. The error body's registry
+check must skip there with its printed reason. Neither check touches installed services,
 personal state or devices, and neither contacts Windows: the tests set
 `APP_VERIFY_WINDOWS_CHECK=off`.
 

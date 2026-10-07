@@ -1,6 +1,6 @@
 ## Why
 
-[ADR 0012](../../../docs/decisions/0012-bunny-event-platform.md) gives every boundary one error body and code registry. [Hub #921](https://github.com/jimmie-potts/agent-device-hub/issues/921) brings app-verify's command-line refusals and maintenance intake's blocked responses onto that body. Both are released 1.x contracts with outside consumers: Nanoleaf and Pixoo vendor app-verify, and the dotfiles nightly supervisor runs maintenance intake. Until the cutover they may change only additively, and the retirement story ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)) removes the old fields.
+[ADR 0012](../../../../docs/decisions/0012-bunny-event-platform.md) gives every boundary one error body and code registry. [Hub #921](https://github.com/jimmie-potts/agent-device-hub/issues/921) brings app-verify's command-line refusals and maintenance intake's blocked responses onto that body. Both are released 1.x contracts with outside consumers: Nanoleaf and Pixoo vendor app-verify, and the dotfiles nightly supervisor runs maintenance intake. Until the cutover they may change only additively, and the retirement story ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)) removes the old fields.
 
 ## What Changes
 

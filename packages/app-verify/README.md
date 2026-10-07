@@ -346,7 +346,8 @@ inside a checkout.
   systemd host such as the owner's WSL PC.
 
 `npm run test:app-verify:package` packs the archive and runs the packaged
-suite from an isolated consumer.
+suite from an isolated consumer under `TMPDIR`, outside every checkout, where no
+other `@jimmie-potts` package resolves.
 
 ## What 1.2 adds
 
