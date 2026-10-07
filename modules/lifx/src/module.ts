@@ -638,11 +638,16 @@ class LifxRun {
     }
   }
 
-  /** An on-demand read of each available qualified bulb whose reading is missing or stale, at most once a `READ_INTERVAL_MS`. */
+  /**
+   * An on-demand read of each qualified bulb whose reading is missing or stale, at most once a `READ_INTERVAL_MS` per bulb,
+   * counting the probe's reads. It covers an unavailable bulb too, as the old host did, so a bulb that came back shows
+   * `available` within that interval of a reader's sync rather than at its next probe, minutes away. A read that a
+   * successful answer ends cancels the pending probe; one that fails leaves the probe's schedule as it was.
+   */
   #readOnDemand(): void {
     const now = this.#context.clock.now();
     for (const bulb of this.#bulbs.values()) {
-      if (bulb.queue === undefined || bulb.probe !== undefined || bulb.availability === 'unavailable') continue;
+      if (bulb.queue === undefined) continue;
       if (bulb.observed !== undefined && now - bulb.observed.atMs < READ_INTERVAL_MS) continue;
       if (bulb.readAtMs !== undefined && now - bulb.readAtMs < READ_INTERVAL_MS) continue;
       this.#track(this.#read(bulb).then(() => {}));

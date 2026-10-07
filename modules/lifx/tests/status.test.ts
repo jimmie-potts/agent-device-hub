@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import {afterEach} from 'node:test';
 import {STATUS_COLORS} from '@jimmie-potts/event-contracts/v2/status';
+import {SdkError} from '@jimmie-potts/sdk';
 import {PACKET, SimulatedLifx} from '../src/index.js';
 import {flush, it, PENDANT, shownColor, World} from './support.js';
 
@@ -118,6 +119,25 @@ it('stale input: while the core\'s sessions are not synced the status is unknown
   assert.equal(paints(world), 1, 'once synced, the current status paints');
   assert.ok(Math.abs((shownColor(world.network, PENDANT.address)?.hue ?? -10) - hueOf(STATUS_COLORS.attention)) <= 1);
   assert.equal(world.logs('operation.completed').filter(entry => entry.fields['bunny.operation'] === 'feed').length, 1, 'and one for its recovery');
+});
+
+it('a session copy that ends after it synced leaves the status unknown: a mode change paints nothing from the stale sessions', async () => {
+  const world = await open({section: ONE, maxQueued: 4});
+  await world.session('s', 'attention');
+  await world.clock.advance(1);
+  // The core can no longer serve, and a burst of records overflows the module's queue: its copy asks again and ends.
+  world.refuseSync = true;
+  world.flood('s', 'attention', 12);
+  await flush();
+  assert.equal(world.logs('operation.failed').filter(entry => entry.fields['bunny.operation'] === 'feed').length, 1, 'one record for the lost feed');
+  await world.mode(PENDANT.id, 'work');
+  assert.equal(paints(world), 0, 'the copy ended, so the status is unknown and nothing paints, whatever the last sessions said');
+  world.refuseSync = false;
+  await world.clock.advance(5000);
+  assert.equal(paints(world), 1, 'once it syncs again, the current status paints');
+  // The burst dropped deliveries on the bus by design; nothing else failed.
+  assert.ok(world.errors.every(error => error instanceof SdkError && error.body.error.code === 'capacity'));
+  world.errors.splice(0);
 });
 
 it('uncertain freshness: a finished turn idle past five minutes still paints done until acknowledged (#439)', async () => {

@@ -7,13 +7,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
-import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
 import {followStandInAcks, ModuleHarness, RecordedSpans, standInAck, standInAckSchemas} from '@jimmie-potts/sdk/testing';
 import {
   createLifxModule, LIFX_COLOR_SET_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, registerLifxFamilies, SimulatedLifx, type LifxConfig, type LifxModuleOptions,
+  type LifxNetwork,
 } from '../src/index.js';
 
 export const START_MS = Date.parse('2026-10-07T12:00:00.000Z');
@@ -130,6 +131,10 @@ export type WorldOptions = {
   section?: unknown;
   /** The state directory to start in, such as a copy of another world's taken as a crash would leave it. */
   dir?: string;
+  /** How the module reaches its bulbs, when not `network` itself, such as a wrapper around it. */
+  transport?: LifxNetwork;
+  /** How many messages one subscription's queue on the bus holds. Defaults to the bus's 1024. */
+  maxQueued?: number;
   network?: SimulatedLifx;
   /** Whether the module follows the stand-in core's acknowledgments. Defaults to true. */
   acknowledged?: boolean;
@@ -163,12 +168,17 @@ export class World {
   operator: Participant;
   /** The module's own SQLite database, once its start opened it. */
   db: DatabaseSync | undefined;
+  /** While true, the stand-in core refuses every sync of its sessions, as an owner that cannot serve. */
+  refuseSync = false;
 
   private constructor(dir: string, options: WorldOptions) {
     this.dir = dir;
     this.#options = options;
     this.network = options.network ?? new SimulatedLifx();
-    this.bus = new InProcessBus({now: this.clock.now, scheduler: this.clock.scheduler, spans: this.spans, onError: error => { this.errors.push(error); }});
+    this.bus = new InProcessBus({
+      now: this.clock.now, scheduler: this.clock.scheduler, spans: this.spans, onError: error => { this.errors.push(error); },
+      ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
+    });
     this.operator = this.#connect('bunny/parts/operator');
   }
 
@@ -196,7 +206,7 @@ export class World {
   async start(options: Partial<LifxModuleOptions> = {}): Promise<void> {
     const {acknowledged = true, beforePublish} = this.#options;
     const inner = createLifxModule({
-      transport: this.network, ...(acknowledged ? {acknowledgments: followStandInAcks} : {}), ...(beforePublish === undefined ? {} : {beforePublish}), ...options,
+      transport: this.#options.transport ?? this.network, ...(acknowledged ? {acknowledgments: followStandInAcks} : {}), ...(beforePublish === undefined ? {} : {beforePublish}), ...options,
     });
     // The same module, with its database kept here, so a test can fill the disk under it.
     const module: BunnyModule<LifxConfig> = {
@@ -238,6 +248,21 @@ export class World {
       kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record,
     });
     await flush();
+  }
+
+  /**
+   * Publishes `count` new records of one session at once, without waiting, so a subscription whose queue is shorter
+   * drops some of them and its copy must sync again.
+   */
+  flood(name: string, shown: Shown, count: number): void {
+    for (let index = 0; index < count; index += 1) {
+      this.#revision += 1;
+      const record = sessionRecord(name, shown, this.#revision, this.clock.now());
+      this.sessions.set(record.id, record);
+      void this.#core?.publish(`bunny.state.session.${record.id}`, {
+        kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record,
+      });
+    }
   }
 
   /** Sets a bulb's mode as an operator would, and lets its paint, if any, go out. */
@@ -293,7 +318,7 @@ export class World {
   async serveCore(): Promise<void> {
     const core = this.#connect('bunny/core');
     this.#core = core;
-    await core.serveSync(['session'], () => ({
+    await core.serveSync(['session'], () => this.refuseSync ? errorBody('unavailable', {detail: 'the stand-in core refuses'}) : ({
       revision: this.#revision,
       states: [...this.sessions.values()].map(record => ({type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record})),
     }));
@@ -309,6 +334,30 @@ export class World {
     this.#participants.push(participant);
     return participant;
   }
+}
+
+/**
+ * Leaves the module's database no room to grow, as a full disk would, through SQLite's own full-disk path: small pages and
+ * a page limit at the file's size, so the next change that needs a page fails with SQLITE_FULL.
+ */
+export function fillDisk(db: DatabaseSync): void {
+  db.exec('PRAGMA page_size = 512; VACUUM');
+  const pages = (db.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
+  db.exec(`PRAGMA max_page_count = ${pages}`);
+}
+
+/** Gives the database its room back. */
+export function roomOnDisk(db: DatabaseSync): void {
+  db.exec('PRAGMA max_page_count = 1073741823');
+}
+
+/** A bulb's device record as a reader syncs it now. A bulb the module never reached publishes no change of its own. */
+export async function synced(world: World, id: string): Promise<DeviceRecord | undefined> {
+  const sync = await world.operator.sync<DeviceRecord>(['device'], () => {}, {timeoutMs: 5000});
+  if (sync.status !== 'synced') return undefined;
+  const record = sync.copy.states().find(state => state.data.id === id)?.data;
+  await sync.copy.close();
+  return record;
 }
 
 /** The bulb's color as the simulated bulb shows it, in degrees and percent. */

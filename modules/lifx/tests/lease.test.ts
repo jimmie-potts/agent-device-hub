@@ -10,10 +10,9 @@ import {chmod, mkdir, rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterEach} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {PACKET} from '../src/index.js';
 import {acquireLease} from '../src/lease.js';
-import {command, it, PENDANT, World} from './support.js';
+import {command, it, PENDANT, synced, World} from './support.js';
 
 const HOLDER = fileURLToPath(new URL('./fixtures/hold-lease.js', import.meta.url));
 const ONE = {bulbs: [PENDANT]};
@@ -46,14 +45,6 @@ async function holder(folder: string, address: string): Promise<{child: ChildPro
     if (text.includes('\n')) break;
   }
   return {child, answer: text.trim()};
-}
-/** The bulb's device record as a reader syncs it: a bulb the module never reached publishes no change of its own. */
-async function synced(world: World, id: string): Promise<DeviceRecord | undefined> {
-  const sync = await world.operator.sync<DeviceRecord>(['device'], () => {}, {timeoutMs: 5000});
-  if (sync.status !== 'synced') return undefined;
-  const record = sync.copy.states().find(state => state.data.id === id)?.data;
-  await sync.copy.close();
-  return record;
 }
 const refusalOf = (result: Awaited<ReturnType<World['send']>>): unknown =>
   result.status === 'rejected' ? {code: result.error.error.code, detail: result.error.error.detail} : result.status;

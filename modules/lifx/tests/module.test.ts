@@ -10,9 +10,9 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {LifxLight} from '../src/index.js';
-import {createLifxModule, PACKET, PROBE_FIRST_MS, READ_INTERVAL_MS, SimulatedLifx} from '../src/index.js';
+import {createLifxModule, PACKET, PROBE_FIRST_MS, READ_INTERVAL_MS, SimulatedLifx, type LifxNetwork} from '../src/index.js';
 import {acquireLease} from '../src/lease.js';
-import {BEAM, command, flush, it, PENDANT, SECTION, shownColor, World} from './support.js';
+import {BEAM, command, fillDisk, flush, it, PENDANT, roomOnDisk, SECTION, shownColor, synced, World} from './support.js';
 
 const worlds: World[] = [];
 async function open(options: Parameters<typeof World.open>[0] = {}): Promise<World> {
@@ -322,10 +322,35 @@ it('a store that cannot write refuses the command before it is accepted, with no
   assert.equal(world.outcomes('req-full').length, 0, 'a refusal has no outcome');
   assert.equal(world.logs('operation.failed').filter(entry => entry.fields['bunny.operation'] === 'storage').length, 1, 'one record for the full store');
   db.exec('PRAGMA max_page_count = 1073741823');
+  // The refused command left nothing behind: the record a reader syncs is the one before it.
+  const record = await synced(world, PENDANT.id);
+  assert.deepEqual([record?.configurationRevision, record?.desired.power, record?.pending, record?.pendingKinds], [0, {status: 'unknown'}, 0, []]);
   accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-room'}));
   await world.clock.advance(1);
   assert.equal(outcome(world, 'req-room')?.result, 'succeeded');
   assert.equal(world.logs('operation.completed').filter(entry => entry.fields['bunny.operation'] === 'storage').length, 1, 'and one for its recovery');
+});
+
+it('a mode change whose outcome cannot be stored changes nothing: the mode stays, and the status keeps following it', async () => {
+  const world = await open({section: {bulbs: [PENDANT]}});
+  await world.clock.advance(1);
+  await world.session('s', 'attention');
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-ahead'}));
+  accepted(await world.send(command.mode(PENDANT.id, 'work'), {requestId: 'req-work'}));
+  // The disk fills while the mode change waits behind the write, so neither outcome can be stored.
+  const db = world.db;
+  assert.ok(db);
+  fillDisk(db);
+  await world.clock.advance(5000);
+  assert.equal(world.outcomes('req-work').length, 0, 'not stored, so not reported');
+  roomOnDisk(db);
+  world.network.online(PENDANT.address);
+  assert.deepEqual((await synced(world, PENDANT.id))?.desired.mode, {status: 'known', value: 'free'}, 'the mode is the one before');
+  const paints = world.packets(PENDANT.address, PACKET.setColor);
+  await world.session('s', 'working');
+  await world.clock.advance(5000);
+  assert.equal(world.packets(PENDANT.address, PACKET.setColor), paints, 'still free, so a status change paints nothing');
 });
 
 it('a bulb unreachable at start: the module runs, the bulb shows unavailable, and the outage logs one degradation and one recovery', async () => {
@@ -442,6 +467,61 @@ it('reading the records starts at most one on-demand LightGet per bulb every 30 
   await world.clock.advance(1);
   assert.equal(reads(), 3);
   assert.equal(world.packets(BEAM.address), 0, 'never the unqualified bulb');
+});
+
+it('a bulb that comes back is available within 30 s of a reader syncing its records, though its next probe is minutes away', async () => {
+  const world = await open({network: new SimulatedLifx({online: false})});
+  await world.clock.advance(10 * 60_000);
+  assert.equal(world.device(PENDANT.id)?.availability, 'unavailable');
+  world.network.online(PENDANT.address);
+  const since = world.clock.now();
+  // A reader syncs every 10 s, as a page that shows the bulb would; the bulb's next probe is still minutes away.
+  while (world.device(PENDANT.id)?.availability !== 'available' && world.clock.now() - since <= READ_INTERVAL_MS) {
+    await synced(world, PENDANT.id);
+    await world.clock.advance(10_000);
+  }
+  assert.equal(world.device(PENDANT.id)?.availability, 'available', 'within 30 s of the first read of its records');
+  assert.ok(world.clock.now() - since <= READ_INTERVAL_MS + 10_000);
+});
+
+it('a stop waits for the bulb\'s call in flight to end, and keeps the bulb\'s lease until then', async () => {
+  // A transport whose abort takes effect two turns later, as a socket that closes late would. One turn after the stop
+  // asked it to end, the test checks whether the bulb's lease is free.
+  const network = new SimulatedLifx();
+  let folder = '';
+  let leaseWhileEnding: string | undefined;
+  const late: LifxNetwork = {connect: address => {
+    const inner = network.connect(address);
+    return {
+      exchange: (type, payload, expected, signal) => {
+        const relay = new AbortController();
+        signal.addEventListener('abort', () => {
+          setImmediate(() => {
+            const taken = acquireLease(folder, address);
+            leaseWhileEnding = taken.status === 'held' ? 'free' : taken.reason;
+            if (taken.status === 'held') taken.lease.release();
+            setImmediate(() => { relay.abort(); });
+          });
+        }, {once: true});
+        return inner.exchange(type, payload, expected, relay.signal);
+      },
+      close: () => { inner.close(); },
+    };
+  }};
+  const world = await open({network, transport: late, section: {bulbs: [PENDANT]}});
+  folder = join(world.dir, 'lifx', 'leases');
+  await world.clock.advance(1);
+  network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-ending'}));
+  await world.harness.stop();
+  assert.equal(leaseWhileEnding, 'busy', 'the lease was still held while the call ended');
+  network.online(PENDANT.address);
+  await world.start();
+  await world.clock.advance(1);
+  assert.deepEqual(outcome(world, 'req-ending'), {
+    requestId: 'req-ending', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the write went out and the bulb did not acknowledge it'},
+  }, 'the outcome was stored during the stop, and goes out at the next start');
 });
 
 it('the module records each device call as a span in its command\'s trace, and gives the bulb no trace context', async () => {
