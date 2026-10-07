@@ -215,13 +215,16 @@ const guideTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
   pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
 };
-// Hub #862: hosted runners sometimes stall in apt downloads during a browser install's --with-deps until the job's
-// limit. scripts/install-browser.sh retries the install; its step limit sits above three attempts and their cleanups.
-const browserInstall = command => `bash scripts/install-browser.sh ${command}`;
+// Hub #862: hosted runners sometimes stall in apt until a job's limit. scripts/apt-retry.sh runs a command that uses apt
+// in up to three attempts, each under the limit its first argument gives, and each step's limit sits above three
+// attempts and their cleanups: 20 minutes for 300 s browser installs, 14 for the hook step's 180 s apt commands.
+const aptRetry = (seconds, command) => `bash scripts/apt-retry.sh ${seconds} ${command}`;
 const browserInstallMinutes = 20;
-const playwrightInstall = browserInstall('npx playwright install --with-deps chromium');
+const playwrightInstall = aptRetry(300, 'npx playwright install --with-deps chromium');
 const guideBrowserInstall = 'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\n'
-  + browserInstall('node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium') + '\n';
+  + aptRetry(300, 'node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium') + '\n';
+const hookAptScript = 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles';
+const hookAptMinutes = 14;
 // Hub #861: the heavy Checks workflow also skips Markdown-only changes.
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
@@ -327,7 +330,11 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
     // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
     // leave room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 30 : id === 'core' ? 15 : 10);
+    // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
+    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 30 : ['core', 'workflow'].includes(id) ? 15 : 10);
+    for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
+      assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
+    }
     const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
     assert.deepEqual(installs, id === 'app-verify' ? [{ name: 'Install Chromium with its system dependencies',
       'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
@@ -339,7 +346,8 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     assert.deepEqual(linuxSteps, id === 'workflow' ? [{
       name: 'Check isolated Linux hook qualification',
       if: "runner.os == 'Linux'",
-      run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
+      'timeout-minutes': hookAptMinutes,
+      run: `${aptRetry(180, `bash -c '${hookAptScript}'`)}\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n`,
     }] : []);
     // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
@@ -460,11 +468,13 @@ test('the standalone wrapper runs its payload only after a successful build', (t
   assert.equal(fs.existsSync(path.join(directory, 'payload-ran')), false);
 });
 
-// Hub #862: a fake installer that behaves like Playwright's --with-deps on a hosted runner. It starts apt-get through
-// sudo in a session of its own, so the attempt's timeout stops the installer but not apt-get, which keeps holding apt's
-// lock; a later apt-get fails at once on that lock. Each attempt's plan letter makes apt-get hang (h), fail (f) or
-// succeed (s). The fake sudo's pkill and the fake pgrep see only this run's fake apt-get processes, so overlapping test
-// runs never stop each other's, and a run as root never signals the host's apt-get.
+// Hub #862: a fake runner for scripts/apt-retry.sh. Every apt-get starts in a session of its own, as Playwright's
+// --with-deps and sudo start it on a hosted runner, so an attempt's timeout stops the command but not apt-get, which keeps
+// holding apt's lock; a later apt-get fails at once on that lock. Each apt-get's plan letter makes it hang (h), fail (f)
+// or succeed (s). The fake sudo accepts only the commands the script and the hook step use and refuses anything else, so
+// no test runs a real machine-wide command. Its pkill and the fake pgrep see only this run's fake apt-get processes, so
+// overlapping test runs never stop each other's, and a run as root never signals the host's apt-get.
+const npxInstall = ['npx', 'playwright', 'install', '--with-deps', 'chromium'];
 function fakeRunner(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-install-'));
   const bin = path.join(directory, 'bin');
@@ -481,13 +491,16 @@ function fakeRunner(t) {
   const each = action => ['for pid in $(cat "$FAKE/pids" 2>/dev/null); do',
     `  [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = apt-get ] && ${action}`, 'done'];
   const files = {
-    // `sudo pkill -x apt-get` stops only this run's fake apt-get; every other command runs unchanged.
-    sudo: ['if [ "$*" = "pkill -x apt-get" ]; then', ...each('kill "$pid"'), '  exit 0', 'fi', 'exec "$@"'],
+    sudo: ['case "$*" in',
+      '  "tee /etc/apt/apt.conf.d/80-ci-apt-retry") echo "$2" > "$FAKE/apt-conf-path"; cat > "$FAKE/apt-conf";;',
+      '  "dpkg --configure -a") echo "$*" >> "$FAKE/dpkg";;',
+      '  "pkill -x apt-get")', ...each('kill "$pid"').map(line => `    ${line}`), '    ;;',
+      '  "apt-get update"|"apt-get install -y bubblewrap apparmor-profiles") exec "$FAKE/bin/launch" "$@";;',
+      '  *) echo "fake sudo refused: $*" >&2; exit 97;;', 'esac'],
     // `pgrep -x "apt-get|dpkg"` succeeds while one of this run's fake apt-get processes is alive.
     pgrep: ['[ "$*" = "-x apt-get|dpkg" ] || { echo "unexpected pgrep $*" >&2; exit 2; }', ...each('exit 0'), 'exit 1'],
-    tee: ['echo "$1" > "$FAKE/apt-conf-path"', 'cat > "$FAKE/apt-conf"'],
-    dpkg: ['echo "$*" >> "$FAKE/dpkg"'],
-    npx: ['n=$(( $(cat "$FAKE/count" 2>/dev/null || echo 0) + 1 ))', 'echo "$n" > "$FAKE/count"',
+    npx: ['exec "$FAKE/bin/launch" "$@"'],
+    launch: ['n=$(( $(cat "$FAKE/count" 2>/dev/null || echo 0) + 1 ))', 'echo "$n" > "$FAKE/count"', 'echo "$*" >> "$FAKE/commands"',
       'setsid "$FAKE/bin/apt-get" "${PLAN:n-1:1}" &', 'wait $! || exit', 'echo "installed $*"'],
     'apt-get': ['echo "$$" >> "$FAKE/pids"', 'exec 9>"$FAKE/lock"',
       'flock -n 9 || { echo "E: Could not get lock $FAKE/lock"; exit 100; }',
@@ -496,59 +509,72 @@ function fakeRunner(t) {
       'case "$1" in h) exec >/dev/null 2>&1; read -t 30 <> "$FAKE/fifo"; exit 100;; f) exit 100;; esac'],
   };
   for (const [name, lines] of Object.entries(files)) fs.writeFileSync(path.join(bin, name), ['#!/bin/bash', ...lines, ''].join('\n'), { mode: 0o755 });
-  // The script runs only where GITHUB_ACTIONS is "true"; these runs opt in unless a case says otherwise (null unsets it).
-  const run = (script, plan, githubActions = 'true') => {
+  // The script runs only where GITHUB_ACTIONS is "true"; runs opt in unless `env` overrides it (null unsets a variable).
+  const run = (script, plan, { args = ['1', ...npxInstall], env: overrides = {} } = {}) => {
     const started = Date.now();
-    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan, GITHUB_ACTIONS: githubActions };
-    if (githubActions === null) delete env.GITHUB_ACTIONS;
-    const result = spawnSync('bash', ['-c', script, 'install', 'npx', 'playwright', 'install', '--with-deps', 'chromium'], {
-      env, encoding: 'utf8', timeout: 30000,
-    });
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan, GITHUB_ACTIONS: 'true', ...overrides };
+    for (const [name, value] of Object.entries(env)) if (value === null) delete env[name];
+    const result = spawnSync('bash', ['-c', script, 'apt-retry', ...args], { env, encoding: 'utf8', timeout: 30000 });
     assert.ifError(result.error);
     const read = name => fs.existsSync(path.join(directory, name)) ? fs.readFileSync(path.join(directory, name), 'utf8') : '';
-    return { ...result, seconds: (Date.now() - started) / 1000, attempts: Number(read('count')), dpkg: read('dpkg'),
-      aptConf: read('apt-conf'), aptConfPath: read('apt-conf-path').trim(), left: pids().filter(alive) };
+    return { ...result, seconds: (Date.now() - started) / 1000, launches: Number(read('count')), commands: read('commands'),
+      dpkg: read('dpkg'), aptConf: read('apt-conf'), aptConfPath: read('apt-conf-path').trim(), left: pids().filter(alive) };
   };
   return { run };
 }
 
-test('a browser install whose apt-get outlives a timed-out attempt recovers on the next attempt', (t) => {
-  const script = fs.readFileSync(path.join(root, 'scripts/install-browser.sh'), 'utf8');
-  // Run the real script with each attempt limited to 1 s and the lock wait to 2 s.
-  const fast = script.replace('attempt_seconds=300 lock_wait_seconds=60', 'attempt_seconds=1 lock_wait_seconds=2');
+test('an apt command whose apt-get outlives a timed-out attempt recovers on the next attempt', (t) => {
+  const script = fs.readFileSync(path.join(root, 'scripts/apt-retry.sh'), 'utf8');
+  // Run the real script with each attempt limited to 1 s (its first argument) and the lock wait to 2 s.
+  const fast = script.replace('lock_wait_seconds=60', 'lock_wait_seconds=2');
   assert.notEqual(fast, script);
   // The #987 loop, shortened the same way, fails on this runner: apt-get keeps the lock and every retry fails on it.
   const old = 'for attempt in 1 2 3; do\n  if timeout --kill-after=10 1 "$@"; then exit 0; fi\n  sleep 0\ndone\nexit 1\n';
-  const stuck = fakeRunner(t).run(old, 'hs');
+  const stuck = fakeRunner(t).run(old, 'hs', { args: npxInstall });
   assert.equal(stuck.status, 1);
-  assert.equal(stuck.attempts, 3);
+  assert.equal(stuck.launches, 3);
   assert.equal((stuck.stdout.match(/Could not get lock/g) ?? []).length, 2);
 
-  for (const [plan, status, attempts] of [['s', 0, 1], ['hs', 0, 2], ['fhs', 0, 3], ['fff', 1, 3]]) {
-    const result = fakeRunner(t).run(fast, plan);
-    assert.equal(result.status, status, `${plan}: ${result.stdout}${result.stderr}`);
-    assert.equal(result.attempts, attempts, plan);
-    assert.equal(result.stdout.includes('Could not get lock'), false, `${plan}: a retry never meets a held lock`);
-    assert.equal(result.stderr.includes('unexpected pgrep'), false, `${plan}: ${result.stderr}`);
-    assert.equal(result.stdout.includes('installed playwright install --with-deps chromium'), status === 0, plan);
-    assert.equal((result.stdout.match(/::warning::Browser install attempt \d of 3/g) ?? []).length, status ? 3 : attempts - 1, plan);
+  const install = 'playwright install --with-deps chromium\n';
+  const update = 'apt-get update\n', hook = 'apt-get install -y bubblewrap apparmor-profiles\n';
+  const hookArgs = ['1', 'bash', '-c', hookAptScript];
+  for (const [plan, args, status, failures, commands] of [
+    ['s', undefined, 0, 0, install], ['hs', undefined, 0, 1, install.repeat(2)], ['fhs', undefined, 0, 2, install.repeat(3)],
+    ['fff', undefined, 1, 3, install.repeat(3)],
+    // The hook step's two apt commands retry together: a hung install reruns the update first.
+    ['ss', hookArgs, 0, 0, update + hook], ['hss', hookArgs, 0, 1, update + update + hook], ['shss', hookArgs, 0, 1, update + hook + update + hook],
+  ]) {
+    const result = fakeRunner(t).run(fast, plan, args && { args });
+    const name = `${plan} ${args ? 'hook' : 'browser'}`;
+    assert.equal(result.status, status, `${name}: ${result.stdout}${result.stderr}`);
+    assert.equal(result.commands, commands, name);
+    assert.equal(result.stdout.includes('Could not get lock'), false, `${name}: a retry never meets a held lock`);
+    assert.equal(result.stderr, '', name);
+    assert.equal((result.stdout.match(/::warning::Attempt \d of 3 failed or ran past 1 s/g) ?? []).length, failures, name);
     // After each failed attempt: stop the leftover apt-get, then finish any interrupted dpkg run.
-    assert.equal(result.dpkg, '--configure -a\n'.repeat(status ? 3 : attempts - 1), plan);
-    assert.deepEqual(result.left, [], `${plan}: no apt-get outlives the step`);
-    assert.equal(result.aptConfPath, '/etc/apt/apt.conf.d/80-browser-install');
+    assert.equal(result.dpkg, 'dpkg --configure -a\n'.repeat(failures), name);
+    assert.deepEqual(result.left, [], `${name}: no apt-get outlives the step`);
+    assert.equal(result.aptConfPath, '/etc/apt/apt.conf.d/80-ci-apt-retry');
     assert.equal(result.aptConf, 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n');
-    assert.ok(result.seconds < 15, `${plan}: took ${result.seconds} s`);
+    assert.ok(result.seconds < 15, `${name}: took ${result.seconds} s`);
   }
 
-  // Outside GitHub Actions the script refuses before it touches apt's configuration or any apt-get.
-  for (const githubActions of [null, 'false', '']) {
-    const refused = fakeRunner(t).run(fast, 's', githubActions);
-    assert.equal(refused.status, 2, String(githubActions));
-    assert.match(refused.stderr, /runs only on a GitHub Actions runner/);
-    assert.equal(refused.attempts, 0);
+  // Outside GitHub Actions, or without a whole number of seconds and a command, the script refuses before it touches
+  // apt's configuration or any apt-get.
+  for (const [options, message] of [[{ env: { GITHUB_ACTIONS: null } }, /runs only on a GitHub Actions runner/],
+    [{ env: { GITHUB_ACTIONS: 'false' } }, /runs only on a GitHub Actions runner/], [{ env: { GITHUB_ACTIONS: '' } }, /runs only on a GitHub Actions runner/],
+    [{ args: npxInstall }, /^Usage: /], [{ args: ['1'] }, /^Usage: /], [{ args: ['5m', ...npxInstall] }, /^Usage: /]]) {
+    const refused = fakeRunner(t).run(fast, 's', options);
+    assert.equal(refused.status, 2, JSON.stringify(options));
+    assert.match(refused.stderr, message);
+    assert.equal(refused.launches, 0);
     assert.equal(refused.aptConf, '');
     assert.equal(refused.dpkg, '');
   }
+
+  // A changed privileged command fails loudly at the fake sudo instead of running machine-wide.
+  const widened = fakeRunner(t).run(fast.replace('sudo pkill -x apt-get', 'sudo pkill apt-get'), 'fs');
+  assert.match(widened.stderr, /fake sudo refused: pkill apt-get/);
 });
 
 // Keep guide build, browser and retained review evidence under regression coverage.

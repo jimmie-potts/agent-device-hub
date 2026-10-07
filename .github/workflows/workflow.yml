@@ -18,7 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-    timeout-minutes: 10
+    # The job takes about 1 minute; the limit leaves room for two stalled attempts of the hook step's apt commands (#862).
+    timeout-minutes: 15
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,11 +35,14 @@ jobs:
       - name: Validate epic Guide contract fixtures
         run: node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs
       - run: npm run test:preflight
+      # Hosted runners sometimes stall in apt-get update until the job's limit (#862). The step takes 15 to 133 s, its
+      # slowest apt install about 2 minutes; each attempt of the two apt commands gets 180 s, and a stalled or failed
+      # attempt reruns both, up to three attempts.
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'
+        timeout-minutes: 14
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap apparmor-profiles
+          bash scripts/apt-retry.sh 180 bash -c 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles'
           sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
           npm run test:performance:linux
