@@ -15,7 +15,8 @@ from divoom-app-upgrade until the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), which
 replaces it with this module. Until then, divoom-app-upgrade takes only bug
 fixes. Mirror each fix here and name its source commit in the commit message.
-The Pixoo pages are #932 and the library's migration is #931.
+The Pixoo pages are #932. The library's [migration](#library-migration) (#931)
+carries the service's library into this module's store at the cutover.
 
 ## Commands
 
@@ -39,8 +40,9 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/media` | Bounded rendering through sharp, GIF encoding and decoding, the media store and its child process |
 | `src/playback` | The player, traversal and the library-backed store |
 | `src/presentation` | Monitor presentation over `session/2.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` and the pixel font |
+| `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
-| `tests/module` | The module's node:test suites: the module test kit, its behavior and its configuration |
+| `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration and the library migration |
 
 ## The module
 
@@ -281,6 +283,52 @@ device `pixoo-1` at `10.0.0.64`, outside the home network's range, with the
 observed GIF profile, and names no secret. Tests and the `shipped` disposable
 run use it. The scenario catalog and disposable runs pair the simulated Pixoo
 with the playback module (#929) and its simulated speakers.
+
+## Library migration
+
+The installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
+carries the Pixoo service's library into this module's store at the cutover
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), offline,
+with the runtime's tool `apps/runtime/dist/src/migrate-pixoo.js`
+([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931)). The
+runtime README's [Pixoo library migration](../../apps/runtime/README.md#pixoo-library-migration)
+gives its commands, exit codes and refusals; this section says what it carries.
+
+- **Source.** The service's `<PIXOO_DATA_DIR>/library` at the installed
+  release's schema version 3 (divoom-app-upgrade `1b4115c`), and no other
+  version (owner decision, 2026-10-07). `INSTALLED_LIBRARY` pins that release
+  and its three migrations' checksums, which are this module's first three. The
+  source must also have exactly the tables, indexes and trigger those
+  migrations create. The tool reads the catalog read-only and immutable, holds
+  the library's owner lock shared, so a running service is refused and one
+  started meanwhile cannot open the library, and opens every file without
+  following a link. It never changes the source.
+- **Carried.** Every asset, rendition, playlist and item, inserted through
+  SQLite at the installed schema, which the library's own first three
+  migrations create in the module's database, and every original and rendition
+  file the catalog names, copied into `media/` in the module's private folder
+  as new private files. The library's own forward migration then takes the
+  database to version 4, and its own check (`verifyStorage`) reads every copy
+  back against the hashes its catalog gives.
+- **Left in the backup.** Sessions, their retained renditions, the player's
+  checkpoint and pending cleanups start fresh (owner decision 10), and files no
+  catalog entry names, such as a deleted asset's original or a staging folder,
+  are not copied. The report counts the rows it leaves behind.
+- **Not precomputed.** The tool writes none of this module's own tables. The
+  first start after the migration checks each multi-frame rendition that the
+  hosted profile has not checked, once, in the background (see
+  [Families](#families)).
+- **Large GIF canvases.** The report counts the GIF originals whose canvas is
+  over 4,096 x 4,096 pixels (`largeGifOriginals`): their stored renditions play,
+  but this module can no longer render them again (see [Isolation](#isolation)).
+  It never names them.
+- **Verifier.** `verifyMigration` compares every carried row and every file's
+  SHA-256 with the source, checks the database's schema and the files' modes, and
+  counts each mismatch by kind. The cutover goes ahead only on zero.
+
+`writeSyntheticLibrary(directory)` builds a library of the installed schema
+with this module's own code, for the tests and the `pixoo-migrated` disposable
+run. Every name, picture and date in it is made up.
 
 ## Expected webcam results for the cutover
 

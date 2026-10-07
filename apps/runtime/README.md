@@ -617,6 +617,75 @@ calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
 `module-folder-not-private`.
 
+## Offline tools
+
+Tools that change a module's files run while the runtime is stopped, as the
+installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
+runs them at the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+
+### The runtime's lease
+
+`holdRuntimeLease(stateDir)` (`src/lease.ts`) takes the
+[core's lease](#agent-session-core), the exclusive transaction on
+`modules/core.sqlite-owner`, without waiting, and holds it until `release()`.
+It refuses with `runtime-running` while a runtime, or another tool, holds it,
+and with `lease-unavailable` when the lock file is not a regular file private
+to the user. It creates `modules/` and the lock file, owner-only, when they are
+missing, as the core does, and writes nothing to the lock file. A tool holds
+the lease for as long as it runs: a runtime that starts meanwhile waits for it
+until its core's three-second deadline, fails with `core-failed` and is
+restarted by its service manager. The Pixoo library migration takes it, and the
+Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+is to take it too.
+
+### Pixoo library migration
+
+The Pixoo library migration ([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931))
+carries the Pixoo service's library into the [Pixoo module's](../../modules/pixoo/README.md#library-migration)
+store. Run it with Node 24 from the repository root, after `npm run build`:
+
+```bash
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library <PIXOO_DATA_DIR>/library --state-dir <state dir> [--min-free-bytes <bytes>]
+node apps/runtime/dist/src/migrate-pixoo.js verify --library <PIXOO_DATA_DIR>/library --state-dir <state dir>
+```
+
+Both paths are absolute. `--library` is the directory that holds the service's
+`catalog.sqlite`, which the tool only reads; `--state-dir` is the runtime's
+state directory, which `migrate` creates when it is missing. `migrate` writes
+the Pixoo module's `modules/pixoo.sqlite` and `modules/pixoo/` there, through
+`openModuleDatabase` and `openModuleFolder`, and closes the database before it
+reports. `verify` compares them with the library. Each holds the runtime's
+lease and the library's owner lock while it runs, and writes one JSON line to
+stdout, `{"schema": "pixoo-migration/1.0", "operation", "result", ...}`, with
+counts, codes and SHA-256 digests only: never a path, a name or a file's
+content.
+
+| Exit | `result` | Meaning |
+| --- | --- | --- |
+| 0 | `migrated`, `verified` | Done; `verified` has zero mismatches |
+| 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
+| 2 | `refused`, code `usage` | Malformed arguments |
+| 3 | `refused` | Refused before writing anything to the module's files; `code` and `message` say why |
+| 4 | `failed` | `migrate` stopped after it began to write; `destination` is `removed` (the module's database and folder are gone again) or `left` |
+
+| Code | Refusal or failure |
+| --- | --- |
+| `runtime-running` | A runtime, or another tool, holds the state directory's lease |
+| `lease-unavailable` | The lease's lock file is not a regular file private to the user |
+| `disk-short` | Less free space than the library's files and catalog plus `--min-free-bytes` (256 MiB by default), or a full disk during the copy |
+| `destination-not-empty` | The module already has a database, a log, a journal or a non-empty folder: migrate into a fresh state directory, or remove those two paths |
+| `destination-missing` | `verify` found no module database |
+| `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
+| `source-missing` | The library directory holds no `catalog.sqlite` |
+| `source-in-use` | The Pixoo service holds the library: stop it first |
+| `source-not-clean` | The catalog's log or journal holds commits the file lacks: start and stop the Pixoo service once, so it folds them in |
+| `source-schema` | Not the installed release's schema version 3, or its tables differ from it |
+| `source-corrupt` | The catalog fails SQLite's checks, names a missing, linked or oversized file, or a copy does not match the hash its catalog gives |
+| `internal` | Anything else |
+
+A refusal and a failure name no path or value. The tool never retries; a
+failed or killed `migrate` is run again only into a fresh destination.
+
 ## Failure isolation
 
 A device's errors and timeouts are not module failures. Under policy A in

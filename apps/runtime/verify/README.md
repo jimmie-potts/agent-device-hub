@@ -36,6 +36,7 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
 | `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, the Pixoo's simulated device `pixoo-1`, and the Nanoleaf module's simulated Lines) |
+| `pixoo-migrated` | The same shipped runtime on a migrated Pixoo library (#931): the seed writes a synthetic library of the installed schema version 3 to `<data>/pixoo-library`, migrates and verifies it into the run's state directory with the [migration tool](../README.md#pixoo-library-migration), as the installer will at the cutover, keeps each one's JSON line in `<data>/migration/`, and fails the start unless both exit 0 |
 | one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), the four Pixoo scenarios below, and `nanoleaf-wall` (the core and the Nanoleaf module with a simulated Lines controller) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
@@ -260,6 +261,28 @@ answer is lost).
 
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.
+
+To check the Pixoo library migration (#931) as an operator would, start the migrated run, read what the migration
+reported and what the runtime serves, then run the tool by hand. Its lines hold counts, codes and hashes only:
+
+```bash
+npm run -s verify:runtime -- start --scenario pixoo-migrated
+data=<the run's runtime dir>/data; origin=<the run's origin>
+cat $data/migration/migrate.json $data/migration/verify.json                          # migrated, then verified with every mismatch count 0
+reader=$(node -p "require('$data/config/part-tokens.json').reader")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/pixoo-playlist"     # the three synthetic playlists, items in order
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/pixoo-rendition"    # one record per migrated rendition
+node apps/runtime/dist/src/migrate-pixoo.js verify --library $data/pixoo-library --state-dir $data/state; echo $?   # runtime-running, 3
+t=$(mktemp -d ~/.cache/agent-device-hub/pixoo-XXXX)                                    # a private folder outside every checkout
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-library --state-dir $t/a; echo $?        # migrated, 0: the run's digests
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-library --state-dir $t/b; echo $?        # the same line again
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-library --state-dir $t/a; echo $?        # destination-not-empty, 3
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-library --state-dir $t/c --min-free-bytes 9007199254740991; echo $?   # disk-short, 3
+printf x >> "$(ls -d $t/a/modules/pixoo/media/originals/* | head -1)"
+node apps/runtime/dist/src/migrate-pixoo.js verify --library $data/pixoo-library --state-dir $t/a; echo $?         # mismatch with files 1, 1
+rm -rf $t
+npm run -s verify:runtime -- stop <run-id>
+```
 
 To see two device modules serve `device` side by side, each for its own devices (#967), start `device-owners`: the
 lamp and the configured sign both run, and the reader keeps one copy of `device` from each, synced by name:
