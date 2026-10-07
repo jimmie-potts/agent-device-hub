@@ -1098,6 +1098,34 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /kind device-mode-set is a command family"
+  },
+  {
+   "name": "a device record at an unregistered version",
+   "base": "device-nanoleaf",
+   "set": {
+    "/dataschema": "https://bunny.invalid/events/device/2.1"
+   },
+   "expect": "unsupported-version",
+   "detail": "https://bunny.invalid/events/device/2.1"
+  },
+  {
+   "name": "a device-specific command that no shared family defines",
+   "base": "power-set",
+   "set": {
+    "/dataschema": "https://bunny.invalid/events/color-set/2.0",
+    "/type": "org.bunny.color.set.requested"
+   },
+   "expect": "unknown-schema",
+   "detail": "https://bunny.invalid/events/color-set/2.0"
+  },
+  {
+   "name": "a general command past its expiry",
+   "base": "brightness-set",
+   "set": {
+    "/expiresat": "2026-10-06T12:00:00.000Z"
+   },
+   "expect": "expired",
+   "detail": "2026-10-06T12:00:00.000Z"
   }
  ]
 }

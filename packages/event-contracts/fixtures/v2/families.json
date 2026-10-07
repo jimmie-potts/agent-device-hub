@@ -2213,6 +2213,24 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /type playback-control uses org.bunny.playback.control.requested"
+  },
+  {
+   "name": "an acknowledgment past its expiry",
+   "base": "notice-acknowledge",
+   "set": {
+    "/expiresat": "2026-10-06T12:00:00.000Z"
+   },
+   "expect": "expired",
+   "detail": "2026-10-06T12:00:00.000Z"
+  },
+  {
+   "name": "a playback request at an unregistered version",
+   "base": "playback-control",
+   "set": {
+    "/dataschema": "https://bunny.invalid/events/playback-control/3.0"
+   },
+   "expect": "unsupported-version",
+   "detail": "https://bunny.invalid/events/playback-control/3.0"
   }
  ],
  "scenarios": [
