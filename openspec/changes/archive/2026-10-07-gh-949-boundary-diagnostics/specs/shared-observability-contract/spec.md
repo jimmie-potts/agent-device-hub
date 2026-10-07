@@ -3,7 +3,7 @@
 ### Requirement: Profile 1.3 registers the runtime's decision records and spans
 
 The artifact SHALL be version 1.3.0 with profiles 1.0, 1.1, 1.2 and 1.3, and producers SHALL still default to profile 1.1. Profile 1.3 SHALL be profile 1.2 plus:
-- under `bunny.runtime`, the bus's decisions `runtime.command.admitted`, `runtime.command.refused`, `runtime.command.cancelled`, `runtime.command.replied` and `runtime.command.uncertain`, the sync decisions `runtime.sync.served`, `runtime.sync.refused` and `runtime.sync.restarted`, and the edge's `runtime.edge.failed`;
+- under `bunny.runtime`, the bus's decisions `runtime.command.admitted`, `runtime.command.refused`, `runtime.command.cancelled`, `runtime.command.replied` and `runtime.command.uncertain`, the sync decisions `runtime.sync.served`, `runtime.sync.refused` and `runtime.sync.restarted`, the edge's `runtime.edge.failed`, and `runtime.tracing.failed` when the runtime's span recording cannot start;
 - under `bunny.module`, `outcome.published`, `outbox.deferred`, `device.unavailable` and `device.available`;
 - the attributes `bunny.routing.key`, an SDK routing key of at most 512 characters, `bunny.outbox.waiting_count` and `bunny.attempt_count`;
 - the span names `bunny.outcome.publish` and `bunny.device.call`.

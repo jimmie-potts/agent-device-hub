@@ -99,6 +99,7 @@
         "runtime.sync.refused",
         "runtime.sync.restarted",
         "runtime.edge.failed",
+        "runtime.tracing.failed",
         "outcome.published",
         "outbox.deferred",
         "device.unavailable",
@@ -154,6 +155,7 @@
         "Sync refused",
         "Sync restarted",
         "Edge call failed",
+        "Span recording failed to start",
         "Outcome published",
         "Outbox publication deferred",
         "Device unavailable",
@@ -783,6 +785,7 @@
                 "runtime.sync.refused",
                 "runtime.sync.restarted",
                 "runtime.edge.failed",
+                "runtime.tracing.failed",
                 "outcome.published",
                 "outbox.deferred",
                 "device.unavailable",
@@ -862,7 +865,8 @@
               "runtime.sync.served",
               "runtime.sync.refused",
               "runtime.sync.restarted",
-              "runtime.edge.failed"
+              "runtime.edge.failed",
+              "runtime.tracing.failed"
             ]
           }
         }
@@ -962,7 +966,8 @@
               "runtime.sync.served",
               "runtime.sync.refused",
               "runtime.sync.restarted",
-              "runtime.edge.failed"
+              "runtime.edge.failed",
+              "runtime.tracing.failed"
             ]
           }
         }

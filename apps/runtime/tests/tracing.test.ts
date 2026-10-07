@@ -8,6 +8,9 @@ import {chmod, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {connectRemote, traceFields, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, RECENT_SPANS, startRuntime, type LogRecord} from '../src/index.js';
+import {LogWriter} from '../src/log.js';
+import {RUNTIME_SCOPE} from '../src/record.js';
+import {startTracing} from '../src/tracing.js';
 import {contextOf, deferred, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
@@ -197,4 +200,17 @@ it('a span whose parent was not sampled is not recorded, and the command keeps t
   assert.deepEqual(lines, [], 'nothing in an unsampled trace is recorded');
   assert.equal(traceFields(commands[0] ?? {traceparent: ''})?.flags, '00');
   assert.equal(traceFields(commands[0] ?? {traceparent: ''})?.traceId, traceFields(unsampled)?.traceId);
+});
+
+it('a tracing start that fails writes one record with the exception\'s type, and the runtime records no spans', async () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', {now: () => Date.parse('2026-10-07T12:00:00.000Z')});
+  // A resource the host adapter refuses, as a broken dependency would refuse every start.
+  const refused = {...writer.resource, 'service.version': 'not a version'};
+  const tracing = await startTracing(refused, () => { assert.fail('no span is recorded'); }, writer.logger(RUNTIME_SCOPE));
+  assert.equal(tracing, undefined);
+  assert.deepEqual(writer.counts(), {written: 1, dropped: 0, failed: 0}, 'one valid record');
+  assert.deepEqual(written.map(record => [record.event_name, record.severity_text, record.attributes['error.type']]),
+    [['runtime.tracing.failed', 'ERROR', 'TypeError']]);
+  assert.equal(JSON.stringify(written).includes('Invalid host'), false, 'never the exception\'s message');
 });

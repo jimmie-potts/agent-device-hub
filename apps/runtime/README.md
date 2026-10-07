@@ -280,7 +280,8 @@ document; without that option the runtime keeps the latest 1,024 for
 spans it evicted, so a span missing from memory was evicted only while that
 count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts spans
 lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
-records. If the adapter cannot start, the runtime runs without recorded spans.
+records. If the adapter cannot start, the runtime runs without recorded spans
+and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
 
 ## Memory
 

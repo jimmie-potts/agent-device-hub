@@ -188,6 +188,8 @@ earlier profile rejects each addition. The additions:
   or `uncertain-result` once it had handed a command to the bus) and
   `error.type`; after dispatch, also the command's `bunny.routing.key`,
   `bunny.request.id`, `bunny.message.id` and trace.
+- **Tracing that cannot start,** `runtime.tracing.failed`, at ERROR with only
+  `error.type`, once, when the runtime runs without recorded spans.
 - **Module events:** an outcome's first publication from a module's outbox
   (`outcome.published`), a run of publishes refused after their commits
   (`outbox.deferred`), and a device that stops or starts answering

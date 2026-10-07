@@ -83,6 +83,7 @@
         "runtime.sync.refused",
         "runtime.sync.restarted",
         "runtime.edge.failed",
+        "runtime.tracing.failed",
         "outcome.published",
         "outbox.deferred",
         "device.unavailable",
@@ -147,6 +148,7 @@
     "runtime.sync.refused": "Sync refused",
     "runtime.sync.restarted": "Sync restarted",
     "runtime.edge.failed": "Edge call failed",
+    "runtime.tracing.failed": "Span recording failed to start",
     "outcome.published": "Outcome published",
     "outbox.deferred": "Outbox publication deferred",
     "device.unavailable": "Device unavailable",
@@ -593,7 +595,8 @@
         "runtime.sync.served",
         "runtime.sync.refused",
         "runtime.sync.restarted",
-        "runtime.edge.failed"
+        "runtime.edge.failed",
+        "runtime.tracing.failed"
       ]
     },
     "bunny.module": {

@@ -189,7 +189,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     recent.shift();
     evicted = Math.min(Number.MAX_SAFE_INTEGER, evicted + 1);
   };
-  const tracing = await startTracing(logs.resource, options.spans ?? keep);
+  const tracing = await startTracing(logs.resource, options.spans ?? keep, log);
   const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing})});
   const startedAtMs = clock.now();
   let lagCheck: RuntimeHealth['lagCheck'] = {status: 'off'};

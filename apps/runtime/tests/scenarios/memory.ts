@@ -122,7 +122,9 @@ class Memory implements MemoryHarness {
 
   async open(): Promise<void> {
     await prepareStateDirectory(this.stateDir);
-    this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); });
+    // A tracing start that fails is the first generation's record, as the runtime writes it before its modules start.
+    const opening = new LogWriter(record => { this.#logs.push({generation: 1, record}); }, 'info', {now: this.#clock.now}).logger(RUNTIME_SCOPE);
+    this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); }, opening);
     if (this.transport === 'remote') {
       const server = createServer((request, response) => { this.#serve(request, response); });
       // The edge never closes an idle connection under a remote part that is about to reuse it.

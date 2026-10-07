@@ -3742,6 +3742,33 @@
       }
     },
     {
+      "name": "runtime-tracing-failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.3",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.tracing.failed",
+        "body": "Span recording failed to start",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "TypeError"
+        }
+      }
+    },
+    {
       "name": "module-outcome-published",
       "valid": true,
       "record": {
@@ -4100,6 +4127,33 @@
           "bunny.provenance": "source",
           "bunny.route": "sync",
           "error.type": "Error: tok_SYNTHETIC123 leaked"
+        }
+      }
+    },
+    {
+      "name": "runtime-tracing-failed-at-1.2",
+      "valid": false,
+      "record": {
+        "schema_version": "1.2",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.tracing.failed",
+        "body": "Span recording failed to start",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "error.type": "TypeError"
         }
       }
     },
