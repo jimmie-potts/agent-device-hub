@@ -46,8 +46,8 @@ own story before the cutover:
   The runtime's core reads no Codex file.
 - **Desktop titles** (`enrichCodexTitle`): the Hub adds the title from Codex's
   `session_index.jsonl` in this Codex home to each Desktop hook's observation.
-  The hook process cannot, since Desktop's hooks run in WSL with WSL's own Codex
-  home.
+  The 2.0 hook reads only its own process's Codex home, which need not be
+  Desktop's.
 
 ## Configuration
 
