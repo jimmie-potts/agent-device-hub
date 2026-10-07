@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test,{mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -103,6 +103,22 @@ try {
    await Promise.all([hold,...reads,...commands,poll]);
    assert.deepEqual(sent,[`${device}/hold`,...Array(4).fill(`${device}/commands`),...reads.map((_,i)=>`${device}/read-${i}`),`${device}/poll`]);
   } finally {globalThis.fetch=original;}
+ });
+ test('a read that waits five seconds for its device is refused with capacity and never sent',async()=>{
+  const original=globalThis.fetch;const sent=[];let release;
+  globalThis.fetch=async(url)=>{sent.push(url);if(url.endsWith('/hold'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
+  mock.timers.enable({apis:['setTimeout']});
+  try {
+   const api=new Api('a'.repeat(43)),device='/api/controllers/v1/one';
+   const hold=api.request(`${device}/hold`),late=api.request(`${device}/late`);
+   const state=()=>Promise.race([late.then(()=>'sent',error=>`${error.code} ${error.status}`),new Promise(resolve=>setImmediate(()=>resolve('waiting')))]);
+   mock.timers.tick(4999);
+   assert.equal(await state(),'waiting','a read waits up to five seconds');
+   mock.timers.tick(1);
+   assert.equal(await state(),'capacity 429','after five seconds it is refused');
+   release(Response.json({ok:true}));await hold;
+   assert.deepEqual(sent,[`${device}/hold`],'the refused read is never sent, and the read in flight is not bounded by the wait');
+  } finally {mock.timers.reset();globalThis.fetch=original;}
  });
  test('general controls name the missing capability, scope or mode and preserve declared power',()=>{
   const capabilities={power:{supported:true},brightness:{supported:true,minimum:0,maximum:100},media:{supported:true,actions:['pause'],playlistIds:['p1'],renditionIds:[]},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};
