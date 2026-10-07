@@ -583,14 +583,15 @@ file, and a directory that others can open. It checks the whole path before it
 creates anything, so a refused path creates nothing, and it never creates
 through a link. Each module's SQLite file is `modules/<name>.sqlite` in it, mode
 600, created when the module first calls `database()`. It is in WAL mode at
-`synchronous = FULL` (Hub #972): each commit is durable when it returns, with one
-sync of the log, `<name>.sqlite-wal`, which SQLite creates beside the file with
-its index, `<name>.sqlite-shm`, and the same mode. A clean stop checkpoints the
-log into the file and removes it. While a module runs, or after a crash, the
-file alone may lack commits that are still in the log, so a copy takes the
-`-wal` file too, or uses SQLite's backup. `synchronous = NORMAL` would skip the
-sync, and a power loss or a stopped WSL VM could then undo a committed outcome
-or an accepted command's record, which ADR 0012 rules out. Beside it, the module's
+`synchronous = FULL` (Hub #972), so each commit syncs its log once and is
+durable when it returns. SQLite keeps the log in `<name>.sqlite-wal` and its
+index in `<name>.sqlite-shm`, beside the file and with the same mode. A clean
+stop checkpoints the log into the file and removes it. While a module runs, or
+after a crash, the file alone may lack commits that are still in the log, so a
+copy takes the `-wal` file too or uses SQLite's backup. `synchronous = NORMAL`
+would skip the sync, and a power loss or a stopped WSL VM could then undo a
+committed outcome or an accepted command's record, which ADR 0012 rules out.
+Beside the file, the module's
 private folder `modules/<name>/` is created with mode 700 when the module first
 calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
@@ -827,12 +828,13 @@ commands to the LIFX module on simulated bulbs, each waiting for its outcome;
 and `outbox` runs the SDK's outbox alone, as a module that stores a pending
 state and then a state, an outcome and a pending count, with a stand-in core
 acknowledging each outcome. `--scenario`, `--seconds`, `--rate`, `--commands`
-and `--runs` change them; each runs three times. It counts a `COMMIT`, or a
-write outside a transaction that changed a row, on a module database, by
-wrapping `node:sqlite` in its own process. The event-loop delay is meaningful
-for `intake`, whose load is paced by timers; the other two run as chains of
-promises that the delay monitor does not see. It needs a build and a TMPDIR
-outside every Git checkout.
+and `--runs` change them; by default each scenario runs three times. The probe
+wraps `node:sqlite` in its own process. It counts as a commit a `COMMIT`, or a
+write outside a transaction that changed a row, on a module database, and as a
+synced commit one that waits for the disk. The event-loop delay is meaningful
+for `intake`, whose load is paced by timers; the other two run each command as
+one chain of promises, which the delay monitor does not sample. It needs a
+build and a TMPDIR outside every Git checkout.
 
 ## Fixture modules
 

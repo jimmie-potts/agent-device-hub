@@ -644,15 +644,15 @@ async start({sdk, database, clock, log, trace}) {
   replay: nothing received it before. One that went out just before a crash,
   before its batch's bookkeeping committed (below), goes out again with the
   same `id`, and the consumer drops the copy by `(source, id)`.
-- Each commit is a sync to disk on the event loop, so once a send's messages
-  settle, what went out is forgotten or marked in one commit, not one per
-  message (Hub #972). It commits after the sends, even when a refusal stopped
-  them partway, and transactions that commit while a send is under way share
-  it. Republishing outcomes that already went out writes nothing. In WAL mode,
-  as the runtime opens a module's database, this bookkeeping and `acknowledge`
-  commit at `synchronous = NORMAL`, without their own sync, and the
-  connection's level comes back at once. A later sync of the log makes them
-  durable; a power loss before it can only undo them, which leaves the rows to
+- Each commit is a sync to disk on the event loop. Once a send's messages
+  settle, the outbox forgets or marks what went out in one commit, not one per
+  message (Hub #972). That commit follows the sends, even when a refusal
+  stopped them partway, and transactions that commit while a send is under way
+  share it. Republishing outcomes that already went out writes nothing.
+- In WAL mode, as the runtime opens a module's database, this bookkeeping and
+  `acknowledge` commit at `synchronous = NORMAL`, without their own sync, and
+  the connection's level comes back at once. A later sync of the log makes them
+  durable. A power loss before it can only undo them, which leaves the rows to
   go out again. The work's own commit keeps the module's level, so a committed
   outcome survives a power loss. Out of WAL mode, every commit keeps the
   module's level.
@@ -666,10 +666,10 @@ async start({sdk, database, clock, log, trace}) {
   that it hears an acknowledgment of a resent outcome.
 - With the module's `log` and `trace` (#949), the outbox records an outcome's
   first publication once, as `outcome.published`: INFO for a succeeded outcome
-  and WARN for a failed or uncertain one, in the outcome's own trace. It
-  records it once the commit that marks the outcome published lands, so after
-  a crash between the send and that commit the run that sends it again records
-  it. A replay records nothing more, so a replayed outcome never makes a second
+  and WARN for a failed or uncertain one, in the outcome's own trace. The
+  record follows the commit that marks the outcome published. After a crash
+  between the send and that commit, the run that sends the outcome again makes
+  the record. A replay records nothing more, so a replayed outcome never makes a second
   record. A
   run of refused publishes after their commits makes one `outbox.deferred`
   warning, in place of the `onError` report, with the refusal's code and
