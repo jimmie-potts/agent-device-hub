@@ -1,9 +1,11 @@
 // The seeds of a disposable runtime run (Hub #920): which modules the runtime starts and the parts' run-generated
 // credentials (Hub #835). Each catalog scenario seeds its own modules; `fixtures` starts the core with its stand-in parts, the lamp and the chime for
-// exploring. Names starting with `control-` cross a boundary on purpose, so their start fails a boundary check.
+// exploring, and `pixoo-migrated` the shipped list on a migrated Pixoo library (Hub #931). Names starting with
+// `control-` cross a boundary on purpose, so their start fails a boundary check.
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {shippedModules, type ModuleFactory} from '../src/index.js';
+import {writeSyntheticLibrary} from '@jimmie-potts/pixoo';
+import {runPixooMigration, shippedModules, type ModuleFactory} from '../src/index.js';
 import {simulatedSections} from '../tests/fixtures/simulated.js';
 import {SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, writeConfiguration} from '../tests/scenarios/parts.js';
@@ -21,10 +23,12 @@ export type RunRuntime = 'shipped' | 'fixtures';
 export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: ModuleName[]; fault?: Fault; config: string};
 /**
  * `config` gives a catalog seed's sections; `simulated` configures each of those factories from its simulated section
- * instead, as the shipped run does.
+ * instead, as the shipped run does. `prepare` runs last, once the run's state directory exists, as an installer's step
+ * before the runtime's first start would.
  */
 export type RunScenario = {
   description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
+  prepare?: (dataDir: string) => Promise<void>;
 };
 
 /** The run's state directory, which the runtime's `--state-dir` names: `<data>/state`. */
@@ -41,12 +45,37 @@ export const credentialsOf = (dataDir: string): string => join(configDirOf(dataD
  */
 export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDir), 'part-tokens.json');
 
+/** Where the `pixoo-migrated` run keeps its synthetic Pixoo library, `<data>/pixoo-library` (Hub #931). */
+export const pixooLibraryOf = (dataDir: string): string => join(dataDir, 'pixoo-library');
+/** Where it keeps the migration's JSON lines, `<data>/migration/{migrate,verify}.json`. */
+export const migrationOf = (dataDir: string): string => join(dataDir, 'migration');
+
+/**
+ * Writes a synthetic Pixoo library of the installed schema version and runs the migration tool's `migrate` and `verify`
+ * on it into the run's state directory, as the installer will before the runtime's first start at the cutover (#840).
+ * Keeps each one's line, and fails the seed unless both exit 0.
+ */
+async function migratePixoo(dataDir: string): Promise<void> {
+  await writeSyntheticLibrary(pixooLibraryOf(dataDir));
+  await mkdir(migrationOf(dataDir), {mode: 0o700});
+  for (const operation of ['migrate', 'verify'] as const) {
+    let line = '';
+    const exit = await runPixooMigration([operation, '--library', pixooLibraryOf(dataDir), '--state-dir', stateDirOf(dataDir)], {write: text => { line += text; }});
+    await writeFile(join(migrationOf(dataDir), `${operation}.json`), line, {mode: 0o600});
+    if (exit !== 0) throw new Error(`the Pixoo library migration's ${operation} exited ${exit}`);
+  }
+}
+
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
   shipped: {
     description: 'The runtime\'s own entry point with the shipped module list: the core and each device module, configured for its simulated devices',
     // Each shipped module's simulated section (Hub #844, #929), so a run of the shipped list starts every module.
     runtime: 'shipped', modules: [], simulated: shippedModules,
+  },
+  'pixoo-migrated': {
+    description: 'The shipped runtime on a Pixoo library migrated from a synthetic library of the installed schema version 3, as the installer migrates it before the runtime starts (Hub #931)',
+    runtime: 'shipped', modules: [], simulated: shippedModules, prepare: migratePixoo,
   },
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
@@ -74,7 +103,7 @@ export const START_ONLY: readonly string[] = Object.keys(RUN_SCENARIOS).filter(n
  * private configuration file: the scenario's module sections, with a token file per configured module holding only the
  * synthetic token, and the edge's section (Hub #835), whose credentials file grants each part, as the catalog's `GRANTS`
  * say, under a run-generated token's digest. The parts' tokens go to a private file of their own for the adapter, and
- * are never printed.
+ * are never printed. Then the scenario's `prepare` runs, such as `pixoo-migrated`'s library migration.
  */
 export async function seedRun(dataDir: string, name: string): Promise<void> {
   const scenario = RUN_SCENARIOS[name];
@@ -93,4 +122,5 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
     await mkdir(dir, {mode: 0o700});
     await chmod(dir, 0o700);
   }
+  await scenario.prepare?.(dataDir);
 }
