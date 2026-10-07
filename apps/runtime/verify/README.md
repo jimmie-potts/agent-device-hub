@@ -25,9 +25,10 @@ for the port. Its loopback harness API, the run's `harness` endpoint, drives the
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop or
 silence either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
 bulb off the network or back, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
-reports the run's state: the devices, the runtime's log records and everything its bus published, each with the runtime's generation, and it answers
-[one request's records and spans](#follow-one-request). It answers only local JSON requests that name its listener, as
-the runtime's health does. Ending a stream takes only a part's source, `bunny/parts/<role>`.
+reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
+runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
+requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
+`bunny/parts/<role>`.
 
 ## Run scenarios
 
