@@ -4,14 +4,37 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {chmod, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {collectJournal} from '../dist/journal.js';
+import {CONFIG_SCHEMA, shippedModules} from '../../runtime/dist/src/index.js';
 
 const MAIN = fileURLToPath(new URL('../../runtime/dist/src/main.js', import.meta.url));
+/**
+ * A section that each shipped module taking one accepts, by module name, at addresses its simulated transport never
+ * uses. Without its section the runtime refuses a module and logs `runtime.module.refused` at ERROR, which intake turns
+ * into a finding, so the clean run configures every shipped module and runs with --simulate. A device module story
+ * adds its module's line here.
+ */
+const SECTIONS = {
+  playback: {id: 'living-room', sources: [{kind: 'sony', endpoint: 'http://127.0.0.1:10000/sony'}]},
+};
+/** Writes a private configuration file with every shipped module's section. */
+async function configuration(dir) {
+  const modules = {};
+  for (const factory of shippedModules) {
+    if (factory.simulate().manifest.configure === undefined) continue;
+    assert.ok(Object.hasOwn(SECTIONS, factory.name), `the clean run needs a section for the shipped module ${factory.name}`);
+    modules[factory.name] = SECTIONS[factory.name];
+  }
+  const file = join(dir, 'runtime-config.json');
+  await writeFile(file, JSON.stringify({schema: CONFIG_SCHEMA, modules}), {mode: 0o600});
+  await chmod(file, 0o600);
+  return file;
+}
 const UNIT = 'bunny-runtime.service';
 
 /** Runs the runtime with `args` and returns its exit code and stderr lines; `stop` sends SIGTERM once it is ready. */
@@ -39,11 +62,11 @@ const window = lines => {
 };
 const options = (lines, services = ['runtime']) => ({units: [UNIT], services, ...window(lines), maxRows: 100, maxBytes: 1024 * 1024});
 
-/** A clean run that stops on SIGTERM, then a start refused for a relative state directory. */
+/** A clean run, with every shipped module configured, that stops on SIGTERM, then a start refused for a relative state directory. */
 async function journal() {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-intake-runtime-')));
   try {
-    const clean = await runtime(['--state-dir', join(dir, 'state')], true);
+    const clean = await runtime(['--state-dir', join(dir, 'state'), '--config', await configuration(dir), '--simulate'], true);
     assert.equal(clean.code, 0);
     const refused = await runtime(['--state-dir', 'relative/state'], false);
     assert.equal(refused.code, 1);
