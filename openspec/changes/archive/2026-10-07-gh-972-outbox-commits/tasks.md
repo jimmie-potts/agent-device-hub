@@ -35,4 +35,4 @@
 - [x] 6.5 Report commit times per sync level and checkpoints in the probe, warm the delay monitor up, and correct the measurements, risks and hand-offs in `design.md`.
 - [x] 6.6 Show the fix round's negative controls fail named tests.
 - [x] 6.7 Open an existing module file through SQLite only, so a refused second open in the same process keeps the live connection's lock, with a test that another process is still refused (`apps/runtime/tests/context.test.ts`).
-- [x] 6.8 After the rebase onto #969, #971 and #968, move the Tidbyt, Pixoo and Nanoleaf tests to the module's own connection, and rebuild the `runtime-playback`, `runtime-tidbyt` and `nanoleaf-module` deltas from the synced text.
+- [x] 6.8 After the rebase onto #969, #971 and #968, move the Tidbyt, Pixoo and Nanoleaf tests to the module's own connection, and rebuild the `runtime-playback`, `runtime-tidbyt` and `nanoleaf-module` deltas from the synced text, and keep the Tidbyt module's refused-lease path under its own test and scenario.

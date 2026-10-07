@@ -113,6 +113,10 @@ Every cloud call SHALL go through one queue, one call at a time, in order, behin
 - **WHEN** a second instance of the module starts on the same state directory while the first runs and holds the lease
 - **THEN** the second's start is refused with `SQLITE_BUSY` at the module's database, which the first keeps to itself, so it takes no lease and reaches no cloud, and a second take of the cloud device's lease is refused as busy
 
+#### Scenario: A lease another holder has
+- **WHEN** the module starts while another holder has the cloud device's lease
+- **THEN** the start logs one `startup` warning with reason `busy`, the device record is `unavailable`, and nothing reaches the cloud
+
 ### Requirement: Start, restart, stop and rendering
 
 Start SHALL open only the database, the private folder with the lease, the key's file and the bus, sync both copies and return; it SHALL NOT wait on the cloud (policy A). Within 30 s of the module's start, a tile SHALL write nothing until its copy has first synced, so a start or a restart writes nothing before the shown state is known; the status tile SHALL read `FEED ?` only when its copy has not synced by then. What each tile last sent, when, and whether its installation is present SHALL survive a restart in the module's database, so a restart pushes nothing while the tile stands, and the gate SHALL hold across it. Before a push or a removal goes out, the tile SHALL store it as uncertain, with the installation's presence unknown, so a stop or a crash before its answer makes the next start read the list before it trusts the presence. The gate and the refresh SHALL run on the runtime's wall clock, and a stored time in the future SHALL count as now, so a clock set back delays a tile's next write by at most its own wait. Frames SHALL render in a worker thread through the runtime's worker call; a stop SHALL end a render in progress, and nothing SHALL be pushed after the stop. A failed render SHALL send nothing, SHALL be no evidence about the device and SHALL be tried again after the wait above.

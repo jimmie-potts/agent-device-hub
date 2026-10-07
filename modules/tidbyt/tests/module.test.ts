@@ -9,7 +9,7 @@ import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
 import {picture} from '../src/picture.js';
 import {statusFrame, statusView} from '../src/status.js';
-import {acquireLease} from '../src/lease.js';
+import {acquireLease, type Lease} from '../src/lease.js';
 import {createTidbytModule} from '../src/module.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simulated.js';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -617,6 +617,23 @@ test('a second writer for the same cloud device cannot open the module\'s databa
   assert.deepEqual(cloud.state().calls, [], 'the second writer reached no cloud');
   // The lease behind it still holds: a second take of the cloud device's lease is refused while the first runs.
   assert.deepEqual(acquireLease(join(h.stateDir, 'tidbyt', 'leases'), SIMULATED_DEVICE), {status: 'refused', reason: 'busy'});
+});
+
+test('a module whose lease another holder has logs one busy startup warning, reports the Tidbyt unavailable and writes nothing', async context => {
+  // The cloud device's lease, taken in the test's process before the module starts, as another writer would hold it.
+  let held: Lease | undefined;
+  context.after(() => { held?.release(); });
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY, before: (_cloud, stateDir) => {
+    const taken = acquireLease(join(stateDir, 'tidbyt', 'leases'), SIMULATED_DEVICE);
+    assert.equal(taken.status, 'held');
+    if (taken.status === 'held') held = taken.lease;
+  }});
+  await h.advance(60 * SECOND, SECOND);
+  assert.deepEqual(h.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'startup')
+    .map(entry => [entry.level, entry.fields['bunny.reason']]), [['warn', 'busy']], 'one startup warning names the refused lease');
+  assert.equal(h.device().availability, 'unavailable');
+  assert.deepEqual(calls(h), [], 'nothing reached the cloud');
+  assert.deepEqual(h.problems(), []);
 });
 
 test('a database that refuses commits is logged once per run, and the device record is published once it works again', async context => {

@@ -105,7 +105,10 @@ subscriber other than the core may act on a resent occurrence.
   connection, and refuse writes with `query_only` or, where reads must fail too, with an authorizer that denies every
   statement. The `runtime-tidbyt` and `nanoleaf-module` scenarios that named another connection now name a database
   that refuses writes; a second Tidbyt instance on the same state directory is now refused at the module's database,
-  before its lease, which a test still checks directly. The in-memory
+  before its lease. A test takes the lease before the module starts, so the module's refused-lease path, a `busy`
+  startup warning, an `unavailable` record and no cloud call, keeps its own test and scenario. The Tidbyt store
+  refusal now logs `internal` at ERROR, and its mapping of a busy or locked database to `unavailable` is gone, since no
+  other writer can hold the file. The in-memory
   scenario harness restarts a crashed runtime in the same process; its crash now closes that runtime's module
   databases at once, as a process's end releases them, so the next generation can open them.
 - **No `journal_size_limit`.** With one connection, every automatic checkpoint completes, so the log stays within the

@@ -70,12 +70,14 @@ export const NO_CONTROLS: Capabilities = {
 const LEASE_REASONS: Readonly<Record<LeaseRefusal, 'busy' | 'unauthorized' | 'unavailable'>> = {busy: 'busy', 'not-private': 'unauthorized', failed: 'unavailable'};
 /** SQLite's result code for a full disk, from a node:sqlite error's `errcode`. */
 const SQLITE_FULL = 13;
-const SQLITE_BUSY = 5, SQLITE_LOCKED = 6;
-/** A database refusal's registry code: `capacity` for a full disk, `unavailable` for a database another writer holds. */
+/**
+ * A database refusal's registry code: `capacity` for a full disk, `internal` for any other. No other writer can hold the
+ * module's database, which it keeps to itself (Hub #972).
+ */
 function storageCode(error: unknown): ErrorCode {
   if (error instanceof SdkError) return error.body.error.code;
   const code = typeof error === 'object' && error !== null && 'errcode' in error ? error.errcode : undefined;
-  return code === SQLITE_FULL ? 'capacity' : code === SQLITE_BUSY || code === SQLITE_LOCKED ? 'unavailable' : 'internal';
+  return code === SQLITE_FULL ? 'capacity' : 'internal';
 }
 
 export type TidbytTiming = {minIntervalMs: number; refreshMs: number; statusPollMs: number; nowPlayingPollMs: number};

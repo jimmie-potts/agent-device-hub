@@ -182,8 +182,8 @@ export type HostOptions = {
   module?: Omit<TidbytModuleOptions, 'transport'>;
   /** How many messages one subscription queue holds, so a test can overflow a copy. */
   maxQueued?: number;
-  /** Runs before the module starts, such as to queue the cloud's answers. */
-  before?: (cloud: SimulatedCloud) => void;
+  /** Runs before the module starts, such as to queue the cloud's answers or take its lease in its state directory. */
+  before?: (cloud: SimulatedCloud, stateDir: string) => void;
   /** Holds the core's first sync until `core.release()`; `host` then returns before the module's start has finished. */
   holdCore?: boolean;
 };
@@ -323,7 +323,7 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
     },
   };
   instances.push(hosted.harness);
-  options.before?.(cloud);
+  options.before?.(cloud, stateDir);
   context.after(async () => {
     await hosted.harness.stop();
     await watcher.close();
