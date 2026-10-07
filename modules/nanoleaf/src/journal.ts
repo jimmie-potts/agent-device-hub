@@ -133,7 +133,8 @@ export function transactWith(db: Db, report: Report): Transact {
     try {
       return Promise.resolve(transaction<R>(db, () => work(report)));
     } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      // A thrown value that is not an Error is kept as the cause, never turned into text (ADR 0012, "Safe errors").
+      return Promise.reject(error instanceof Error ? error : new Error('The transaction threw a value that is not an Error.', {cause: error}));
     }
   };
 }

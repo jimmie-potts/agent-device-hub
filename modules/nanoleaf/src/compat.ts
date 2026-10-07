@@ -289,13 +289,17 @@ export function sameValue(left: unknown, right: unknown): boolean {
   return false;
 }
 
-/** Python's json.loads(text): malformed JSON is a ValueError. A leading byte order mark is kept, so it fails as in Python. */
+/**
+ * Python's json.loads(text): malformed JSON is a ValueError. A leading byte order mark is kept, so it fails as in Python.
+ * The ValueError has fixed text: the parser's message quotes part of the text, which may be a device's reply or a saved
+ * credential (ADR 0012, "Safe errors"). The parser's error stays its cause.
+ */
 export function parseJson(text: string): unknown {
   try {
     const value: unknown = JSON.parse(text);
     return value;
   } catch (error) {
-    if (error instanceof SyntaxError) throw new ValueError(error.message);
+    if (error instanceof SyntaxError) throw new ValueError('Malformed JSON.', {cause: error});
     throw error;
   }
 }

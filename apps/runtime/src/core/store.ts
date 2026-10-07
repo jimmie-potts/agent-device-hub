@@ -19,7 +19,7 @@ import {constants} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {DatabaseSync, type StatementSync} from 'node:sqlite';
 import {validateExport, type Commit, type DurableState, type Session, type Storage, type StorageLease} from '@jimmie-potts/agent-state';
-import {MessageValidator, compareDelivery, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   registerCoreFamilies, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
   type SessionRecord, type TurnEnded,
@@ -384,12 +384,12 @@ export class CoreStore implements Storage {
   }
 
   #statements(): Statements {
-    if (this.#opened === undefined) throw new SdkError({error: {code: 'unavailable', retryable: true, detail: 'the core store is not open'}});
+    if (this.#opened === undefined) throw new SdkError(errorBody('unavailable', {detail: 'the core store is not open'}));
     return this.#opened.statements;
   }
 
   #outbox(): Outbox {
-    if (this.#opened === undefined) throw new SdkError({error: {code: 'unavailable', retryable: true, detail: 'the core store is not open'}});
+    if (this.#opened === undefined) throw new SdkError(errorBody('unavailable', {detail: 'the core store is not open'}));
     return this.#opened.outbox;
   }
 
