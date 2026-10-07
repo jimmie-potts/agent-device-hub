@@ -163,7 +163,7 @@ BunnyModule<PlaybackConfig> {
         log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
       };
 
-      // The record as last committed. Each start publishes a new revision, unavailable until a speaker answers.
+      // The record as last committed. Each start publishes a new revision, unavailable until every speaker's first read settles.
       const stored = db.prepare('SELECT revision FROM playback_records WHERE id = ?').get(id) as {revision: number} | undefined;
       let record = recordOf(id, (stored?.revision ?? 0) + 1, presentation.view());
       /** Whether the last commit failed, so the next evaluation publishes whatever it finds. */
@@ -185,10 +185,19 @@ BunnyModule<PlaybackConfig> {
       };
       await commit(record);
 
+      /**
+       * Whether each speaker's first read since this start has settled: answered, or failed at its deadline. Until all
+       * have, nothing is presented, so a speaker that answers first never stands in for one still being read: after a
+       * restart, an HT-A9 on another input would otherwise publish a record that says nothing plays while the Move does.
+       */
+      const firstRead = sources.map(() => false);
+      const started = (): boolean => firstRead.every(Boolean);
+      let markStarted: () => void = () => {};
+      const firstReads = new Promise<void>(resolve => { markStarted = resolve; });
       /** Publishes a new revision when availability or the presented playback changed. */
       let freshness: (() => void) | undefined;
       const evaluate = (): void => {
-        if (signal.aborted) return;
+        if (signal.aborted || !started()) return;
         const next = recordOf(id, record.revision + 1, presentation.view());
         if (dirty || content(next) !== content(record)) {
           dirty = false;
@@ -217,6 +226,8 @@ BunnyModule<PlaybackConfig> {
           // A failed read reports nothing, so the observation ages; one record per outage, not one per poll.
           reach.unreachable(device, 'unavailable');
         }
+        firstRead[index] = true;
+        if (started()) markStarted();
         evaluate();
       };
       /** The speaker's read in progress, or a new one. */
@@ -238,6 +249,16 @@ BunnyModule<PlaybackConfig> {
         void readNow(index);
       };
 
+      /** Waits for `pending`, at most one call's deadline. */
+      const atMostOneCall = async (pending: Promise<void>): Promise<void> => {
+        let cancel: Cancel = () => {};
+        const late = new Promise<void>(resolve => { cancel = scheduler.after(timeoutMs, resolve); });
+        try {
+          await Promise.race([pending, late]);
+        } finally {
+          cancel();
+        }
+      };
       /**
        * The read of a speaker that follows its last command. The next command's admission waits for it, at most one call's
        * deadline, so a queued command is checked against what the speaker reports after the command ahead of it.
@@ -246,14 +267,7 @@ BunnyModule<PlaybackConfig> {
       const settled = async (): Promise<void> => {
         const pending = settling;
         settling = undefined;
-        if (pending === undefined) return;
-        let cancel: Cancel = () => {};
-        const late = new Promise<void>(resolve => { cancel = scheduler.after(timeoutMs, resolve); });
-        try {
-          await Promise.race([pending, late]);
-        } finally {
-          cancel();
-        }
+        if (pending !== undefined) await atMostOneCall(pending);
       };
 
       /**
@@ -294,9 +308,12 @@ BunnyModule<PlaybackConfig> {
             return errorBody('duplicate-conflict', {detail: 'this requestId was used for another playback command'});
           }
           await settled();
+          // A command right after the start waits for every speaker's first read, so it goes where the record will point.
+          if (!started()) await atMostOneCall(firstReads);
           if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
           // The SDK answered the requester `uncertain-result` if the deadline passed while the command waited for the read
-          // ahead. Nothing is sent then: the command is recorded as failed, and its outcome is the definitive answer.
+          // ahead or the first reads. Nothing is sent then: the command is recorded as failed, and its outcome is the
+          // definitive answer.
           const expiresAtMs = Date.parse(command.expiresat ?? '');
           if (Number.isFinite(expiresAtMs) && clock.now() >= expiresAtMs) {
             try {
@@ -315,6 +332,8 @@ BunnyModule<PlaybackConfig> {
           if (expectedRevision !== undefined && expectedRevision !== record.revision) {
             return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
           }
+          // Until every speaker's first read settles, the record is unavailable, and no source is presented.
+          if (!started()) return errorBody('unavailable', {detail: 'not every speaker has answered since the module started'});
           // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
           const index = presentation.presented();
           const source = sources[index], device = devices[index];

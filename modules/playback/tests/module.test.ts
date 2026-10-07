@@ -131,14 +131,35 @@ test('after a start, the record stays unavailable until every speaker\'s first r
   const hosted = await host(context, speakers, {clock});
   await hosted.advance(1000);
   assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown']], 'the HT-A9 answered, but the record waits for the Move');
-  assert.equal(answer(await hosted.send('pause', 'r-early')), 'unavailable', 'a command waits for every speaker too');
-  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [[], []], 'and reaches no speaker');
+  const early = hosted.send('pause', 'r-early');
   await hosted.advance(300);
   assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown'], [2, 'available', 'playing']],
     'the first read published is the Move\'s song, never the HT-A9\'s other input');
   assert.equal(publishedAt(hosted, 1), 1200, 'published as the Move\'s first read answered');
   assert.equal(shown(hosted)?.title, 'Move song');
+  await hosted.advance(500);
+  assert.equal(answer(await early), 'accepted');
+  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [['pause'], []],
+    'a command sent meanwhile waited for the Move\'s first read, and went to the Move');
   assert.deepEqual(warnings(hosted), [], 'a slow speaker is not an unavailable one');
+  clean(hosted);
+});
+
+test('a command right after a start waits at most 1.5 s for every speaker\'s first read, then is refused unavailable', async context => {
+  // The Move takes 1 s a call, so its first read takes 3 s, each call inside its deadline.
+  const clock = manualClock();
+  const speakers = new SimulatedSpeakers({sonos: playing('Move song'), sony: playing('Sony song')}, {scheduler: clock.scheduler});
+  speakers.slow('sonos', 1000);
+  const hosted = await host(context, speakers, {clock});
+  const early = hosted.send('pause', 'r-early');
+  await hosted.advance(1400);
+  assert.deepEqual([revisions(hosted), hosted.outcomes()], [[[1, 'unavailable', 'unknown']], []], 'still waiting, with nothing decided');
+  await hosted.advance(200);
+  assert.equal(answer(await early), 'unavailable');
+  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [[], []], 'the HT-A9 answered and plays, but heard nothing');
+  await hosted.advance(1500);
+  assert.deepEqual(revisions(hosted), [[1, 'unavailable', 'unknown'], [2, 'available', 'playing']]);
+  assert.equal(shown(hosted)?.title, 'Move song', 'the Move, configured first, is presented once it answers');
   clean(hosted);
 });
 

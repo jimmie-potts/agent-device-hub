@@ -42,12 +42,16 @@ configuration with secrets, files and worker calls (#919), and the playback modu
 ### Modified Capabilities
 
 - `bunny-runtime`: the shipped list holds the Tidbyt module after the playback and LIFX modules, refused without its
-  section, and the scenario catalog covers its tiles.
+  section, and the scenario catalog covers its tiles, a restart with a slow speaker included.
+- `runtime-playback` (PR #973 review): after each start the playback record stays `unavailable`, and a command waits at
+  most 1.5 s, until every configured speaker's first read has settled, so a speaker that answers first never stands in
+  for one still being read; the simulated speakers can answer each call late.
 
 ## Impact
 
-- **Code:** `modules/tidbyt` (new); `apps/runtime/src/modules.ts`; `apps/runtime/tests/scenarios` (`catalog.ts`,
-  `catalog.test.ts`, `memory.ts`); `apps/runtime/verify` (`child.ts`, `supervisor.ts`, `protocol.ts`, `adapter.ts`,
+- **Code:** `modules/tidbyt` (new); `modules/playback` (`src/module.ts`, `src/simulated.ts`, its tests and README);
+  `apps/runtime/src/modules.ts`; `apps/runtime/tests/scenarios` (`catalog.ts`, `catalog.test.ts`, `memory.ts`,
+  `parts.ts`); `apps/runtime/verify` (`child.ts`, `supervisor.ts`, `protocol.ts`, `adapter.ts`,
   `plugin.ts`, `tests/build.test.ts`).
 - **Docs:** the module README, with the expected webcam result for #840; the runtime and verify READMEs; the old
   controller's README; `docs/development.md` ("Tidbyt module checks" and the test layers).

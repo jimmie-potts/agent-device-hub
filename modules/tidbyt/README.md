@@ -164,10 +164,15 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   yet never makes it read `FEED ?` over the tile it shows; only a copy that has
   not synced 30 s after the start reads `FEED ?`;
 - the now-playing tile waits for its copy's first sync, and then for the
-  playback module's first read. That module publishes its record `unavailable`,
-  with unknown playback, at each start before it reads a speaker, so a playing
-  card is neither removed nor pushed again across a restart. A speaker still
-  `unavailable` 30 s after the start removes the card.
+  playback module's first reads. That module keeps its record `unavailable`,
+  with unknown playback, from each start until every speaker's first read has
+  settled, so a playing card is neither removed nor pushed again across a
+  restart, even when the speaker that plays answers after the other. A speaker
+  that misses its 1.5 s read deadline counts as not playing: if the other
+  reports another input, the card is removed, and pushed again once the speaker
+  answers and the gate opens. A record still `unavailable` 30 s after the start
+  removes the card. The module follows the record it is given; the window never
+  holds a card the record says has stopped.
 
 ## Writes
 
@@ -310,8 +315,11 @@ next comes round.
   stay dimmed.
 - **A lost copy of the sessions:** the status rows dim with `?`, or the tile
   reads `FEED ?`; the tile stays in the rotation.
-- **A restart of the runtime:** both tiles stay as they were; neither is removed
-  or pushed again while what they show is unchanged.
+- **A restart of the runtime:** the now-playing tile stays as it was, neither
+  removed nor pushed again while the same song plays. The core marks every
+  stored session `uncertain` at a restart, so the status tile's rows are pushed
+  again dimmed with `?` as soon as its 15 s gate allows, and each row turns
+  bright again once its session reports again.
 
 Source tests, a running module and cloud receipts do not establish what the
 display shows; the owner's visual check does.

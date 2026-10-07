@@ -55,7 +55,7 @@ The module SHALL keep a synced copy of the core's `session` records and draw the
 
 ### Requirement: Now-playing tile from the playback record
 
-With `nowPlaying` configured, the module SHALL keep a synced copy of the playback module's `playback` records and draw the configured record as the runner's card: a green play triangle or amber pause bars, the title and the artist, for a `playing` or `paused` record that is `available` or `stale`. A `stale` record SHALL dim the card with a `?` marker. An `unavailable` record, unknown playback, a stopped track or another input SHALL remove the card. Freshness SHALL come from the record's `availability`, never from the age of `observedAtMs`. While the copy does not follow the playback module, the last card SHALL be dimmed, and it SHALL be removed once the copy has not followed for 30 s. Within 30 s of the module's start, the tile SHALL write nothing while its copy has not synced, or while the configured record is missing or `unavailable`, which the playback module publishes at each start before its first read; a record still `unavailable` after that window SHALL remove the card.
+With `nowPlaying` configured, the module SHALL keep a synced copy of the playback module's `playback` records and draw the configured record as the runner's card: a green play triangle or amber pause bars, the title and the artist, for a `playing` or `paused` record that is `available` or `stale`. A `stale` record SHALL dim the card with a `?` marker. An `unavailable` record, unknown playback, a stopped track or another input SHALL remove the card. Freshness SHALL come from the record's `availability`, never from the age of `observedAtMs`. While the copy does not follow the playback module, the last card SHALL be dimmed, and it SHALL be removed once the copy has not followed for 30 s. Within 30 s of the module's start, the tile SHALL write nothing while its copy has not synced, or while the configured record is missing or `unavailable`, which the playback module publishes at each start until every speaker's first read has settled; a record still `unavailable` after that window SHALL remove the card. The window SHALL hold nothing else: a record that says the music stopped or another input plays SHALL remove the card within the window too.
 
 #### Scenario: Play, pause, stale and the end of playback
 - **WHEN** the record plays, pauses, turns stale, then turns unavailable
@@ -66,8 +66,12 @@ With `nowPlaying` configured, the module SHALL keep a synced copy of the playbac
 - **THEN** the tile removes nothing and shows the card once its copy syncs; with no playback module at all, the leftover card is removed after 30 s
 
 #### Scenario: The playback module's start-time record
-- **WHEN** the runtime restarts while a song plays, the playback module first serves its record `unavailable` with unknown playback, then the same song playing
+- **WHEN** the runtime restarts while a song plays, the playback module first serves its record `unavailable` with unknown playback, then the same song playing, 5 s later or 1.2 s later as when the Move answers after the HT-A9
 - **THEN** the card is neither removed nor pushed again; from a fresh start with a leftover card and a record that stays `unavailable`, nothing is written for 30 s, then the card is removed
+
+#### Scenario: Another input inside the start window
+- **WHEN** the runtime restarts while a song's card has stood past its gate, and the playback record turns from `unavailable` to another input, then back to the song
+- **THEN** the card is removed, and pushed again once the song plays and its gate opens
 
 #### Scenario: A lost playback copy
 - **WHEN** the playback copy stops following its owner while a song plays

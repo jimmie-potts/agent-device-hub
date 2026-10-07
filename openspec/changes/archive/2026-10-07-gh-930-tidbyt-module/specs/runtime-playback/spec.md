@@ -1,73 +1,4 @@
-# runtime-playback Specification
-
-## Purpose
-Define the runtime's playback module: one owner of the Sony HT-A9 and the Sonos Move that polls both, publishes the presented source as the core `playback` record and answers `playback-control` with a reply and an outcome, under ADR 0012's policy A. It covers the module's private configuration and the conversion of the old Hub's block, freshness, the presented-source rule, each source's protocol, commands, diagnostics and the simulated speakers. It is source that the cutover installs; it claims no installation or speaker behavior.
-
-## Requirements
-
-### Requirement: One playback module with private speaker configuration
-
-The runtime SHALL host one module, `playback` (module API 1.1), that owns both the Sony HT-A9 and the Sonos Move sources, because the presented-source rule needs both in one owner and modules cannot import each other. Its `configure` SHALL accept a section with exactly an `id`, a routing ID of lowercase letters and digits with single hyphens and at most 128 characters, a `sources` list of one or two speakers in preference order with at most one of each kind, and optionally a `secrets` member, which it does not use. A Sony speaker SHALL be `{kind: "sony", endpoint}` with an endpoint `http://<numeric private or loopback IPv4>:<port>/sony`, and a Sonos speaker `{kind: "sonos", endpoint}` with the exact control URL `http://<numeric private or loopback IPv4>:<port>/MediaRenderer/AVTransport/Control`, neither with credentials, a query or a fragment. Any other section SHALL be refused with `invalid-request` and a fixed detail that repeats no value. The module SHALL name the record's `id` as its one device. A speaker's address SHALL NOT appear in any message, log record, error body or health entry.
-
-#### Scenario: A valid section
-- **WHEN** the section names `living-room` and the Move then the HT-A9 at private addresses
-- **THEN** the runtime accepts it, the module's device is `living-room`, and its configuration keeps the speakers in that order
-
-#### Scenario: Sections the module refuses
-- **WHEN** the section lists no speaker or three, repeats a kind, uses the former `selected` form, adds a member, gives an ID with capitals, underscores, dots, a repeated hyphen or more than 128 characters, or gives an endpoint that is HTTPS, public, named, portless, credentialed, with a query or fragment, or on another path
-- **THEN** the runtime refuses the module with `invalid-request`, its detail quotes no address, and the other modules run
-
-#### Scenario: No section
-- **WHEN** the configuration file has no `playback` section, or there is no file
-- **THEN** the runtime refuses the module with `not-found` and runs the others
-
-### Requirement: Conversion of the Hub's playback block
-
-The module SHALL provide `convertHostPlayback(block)`, which the cutover's installer runs on the old Hub's `host.json` `playback` block. It SHALL check the block as the Hub checked it at its start, apart from the Hub's own aliases: exactly `{id, sources}`, a 1.x ID of 1 to 128 letters, digits, underscores, dots or hyphens that is not an IPv4 address and carries no speaker's address, and the speaker rules above. It SHALL return the module's section with both speakers' addresses in their configured order and nothing else, because the Hub saves no playback preference beyond that order (owner decision 10, 2026-10-06). An ID outside the routing-ID form SHALL be renamed by lowercasing it and turning each run of other characters into one hyphen, or `playback` when nothing is left, and the result SHALL name the old ID. A block the Hub would refuse SHALL be refused with fixed text.
-
-#### Scenario: Both speakers converted
-- **WHEN** the block is `living-room` with the Move then the HT-A9
-- **THEN** the section is `{id: "living-room", sources: [Move, HT-A9]}` with both addresses, has no other member, and the runtime accepts it
-
-#### Scenario: A 1.x ID renamed
-- **WHEN** the block's ID is `HT-A9` or `living_room.1`
-- **THEN** the section's ID is `ht-a9` or `living-room-1`, and the result names the old ID
-
-#### Scenario: A block the Hub refused
-- **WHEN** the block has an extra member, an address-shaped ID, an ID carrying a speaker's address, a repeated kind or a bad endpoint
-- **THEN** the conversion refuses it with `invalid-request`, quoting no address
-
-### Requirement: Polling and observation freshness
-
-The module SHALL read each configured speaker when it starts and then about every two seconds on the runtime's scheduler, each call with a 1.5-second deadline that also ends when the module stops, and SHALL NOT start a read of a speaker while one is in progress. Its start SHALL NOT wait for any read (policy A). Each speaker SHALL keep its own last observation. A successful read, including an unchanged one, SHALL refresh that speaker's observation time; a failed read SHALL report nothing. A speaker SHALL be `available` below 5 seconds of age, `stale` from 5 to under 30 seconds and `unavailable` at 30 seconds or more or before its first observation, where age is the larger of the wall-clock and monotonic ages.
-
-#### Scenario: Unchanged reads
-- **WHEN** a speaker keeps reporting the same track
-- **THEN** its observation time advances with each read and it stays available
-
-#### Scenario: Reads never overlap
-- **WHEN** a speaker answers slower than the poll period
-- **THEN** each speaker is still polled again and again, never with two calls in progress at once, and stopping the module ends the polling
-
-#### Scenario: Monotonic and wall-clock age
-- **WHEN** the wall clock steps back, or the monotonic clock pauses during a suspend
-- **THEN** the speaker still turns stale or unavailable on time
-
-### Requirement: The presented source
-
-The module SHALL present, for the record and for each command's admission, the first speaker in configured order with the highest rank, where a speaker ranks first by reporting a session (a retained observation that is `playing` or `paused`), then by freshness class (`available` over `stale` over `unavailable`), then by configured order.
-
-#### Scenario: Sony alone, then grouped
-- **WHEN** the Move reports another input and the HT-A9 plays, and then the Move, configured first, plays too
-- **THEN** the HT-A9 is presented first, and then the Move
-
-#### Scenario: Move offline mid-song
-- **WHEN** the Move was playing and stops answering while the HT-A9 reports another input
-- **THEN** the Move stays presented as stale for up to 30 seconds, and then the HT-A9 is presented
-
-#### Scenario: Nothing playing
-- **WHEN** no speaker reports playing or paused
-- **THEN** the freshest speaker is presented, ties going to configured order
+## MODIFIED Requirements
 
 ### Requirement: The playback record
 
@@ -92,30 +23,6 @@ The module SHALL serve the core family `playback` through sync and publish the p
 #### Scenario: Restart
 - **WHEN** the module restarts on the same database
 - **THEN** its revisions continue above the last one it published
-
-### Requirement: Sony HT-A9 source
-
-The Sony source SHALL read `getPlayingContentInfo` version 1.2 with `[{output: ""}]`, and SHALL normalize the AirPlay entry's title, artist, optional album and state: `PLAYING`, `PAUSED` and `STOPPED` to `playing`, `paused` and `stopped`, and any other state to `unknown`. It SHALL declare pause, next and previous while AirPlay plays, only next and previous while paused, no controls otherwise, and never play. A reply without an AirPlay entry SHALL be `inactive` with no metadata or controls. A JSON-RPC error, an HTTP error, a malformed body, a reply to another ID, a dropped connection or a missed deadline SHALL fail the read. Commands SHALL call `pausePlayingContent` 1.1, `setPlayNextContent` 1.0 or `setPlayPreviousContent` 1.0 once: a result is sent, a JSON-RPC error is a refusal, and no answer is uncertain. No other receiver field, artwork URL included, SHALL be copied.
-
-#### Scenario: Paused AirPlay
-- **WHEN** the HT-A9 reports AirPlay `PAUSED` with no album
-- **THEN** the observation is paused with next and previous, and no album
-
-#### Scenario: Failed reads
-- **WHEN** a read gets an error, an HTTP 500, a non-JSON body, a wrong result, a dropped connection, no answer or another ID
-- **THEN** the observation time does not change
-
-### Requirement: Sonos Move source
-
-The Sonos source SHALL read `GetTransportInfo`, `GetPositionInfo` and `GetCurrentTransportActions` in sequence, each a 200 reply carrying its response element within 64 KiB, and any failed call SHALL fail the whole read. It SHALL treat an `x-sonos-vli` track URI as the AirPlay session and any other as `inactive` with no metadata or controls, map `PLAYING`, `PAUSED_PLAYBACK` and `STOPPED` to `playing`, `paused` and `stopped` and any other state to `unknown`, read the DIDL-Lite title, creator and album decoded once per layer, and SHALL NOT copy artwork, position or duration. It SHALL declare pause, next and previous while playing and play, next and previous while paused, each only while the Move's actions list it. Commands SHALL send `Pause`, `Play` with speed 1, `Next` or `Previous` once: HTTP 200 is sent, an HTTP 500 SOAP fault is a refusal, and anything else is uncertain.
-
-#### Scenario: Paused with play advertised
-- **WHEN** the Move reports `PAUSED_PLAYBACK` with Play, Next and Previous among its actions
-- **THEN** the observation declares play, next and previous
-
-#### Scenario: Command answers
-- **WHEN** play gets HTTP 200, next a SOAP fault, previous no answer, and previous an HTTP 500 without a fault
-- **THEN** play is sent with `<Speed>1</Speed>`, next is refused, and both previous calls are uncertain
 
 ### Requirement: Playback commands
 
@@ -180,18 +87,6 @@ The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`,
 #### Scenario: Bounded memory of commands
 - **WHEN** 65 distinct commands are sent
 - **THEN** repeating the second sends nothing, and repeating the first sends again
-
-### Requirement: Speaker failures and diagnostics
-
-Under policy A a speaker's errors and timeouts SHALL become `unavailable` state and outcomes, never a module failure, and a module whose speakers are offline at start SHALL run, report `unavailable` and refuse commands. The module SHALL log through its context under `bunny.module` only registered events and attributes: one `device.unavailable` warning when a speaker's reads start failing and DEBUG summaries at most once a minute afterwards, one `device.available` record when it answers again, `command.executing` in the command's trace when it sends a command, the outbox's `outcome.published` and `outbox.republished`, one `operation.failed` record per run of database refusals of any commit, a record, an intent or an outcome (WARN, or ERROR for `internal`), and one `operation.completed` record when a commit works again. It SHALL name a speaker in `bunny.device.id` as `<id>.<kind>`, never by address, and SHALL NOT log an exception's text, a title or an address. It SHALL record a `bunny.device.call` span around each command's speaker call, the command's child, and SHALL give no trace context to a speaker.
-
-#### Scenario: Both speakers offline at start
-- **WHEN** neither speaker answers when the module starts, and for 20 seconds after
-- **THEN** start returns at once, the record stays `unavailable` with one revision, each speaker has one `device.unavailable` warning, a pause is refused `unavailable`, and once both answer the record turns `available` with one `device.available` record each
-
-#### Scenario: The module test kit
-- **WHEN** the module runs the module test kit with simulated speakers, one instance of which never answers
-- **THEN** every check passes, policy A's offline check included
 
 ### Requirement: Simulated speakers
 

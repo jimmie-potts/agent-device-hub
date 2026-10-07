@@ -33,3 +33,11 @@
 - [x] 5.4 Assert, red before the fix, one record per run of the module's own faults with one recovery record, a refused key logged inside a run of other failures, no span for a held call, and a sync that serves only the committed record; implement each.
 - [x] 5.5 Correct the README's webcam expectations and diagnostics, the verify README and the core job's row in docs/development.md, and drop the wall-clock assertion from the offline test.
 - [x] 5.6 Show each fix's mutant fails its named tests, and rerun the gate.
+
+## 6. Review fixes, round 2 (PR #973)
+
+- [x] 6.1 Let the simulated speakers answer each call late, on a test's clock or real time, and the scenario catalog and disposable runs slow one with the `slow` action.
+- [x] 6.2 Assert, red before the fix, that after a start the playback record stays `unavailable` until every speaker's first read settles, a slow second speaker's included, that a speaker that never answers releases it at its 1.5 s read deadline, and that a command right after a start waits at most 1.5 s for those reads; implement each in the playback module.
+- [x] 6.3 Assert, red before the fix, in `tidbyt-tiles` in process and through the edge, that a restart while a song's card has stood past its gate, with the Move answering 400 ms late, neither removes nor pushes the card, and that the status rows come back dimmed; pin in a module test that the Tidbyt module follows an in-between record it is given.
+- [x] 6.4 Update the playback, Tidbyt, runtime and verify READMEs, with the restart's dimmed status rows in the webcam expectations, and the `runtime-playback`, `runtime-tidbyt` and `bunny-runtime` specs.
+- [x] 6.5 Show the old publication order fails the new tests, and rerun the gate.

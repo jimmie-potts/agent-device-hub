@@ -165,7 +165,7 @@ test('a start never removes a playing card while the playback module publishes i
   const h = await host(context, {sessions: [], playback: playback('playing')});
   await until(() => pushes(h, NOW_PLAYING) === 1, 'the card');
   await h.advance(20 * SECOND);
-  // The runtime restarts: the playback module publishes `unavailable`, with unknown playback, before its first read.
+  // The runtime restarts: the playback module publishes `unavailable`, with unknown playback, before its first reads settle.
   await h.stop();
   await owner(h).set(unavailablePlayback());
   await h.start();

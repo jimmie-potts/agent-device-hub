@@ -481,8 +481,9 @@ class TidbytRun {
     if (!copy.everSynced && starting) return {kind: 'hold'};
     const wanted = this.#config.nowPlaying?.playback;
     const record = (copy.copy?.states() ?? []).map(message => message.data as PlaybackState).find(entry => entry.id === wanted);
-    // The playback module publishes `unavailable`, with unknown playback, at each start, before its first read: the card
-    // waits for that read, for at most the start window, and is never removed for want of it.
+    // The playback module publishes `unavailable`, with unknown playback, from each start until every speaker's first read
+    // settles: the card waits for those reads, for at most the start window, and is never removed for want of them. Any
+    // other record is followed, inside the window too.
     if (starting && (record === undefined || record.availability === 'unavailable')) return {kind: 'hold'};
     const view = nowPlayingView({record, following: copy.following, lostForMs});
     return view.card ? {kind: 'show', key: JSON.stringify(view), request: {tile: 'now-playing', view}} : {kind: 'remove'};
