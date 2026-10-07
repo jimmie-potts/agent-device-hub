@@ -150,10 +150,10 @@ straight back to the requester, never to subscribers.
 As ADR 0012's "Errors, effects and outcomes" says, `rejected` proves that the
 command had no effect: it never reached the handler, or the handler refused it
 with an error body before acting. Once the handler has started, an exception may
-come after an effect, so the request is `uncertain`, never a refusal. That
-includes an `SdkError` from a call the handler makes, and a throw before the
-handler acted, which the SDK cannot tell apart. A responder that can refuse
-should return its error body instead of throwing.
+come after an effect, so the request is `uncertain`, never a refusal. This holds
+for an `SdkError` from a call the handler makes, and for a throw before the
+handler acted: the SDK cannot tell a throw before an effect from one after it.
+A responder that can refuse should return its error body instead of throwing.
 
 The SDK never sends a command twice, and a reply that arrives after the
 deadline is ignored. Error bodies carry the `requestId` and the command's trace
@@ -386,12 +386,12 @@ async start({sdk, database, clock}) {
   `work` must be synchronous: its type refuses a promise, and one returned anyway
   rolls the work back with a `TypeError`. The outbox opens the transaction
   itself.
-- Committed is not published. Once the work commits, the promise resolves with
-  `work`'s result after the publish ends, and never rejects, so no caller takes
-  a failed publish for a rollback and does the work again. If publishing is
-  refused, for example because the module is stopping, the messages stay
-  stored, unpublished, and the next transaction or start sends them unchanged.
-  Nothing sends them again on its own.
+- A commit stands even when its publish fails. Once the work commits, the
+  promise resolves with `work`'s result after the publish ends, and never
+  rejects, so no caller takes a failed publish for a rollback and does the work
+  again. If publishing is refused, for example because the module is stopping,
+  the messages stay stored, unpublished, and the next transaction or start
+  sends them unchanged. Nothing sends them again on its own.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One
@@ -443,9 +443,9 @@ Each check hosts a fresh instance of the module on its own bus and state
 directory, with a stand-in owner, `bunny/core`, serving the families it copies.
 Under ADR 0012's failure isolation (policy A), a device's errors and timeouts
 become outcomes and an `unavailable` device state, never a module failure, and
-only an error that escapes the module stops it. The kit therefore fails a module
-whose handler, timer or worker fails; a check that a device failure stays with
-the device belongs to [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919).
+only an error that escapes the module stops it. The kit fails a module whose
+handler, timer or worker fails. A check that a device failure stays with the
+device belongs to [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919).
 Every message the check sees must follow profile 2.0, with the core families,
 the stand-in acknowledgment and `spec.schemas` registered. Every record the
 module logs must be one the runtime writes whole as a
@@ -558,8 +558,8 @@ HTTP status that fits its code.
   process, and sends no reply message.
 - **Safe errors.** An exception that the edge did not expect is answered with
   `internal` and the fixed detail `the edge failed`, in the response and in the
-  edge's log record. Its message, stack and cause stay in memory. Only the
-  edge's and the SDK's own refusals carry their own fixed text.
+  edge's log record. Its message, stack and cause stay in memory. Refusals that
+  the edge or the SDK raises keep their own fixed text.
 - **Subscriptions.** `subscribe` resolves once the edge has registered the
   subscription, so nothing published after it is missed. Messages come down the
   stream in order.
