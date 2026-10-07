@@ -22,7 +22,7 @@ type Row = Record<string, unknown>;
 const optionsSchema = z.object({repeat:z.boolean().optional(), shuffle:z.boolean().optional()}).strict();
 const json = <T>(value:unknown):T => JSON.parse(String(value)) as T;
 /** The tables of a database the caller owns that are not the catalog's: the SDK's outbox and a module's own. */
-const CALLER_TABLES=/^(?:bunny|pixoo)_/;
+export const CALLER_TABLES=/^(?:bunny|pixoo)_/;
 const HOSTED='pixoo64-hosted-2026-10-01';
 /**
  * Where an attached library keeps each multi-frame rendition's hosted check, by rendition and profile: whether its frames
