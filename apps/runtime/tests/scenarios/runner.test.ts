@@ -117,8 +117,8 @@ it('each harness generates its own tokens, and none appears in a log record, an 
     const result = await runScenario(named('command-tracked-outcome'), first);
     assert.equal(result.outcome, 'passed');
     const tokens = first.tokens();
-    assert.equal(tokens.length, 4, 'one per part');
-    assert.equal(new Set([...tokens, ...second.tokens()]).size, 8, 'no token repeats within or across harnesses');
+    assert.equal(tokens.length, 5, 'one per part, and the agent hooks\' producer\'s (Hub #926)');
+    assert.equal(new Set([...tokens, ...second.tokens()]).size, 10, 'no token repeats within or across harnesses');
     const seen = JSON.stringify([first.logs(), first.edgeLog(), first.published(), first.reader.heard()]);
     for (const token of tokens) assert.equal(seen.includes(token), false);
   } finally {

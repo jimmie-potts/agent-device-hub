@@ -61,7 +61,7 @@ export interface MemoryHarness extends Harness {
    * One recorder serves every generation, so a restart's spans follow the crashed runtime's.
    */
   spans(): Promise<readonly string[]>;
-  /** The run-generated tokens, one per part, so a test can show they never leak. */
+  /** The run-generated tokens, one per part and the agent hooks' producer's, so a test can show they never leak. */
   tokens(): readonly string[];
   /** Stops everything the harness started and removes its state directory. */
   close(): Promise<void>;
