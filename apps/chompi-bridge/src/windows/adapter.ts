@@ -1,8 +1,8 @@
 import { win32 as winPath } from 'node:path';
 import {
   MAX_PICKER_ITEMS, MAX_PICKER_LABEL, OS_ADAPTER_VERSION, type CardButtons, type ClaudeDesktopSession, type ClaudeSettings, type Client, type ClientVersions,
-  type ForegroundWindow, type KeyName, type KeyRequest, type Observation, type OsAdapter, type PickerAnnouncement, type PickerItem, type PickerState,
-  type VolumeKey,
+  type ForegroundWindow, type KeyName, type KeyRequest, type MenuKind, type Observation, type OsAdapter, type PickerAnnouncement, type PickerItem,
+  type PickerSlider, type PickerState, type SettingButton, type SettingControl, type VolumeKey,
 } from '../os-adapter.js';
 import { claudeSessions, claudeSettings, CodexArchiveIndex, CodexThreadNames, type CodexArchiveOptions, type CodexThreadNameOptions } from './client-files.js';
 import { CLAUDE_PACKAGE_FAMILY, PACKAGE_FAMILIES } from './constants.js';
@@ -80,38 +80,56 @@ const PICKER_KINDS = new Set(['option', 'action', 'toggle']);
 /** Codex's picker announcement: `<model> <level>, <n> of <count>.` */
 const ANNOUNCEMENT = /^(\S.*\S|\S), (\d{1,2}) of (\d{1,2})\.?$/;
 
+const MENU_KINDS: Readonly<Record<Client, readonly MenuKind[]>> = { claude: ['claude-model'], codex: ['codex-picker', 'codex-models'] };
+const SETTING_CONTROLS: Readonly<Record<Client, readonly SettingControl[]>> = { claude: ['claude-model', 'claude-effort'], codex: ['codex-picker'] };
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isMenuKind = (client: Client, menu: unknown): menu is MenuKind => MENU_KINDS[client].includes(menu as MenuKind);
+const isSettingControl = (client: Client, control: unknown): control is SettingControl => SETTING_CONTROLS[client].includes(control as SettingControl);
+/** A valid entry index into a menu of `count` entries. */
+const validMenuIndex = (index: unknown, count: unknown): boolean =>
+  isCount(count, MAX_PICKER_ITEMS) && count >= 1 && isCount(index, MAX_PICKER_ITEMS) && index < count;
+
 /** Parses the helper's `pickerState` reply; null when anything is out of shape. */
 function parsePickerState(client: Client, value: unknown): PickerState | null {
   const { menu, slider, model, effort, announcement } = record(value);
-  const label = (entry: unknown): string | null | undefined => entry === null ? null : isLabel(entry) ? entry : undefined;
+  const button = (entry: unknown): SettingButton | null | undefined => {
+    if (entry === null) return null;
+    const { label, expanded } = record(entry);
+    return isLabel(label) && typeof expanded === 'boolean' ? { label, expanded } : undefined;
+  };
   let parsedMenu: PickerState['menu'] = null;
   if (menu !== null) {
-    const { label: menuLabel, items, focused } = record(menu);
-    if (!isLabel(menuLabel) || !Array.isArray(items) || items.length > MAX_PICKER_ITEMS) return null;
+    const { kind, label: menuLabel, items, focused, hasFocus } = record(menu);
+    if (!isMenuKind(client, kind) || !isLabel(menuLabel) || !Array.isArray(items) || items.length > MAX_PICKER_ITEMS || typeof hasFocus !== 'boolean') return null;
     const parsedItems: PickerItem[] = [];
     for (const item of items) {
-      const { kind, label: itemLabel, selected } = record(item);
-      if (typeof kind !== 'string' || !PICKER_KINDS.has(kind) || !isLabel(itemLabel) || typeof selected !== 'boolean') return null;
-      parsedItems.push({ kind: kind as PickerItem['kind'], label: itemLabel, selected });
+      const { kind: itemKind, label: itemLabel, selected } = record(item);
+      if (typeof itemKind !== 'string' || !PICKER_KINDS.has(itemKind) || !isLabel(itemLabel) || typeof selected !== 'boolean') return null;
+      parsedItems.push({ kind: itemKind as PickerItem['kind'], label: itemLabel, selected });
     }
     const index = focused === -1 ? null : isCount(focused, MAX_PICKER_ITEMS) && focused < parsedItems.length ? focused : undefined;
     if (index === undefined) return null;
-    parsedMenu = { label: menuLabel, items: parsedItems, focused: index };
+    parsedMenu = { kind, label: menuLabel, items: parsedItems, focused: index, hasFocus };
   }
-  const parsed = { slider: label(slider), model: label(model), effort: label(effort), announcement: label(announcement) };
-  if (Object.values(parsed).some(entry => entry === undefined)) return null;
+  let parsedSlider: PickerSlider | null = null;
+  if (slider !== null) {
+    const { value: sliderValue, min, max, step } = record(slider);
+    if (!isNumber(sliderValue) || !isNumber(min) || !isNumber(max) || !isNumber(step) || step <= 0 || min > max) return null;
+    parsedSlider = { value: sliderValue, min, max, step };
+  }
+  const buttons = { model: button(model), effort: button(effort) };
+  if (buttons.model === undefined || buttons.effort === undefined || (announcement !== null && !isLabel(announcement))) return null;
   let heard: PickerAnnouncement | null = null;
-  const match = client === 'codex' && parsed.announcement ? ANNOUNCEMENT.exec(parsed.announcement) : null;
+  const match = client === 'codex' && typeof announcement === 'string' ? ANNOUNCEMENT.exec(announcement) : null;
   if (match) {
     const position = Number(match[2]), count = Number(match[3]);
     // An announcement out of shape is not guessed at: the readback is then unverified.
     if (position >= 1 && position <= count) heard = { label: match[1], position, count };
   }
-  // Claude's composer buttons carry the model and effort; Codex's carry nothing, and only Codex announces.
+  // Only Claude has an Effort button and slider, and only Codex announces.
   return {
-    menu: parsedMenu, slider: parsed.slider!,
-    model: client === 'claude' ? parsed.model! : null, effort: client === 'claude' ? parsed.effort! : null,
-    announcement: heard,
+    menu: parsedMenu, slider: client === 'claude' ? parsedSlider : null, model: buttons.model,
+    effort: client === 'claude' ? buttons.effort : null, announcement: heard,
   };
 }
 
@@ -322,6 +340,77 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       if (closed) return unknown('adapter-closed');
       if (!isClient(client)) return unknown('invalid-client');
       return windowQuery(client, 'pickerState', { client }, value => parsePickerState(client, value), unknown(`${client}-not-foreground`));
+    },
+
+    /** The setting actions re-read their target in the helper and refuse on any difference; see UIA-NOTES.md. */
+    async expandSetting(client: Client, control: SettingControl): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (!isSettingControl(client, control)) return unknown('invalid-setting');
+      return windowQuery(client, 'expandSetting', { client, control }, value => {
+        const { expanded } = record(value);
+        return typeof expanded === 'boolean' ? expanded : null;
+      }, unknown(`${client}-not-foreground`));
+    },
+
+    async collapseSetting(client: Client, control: SettingControl): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (client !== 'claude' || !isSettingControl(client, control)) return unknown('collapse-unsupported');
+      return windowQuery(client, 'collapseSetting', { client, control }, value => {
+        const { collapsed } = record(value);
+        return typeof collapsed === 'boolean' ? collapsed : null;
+      }, unknown(`${client}-not-foreground`));
+    },
+
+    async invokeSelectModel(client: Client): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'codex') return unknown('invalid-client');
+      return windowQuery(client, 'invokeSelectModel', { client }, value => record(value).invoked === true ? true : null, unknown('codex-not-foreground'));
+    },
+
+    async focusMenuEntry(client: Client, menu: MenuKind, index: number, count: number): Promise<Observation<number | null>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (!isMenuKind(client, menu)) return unknown('invalid-menu');
+      if (!validMenuIndex(index, count)) return unknown('invalid-menu-index');
+      const reply = await windowQuery<{ focused: number | null }>(client, 'focusMenuEntry', { client, menu, index, count }, value => {
+        const { focused } = record(value);
+        if (focused === -1) return { focused: null };
+        return isCount(focused, MAX_PICKER_ITEMS) && focused < count ? { focused } : null;
+      }, unknown(`${client}-not-foreground`));
+      return reply.status === 'unknown' ? reply : known(reply.value.focused);
+    },
+
+    async selectMenuOption(client: Client, menu: MenuKind, index: number, count: number): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      if (!isMenuKind(client, menu) || menu === 'codex-picker') return unknown('invalid-menu');
+      if (!validMenuIndex(index, count)) return unknown('invalid-menu-index');
+      return windowQuery(client, 'selectMenuOption', { client, menu, index, count }, value => {
+        const { selected } = record(value);
+        return typeof selected === 'boolean' ? selected : null;
+      }, unknown(`${client}-not-foreground`));
+    },
+
+    async setSliderValue(client: Client, from: number, to: number): Promise<Observation<number | null>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'claude') return unknown('invalid-client');
+      if (!isNumber(from) || !isNumber(to) || from === to) return unknown('invalid-slider-value');
+      const reply = await windowQuery<{ value: number }>(client, 'setSliderValue', { client, from, to }, value => {
+        const { value: now } = record(value);
+        return isNumber(now) ? { value: now } : null;
+      }, unknown('claude-not-foreground'));
+      return reply.status === 'unknown' ? reply : known(reply.value.value === to ? to : null);
+    },
+
+    async focusComposer(client: Client): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (!isClient(client)) return unknown('invalid-client');
+      return windowQuery(client, 'focusComposer', { client }, value => {
+        const { focused } = record(value);
+        return typeof focused === 'boolean' ? focused : null;
+      }, unknown(`${client}-not-foreground`));
     },
 
     async claudeSettings(localId: string): Promise<Observation<ClaudeSettings | null>> {

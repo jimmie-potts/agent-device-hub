@@ -24,8 +24,12 @@ test('an unsupported platform observes nothing and refuses every action', async 
   assert.deepEqual(await adapter.focusCardButton('claude', '42.1', 0, 2), unknown);
   assert.deepEqual(await adapter.invokeCardButton('claude', '42.1', 0, 2), unknown);
   assert.deepEqual(await adapter.pickerState('claude'), unknown);
+  for (const call of [adapter.expandSetting('claude', 'claude-model'), adapter.collapseSetting('claude', 'claude-model'), adapter.invokeSelectModel('codex'),
+    adapter.focusMenuEntry('claude', 'claude-model', 0, 2), adapter.selectMenuOption('claude', 'claude-model', 0, 2), adapter.setSliderValue('claude', 0, 1), adapter.focusComposer('claude')]) {
+    assert.deepEqual(await call, unknown);
+  }
   assert.deepEqual(await adapter.claudeSettings('local_4f1e2d3c-1b2a-4c5d-8e9f-a0b1c2d3e4f5'), unknown);
-  for (const call of [adapter.sendKeys({ action: 'tap', keys: ['Enter'] }), adapter.openUri('codex://threads/x'), adapter.sendVolumeKey('VolumeUp', 1), adapter.tapInClient('codex', ['Down'], 1)]) {
+  for (const call of [adapter.sendKeys({ action: 'tap', keys: ['Enter'] }), adapter.openUri('codex://threads/x'), adapter.sendVolumeKey('VolumeUp', 1), adapter.tapInClient('codex', ['Escape'], 1)]) {
     await assert.rejects(call, error => error instanceof OsAdapterNotImplementedError && error.code === 'os-adapter-not-implemented');
   }
   await adapter.releaseAll();

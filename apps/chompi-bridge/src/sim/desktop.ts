@@ -5,7 +5,7 @@ import {
 } from '../os-adapter.js';
 import { KEY_NAMES } from '../routing/profile.js';
 import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constants.js';
-import { SimPickers, type PickerSeed } from './pickers.js';
+import { PickerRefusal, SimPickers, type PickerResult, type PickerSeed } from './pickers.js';
 
 /**
  * A simulated Codex and Claude desktop behind OS adapter interface version 5, for disposable verification runs and the
@@ -21,8 +21,10 @@ import { SimPickers, type PickerSeed } from './pickers.js';
  * - releasing the dictation chord inserts a fixed synthetic phrase into the focused composer, as Wispr would;
  * - a volume key changes a synthetic system volume (2 points per press, 0-100) or toggles mute, reaches no window and,
  *   like the Windows keyboard, is refused while any key is held; a volume step unmutes, as Windows does;
- * - each client has the model and effort controls of `SimPickers` (#906): an open menu or slider takes the keys, so an
- *   Enter there picks a model instead of sending, and Claude's `LeftControl`+`LeftAlt`+`Minus` splits the pane.
+ * - each client has the model and effort controls of `SimPickers` (#906), driven by UI Automation actions and keys: an
+ *   open menu or slider takes the keys, so an Enter there picks a model instead of sending, and Claude's
+ *   `LeftControl`+`LeftAlt`+`Minus` splits the pane. `pickers.lag` makes each read after a change return the state from
+ *   before it once, as a lagging UI Automation view would.
  *
  * Everything is synthetic: titles and text come from the run's seed or its operator, never from a real desktop. This
  * proves routing behavior, not Windows client fidelity (UI Automation trees, real focus timing, Wispr).
@@ -316,6 +318,37 @@ export class SimulatedDesktop {
     return true;
   }
 
+  /**
+   * @internal A UI Automation action on the client's model and effort controls (#906), only while it is in front; a
+   * refusal answers unknown, as the adapter does.
+   */
+  pickerAction<T>(client: Client, act: () => PickerResult<T>): Observation<T> {
+    if (!isClient(client) || !this.clientInFront(client)) return unknown(`${String(client)}-not-foreground`);
+    try {
+      return known(this.#applyPicker(client, act()));
+    } catch (error) {
+      if (error instanceof PickerRefusal) return unknown(error.message);
+      throw error;
+    }
+  }
+
+  /** @internal The bridge gives the client's composer keyboard focus, which closes an open menu or slider (#906). */
+  focusComposerFromBridge(client: Client): Observation<boolean> {
+    if (!isClient(client) || !this.clientInFront(client)) return unknown(`${String(client)}-not-foreground`);
+    if (client === 'codex' && this.#cards.codex) return unknown('codex-composer-absent');
+    this.pickers.dismiss(client);
+    this.#composer[client].focused = true;
+    this.#record({ kind: 'picker', client, action: 'focus-composer' });
+    return known(true);
+  }
+
+  #applyPicker<T>(client: Client, result: PickerResult<T>): T {
+    if (result.composerFocused !== undefined) this.#composer[client].focused = result.composerFocused && !(client === 'codex' && this.#cards.codex);
+    for (const event of result.events) this.#record({ kind: 'picker', client, ...event });
+    if (result.events.length === 0) this.#changed();
+    return result.value;
+  }
+
   /** @internal A volume key acts on the system, never a window; like the Windows keyboard it never joins held keys. */
   volume(key: VolumeKey, presses: number): void {
     if (this.#held.size > 0) throw new Error('keys-held');
@@ -392,10 +425,8 @@ export class SimulatedDesktop {
     const front = this.#foreground;
     // An open menu or slider has keyboard focus and takes every key; the picker shortcuts open one (#906).
     if (isClient(front)) {
-      const tap = this.pickers.tap(front, chord, { composerFocused: this.#composer[front].focused, card: this.#cards[front] !== null });
-      if (tap.composerFocused !== undefined) this.#composer[front].focused = tap.composerFocused && !(front === 'codex' && this.#cards.codex);
-      for (const event of tap.events) this.#record({ kind: 'picker', client: front, ...event });
-      if (tap.consumed) return;
+      const tap = this.#applyPicker(front, this.pickers.tap(front, chord, { composerFocused: this.#composer[front].focused, card: this.#cards[front] !== null }));
+      if (tap) return;
     }
     if (chord === CODEX_COMPOSER_SHORTCUT && front === 'codex' && !this.#cards.codex) this.#composer.codex.focused = true;
     if (chord !== 'Enter' || !isClient(front)) return;
@@ -521,6 +552,19 @@ export function createSimulatedOsAdapter(desktop: SimulatedDesktop): SimulatedOs
       if (!isClient(client) || !desktop.clientInFront(client)) return Promise.resolve(unknown(`${String(client)}-not-foreground`));
       return Promise.resolve(known(desktop.pickers.state(client)));
     },
+    expandSetting: (client, control) => { enter('expandSetting'); return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.expand(client, control))); },
+    collapseSetting: (client, control) => { enter('collapseSetting'); return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.collapse(client, control))); },
+    invokeSelectModel: client => { enter('invokeSelectModel'); return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.invokeSelectModel(client))); },
+    focusMenuEntry: (client, menu, index, count) => {
+      enter('focusMenuEntry');
+      return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.focusEntry(client, menu, index, count)));
+    },
+    selectMenuOption: (client, menu, index, count) => {
+      enter('selectMenuOption');
+      return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.selectOption(client, menu, index, count)));
+    },
+    setSliderValue: (client, from, to) => { enter('setSliderValue'); return Promise.resolve(desktop.pickerAction<number | null>(client, () => desktop.pickers.setSlider(client, from, to))); },
+    focusComposer: client => { enter('focusComposer'); return Promise.resolve(desktop.focusComposerFromBridge(client)); },
     claudeSettings: localId => {
       enter('claudeSettings');
       return Promise.resolve(known(desktop.claudeRecords([localId]).length ? desktop.pickers.claudeSettings(localId) : null));

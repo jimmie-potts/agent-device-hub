@@ -85,13 +85,24 @@ let nonAsciiTitle = 'codex-not-running';
 let codexApprovalCount = 'codex-not-running';
 let codexCardButtons = 'codex-not-running';
 let codexPicker = 'codex-not-running';
-/** The picker read (#906) is read-only; the summary keeps its shape, not the labels. */
+/**
+ * The picker read (#906) is read-only: it records which qualified controls the helper finds and which UI Automation
+ * patterns they expose (a setting button is listed only when it supports ExpandCollapse; a slider only with RangeValue),
+ * never their labels. A refusal, such as an ambiguous Codex picker button, is recorded, not asserted, because it is
+ * itself the qualification evidence. No setting action is called.
+ */
 const pickerShape = reply => {
-  assert.equal(reply.ok, true, `pickerState: ${reply.reason ?? ''}`);
+  if (!reply.ok) return { refused: reply.reason };
   assert.deepEqual(Object.keys(reply.value).sort(), ['announcement', 'effort', 'menu', 'model', 'slider']);
   const { menu, slider, model, effort, announcement } = reply.value;
   if (menu) assert.ok(Array.isArray(menu.items) && menu.items.length <= 64 && Number.isInteger(menu.focused));
-  return { menu: menu ? { entries: menu.items.length, focused: menu.focused } : null, slider: slider !== null, model: model !== null, effort: effort !== null, announcement: announcement !== null };
+  return {
+    menu: menu ? { kind: menu.kind, entries: menu.items.length, options: menu.items.filter(item => item.kind === 'option').length, focused: menu.focused, hasFocus: menu.hasFocus } : null,
+    slider: slider ? { rangeValue: true, min: slider.min, max: slider.max, step: slider.step } : null,
+    modelButton: model ? { expandCollapse: true, expanded: model.expanded } : null,
+    effortButton: effort ? { expandCollapse: true, expanded: effort.expanded } : null,
+    announcement: announcement !== null,
+  };
 };
 if (codexWindow.length === 2 && codexWindow.every(Number.isInteger)) {
   const reply = await helper.request('codexSelectedTitle', { hwnd: codexWindow[0], processId: codexWindow[1], title: `\u00e9\u2014\u4e2d\u{1f600} ${randomUUID()}` });
@@ -165,13 +176,13 @@ for (const [key, presses] of [['VolumeUp', 0], ['VolumeDown', 11], ['Enter', 1]]
 }
 // The model and effort keys (#906) use the same guarded SendInput. Their key table is checked, and malformed client taps
 // are refused before the window in front is even read; no key is sent.
-assert.deepEqual([...NAVIGATION_KEY_CODES], [['Up', 0x26], ['Down', 0x28], ['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b]]);
+assert.deepEqual([...NAVIGATION_KEY_CODES], [['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b]]);
 assert.deepEqual([VIRTUAL_KEYS.get('Equal'), VIRTUAL_KEYS.get('Minus')], [0xbb, 0xbd]);
-for (const [client, keys, presses] of [['codex', ['PageDown'], 1], ['claude', ['Down'], 0], ['claude', [], 1], ['other', ['Escape'], 1]]) {
+for (const [client, keys, presses] of [['codex', ['PageDown'], 1], ['codex', ['Down'], 1], ['claude', ['Escape'], 0], ['claude', [], 1], ['other', ['Escape'], 1]]) {
   await assert.rejects(adapter.tapInClient(client, keys, presses), error => ['invalid-key-request', 'unknown-key'].includes(error.code), `${client} ${keys} x${presses} is refused`);
 }
 const pickerCodex = await adapter.pickerState('codex');
-assert.ok(pickerCodex.status === 'known' ? pickerCodex.value.model === null : typeof pickerCodex.reason === 'string', 'Codex reports no composer model label');
+assert.ok(pickerCodex.status === 'known' ? pickerCodex.value.effort === null && pickerCodex.value.slider === null : typeof pickerCodex.reason === 'string', 'Codex has no Effort button or slider');
 assert.deepEqual(await adapter.claudeSettings(`local_${randomUUID()}`), { status: 'known', value: null }, 'a missing record has no settings');
 await adapter.close();
 assert.equal(guarded.calls, 0, 'no keystroke or link was attempted');
@@ -208,7 +219,8 @@ console.log(JSON.stringify({
   osAdapter: {
     scope: 'read-only; SendInput (keys, volume keys, wheel, client taps) and ShellExecute guarded, zero attempts; no card button focused or pressed',
     volumeKeys: { table: 'VolumeUp 0xAF, VolumeDown 0xAE, VolumeMute 0xAD', malformedRefused: true, sent: 0 },
-    clientTaps: { table: 'Up 0x26, Down 0x28, Left 0x25, Right 0x27, Escape 0x1B, Equal 0xBB, Minus 0xBD', malformedRefused: true, sent: 0 },
+    clientTaps: { table: 'Left 0x25, Right 0x27, Escape 0x1B, Equal 0xBB, Minus 0xBD', malformedRefused: true, sent: 0 },
+    settingActions: 'none called: no Expand, Collapse, Invoke, SetFocus, Select or SetValue',
     codexPicker,
     claudePicker,
     ffiLoaded: true,

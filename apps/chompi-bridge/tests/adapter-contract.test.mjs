@@ -55,7 +55,8 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     assert.equal(d.adapter.version, OS_ADAPTER_VERSION);
     assert.equal(typeof d.adapter.platform, 'string');
     for (const method of ['clientVersions', 'foregroundWindow', 'openUri', 'sendKeys', 'sendVolumeKey', 'releaseAll', 'scrollClient', 'codexSelectedThread', 'composerFocused',
-      'approvalVisible', 'cardButtons', 'focusCardButton', 'invokeCardButton', 'tapInClient', 'pickerState', 'claudeSettings', 'codexArchived', 'claudeSessions', 'close']) {
+      'approvalVisible', 'cardButtons', 'focusCardButton', 'invokeCardButton', 'tapInClient', 'pickerState', 'expandSetting', 'collapseSetting', 'invokeSelectModel',
+      'focusMenuEntry', 'selectMenuOption', 'setSliderValue', 'focusComposer', 'claudeSettings', 'codexArchived', 'claudeSessions', 'close']) {
       assert.equal(typeof d.adapter[method], 'function', method);
     }
     const versions = await d.adapter.clientVersions();
@@ -178,59 +179,78 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     await d.adapter.releaseAll();
   });
 
-  test(`${name}: model and effort controls open, step, pick and close as the clients do, only for the client in front (#906)`, async () => {
+  test(`${name}: model and effort controls open, move, select and close as the clients do, only for the client in front (#906)`, async () => {
     const d = make(new ManualClock(1_000));
     d.claudeSession(lid(1));
     d.selectClaude(lid(1));
     d.front('claude');
     d.focusComposer('claude');
+    const state = async client => (await d.adapter.pickerState(client)).value;
     assert.deepEqual(await d.adapter.pickerState('codex'), { status: 'unknown', reason: 'codex-not-foreground' });
-    assert.deepEqual(await d.adapter.tapInClient('codex', ['LeftControl', 'LeftShift', 'M'], 1), known(false), 'a key for a client not in front is not typed');
+    assert.equal((await d.adapter.expandSetting('codex', 'codex-picker')).status, 'unknown', 'no action for a client not in front');
+    assert.deepEqual(await d.adapter.tapInClient('codex', ['Escape'], 1), known(false), 'a key for a client not in front is not typed');
     assert.equal(d.typed(), 0);
-    await assert.rejects(d.adapter.tapInClient('claude', ['PageDown'], 1));
-    await assert.rejects(d.adapter.tapInClient('claude', ['Down'], 11));
-    const closed = (await d.adapter.pickerState('claude')).value;
-    assert.deepEqual([closed.menu, closed.slider, closed.model, closed.effort, closed.announcement], [null, null, 'Sonnet 5.5', 'Low', null]);
-    // Claude's model menu: no entry focused at first; the first Down focuses the first entry.
-    assert.deepEqual(await d.adapter.tapInClient('claude', ['LeftControl', 'LeftShift', 'I'], 1), known(true));
-    let menu = (await d.adapter.pickerState('claude')).value.menu;
-    assert.deepEqual([menu.label, menu.focused, menu.items.map(i => i.kind)], ['Model: Sonnet 5.5', null, ['option', 'option', 'option', 'option', 'action']]);
-    assert.deepEqual(await d.adapter.composerFocused('claude'), known(false), 'the menu takes keyboard focus');
-    await d.adapter.tapInClient('claude', ['Down'], 2);
-    assert.equal((await d.adapter.pickerState('claude')).value.menu.focused, 1);
-    await d.adapter.tapInClient('claude', ['Enter'], 1);
-    const picked = (await d.adapter.pickerState('claude')).value;
-    assert.deepEqual([picked.menu, picked.model], [null, 'Fable 5.1']);
+    await assert.rejects(d.adapter.tapInClient('claude', ['Down'], 1), 'Up and Down are gone');
+    await assert.rejects(d.adapter.tapInClient('claude', ['Escape'], 11));
+    const closed = await state('claude');
+    assert.deepEqual([closed.menu, closed.slider, closed.model, closed.effort], [null, null, { label: 'Sonnet 5.5', expanded: false }, { label: 'Low', expanded: false }]);
+    // Claude's model menu: Expand, SetFocus, Select on the focused option only; Collapse closes it unchanged.
+    assert.deepEqual(await d.adapter.expandSetting('claude', 'claude-model'), known(true));
+    assert.equal((await d.adapter.expandSetting('claude', 'claude-model')).status, 'unknown', 'only a collapsed button expands');
+    let menu = (await state('claude')).menu;
+    assert.deepEqual([menu.kind, menu.label, menu.focused, menu.items.map(i => i.kind)], ['claude-model', 'Model: Sonnet 5.5', null, ['option', 'option', 'option', 'option', 'action']]);
+    assert.deepEqual(await d.adapter.selectMenuOption('claude', 'claude-model', 1, 5), known(false), 'an option without focus is not selected');
+    assert.equal((await d.adapter.focusMenuEntry('claude', 'claude-model', 1, 4)).status, 'unknown', 'a changed entry count is refused');
+    assert.deepEqual(await d.adapter.focusMenuEntry('claude', 'claude-model', 1, 5), known(1));
+    assert.equal((await d.adapter.selectMenuOption('claude', 'claude-model', 4, 5)).status, 'unknown', '"More models" is not an option');
+    assert.deepEqual(await d.adapter.selectMenuOption('claude', 'claude-model', 1, 5), known(true));
+    assert.deepEqual([(await state('claude')).menu, (await state('claude')).model], [null, { label: 'Fable 5.1', expanded: false }]);
     assert.deepEqual(await d.adapter.claudeSettings(lid(1)), known({ model: 'claude-fable-5-1', effort: 'low' }));
     assert.deepEqual(await d.adapter.claudeSettings(lid(9)), known(null));
-    assert.deepEqual(await d.adapter.composerFocused('claude'), known(true), 'focus returns to the composer');
-    // Claude's Effort slider applies each step at once; Escape keeps it.
-    await d.adapter.tapInClient('claude', ['LeftControl', 'LeftShift', 'E'], 1);
-    assert.equal((await d.adapter.pickerState('claude')).value.slider, 'Effort');
-    await d.adapter.tapInClient('claude', ['Right'], 1);
-    assert.equal((await d.adapter.pickerState('claude')).value.effort, 'Medium');
-    await d.adapter.tapInClient('claude', ['Escape'], 1);
+    await d.adapter.expandSetting('claude', 'claude-model');
+    assert.deepEqual(await d.adapter.collapseSetting('claude', 'claude-model'), known(true));
+    assert.equal((await state('claude')).model.label, 'Fable 5.1', 'Collapse changes nothing');
+    assert.deepEqual(await d.adapter.focusComposer('claude'), known(true));
+    assert.deepEqual(await d.adapter.composerFocused('claude'), known(true));
+    // Claude's Effort slider: one step at a time from the value read, within its range.
+    await d.adapter.expandSetting('claude', 'claude-effort');
+    assert.deepEqual((await state('claude')).slider, { value: 0, min: 0, max: 5, step: 1 });
+    assert.equal((await d.adapter.setSliderValue('claude', 1, 2)).status, 'unknown', 'a value other than the one read is refused');
+    assert.equal((await d.adapter.setSliderValue('claude', 0, -1)).status, 'unknown', 'outside the range');
+    assert.deepEqual(await d.adapter.setSliderValue('claude', 0, 1), known(1));
+    assert.equal((await state('claude')).effort.label, 'Medium');
+    await d.adapter.collapseSetting('claude', 'claude-effort');
     assert.deepEqual((await d.adapter.claudeSettings(lid(1))).value, { model: 'claude-fable-5-1', effort: 'medium' });
-    // Codex's picker: "Select model" focused; the model list; the announcement; the picker stays open after a pick.
+    // Codex's picker: the button names the model and level while collapsed; Collapse does not close it; one Escape does.
     d.front('codex');
-    await d.adapter.tapInClient('codex', ['LeftControl', 'LeftShift', 'M'], 1);
-    const main = (await d.adapter.pickerState('codex')).value;
-    assert.deepEqual([main.menu.label, main.menu.items[main.menu.focused].label, main.announcement], ['Select effort', 'Select model', { label: 'GPT-6 Luna Light', position: 1, count: 5 }]);
-    await d.adapter.tapInClient('codex', ['Enter'], 1);
-    const list = (await d.adapter.pickerState('codex')).value.menu;
-    assert.equal(list.items[list.focused].label, 'GPT-6 Luna');
-    await d.adapter.tapInClient('codex', ['Up'], 1);
-    await d.adapter.tapInClient('codex', ['Enter'], 1);
-    const after = (await d.adapter.pickerState('codex')).value;
-    assert.deepEqual([after.menu.label, after.announcement], ['Select effort', { label: 'GPT-6 Astra Light', position: 1, count: 6 }], 'the level count follows the model');
-    await d.adapter.tapInClient('codex', ['Down'], 3);
+    assert.deepEqual((await state('codex')).model, { label: 'GPT-6 Luna Light', expanded: false });
+    assert.equal((await d.adapter.collapseSetting('codex', 'codex-picker')).status, 'unknown');
+    assert.deepEqual(await d.adapter.expandSetting('codex', 'codex-picker'), known(true));
+    const main = await state('codex');
+    assert.deepEqual([main.menu.kind, main.menu.label, main.model, main.announcement], ['codex-picker', 'Select effort', { label: 'Select effort', expanded: true }, { label: 'GPT-6 Luna Light', position: 1, count: 5 }]);
+    assert.deepEqual(await d.adapter.invokeSelectModel('codex'), known(true));
+    const list = (await state('codex')).menu;
+    assert.deepEqual([list.kind, list.items.find(i => i.selected).label], ['codex-models', 'GPT-6 Luna']);
+    await d.adapter.focusMenuEntry('codex', 'codex-models', 1, list.items.length);
+    assert.deepEqual(await d.adapter.selectMenuOption('codex', 'codex-models', 1, list.items.length), known(true));
+    assert.deepEqual([(await state('codex')).menu.kind, (await state('codex')).announcement], ['codex-picker', { label: 'GPT-6 Astra Light', position: 1, count: 6 }], 'back in the picker, which stays open');
+    await d.adapter.focusMenuEntry('codex', 'codex-picker', 3, 4);
     await d.adapter.tapInClient('codex', ['Right'], 1);
-    assert.equal((await d.adapter.pickerState('codex')).value.announcement.position, 2);
+    assert.equal((await state('codex')).announcement.position, 2, 'Right on a focused Power steps the level');
     await d.adapter.tapInClient('codex', ['Escape'], 1);
-    assert.equal((await d.adapter.pickerState('codex')).value.menu, null);
+    assert.deepEqual([(await state('codex')).menu, (await state('codex')).model], [null, { label: 'GPT-6 Astra Standard', expanded: false }]);
+    // The owner's chord, with the picker closed, changes the button's name.
+    await d.adapter.tapInClient('codex', ['LeftControl', 'LeftAlt', 'Equal'], 1);
+    assert.equal((await state('codex')).model.label, 'GPT-6 Astra Extended');
+    // A lagging read shows the state from before the last change, once.
+    d.pickers.lag = true;
+    await d.adapter.expandSetting('codex', 'codex-picker');
+    assert.equal((await state('codex')).menu, null, 'the first read lags');
+    assert.equal((await state('codex')).menu.kind, 'codex-picker', 'the next one does not');
+    d.pickers.lag = false;
     // Held keys refuse a client tap, as the Windows keyboard does.
     await d.adapter.sendKeys({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
-    await assert.rejects(d.adapter.tapInClient('codex', ['Down'], 1), /keys-held/);
+    await assert.rejects(d.adapter.tapInClient('codex', ['Escape'], 1), /keys-held/);
     await d.adapter.releaseAll();
   });
 }

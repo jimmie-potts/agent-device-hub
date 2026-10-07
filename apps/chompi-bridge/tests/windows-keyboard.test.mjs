@@ -229,16 +229,16 @@ test('a volume tap refuses a physically held modifier and malformed requests bef
   assert.deepEqual(recovering.held, [], 'the inserted key-down is released');
 });
 
-test('the Codex effort chord keys and the menu navigation keys map to their virtual-key codes; navigation keys are not shortcut keys (#906)', () => {
+test('the Codex effort chord keys and the few keys only tapInClient types map to their virtual-key codes; those are not shortcut keys (#906)', () => {
   assert.equal(virtualKeyCode('Equal'), 0xbb, 'VK_OEM_PLUS');
   assert.equal(virtualKeyCode('Minus'), 0xbd, 'VK_OEM_MINUS');
-  assert.deepEqual([...NAVIGATION_KEY_CODES], [['Up', 0x26], ['Down', 0x28], ['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b]]);
+  assert.deepEqual([...NAVIGATION_KEY_CODES], [['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b]], 'Up and Down are gone: menus move by UI Automation');
   for (const name of NAVIGATION_KEY_CODES.keys()) {
     assert.equal(VIRTUAL_KEYS.has(name), false, `${name} is typed only by tapInClient`);
     assert.throws(() => new Keyboard(fakeKeyboardApi()).send({ action: 'tap', keys: [name] }), error => error.code === 'unknown-key');
   }
   const flags = vk => new DataView(encodeKeyboardInputs([step(vk, false)]).buffer).getUint32(12, true);
-  assert.equal(flags(0x28), 0x0001, 'arrow keys are extended keys');
+  assert.equal(flags(0x27), 0x0001, 'arrow keys are extended keys');
   assert.equal(flags(0x1b), 0, 'Escape is not');
   assert.equal(flags(0xbb), 0, 'the = key is not');
 });
@@ -246,8 +246,8 @@ test('the Codex effort chord keys and the menu navigation keys map to their virt
 test('a client chord taps complete down/up batches, one per press, and leaves nothing held (#906)', () => {
   const api = fakeKeyboardApi();
   const keyboard = new Keyboard(api);
-  keyboard.tapChord(['Down'], 2);
-  assert.deepEqual(api.calls, [[step(0x28, false), step(0x28, true), step(0x28, false), step(0x28, true)]]);
+  keyboard.tapChord(['Right'], 2);
+  assert.deepEqual(api.calls, [[step(0x27, false), step(0x27, true), step(0x27, false), step(0x27, true)]]);
   keyboard.tapChord(['LeftControl', 'LeftAlt', 'Equal'], 1);
   assert.deepEqual(api.calls[1], [step(0xa2, false), step(0xa4, false), step(0xbb, false), step(0xbb, true), step(0xa4, true), step(0xa2, true)]);
   assert.deepEqual(keyboard.held, []);
@@ -259,10 +259,10 @@ test('a client chord is refused while keys are held, with a physically held modi
   keyboard.send({ action: 'down', keys: ['LeftControl', 'LeftWindows'] });
   assert.throws(() => keyboard.tapChord(['Escape'], 1), error => error instanceof KeyboardError && error.code === 'keys-held');
   assert.equal(api.calls.length, 1);
-  assert.throws(() => new Keyboard(fakeKeyboardApi({ physical: [0xa0] })).tapChord(['Down'], 1), HeldModifierError);
-  for (const [keys, presses] of [[[], 1], [['Down'], 0], [['Down'], 11], [['Down', 'Down'], 1], [['Down'], 1.5], ['Down', 1]]) {
+  assert.throws(() => new Keyboard(fakeKeyboardApi({ physical: [0xa0] })).tapChord(['Right'], 1), HeldModifierError);
+  for (const [keys, presses] of [[[], 1], [['Right'], 0], [['Right'], 11], [['Right', 'Right'], 1], [['Right'], 1.5], ['Right', 1]]) {
     assert.throws(() => chordCodes(keys, presses), error => error instanceof KeyboardError && error.code === 'invalid-key-request', `${JSON.stringify(keys)} x${presses}`);
   }
-  for (const key of ['PageDown', 'Tab', 'VolumeUp', 'F4', 'down']) assert.throws(() => chordCodes([key], 1), error => error.code === 'unknown-key', key);
+  for (const key of ['PageDown', 'Tab', 'VolumeUp', 'F4', 'Down', 'Up', 'right']) assert.throws(() => chordCodes([key], 1), error => error.code === 'unknown-key', key);
   assert.deepEqual(chordCodes(['Enter'], 1), [0x0d]);
 });

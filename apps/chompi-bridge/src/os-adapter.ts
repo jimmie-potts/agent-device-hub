@@ -10,9 +10,11 @@
  * Version 3 (#821) adds the card operations: the open approval or question card's actionable buttons,
  * moving keyboard focus between them and pressing the focused one. Version 4 (#865) adds `sendVolumeKey`, the
  * system volume and mute keys, which target no window and need no window check. Version 5 (#906) adds the model and
- * effort operations: `tapInClient`, which types a key only while the named client is in front, `pickerState`, a
- * read-only view of the client's open model menu, effort slider and picker, and `claudeSettings`, a Claude session
- * record's `model` and `effort`. They return model and effort labels, never conversation text.
+ * effort operations: `pickerState`, a read-only view of the clients' model and effort controls; UI Automation actions on
+ * those controls only (`expandSetting`, `collapseSetting`, `invokeSelectModel`, `focusMenuEntry`, `selectMenuOption`,
+ * `setSliderValue`, `focusComposer`), each checked against a fresh read before it acts; `tapInClient`, which types a key
+ * only while the named client is in front, for Codex's one closing Escape and the owner's effort chords; and
+ * `claudeSettings`, a Claude session record's `model` and `effort`. They return model and effort labels only.
  */
 export const OS_ADAPTER_VERSION = 5;
 
@@ -27,10 +29,11 @@ export type VolumeKey = 'VolumeUp' | 'VolumeDown' | 'VolumeMute';
 export const MAX_VOLUME_PRESSES = 10;
 
 /**
- * Menu and slider navigation keys (#906). Only `tapInClient` types them, into the named client's window while it is in
- * front; no profile can name them.
+ * Keys only `tapInClient` types, into the named client's window while it is in front, and no profile can name (#906):
+ * Escape, the one key that closes Codex's picker, and Left and Right, which step its Power entry when no effort chords
+ * are configured. Every other menu move is a UI Automation action.
  */
-export const NAVIGATION_KEYS = Object.freeze(['Up', 'Down', 'Left', 'Right', 'Escape'] as const);
+export const NAVIGATION_KEYS = Object.freeze(['Left', 'Right', 'Escape'] as const);
 export type NavigationKey = typeof NAVIGATION_KEYS[number];
 /** Presses per `tapInClient` call. */
 export const MAX_CLIENT_PRESSES = 10;
@@ -87,25 +90,40 @@ export interface PickerItem {
   /** The option the client marks as current. */
   selected: boolean;
 }
-/** The menu that holds keyboard focus: its label (`Model: <name>`, `Select effort`), its entries in order and the focused one. */
-export interface PickerMenu { label: string; items: PickerItem[]; focused: number | null }
-/** Codex's picker announcement, `<model> <level>, <position> of <count>.`, parsed. */
+/**
+ * The qualified menus (#906), and only these: Claude's `Model: <name>` menu, Codex's `Select effort` picker and the
+ * Codex model list opened from it.
+ */
+export type MenuKind = 'claude-model' | 'codex-picker' | 'codex-models';
+/** One open qualified menu: its label, its own entries in order, the entry holding keyboard focus, and whether focus is in it. */
+export interface PickerMenu { kind: MenuKind; label: string; items: PickerItem[]; focused: number | null; hasFocus: boolean }
+/** Claude's open `Effort` slider and its range (`RangeValue`). */
+export interface PickerSlider { value: number; min: number; max: number; step: number }
+/**
+ * A composer button that opens a setting: Claude's `Model: <name>` or `Effort: <level>` (label after the prefix), or
+ * Codex's picker button (whole name: `<model> <effort>` while collapsed, `Select effort` while expanded).
+ */
+export interface SettingButton { label: string; expanded: boolean }
+/** Codex's picker announcement, `<model> <level>, <n> of <count>.`, parsed. */
 export interface PickerAnnouncement { label: string; position: number; count: number }
 /**
  * The model and effort controls of the client's foreground window (#906), read without changing anything. Labels are
- * the client's own model and effort names; nothing else crosses this boundary.
+ * the client's own model and effort names; nothing else crosses this boundary, and other menus are not read.
  */
 export interface PickerState {
-  /** The open menu holding keyboard focus, or null when focus is in no menu. */
+  /** The open qualified menu (the Codex model list before its picker), focused or not; null when none is open. */
   menu: PickerMenu | null;
-  /** The name of the slider holding keyboard focus (Claude's `Effort`), or null. */
-  slider: string | null;
-  /** Claude: the composer's `Model: <name>` and `Effort: <level>` buttons after their prefix; null when absent (Codex: always null). */
-  model: string | null;
-  effort: string | null;
+  /** Claude's `Effort` slider while it is open; null otherwise (Codex: always null). */
+  slider: PickerSlider | null;
+  /** Claude's `Model:` button, or Codex's picker button; null when absent. */
+  model: SettingButton | null;
+  /** Claude's `Effort:` button; null when absent (a model without effort) and for Codex. */
+  effort: SettingButton | null;
   /** Codex: the open picker's announcement; null when there is none. */
   announcement: PickerAnnouncement | null;
 }
+/** The controls the UI Automation actions may open or close. */
+export type SettingControl = 'claude-model' | 'claude-effort' | 'codex-picker';
 /** Bounds on a menu's entries and on one label. */
 export const MAX_PICKER_ITEMS = 64;
 export const MAX_PICKER_LABEL = 128;
@@ -138,7 +156,8 @@ export interface OsAdapter {
 
   /**
    * Taps one chord `presses` times (1-`MAX_CLIENT_PRESSES`), but only while `client`'s window is in front, checked right
-   * before the input goes in (#906). The keys are profile key names or `NAVIGATION_KEYS`. Known `true` when sent, known
+   * before the input goes in (#906): Codex's one closing Escape, the owner's Codex effort chords and the picker's arrows
+   * when no chords are configured. The keys are profile key names or `NAVIGATION_KEYS`. Known `true` when sent, known
    * `false` when the client is not in front (nothing sent). Rejects, sending nothing, on a malformed request, while this
    * adapter holds any key, or while the user holds a modifier.
    */
@@ -149,6 +168,36 @@ export interface OsAdapter {
    * front or the controls cannot be read.
    */
   pickerState(client: Client): Promise<Observation<PickerState>>;
+
+  /*
+   * UI Automation actions on the qualified model and effort controls only (#906). Each runs in the client's own foreground
+   * window, re-reads its target just before acting and refuses (unknown) on any difference: a missing or duplicated
+   * control, a changed entry count, a state other than the one named. None types a key.
+   */
+
+  /** Expands a collapsed setting button (`ExpandCollapse.Expand`); known whether it reads expanded within the read-back bound. */
+  expandSetting(client: Client, control: SettingControl): Promise<Observation<boolean>>;
+  /** Collapses an expanded Claude setting button; Codex's picker does not close this way and is refused. */
+  collapseSetting(client: Client, control: SettingControl): Promise<Observation<boolean>>;
+  /** Codex: invokes the open `Select effort` picker's "Select model" entry, which opens the model list. */
+  invokeSelectModel(client: Client): Promise<Observation<boolean>>;
+  /**
+   * Moves keyboard focus to entry `index` of the open `menu` of `count` entries (`SetFocus`), and reads focus back for
+   * a short bounded time: the focused index then, or null.
+   */
+  focusMenuEntry(client: Client, menu: MenuKind, index: number, count: number): Promise<Observation<number | null>>;
+  /**
+   * Selects model option `index` of the open `menu` (`SelectionItem.Select`) only while it has keyboard focus: known
+   * `false`, with nothing done, when it does not.
+   */
+  selectMenuOption(client: Client, menu: MenuKind, index: number, count: number): Promise<Observation<boolean>>;
+  /**
+   * Claude: sets the open Effort slider from `from` to `to` (`RangeValue.SetValue`), only when it reads `from` and `to`
+   * is one step away within its range; the value read back, or null when it did not settle.
+   */
+  setSliderValue(client: Client, from: number, to: number): Promise<Observation<number | null>>;
+  /** Gives the client's one composer keyboard focus; known whether it has it within the read-back bound. */
+  focusComposer(client: Client): Promise<Observation<boolean>>;
 
   /** Claude Desktop: the named session record's `model` and `effort`, or known null when there is no record. Reads those keys only. */
   claudeSettings(localId: string): Promise<Observation<ClaudeSettings | null>>;

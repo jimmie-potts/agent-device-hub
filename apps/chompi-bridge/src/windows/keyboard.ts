@@ -28,12 +28,11 @@ export const VIRTUAL_KEYS: ReadonlyMap<KeyName, number> = new Map<KeyName, numbe
 ]);
 
 /**
- * Menu and slider navigation keys (#906): `VK_UP`, `VK_DOWN`, `VK_LEFT`, `VK_RIGHT` and `VK_ESCAPE`, typed only by
- * `tapInClient` into the named client's window. They are not in `VIRTUAL_KEYS`, so no profile can name them and `send`
- * refuses them.
+ * The keys only `tapInClient` types (#906): `VK_LEFT`, `VK_RIGHT` and `VK_ESCAPE`, into the named client's window. They
+ * are not in `VIRTUAL_KEYS`, so no profile can name them and `send` refuses them.
  */
 export const NAVIGATION_KEY_CODES: ReadonlyMap<NavigationKey, number> = new Map<NavigationKey, number>([
-  ['Up', 0x26], ['Down', 0x28], ['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b],
+  ['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b],
 ]);
 
 /**
