@@ -150,7 +150,7 @@ device's new pending count and last outcome. The rules for an outcome:
 - **Answered with an error.** A failure the Pixoo answered reached it, so its
   evidence is `transmitted`, never `none`: an error status or code is `failed`
   (`invalid-state` for a refusal), and an answer that cannot be read is
-  `uncertain`.
+  `uncertain`. Either way the send is the device's `lastTransmission`.
 - **Failed.** One that did not reach the device is `failed`: `unavailable` for
   a device that did not answer, `cancelled` for one that a newer command
   superseded.
@@ -184,7 +184,8 @@ one `device.unavailable` warning, and DEBUG summaries at most once a minute.
 Its recovery logs one `device.available` record that counts the failed probes.
 
 The device record's `lastTransmission` names the last send that the device
-answered, for a command or for one of the module's own paints, never a probe.
+answered, with success or with an error, for a command or for one of the
+module's own paints, never a probe.
 Only a probe of the device sets `observed`.
 
 A real device's start restores a saved Monitor selection; a simulated Pixoo's

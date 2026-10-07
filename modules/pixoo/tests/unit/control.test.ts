@@ -87,17 +87,20 @@ it('reports a write the Pixoo refused with an error code as failed and transmitt
  const player=await Player.open({store:new MemoryPlaybackStore(),device}),monitor=new MonitorPresentation(player,{save:async()=>{}});
  const control=new PixooControl({player,monitor});
  try{
-  expect(await control.brightness(30)).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'invalid-state'}});
+  expect(await control.brightness(30)).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'invalid-state'},transmission:{operationIds:['display']}});
  }finally{control.close();await monitor.close();await player.close();await device.close();}
 });
 it('maps device results and errors by what they prove about effects',()=>{
  expect(deviceCompletion(undefined,'display')).toMatchObject({result:'failed',evidence:'none',error:{code:'cancelled'}});
  expect(deviceCompletion(result({code:'timeout',priorEffects:'possible'}),'media')).toMatchObject({result:'uncertain',evidence:'none',error:{code:'uncertain-result'}});
  expect(deviceCompletion(result({code:'stale-generation'}),'media')).toMatchObject({result:'failed',error:{code:'cancelled'}});
- // A failure the Pixoo answered reached it: its evidence is transmitted, never none.
- expect(deviceCompletion(result({code:'device-error',priorEffects:'possible'}),'display')).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'invalid-state'}});
- expect(deviceCompletion(result({code:'http-error',priorEffects:'possible'}),'display')).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'unavailable'}});
- expect(deviceCompletion(result({code:'protocol-error',priorEffects:'possible'}),'media')).toMatchObject({result:'uncertain',evidence:'transmitted',error:{code:'uncertain-result'}});
+ // A failure the Pixoo answered reached it: its evidence is transmitted, never none, and the send is the device's last
+ // transmission, as for a confirmed send.
+ expect(deviceCompletion(result({code:'device-error',priorEffects:'possible'}),'display')).toEqual({result:'failed',evidence:'transmitted',error:expect.objectContaining({code:'invalid-state'}),transmission:{transmittedAtMs:5,operationIds:['display']}});
+ expect(deviceCompletion(result({code:'http-error',priorEffects:'possible'}),'display')).toEqual({result:'failed',evidence:'transmitted',error:expect.objectContaining({code:'unavailable'}),transmission:{transmittedAtMs:5,operationIds:['display']}});
+ expect(deviceCompletion(result({code:'protocol-error',priorEffects:'possible'}),'media')).toEqual({result:'uncertain',evidence:'transmitted',error:expect.objectContaining({code:'uncertain-result'}),transmission:{transmittedAtMs:5,operationIds:['media']}});
+ // A failure it did not answer was never a transmission.
+ expect(deviceCompletion(result({code:'timeout',priorEffects:'possible'}),'media')).not.toHaveProperty('transmission');
  expect(deviceCompletion(result({code:'offline'}),'display')).toMatchObject({result:'failed',evidence:'none',error:{code:'unavailable'}});
  expect(deviceCompletion({ok:true,value:undefined,generation:0,timing:{submittedAtMs:0,startedAtMs:0,completedAtMs:7,queueMs:0,serviceMs:7}},'media'))
   .toEqual({result:'succeeded',evidence:'transmitted',transmission:{transmittedAtMs:7,operationIds:['media']}});

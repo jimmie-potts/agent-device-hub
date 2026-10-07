@@ -65,7 +65,7 @@ The module SHALL answer, on `bunny.cmd.<family>.<device id>` only, `device-mode-
 Otherwise it SHALL store its record of the work, reply `accepted`, run the work outside the responder, and report the outcome through its outbox, committed with the device's new pending count and last outcome:
 - A device write SHALL complete `succeeded` with `transmitted` once the Pixoo answers.
 - A start, show, resume, next, previous or restart SHALL complete with its own first upload, found by the async context of the command's action.
-- A failure the Pixoo answered SHALL have `transmitted` evidence, never `none`: an error status or code SHALL be `failed`, and an unreadable answer `uncertain` with `uncertain-result`.
+- A failure the Pixoo answered SHALL have `transmitted` evidence, never `none`: an error status or code SHALL be `failed`, and an unreadable answer `uncertain` with `uncertain-result`. Like a confirmed send, it SHALL set the device record's `lastTransmission` with its request ID.
 - Of the failures it did not answer, a write or upload that may have reached the device SHALL be `uncertain` with `uncertain-result` and no evidence.
 - One that did not reach it SHALL be `failed`: `unavailable` for a device that did not answer, `cancelled` for one a newer command superseded.
 - A change to state the module owns (pause, stop, clear, the presentation and Now Playing settings, playlists, media and a dismissal) SHALL complete `succeeded` with `observed`, its committed state being the evidence.

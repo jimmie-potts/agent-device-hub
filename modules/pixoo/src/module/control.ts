@@ -53,18 +53,20 @@ const ANSWERED: readonly string[] = ['device-error', 'http-error', 'protocol-err
 /**
  * A device operation's completion. A confirmed send is `succeeded` with `transmitted`: the Pixoo's answer is a transport
  * acknowledgment, never an observation. A failure the Pixoo answered reached it, so its evidence is `transmitted`, never
- * `none`: an error status or code is `failed`, and an answer that cannot be read is `uncertain`. Of the failures it did
+ * `none`: an error status or code is `failed`, and an answer that cannot be read is `uncertain`. Every send the Pixoo
+ * answered, failed or not, is the device's last transmission, as the device profile requires. Of the failures it did
  * not answer, one that may have reached it is `uncertain` with no evidence (MAPPING.md's receipt rule 2), and one that
  * certainly did not is `failed`. No result means a newer request superseded it before it was sent.
  */
 export function deviceCompletion(result: OperationResult<unknown> | undefined, operation: string): Completion {
   if (result === undefined) return failed('cancelled', 'a newer request superseded it before it was sent');
-  if (result.ok) return {result: 'succeeded', evidence: 'transmitted', transmission: {transmittedAtMs: result.timing.completedAtMs, operationIds: [operation]}};
+  const transmission = {transmittedAtMs: result.timing.completedAtMs, operationIds: [operation]};
+  if (result.ok) return {result: 'succeeded', evidence: 'transmitted', transmission};
   if (result.code === 'protocol-error') {
-    return {result: 'uncertain', evidence: 'transmitted', error: errorBody('uncertain-result', {detail: `the device's answer to the ${operation} send could not be read`}).error};
+    return {result: 'uncertain', evidence: 'transmitted', error: errorBody('uncertain-result', {detail: `the device's answer to the ${operation} send could not be read`}).error, transmission};
   }
   if (ANSWERED.includes(result.code)) {
-    return {result: 'failed', evidence: 'transmitted', error: errorBody(DEVICE_CODES[result.code] ?? 'internal', {detail: `the device refused the ${operation} send: ${result.code}`}).error};
+    return {result: 'failed', evidence: 'transmitted', error: errorBody(DEVICE_CODES[result.code] ?? 'internal', {detail: `the device refused the ${operation} send: ${result.code}`}).error, transmission};
   }
   if (result.priorEffects === 'possible') return uncertain(`the ${operation} send may have reached the device: ${result.code}`);
   return failed(DEVICE_CODES[result.code] ?? 'internal', `the ${operation} send did not reach the device: ${result.code}`);
