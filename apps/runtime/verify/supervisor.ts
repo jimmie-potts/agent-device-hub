@@ -457,15 +457,19 @@ const ACTIONS = {
   lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline'],
   playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
   tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'], nanoleaf: ['online', 'offline', 'power-on', 'power-off', 'lose-next-answer'],
+  'codex-desktop': ['list', 'unusable', 'stall', 'answer'],
 } as const satisfies {readonly [D in SimulateRequest['device']]: readonly Extract<SimulateRequest, {device: D}>['action'][]};
 /** An action a `SimulateRequest` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
 type Unlisted = {[D in SimulateRequest['device']]: Exclude<Extract<SimulateRequest, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[SimulateRequest['device']];
 export const EVERY_ACTION_LISTED: [Unlisted] extends [never] ? true : never = true;
 const SPEAKERS: readonly string[] = ['sony', 'sonos'];
+/** The threads the simulated Codex Desktop marker may list (Hub #926): at most 64 thread IDs. */
+const THREAD = /^[A-Za-z0-9_.-]{1,128}$/;
+const threadsOf = (value: unknown): boolean => Array.isArray(value) && value.length <= 64 && value.every(id => typeof id === 'string' && THREAD.test(id));
 /** The simulation a request names, or undefined when its device, action or other field is unknown, so a typo changes nothing. */
 function simulationOf(value: unknown): SimulateRequest | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const {device, action, speaker, title, address, ...rest} = value as Record<string, unknown>;
+  const {device, action, speaker, title, address, sessions, ...rest} = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || typeof device !== 'string' || !Object.hasOwn(ACTIONS, device) || typeof action !== 'string') return undefined;
   if (!(ACTIONS[device as SimulateRequest['device']] as readonly string[]).includes(action)) return undefined;
   if (device === 'playback') {
@@ -473,6 +477,7 @@ function simulationOf(value: unknown): SimulateRequest | undefined {
     if (title !== undefined && (typeof title !== 'string' || title.length > 200)) return undefined;
   } else if (speaker !== undefined || title !== undefined) return undefined;
   if (device === 'lifx' ? typeof address !== 'string' || address.length > 64 : address !== undefined) return undefined;
+  if (device === 'codex-desktop' && action === 'list' ? !threadsOf(sessions) : sessions !== undefined) return undefined;
   return value as SimulateRequest;
 }
 

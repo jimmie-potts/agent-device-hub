@@ -18,7 +18,6 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx`, the Tidbyt module's `SimulatedCloud`, the Nanoleaf module's `SimulatedNanoleaf` and the Codex Desktop module's `SimulatedMarker`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
 | Agent hook | actual | The 2.0 hook script, `apps/runtime/bin/monitor-hook.mjs` (#926), run by the capture step as a client's hook command, with a synthetic, unchanged 1.x producer file at `<data>/config/producer/producer.json` that names the run's port and the converted producer credential's token, `producer` in `part-tokens.json`, and synthetic Claude Code payloads on stdin |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
-| Agent hook | actual | The 2.0 hook script, `apps/runtime/bin/monitor-hook.mjs` (#926), run by the capture step as a client's hook command, with a synthetic, unchanged 1.x producer file at `<data>/config/producer/producer.json` that names the run's port and the converted producer credential's token, `producer` in `part-tokens.json`, and synthetic Claude Code payloads on stdin |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
 publish, on the same port and state directory, as the service manager would. It gives up and ends the run after five
@@ -321,9 +320,9 @@ To watch Codex Desktop's read marker (#926) become read evidence, start `codex-d
 Desktop turn and a subagent's, lists both as unread, clears the flag, turns the marker unusable, stalls the Codex home
 and lets it answer again, and checks each session's read state and the marker's records. Time is real, so it takes about
 half a minute. By hand, `POST /api/harness/v1/simulate` with `{"device": "codex-desktop", "action": "list", "sessions":
-["<thread id>"]}`, or with the action `unusable`, `stall` or `answer`, drives the marker, and `GET
-/api/harness/v1/state` shows `devices.codexDesktop`: what it lists, whether it stalls and how many reads it answered or
-holds.
+["<thread id>"]}` (up to 64 IDs of letters, digits, `.`, `_` and `-`), or with the action `unusable`, `stall` or
+`answer`, drives the marker, and `GET /api/harness/v1/state` shows `devices.codexDesktop`: what it lists, whether it
+stalls and how many reads it answered or holds.
 
 ```bash
 npm run -s verify:runtime -- start --scenario codex-desktop-read

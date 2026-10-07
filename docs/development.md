@@ -1998,7 +1998,7 @@ into the runtime module `modules/codex-desktop`, under the
 [strict profile](#strict-profile-for-new-code) and the module boundary. Its
 [README](../modules/codex-desktop/README.md) records the provenance, the read
 rules and why the reader runs in a process of its own. The runtime ships it
-after the Tidbyt module. The installed Hub keeps its own reader until #839.
+last, after the Nanoleaf module. The installed Hub keeps its own reader until #839.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:codex-desktop` from the worktree root. `test:codex-desktop`

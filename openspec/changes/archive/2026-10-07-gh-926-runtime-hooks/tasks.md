@@ -13,7 +13,7 @@
 
 - [x] 3.1 Assert, red against a module that never reads (9 of 9 failing), the read rules on published observations, the settle rule, an unusable marker logged once, evidence once per revision, a stalled folder before and after the first read, a failing reader's backoff, a stop during a stalled read and what leaves the module (`modules/codex-desktop/tests/module.test.ts`); port the parser, configuration and read cases (`marker.test.ts`, `configuration.test.ts`); pass the module test kit (`kit.test.ts`).
 - [x] 3.2 Implement the configuration and conversion, the marker read, the reader process and its transport, the read rules, the module and the simulated marker; measure the reader process's memory (49 MiB resident against 44 MiB for an idle Node process).
-- [x] 3.3 Add the module to the shipped list after the Tidbyt module, and test it with the real core and the real reader, a stuck reader included (`apps/runtime/tests/codex-desktop.test.ts`); take each shipped module's API version from its manifest in the process test.
+- [x] 3.3 Add the module to the shipped list, last (after the Tidbyt module at first, after the Nanoleaf module once rebased onto #968), and test it with the real core and the real reader, a stuck reader included (`apps/runtime/tests/codex-desktop.test.ts`); take each shipped module's API version from its manifest in the process test.
 
 ## 4. Both tiers
 

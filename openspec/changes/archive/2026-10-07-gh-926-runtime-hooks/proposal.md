@@ -23,7 +23,7 @@ Producer grant and revoke operations wait until a new client or machine needs on
   published as `read-observed` observations, read in a child process of its own so a stalled Windows mount never holds
   a runtime thread, with a read deadline, the marker's availability logged once per outage, capped backoff and a stop
   that never waits. `convertHubCodexDesktop` turns the Hub's `codexDesktop` setting into its section for the installer.
-  The runtime ships it after the Tidbyt module.
+  The runtime ships it last, after the Nanoleaf module.
 - **Both tiers.** The catalog gains `agent-hooks` and `codex-desktop-read`, played in the in-memory harness on both
   transports and in disposable runs; the harness contract gains `hook`, which runs the script, if asked while the
   runtime is stopped. A run's supervisor writes the producer file, holds the simulated marker and can hold the runtime
@@ -41,8 +41,8 @@ Producer grant and revoke operations wait until a new client or machine needs on
 ### Modified Capabilities
 
 - `bunny-sdk`: one prepared message published without a stream.
-- `bunny-runtime`: the shipped list holds the Codex Desktop module after the Tidbyt module; the catalog and disposable
-  runs cover the agent hooks and the Codex Desktop marker.
+- `bunny-runtime`: the shipped list holds the Codex Desktop module last, after the Nanoleaf module; the catalog and
+  disposable runs cover the agent hooks and the Codex Desktop marker.
 
 ## Impact
 

@@ -12,9 +12,10 @@ until the retirement story ([#839](https://github.com/jimmie-potts/agent-device-
 Nothing installs this module yet, and its tests and disposable runs use a
 synthetic or simulated marker only.
 
-The runtime ships it after the Tidbyt module (`apps/runtime/src/modules.ts`),
-through `codexDesktopFactory`: `folderReader()` for the real Codex home, or
-`SimulatedMarker` under `--simulate`. A runtime without a `codex-desktop` section
+The runtime ships it last, after the Nanoleaf module (`apps/runtime/src/modules.ts`):
+it only syncs from the core and publishes to it, so no module waits on it.
+`codexDesktopFactory` builds it with `folderReader()` for the real Codex home, or
+with `SimulatedMarker` under `--simulate`. A runtime without a `codex-desktop` section
 in its [configuration file](../../apps/runtime/README.md#configuration) refuses
 the module with `not-found` and runs on. The factory's `simulatedSection`,
 `CODEX_DESKTOP_SIMULATED_SECTION`, configures the simulated build; its home is

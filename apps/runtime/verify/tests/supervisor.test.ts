@@ -159,7 +159,8 @@ void test('the harness drops a part\'s stream at the edge, and the same remote p
 
 void test('the harness refuses a simulation it does not know with 400, and the Pixoo\'s panel outlives a restart', {timeout: 90_000}, async context => {
   const run = await startRun(context, await base(context), 'pixoo-offline');
-  for (const body of [{device: 'pixoo', action: 'sideways'}, {device: 'pixoo'}, {device: 'toaster', action: 'online'}, {device: 'lamp', action: 'online'}, []]) {
+  for (const body of [{device: 'pixoo', action: 'sideways'}, {device: 'pixoo'}, {device: 'toaster', action: 'online'}, {device: 'lamp', action: 'online'}, [],
+    {device: 'codex-desktop', action: 'list'}, {device: 'codex-desktop', action: 'list', sessions: ['two words']}, {device: 'pixoo', action: 'online', sessions: []}]) {
     assert.equal((await post(run, 'simulate', body)).status, 400, JSON.stringify(body));
   }
   assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');

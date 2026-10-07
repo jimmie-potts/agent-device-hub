@@ -8,6 +8,9 @@ through `grantCredential` and SIGHUP, checked with `/api/v2/authority`; an `inge
 file and its receipt), the Hub's Codex Desktop reader and its tests; agent-state's normalizers; the core's mapping
 (`toEnvelope`) and intake; the gateway's grants, `convertHubEdge`; the SDK's remote client and edge; the module test
 kit; and the LIFX and Tidbyt modules as patterns. The issue stays aligned; the adjustments below are within its scope.
+Rebased on 2026-10-07 onto `2298cc7c` (#972, on main `c83f6697` with the Pixoo and Nanoleaf modules): the module now
+ships last, after them, since it only syncs from the core and publishes to it, and the harness's new simulation check
+lists the marker's actions and takes `sessions` only with `list`.
 
 ## Goals / Non-Goals
 
