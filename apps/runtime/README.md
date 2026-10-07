@@ -6,11 +6,13 @@ hosts a fixed list of modules on the SDK's in-process bus and serves health,
 and with `--edge` the SDK edge for remote parts, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
 and, after it, the device modules: the
-[playback module](../../modules/playback/README.md) (#929) so far. Module stories
+[playback module](../../modules/playback/README.md) (#929) and the
+[LIFX module](../../modules/lifx/README.md) (#928) so far. Module stories
 add theirs after the core, and the runtime also runs with no module at all.
 Without a [configuration file](#configuration), the runtime refuses each module
-that takes one, so the shipped runtime then runs the core alone, with the
-playback module `refused`. Nothing installs it yet; the cutover (#840) does.
+that takes one, with `not-found`, shows it in health and runs on, so the shipped
+runtime then runs the core alone, with the device modules `refused`. Nothing
+installs it yet; the cutover (#840) does.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
@@ -22,7 +24,7 @@ and secrets come from one private [configuration file](#configuration).
 A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
-reads no secret, such as the playback module, omits `secrets`. One helper,
+reads no secret, such as the playback and LIFX modules, omits `secrets`. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -190,8 +192,9 @@ a module (`bunny/modules/<name>`), so a remote part can never publish as either.
 The runtime refuses to start otherwise, with `edge-grants-missing`,
 `edge-grants-not-private`, `edge-grants-invalid` or `edge-grant-source` in
 `runtime.failed`. No refusal or log record quotes a token. The edge checks every
-remote message against profile 2.0, the core families and the modules' own
-schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
+remote message against profile 2.0, the core families, the device families that
+every device module answers (#918) and the modules' own schemas (each factory's
+`schemas`), and logs `runtime.edge.connected`,
 `runtime.edge.disconnected`, `runtime.edge.refused` and `runtime.edge.failed`.
 A refusal's record holds `bunny.route` (one of the edge's routes, or `other`),
 `bunny.participant` when the caller had a grant, `bunny.code` from the error
@@ -511,7 +514,7 @@ outside the runtime can read the spans, and a crash keeps those it had finished
 ## Memory
 
 `node apps/runtime/scripts/measure-memory.mjs` measures the shipped runtime with
-no configuration file, so the core alone, with the playback module refused, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
+no configuration file, so the core alone, with each device module refused, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
 runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
@@ -642,6 +645,12 @@ The catalog holds:
   answers, `uncertain` in history and the inbox and never sent again. Time is
   real in a disposable run, so the step to `unavailable` at 30 s is left to the
   module's own tests.
+- the LIFX module (#928) with a simulated pendant and Beam: the pendant follows the
+  core's sessions in Work, painting once per change, a restart writes nothing to
+  it, Free never paints it, a color command reaches it, and once it is switched
+  off at the wall it shows unavailable and a command to it ends uncertain in the
+  inbox; the Beam has no controls and gets no packet, and no address leaves the
+  module.
 
 A seed's `config` gives configured modules their sections. Each harness writes
 them, as the installer would, into a private configuration file with a token

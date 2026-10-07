@@ -2,8 +2,10 @@
 // type has one execution adapter that runs these definitions unchanged: the in-memory harness (`memory.ts`, tier 1, in
 // CI) and #920's disposable runs (tier 2). A step acts through the harness, expects an observation within a time bound,
 // or expects one to hold for a while. Time is virtual in memory and real in a run; only the harness differs.
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SIMULATED_SECTION, controlPlayback, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
+import {LIFX_SIMULATED_SECTION, PACKET, type LifxDeviceState} from '@jimmie-potts/lifx';
 import type {CommandDraft, Participant} from '@jimmie-potts/sdk';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
@@ -22,7 +24,7 @@ export type TransportName = (typeof TRANSPORTS)[number];
 export const ROLES = ['hook', 'operator', 'panel', 'reader'] as const;
 export type Role = (typeof ROLES)[number];
 /** The modules a run can start, each built by its factory with its simulated transport. */
-export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback';
+export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx';
 
 export type Seed = {
   /** The modules the runtime starts with, in order. The core comes first (#831). */
@@ -60,7 +62,7 @@ export interface ReaderView {
 }
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
-export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState};
+export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState; lifx: LifxDeviceState};
 /** What a scenario can make a simulated device do. */
 export type Simulation =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
@@ -70,7 +72,9 @@ export type Simulation =
    * The playback module's simulated speakers (Hub #929): the phone plays `title` to one over AirPlay, it pauses, stops or
    * switches to another input, it stops answering or answers again, or its next command is refused or never answered.
    */
-  | {device: 'playback'; speaker: SimulatedKind; action: 'play' | 'pause' | 'stop' | 'other-input' | 'silent' | 'answer' | 'refuse-next' | 'hang-next'; title?: string};
+  | {device: 'playback'; speaker: SimulatedKind; action: 'play' | 'pause' | 'stop' | 'other-input' | 'silent' | 'answer' | 'refuse-next' | 'hang-next'; title?: string}
+  /** The simulated LIFX bulb at `address` goes off the network, as one switched off at the wall, or comes back. */
+  | {device: 'lifx'; action: 'online' | 'offline'; address: string};
 export type Generational<T> = {generation: number} & T;
 
 /** What a scenario can touch. Each run type implements it; the in-memory harness is `memory.ts`. */
@@ -798,10 +802,105 @@ const speakerPlayback: Scenario = {
   ],
 };
 
+// The LIFX module (Hub #928)
+
+/** The LIFX module's section (Hub #919, #928): its factory's simulated section, `pendant-1` and the unqualified Beam. */
+export const LIFX_SECTION = LIFX_SIMULATED_SECTION;
+const PENDANT_AT = '192.0.2.40';
+const BEAM_AT = '192.0.2.41';
+/** The documentation network every simulated bulb's address is in, so a leak of any bulb's address shows. */
+const BULB_NETWORK = '192.0.2.';
+/** The hue in degrees each agent status paints, from the shared status colors. */
+const STATUS_HUE = {attention: 38, working: 218, done: 135} as const;
+/** A command the operator sends one bulb, as the dashboard would. */
+const bulbCommand = (family: string, type: string, id: string, data: object, dataschema = `https://bunny.invalid/events/${family}/2.0`): {key: string; draft: CommandDraft<object>} =>
+  ({key: `bunny.cmd.${family}.${id}`, draft: {type, subject: id, dataschema, data}});
+const lifxMode = (mode: string): {key: string; draft: CommandDraft<object>} => bulbCommand('device-mode-set', 'org.bunny.device-mode.set.requested', 'pendant-1', {mode});
+/** How many writes, paints and commands alike, the simulated bulb at `address` got. */
+const lifxWrites = (h: Harness, address = PENDANT_AT): number =>
+  h.devices().lifx.packets.filter(packet => packet.address === address && (packet.type === PACKET.setColor || packet.type === PACKET.setPower)).length;
+/** Whether pendant-1 shows `expected`, each value in degrees, percent or kelvin, within one unit. */
+const pendantShows = (h: Harness, expected: {hue?: number; saturation?: number; brightness?: number; kelvin?: number}): Outcome => {
+  const color = h.devices().lifx.bulbs[PENDANT_AT]?.color;
+  if (color === undefined) return 'pendant-1 is not simulated yet';
+  const shown = {
+    hue: Math.round((color.hue * 360) / 65535), saturation: Math.round((color.saturation * 100) / 65535),
+    brightness: Math.round((color.brightness * 100) / 65535), kelvin: color.kelvin,
+  };
+  const close = Object.entries(expected).every(([key, value]) => Math.abs(shown[key as keyof typeof shown] - value) <= 1);
+  return close || `pendant-1 shows ${show(shown)}`;
+};
+const lifxDevice = (h: Harness, id: string): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device').find(state => state.data.id === id)?.data;
+
+/**
+ * The LIFX module (Hub #928) with a simulated pendant-1 and Beam: in Work the bulb follows the core's sessions, painting
+ * only when the shown status changes; a restart writes nothing; in Free nothing paints it; a color command reaches it;
+ * switched off at the wall, it is reported unavailable and a command to it ends uncertain, in the inbox. The Beam is
+ * listed with no controls and never reached, and no address leaves the module.
+ */
+const lifxBulbs: Scenario = {
+  id: 'lifx-bulbs',
+  title: 'the LIFX bulbs follow agent status in Work, rest in Free, take a color, and report an unreachable bulb',
+  seed: {modules: ['core', 'lifx'], follows: [CORE_FAMILIES, ['device', 'lifx-light']], config: {lifx: LIFX_SECTION}},
+  steps: [
+    expect('the core and the LIFX module are running', h => running(h, ['core', 'lifx'])),
+    expect('the reader holds pendant-1 available, in free, with its controls, and the Beam with none', h => {
+      const pendant = lifxDevice(h, 'pendant-1'), beam = lifxDevice(h, 'beam');
+      const ready = pendant?.availability === 'available' && pendant.desired.mode.status === 'known' && pendant.desired.mode.value === 'free' && pendant.capabilities.power.supported;
+      return (ready && beam !== undefined && Object.values(beam.capabilities).every(capability => !capability.supported)) ||
+        `pendant-1 ${String(pendant?.availability)}, beam ${show(beam?.capabilities)}`;
+    }),
+    act('the operator sets pendant-1 to work as req-work', h => sendOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
+    expect('history holds req-work succeeded, and the reader shows pendant-1 in work', h =>
+      recorded(h, 'req-work', 'succeeded', 'transmitted') === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :
+        recorded(h, 'req-work', 'succeeded', 'transmitted')),
+    expect('pendant-1 paints idle: warm white at half brightness', h => pendantShows(h, {saturation: 0, brightness: 50, kelvin: 2700})),
+    act('the hook observes a session start and a turn', async h => {
+      await publish(h, sessionStarted);
+      await publish(h, turnStarted);
+    }),
+    expect('pendant-1 paints working blue', h => pendantShows(h, {hue: STATUS_HUE.working, brightness: 50})),
+    act('the hook observes an approval prompt', h => publish(h, approvalPrompt('approval-1'))),
+    expect('pendant-1 paints attention amber', h => pendantShows(h, {hue: STATUS_HUE.attention, brightness: 50})),
+    holds('pendant-1 got one paint per change: idle, working and attention', h => lifxWrites(h) === 3 || `${lifxWrites(h)} writes`, 500),
+    act('the runtime restarts cleanly while the approval still waits', h => h.restart()),
+    expect('the core and the LIFX module are running again', h => running(h, ['core', 'lifx'])),
+    holds('the restart wrote nothing to pendant-1, which still shows attention', h =>
+      (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
+    act('the operator sets pendant-1 to free as req-free', h => sendOnce(h, 'operator', 'free', lifxMode('free'), 'req-free')),
+    expect('history holds req-free succeeded', h => recorded(h, 'req-free', 'succeeded', 'transmitted')),
+    act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
+    expect('the reader\'s session no longer waits', h => waiting(h, [])),
+    holds('in free nothing paints pendant-1, which keeps its amber', h =>
+      (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
+    act('the operator sets pendant-1 to hue 120 at full saturation as req-color', h =>
+      sendOnce(h, 'operator', 'color', bulbCommand('lifx-color-set', 'org.bunny.lifx-color.set.requested', 'pendant-1', {hue: 120, saturation: 100}), 'req-color')),
+    expect('pendant-1 shows green, and history holds req-color succeeded', h =>
+      pendantShows(h, {hue: 120, saturation: 100}) === true ? recorded(h, 'req-color', 'succeeded', 'transmitted') : pendantShows(h, {hue: 120, saturation: 100})),
+    act('pendant-1 is switched off at the wall', h => { h.simulate({device: 'lifx', action: 'offline', address: PENDANT_AT}); }),
+    act('the operator switches pendant-1 off as req-off; the module accepts it', h =>
+      sendOnce(h, 'operator', 'off', bulbCommand('power-set', 'org.bunny.power.set.requested', 'pendant-1', {on: false}), 'req-off')),
+    expect('history holds req-off uncertain, with no evidence it reached the bulb, and the inbox holds it', h => {
+      const rows = historyOf(h, 'req-off').map(entry => `${entry.result}/${entry.evidence}`);
+      const items = inboxOf(h, 'req-off');
+      return (show(rows) === show(['uncertain/none']) && items.length === 1) || `history ${show(rows)}, inbox ${show(items)}`;
+    }, 5000),
+    expect('the reader shows pendant-1 unavailable', h => lifxDevice(h, 'pendant-1')?.availability === 'unavailable' || String(lifxDevice(h, 'pendant-1')?.availability)),
+    act('the operator asks the Beam to switch on', h => h.send('operator', 'beam', bulbCommand('power-set', 'org.bunny.power.set.requested', 'beam', {on: true}), {timeoutMs: 5000, requestId: 'req-beam'})),
+    expect('the Beam refuses it: it offers no power control', h => answered(h, 'beam', 'unsupported-capability')),
+    holds('the Beam got no packet, and no message or record carries a bulb\'s address', h => {
+      const places = [h.logs(), h.published(), h.reader.heard(), ...h.reader.families().map(family => h.reader.states(family))];
+      const leaked = places.some(value => JSON.stringify(value).includes(BULB_NETWORK));
+      const packets = h.devices().lifx.packets.filter(packet => packet.address === BEAM_AT).length;
+      return (packets === 0 && !leaked) || `${packets} packets to the Beam, address leaked: ${String(leaked)}`;
+    }, 300),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
-  configuredModule, misconfiguredModule, speakerPlayback,
+  configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

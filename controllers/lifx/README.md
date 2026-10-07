@@ -10,6 +10,12 @@ automatic agent status, painted internally through the same controller (see
 [Automatic agent status](#automatic-agent-status)). Neither is installed yet.
 Source validation sends no bulb traffic.
 
+The runtime's [LIFX module](../../modules/lifx/README.md) (#928) is a copy of this
+package, converted to the 2.0 message format; it replaces this package at the
+cutover (#840). Until the retirement story (#839), this package stays unchanged for
+the local controller host, so a fix here does not reach the module, and the other
+way round.
+
 ## Ownership and configuration
 
 Construct `LifxController` with `controllerId`, `sourceId` and 1–32 `bulbs`.

@@ -1,0 +1,17 @@
+{
+  "name": "@jimmie-potts/lifx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The LIFX runtime module: qualified LAN bulbs and their automatic agent status (ADR 0012, Hub #928)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
+  }
+}
