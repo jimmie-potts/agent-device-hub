@@ -17,8 +17,8 @@ import {SceneRestorer} from '../src/scenes.js';
 import {identityKey} from '../src/shared-input.js';
 import {execute, rows, transaction, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import type {LightAddress} from '../src/transport.js';
-import {runWorker, type Sender, type WorkerOptions} from '../src/worker.js';
+import type {LightAddress, LightRequest} from '../src/transport.js';
+import {runWorker, superviseWorker, type Sender, type WorkerOptions} from '../src/worker.js';
 import {Feed, fixtureJson, temporary, write, type FeedChange} from './support.js';
 
 /** SceneTest.setUp's configuration. */
@@ -188,7 +188,7 @@ const WORKER_ROWS: Record<string, string> = {
 /** JSON that may hold Python's infinite floats, which the recording keeps as text. */
 const parseDisplay = (text: string): unknown => JSON.parse(text.replace(/(-?Infinity|NaN)/g, '"$1"'));
 
-type Options = {scenes?: boolean; send?: 'capture' | 'fail' | 'failAfterFirst'};
+type Options = {scenes?: boolean; send?: 'capture' | 'fail' | 'failAfterFirst'; device?: string};
 
 /** record.WorkerCase: one scripted case on SceneTest's Lines and fake device, with shared input selected at 1000. */
 export class WorkerCase {
@@ -196,7 +196,8 @@ export class WorkerCase {
   /** The module's one connection, as ModuleContext.database gives it. */
   readonly database: () => Db;
   readonly clock = new ManualClock();
-  readonly device = new SceneDevice(this.clock);
+  /** The fake that device steps address; a two-device case points it at either fake for one step. */
+  device = new SceneDevice(this.clock);
   readonly feed = new Feed();
   readonly sends: [Indication[], number, boolean][] = [];
   /** Every outcome and scene list change the worker and steps reported, in order. */
@@ -235,7 +236,7 @@ export class WorkerCase {
         transaction(db, () => commandMode(db, text(0), this.clock.seconds(), this.report, args.length > 1 ? text(1) : DEFAULT));
         return null;
       }
-      case 'status': return withState(this.directory, db => modeStatus(db));
+      case 'status': return withState(this.directory, db => modeStatus(db, args.length > 0 ? text(0) : DEFAULT));
       case 'sleep':
         this.clock.sleep(Number(args[0]));
         return null;
@@ -287,29 +288,56 @@ export class WorkerCase {
           }
         });
       case 'second': return runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
-        signal: new AbortController().signal, request: this.device.request, transact: this.transact});
+        signal: new AbortController().signal, request: this.transport(), transact: this.transact});
       case 'run': return this.run(Number(args[0]), (args[1] ?? []) as [number, Step][], (args[2] ?? {}) as Options);
+      case 'supervise': return this.supervise(Number(args[0]), (args[1] ?? []) as [number, Step][], (args[2] ?? {}) as Options);
       default: throw new Error(`Unknown step ${op}.`);
     }
+  }
+
+  /** The device transport every worker run and step uses (record.WorkerCase.transport). */
+  transport(): LightRequest {
+    return this.device.request;
+  }
+
+  /** The worker options for one run on this case. */
+  options(signal: AbortSignal, options: Options): WorkerOptions {
+    const send: Sender = (_config, snapshot, instant, loop) => {
+      if (options.send === 'fail' || (options.send === 'failAfterFirst' && this.sends.length > 0)) throw new NamedError('RuntimeError', 'offline');
+      this.sends.push([snapshot.map(item => (item === null ? null : [...item]) as Indication), instant, loop]);
+      return undefined;
+    };
+    return {directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler, signal,
+      request: this.transport(), scenes: options.scenes ?? true, transact: this.transact, ...(options.send === undefined ? {} : {send}),
+      ...(options.device === undefined ? {} : {device: options.device})};
   }
 
   /**
    * record.WorkerCase.run: the worker until `until` seconds, with scheduled steps taken at the first wake-up at or after
    * their time, as Python's sleep took them, and then the stop signal at the first wake-up at or after `until`.
    */
-  async run(until: number, scheduled: readonly [number, Step][], options: Options = {}): Promise<{outcome: Outcome; scheduled: Outcome[]}> {
+  run(until: number, scheduled: readonly [number, Step][], options: Options = {}): Promise<{outcome: Outcome; scheduled: Outcome[]}> {
+    return this.drive(until, scheduled, signal => runWorker(this.options(signal, options)));
+  }
+
+  /**
+   * record.WorkerCase.supervise: the worker command's retry loop around the worker, driven as `run` drives the worker.
+   * Python's loop returned None however it ended; the port's supervisor says why.
+   */
+  supervise(until: number, scheduled: readonly [number, Step][], options: Options = {}): Promise<{outcome: Outcome; scheduled: Outcome[]}> {
+    return this.drive(until, scheduled, async signal => {
+      await superviseWorker(this.options(signal, options));
+      return null;
+    });
+  }
+
+  async drive(until: number, scheduled: readonly [number, Step][], start: (signal: AbortSignal) => Promise<unknown>):
+    Promise<{outcome: Outcome; scheduled: Outcome[]}> {
     const pending = [...scheduled];
     const results: Outcome[] = [];
     const controller = new AbortController();
-    const send: Sender = (_config, snapshot, instant, loop) => {
-      if (options.send === 'fail' || (options.send === 'failAfterFirst' && this.sends.length > 0)) throw new NamedError('RuntimeError', 'offline');
-      this.sends.push([snapshot.map(item => (item === null ? null : [...item]) as Indication), instant, loop]);
-      return undefined;
-    };
     let settled = false;
-    const running = outcomeOf(() => runWorker({directory: this.directory, database: this.database, clock: this.clock, scheduler: this.clock.scheduler,
-      signal: controller.signal, request: this.device.request, scenes: options.scenes ?? true, transact: this.transact,
-      ...(options.send === undefined ? {} : {send})})).finally(() => { settled = true; });
+    const running = outcomeOf(() => start(controller.signal)).finally(() => { settled = true; });
     for (;;) {
       await settle();
       if (settled) break;
@@ -324,8 +352,8 @@ export class WorkerCase {
       timer.callback();
     }
     const outcome = await running;
-    return {outcome: controller.signal.aborted && 'result' in outcome && outcome.result === true ? {stopped: this.clock.seconds()} : outcome,
-      scheduled: results};
+    const stopped = controller.signal.aborted && 'result' in outcome && (outcome.result === true || outcome.result === null);
+    return {outcome: stopped ? {stopped: this.clock.seconds()} : outcome, scheduled: results};
   }
 
   rows(): Record<string, unknown[][]> {

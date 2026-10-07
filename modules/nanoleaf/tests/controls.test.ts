@@ -238,11 +238,16 @@ suite('ControllerWorkerTest', () => {
   });
 
   test('test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries', async context => {
-    // Partly: the worker command's retry loop is slice 3e's. A second run stands in for its automatic retry.
-    const replay = await replayControls(context, 'a same-mode command retries after a hold');
+    // The worker command's retry loop is superviseWorker: the failed pass is recorded and run again, and the held device
+    // sends nothing more until the explicit same-mode command.
+    const replay = await replayControls(context, 'the worker command retries a failed pass and keeps the hold');
+    assert.deepEqual((results(replay, 'supervise')[0] as {outcome: unknown}).outcome, {stopped: 1005});
     const counts = results(replay, 'countPuts') as number[];
     assert.equal(counts[0], 1);
+    assert.deepEqual(results(replay, 'query')[0], [['control_error', 'Light update failed; retrying.'], ['controller_hold_revision', '1']]);
     assert.ok((counts[1] ?? 0) > 1);
+    // Before 3e, a second run stood in for the retry; that recording still holds.
+    await replayControls(context, 'a same-mode command retries after a hold');
   });
 
   test('test_partial_failure_retains_completed_operations', async context => {
@@ -414,6 +419,16 @@ async function steps(context: TestContext, list: readonly Step[]): Promise<{run:
 }
 
 suite('control checks the port adds', () => {
+  test('the worker command runs a worker that ended at a hold again', async context => {
+    // Recorded from Python: a hold set as a write completes ends the pass; the worker command runs the worker again 1 s
+    // later, and the fresh brightness admitted meanwhile, which released the hold, is written then.
+    const replay = await replayControls(context, 'the worker command runs a worker that ended at a hold again');
+    assert.deepEqual(puts(replay.run.device.calls), [['/state', {brightness: {value: 42, duration: 0}}], ['/state', {brightness: {value: 30, duration: 0}}]]);
+    assert.equal(replay.run.device.calls.at(-1)?.[0], 1003);
+    assert.deepEqual(outcomeOf(replay, 'p'), outcome('p', 'failed', 'none', 'expired'));
+    assert.deepEqual(outcomeOf(replay, 'b2'), outcome('b2', 'succeeded', 'transmitted'));
+  });
+
   test('a saved layout too large refuses an animation before the Free gate', async context => {
     // In Work, a layout over its byte bound refuses with capacity, as integration_api.admit read the layout before it
     // checked the mode.
