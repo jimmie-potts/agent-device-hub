@@ -7,7 +7,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isObject, parseJson} from './compat.js';
 import {registeredDevices} from './configuration.js';
-import {DEFAULT, layoutDevices, metaKey} from './devices.js';
+import {DEFAULT, ID, layoutDevices, metaKey} from './devices.js';
 import {Rejected, render, valid, type AnimationCommand, type Display} from './effects.js';
 import {ValueError} from './errors.js';
 import {resolveAnimation} from './favorites.js';
@@ -115,6 +115,7 @@ export function animationPayload(db: Db, command: AnimationCommand, groups: read
  */
 export function admitCommand(db: Db, directory: string, admission: Admission, report: Report): void {
   const device = admission.device ?? DEFAULT;
+  if (!ID.test(device)) throw new Refused('invalid-request', 'A device ID is letters, digits, dots, hyphens and underscores.');
   if (device !== DEFAULT && !registeredDevices(directory).includes(device)) throw new Refused('not-found', 'No such device.');
   const command = parseCommand(admission.command);
   const control = controlState(db, device);
