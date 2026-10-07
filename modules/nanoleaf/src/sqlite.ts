@@ -1,5 +1,5 @@
 // Positional SQLite access in the shape the Python bridge used: rows are tuples and callers own the transaction.
-import {chmodSync, closeSync, constants, openSync} from 'node:fs';
+import {chmodSync, closeSync, constants, lstatSync, openSync, type Stats} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 
 export type Db = DatabaseSync;
@@ -100,14 +100,35 @@ export function sameRow(left: Row | undefined, right: Row | undefined): boolean 
 /**
  * Opens a SQLite file that only the owner can read or write: the file is created with mode 600 before SQLite opens it,
  * and an older file is narrowed to 600, so its journals, which SQLite creates with the file's own mode, are private too.
- * The device locks and the layout lock use it.
+ * The device locks, the layout lock and the registry lock use it.
+ *
+ * Only SQLite opens an existing file. Closing any other descriptor of it would drop every POSIX lock this process holds
+ * on it, so a second take refused in this process would free the first holder's lock for another process (Hub #972).
+ * An existing file is checked with `lstat`, and a missing one is created with `O_EXCL`, whose descriptor no lock can be
+ * on yet. A link in the file's place is refused with `ELOOP`, as opening it with `O_NOFOLLOW` would.
  */
 export function privateDatabase(path: string, options: {timeout: number}): DatabaseSync {
-  const descriptor = openSync(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
-  try {
-    chmodSync(path, 0o600);
-  } finally {
-    closeSync(descriptor);
+  if (statOf(path) === undefined) {
+    try {
+      closeSync(openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW, 0o600));
+    } catch (error) {
+      // Another opener created it meanwhile: it is checked as an existing file.
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+    }
   }
+  const info = statOf(path);
+  if (info?.isSymbolicLink() === true) throw Object.assign(new Error(`ELOOP: a link stands in the place of ${path}`), {code: 'ELOOP'});
+  if (info === undefined || !info.isFile()) throw Object.assign(new Error(`${path} is not a regular file`), {code: 'EINVAL'});
+  if ((info.mode & 0o777) !== 0o600) chmodSync(path, 0o600);
   return new DatabaseSync(path, options);
+}
+
+/** The file's own status, never a link's target's, or undefined when nothing is there. */
+function statOf(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+    throw error;
+  }
 }
