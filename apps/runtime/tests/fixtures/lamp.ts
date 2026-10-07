@@ -1,10 +1,10 @@
 // The fixture module (Hub #882, #846): a lamp, the stand-in device module that later stories use. It shows the module
 // factory convention: `createLampModule({transport})` takes how the module reaches its device, so a test or a run passes
-// a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, and
-// their `device/2.0` records, as every device module serves its own (Hub #918, #967), follows
-// the core's mode and sessions, switches a lamp on command, in a device span whose context never reaches the device, and
-// reports the change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet
-// mode keeps the lamps off, and its indicator shows when an agent session waits for a person.
+// a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, with
+// their `device/2.0` records, as every device module serves its own (Hub #918, #967). It follows the core's mode and
+// sessions, and switches a lamp on command, in a device span whose context never reaches the device. It reports the
+// change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet mode keeps
+// the lamps off, and its indicator shows when an agent session waits for a person.
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';

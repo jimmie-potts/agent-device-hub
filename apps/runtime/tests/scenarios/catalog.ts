@@ -955,6 +955,10 @@ const deviceOwners: Scenario = {
   },
   steps: [
     expect('the core, the lamp and the sign are running, though the lamp and the sign both serve device', h => running(h, ['core', 'lamp', 'sign'])),
+    expect('health names the lamp and the sign, and no other module, as serving device', async h => {
+      const owners = (await h.health()).filter(module => module.serves?.includes('device') === true).map(module => module.name);
+      return show(owners) === show(['lamp', 'sign']) || `health names ${show(owners)}`;
+    }),
     expect('the reader\'s copy from the lamp holds lamp-1 only', h => holdsDevices(h, LAMP_OWNER, ['lamp-1 unknown'])),
     expect('the reader\'s copy from the sign holds sign-1 only, unavailable once the sign\'s deadline passed', h => holdsDevices(h, SIGN_OWNER, ['sign-1 unavailable']), 5000),
     act('the sign comes online', h => { h.simulate({device: 'sign', action: 'online'}); }),

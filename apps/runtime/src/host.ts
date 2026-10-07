@@ -25,7 +25,13 @@ import type {RuntimeTracing} from './tracing.js';
 export type ModuleState = 'refused' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
 /** Why a module is refused or failed: a code from the 2.0 error registry and a fixed sentence. */
 export type Reason = {code: string; detail: string};
-export type ModuleHealth = {name: string; apiVersion: string; state: ModuleState; healthy: boolean; syncRestarts: number; reason?: Reason};
+/**
+ * A module's health. `serves` lists the families the module serves through sync now, when it serves any, so a consumer
+ * of a family that several modules serve, such as `device`, learns its owners (#967).
+ */
+export type ModuleHealth = {
+  name: string; apiVersion: string; state: ModuleState; healthy: boolean; syncRestarts: number; serves?: readonly string[]; reason?: Reason;
+};
 
 export type HostOptions = {
   /**
@@ -257,8 +263,10 @@ export class ModuleHost {
   }
 
   health(): ModuleHealth[] {
-    return this.#slots.map(({name, apiVersion, state, reason, syncRestarts}) =>
-      ({name, apiVersion, state, healthy: state === 'running', syncRestarts, ...(reason === undefined ? {} : {reason})}));
+    return this.#slots.map(({name, apiVersion, state, reason, syncRestarts}) => {
+      const serves = this.#bus.served(sourceOf(name));
+      return {name, apiVersion, state, healthy: state === 'running', syncRestarts, ...(serves.length === 0 ? {} : {serves}), ...(reason === undefined ? {} : {reason})};
+    });
   }
 
   /**

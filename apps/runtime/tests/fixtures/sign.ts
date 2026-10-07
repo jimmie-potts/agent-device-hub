@@ -1,9 +1,10 @@
 // The configured fixture module (Hub #919): a sign, the stand-in for a device module that needs settings, a secret and
 // private files, as Tidbyt, Nanoleaf and Pixoo do. `configureSign` checks its section of the runtime's configuration
-// file. Its start reads its token, keeps its layout in its private folder and serves its signs' availability, as its
-// own family and as the signs' `device/2.0` records (Hub #918, #967), and returns without reaching a sign (policy A). It reaches each sign afterwards, on the runtime's scheduler with a
-// deadline, to show the greeting it rendered in a worker thread: a sign that never answers is `unavailable` and is
-// tried again with capped backoff, and one that shows the greeting is `available`. A render that fails is reported
+// file. Its start reads its token, keeps its layout in its private folder, serves its signs' availability, as its own
+// family and as the signs' `device/2.0` records (Hub #918, #967), and returns without reaching a sign (policy A). It
+// reaches each sign afterwards, on the runtime's scheduler with a deadline, to show the greeting it rendered in a
+// worker thread: a sign that never answers is `unavailable` and is tried again with capped backoff, and one that shows
+// the greeting is `available`. A render that fails is reported
 // against the sign and tried again, never a module failure. It passes the module test kit, policy A's check included.
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';

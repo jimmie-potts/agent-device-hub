@@ -46,6 +46,10 @@ it('two modules that both serve device run, and a module and a remote part sync 
   const report = runtime.health();
   assert.deepEqual(['bulbs', 'panels', 'display'].map(name => `${name} ${entry(report, name).state}`), ['bulbs running', 'panels running', 'display running']);
   assert.equal(report.status, 'ok');
+  // Health names each module's served families, so a consumer learns the owners of device without asking every module.
+  assert.deepEqual(['bulbs', 'panels', 'display'].map(name => entry(report, name).serves), [[DEVICE_FAMILY], [DEVICE_FAMILY], undefined]);
+  const owners = report.modules.filter(module => module.serves?.includes(DEVICE_FAMILY) === true).map(module => sourceOf(module.name));
+  assert.deepEqual(owners, ['bunny/modules/bulbs', 'bunny/modules/panels']);
   assert.deepEqual(ids(copies.get('bunny/modules/bulbs')), ['bunny/modules/bulbs bulb-1', 'bunny/modules/bulbs bulb-2']);
   assert.deepEqual(ids(copies.get('bunny/modules/panels')), ['bunny/modules/panels panel-1']);
 
