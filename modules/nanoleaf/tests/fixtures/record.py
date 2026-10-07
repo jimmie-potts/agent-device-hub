@@ -1184,6 +1184,11 @@ class Stopped(Exception):
     """Ends a scripted worker run, as the module's stop signal ends the port's worker."""
 
 
+class Halt(BaseException):
+    """Ends a scripted run of the worker command, whose retry loop catches every Exception, as the module's stop signal
+    ends the port's supervisor."""
+
+
 class MsClock:
     """A test clock kept in milliseconds, as the runtime's clock is. now() is in seconds; a sleep of s seconds adds s * 1000
     milliseconds, the arithmetic the port's worker does through its scheduler, so both sides see the same instants."""
@@ -1294,7 +1299,7 @@ class WorkerCase:
             modes.set_mode(self.path, args[0], launch=lambda _: None, now=self.clock.now, device=args[1] if len(args) > 1 else devices.DEFAULT)
             return None
         if op == 'status':
-            return modes.get_status(self.path)
+            return modes.get_status(self.path, args[0] if args else devices.DEFAULT)
         if op == 'sleep':
             self.clock.sleep(args[0])
             return None
@@ -1347,7 +1352,40 @@ class WorkerCase:
                                 read_unread=lambda: None, feed={'poller': IdleFeed(self.path)})
         if op == 'run':
             return self.run(*args)
+        if op == 'supervise':
+            return self.supervise(*args)
         raise AssertionError(op)
+
+    def transport(self):
+        """The device transport every worker run and step uses."""
+        return self.device.request
+
+    def supervise(self, until, scheduled=(), options=None):
+        """The `worker` command's retry loop around the real worker, as the port's superviseWorker runs it: both the
+        worker's waits and the loop's take scheduled steps and end at `until`."""
+        from unittest.mock import patch
+        options = options or {}
+        device = options.get('device', devices.DEFAULT)
+        pending = list(scheduled)
+        results = []
+        def advance(seconds):
+            self.clock.sleep(seconds)
+            while pending and self.clock.now() >= pending[0][0]:
+                results.append(outcome_of(lambda: self.apply(pending.pop(0)[1])))
+            if self.clock.now() >= until:
+                raise Halt()
+        original = b.run_worker
+        def run(directory, device=devices.DEFAULT, feed=None, request=None, diagnostic=None):
+            return original(directory, device=device, sleep=advance, now=self.clock.now, read_unread=lambda: None,
+                            request=self.transport(), feed={'poller': IdleFeed(self.path)}, diagnostic=diagnostic)
+        argv = ['bridge.py', 'worker', '--state-dir', str(self.path)] + (['--device', device] if device != devices.DEFAULT else [])
+        with patch.object(sys, 'argv', argv), patch.object(b, 'run_worker', run), patch.object(b.time, 'sleep', advance):
+            try:
+                b.main(launch=lambda _: None, request=self.transport())
+                outcome = {'result': None}
+            except Halt:
+                outcome = {'stopped': self.clock.now()}
+        return {'outcome': outcome, 'scheduled': results}
 
     def run(self, until, scheduled=(), options=None):
         options = options or {}
@@ -1363,8 +1401,8 @@ class WorkerCase:
             if options.get('send') == 'fail' or (options.get('send') == 'failAfterFirst' and self.sends):
                 raise RuntimeError('offline')
             self.sends.append([[list(item) if item else None for item in snapshot], instant, loop])
-        arguments = dict(sleep=advance, now=self.clock.now, read_unread=lambda: None, request=self.device.request,
-                         feed={'poller': IdleFeed(self.path)})
+        arguments = dict(sleep=advance, now=self.clock.now, read_unread=lambda: None, request=self.transport(),
+                         feed={'poller': IdleFeed(self.path)}, device=options.get('device', devices.DEFAULT))
         if options.get('send'):
             arguments['send'] = capture
         if options.get('scenes') is False:
@@ -1602,13 +1640,19 @@ class ControlCase(WorkerCase):
             self.controller()
             return None
         if op == 'command':
+            # A third argument names the target by its public ID; `device` is the Lines.
+            target = args[2] if len(args) > 2 else 'device'
+            ledger = None if target == 'device' else target
             command = copy.deepcopy(args[1])
             if 'sceneIndex' in command:
                 index = command.pop('sceneIndex')
-                ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
+                ids = self.app.snapshot(ledger)['capabilities']['scenes']['sceneIds']
                 command['sceneId'] = ids[index] if isinstance(index, int) else index
-            snap = self.app.snapshot()
-            request = dict(apiVersion='1.0', controllerId='controller', deviceId='device', requestId=snap['nextRequestId'],
+            try:
+                snap = self.app.snapshot(ledger)
+            except integration_api.Failure:
+                snap = self.app.snapshot()  # An unknown target takes the Lines ledger's ticket.
+            request = dict(apiVersion='1.0', controllerId='controller', deviceId=target, requestId=snap['nextRequestId'],
                            expectedConfigurationRevision=snap['configurationRevision'], expectedGeneration=snap['generation'], command=command)
             code, receipt = self.app.admit(self.token, request)
             self.requests[args[0]] = ('command', request, code >= 400)
@@ -1651,11 +1695,23 @@ class ControlCase(WorkerCase):
         if op == 'deviceState':
             return {'brightness': self.device.brightness, 'on': self.device.on, 'selected': self.device.selected}
         if op == 'desired':
-            desired = self.app.snapshot()['state']['desired']
+            desired = self.app.snapshot(args[0] if args else None)['state']['desired']
             return {'power': desired['power'], 'brightness': desired['brightness']}
         if op == 'sceneIds':
-            ids = self.app.snapshot()['capabilities']['scenes']['sceneIds']
+            ids = self.app.snapshot(args[0] if args else None)['capabilities']['scenes']['sceneIds']
             return [len(ids), all(len(item) <= 128 and item.startswith('scene-') for item in ids)]
+        if op == 'sceneNames':
+            # The names a device's ledger lists, in order; a device without a ledger lists none.
+            ledger = devices.DEFAULT if not args or args[0] == 'device' else args[0]
+            with self.db() as db:
+                return controller_state.read(db, ledger).get('scenes', []) if controller_state.present(db, ledger) else []
+        if op == 'ledger':
+            import controller_server as server
+            server.configure(self.path, 'controller', args[0], 'source')
+            return None
+        if op == 'pending':
+            # The kinds of a device's queued and attempting native commands.
+            return [item['command']['kind'] for item in self.app.snapshot(args[0] if args else None)['state']['pending']]
         if op == 'layout':
             # With a size, trailing spaces pad the file to that many bytes; JSON allows them.
             text = json.dumps(args[0])
@@ -1706,13 +1762,15 @@ class ControlCase(WorkerCase):
     def receipts(self):
         """Each admitted request's final receipt; a refused request has none. A refused extension request leaves its
         ticket to the next request, so its sequence would read that request's receipt."""
+        import controller_state
         result = {}
         with self.db() as db:
             for name, (kind, request, refused) in self.requests.items():
                 if refused:
                     result[name] = None
                     continue
-                table = 'controller_requests' if kind == 'command' else 'integration_requests'
+                ledger = devices.DEFAULT if request['deviceId'] == 'device' else request['deviceId']
+                table = controller_state.table('controller_requests', ledger) if kind == 'command' else 'integration_requests'
                 row = db.execute(f'SELECT receipt FROM {table} WHERE sequence=?', (request['requestId']['sequence'],)).fetchone()
                 result[name] = receipt_summary(None, json.loads(row[0]) if row else None)
         return result
@@ -1811,6 +1869,16 @@ def control_cases():
         case('a same-mode command retries after a hold', [
             ctrl, command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT'}), ('run', 1002.0), ('run', 1004.0), ('countPuts',),
             ('mode', 'quiet'), ('run', 1008.0, [(1006.0, ('mode', 'free'))]), ('countPuts',)]),
+        # As the brightness completes, a power command is admitted and expires at once, which holds the device: the pass
+        # ends at the hold, and the worker command runs the worker again 1 s later. Completion hooks run last-set first.
+        case('the worker command runs a worker that ended at a hold again', [
+            ctrl, ('mode', 'free'), ('run', 1002.0), command('b', brightness(42)), ('hook', {'complete': True, 'step': ('expireAll',)}),
+            ('hook', {'complete': True, 'step': command('p', power_off)}),
+            ('supervise', 1006.0, [(1002.5, command('b2', brightness(30)))]), ('deviceState',)]),
+        case('the worker command retries a failed pass and keeps the hold', [
+            ctrl, command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT'}), ('supervise', 1005.0), ('countPuts',),
+            ('query', "SELECT key, value FROM meta WHERE key IN ('control_error', 'controller_hold_revision') ORDER BY key"),
+            ('mode', 'quiet'), ('run', 1009.0, [(1006.0, ('mode', 'free'))]), ('countPuts',)]),
         case('a partial failure keeps its completed write', [
             ctrl, feed('prompt', 'a'), command('q', machine('Quiet')), ('device', 'fail', {'method': 'PUT', 'endpoint': '/state'}),
             ('run', 1002.0)]),
@@ -1898,6 +1966,374 @@ def control_values():
     write_nested('controls.json', {'cases': cases}, 3)
 
 
+# Slice 3e: test_device_worker.DeviceWorkerTest and test_panels_controller's worker ownership cases on shared input.
+
+LINES_IP, PANELS_IP, MOVED_IP = '192.0.2.1', '192.0.2.2', '192.0.2.4'
+DEVICE_ENTRIES = {'wall': {'kind': 'lines', 'ip': LINES_IP, 'token_ref': 'token'},
+                  'panels': {'kind': 'panels', 'ip': PANELS_IP, 'token_ref': 'panelsToken'}}
+
+
+def triangles(count):
+    """test_device_worker.triangles: the NL22 fixture's first `count` triangles, by position."""
+    import panels
+    reported = copy.deepcopy(json.loads((SOURCE / 'tests/fixtures/nl22-panels-fixture.json').read_text())['panelLayout'])
+    points = reported['layout']['positionData']
+    points[:] = sorted(points, key=lambda p: (p['x'], p['y']))[:count]
+    return panels.read_layout(reported)
+
+
+class DeviceCase(ControlCase):
+    """DeviceWorkerTest on shared input: the 15 straight Lines and NL22 Panels registered as two devices, each with its own
+    fake at its own address. Steps reach the Panels' fake through `on`; worker runs name their device."""
+    def __init__(self, path, record):
+        import jsonfile
+        super().__init__(path, record)
+        self.lines = self.device
+        self.panels = SceneDevice(self.clock)
+        self.panels.names = ['Forest', 'Sunset']
+        self.panels.selected, self.panels.brightness = 'Forest', 64
+        self.addresses = []
+        self.locks = {}
+        jsonfile.write_json(path / 'config.json', {
+            'ip': LINES_IP, 'token': 'fakeLines', 'panelsToken': 'fakePanels', 'devices': DEVICE_ENTRIES,
+            'metadata_path': str(path / 'metadata.json'), 'title_index_path': str(path / 'session_index.jsonl')})
+        lines = devices.lines_entry([[100 + i * 2, 101 + i * 2] for i in range(15)], [[i * 10, 0] for i in range(15)])
+        devices.save_layout(path / 'layout.json', {'wall': lines, 'panels': triangles(record.get('panels', 18))})
+
+    def setup(self):
+        """The files the port writes for this case: its paths are the case's own, so they are kept relative to it."""
+        return {name: (self.path / name).read_text().replace(str(self.path), '{directory}') for name in ('config.json', 'layout.json')}
+
+    def close(self):
+        for lock in self.locks.values():
+            lock.close()
+        super().close()
+
+    def transport(self):
+        return self.route
+
+    def route(self, config, method, endpoint='', payload=None):
+        self.addresses.append([config['ip'], method, endpoint])
+        target = {LINES_IP: self.lines, PANELS_IP: self.panels, MOVED_IP: self.panels}[config['ip']]
+        return target.request(config, method, endpoint, payload)
+
+    def config(self):
+        return json.loads((self.path / 'config.json').read_text())
+
+    def write_config(self, config):
+        import jsonfile
+        jsonfile.write_json(self.path / 'config.json', config)
+
+    def load(self, device):
+        import configuration
+        return configuration.load_config(self.path, device, request=self.transport())
+
+    def apply(self, step):
+        import configuration
+        import controller_state
+        import edits
+        import sqlite3
+        op, args = step[0], step[1:]
+        if op == 'on':
+            previous = self.device
+            self.device = self.panels if args[0] == 'panels' else self.lines
+            try:
+                return self.apply(args[1])
+            finally:
+                self.device = previous
+        if op == 'devices':
+            self.write_config(dict(self.config(), devices=args[0]))
+            return None
+        if op == 'readdress':
+            config = self.config()
+            config['devices'][args[0]]['ip'] = args[1]
+            self.write_config(config)
+            self.addresses.append('moved')
+            return None
+        if op == 'unregister':
+            config = self.config()
+            del config['devices'][args[0]]
+            self.write_config(config)
+            with self.db() as db, db:
+                store.mark_dirty(db)
+            return None
+        if op == 'configText':
+            (self.path / 'config.json').write_text(args[0])
+            return None
+        if op == 'registered':
+            return configuration.registered_devices(self.path)
+        if op == 'lock':
+            lock = sqlite3.connect(self.path / devices.lock_file(args[0]), timeout=0)
+            lock.execute('BEGIN EXCLUSIVE')
+            self.locks[args[0]] = lock
+            return None
+        if op == 'unlock':
+            self.locks.pop(args[0]).close()
+            return None
+        if op == 'locks':
+            return sorted(item.name for item in self.path.glob('notification-lock*'))
+        if op == 'recordFailure':
+            return b.record_failure(self.path, args[0])
+        if op == 'dirty':
+            with self.db() as db, db:
+                store.mark_dirty(db)
+            return None
+        if op == 'patch':
+            config = self.load(args[0])
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                return wall.request_patch(db, args[1], config)
+        if op == 'assignAll':
+            config = self.load(args[0])
+            patch = {'settings': args[2], 'lines': {element['id']: {'project': args[1]} for element in config['elements']}}
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                return wall.request_patch(db, patch, config)
+        if op == 'locate':
+            target, element = self.load(args[0]), self.load(args[1])['elements'][args[2]]['id']
+            with self.db() as db, db:
+                db.execute('BEGIN IMMEDIATE')
+                return edits.locate(db, target, element)
+        if op == 'matchRevision':
+            # Give a device the Lines' held revision, so a hold that ignored the device would match it.
+            device = args[0]
+            with self.db() as db:
+                held = int(db.execute("SELECT value FROM meta WHERE key='controller_hold_revision'").fetchone()[0])
+            def revision():
+                with self.db() as db:
+                    row = db.execute('SELECT value FROM meta WHERE key=?', (devices.meta_key('mode_revision', device),)).fetchone()
+                return int(row[0]) if row else 0
+            while revision() < held:
+                mode = 'quiet' if modes.get_status(self.path, device)['mode'] == 'work' else 'work'
+                modes.set_mode(self.path, mode, launch=lambda _: None, now=self.clock.now, device=device)
+            return revision()
+        if op == 'animationsPending':
+            with self.db() as db:
+                return [phase for phase, in db.execute("SELECT phase FROM integration_requests WHERE phase!='done' ORDER BY sequence")]
+        return super().apply(step)
+
+
+def device_cases():
+    def case(name, steps, **options):
+        return dict({'name': name, 'steps': [list(step) for step in steps]}, **options)
+    key = lambda name: shared_input.identity_key(dict(FEED_IDENTITY, sessionId=name))
+    feed = lambda op, name='a': ('feed', op, name)
+    mode = lambda name, device='wall': ('mode', name, device)
+    run = lambda until, scheduled=(), device='wall': ('run', until, list(scheduled), {'device': device})
+    on = lambda device, step: ('on', device, step)
+    command = lambda name, value, device='device': ('command', name, value, device)
+    play = lambda name, value: ('play', name, value)
+    ctrl = ('controller',)
+    owned = [ctrl, ('ledger', 'panels')]  # PanelsControllerTest: each device has its own ledger.
+    quiet_command = {'kind': 'mode.set', 'mode': 'Quiet'}
+    brightness = lambda percent: {'kind': 'brightness.set', 'percent': percent}
+    power_off = {'kind': 'power.set', 'on': False}
+    holds = ('query', "SELECT key FROM meta WHERE key LIKE 'controller_hold_revision%' ORDER BY key")
+    slots = ('query', 'SELECT device, COUNT(*) FROM slots GROUP BY device ORDER BY device')
+    comets = ('query', 'SELECT device FROM comets ORDER BY device')
+    # PanelsControllerTest.free: each device handed to Free by its own worker, from 1000 to 1004, then no calls kept.
+    free = [mode('free'), run(1002.0), mode('free', 'panels'), run(1004.0, device='panels'), on('wall', ('device', 'clearCalls')),
+            on('panels', ('device', 'clearCalls'))]
+    # PanelsControllerTest.discover: a Work pass on each device observes its scenes, from 1000 to 1008.
+    discover = [feed('prompt'), run(1004.0, [(1003.0, mode('free'))]), run(1008.0, [(1007.0, mode('free', 'panels'))], 'panels')]
+    return [
+        # LaunchAndTargetTest.
+        case('a second instance for a device exits without sending', [
+            feed('prompt'), ('lock', 'panels'), run(1000.0, device='panels'), on('panels', ('calls',)),
+            run(1005.0, [(1003.0, mode('free'))]), ('unlock', 'panels'), ('locks',)]),
+        case('each registered device has a worker', [('registered',), ('configText', '{'), ('registered',)]),
+        case('mode commands address one device', [
+            mode('quiet', 'panels'), ('status', 'panels'), ('status',), mode('free'), ('status',), ('status', 'panels')]),
+        case('an unknown target changes nothing', [
+            ctrl, ('query', 'SELECT key, value FROM meta ORDER BY key'), command('m1', {'kind': 'mode.set', 'mode': 'Free'}, 'missing'),
+            command('m2', {'kind': 'mode.set', 'mode': 'Free'}, '../x'), ('query', 'SELECT key, value FROM meta ORDER BY key')]),
+        # MirroredTest.
+        # The task starts after shared input was selected, so its outward wave is newer than the selection's cutoff.
+        case('one task occupies one element on each device', [
+            ('sleep', 1.0), feed('prompt'), run(1005.0, [(1004.0, mode('free', 'panels'))], 'panels'), run(1009.0, [(1008.0, mode('free'))]),
+            slots, ('query', 'SELECT COUNT(*) FROM activity')]),
+        case('scene restoration is per device', [feed('prompt'), run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels')]),
+        # AddressChangeTest.
+        case('a running worker follows an address change', [
+            feed('prompt'), run(1005.0, [(1002.0, ('readdress', 'panels', MOVED_IP)), (1004.0, mode('free', 'panels'))], 'panels')]),
+        # SmallPanelsTest.
+        case('a full Panels device waits without moving tasks', [
+            *[feed('prompt', 's%d' % n) for n in range(9)], run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'),
+            run(1008.0, [(1007.0, mode('free'))]), slots, ('query', "SELECT session, slot FROM slots WHERE device='panels' ORDER BY slot"),
+            mode('work', 'panels'), on('panels', ('device', 'fail', {})), run(1012.0, device='panels'), slots,
+            ('query', "SELECT session, slot FROM slots WHERE device='panels' ORDER BY slot")], panels=6),
+        # EvidenceTest.
+        case('a completion queues one comet per Work device', [
+            mode('quiet', 'panels'), feed('prompt'), feed('stop'), comets, mode('work', 'panels'), feed('prompt', 'b'), feed('stop', 'b'),
+            ('query', 'SELECT device FROM comets WHERE session=? ORDER BY device', [key('b')])]),
+        case('reading clears both devices and drops queued comets', [
+            feed('prompt'), feed('stop'), run(1005.0, [(1002.5, feed('read'))]), ('query', 'SELECT status FROM sessions'), comets,
+            run(1009.0, device='panels'), comets]),
+        case('the Panels play their own comet from their own triangle', [
+            feed('prompt'), feed('stop'), run(1005.0, [(1002.5, feed('read'))], 'panels'), comets]),
+        # ModesTest.
+        case('a Panels Free handoff leaves the Lines rendering', [
+            feed('prompt'), run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'), on('panels', ('deviceState',)),
+            on('panels', ('device', 'clearCalls')), ('patch', 'wall', {'settings': {'coverage': 'status'}}), feed('permission'),
+            run(1006.0, device='panels'), on('panels', ('calls',)), run(1010.0, [(1009.0, mode('free'))]), ('status', 'panels')]),
+        case('a Panels Free keeps the Lines comet and pending edit', [
+            feed('prompt'), feed('stop'), ('sql', "UPDATE comets SET source=0, started=? WHERE device='wall'", [1000.0]),
+            ('sql', "INSERT INTO slots (session, slot, device) VALUES (?, 0, 'wall')", [key('a')]),
+            ('patch', 'wall', {'settings': {'style': 'project'}}), mode('free', 'panels'), run(1004.0, [(1001.0, feed('read'))], 'panels'),
+            ('query', 'SELECT device, started IS NOT NULL FROM comets'), ('query', 'SELECT device FROM map_pending'), ('status',)]),
+        case('an unread completion shows the unread color on both devices', [
+            mode('quiet'), mode('quiet', 'panels'), feed('prompt'), feed('stop'), run(1000.0), run(1000.0, device='panels'),
+            ('query', 'SELECT device, slot FROM slots ORDER BY device')]),
+        case('a Panels scene returns after a recoverable failure', [
+            feed('prompt'), on('panels', ('device', 'fail', {'method': 'PUT'})), run(1002.0, device='panels'), feed('stop'),
+            run(1012.0, [(1005.0, feed('read')), (1008.0, feed('end'))], 'panels')]),
+        case('Quiet on one device keeps the other in Work', [
+            feed('prompt'), mode('quiet', 'panels'), run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'),
+            run(1008.0, [(1007.0, mode('free'))])]),
+        case('a preview is scoped to its device', [
+            mode('quiet'), ('sql', "INSERT OR REPLACE INTO meta VALUES ('preview@panels', 'working')"),
+            run(1004.0, [(1003.0, mode('free'))]), ('query', "SELECT key FROM meta WHERE key LIKE 'preview%'"), run(1012.0, device='panels'),
+            ('query', "SELECT key FROM meta WHERE key LIKE 'preview%'")]),
+        # LocateTest.
+        case('Locate flashes one triangle on the Panels only', [
+            ('locate', 'panels', 'panels', 7), ('query', 'SELECT line_id, device FROM locate'), run(1002.0), run(1006.0, device='panels'),
+            ('query', 'SELECT * FROM locate')]),
+        case('Locate is refused in Panels Free and for Lines IDs', [
+            mode('free', 'panels'), ('locate', 'panels', 'panels', 0), mode('work', 'panels'), ('locate', 'panels', 'wall', 0),
+            ('query', 'SELECT * FROM locate')]),
+        # ContinuityTest.
+        case('registering the Panels later replays nothing', [
+            ('devices', {'wall': DEVICE_ENTRIES['wall']}), feed('prompt'), feed('prompt', 'b'), feed('stop', 'b'),
+            ('query', 'SELECT session, started FROM activity ORDER BY session'), comets, ('sleep', 10.0), ('devices', DEVICE_ENTRIES),
+            run(1016.0, [(1013.0, mode('free', 'panels')), (1013.5, feed('read', 'b'))], 'panels'),
+            ('query', 'SELECT session, started FROM activity WHERE session=?', [key('a')]), ('query', "SELECT COUNT(*) FROM comets WHERE device='panels'"),
+            ('query', "SELECT session, slot FROM slots WHERE device='panels' ORDER BY slot")]),
+        case('an override keeps the Panels comet source until it ends', [
+            feed('prompt'), feed('stop'), ('sql', "INSERT INTO projects VALUES ('p','P','#00ff00','[]'), ('q','Q','#ff00ff','[]')"),
+            ('sql', "UPDATE task_info SET project='p'"), ('assignAll', 'panels', 'p', {'style': 'project'}),
+            run(1007.0, [(1000.5, ('query', "SELECT source FROM comets WHERE device='panels' AND started IS NOT NULL")),
+                         (1000.5, ('patch', 'wall', {'tasks': {key('a'): 'q'}})), (1000.5, ('dirty',)),
+                         (1001.5, ('query', "SELECT slot FROM slots WHERE device='panels'")),
+                         (1002.6, ('query', "SELECT slot FROM slots WHERE device='panels'")),
+                         (1004.0, mode('free', 'panels')), (1004.5, feed('read'))], 'panels')]),
+        # IsolationTest.
+        case('a Panels outage leaves the Lines updating', [
+            ctrl, feed('prompt'), on('panels', ('device', 'fail', {})),
+            ('supervise', 1010.0, [(1002.0, mode('free', 'panels'))], {'device': 'panels'}), ('status',),
+            ('query', "SELECT key, value FROM meta WHERE key LIKE 'control_error%' ORDER BY key"), run(1014.0, [(1013.0, mode('free'))]),
+            ('status',)]),
+        case('a failed pass records the Panels error only', [
+            feed('prompt'), on('panels', ('device', 'fail', {})), run(1002.0, device='panels'), ('recordFailure', 'panels'),
+            ('status', 'panels'), ('status',)]),
+        case('a waiting Panels worker wakes after the Lines clear the dirty flag', [
+            feed('prompt'), run(1006.0, [(1004.1, feed('permission')), (1004.1, ('sql', "DELETE FROM meta WHERE key='dirty'")),
+                                        (1004.6, mode('free', 'panels'))], 'panels')]),
+        # ProtectedApiTest: only the Lines have a ledger.
+        case('machine requests never reach the Panels', [
+            ctrl, feed('prompt'), command('q', quiet_command), command('b', brightness(55)),
+            run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'), ('status', 'panels'), ('pending',),
+            run(1008.0, [(1007.0, mode('free'))]), ('pending',)]),
+        case('requested animations play only on the Lines', [
+            ctrl, mode('free'), run(1002.0), mode('free', 'panels'), run(1004.0, device='panels'),
+            play('w', {'kind': 'animation.play', 'pattern': 'pulse', 'colors': ['#ff00ff']}), on('panels', ('device', 'clearCalls')),
+            run(1006.0, device='panels'), ('animationsPending',), run(1008.0), ('animationsPending',)]),
+        case('a Lines hold does not stop the Panels', [
+            ctrl, command('q', quiet_command), on('wall', ('device', 'fail', {'method': 'PUT'})), run(1002.0),
+            ('query', "SELECT value FROM meta WHERE key='controller_hold_revision'"), ('matchRevision', 'panels'), feed('prompt'),
+            run(1006.0, [(1005.0, mode('free', 'panels'))], 'panels')]),
+        case('only the Lines list the Lines scenes', [
+            ctrl, feed('prompt'), run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'), run(1008.0, [(1007.0, mode('free'))]),
+            ('sceneNames', 'device')]),
+        case('a Panels pass keeps the Lines error', [
+            ('sql', "INSERT INTO meta VALUES ('control_error', 'Light update failed; retrying.')"), feed('prompt'),
+            run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'), ('status',), ('status', 'panels')]),
+        case('a Lines outage keeps the Panels comets in shared input', [
+            feed('prompt'),
+            on('wall', ('device', 'fail', {})), ('sleep', 2.0), run(1010.0),
+            on('wall', ('device', 'fail', {})), feed('stop'), ('sleep', 2.0), run(1010.0),
+            on('wall', ('device', 'fail', {})), ('sleep', 2.0), run(1010.0), comets]),
+        # UnregisteredDeviceTest.
+        case('a waiting instance exits after its device is removed', [
+            feed('prompt'), run(1010.0, [(1003.0, ('unregister', 'panels'))], 'panels'), run(1014.0, [(1013.0, mode('free'))])]),
+        case('the worker command ends when shared input is paused', [
+            ('supervise', 1010.0, [(1002.0, ('sql', "UPDATE shared_input SET source='legacy' WHERE id=1"))])]),
+        case('a stop during the retry wait ends the worker command', [
+            on('panels', ('device', 'fail', {})), ('supervise', 1001.0, [], {'device': 'panels'}),
+            ('query', "SELECT key, value FROM meta WHERE key LIKE 'control_error%'")]),
+        case('the retry loop stops for an unregistered device', [
+            on('panels', ('hook', {'step': ('unregister', 'panels')})), on('panels', ('device', 'fail', {})),
+            ('supervise', 1010.0, [], {'device': 'panels'}), ('query', "SELECT key FROM meta WHERE key LIKE 'control_error%'")]),
+        # test_panels_controller.WorkerOwnershipTest and LedgerTest: each device has its own ledger.
+        case('a command runs only on its own device\'s worker', [
+            *owned, *free, command('p', brightness(42), 'panels'), command('l', power_off), run(1006.0, device='panels'),
+            on('wall', ('calls',)), run(1008.0)]),
+        case('commands admitted while the Panels worker waits stay with their own device', [
+            *owned, *free, run(1008.0, [(1005.0, command('l', brightness(55))), (1005.0, command('p', power_off, 'panels'))], 'panels')]),
+        case('a Panels override governs only the Panels', [
+            *owned, feed('prompt'), command('p', brightness(60), 'panels'), ('desired', 'panels'), ('desired',),
+            run(1004.0, [(1003.0, mode('free', 'panels'))], 'panels'), run(1008.0, [(1007.0, mode('free'))])]),
+        case('a Panels mode command is journaled by the Panels worker', [
+            *owned, *free, command('q', quiet_command, 'panels'), run(1008.0, [(1007.0, mode('free', 'panels'))], 'panels')]),
+        case('an uncertain Panels mode write holds only the Panels', [
+            *owned, *free, command('q', quiet_command, 'panels'), on('panels', ('device', 'fail', {'method': 'PUT'})),
+            run(1006.0, device='panels'), holds]),
+        case('a Panels hold leaves the Lines running', [
+            *owned, *free, command('p', brightness(42), 'panels'), on('panels', ('device', 'fail', {'method': 'PUT'})),
+            run(1006.0, device='panels'), holds, command('l', brightness(55)), run(1008.0), on('panels', ('device', 'clearCalls')),
+            run(1010.0, device='panels'), on('panels', ('calls',)), mode('work'), feed('prompt'), on('wall', ('device', 'clearCalls')),
+            run(1014.0, [(1013.0, mode('free'))])]),
+        case('a Lines hold leaves the Panels commands running', [
+            *owned, *free, command('l', brightness(55)), on('wall', ('device', 'fail', {'method': 'PUT'})), run(1006.0),
+            command('p', power_off, 'panels'), run(1008.0, device='panels'), holds]),
+        case('each worker discovers only its own scenes', [
+            *owned, *discover, ('sceneIds',), ('sceneIds', 'panels'), ('sceneNames', 'device'), ('sceneNames', 'panels')]),
+        case('a Panels scene follows the Panels mode', [
+            *owned, *discover, mode('free'), run(1010.0), mode('work', 'panels'), on('wall', ('device', 'clearCalls')),
+            on('panels', ('device', 'clearCalls')), command('s1', {'kind': 'scene.activate', 'sceneIndex': 1}, 'panels'),
+            run(1014.0, [(1013.0, mode('free', 'panels'))], 'panels'), on('panels', ('calls',)), run(1016.0, device='panels'),
+            on('panels', ('device', 'clearCalls')), command('s2', {'kind': 'scene.activate', 'sceneIndex': 1}, 'panels'),
+            run(1018.0, device='panels')]),
+        case('a local mode change cancels only that device\'s controls', [
+            *owned, *free, command('p', brightness(42), 'panels'), command('l', brightness(55)), mode('work', 'panels'),
+            ('status', 'panels')]),
+    ]
+
+
+def device_values():
+    """Each device case's step outcomes, both fakes' requests and addresses, the rows, both scene files and devices, and
+    the final receipts (device-worker.test.ts)."""
+    cases = device_cases()
+    original = shared_input.check_envelope
+    shared_input.check_envelope = lambda value, config, minimum_revision=0: dict(value)
+    setups = {}
+    try:
+        for record in cases:
+            with tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary)
+                run = DeviceCase(path, record)
+                setups.setdefault(str(record.get('panels', 18)), run.setup())
+                try:
+                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                    record['hooks'] = run.hooks
+                    record['calls'] = run.lines.calls
+                    record['panelsCalls'] = run.panels.calls
+                    record['addresses'] = run.addresses
+                    record['rows'] = run.rows()
+                    record['scenes'] = {}
+                    for device in ('wall', 'panels'):
+                        scene = path / devices.scene_file(device)
+                        record['scenes'][device] = json.loads(scene.read_text()) if scene.exists() else None
+                    record['devices'] = {name: {'selected': fake.selected, 'brightness': fake.brightness, 'on': fake.on}
+                                         for name, fake in (('wall', run.lines), ('panels', run.panels))}
+                    record['receipts'] = run.receipts()
+                    record['clock'] = run.clock.now()
+                finally:
+                    run.close()
+    finally:
+        shared_input.check_envelope = original
+    write_nested('devices.json', {'setups': setups, 'cases': cases}, 3)
+
+
 if __name__ == '__main__':
     values()
     setups()
@@ -1908,3 +2344,4 @@ if __name__ == '__main__':
     edit_values()
     worker_values()
     control_values()
+    device_values()

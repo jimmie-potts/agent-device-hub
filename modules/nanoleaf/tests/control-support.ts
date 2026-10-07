@@ -8,7 +8,7 @@ import type {TestContext} from 'node:test';
 import type {Json} from '../src/compat.js';
 import {admitCommand, discovered, Execution, Refused, sceneList} from '../src/controls.js';
 import {DEFAULT} from '../src/devices.js';
-import {expireQueued, type ErrorCode, type Outcome as ControlOutcome} from '../src/journal.js';
+import {ANIMATION, expireQueued, journal, type ErrorCode, type Outcome as ControlOutcome} from '../src/journal.js';
 import {setMode} from '../src/modes.js';
 import {execute, transaction} from '../src/sqlite.js';
 import {overrides} from '../src/store.js';
@@ -48,11 +48,33 @@ export type Reply = 'accepted' | {refused: ErrorCode};
 const RENAMED: Record<string, ErrorCode | 'revision-conflict'> = {'unknown-device': 'not-found', 'stale-generation': 'revision-conflict',
   'request-order': 'revision-conflict', 'request-expired': 'expired'};
 
-/** The reply for Python's admission: queued is accepted, and so is a mode command that needed no change. */
-export function replyOf(summary: Summary): Reply {
+/** The devices the recorded cases register: the Lines, and the Panels in the two-device cases. */
+const REGISTERED = new Set([DEFAULT, 'panels']);
+
+/**
+ * The reply for Python's admission to `device`: queued is accepted, and so is a mode command that needed no change.
+ * Python's credential check refused a target outside the credential's devices as `forbidden`; credentials stay with
+ * the core, and the port refuses a device it does not have as `not-found` (PORTING.md). A `forbidden` for a registered
+ * device is a credential refusal, which the port never makes, so it stays `forbidden` and fails the comparison.
+ */
+export function replyOf(summary: Summary, device: string = DEFAULT): Reply {
   if (summary.code === 202 || (summary.code === 200 && summary.outcome === 'cancelled' && summary.failure === null)) return 'accepted';
   assert.ok(summary.failure !== null && summary.code !== null && summary.code >= 400, `Unexpected admission ${JSON.stringify(summary)}.`);
+  if (summary.failure === 'forbidden' && !REGISTERED.has(device)) return {refused: 'not-found'};
   return {refused: (RENAMED[summary.failure] ?? summary.failure) as ErrorCode};
+}
+
+/** The port's device for Python's public device ID: `device` was the Lines. */
+export function targetOf(target: Json | undefined): string {
+  if (target === undefined || target === 'device') return DEFAULT;
+  if (typeof target !== 'string') throw new TypeError('A step names its device with text.');
+  return target;
+}
+
+/** An admitted request's Python admission and its target device. */
+export interface Admitted {
+  summary: Summary;
+  device: string;
 }
 
 /**
@@ -60,8 +82,8 @@ export function replyOf(summary: Summary): Reply {
  * a mode command that needed no change succeeds with observed evidence, and a native command that expired unsent fails
  * `expired`, where Python's listener wrote `transport-failure`. The command was admitted; null while it is still queued.
  */
-export function outcomeFor(id: string, summary: Summary, admission: Summary): ControlOutcome | null {
-  const base = {type: 'outcome' as const, device: DEFAULT, requestId: id};
+export function outcomeFor(id: string, summary: Summary, admission: Summary, device: string = DEFAULT): ControlOutcome | null {
+  const base = {type: 'outcome' as const, device, requestId: id};
   if (summary.outcome === 'queued') return null;
   if (admission.code === 200) return {...base, result: 'succeeded', evidence: 'observed'};
   // Rule 2: possible effects are uncertain, with no evidence.
@@ -136,13 +158,19 @@ export class ControlCase extends WorkerCase {
       case 'expireAll': return this.expireAll();
       case 'deviceState': return {brightness: this.device.brightness, on: this.device.on, selected: this.device.selected};
       case 'desired': {
-        const desired = overrides(db);
+        const desired = overrides(db, targetOf(args[0]));
         return {power: known(desired.power), brightness: known(desired.brightness)};
       }
       case 'sceneIds': {
-        const ids = sceneList(db).map(scene => scene.id);
+        const ids = sceneList(db, targetOf(args[0])).map(scene => scene.id);
         return [ids.length, ids.every(id => id.length <= 128 && id.startsWith('scene-'))];
       }
+      // The names a device's scene list shows, in order.
+      case 'sceneNames': return sceneList(db, targetOf(args[0])).map(scene => scene.name ?? null);
+      // A device's own ledger: the port's journal and scene list belong to every device already.
+      case 'ledger': return null;
+      // The kinds of a device's unfinished native commands, in admission order.
+      case 'pending': return journal(db, targetOf(args[0]), 'AND kind<>?', ANIMATION).map(row => row.kind);
       case 'calls': return structuredClone(this.device.calls);
       case 'hook': {
         const spec = args[0] as unknown as RequestSpec & {complete?: boolean; step: Step};
@@ -155,7 +183,8 @@ export class ControlCase extends WorkerCase {
         else this.device.hooks.push({spec, run});
         return null;
       }
-      case 'run': {
+      case 'run':
+      case 'supervise': {
         const result = await super.apply(step) as {outcome: Outcome; scheduled: Outcome[]};
         // Python's worker returned None where the port's ends with true.
         if ('result' in result.outcome && result.outcome.result === true) result.outcome = {result: null};
@@ -172,16 +201,17 @@ export class ControlCase extends WorkerCase {
   admit(id: string, value: unknown, target?: string): Reply {
     const command = structuredClone(value) as Record<string, unknown>;
     const db = this.database();
+    const device = targetOf(target);
     if ('sceneIndex' in command) {
       const index = command.sceneIndex;
       delete command.sceneIndex;
-      command.sceneId = typeof index === 'number' ? sceneList(db)[index]?.id : index;
+      command.sceneId = typeof index === 'number' ? sceneList(db, device)[index]?.id : index;
     }
     if (command.kind === 'mode.set') command.mode = String(command.mode).toLowerCase();
     const instant = this.clock.seconds();
     try {
-      const device = target === undefined || target === 'device' ? {} : {device: target};
-      transaction(db, () => admitCommand(db, this.directory, {id, command, instant, expires: instant + 30, ...device}, this.report));
+      transaction(db, () => admitCommand(db, this.directory, {id, command, instant, expires: instant + 30,
+        ...(device === DEFAULT ? {} : {device})}, this.report));
       return 'accepted';
     } catch (error) {
       if (error instanceof Refused) return {refused: error.code};
@@ -199,7 +229,7 @@ export class ControlCase extends WorkerCase {
   /** A hook's step runs inside a device request or an execution's completion, so it is synchronous. */
   hookStep(step: Step): Outcome {
     try {
-      if (step[0] === 'command') return {result: this.admit(textOf(step[1]), step[2])};
+      if (step[0] === 'command') return {result: this.admit(textOf(step[1]), step[2], step.length > 3 ? textOf(step[3]) : undefined)};
       if (step[0] === 'expireAll') return {result: this.expireAll()};
       if (step[0] === 'mode') {
         const db = this.database();
@@ -243,15 +273,17 @@ export class ControlCase extends WorkerCase {
 }
 
 /** A recorded step's outcome in the port's terms: a command's receipt becomes its reply, also inside a worker run. */
-function translated(step: Step, outcome: Outcome, admissions: Map<string, Summary>): Outcome {
+export function translated(step: Step, outcome: Outcome, admissions: Map<string, Admitted>): Outcome {
   if (!('result' in outcome)) return outcome;
   const [op, ...args] = step;
   if (op === 'command' || op === 'play') {
     const summary = outcome.result as Summary;
-    admissions.set(textOf(args[0]), summary);
-    return {result: replyOf(summary)};
+    const device = targetOf(args[2]);
+    admissions.set(textOf(args[0]), {summary, device});
+    return {result: replyOf(summary, device)};
   }
-  if (op === 'run') {
+  if (op === 'on') return translated(args[1] as Step, outcome, admissions);
+  if (op === 'run' || op === 'supervise') {
     const value = outcome.result as {outcome: Outcome; scheduled: Outcome[]};
     const scheduled = (args[1] ?? []) as [number, Step][];
     return {result: {outcome: value.outcome, scheduled: value.scheduled.map((item, index) => translated(scheduled[index]?.[1] ?? [], item, admissions))}};
@@ -276,25 +308,43 @@ export async function replayControls(context: TestContext, name: string): Promis
   const run = new ControlCase(context);
   const outcomes: Outcome[] = [];
   for (const step of recorded.steps) outcomes.push(await outcomeOf(() => run.apply(step)));
-  const admissions = new Map<string, Summary>();
-  assert.deepEqual(outcomes, recorded.steps.map((step, index) => translated(step, recorded.outcomes[index] ?? {result: null}, admissions)),
-    `${name}: outcomes`);
-  const hookSteps = recorded.steps.filter(step => step[0] === 'hook').map(step => (step[1] as {step: Step}).step);
-  assert.deepEqual(run.hookResults, recorded.hooks.map((results, index) => results.map(item => translated(hookSteps[index] ?? [], item, admissions))),
-    `${name}: hooks`);
+  const admissions = compareSteps(name, run, recorded, outcomes);
   assert.deepEqual(run.device.calls, recorded.calls, `${name}: device requests`);
   assert.deepEqual(run.rows(), recorded.rows, `${name}: rows`);
   assert.deepEqual(run.scene(), recorded.scene, `${name}: scene file`);
   assert.deepEqual({selected: run.device.selected, brightness: run.device.brightness, on: run.device.on}, recorded.device, `${name}: device`);
   assert.equal(run.clock.seconds(), recorded.clock, `${name}: clock`);
+  compareOutcomes(name, run, recorded.receipts, admissions);
+  return {run, outcomes, recorded};
+}
+
+/** Each step's and hook's outcome against Python's, with commands' receipts as replies; returns the admissions. */
+export function compareSteps(name: string, run: ControlCase, recorded: {steps: Step[]; outcomes: Outcome[]; hooks: Outcome[][]},
+  outcomes: Outcome[]): Map<string, Admitted> {
+  const admissions = new Map<string, Admitted>();
+  assert.deepEqual(outcomes, recorded.steps.map((step, index) => translated(step, recorded.outcomes[index] ?? {result: null}, admissions)),
+    `${name}: outcomes`);
+  // A hook set on one device's fake is the step inside an `on`.
+  const hookSteps = recorded.steps.map(step => (step[0] === 'on' ? step[2] as Step : step)).filter(step => step[0] === 'hook')
+    .map(step => (step[1] as {step: Step}).step);
+  assert.deepEqual(run.hookResults, recorded.hooks.map((results, index) => results.map(item => translated(hookSteps[index] ?? [], item, admissions))),
+    `${name}: hooks`);
+  return admissions;
+}
+
+/**
+ * Each command's last reported outcome against its Python receipt through MAPPING.md's controller receipt rule; a
+ * command ends at most once, and each outcome follows the profile's outcome rules.
+ */
+export function compareOutcomes(name: string, run: ControlCase, receipts: Record<string, Summary | null>, admissions: Map<string, Admitted>): void {
   const expected = new Map<string, ControlOutcome>();
-  for (const [id, summary] of Object.entries(recorded.receipts)) {
+  for (const [id, summary] of Object.entries(receipts)) {
     const admission = admissions.get(id);
     assert.ok(admission !== undefined, `${name}: ${id} has no admission`);
     // A refused request has no receipt and no outcome.
-    assert.equal(summary === null, replyOf(admission) !== 'accepted', `${name}: ${id} receipt`);
+    assert.equal(summary === null, replyOf(admission.summary, admission.device) !== 'accepted', `${name}: ${id} receipt`);
     if (summary === null) continue;
-    const outcome = outcomeFor(id, summary, admission);
+    const outcome = outcomeFor(id, summary, admission.summary, admission.device);
     if (outcome !== null) expected.set(id, outcome);
   }
   assert.deepEqual(run.outcomes(), expected, `${name}: outcomes through the mapping`);
@@ -307,7 +357,6 @@ export async function replayControls(context: TestContext, name: string): Promis
     else assert.ok(message.error !== undefined, name);
     if (message.result === 'uncertain') assert.equal(message.error?.code, 'uncertain-result', name);
   }
-  return {run, outcomes, recorded};
 }
 
 /** The PUT requests in `calls` as [endpoint, payload]. */

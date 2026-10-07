@@ -7,8 +7,7 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
-import {followRegistry, loadConfig, registeredDevices} from './configuration.js';
-import {connectState} from './database.js';
+import {followRegistry, loadConfig, readRegisteredDevices, registeredDevices} from './configuration.js';
 import {DEFAULT, deviceOf, lockFile, metaKey} from './devices.js';
 import {dashboard, type Indication} from './line-projection.js';
 import {applyPending, locateState, palette, paletteRgb, renderConfig} from './project-map.js';
@@ -104,18 +103,94 @@ export async function updateDisplay(db: Db, config: RenderConfig, snapshot: read
   });
 }
 
-/** Record a failed pass for this device only; false when even that cannot be written. */
-export function recordFailure(directory: string, device: string = DEFAULT): boolean {
+/** Record a failed pass for this device only, in one transaction on the module's connection; false when even that cannot be written. */
+export function recordFailure(db: Db, device: string = DEFAULT): boolean {
   try {
-    const db = connectState(directory);
-    try {
-      db.exec('BEGIN IMMEDIATE');
+    transaction(db, () => {
       execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey('control_error', device), 'Light update failed; retrying.');
       markDirty(db);
-      db.exec('COMMIT');
-    } finally {
-      db.close();
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why `superviseWorker` ended: the stop signal; another instance holding the device's lock; shared input no longer
+ * selected; the device no longer registered; or a failure that could not even be recorded.
+ */
+export type SupervisorEnd = 'stopped' | 'locked' | 'paused' | 'unregistered' | 'unrecorded';
+
+export interface SupervisorOptions extends WorkerOptions {
+  /**
+   * Told of each failed pass before it is recorded and retried, so the runtime can log it (Python emitted
+   * `process.failed`). A hook that throws stops nothing.
+   */
+  onFailure?: (error: unknown, device: string) => void;
+}
+
+/**
+ * Keep one device's worker running, as the `worker` command did (bridge.main), and never reject for a failed pass: a
+ * device outage must not stop the module (module failure policy A). A failed pass records this device's own failure
+ * and runs again 2 s later, while the device is registered; a worker that ends runs again 1 s later, while shared input
+ * is selected and the device is registered. Each wait is on the runtime's scheduler and ends at the stop signal.
+ *
+ * Every read after a pass is part of it, as in Python's loop: a database or configuration read that fails is a failed
+ * pass. Only a configuration that reads and omits the device ends the supervisor as unregistered.
+ */
+export async function superviseWorker(options: SupervisorOptions): Promise<SupervisorEnd> {
+  const {directory, signal, scheduler, onFailure} = options;
+  const device = options.device ?? DEFAULT;
+  // True when the wait ran its full time, false when the stop signal ended it. The stop cancels the timer, so a timer
+  // that fires ran its full time.
+  const wait = (seconds: number): Promise<boolean> => new Promise<boolean>(resolve => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
     }
+    const onAbort = (): void => {
+      cancel();
+      resolve(false);
+    };
+    const cancel = scheduler.after(seconds * 1000, () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(true);
+    });
+    signal.addEventListener('abort', onAbort, {once: true});
+  });
+  for (;;) {
+    let failure: {error: unknown} | null = null;
+    try {
+      if (!await runWorker(options)) return 'locked';
+      if (signal.aborted) return 'stopped';
+      if (!readRegisteredDevices(directory).includes(device)) return 'unregistered';
+      if (!selected(options.database())) return 'paused';
+    } catch (error) {
+      failure = {error};
+    }
+    if (signal.aborted) return 'stopped';
+    if (failure === null) {
+      if (!await wait(1)) return 'stopped';
+      continue;
+    }
+    try {
+      onFailure?.(failure.error, device);
+    } catch {
+      // The runtime's log is optional; it cannot stop the device's worker.
+    }
+    // A configuration that cannot be read now is retried with the pass.
+    if (!registeredDevices(directory).includes(device) && readable(directory)) return 'unregistered';
+    if (!recordFailure(options.database(), device)) return 'unrecorded';
+    // Release the device between attempts; each retry reads the newest mode.
+    if (!await wait(2)) return 'stopped';
+  }
+}
+
+/** Whether the module's configuration reads now. */
+function readable(directory: string): boolean {
+  try {
+    readRegisteredDevices(directory);
     return true;
   } catch {
     return false;

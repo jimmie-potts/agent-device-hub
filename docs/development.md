@@ -1712,7 +1712,8 @@ The port is split into slices by area:
 - **Slice 3d:** controls, a minimal journal for holds and uncertain attempts,
   and animation play.
 - **Slice 3e:** the remaining multi-device worker cases of
-  `test_device_worker.py`.
+  `test_device_worker.py` and the Panels worker ownership cases, and the
+  `worker` command's retry loop (`superviseWorker`).
 
 The translated Python tests keep their class and method names. A replay of
 recorded Python sequences compares, after every step, the results and the rows of
@@ -1728,7 +1729,8 @@ discovery and malformed Lines replies, color parsing, every effect pattern's
 payload, zone colors and effect payloads on random renderer states, map
 edits, mode commands, Locate, comets and rendering receipts with the rows they
 leave, and scripted runs of the display worker with scene restore, native
-controls, holds and requested animations on a fake device. The colors, payloads,
+controls, holds and requested animations on a fake device, and on the Lines and
+NL22 Panels as two devices with the worker command's retry loop. The colors, payloads,
 effects, pairing, edits and worker runs match exactly; the worker runs on a
 manual millisecond clock, as the runtime's is, so its instants match Python's.
 Each command's Python receipt is compared, through the controller receipt rule in

@@ -265,6 +265,30 @@
    "steps":[["controller"],["command","q",{"kind":"mode.set","mode":"Quiet"}],["device","fail",{"method":"PUT"}],["run",1002.0],["run",1004.0],["countPuts"],["mode","quiet"],["run",1008.0,[[1006.0,["mode","free"]]]],["countPuts"]]
   },
   {
+   "calls":[[1000.0,"GET","/effects",null],[1000.0,"GET","/state",null],[1002.0,"PUT","/state",{"brightness":{"duration":0,"value":42}}],[1003.0,"PUT","/state",{"brightness":{"duration":0,"value":30}}]],
+   "clock":1006.0,
+   "device":{"brightness":30,"on":true,"selected":"Beach Waves"},
+   "hooks":[[{"result":null}],[{"result":{"code":202,"completed":[],"failure":null,"outcome":"queued","priorEffects":"none","uncertain":[]}}]],
+   "name":"the worker command runs a worker that ended at a hold again",
+   "outcomes":[{"result":null},{"result":null},{"result":{"outcome":{"stopped":1002.0},"scheduled":[]}},{"result":{"code":202,"completed":[],"failure":null,"outcome":"queued","priorEffects":"none","uncertain":[]}},{"result":null},{"result":null},{"result":{"outcome":{"stopped":1006.0},"scheduled":[{"result":{"code":202,"completed":[],"failure":null,"outcome":"queued","priorEffects":"none","uncertain":[]}}]}},{"result":{"brightness":30,"on":true,"selected":"Beach Waves"}}],
+   "receipts":{"b":{"code":null,"completed":["transport-1"],"failure":null,"outcome":"sent","priorEffects":"confirmed-transmission","uncertain":[]},"b2":{"code":null,"completed":["transport-1"],"failure":null,"outcome":"sent","priorEffects":"confirmed-transmission","uncertain":[]},"p":{"code":null,"completed":[],"failure":"transport-failure","outcome":"failed","priorEffects":"none","uncertain":[]}},
+   "rows":{"activity":[],"comets":[],"display_v3":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["shared_wave_cutoff","1000.0"],["event_revision","6"],["mode","free"],["mode_revision","1"],["controller_power","0"],["controller_brightness","30"],["mode_applied","1"],["rendering","1"]],"palette":[],"sessions":[],"slots":[],"task_info":[]},
+   "scene":{"owned":false,"quiet_brightness":null,"quiet_scene":null,"scene":{"brightness":43,"name":"Beach Waves"},"version":1},
+   "steps":[["controller"],["mode","free"],["run",1002.0],["command","b",{"kind":"brightness.set","percent":42}],["hook",{"complete":true,"step":["expireAll"]}],["hook",{"complete":true,"step":["command","p",{"kind":"power.set","on":false}]}],["supervise",1006.0,[[1002.5,["command","b2",{"kind":"brightness.set","percent":30}]]]],["deviceState"]]
+  },
+  {
+   "calls":[[1000.0,"GET","/effects",null],[1000.0,"GET","/state",null],[1000.0,"PUT","/state",{"brightness":{"duration":0,"value":10}}],[1005.0,"GET","/effects",null],[1005.0,"GET","/state",null],[1005.0,"PUT","/state",{"brightness":{"duration":0,"value":10}}],[1006.0,"GET","/effects",null],[1006.0,"GET","/state",null],[1006.0,"PUT","/state",{"brightness":{"duration":0,"value":43}}]],
+   "clock":1009.0,
+   "device":{"brightness":43,"on":true,"selected":"Beach Waves"},
+   "hooks":[],
+   "name":"the worker command retries a failed pass and keeps the hold",
+   "outcomes":[{"result":null},{"result":{"code":202,"completed":[],"failure":null,"outcome":"queued","priorEffects":"none","uncertain":[]}},{"result":null},{"result":{"outcome":{"stopped":1005.0},"scheduled":[]}},{"result":1},{"result":[["control_error","Light update failed; retrying."],["controller_hold_revision","1"]]},{"result":null},{"result":{"outcome":{"stopped":1009.0},"scheduled":[{"result":null}]}},{"result":3}],
+   "receipts":{"q":{"code":null,"completed":[],"failure":"uncertain-result","outcome":"uncertain","priorEffects":"possible","uncertain":["transport-1"]}},
+   "rows":{"activity":[],"comets":[],"display_v3":[],"locate":[],"map_pending":[],"map_settings":[["classic","whole",0,0,0,"wall"]],"meta":[["model_version","4"],["shared_wave_cutoff","1000.0"],["event_revision","5"],["rendering_receipt","{\"apiVersion\":\"1.0\",\"deviceId\":\"wall\",\"outcome\":\"unknown\"}"],["mode","free"],["mode_revision","2"],["mode_applied","2"],["rendering","1"]],"palette":[],"sessions":[],"slots":[],"task_info":[]},
+   "scene":{"owned":false,"quiet_brightness":null,"quiet_scene":null,"scene":{"brightness":43,"name":"Beach Waves"},"version":1},
+   "steps":[["controller"],["command","q",{"kind":"mode.set","mode":"Quiet"}],["device","fail",{"method":"PUT"}],["supervise",1005.0],["countPuts"],["query","SELECT key, value FROM meta WHERE key IN ('control_error', 'controller_hold_revision') ORDER BY key"],["mode","quiet"],["run",1009.0,[[1006.0,["mode","free"]]]],["countPuts"]]
+  },
+  {
    "calls":[[1000.0,"GET","/effects",null],[1000.0,"GET","/state",null],[1000.0,"PUT","/effects",{"write":{"animData":"30 100 1 0 255 0 0 1 101 1 0 255 0 0 1 102 1 10 24 102 0 1 103 1 10 24 102 0 1 104 1 10 24 102 0 1 105 1 10 24 102 0 1 106 1 10 24 102 0 1 107 1 10 24 102 0 1 108 1 10 24 102 0 1 109 1 10 24 102 0 1 110 1 10 24 102 0 1 111 1 10 24 102 0 1 112 1 10 24 102 0 1 113 1 10 24 102 0 1 114 1 10 24 102 0 1 115 1 10 24 102 0 1 116 1 10 24 102 0 1 117 1 10 24 102 0 1 118 1 10 24 102 0 1 119 1 10 24 102 0 1 120 1 10 24 102 0 1 121 1 10 24 102 0 1 122 1 10 24 102 0 1 123 1 10 24 102 0 1 124 1 10 24 102 0 1 125 1 10 24 102 0 1 126 1 10 24 102 0 1 127 1 10 24 102 0 1 128 1 10 24 102 0 1 129 1 10 24 102 0 1","animType":"static","colorType":"HSB","command":"display","logicalPanelsEnabled":true,"loop":false,"palette":[{"brightness":100,"hue":0,"saturation":0}],"version":"2.0"}}],[1000.0,"PUT","/state",{"brightness":{"duration":0,"value":10},"on":{"value":true}}]],
    "clock":1000.0,
    "device":{"brightness":43,"on":true,"selected":"*Static*"},
