@@ -153,16 +153,20 @@ export async function loadConfig(directory: string, device: string = DEFAULT, re
   return result;
 }
 
+/** Registered device ids, the original Lines device first; an unreadable configuration is an error. */
+export function readRegisteredDevices(directory: string): string[] {
+  const devices = registry(readJson(join(directory, 'config.json'), true));
+  return [DEFAULT, ...[...devices.keys()].filter(device => device !== DEFAULT)];
+}
+
 /** Registered device ids, the original Lines device first; an unreadable configuration means Lines only. */
 export function registeredDevices(directory: string): string[] {
-  let devices: Map<string, unknown>;
   try {
-    devices = registry(readJson(join(directory, 'config.json'), true));
+    return readRegisteredDevices(directory);
   } catch (error) {
     if (error instanceof ValueError || (error instanceof Error && 'code' in error)) return [DEFAULT];
     throw error;
   }
-  return [DEFAULT, ...[...devices.keys()].filter(device => device !== DEFAULT)];
 }
 
 /** Point a running pass at its device's registered address and credential; keep them if unreadable. */
