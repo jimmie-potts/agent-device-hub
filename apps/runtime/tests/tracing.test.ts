@@ -7,7 +7,7 @@ import {randomBytes} from 'node:crypto';
 import {chmod, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {connectRemote, traceFields, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, startRuntime, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, RECENT_SPANS, startRuntime, type LogRecord} from '../src/index.js';
 import {contextOf, deferred, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
@@ -89,16 +89,38 @@ it('the bus\'s and the modules\' spans reach the span sink through the host adap
   const recorded = new Set(spans.map(span => span.spanId));
   assert.deepEqual(spans.filter(span => span.parentSpanId !== undefined && !recorded.has(span.parentSpanId) && span !== request).map(span => span.name), [],
     'no lost parent: only the request span continues a parent from outside, its caller\'s');
-  assert.deepEqual(runtime.spans(), [], 'with a sink, nothing is kept in memory');
+  assert.deepEqual(runtime.spans(), {recent: [], evicted: 0}, 'with a sink, nothing is kept in memory');
 });
 
 it('without a span sink, the runtime keeps its latest spans for runtime.spans()', async context => {
   const caller = fixture('caller');
   const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'})), caller]});
   await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000});
-  await waitFor(() => runtime.spans().length >= 4, 2000, 'the spans in memory');
-  assert.deepEqual(parse(runtime.spans()).map(span => span.name).sort(),
+  await waitFor(() => runtime.spans().recent.length >= 4, 2000, 'the spans in memory');
+  assert.deepEqual(parse(runtime.spans().recent).map(span => span.name).sort(),
     ['bunny.command.execute', 'bunny.command.queue', 'bunny.command.request', 'bunny.device.call']);
+  assert.equal(runtime.spans().evicted, 0, 'nothing let go yet');
+});
+
+it('the spans in memory keep their bound: the oldest go first, and each one let go is counted', async context => {
+  const device = fixture('lamp');
+  const {runtime} = await run(context, {modules: [device]});
+  const {trace} = contextOf(device);
+  const total = RECENT_SPANS + 6;
+  // In batches, so that the adapter's own bounded queue, which drops the newest when full, never fills.
+  for (let made = 0; made < total;) {
+    const batch = Math.min(100, total - made);
+    for (let index = 0; index < batch; index += 1) {
+      trace.start('bunny.device.call', {attributes: {'bunny.device.id': `lamp-${made + index}`}}).end();
+    }
+    made += batch;
+    await waitFor(() => runtime.spans().recent.length + runtime.spans().evicted === made, 2000, `${made} spans`);
+  }
+  const {recent, evicted} = runtime.spans();
+  assert.equal(recent.length, RECENT_SPANS, 'at most the bound');
+  assert.equal(evicted, 6, 'each span let go is counted, so a reader can tell eviction from absence');
+  const devices = parse(recent).map(span => attribute(span, 'bunny.device.id'));
+  assert.deepEqual([devices[0], devices.at(-1)], ['lamp-6', `lamp-${total - 1}`], 'the oldest went first');
 });
 
 it('concurrent requests from two traces have their own spans, and a failure ends its spans with error', async context => {

@@ -143,7 +143,7 @@ it('a secret in a handler\'s or a device call\'s exception reaches no record or 
   assert.deepEqual(about(logs, 'req-throws'), ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN']);
   const failed = logs.find(record => record.event_name === 'runtime.module.failed');
   assert.equal(failed?.attributes['error.type'], 'Error');
-  const spans = runtime.spans();
+  const spans = runtime.spans().recent;
   assert.ok(spans.some(line => line.includes('"bunny.device.call"') && line.includes('"code":2')), 'the failed device call\'s span ended with an error');
   assert.equal(JSON.stringify([logs, spans]).includes(SECRET), false, 'the exceptions\' messages stay in memory');
 });

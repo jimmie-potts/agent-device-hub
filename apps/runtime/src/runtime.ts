@@ -51,7 +51,8 @@ export type RuntimeOptions = {
   log?: LogSink;
   /**
    * Receives each finished span of the bus and the modules as one projected OTLP JSON document, through the observability
-   * package's bounded queue (Hub #949). Without it, the runtime keeps the latest `RECENT_SPANS` for `spans()`.
+   * package's bounded queue (Hub #949). Without it, the runtime keeps the latest `RECENT_SPANS` for `spans()`, and
+   * counts the older ones it lets go.
    */
   spans?: SpanSink;
   /** The lowest level written. Defaults to `info`. */
@@ -79,8 +80,8 @@ export interface Runtime {
   /** The health server's origin, such as `http://127.0.0.1:41000`. */
   readonly url: string;
   health(): RuntimeHealth;
-  /** The latest finished spans, oldest first, when no `spans` sink was given; empty otherwise. */
-  spans(): readonly string[];
+  /** The spans kept in memory when no `spans` sink was given; with a sink, none, and none evicted. */
+  spans(): RecentSpans;
   /** Stops every module within its stop deadline, then the health server. Calling it again returns the same promise. */
   stop(): Promise<void>;
 }
@@ -92,6 +93,12 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 
 /** How many finished spans the runtime keeps in memory when it has no span sink: the contract's queue bound. */
 export const RECENT_SPANS = 1024;
+
+/**
+ * The latest `RECENT_SPANS` finished spans, oldest first, and how many older ones the runtime let go to keep that
+ * bound. A span that is not in `recent` was evicted only while `evicted` is above 0; otherwise it never reached memory.
+ */
+export type RecentSpans = {recent: readonly string[]; evicted: number};
 
 /**
  * Where the listener sends the SDK edge's routes: nowhere without an edge, the edge while it serves, and a refusal while
@@ -173,11 +180,14 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const stateDir = await prepareStateDirectory(options.stateDir);
   const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
-  // Spans go to the given sink, or stay in memory, the latest first to go.
+  // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
   const recent: string[] = [];
+  let evicted = 0;
   const keep: SpanSink = line => {
     recent.push(line);
-    if (recent.length > RECENT_SPANS) recent.shift();
+    if (recent.length <= RECENT_SPANS) return;
+    recent.shift();
+    evicted = Math.min(Number.MAX_SAFE_INTEGER, evicted + 1);
   };
   const tracing = await startTracing(logs.resource, options.spans ?? keep);
   const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing})});
@@ -241,7 +251,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   return {
     url,
     health,
-    spans: () => [...recent],
+    spans: () => ({recent: [...recent], evicted}),
     stop: () => stopping ??= (async () => {
       // Remote parts go first, so none acts on a module that is stopping. Until the listener closes, the edge's routes
       // answer that the runtime is stopping.

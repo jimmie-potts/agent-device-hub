@@ -273,7 +273,9 @@ it installs no process context manager. The bus records each command's
 `trace.start` records a module's own spans under `bunny.module` with its name.
 Each finished span goes to `RuntimeOptions.spans` as one projected OTLP JSON
 document; without that option the runtime keeps the latest 1,024 for
-`runtime.spans()`. Nothing exports them yet (#813). `runtime.stopped` counts spans
+`runtime.spans()`, which returns them oldest first with the count of older
+spans it evicted, so a span missing from memory was evicted only while that
+count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts spans
 lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
 records. If the adapter cannot start, the runtime runs without recorded spans.
 
