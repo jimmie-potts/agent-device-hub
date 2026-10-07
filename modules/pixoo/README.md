@@ -112,14 +112,19 @@ A playlist holds at most 1,000 items, so every record fits the 256 KiB cap.
 The start does not read the catalog. The module reads it once the start is
 done, without reading any rendition's frames, and a sync that names
 `pixoo-rendition` or `pixoo-playlist` waits for that first read, which is
-served at the current revision without a publish. A multi-frame rendition's
-hosted check reads its frames once per rendition and profile and is kept: at
-its import, before the import's outcome, or, for a rendition the first read
-meets unchecked (as after the library migration, #931), after the start, one
-at a time, listed as its timing allows until then and published incompatible
-if its colors or timing do not fit. Later reads of the catalog, later starts
-and playlist starts use the kept checks. With 32 hosted 500-frame renditions,
-the start went from 10.9 s to 0.4 s and a playlist edit from 11.4 s to 0.3 s.
+served at the current revision without a publish. While no read of the catalog
+has succeeded, as when a stored manifest is corrupt, such a sync is refused
+`unavailable` at once; `device` and `pixoo-display` are still served. A failed
+read is tried again after a doubling wait from 1 s up to 30 s. The first
+failure of a run is one ERROR record, and the read that ends the run is one
+INFO record. A multi-frame rendition's hosted check reads its frames once per
+rendition and profile and is kept: at its import, before the import's outcome,
+or, for a rendition the first read meets unchecked (as after the library
+migration, #931), after the start, one at a time, listed as its timing allows
+until then and published incompatible if its colors or timing do not fit.
+Later reads of the catalog, later starts and playlist starts use the kept
+checks. With 32 hosted 500-frame renditions, the start went from 10.9 s to
+0.4 s and a playlist edit from 11.4 s to 0.3 s.
 Every record carries the revision of its last change, from one stored counter;
 a change that alters nothing publishes nothing. `device` is a shared family:
 every device module serves it for its own devices, so a reader syncs the
@@ -167,11 +172,14 @@ pending count, last outcome and last transmission. A change while a command
 runs waits up to 1 s for that commit. A device command therefore makes five
 commits: two of the module's own, its acceptance and its outcome, and three of
 the SDK outbox, which marks each published row one row at a time. 20
-`brightness-set` commands made 100 commits, where they made 120 before. What
-the module serves and its last transmission change only once a transaction
-commits, so after a rollback a new copy syncs what live followers last heard.
-The outbox's `outcome.published` record (INFO, or WARN for `failed` or
-`uncertain`) is an outcome's only log record. The rules for an outcome:
+`brightness-set` commands made 100 commits, where they made 120 before. A
+catalog command's change is committed before its outcome, so a failed read of
+the catalog after it never holds the outcome back: the read is tried again as
+above, and the change goes out once a read succeeds. What the module serves
+and its last transmission change only once a transaction commits, so after a
+rollback a new copy syncs what live followers last heard. The outbox's
+`outcome.published` record (INFO, or WARN for `failed` or `uncertain`) is an
+outcome's only log record. The rules for an outcome:
 - **Transmitted.** A device write is `succeeded` with `transmitted` once the
   Pixoo answers: the answer is a transport acknowledgment, never an
   observation. A start, show, resume, next, previous or restart completes with

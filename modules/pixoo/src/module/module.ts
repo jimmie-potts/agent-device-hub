@@ -171,8 +171,14 @@ class PixooRuntime {
   #catalogTail: Promise<unknown> = Promise.resolve();
   /** Hosted renditions the first read of the catalog listed before their frames were checked. */
   readonly #unchecked = new Set<string>();
-  /** Settles once the catalog has been read the first time; a sync of the catalog's families waits for it. */
+  /**
+   * Settles once the first read of the catalog has succeeded or failed, or the module stops. A sync of the catalog's
+   * families waits for it, and is refused while the catalog has never been read.
+   */
   readonly #catalogRead = deferred();
+  /** How many reads of the catalog in a row have failed, and whether a read waits to try again. */
+  #catalogFailures = 0;
+  #catalogWaiting = false;
   /** The device's last transmission as last committed: a command's completion, or one of the module's own paints. */
   #lastTransmission: DeviceRecord['lastTransmission'] = UNKNOWN;
   #publishing = false;
@@ -270,29 +276,48 @@ class PixooRuntime {
     this.#after(0, () => this.#probe(0));
     // Read at once after the start, not on the runtime's scheduler, so a sync that waits for the catalog never waits
     // for time to pass.
-    void Promise.resolve().then(() => this.#firstCatalog(0));
+    void Promise.resolve().then(() => this.#readCatalog('start'));
   }
 
   /**
-   * Reads the catalog the first time, after the start, and tries again after a doubling wait if the library cannot be
-   * read. A sync of the catalog's families waits for it, so no copy can hold the catalog before it: the first read is
-   * served from then on at the current revision, with no publish, and only the device record's capabilities change.
+   * Reads the catalog: once after the start (`start`), and again after each catalog command (`command`), whose
+   * completion publishes what the read changed. A sync of the catalog's families waits for the first read, so no copy
+   * can hold the catalog before it: that read is served from then on at the current revision, with no publish, and only
+   * the device record's capabilities change. A read that fails leaves the catalog as last read, and until one succeeds,
+   * a sync of its families is refused. The read that begins a run of failures logs it once and reads again after a
+   * doubling wait (`again`), and the read that ends it logs one recovery. It never throws.
    */
-  async #firstCatalog(failures: number): Promise<void> {
+  async #readCatalog(cause: 'start' | 'command' | 'again'): Promise<void> {
+    const first = this.#catalog === undefined;
     try {
       await this.#refreshCatalog();
-      this.#catalogRead.resolve();
-      this.#changed();
-      await this.#checkHosted();
     } catch (error) {
-      if (failures === 0) this.#failedWrite(error);
-      this.#after(Math.min(this.#timing.probeMs, this.#timing.firstRetryMs * 2 ** Math.min(failures, 16)), () => this.#firstCatalog(failures + 1));
+      this.#catalogRead.resolve();
+      this.#catalogFailures += 1;
+      if (this.#catalogFailures === 1) this.#failedWrite(error);
+      if (!this.#catalogWaiting) {
+        this.#catalogWaiting = true;
+        this.#after(Math.min(this.#timing.probeMs, this.#timing.firstRetryMs * 2 ** Math.min(this.#catalogFailures - 1, 16)), () => {
+          this.#catalogWaiting = false;
+          return this.#readCatalog('again');
+        });
+      }
+      return;
     }
+    this.#catalogRead.resolve();
+    if (this.#catalogFailures > 0) {
+      this.#context.log.info('operation.completed', {
+        'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.outcome': 'succeeded', 'bunny.attempt_count': this.#catalogFailures,
+      });
+      this.#catalogFailures = 0;
+    }
+    if (cause !== 'command') this.#changed();
+    if (first) void this.#checkHosted().catch((error: unknown) => { this.#failedWrite(error); });
   }
 
   async stop(): Promise<void> {
     this.#stopping = true;
-    // A sync still waiting for the first read of the catalog is answered with what the module has.
+    // A sync still waiting for the first read of the catalog is refused.
     this.#catalogRead.resolve();
     for (const cancel of this.#timers) cancel();
     this.#timers.clear();
@@ -315,9 +340,12 @@ class PixooRuntime {
    */
   async #serve(): Promise<void> {
     const catalog: readonly string[] = [FAMILIES.rendition, FAMILIES.playlist];
-    // A sync that names the catalog's families waits until the catalog has been read the first time.
+    // A sync that names the catalog's families waits for the catalog's first read, and is refused until a read succeeds.
     await this.#context.sdk.serveSync(['device', FAMILIES.display, ...catalog], async request => {
-      if (request.data.families.some(family => catalog.includes(family))) await this.#catalogRead.promise;
+      if (request.data.families.some(family => catalog.includes(family))) {
+        await this.#catalogRead.promise;
+        if (this.#catalog === undefined) return errorBody('unavailable', {detail: 'the Pixoo cannot read its catalog'});
+      }
       return this.#snapshot(request.data.families);
     });
   }
@@ -883,7 +911,10 @@ class PixooRuntime {
     return this.#capabilities({playlistIds: this.#library?.playlistExists(playlistId) === true ? [playlistId] : []});
   }
 
-  /** Runs an accepted command's work and reports its outcome. A failure to store the outcome leaves it for the next start. */
+  /**
+   * Runs an accepted command's work and reports its outcome. A catalog command's change is committed, so its outcome
+   * never waits on the read of the catalog after it. A failure to store the outcome leaves it for the next start.
+   */
   async #run(command: Command<object>, family: string, work: () => Promise<Completion>, catalog: boolean): Promise<void> {
     const call = this.#context.trace.start('bunny.device.call', {
       parent: command, kind: 'client', attributes: {'bunny.device.id': this.#device, ...requestField(command.data.requestId)},
@@ -896,8 +927,8 @@ class PixooRuntime {
     }
     call.end(completion.result === 'succeeded' ? 'unset' : 'error');
     if (this.#stopping) return;
+    if (catalog) await this.#readCatalog('command');
     try {
-      if (catalog) await this.#refreshCatalog();
       await this.#complete(command, family, completion);
     } catch (error) {
       this.#failedWrite(error);

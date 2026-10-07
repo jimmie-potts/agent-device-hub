@@ -408,6 +408,40 @@ void describe('a finished turn', () => {
   });
 });
 
+/**
+ * Makes every rendition's manifest unreadable in the module's database, as a storage fault below the library would, and
+ * keeps the library's schema as it was; `restore` repairs it.
+ */
+function corruptManifests(world: World): {restore: () => void} {
+  const rewrite = (manifests: (id: string) => string): void => {
+    const database = new DatabaseSync(world.databaseFile);
+    try {
+      const trigger = String((database.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get('immutable_rendition') as {sql: unknown}).sql);
+      database.exec('BEGIN');
+      database.exec('DROP TRIGGER immutable_rendition');
+      for (const row of database.prepare('SELECT id FROM renditions').all()) {
+        database.prepare('UPDATE renditions SET manifest_json = ? WHERE id = ?').run(manifests(String(row.id)), String(row.id));
+      }
+      database.exec(trigger);
+      database.exec('COMMIT');
+    } finally {
+      database.close();
+    }
+  };
+  const database = new DatabaseSync(world.databaseFile);
+  let saved: Map<string, string>;
+  try {
+    saved = new Map(database.prepare('SELECT id, manifest_json FROM renditions').all().map(row => [String(row.id), String(row.manifest_json)]));
+  } finally {
+    database.close();
+  }
+  rewrite(() => '{');
+  return {restore: () => { rewrite(id => saved.get(id) ?? '{'); }};
+}
+/** The module's records of `event` about its storage. */
+const storageRecords = (world: World, event: string): ReturnType<World['logs']> =>
+  world.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'storage');
+
 /** Counts commits on every SQLite connection: each COMMIT, and each write that runs outside a transaction. */
 function countCommits(): {count: () => number; restore: () => void} {
   let commits = 0;
@@ -528,6 +562,48 @@ void describe('commands and the catalog', () => {
       assert.equal((await world.outcome(again, 10_000)).data.result, 'succeeded');
       const unknown = await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: '00000000-0000-4000-8000-0000000000ff'});
       assert.equal(unknown.status === 'rejected' && unknown.error.error.code, 'unsupported-capability');
+    });
+  });
+
+  void it('refuses a sync of its catalog as unavailable while the catalog cannot be read, and serves it once it can', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.populate(async library => { await library.importMedia(bytesOf(await solid([0, 0, 255])), 'Blue'); });
+      // A storage fault: the rendition's manifest is no longer JSON, so every read of the catalog fails.
+      const manifest = corruptManifests(world);
+      await world.start();
+      const asked = performance.now();
+      const refused = await world.probe.sync([FAMILIES.rendition], () => {}, {timeoutMs: 5000});
+      assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable');
+      assert.ok(performance.now() - asked < 2000, `refused after ${String(Math.round(performance.now() - asked))} ms, not at the sync's deadline`);
+      // The device record is still served, and the reads that keep failing are one record.
+      assert.equal((await world.synced('device')).length, 1);
+      await sleep(300);
+      assert.equal(storageRecords(world, 'operation.failed').length, 1, 'one record for the run of failed reads');
+      // The fault is repaired: the next read serves the catalog, and logs the recovery once.
+      manifest.restore();
+      await waitFor(() => storageRecords(world, 'operation.completed').length === 1 ? true : undefined, 'the recovery');
+      assert.deepEqual((await world.synced<RenditionRecord>(FAMILIES.rendition)).map(item => item.name), ['Blue']);
+    });
+  });
+
+  void it('completes a catalog command with its outcome though the read of the catalog after it fails', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.populate(async library => { await library.importMedia(bytesOf(await solid([0, 0, 255])), 'Blue'); });
+      await world.start();
+      assert.equal((await world.synced<RenditionRecord>(FAMILIES.rendition)).length, 1);
+      const manifest = corruptManifests(world);
+      // The library commits the playlist; the read after it fails. The outcome goes out at once, not at the next start.
+      const created = await accepted(playlist(world, {operation: 'create', name: 'Desk'}));
+      assert.deepEqual((await world.outcome(created, 3000)).data, {requestId: created, result: 'succeeded', evidence: 'observed'});
+      assert.equal(world.deviceRecord()?.pending, 0);
+      await sleep(300);
+      assert.equal(storageRecords(world, 'operation.failed').length, 1, 'one record for the run of failed reads');
+      // Once the catalog can be read again, the playlist goes out without another command.
+      manifest.restore();
+      await waitFor(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist, published live');
+      assert.equal(storageRecords(world, 'operation.completed').length, 1, 'one recovery');
     });
   });
 

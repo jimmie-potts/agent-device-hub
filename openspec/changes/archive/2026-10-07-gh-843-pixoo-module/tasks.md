@@ -14,8 +14,8 @@
 
 - [x] 3.1 Assert the kit's checks with policy A's silent device (`conformance.test.ts`), the configuration and conversion (`configuration.test.ts`), and Monitor, Media, Now Playing, offline start, a failed render, a corrupt and an oversized image, the child's heap, a restart before an outcome, a repeated request, refusals, the catalog cap, a late playback owner, another module serving `device` beside it, named by its readers, and dismissal (`module.test.ts`).
 - [x] 3.2 Add `createPixooModule`, `configurePixoo`, `convertPixooSettings`, `SimulatedPixoo`, the HTTP transport, the module store, the render worker and `Library.attach`.
-- [x] 3.3 Assert a reused request ID refused with `duplicate-conflict`, a rollback that leaves what is served, a 257th playlist started, at most five commits a command, and a hosted library whose start reads no frames and whose frames are checked once (`module.test.ts`).
-- [x] 3.4 Read the catalog after the start, keep each rendition's hosted check, commit acceptance with the pending count, apply served state after commit, and let the outbox's record be an outcome's only one.
+- [x] 3.3 Assert a reused request ID refused with `duplicate-conflict`, a rollback that leaves what is served, a 257th playlist started, at most five commits a command, a hosted library whose start reads no frames and whose frames are checked once, a catalog that cannot be read refused `unavailable`, and a catalog command completed though the read after it fails (`module.test.ts`).
+- [x] 3.4 Read the catalog after the start, keep each rendition's hosted check, commit acceptance with the pending count, apply served state after commit, let the outbox's record be an outcome's only one, refuse a catalog sync while no read has succeeded, and complete a catalog command whatever the read after it finds.
 
 ## 4. Runtime
 
