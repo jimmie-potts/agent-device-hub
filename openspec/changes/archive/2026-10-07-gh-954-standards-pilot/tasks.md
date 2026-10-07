@@ -19,7 +19,7 @@
 - [x] 4.1 Assert that a release that cannot read its claim's invocation stops nothing (`single-run.test.mjs`), and fix `releaseClaim`.
 - [x] 4.2 Add the lint checks for destructured streams, `globalThis.process`, `String.raw`, joined array literals and string `concat`, with valid and invalid cases (`tests/strict_profile.test.mjs`).
 - [x] 4.3 Add the scratch-root helper with its test, and use it in both packaging scripts.
-- [x] 4.4 Fix the one-run guard's documentation and the composition test's precondition.
+- [x] 4.4 Fix the one-run guard's documentation and the composition test's precondition, and add the boundary prompt to the bug and epic issue templates.
 
 ## 5. Documentation and qualification
 
