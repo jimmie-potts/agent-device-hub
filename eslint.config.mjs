@@ -16,6 +16,12 @@ const unused = {
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
 export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
 export const staged = ['modules/pixoo/**'];
+// Tests, their fixtures and helpers read an error to report a failure and spell out the bodies they expect, so the
+// safe-error rules (Hub #953) skip them. The strict rules still apply.
+const tests = ['**/tests/**', '**/*.test.{ts,tsx,js,mjs}'];
+// Named entry points that own the process's standard streams, so `bunny/no-console` skips them: the runtime's journal
+// sink and its process entry (the ready line and usage), and the verification run's supervisor and network guard.
+export const streamOwners = ['apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts'];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
 const noInlineConfig = {noInlineConfig: true};
@@ -143,6 +149,62 @@ export default defineConfig(
     linterOptions: noInlineConfig,
     plugins: {bunny},
     rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages, workspaceScopes}]},
+  },
+  {
+    // ADR 0012's "Safe errors" and "Observability" rules, for production code under the profile.
+    name: 'bunny/safe-errors',
+    files: [...strict, 'modules/**/*.{js,mjs}'],
+    ignores: [...staged, ...tests],
+    linterOptions: noInlineConfig,
+    plugins: {bunny},
+    rules: {
+      'bunny/no-console': 'error',
+      // An error class from a workspace package is this repository's own, with fixed text.
+      'bunny/no-raw-error-text': ['error', {workspaceScopes}],
+      'bunny/error-body-from-registry': 'error',
+    },
+  },
+  // Where the safe-error rules do not apply. Each block lifts only the rules it names; docs/development.md "Static
+  // analysis" lists them, and tests/strict_profile.test.mjs checks that each names files that exist.
+  {
+    // Scripts write their results to the terminal.
+    name: 'bunny/safe-errors/scripts',
+    files: ['**/scripts/**'],
+    rules: {'bunny/no-console': 'off'},
+  },
+  {
+    name: 'bunny/safe-errors/stream-owners',
+    files: streamOwners,
+    rules: {'bunny/no-console': 'off'},
+  },
+  {
+    // The contracts package defines `errorBody`, the one place that builds an error body.
+    name: 'bunny/safe-errors/contracts',
+    files: ['packages/event-contracts/**'],
+    rules: {'bunny/error-body-from-registry': 'off'},
+  },
+  // Code that breaks a safe-error rule until its owner converts it.
+  {
+    // A malformed command line's usage error quotes parseArgs's message. Open PR #960 changes the file; #953 converts it
+    // after that merges.
+    name: 'bunny/safe-errors/runtime-usage',
+    files: ['apps/runtime/src/process.ts'],
+    rules: {'bunny/no-raw-error-text': 'off'},
+  },
+  {
+    // The verification run's harness quotes a failure's message in its own refusal body, its lamp failures and its
+    // start-failure lines. Open PR #960 changes the file; #953 converts it after that merges.
+    name: 'bunny/safe-errors/verification-harness',
+    files: ['apps/runtime/verify/supervisor.ts'],
+    rules: {'bunny/no-raw-error-text': 'off', 'bunny/error-body-from-registry': 'off'},
+  },
+  {
+    // The staged Nanoleaf port's outcome drafts carry a bare {code} error block, without the registry's retryable flag,
+    // because the module does not depend on the contracts package yet. #844 converts it when it publishes them through
+    // the SDK's outbox.
+    name: 'bunny/safe-errors/nanoleaf-outcomes',
+    files: ['modules/nanoleaf/src/journal.ts'],
+    rules: {'bunny/error-body-from-registry': 'off'},
   },
   {
     name: 'bunny/react-hooks',

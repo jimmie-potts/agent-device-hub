@@ -1,4 +1,5 @@
-// The strict profile for new code (Hub #867): which files it covers, the module boundary rule and the compiler base.
+// The strict profile for new code (Hub #867): which files it covers, the module boundary rule, the safe-error rules
+// (Hub #953) and the compiler base.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
@@ -7,31 +8,75 @@ import {dirname, join, relative} from 'node:path';
 import {describe, it, test} from 'node:test';
 import {ESLint, RuleTester} from 'eslint';
 import tseslint from 'typescript-eslint';
-import {staged as stagedGlobs, strict as strictGlobs, workspaceScopes} from '../eslint.config.mjs';
+import config, {staged as stagedGlobs, streamOwners, strict as strictGlobs, workspaceScopes} from '../eslint.config.mjs';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
 
 const root = join(import.meta.dirname, '..');
 const strictRules = ['@typescript-eslint/switch-exhaustiveness-check', '@typescript-eslint/strict-boolean-expressions',
   '@typescript-eslint/no-non-null-assertion'];
+const safeErrorRules = ['bunny/no-console', 'bunny/no-raw-error-text', 'bunny/error-body-from-registry'];
 const severity = (config, rule) => {
   const value = config.rules?.[rule];
   return Array.isArray(value) ? value[0] : value;
 };
+const on = (config, rule) => [2, 'error'].includes(severity(config, rule));
 
 test('the strict rules cover new code and skip old and staged code', async () => {
   const eslint = new ESLint({cwd: root});
   for (const file of ['apps/runtime/src/a.ts', 'packages/sdk/src/a.ts', 'modules/example/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
-    for (const rule of strictRules) assert.ok([2, 'error'].includes(severity(config, rule)), `${file}: ${rule}`);
+    for (const rule of strictRules) assert.ok(on(config, rule), `${file}: ${rule}`);
     assert.equal(config.linterOptions.noInlineConfig, true, `${file}: inline config`);
   }
   const moduleScript = await eslint.calculateConfigForFile(join(root, 'modules/example/src/a.mjs'));
-  assert.ok([2, 'error'].includes(severity(moduleScript, 'bunny/module-boundary')));
+  assert.ok(on(moduleScript, 'bunny/module-boundary'));
   assert.equal(moduleScript.linterOptions.noInlineConfig, true);
   for (const file of ['apps/hub/src/a.ts', 'modules/pixoo/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
-    for (const rule of [...strictRules, 'bunny/module-boundary']) assert.ok(!severity(config, rule), `${file}: ${rule} stays off`);
+    for (const rule of [...strictRules, 'bunny/module-boundary', ...safeErrorRules]) assert.ok(!severity(config, rule), `${file}: ${rule} stays off`);
     assert.notEqual(config.linterOptions.noInlineConfig, true, `${file}: inline config stays on`);
+  }
+});
+
+test('the safe-error rules cover production code under the profile, not its tests', async () => {
+  const eslint = new ESLint({cwd: root});
+  const production = ['apps/runtime/src/a.ts', 'apps/runtime/verify/a.ts', 'packages/sdk/src/a.ts', 'packages/sdk/src/testing/a.ts',
+    'modules/example/src/a.ts', 'modules/example/src/a.mjs'];
+  for (const file of production) {
+    const config = await eslint.calculateConfigForFile(join(root, file));
+    for (const rule of safeErrorRules) assert.ok(on(config, rule), `${file}: ${rule}`);
+    assert.deepEqual(config.rules['bunny/no-raw-error-text'][1], {workspaceScopes}, `${file}: own error classes come from the workspace`);
+  }
+  // The contracts package defines `errorBody`, so it builds the body by hand; its other rules still apply.
+  const contracts = await eslint.calculateConfigForFile(join(root, 'packages/event-contracts/src/v2/a.ts'));
+  assert.ok(!severity(contracts, 'bunny/error-body-from-registry'));
+  for (const rule of ['bunny/no-console', 'bunny/no-raw-error-text']) assert.ok(on(contracts, rule), `contracts: ${rule}`);
+  for (const file of ['apps/runtime/tests/a.ts', 'apps/runtime/verify/tests/a.ts', 'packages/sdk/tests/fixtures/a.ts', 'modules/example/tests/a.test.ts',
+    'modules/example/src/a.test.ts']) {
+    const config = await eslint.calculateConfigForFile(join(root, file));
+    for (const rule of safeErrorRules) assert.ok(!severity(config, rule), `${file}: ${rule} skips tests`);
+    for (const rule of strictRules) assert.ok(on(config, rule), `${file}: ${rule} still applies`);
+  }
+  for (const file of ['apps/runtime/scripts/a.ts', ...streamOwners]) {
+    const config = await eslint.calculateConfigForFile(join(root, file));
+    assert.ok(!severity(config, 'bunny/no-console'), `${file}: writes the standard streams`);
+  }
+});
+
+// An exception is a config block named bunny/safe-errors/<reason>, after the profile blocks. Scripts and the stream
+// owners lift only `bunny/no-console`, and the contracts package only `bunny/error-body-from-registry`; every other
+// exception names existing files, so a renamed file cannot leave a stale entry behind.
+test('each exception to the safe-error rules names files that exist and lifts only those rules', () => {
+  const exceptions = config.filter(block => block.name?.startsWith('bunny/safe-errors/'));
+  const scopes = {'bunny/safe-errors/scripts': {'bunny/no-console': 'off'}, 'bunny/safe-errors/contracts': {'bunny/error-body-from-registry': 'off'}};
+  for (const [name, rules] of Object.entries(scopes)) assert.deepEqual(exceptions.find(block => block.name === name)?.rules, rules, name);
+  assert.deepEqual(exceptions.find(block => block.name === 'bunny/safe-errors/stream-owners')?.rules, {'bunny/no-console': 'off'});
+  for (const block of exceptions.filter(block => !Object.hasOwn(scopes, block.name))) {
+    for (const file of block.files) assert.ok(!file.includes('*') && existsSync(join(root, file)), `${block.name}: ${file} must name an existing file`);
+    for (const [rule, value] of Object.entries(block.rules)) {
+      assert.ok(safeErrorRules.includes(rule), `${block.name} lifts ${rule}`);
+      assert.equal(value, 'off', `${block.name}: ${rule}`);
+    }
   }
 });
 
@@ -175,6 +220,164 @@ typescript.run('module-boundary types', bunny.rules['module-boundary'], {
     {code: "type Other = import('../../other/src/a.js').Other;", filename: inModuleTs, options, errors: [{messageId: 'outside'}]},
     {code: "import type {Other} from '../../other/src/a.js';", filename: inModuleTs, options, errors: [{messageId: 'outside'}]},
     {code: "export type {Store} from '@jimmie-potts/agent-state';", filename: inModuleTs, options, errors: [{messageId: 'workspace'}]},
+  ],
+});
+
+// The safe-error rules (Hub #953, ADR 0012 "Safe errors" and "Observability").
+const nodeGlobals = {languageOptions: {globals: {console: 'readonly', process: 'readonly', globalThis: 'readonly', JSON: 'readonly', String: 'readonly'}}};
+const withGlobals = cases => cases.map(item => ({...nodeGlobals, ...(typeof item === 'string' ? {code: item} : item)}));
+
+tester.run('no-console', bunny.rules['no-console'], {
+  valid: withGlobals([
+    "log.info('runtime.ready', {count: 1});",
+    'const console = {log() {}}; console.log(1);',
+    'function write(process) { return process.stdout; }',
+    'process.exitCode = 1; process.on("SIGTERM", () => {});',
+    "import {argv} from 'node:process'; export {argv};",
+    "import process from 'node:process'; export const args = process.argv;",
+  ]),
+  invalid: [
+    ...withGlobals([
+      {code: "console.log('ready');", errors: [{messageId: 'console'}]},
+      {code: 'try { run(); } catch (error) { console.error(error); }', errors: [{messageId: 'console'}]},
+      {code: 'const {log} = console; log(1);', errors: [{messageId: 'console'}]},
+      {code: "globalThis.console.warn('x');", errors: [{messageId: 'console'}]},
+      {code: "process.stderr.write('x\\n');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
+      {code: "process.stdout.write('x\\n');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "process['stdout'].write('x\\n');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "const out = process.stderr; out.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
+      {code: "import {stderr} from 'node:process'; stderr.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
+      {code: "import proc from 'node:process'; proc.stdout.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "import * as proc from 'process'; proc.stderr.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
+      {code: "import {Console} from 'node:console'; export {Console};", errors: [{messageId: 'console'}]},
+    ]),
+    // Without configured globals, an undeclared console is still the global one.
+    {code: "console.info('x');", errors: [{messageId: 'console'}]},
+  ],
+});
+
+const rawText = (property) => [{messageId: 'read', data: {property}}];
+const asText = [{messageId: 'text'}];
+tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
+  valid: withGlobals([
+    "try { run(); } catch (error) { throw new Failed('the read failed', {cause: error}); }",
+    "try { run(); } catch (error) { log.warn('read.failed', errorFields(error)); }",
+    'export function name() { try { run(); } catch (error) { return error.name; } }',
+    "export function read() { try { run(); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } }",
+    'export function read() { try { run(); } catch (_) { return null; } }',
+    'export function read() { try { run(); } catch { return null; } }',
+    // A typed refusal carries its body on; its code and fixed text came from the registry.
+    "import {SdkError} from '@jimmie-potts/sdk'; export function body() { try { run(); } catch (error) { if (error instanceof SdkError) return error.body; throw error; } }",
+    // An error class this repository declares holds fixed text from the code that raised it.
+    "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (!(error instanceof UsageError)) throw error; write(error.message); }",
+    "import {UsageError} from './usage.js'; try { run(); } catch (error) { write(error instanceof UsageError ? `${error.message}\\n` : 'failed'); }",
+    "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (error instanceof UsageError) write(`usage: ${error}`); }",
+    "import * as errors from './errors.js'; try { run(); } catch (error) { if (error instanceof errors.ValueError) write(error.message); }",
+    "class LocalError extends Error {} try { run(); } catch (error) { if (error instanceof LocalError) write(error.message); }",
+    "import {A, B} from './errors.js'; try { run(); } catch (error) { if (!(error instanceof A) && !(error instanceof B)) throw error; write(error.message); }",
+    "import {ValueError} from '@jimmie-potts/nanoleaf'; try { run(); } catch (error) { if (!(error instanceof ValueError)) throw error; write(error.message); }",
+    {code: "import {ValueError} from '@pixoo/core'; try { run(); } catch (error) { if (!(error instanceof ValueError)) throw error; write(error.message); }",
+      options: [{workspaceScopes: ['@jimmie-potts/', '@pixoo/']}]},
+    // Values that are not exceptions.
+    "const reply = {message: 'hello'}; write(reply.message); write(`${reply}`);",
+    'function title(input) { return input.message + String(input); }',
+    'function show(value) { if (value instanceof URL) return String(value); return `${value}`; }',
+    'promise.then(result => write(result.message));',
+    'promise.catch(() => write("failed"));',
+    'promise.catch(error => fail(error));',
+    "stream.on('data', chunk => write(chunk.message));",
+    // The inner function's parameter shadows the catch binding.
+    'try { run(); } catch (error) { const show = error => error.message; show(1); }',
+  ]),
+  invalid: withGlobals([
+    {code: 'try { run(); } catch (error) { report(error.message); }', errors: rawText('message')},
+    {code: 'try { run(); } catch (error) { report(error.stack); }', errors: rawText('stack')},
+    {code: 'try { run(); } catch (error) { report(error.cause); }', errors: rawText('cause')},
+    {code: 'try { run(); } catch (error) { report(error?.message); }', errors: rawText('message')},
+    {code: "try { run(); } catch (error) { report(error['stack']); }", errors: rawText('stack')},
+    {code: 'try { run(); } catch ({message}) { report(message); }', errors: rawText('message')},
+    {code: 'try { run(); } catch (error) { const {name, stack} = error; report(name, stack); }', errors: rawText('stack')},
+    {code: 'try { run(); } catch (error) { report(`failed: ${error}`); }', errors: asText},
+    {code: "try { run(); } catch (error) { report('failed: ' + error); }", errors: asText},
+    {code: 'try { run(); } catch (error) { report(String(error)); }', errors: asText},
+    {code: 'try { run(); } catch (error) { report(JSON.stringify(error)); }', errors: asText},
+    {code: 'try { run(); } catch (error) { report(error.toString()); }', errors: asText},
+    {code: "try { run(); } catch (error) { let line = 'x'; line += error; report(line); }", errors: asText},
+    {code: "import {inspect} from 'node:util'; try { run(); } catch (error) { report(inspect(error)); }", errors: asText},
+    {code: "import util from 'node:util'; try { run(); } catch (error) { report(util.format('%s', error)); }", errors: asText},
+    // The remote edge's old answer to an unexpected exception (Hub #948).
+    {code: 'try { run(); } catch (error) { const refused = error instanceof Refusal ? error.body'
+      + " : errorBody('internal', {detail: `the edge failed: ${error instanceof Error ? error.message : 'unknown'}`}); answer(refused); }",
+    errors: rawText('message')},
+    // A built-in or third-party error's message is not this repository's text.
+    {code: 'try { parse(); } catch (error) { if (error instanceof SyntaxError) throw new ValueError(error.message); throw error; }', errors: rawText('message')},
+    {code: "import {HTTPError} from 'got'; try { run(); } catch (error) { if (error instanceof HTTPError) report(error.message); }", errors: rawText('message')},
+    // An own class's stack and cause are never fixed text, and its narrowing does not reach the other branch.
+    {code: "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (error instanceof UsageError) report(error.stack); }", errors: rawText('stack')},
+    {code: "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (error instanceof UsageError) report(error.cause); }", errors: rawText('cause')},
+    {code: "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (error instanceof UsageError) {} else report(error.message); }", errors: rawText('message')},
+    {code: "import {UsageError} from './usage.js'; try { run(); } catch (error) { if (error instanceof UsageError || error instanceof Error) report(error.message); }",
+      errors: rawText('message')},
+    // A rejection or 'error' event handler's parameter is a caught exception too.
+    {code: 'promise.catch(error => answer(error.message));', errors: rawText('message')},
+    {code: 'promise.then(ok, function (error) { answer(`${error}`); });', errors: asText},
+    {code: "stream.on('error', error => log(error.stack));", errors: rawText('stack')},
+    {code: "process.once('uncaughtException', ({message}) => log(message));", errors: rawText('message')},
+    // Any value narrowed to an error class counts, wherever it came from.
+    {code: "const failed = error => write(`start failed: ${error instanceof Error ? error.message : 'unknown'}`);", errors: rawText('message')},
+    {code: 'function fail(reason) { if (!(reason instanceof Error)) return; write(reason.message); }', errors: rawText('message')},
+    {code: 'function fail(reason) { if (reason instanceof TypeError && reason.stack) write(reason.stack); }', errors: [...rawText('stack'), ...rawText('stack')]},
+  ]),
+});
+
+typescript.run('no-raw-error-text types', bunny.rules['no-raw-error-text'], {
+  valid: [
+    "import type {SdkError} from '@jimmie-potts/sdk'; export function code(error: SdkError): string { return error.message; }",
+    "import type * as errors from './errors.js'; export function text(error: errors.ValueError): string { return error.message; }",
+    'type Failure = {message: string}; export function text(failure: Failure): string { return failure.message; }',
+    'try { run(); } catch (error: unknown) { log((error as {code?: string}).code); }',
+  ],
+  invalid: [
+    {code: 'try { run(); } catch (error) { report((error as Error).message); }', errors: rawText('message')},
+    {code: 'try { run(); } catch (error) { report(error!.stack); }', errors: rawText('stack')},
+    {code: 'try { run(); } catch (error: unknown) { report(`${error as Error}`); }', errors: asText},
+    {code: "socket.on('close', (error: Error) => log(error.message));", errors: rawText('message')},
+    {code: 'export function done(error: NodeJS.ErrnoException | null): void { if (error !== null) log(error.message); }', errors: rawText('message')},
+    {code: "import {SdkError} from '@jimmie-potts/sdk'; export function code(error: SdkError): string { return error.stack ?? ''; }", errors: rawText('stack')},
+  ],
+});
+
+const handBuilt = [{messageId: 'literal'}];
+tester.run('error-body-from-registry', bunny.rules['error-body-from-registry'], {
+  valid: [
+    "return errorBody('internal', {detail: 'the edge failed'});",
+    'const body = {error: {...refused.error, requestId, traceId}};',
+    'throw new Refusal({error: result.error});',
+    "const result = {status: 'rejected', requestId, error: named(refused, ids)};",
+    "const outcome = {result: 'failed', evidence: 'none', error: errorBody('expired').error};",
+    "const record = {error: 'failed'};",
+    "const record = {error: {message: 'x'}};",
+    "const options = {code: 'internal'};",
+    "const fields = {[error]: {code: 'x'}};",
+  ].map(code => `export function f() { ${code} }`),
+  invalid: [
+    "return {error: {code: 'internal', retryable: false}};",
+    'const refusal = (code, detail) => ({error: {code, detail}});',
+    "return {result: 'failed', evidence: 'none', error: {code: 'expired'}};",
+    "return {error: {...body.error, code: 'internal'}};",
+    "return {'error': {'code': 'internal', retryable: false}};",
+    "return {['error']: {code: 'internal'}};",
+  ].map(code => ({code: `export function f() { ${code} }`, errors: handBuilt})),
+});
+
+typescript.run('error-body-from-registry types', bunny.rules['error-body-from-registry'], {
+  valid: [
+    'type Body = {error: {code: string; retryable: boolean}};',
+    "const body: ErrorBody = errorBody('internal');",
+  ],
+  invalid: [
+    {code: "const body = {error: {code: 'internal', retryable: false}} as ErrorBody;", errors: handBuilt},
+    {code: "const body = {error: {code: 'internal', retryable: false} satisfies ErrorDetail};", errors: handBuilt},
   ],
 });
 
