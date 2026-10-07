@@ -313,29 +313,36 @@ catalog's `speaker-playback` scenario drives them
 ## What to see and hear at the cutover
 
 For #840's live check, the owner plays music from the iPhone over AirPlay to the
-HT-A9 or the Sonos Move. The speakers show little through the webcam, so the
-result is judged by ear and on the displays that follow the `playback` record:
+HT-A9 or the Sonos Move, with both speakers configured. The speakers show little
+through the webcam, so the result is judged by ear and on the displays that
+follow the `playback` record:
 
 - **Playing:** within about 2 s of the music starting, the record shows the
   title, the artist and the actions the speaker offers. The Tidbyt's now-playing
-  tile shows a green triangle at its next turn in the rotation, and in Monitor
-  the Pixoo shows the song's card as a pop-up for about 10 s.
+  tile shows a green triangle at its next turn in the rotation. In Monitor, while
+  no session waits for an approval, input or an answer, the Pixoo shows the
+  song's card as a pop-up for about 10 s (once its module ships, #843).
 - **Pause:** a pause from the dashboard or MCP stops the audio within a few
   seconds, and the record shows the session paused. The Tidbyt's marker turns
   into two amber bars once its 15 s gate allows. On the HT-A9 a paused AirPlay
-  session offers only next and previous: play stays unavailable
+  session offers only next and previous, and play is not offered
   ([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)), so
   resume from the phone.
-- **Next:** the track changes audibly within a few seconds, and the title follows
-  at the next read.
+- **Next:** while a session plays, the track changes audibly within a few
+  seconds, and the title follows at the next read. On a paused HT-A9 the phone
+  changes track without resuming, and the receiver keeps reporting the old title
+  until playback resumes.
 - **A restart of the runtime:** the record reads `unavailable` until each
-  speaker's first read settles, about 1.5 s for the HT-A9 and up to about 4.5 s
-  for the Move, then shows the same song, and the displays keep its card. A Move
-  that does not answer within its call deadline releases the record with the
-  HT-A9's report, so the Tidbyt card can drop and come back about 15 s later.
-- **A speaker that stops answering:** the record turns `stale` after 5 s and
-  `unavailable` at 30 s, and commands are refused `unavailable`. The audio itself
-  is unaffected.
+  speaker's first read settles, at most about 1.5 s for the HT-A9 and about
+  4.5 s for the Move, then shows the same song. The Tidbyt keeps its card; the
+  Pixoo shows the card again as a 10 s pop-up. A Move that does not answer within
+  its call deadline releases the record with the HT-A9's report, so the Tidbyt
+  card can drop and come back about 15 s later.
+- **A speaker that stops answering:** its observation turns `stale` after 5 s.
+  From 30 s the answering speaker is presented instead, often `inactive` with no
+  title, and commands are then refused `unsupported-capability`. The record reads
+  `unavailable` only when no configured speaker answers. No audio passes through
+  the module, so its view of a speaker changes nothing the speaker plays.
 
 Source tests, a running module and command outcomes do not establish what the
 speakers play; the owner's listening check does.
