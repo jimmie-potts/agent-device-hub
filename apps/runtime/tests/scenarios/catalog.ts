@@ -808,6 +808,8 @@ const speakerPlayback: Scenario = {
 export const LIFX_SECTION = LIFX_SIMULATED_SECTION;
 const PENDANT_AT = '192.0.2.40';
 const BEAM_AT = '192.0.2.41';
+/** The documentation network every simulated bulb's address is in, so a leak of any bulb's address shows. */
+const BULB_NETWORK = '192.0.2.';
 /** The hue in degrees each agent status paints, from the shared status colors. */
 const STATUS_HUE = {attention: 38, working: 218, done: 135} as const;
 /** A command the operator sends one bulb, as the dashboard would. */
@@ -887,7 +889,8 @@ const lifxBulbs: Scenario = {
     act('the operator asks the Beam to switch on', h => h.send('operator', 'beam', bulbCommand('power-set', 'org.bunny.power.set.requested', 'beam', {on: true}), {timeoutMs: 5000, requestId: 'req-beam'})),
     expect('the Beam refuses it: it offers no power control', h => answered(h, 'beam', 'unsupported-capability')),
     holds('the Beam got no packet, and no message or record carries a bulb\'s address', h => {
-      const leaked = [h.logs(), h.published(), h.reader.heard()].some(value => JSON.stringify(value).includes(PENDANT_AT));
+      const places = [h.logs(), h.published(), h.reader.heard(), ...h.reader.families().map(family => h.reader.states(family))];
+      const leaked = places.some(value => JSON.stringify(value).includes(BULB_NETWORK));
       const packets = h.devices().lifx.packets.filter(packet => packet.address === BEAM_AT).length;
       return (packets === 0 && !leaked) || `${packets} packets to the Beam, address leaked: ${String(leaked)}`;
     }, 300),
