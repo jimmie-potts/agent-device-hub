@@ -35,8 +35,8 @@ the [strict profile](../../docs/development.md#strict-profile-for-new-code):
 | `src/status.ts` | `src/status.ts` | Reads a synced copy of `session/2.0` records through the shared helper in `@jimmie-potts/event-contracts/v2/status` (#918). A copy that has not synced, or whose later sync failed, is the unavailable feed. The neutral label keeps the 1.x identity hash, so a session without a label shows the same `C-` or `X-` ID as before. |
 | `src/nowplaying.ts` | `src/nowplaying.ts` | Reads the `playback/2.0` record. `parsePlaybackSnapshot` is not copied. Freshness is the record's `availability`, never the age of `observedAtMs`; see [Now playing](#now-playing). |
 | `src/connection.ts` | `src/cloud.ts` | The transport is the module's `fetch`; a deadline is the caller's signal; an uncertain result says whether the cloud answered; the 1.x capability block went with the 1.x snapshot. |
-| `src/controller.ts` (queue and holds) | `src/writer.ts` (`CloudQueue`) | The controller v1 envelope, tickets, replays and conflicts are gone: only the module's tiles write. Order, one call in flight, the authentication hold and the rate-limit hold stay. |
-| `src/publishing.ts` (`InstallationWriter`) | `src/writer.ts` (`TileWriter`) | The gate runs from the moment a request goes out. A tile can hold. What a tile sent survives a restart. |
+| `src/controller.ts` (queue and holds) | `src/writer.ts` (`CloudQueue`) | The controller v1 envelope, tickets, replays and conflicts are gone: only the module's tiles write. Order, one call in flight, the authentication hold and the rate-limit hold stay. The installation listing now goes through the queue too, where the controller read it beside the queue. A listing the cloud answers with an error makes the Tidbyt `degraded`, where the controller made it `unavailable`; only a listing with no answer makes it `unavailable`. |
+| `src/publishing.ts` (`InstallationWriter`) | `src/writer.ts` (`TileWriter`) | The gate runs from the moment a request goes out. A tile can hold. What a tile sent survives a restart, and a write is stored as uncertain until its answer. The gate and the refresh run on the wall clock, where the runner used a monotonic one, with a time in the future taken as now. |
 | `src/publisher.ts`, `src/nowplaying-publisher.ts` | `src/module.ts` | The tiles follow synced copies instead of reading the Hub. |
 | `src/runner.ts` (`acquireWriterLease`) | `src/lease.ts` | By way of the LIFX module's copy (#928); the lease file lives in the module's private folder. |
 | `src/credentials.ts` | `src/configuration.ts` (`parseRunnerCredentials`) | Used only by the conversion. |
@@ -156,9 +156,20 @@ artist in blue, for a `playing` or `paused` record that is `available` or
 `stale`. A `stale` record dims the card and shows `?`. An `unavailable` record,
 unknown playback, a stopped track or another input removes the card. While the
 copy does not follow the playback module, the last card is dimmed, and it is
-removed once the copy has not followed for 30 s. Until its first sync succeeds, for at
-most 30 s after the module starts, the tile writes nothing, so a playback module
-that starts a moment later never makes it remove a playing card.
+removed once the copy has not followed for 30 s.
+
+### The start window
+
+Each start and restart writes nothing until what a tile shows is known, for at
+most 30 s after the module starts (`START_WINDOW_MS`):
+- the status tile waits for its copy's first sync. A core that is not serving
+  yet never makes it read `FEED ?` over the tile it shows; only a copy that has
+  not synced 30 s after the start reads `FEED ?`;
+- the now-playing tile waits for its copy's first sync, and then for the
+  playback module's first read. That module publishes its record `unavailable`,
+  with unknown playback, at each start before it reads a speaker, so a playing
+  card is neither removed nor pushed again across a restart. A speaker still
+  `unavailable` 30 s after the start removes the card.
 
 ## Writes
 
@@ -184,9 +195,15 @@ that starts a moment later never makes it remove a playing card.
   holds later calls for its `Retry-After`.
 - **Restarts.** What each tile last sent, when, and whether its installation is
   present are kept in the module's database. A restart pushes nothing while the
-  tile stands, and the gate holds across it. Start and restart write nothing
-  until the shown state is known: the status tile waits for its first sync to
-  settle, and the now-playing tile as above.
+  tile stands, and the gate holds across it. Before a push or a removal goes out,
+  the tile stores it as uncertain, so a stop or a crash before its answer leaves
+  the installation's presence unknown, and the next start reads the list before
+  it trusts it. Start and restart write nothing until the shown state is known;
+  see [The start window](#the-start-window).
+- **The clock.** The gate and the refresh run on the runtime's wall clock, so
+  they hold across a restart. A time in the future, after the clock was set
+  back, counts as now, so a clock set back delays a tile's next write by at most
+  its own wait, never by the step.
 - **Stop.** A stop ends the call in flight, whose result is then unknown, sends
   nothing more, and ends a render in progress. Both tiles stay in the rotation.
 
@@ -215,14 +232,20 @@ the Tidbyt's routing ID. It never logs the cloud's device ID, the key or a frame
 | `device.unavailable` | WARN, then a DEBUG summary at most once a minute | The cloud does not answer, once per outage (`DeviceAvailability`) |
 | `device.available` | INFO | The cloud answers again, with the failed attempts and the outage's length |
 | `operation.completed` | INFO | The cloud accepted a push or a removal: `bunny.operation` `status` or `playback`, `bunny.operation.id` `push` or `remove` |
-| `operation.failed` | WARN | The cloud refused a tile's call, answered with a server error, or a render failed, once per run of failures of that tile, with the code: `unauthenticated`, `forbidden`, `not-found`, `invalid-request`, `capacity`, `uncertain-result` or `unavailable` |
+| `operation.failed` | WARN | The cloud refused a tile's call, answered with a server error, or a render failed, once per run of failures of that tile, and again when the cloud refuses the key or the device inside that run, with the code: `unauthenticated`, `forbidden`, `not-found`, `invalid-request`, `capacity`, `uncertain-result` or `unavailable` |
+| `operation.failed` / `operation.completed` | ERROR / INFO | A fault of the module's own in a tile's evaluation, with `bunny.code` `internal` and its `error.type`, once per run of faults; and the next evaluation that completes, with no `bunny.operation.id` |
 | `operation.failed` / `operation.completed` | WARN / INFO | A copy stopped following its owner, or follows again: `bunny.operation` `feed`, `bunny.participant` the owner |
 | `operation.failed` / `operation.completed` | WARN, or ERROR for `internal` / INFO | The database refused a commit, once per run, with `bunny.operation` `storage` |
 | `operation.failed` | WARN | The writer lease was refused at start: `bunny.operation` `startup`, `bunny.reason` `busy`, `unauthorized` or `unavailable` |
 | `outbox.republished` | INFO | Each start |
 
-Each cloud call has a `bunny.device.call` span, the child of the message that
-asked for the tile's evaluation. No trace context reaches the cloud.
+Each cloud call that goes out has a `bunny.device.call` span, the child of the
+message that asked for the tile's evaluation; a call a hold kept back has none.
+No trace context reaches the cloud.
+
+Sync serves the device record as last committed. While the database refuses
+commits, a reader gets that record, and the module commits and publishes the new
+one once the database works again.
 
 ## Simulated cloud
 
@@ -232,8 +255,8 @@ runs. It takes only its key (the synthetic token by default) and its device
 (`simulated-tidbyt`), keeps its installations across runtime restarts, and shows
 each installation's last frame as 32 text rows of 64 characters: `.` dark, `A`
 amber, `B` blue, `G` green, `R` red, `W` white or grey, lower case when dimmed.
-A test or run can take it offline, refuse connections, or answer the next calls
-with a status of its choice. The runtime's `--simulate` builds the module with
+A test or run can take it offline, refuse connections, answer the next calls
+with a status of its choice, or carry out the next call and lose its answer. The runtime's `--simulate` builds the module with
 it; the catalog's `tidbyt-tiles` scenario drives it
 ([runtime README](../../apps/runtime/README.md#scenario-catalog)).
 
@@ -257,8 +280,9 @@ tests need no cloud and no Python.
 - `module.test.ts`: both tiles from synced records, the gate under bursts, the
   refresh, removal, a lost or slow copy, failed, uncertain and held writes, a
   cloud that does not answer at start, rendering and its end at stop, a restart,
-  the device record, the lease, a database that refuses commits and secrecy, on
-  the simulated cloud and a manual clock.
+  the start window, a stop during a push, a wall clock set back, the device
+  record, the lease, a database that refuses commits, fault records and secrecy,
+  on the simulated cloud and a manual clock.
 - `kit.test.ts`: the module test kit, with policy A's offline check.
 
 The 1.x tests of the Hub feed, the SSE subscription, the runner's private files
@@ -269,17 +293,27 @@ the bus, and the runtime checks its configuration and secret files (#919).
 
 For #840's physical check, with one real agent session and the speakers:
 
-- **Status tile**, in the rotation beside the other apps: one row per root
-  session. A working session shows a blue square, its label in light grey and
-  `RUN` in blue at the right. A question or approval turns the square and the
-  word amber, `ASK`. A finished turn shows green `DONE` until a consumer
-  acknowledges it. Each change appears within about 15 s. An idle agent setup
-  leaves the rotation.
-- **Now-playing tile**: while music plays, a green triangle at the top left, the
+Both tiles are background installations, so the Tidbyt shows each only on its
+turn in the rotation, for the time the Tidbyt app gives each app. A change
+reaches the cloud within about 15 s, and appears on the display when its tile
+next comes round.
+
+- **Status tile:** one row per root session. A working session shows a blue
+  square, its label in light grey and `RUN` in blue at the right. A question or
+  approval turns the square and the word amber, `ASK`. A finished turn shows
+  green `DONE` until a consumer acknowledges it. An idle agent setup leaves the
+  rotation.
+- **Now-playing tile:** while music plays, a green triangle at the top left, the
   title in light grey and the artist in blue. Pause turns the marker into two
-  amber bars within about 15 s. Stopping the music removes the tile.
-- With the speakers or the runtime's sessions unreachable, the tiles dim and show
-  `?`, or the status tile reads `FEED ?`, rather than going blank.
+  amber bars. Stopping the music removes the tile.
+- **Speakers that stop answering:** the card dims and shows `?` while the
+  playback record is `stale`, 5 to 30 s after the speaker's last answer. Once the
+  record turns `unavailable` at 30 s, the card leaves the rotation; it does not
+  stay dimmed.
+- **A lost copy of the sessions:** the status rows dim with `?`, or the tile
+  reads `FEED ?`; the tile stays in the rotation.
+- **A restart of the runtime:** both tiles stay as they were; neither is removed
+  or pushed again while what they show is unchanged.
 
 Source tests, a running module and cloud receipts do not establish what the
 display shows; the owner's visual check does.

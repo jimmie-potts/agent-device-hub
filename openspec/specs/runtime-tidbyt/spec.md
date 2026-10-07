@@ -50,12 +50,12 @@ The module SHALL keep a synced copy of the core's `session` records and draw the
 - **THEN** the next push dims every row, the module logs one feed failure, and the tile is never removed while the copy is lost
 
 #### Scenario: No sync at all
-- **WHEN** the first sync of the sessions is refused, and the core comes up later
-- **THEN** the tile reads `FEED ?`, the module syncs again after its backoff and logs one recovery, and the next push, after the 15-second gate, shows the sessions
+- **WHEN** the core refuses every sync of the sessions for 30 s after the start, and comes up later
+- **THEN** the tile writes nothing for those 30 s, then reads `FEED ?`, the module syncs again after its backoff and logs one recovery, and the next push, after the 15-second gate, shows the sessions
 
 ### Requirement: Now-playing tile from the playback record
 
-With `nowPlaying` configured, the module SHALL keep a synced copy of the playback module's `playback` records and draw the configured record as the runner's card: a green play triangle or amber pause bars, the title and the artist, for a `playing` or `paused` record that is `available` or `stale`. A `stale` record SHALL dim the card with a `?` marker. An `unavailable` record, unknown playback, a stopped track or another input SHALL remove the card. Freshness SHALL come from the record's `availability`, never from the age of `observedAtMs`. While the copy does not follow the playback module, the last card SHALL be dimmed, and it SHALL be removed once the copy has not followed for 30 s. Until the copy's first sync succeeds, for at most 30 s after the module starts, the tile SHALL write nothing.
+With `nowPlaying` configured, the module SHALL keep a synced copy of the playback module's `playback` records and draw the configured record as the runner's card: a green play triangle or amber pause bars, the title and the artist, for a `playing` or `paused` record that is `available` or `stale`. A `stale` record SHALL dim the card with a `?` marker. An `unavailable` record, unknown playback, a stopped track or another input SHALL remove the card. Freshness SHALL come from the record's `availability`, never from the age of `observedAtMs`. While the copy does not follow the playback module, the last card SHALL be dimmed, and it SHALL be removed once the copy has not followed for 30 s. Within 30 s of the module's start, the tile SHALL write nothing while its copy has not synced, or while the configured record is missing or `unavailable`, which the playback module publishes at each start before its first read; a record still `unavailable` after that window SHALL remove the card.
 
 #### Scenario: Play, pause, stale and the end of playback
 - **WHEN** the record plays, pauses, turns stale, then turns unavailable
@@ -64,6 +64,10 @@ With `nowPlaying` configured, the module SHALL keep a synced copy of the playbac
 #### Scenario: A playback module that starts late
 - **WHEN** a leftover card is in the rotation and the playback module starts serving 5 s after the Tidbyt module
 - **THEN** the tile removes nothing and shows the card once its copy syncs; with no playback module at all, the leftover card is removed after 30 s
+
+#### Scenario: The playback module's start-time record
+- **WHEN** the runtime restarts while a song plays, the playback module first serves its record `unavailable` with unknown playback, then the same song playing
+- **THEN** the card is neither removed nor pushed again; from a fresh start with a leftover card and a record that stays `unavailable`, nothing is written for 30 s, then the card is removed
 
 #### Scenario: A lost playback copy
 - **WHEN** the playback copy stops following its owner while a song plays
@@ -99,11 +103,23 @@ Every cloud call SHALL go through one queue, one call at a time, in order, behin
 
 ### Requirement: Start, restart, stop and rendering
 
-Start SHALL open only the database, the private folder with the lease, the key's file and the bus, sync both copies and return; it SHALL NOT wait on the cloud (policy A). A tile SHALL write nothing until its copy's first sync has settled, so a start or a restart writes nothing before the shown state is known. What each tile last sent, when, and whether its installation is present SHALL survive a restart in the module's database, so a restart pushes nothing while the tile stands, and the gate SHALL hold across it. Frames SHALL render in a worker thread through the runtime's worker call; a stop SHALL end a render in progress, and nothing SHALL be pushed after the stop. A failed render SHALL send nothing, SHALL be no evidence about the device and SHALL be tried again after the wait above.
+Start SHALL open only the database, the private folder with the lease, the key's file and the bus, sync both copies and return; it SHALL NOT wait on the cloud (policy A). Within 30 s of the module's start, a tile SHALL write nothing until its copy has first synced, so a start or a restart writes nothing before the shown state is known; the status tile SHALL read `FEED ?` only when its copy has not synced by then. What each tile last sent, when, and whether its installation is present SHALL survive a restart in the module's database, so a restart pushes nothing while the tile stands, and the gate SHALL hold across it. Before a push or a removal goes out, the tile SHALL store it as uncertain, with the installation's presence unknown, so a stop or a crash before its answer makes the next start read the list before it trusts the presence. The gate and the refresh SHALL run on the runtime's wall clock, and a stored time in the future SHALL count as now, so a clock set back delays a tile's next write by at most its own wait. Frames SHALL render in a worker thread through the runtime's worker call; a stop SHALL end a render in progress, and nothing SHALL be pushed after the stop. A failed render SHALL send nothing, SHALL be no evidence about the device and SHALL be tried again after the wait above.
 
 #### Scenario: A slow core at start
 - **WHEN** the core's first sync is held
 - **THEN** the module writes and removes nothing until it is answered, then pushes the sessions
+
+#### Scenario: A core that serves a moment after a restart
+- **WHEN** the runtime restarts while the status tile shows a session, and the core refuses the module's syncs for 3 s
+- **THEN** the tile reads neither `FEED ?` nor anything else: the rows it shows are unchanged, so nothing is pushed
+
+#### Scenario: A stop while a push is in flight
+- **WHEN** a push reaches the cloud and its answer is lost, the module stops, the session turns idle, and the module starts again
+- **THEN** the start reads the installation list and removes the tile
+
+#### Scenario: A wall clock set back
+- **WHEN** the wall clock is set back ten minutes just after a push, and a session changes
+- **THEN** the change is pushed 15 s later, and the next refresh 10 minutes after that
 
 #### Scenario: A restart
 - **WHEN** the runtime restarts 5 s after a push, and a session changes after the restart
@@ -115,7 +131,7 @@ Start SHALL open only the database, the private folder with the lease, the key's
 
 ### Requirement: Device record, commands and diagnostics
 
-The module SHALL serve `device` through sync and publish the Tidbyt's `device/2.0` record of kind `tidbyt` with every capability unsupported, desired, observed, last outcome and external control `unknown`, and `pending` 0. Its `availability` SHALL be `unknown` until the cloud first answers, `available` once it accepted a write or listed the installations, `degraded` while it rate limits, refuses a request or answers with a server error, and `unavailable` while it does not answer or refuses the key or the device. `lastTransmission` SHALL record each push or removal the cloud accepted. A new revision SHALL be published only when availability or the last transmission changes, and its revision SHALL rise across restarts. Every general command to the Tidbyt SHALL be refused with `unsupported-capability`, and one whose subject is another device with `invalid-request`. A cloud that does not answer SHALL log one `device.unavailable` warning per outage, later failures as DEBUG summaries, and one `device.available` on recovery; a tile's refused calls and failed renders SHALL log one `operation.failed` per run of failures; a database that refuses commits SHALL log one `operation.failed` and one `operation.completed` per run, and the record SHALL be published again once a commit works. Each cloud call SHALL have a `bunny.device.call` span, and no trace context SHALL reach the cloud.
+The module SHALL serve `device` through sync and publish the Tidbyt's `device/2.0` record of kind `tidbyt` with every capability unsupported, desired, observed, last outcome and external control `unknown`, and `pending` 0. Its `availability` SHALL be `unknown` until the cloud first answers, `available` once it accepted a write or listed the installations, `degraded` while it rate limits, refuses a request or answers with a server error, and `unavailable` while it does not answer or refuses the key or the device. `lastTransmission` SHALL record each push or removal the cloud accepted. A new revision SHALL be published only when availability or the last transmission changes, and its revision SHALL rise across restarts. Every general command to the Tidbyt SHALL be refused with `unsupported-capability`, and one whose subject is another device with `invalid-request`. Sync SHALL serve the record as last committed, never a revision the database refused. A cloud that does not answer SHALL log one `device.unavailable` warning per outage, later failures as DEBUG summaries, and one `device.available` on recovery; a tile's refused calls and failed renders SHALL log one `operation.failed` per run of failures, and another when the cloud refuses the key or the device inside that run; a database that refuses commits SHALL log one `operation.failed` and one `operation.completed` per run, and the record SHALL be published again once a commit works; a fault of the module's own in a tile's evaluation SHALL log one `operation.failed` at ERROR per run of faults and one `operation.completed` when an evaluation completes again. Each cloud call that goes out SHALL have a `bunny.device.call` span, a call a hold keeps back SHALL have none, and no trace context SHALL reach the cloud.
 
 #### Scenario: A cloud that does not answer at start
 - **WHEN** the module starts while the simulated cloud never answers, and the cloud answers again ten minutes later
@@ -127,7 +143,15 @@ The module SHALL serve `device` through sync and publish the Tidbyt's `device/2.
 
 #### Scenario: A database that refuses commits
 - **WHEN** another connection holds the module's database while a push changes the record
-- **THEN** one `operation.failed` names `storage`, no record is published that did not commit, and once the database works the record is published and one `operation.completed` follows
+- **THEN** one `operation.failed` names `storage`, no record is published that did not commit, a reader's sync gets the record last committed, and once the database works the record is published and one `operation.completed` follows
+
+#### Scenario: A fault of the module's own
+- **WHEN** the core sends a session record the status view cannot read, for five minutes, and then a valid one
+- **THEN** one `operation.failed` at ERROR names `internal`, and one `operation.completed` follows the first evaluation that completes
+
+#### Scenario: A refused key inside a run of failures
+- **WHEN** the cloud refuses a push as a bad request, then the next one for its key, and the module stays held for ten minutes
+- **THEN** both refusals are logged, no further request goes out, and only the two requests that went out have device call spans
 
 ### Requirement: Golden frames decoded independently
 

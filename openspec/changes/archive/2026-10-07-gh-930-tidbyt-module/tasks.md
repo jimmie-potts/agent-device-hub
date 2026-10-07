@@ -24,3 +24,12 @@
 - [x] 4.2 Run build, typecheck, lint, the module, SDK, runtime, scenario, verify, event, maintenance, Tidbyt controller and workflow checks, and OpenSpec validation, and name each failure that only #967 removes.
 - [x] 4.3 Show each protection's mutant fails its named tests.
 - [x] 4.4 Synchronize the affected specifications and archive the change.
+
+## 5. Review fixes (PR #973)
+
+- [x] 5.1 Assert, red before the fix, that a restart while a song plays neither removes nor pushes the card while the playback module serves its start-time `unavailable` record, and that a core that serves a moment late never makes the status tile read `FEED ?`; hold each tile for up to 30 s after the start until its copy syncs, and the card while its record is missing or `unavailable`.
+- [x] 5.2 Assert, red before the fix, that a stop while a push is in flight leaves the tile's presence unknown, so an idle restart lists and removes it; store each write as uncertain before it goes out.
+- [x] 5.3 Assert, red before the fix, that a wall clock set back delays a tile's next write and refresh by at most its wait; take a stored time in the future as now.
+- [x] 5.4 Assert, red before the fix, one record per run of the module's own faults with one recovery record, a refused key logged inside a run of other failures, no span for a held call, and a sync that serves only the committed record; implement each.
+- [x] 5.5 Correct the README's webcam expectations and diagnostics, the verify README and the core job's row in docs/development.md, and drop the wall-clock assertion from the offline test.
+- [x] 5.6 Show each fix's mutant fails its named tests, and rerun the gate.

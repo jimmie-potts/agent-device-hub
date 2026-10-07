@@ -132,7 +132,7 @@ export class SimulatedCloud {
       throw refusedConnection();
     }
     if (!this.#online) return await silence(init.signal);
-    const response = this.#reply(route, init);
+    const response = this.#reply(route, init, call);
     call.answer = response.status;
     if (this.#loseAnswers > 0) {
       this.#loseAnswers -= 1;
@@ -153,7 +153,7 @@ export class SimulatedCloud {
     return {path: 'other', device};
   }
 
-  #reply(route: Route, init: Parameters<CloudFetch>[1]): Response {
+  #reply(route: Route, init: Parameters<CloudFetch>[1], call: CloudCall): Response {
     if (init.headers.authorization !== `Bearer ${this.#key}`) {
       this.#refusedKeys += 1;
       return json(401, {code: 16, message: 'request unauthenticated'});
@@ -163,7 +163,7 @@ export class SimulatedCloud {
     if (route.device !== this.#device) return json(404, {message: 'device not found'});
     switch (route.path) {
       case 'push':
-        return this.#push(init.body);
+        return this.#push(init.body, call);
       case 'installations':
         return json(200, {installations: [...this.#installations.keys()].map(id => ({id, appID: ''}))});
       case 'installation':
@@ -175,7 +175,8 @@ export class SimulatedCloud {
     }
   }
 
-  #push(body: string | undefined): Response {
+  /** Shows a pushed frame, and names its installation in the call it answers. */
+  #push(body: string | undefined, call: CloudCall): Response {
     let request: unknown;
     try {
       request = JSON.parse(body ?? '');
@@ -186,6 +187,7 @@ export class SimulatedCloud {
       request.background !== true) {
       return json(400, {message: 'invalid push'});
     }
+    call.installation = request.installationID;
     const decoded = decodeLossless(new Uint8Array(Buffer.from(request.image, 'base64')));
     if (decoded === undefined) return json(400, {message: 'invalid image'});
     const shown = this.#installations.get(request.installationID) ?? {picture: [], pushes: 0, pushedAtMs: []};

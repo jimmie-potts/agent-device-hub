@@ -105,7 +105,7 @@ test('the status tile is removed once nothing is working, waiting or unacknowled
   await h.advance(20 * SECOND);
   await core(h).set({...done, notices: [notice(['pixoo'])]});
   await until(() => calls(h).includes('DELETE agentdevicehub'), 'the removal');
-  assert.deepEqual(calls(h), ['POST default', 'DELETE agentdevicehub'], 'a present installation is deleted without a listing');
+  assert.deepEqual(calls(h), ['POST agentdevicehub', 'DELETE agentdevicehub'], 'a present installation is deleted without a listing');
   await h.advance(5 * MINUTE, SECOND);
   assert.equal(calls(h).length, 2);
 });
@@ -171,7 +171,7 @@ test('a start never removes a playing card while the playback module publishes i
   await h.start();
   await h.advance(5 * SECOND, SECOND);
   await quiet();
-  assert.deepEqual(calls(h).filter(call => call.endsWith(NOW_PLAYING)), ['POST nowplaying'], 'the card was neither removed nor listed');
+  assert.deepEqual(calls(h).filter(call => call.endsWith(NOW_PLAYING)), ['POST nowplaying'], 'the card was not removed');
   // The first read finds the same song playing: the card stands, and nothing is pushed.
   await owner(h).set(playback('playing'));
   await h.advance(20 * SECOND, SECOND);
@@ -210,14 +210,14 @@ test('a stop while a push is in flight leaves the tile\'s presence unknown, so a
 test('a wall clock set back never holds a tile\'s next write or refresh longer than its wait', async context => {
   const h = await host(context, {sessions: [working({label: label('one')})], section: STATUS_ONLY});
   await until(() => pushes(h) === 1, 'the first push');
+  // The wall clock is set back ten minutes just after the push; a change follows at once.
   h.stepWall(-10 * MINUTE);
-  await h.advance(SECOND);
   await core(h).set(asking({label: label('two')}));
-  await h.advance(14 * SECOND - 100);
+  await h.advance(15 * SECOND - 100);
   await quiet();
   assert.equal(pushes(h), 1);
   await h.advance(100);
-  await until(() => pushes(h) === 2, 'the push 15 s after the first, whatever the wall clock says');
+  await until(() => pushes(h) === 2, 'the push 15 s after the change, whatever the wall clock says');
   await h.advance(10 * MINUTE, 10 * SECOND);
   await until(() => pushes(h) === 3, 'the refresh 10 minutes after the last push');
   const [first = 0, second = 0, third = 0] = shown(h, STATUS).pushedAtMs;
@@ -375,7 +375,7 @@ test('a failed push is not replayed, repeated failures back off, and an uncertai
   await core(uncertain).set({...only, activity: 'idle'});
   await uncertain.advance(14 * SECOND);
   await until(() => calls(uncertain).length === 2, 'the listing');
-  assert.deepEqual(calls(uncertain), ['POST default', 'GET list'], 'nothing to delete: the uncertain push left nothing');
+  assert.deepEqual(calls(uncertain), ['POST unknown', 'GET list'], 'nothing to delete: the uncertain push left nothing');
 });
 
 test('the gate runs from the moment a push goes out, so a slow render never brings the next push closer', async context => {

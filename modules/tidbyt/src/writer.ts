@@ -8,7 +8,10 @@
 // - A tile renders its frame only once its write is due, in a worker thread, and a tile can hold: write nothing while
 //   what it shows is not known yet.
 // - What a tile last sent, when, and whether its installation is present survive a restart in the module's database,
-//   so a restart writes nothing while the tile stands, and the 15-second gate holds across it.
+//   so a restart writes nothing while the tile stands, and the 15-second gate holds across it. Before a write goes out,
+//   the tile stores it as uncertain, so a stop or a crash before its answer leaves the installation's presence unknown.
+// - The gate and the refresh run on the runtime's wall clock, so they hold across a restart. A time in the future, after
+//   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Cancel, type ModuleScheduler} from '@jimmie-potts/sdk';
 import type {ListResult, TidbytCloudConnection, WriteResult} from './cloud.js';
@@ -155,7 +158,10 @@ export type TileWriterOptions = {
   render: (request: TileRequest) => Promise<Uint8Array>;
   /** Hears each call and render, with how it ended. */
   report: (call: TileCall) => void;
-  /** Hears that a call is about to be made, and answers what to call once it ended, such as the end of its span. */
+  /**
+   * Hears that a call goes out now, after any wait in the queue, and answers what to call once it ended, such as the end
+   * of its span. A call that a hold or the stop kept from going out is never begun.
+   */
   begin: (call: CallKind) => (succeeded: boolean) => void;
   /** Hears what to keep across restarts, after each change. */
   remember: (memory: TileMemory) => void;
@@ -201,6 +207,9 @@ export class TileWriter {
     const {queue, installation, render, stopped, refreshMs, pollMs, now: clock} = this.#options;
     if (stopped() || target.kind === 'hold') return pollMs;
     const now = clock();
+    // A time in the future, after the wall clock was set back, counts as now.
+    if (this.#sent !== undefined && this.#sent.atMs > now) this.#sent = {...this.#sent, atMs: now};
+    if (this.#lastWriteAtMs !== undefined && this.#lastWriteAtMs > now) this.#lastWriteAtMs = now;
     let call: 'push' | 'remove' | undefined;
     if (target.kind === 'show') {
       const sent = this.#sent;
@@ -215,15 +224,24 @@ export class TileWriter {
     // The gate runs from the moment each request goes out, after a render and any wait in the queue, so two writes of
     // this tile reach the cloud at least `minIntervalMs` apart. It is set now too, so a stop before the send keeps it.
     this.#lastWriteAtMs = now;
-    const sending = (): void => {
+    /** What ends the call that went out, once it has an answer; undefined while nothing went out. */
+    let ended: ((succeeded: boolean) => void) | undefined;
+    const sending = (sent: CallKind) => (): void => {
       this.#lastWriteAtMs = clock();
-      this.#remember();
+      ended = this.#options.begin(sent);
+      if (sent === 'list') {
+        this.#remember();
+        return;
+      }
+      // Until its answer, the write may or may not take effect: a stop or a crash before then leaves the frame and the
+      // installation's presence unknown, so the next start reads the list before it trusts either.
+      this.#options.remember({lastWriteAtMs: this.#lastWriteAtMs, presence: 'unknown'});
     };
     if (call === 'remove' && this.#presence === 'unknown' && !queue.held()) {
       // Read the installation list first, so an installation that is already gone is not deleted again.
-      const end = this.#options.begin('list');
-      const listing = await queue.list(installation, sending);
-      end('ok' in listing && listing.ok);
+      const listing = await queue.list(installation, sending('list'));
+      ended?.('ok' in listing && listing.ok);
+      ended = undefined;
       this.#options.report({call: 'list', result: listing});
       if ('ok' in listing && listing.ok && !listing.present) {
         this.#presence = 'absent';
@@ -247,15 +265,13 @@ export class TileWriter {
       }
       // The render was a wait: nothing goes out once the module stops.
       if (stopped()) return pollMs;
-      const end = this.#options.begin('push');
-      result = await queue.push(webp, installation, sending);
-      end(result.outcome === 'sent');
+      result = await queue.push(webp, installation, sending('push'));
+      ended?.(result.outcome === 'sent');
       this.#options.report({call: 'push', result});
       this.#record('push', result, target.key, this.#lastWriteAtMs);
     } else {
-      const end = this.#options.begin('remove');
-      result = await queue.remove(installation, sending);
-      end(result.outcome === 'sent');
+      result = await queue.remove(installation, sending('remove'));
+      ended?.(result.outcome === 'sent');
       this.#options.report({call: 'remove', result});
       this.#record('remove', result, undefined, this.#lastWriteAtMs);
     }

@@ -42,6 +42,11 @@ export const NOW_PLAYING_POLL_MS = 5000;
 export const CALL_TIMEOUT_MS = 10_000;
 /** How long one render may take in its worker thread. */
 export const RENDER_TIMEOUT_MS = 5000;
+/**
+ * How long after its start each tile waits for what it shows to be known: for its copy's first sync, and, for the card,
+ * for the playback module's first read, which follows the `unavailable` record that module publishes at each start.
+ */
+export const START_WINDOW_MS = PLAYBACK_LOST_MS;
 /** How long one sync of a copy may take, and the waits before the module syncs again after a failure. */
 export const SYNC_TIMEOUT_MS = 5000;
 export const RESYNC_FIRST_MS = 1000;
@@ -113,8 +118,6 @@ type Copy = {
   copy: SyncedCopy<object> | undefined;
   /** Whether the copy follows its owner now. */
   following: boolean;
-  /** Whether the first sync has settled, synced or refused, so what the tile shows is known. */
-  settled: boolean;
   /** Whether the copy ever synced. */
   everSynced: boolean;
   /** Since when the copy has not followed its owner: the module's start before its first sync. */
@@ -139,8 +142,10 @@ type Tile = {
   requested: boolean;
   running: Promise<void> | undefined;
   timer: Cancel | undefined;
-  /** Whether a run of failed writes has been logged. */
-  failing: boolean;
+  /** The code logged for the current run of failed writes, or undefined outside one. */
+  failing: ErrorCode | undefined;
+  /** Whether a run of the module's own faults in this tile's evaluation has been logged. */
+  faulting: boolean;
 };
 
 /** One start of the module, from `start` to `stop`. */
@@ -159,9 +164,20 @@ class TidbytRun {
   readonly #epoch = randomUUID();
   #queue: CloudQueue | undefined;
   #lease: Lease | undefined;
-  #record: DeviceRecord;
+  /** The device record as last committed, which sync serves; undefined until the first commit. */
+  #committed: DeviceRecord | undefined;
+  /** What the record should say now, which the next commit stores. */
+  #wanted: {availability: DeviceRecord['availability']; lastTransmission: DeviceRecord['lastTransmission']} = {availability: 'unknown', lastTransmission: UNKNOWN};
+  /** The revision the next commit takes: one above the last committed, kept when a commit fails. */
+  #nextRevision = 1;
+  /** Commits run one after another, so revisions rise. */
+  #committing: Promise<void> = Promise.resolve();
   /** Whether the last commit of the device record failed, so the next evaluation publishes it. */
   #dirty = false;
+  /** When this start began, on the runtime's clock: the start of each tile's start window. */
+  #startedAtMs: number;
+  /** Whether a run of faults that escaped the module's own work has been logged. */
+  #escaped = false;
   #closing = false;
   #storageDown: ErrorCode | undefined;
   #saveTile: ((installation: string, memory: TileMemory) => void) | undefined;
@@ -176,11 +192,11 @@ class TidbytRun {
     this.#availability = new DeviceAvailability({log: context.log, clock: context.clock});
     const now = context.clock.now();
     const copy = (): Copy => ({
-      copy: undefined, following: false, settled: false, everSynced: false, lostSinceMs: now, down: false, resync: undefined, resyncDelayMs: RESYNC_FIRST_MS,
+      copy: undefined, following: false, everSynced: false, lostSinceMs: now, down: false, resync: undefined, resyncDelayMs: RESYNC_FIRST_MS,
     });
     this.#sessions = copy();
     this.#playback = copy();
-    this.#record = this.#deviceRecord(0, 'unknown', UNKNOWN);
+    this.#startedAtMs = now;
   }
 
   async open(): Promise<void> {
@@ -212,11 +228,16 @@ class TidbytRun {
     else log.warn('operation.failed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[taken.reason]});
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
     const key = await secrets.read(API_KEY_SECRET);
-    this.#record = this.#deviceRecord((stored?.revision ?? 0) + 1, this.#lease === undefined ? 'unavailable' : 'unknown', UNKNOWN);
-    await this.#commit(this.#record, undefined);
+    this.#nextRevision = (stored?.revision ?? 0) + 1;
+    await this.#change(this.#lease === undefined ? 'unavailable' : 'unknown', UNKNOWN, undefined);
 
-    await sdk.serveSync(['device'], () => this.#closing ? errorBody('unavailable', {detail: 'the Tidbyt module is stopping'}) :
-      {revision: this.#record.revision, states: [deviceState(this.#record)]});
+    // Sync serves only what committed, so no reader holds a revision the database never stored.
+    await sdk.serveSync(['device'], () => {
+      if (this.#closing) return errorBody('unavailable', {detail: 'the Tidbyt module is stopping'});
+      const committed = this.#committed;
+      if (committed === undefined) return errorBody('unavailable', {detail: 'the Tidbyt module has not stored its device record yet'});
+      return {revision: committed.revision, states: [deviceState(committed)]};
+    });
     for (const family of COMMAND_FAMILIES) {
       await sdk.respond(`bunny.cmd.${family}.${id}`, (command): ErrorBody => command.subject === id ?
         errorBody('unsupported-capability', {detail: 'the Tidbyt offers no controls: it shows agent status and what plays'}) :
@@ -242,7 +263,7 @@ class TidbytRun {
     if (nowPlaying !== undefined) {
       this.#tiles.push(this.#tile('now-playing', nowPlaying.installation, nowPlaying.installation, this.#timing.nowPlayingPollMs, remembered.get(nowPlaying.installation)));
     }
-    // Both copies sync at once; each tile writes nothing until its copy's first sync has settled.
+    // Both copies sync at once; each tile writes nothing until its copy first syncs, for at most the start window.
     await Promise.all([this.#follow('session'), ...(nowPlaying === undefined ? [] : [this.#follow('playback')])]);
     for (const tile of this.#tiles) this.#update(tile, undefined);
   }
@@ -287,27 +308,40 @@ class TidbytRun {
 
   #publishRecord: (record: DeviceRecord, parent: TraceContext | undefined) => Promise<boolean> = () => Promise.resolve(false);
 
-  /** Commits the record at its revision and publishes it. A refusal never escapes: the next evaluation publishes again. */
-  async #commit(record: DeviceRecord, parent: TraceContext | undefined): Promise<void> {
-    try {
-      await this.#publishRecord(record, parent);
-      this.#storageWorked();
-    } catch (error) {
-      if (this.#context.signal.aborted) return;
-      this.#dirty = true;
-      this.#storageFailed(storageCode(error));
-    }
+  /**
+   * Sets what the record should say, and commits and publishes a new revision when that differs from the record last
+   * committed. A refusal never escapes: the record stays as committed, and the next evaluation tries again.
+   */
+  #change(availability: DeviceRecord['availability'], lastTransmission: DeviceRecord['lastTransmission'], parent: TraceContext | undefined): Promise<void> {
+    this.#wanted = {availability, lastTransmission};
+    return this.#commitWanted(parent);
   }
 
-  /** Publishes a new revision when the device's availability or last transmission changed, or when the last commit failed. */
-  async #change(availability: DeviceRecord['availability'], lastTransmission: DeviceRecord['lastTransmission'], parent: TraceContext | undefined): Promise<void> {
-    if (this.#context.signal.aborted) return;
-    const current = this.#record;
-    if (!this.#dirty && availability === current.availability && JSON.stringify(lastTransmission) === JSON.stringify(current.lastTransmission)) return;
-    this.#dirty = false;
-    const next = this.#deviceRecord(current.revision + 1, availability, lastTransmission);
-    this.#record = next;
-    await this.#commit(next, parent);
+  #commitWanted(parent: TraceContext | undefined): Promise<void> {
+    const next = this.#committing.then(async () => {
+      if (this.#context.signal.aborted) return;
+      const {availability, lastTransmission} = this.#wanted;
+      const committed = this.#committed;
+      if (committed !== undefined && availability === committed.availability && JSON.stringify(lastTransmission) === JSON.stringify(committed.lastTransmission)) {
+        this.#dirty = false;
+        return;
+      }
+      const record = this.#deviceRecord(this.#nextRevision, availability, lastTransmission);
+      try {
+        await this.#publishRecord(record, parent);
+      } catch (error) {
+        if (this.#context.signal.aborted) return;
+        this.#dirty = true;
+        this.#storageFailed(storageCode(error));
+        return;
+      }
+      this.#committed = record;
+      this.#nextRevision = record.revision + 1;
+      this.#dirty = false;
+      this.#storageWorked();
+    });
+    this.#committing = next.catch(() => undefined);
+    return next;
   }
 
   /** One record per run of database refusals, not one per attempt. */
@@ -348,7 +382,6 @@ class TidbytRun {
       return;
     }
     if (this.#closing) return;
-    copy.settled = true;
     if (result.status === 'rejected') {
       this.#lost(family, result.error.error.code);
       this.#updateFor(family, undefined);
@@ -417,7 +450,7 @@ class TidbytRun {
     const {clock, signal} = this.#context;
     const tile: Tile = {
       name, operation: name === 'status' ? 'status' : 'playback', installation, poll, trigger: undefined, requested: false, running: undefined, timer: undefined,
-      failing: false,
+      failing: undefined, faulting: false,
       writer: new TileWriter({
         queue, installation: target, minIntervalMs: this.#timing.minIntervalMs, refreshMs: this.#timing.refreshMs, pollMs: poll, now: () => clock.now(),
         stopped: () => this.#closing || signal.aborted, render: request => this.#render(request), report: call => { this.#report(tile, call); },
@@ -430,20 +463,27 @@ class TidbytRun {
 
   /** What the tile should show now, from its copy. */
   #target(tile: Tile): TileTarget {
+    const now = this.#context.clock.now();
+    // Times in the future, after the wall clock was set back, count as now.
+    if (this.#startedAtMs > now) this.#startedAtMs = now;
+    for (const copy of [this.#sessions, this.#playback]) if (copy.lostSinceMs > now) copy.lostSinceMs = now;
+    // A start or a restart writes nothing before what the tile shows is known: until its copy first syncs, for at most
+    // `START_WINDOW_MS`, so an owner that serves a moment after this module starts never makes it replace or remove a tile.
+    const starting = now - this.#startedAtMs < START_WINDOW_MS;
     if (tile.name === 'status') {
       const copy = this.#sessions;
-      // Nothing is written until the first sync has settled: a start or a restart publishes nothing before the shown state is known.
-      if (!copy.settled) return {kind: 'hold'};
+      if (!copy.everSynced && starting) return {kind: 'hold'};
       const view = statusView({synced: copy.following, sessions: (copy.copy?.states() ?? []).map(message => message.data as SessionRecord)});
       return view.idle ? {kind: 'remove'} : {kind: 'show', key: JSON.stringify(view), request: {tile: 'status', view}};
     }
     const copy = this.#playback;
-    const lostForMs = copy.following ? 0 : Math.max(0, this.#context.clock.now() - copy.lostSinceMs);
-    // Before the first sync, and for a while after a first sync that failed, what plays is not known: the tile writes
-    // nothing, so a playback module that starts a moment later never makes it remove a playing card.
-    if (!copy.everSynced && lostForMs < PLAYBACK_LOST_MS) return {kind: 'hold'};
+    const lostForMs = copy.following ? 0 : Math.max(0, now - copy.lostSinceMs);
+    if (!copy.everSynced && starting) return {kind: 'hold'};
     const wanted = this.#config.nowPlaying?.playback;
     const record = (copy.copy?.states() ?? []).map(message => message.data as PlaybackState).find(entry => entry.id === wanted);
+    // The playback module publishes `unavailable`, with unknown playback, at each start, before its first read: the card
+    // waits for that read, for at most the start window, and is never removed for want of it.
+    if (starting && (record === undefined || record.availability === 'unavailable')) return {kind: 'hold'};
     const view = nowPlayingView({record, following: copy.following, lostForMs});
     return view.card ? {kind: 'show', key: JSON.stringify(view), request: {tile: 'now-playing', view}} : {kind: 'remove'};
   }
@@ -468,11 +508,16 @@ class TidbytRun {
       tile.requested = false;
       let wakeMs = tile.poll;
       try {
-        if (this.#dirty) await this.#change(this.#record.availability, this.#record.lastTransmission, undefined);
+        if (this.#dirty) await this.#commitWanted(undefined);
         wakeMs = await tile.writer.write(this.#target(tile));
+        this.#healthy(tile);
       } catch (error) {
-        // A fault of the module's own, never the cloud's: logged once by type, and the tile tries again at its next poll.
-        this.#context.log.error('operation.failed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.code': 'internal', 'error.type': errorType(error)});
+        // A fault of the module's own, never the cloud's: logged once per run, by type, and the tile tries again at its
+        // next poll (ADR 0012, "Repetition").
+        if (!tile.faulting) {
+          tile.faulting = true;
+          this.#context.log.error('operation.failed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.code': 'internal', 'error.type': errorType(error)});
+        }
       }
       if (this.#closing) return;
       this.#cancel(tile.timer);
@@ -528,10 +573,10 @@ class TidbytRun {
     const device = this.#config.id;
     if (answered) this.#availability.reached(device, parent);
     else this.#availability.unreachable(device, 'outcome' in result && result.outcome === 'uncertain' ? 'uncertain-result' : 'unavailable', parent);
-    let lastTransmission = this.#record.lastTransmission;
+    let lastTransmission = this.#wanted.lastTransmission;
     if ('outcome' in result && result.outcome === 'sent') {
       lastTransmission = {status: 'known', transmittedAtMs: clock.now(), operationIds: [call.call]};
-      tile.failing = false;
+      tile.failing = undefined;
       log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
       tile.trigger = undefined;
     } else if (answered && !('ok' in result && result.ok)) {
@@ -540,16 +585,30 @@ class TidbytRun {
     this.#track(this.#change(availabilityAfter(result, answered), lastTransmission, parent));
   }
 
-  /** A write the cloud refused, or a render that failed: logged once per run of failures of the tile. */
+  /**
+   * A write the cloud refused, or a render that failed: logged once per run of failures of the tile, and again when the
+   * cloud refuses the key or the device inside that run, which holds every later call.
+   */
   #failed(tile: Tile, fields: LogFields, code: ErrorCode, parent: TraceContext | undefined): void {
-    if (tile.failing) return;
-    tile.failing = true;
+    const holding = code === 'unauthenticated' || code === 'forbidden';
+    if (tile.failing !== undefined && !(holding && tile.failing !== code)) return;
+    tile.failing = code;
     this.#context.log.warn('operation.failed', {...fields, 'bunny.code': code}, parent);
   }
 
-  /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once, by type. */
+  /** An evaluation of the tile finished: a run of the module's own faults, if any, has ended. */
+  #healthy(tile: Tile): void {
+    if (!tile.faulting && !this.#escaped) return;
+    tile.faulting = false;
+    this.#escaped = false;
+    this.#context.log.info('operation.completed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.outcome': 'succeeded'});
+  }
+
+  /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once per run, by type. */
   #track(work: Promise<void>): void {
     const tracked = work.catch((error: unknown) => {
+      if (this.#escaped) return;
+      this.#escaped = true;
       this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
     this.#work.add(tracked);

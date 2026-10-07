@@ -320,9 +320,9 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
 export const shown = (hosted: Hosted, installation: string): {pushes: number; picture: string[]; pushedAtMs: number[]} =>
   hosted.cloud.state().installations[installation] ?? {pushes: 0, picture: [], pushedAtMs: []};
 
-/** The calls the cloud heard, as `<method> <installation or list>`. */
+/** The calls the cloud heard, as `<method> <installation>`, or `GET list` for a listing. */
 export const calls = (hosted: Hosted): string[] =>
-  hosted.cloud.state().calls.map(call => `${call.method} ${call.installation ?? (call.method === 'GET' ? 'list' : 'default')}`);
+  hosted.cloud.state().calls.map(call => `${call.method} ${call.installation ?? (call.method === 'GET' ? 'list' : 'unknown')}`);
 
 /**
  * The module's log records of one event, as `<level> <fields>` with the fields that tell them apart. Records of the
