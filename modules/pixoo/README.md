@@ -143,6 +143,14 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
 
+A staged import reads `incoming/<sha256>` in the module's private folder and
+checks its size and hash. Nothing in this module writes or removes those
+files: the uploader does both. That is #932's Pixoo pages, on #835's module
+API 1.2, which write a file under its SHA-256, send the import that names it,
+and remove the file once the import's outcome arrives, whatever its result.
+Until #932, media over 160 KiB cannot be imported over the bus; the Pixoo
+service took up to 10 MiB.
+
 Before acting, the module refuses with the shared error body:
 - a command that breaks its schema;
 - a `requestId` it accepted before for other content (`duplicate-conflict`);

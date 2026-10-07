@@ -1,6 +1,6 @@
 ## 1. One package under the strict profile
 
-- [x] 1.1 Regroup the six `@pixoo/*` packages into `@jimmie-potts/pixoo` with relative imports, compile its tests with it, and run the moved Vitest suite from `dist/tests` (302 tests pass).
+- [x] 1.1 Regroup the six `@pixoo/*` packages into `@jimmie-potts/pixoo` with relative imports, compile its tests with it, and run the moved Vitest suite from `dist/tests`, where its 302 moved tests pass.
 - [x] 1.2 Take `modules/pixoo` out of `staged`, drop the `@pixoo/` scope and its 59 baseline entries, and update the strict profile test; `npx eslint modules/pixoo` reports nothing.
 - [x] 1.3 Clear the strict and safe-error findings with behavior kept: a busy lock by SQLite's code, an oversized image by its declared size; the moved suite still passes.
 
