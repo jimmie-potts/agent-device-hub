@@ -31,5 +31,7 @@
 - [x] 5.5 Hold a bulb's lease in a child process and in the same process, and give each lease refusal its own reason and refusal text.
 - [x] 5.6 Test a refused command's rollback, a mode change whose outcome cannot be stored, a session copy that ends after it synced, a bulb that comes back while a reader syncs, and a stop with a call in flight; read an unavailable bulb on demand, and end a call only when its transport says it ended.
 - [x] 5.7 Look for every simulated bulb's address in the catalog's leak check.
+- [x] 5.9 Give `simulatedSection` the `{config, secrets?}` shape with one `simulatedSections` helper, and start every shipped module from it in a process test.
+- [x] 5.10 Assert, red before the fix, that reads which change nothing publish nothing; publish after a read only the records it changed.
 - [x] 5.8 Show each fix's mutant fails its named tests, synchronize the specifications and rerun the gate.
 
