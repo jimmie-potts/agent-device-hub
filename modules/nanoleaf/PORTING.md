@@ -61,46 +61,47 @@ The issue delivers the port in PRs by area, each with its translated tests:
    - 3d: controls: the control execution half of `controller_state.py`, the worker's control
      queue, a minimal journal for holds and uncertain attempts, and animation play (the retirement
      of requested animations on a mode command, and the worker's play in Free).
-   - 3e: the rest of `test_device_worker.py`, after 3c and 3d, and the Panels worker ownership cases of
-     `test_panels_controller.py`, which 3d left for the multi-device worker harness.
+   - 3e: the rest of `test_device_worker.py`, after 3c and 3d, the Panels worker ownership cases of
+     `test_panels_controller.py`, which 3d left for the multi-device worker harness, and the `worker`
+     command's retry loop (`superviseWorker`).
 
 Slice 1 drafted the port before translating its tests, then ran the translations against it.
 Slices 2 and 3 translate their tests first.
 
 ### Python modules
 
-| Python module | Ported (slice 1 unless marked) | Later slice | Not ported (replacement) |
-| --- | --- | --- | --- |
-| `database.py` | `connect_state` (`database.ts`) | | `seed_synthetic`: demo and browser fixtures (#844 scenarios) |
-| `devices.py` | All but `legacy_row` (`devices.ts`) | | `write_json` duplicates `jsonfile.write_json`; `legacy_row` (see [Shared input only](#shared-input-only)) |
-| `store.py` | All (`store.ts`) | | |
-| `jsonfile.py` | All (`jsonfile.ts`) | | |
-| `panels.py` | `read_layout` (`panels.ts`) | | |
-| `shared_input.py` | Snapshot projection, grouping, evictions and the consumer part of `check_envelope` (`shared-input.ts`). 2a: `render_config` (`sharedRenderConfig`) | | The rest of the feed: `validate_snapshot`, `private_read`, `request`, `fetch_snapshot` and the other `check_envelope` checks (see [Known differences](#known-differences)); `inspect` (runtime state, #844); the legacy task backup and `bindings` (see [Shared input only](#shared-input-only)) |
-| `shared_source.py` | `configure`, `source_config`, `select_source` for shared input (`selectShared`), `accept`, `failed` as transaction bodies (`shared-source.ts`) | | Preflight fetch, `Poller`, `acknowledge` (core session events and commands, #844); `metadata_reader` and `command` (configuration wiring and CLI, #844); the legacy branch of `select_source` and its hooks check (see [Shared input only](#shared-input-only)) |
-| `project_map.py` | Task metadata and placement: `init`, `seed`, `settings`, `line_id`, `normalize`, `default_color`, `fallback_title`, `Metadata`, `task_projects`, `owners`, `allocate` (`project-map.ts`). 2a: `palette`, `palette_rgb`, `render_config` (`project-map.ts`); `geometry`, `triangle_geometry`, `validated_connector_geometry`, `connector_layout` (`geometry.ts`) | 3b: `validate_palette`, `save_palette`, `rendering_snapshot`, `pending`, `apply_patch`, `request_patch`, `apply_pending`, `locate_state` (`project-map.ts`) | `record_event` (see [Shared input only](#shared-input-only)) |
-| `bridge.py` | `dashboard` (`line-projection.ts`). 2a: the palette and timing constants, `pulse_amplitude`, `travel_delays`, `pixel_color`, `comet_color`, `zone_color`, `effect_payload`, `render`, `indicator_brightness` (`renderer.ts`). 3b: `prune_comets`, `current_comet` (`comets.ts`). 3c: `introduction_ends`, `update_display`, `record_failure`, `play_preview`, `run_worker` (`worker.ts`); `SceneRestorer` (`scenes.ts`). 3d: `run_worker`'s controls, holds and animation play (`worker.ts`) | 3e: the `worker` command's retry loop | `setup`, `main` (installer and CLI); `run_worker`'s feed poll, metadata refresh and legacy unread reads (shared input only, and the runtime); `transition`, `handle_event`, `unread_reader`, `reconcile_read_state` (see [Shared input only](#shared-input-only)) |
-| `configuration.py` | `registered_devices` (`configuration.ts`). 2a: `pair_lines`, `load_config`, `follow_registry` (`configuration.ts`) | | `data_dir` (installation path) |
-| `enrollment.py` | `enroll`, `change_address`, `remove`, `check` and their checks (`enrollment.ts`); `private_address` (`transport.ts`). 2b: `pair` (`enrollment.ts`) | | `read_token`, `reason`, `command` (CLI, #844) |
-| `transport.py` | 2a: the request shape callers inject, `LightRequest`. 2b: `light_request` (`lightRequest` over `nodeTransport`, `transport.ts`) | | |
-| `effects.py` | 2a: `display`, the frame encoder. 2b: validation, presets, the patterns and `render` (`effects.ts`) | | |
-| `modes.py` | 3b: `change_mode`, `set_mode` without its worker launch (`setMode`), `get_status` (`modeStatus`) (`modes.ts`). 3d: a mode command ends the device's queued commands and hold, as `controller_state.changed` and `integration_api.retire` did | | The controller ledger notice's revision, generation and event (`controller_state.changed`) |
-| `edits.py` | 3b: all (`edits.ts`, exported as the `edits` namespace) | | The controller ledger notices in `recorded` |
-| `controller_state.py` | 3b: `overrides` (`store.ts`). 3d: the execution half that `run_worker` calls: `hold`, `held`, `release`, `finish` (with outcomes) and `recover`'s recovery and expiry (`journal.ts`); `Execution`, `Cancelled`, `controls` (`queuedContent`), `control_payload`, `discovered`, `scenes` (`sceneList`) and `scene_id` (`controls.ts`). The request rows become the control journal | | The ledger and HTTP half: tables, `init`, `drop`, `ledgers`, `present`, `read`, `save`, `snapshot`, `capabilities`, `event`, `changed`'s revision, generation and event, `credential`, `readonly` and the HTTP admission (runtime commands and replies) |
-| `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`). These are domain rules and stay in the module; #844's command schema checks message shape and does not take them over. 3d: animation admission's domain checks (`admitCommand`), `geometry` (`savedGeometry`), `queued_animations` (`queuedContent`), `retire` (`retireQueued`), `recover_attempts` (`recoverAttempts`), `attempt` and `play` (`playAnimation`), and the animation expiry of `recover` and `process` (`expireQueued`) | | The rest of the integration extension API (runtime commands, #844) |
-| `controller_server.py`, `controller_contract.py` | 3d: `admit`'s domain checks and desired state (`admitCommand`, `controls.ts`) | | The HTTP controller, credentials and the contract's request checks (runtime commands and replies, and the core's credentials) |
-| `codex_hooks.py` | | | Codex hook registration, retired (owner decision, 2026-10-05) |
-| `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | | The web server is replaced by the runtime; the wall pages, their view and assets move with #844 |
-| `launcher.py` | | | Process launch (runtime module host) |
-| `diagnostics.py` | | | Runtime observability |
-| `install_*.py`, `runtime_*.py` | | | Install and packaging (the extended installer, #840) |
-| `vendor/`, `mcp/`, `contracts/`, `scripts/` | | | Vendored package copies, the Node MCP host, the integration contract, and repository tooling |
+| Python module | Ported (slice 1 unless marked) | Not ported (replacement) |
+| --- | --- | --- |
+| `database.py` | `connect_state` (`database.ts`) | `seed_synthetic`: demo and browser fixtures (#844 scenarios) |
+| `devices.py` | All but `legacy_row` (`devices.ts`) | `write_json` duplicates `jsonfile.write_json`; `legacy_row` (see [Shared input only](#shared-input-only)) |
+| `store.py` | All (`store.ts`) | |
+| `jsonfile.py` | All (`jsonfile.ts`) | |
+| `panels.py` | `read_layout` (`panels.ts`) | |
+| `shared_input.py` | Snapshot projection, grouping, evictions and the consumer part of `check_envelope` (`shared-input.ts`). 2a: `render_config` (`sharedRenderConfig`) | The rest of the feed: `validate_snapshot`, `private_read`, `request`, `fetch_snapshot` and the other `check_envelope` checks (see [Known differences](#known-differences)); `inspect` (runtime state, #844); the legacy task backup and `bindings` (see [Shared input only](#shared-input-only)) |
+| `shared_source.py` | `configure`, `source_config`, `select_source` for shared input (`selectShared`), `accept`, `failed` as transaction bodies (`shared-source.ts`) | Preflight fetch, `Poller`, `acknowledge` (core session events and commands, #844); `metadata_reader` and `command` (configuration wiring and CLI, #844); the legacy branch of `select_source` and its hooks check (see [Shared input only](#shared-input-only)) |
+| `project_map.py` | Task metadata and placement: `init`, `seed`, `settings`, `line_id`, `normalize`, `default_color`, `fallback_title`, `Metadata`, `task_projects`, `owners`, `allocate` (`project-map.ts`). 2a: `palette`, `palette_rgb`, `render_config` (`project-map.ts`); `geometry`, `triangle_geometry`, `validated_connector_geometry`, `connector_layout` (`geometry.ts`). 3b: `validate_palette`, `save_palette`, `rendering_snapshot`, `pending`, `apply_patch`, `request_patch`, `apply_pending`, `locate_state` (`project-map.ts`) | `record_event` (see [Shared input only](#shared-input-only)) |
+| `bridge.py` | `dashboard` (`line-projection.ts`). 2a: the palette and timing constants, `pulse_amplitude`, `travel_delays`, `pixel_color`, `comet_color`, `zone_color`, `effect_payload`, `render`, `indicator_brightness` (`renderer.ts`). 3b: `prune_comets`, `current_comet` (`comets.ts`). 3c: `introduction_ends`, `update_display`, `record_failure`, `play_preview`, `run_worker` (`worker.ts`); `SceneRestorer` (`scenes.ts`). 3d: `run_worker`'s controls, holds and animation play (`worker.ts`). 3e: `main`'s `worker` command loop (`superviseWorker`, `worker.ts`) | `setup` and the rest of `main` (installer and CLI); `run_worker`'s feed poll, metadata refresh and legacy unread reads (shared input only, and the runtime); `transition`, `handle_event`, `unread_reader`, `reconcile_read_state` (see [Shared input only](#shared-input-only)) |
+| `configuration.py` | `registered_devices` (`configuration.ts`). 2a: `pair_lines`, `load_config`, `follow_registry` (`configuration.ts`) | `data_dir` (installation path) |
+| `enrollment.py` | `enroll`, `change_address`, `remove`, `check` and their checks (`enrollment.ts`); `private_address` (`transport.ts`). 2b: `pair` (`enrollment.ts`) | `read_token`, `reason`, `command` (CLI, #844) |
+| `transport.py` | 2a: the request shape callers inject, `LightRequest`. 2b: `light_request` (`lightRequest` over `nodeTransport`, `transport.ts`) | |
+| `effects.py` | 2a: `display`, the frame encoder. 2b: validation, presets, the patterns and `render` (`effects.ts`) | |
+| `modes.py` | 3b: `change_mode`, `set_mode` without its worker launch (`setMode`), `get_status` (`modeStatus`) (`modes.ts`). 3d: a mode command ends the device's queued commands and hold, as `controller_state.changed` and `integration_api.retire` did | The controller ledger notice's revision, generation and event (`controller_state.changed`) |
+| `edits.py` | 3b: all (`edits.ts`, exported as the `edits` namespace) | The controller ledger notices in `recorded` |
+| `controller_state.py` | 3b: `overrides` (`store.ts`). 3d: the execution half that `run_worker` calls: `hold`, `held`, `release`, `finish` (with outcomes) and `recover`'s recovery and expiry (`journal.ts`); `Execution`, `Cancelled`, `controls` (`queuedContent`), `control_payload`, `discovered`, `scenes` (`sceneList`) and `scene_id` (`controls.ts`). The request rows become the control journal | The ledger and HTTP half: tables, `init`, `drop`, `ledgers`, `present`, `read`, `save`, `snapshot`, `capabilities`, `event`, `changed`'s revision, generation and event, `credential`, `readonly` and the HTTP admission (runtime commands and replies) |
+| `integration_api.py` | 2b: `favorites`, `resolve_animation`, `favorite_edit`, the favorite checks of `validate` (`validFavoriteEdit`) and the `animation_favorites` table (`favorites.ts`). These are domain rules and stay in the module; #844's command schema checks message shape and does not take them over. 3d: animation admission's domain checks (`admitCommand`), `geometry` (`savedGeometry`), `queued_animations` (`queuedContent`), `retire` (`retireQueued`), `recover_attempts` (`recoverAttempts`), `attempt` and `play` (`playAnimation`), and the animation expiry of `recover` and `process` (`expireQueued`) | The rest of the integration extension API (runtime commands, #844) |
+| `controller_server.py`, `controller_contract.py` | 3d: `admit`'s domain checks and desired state (`admitCommand`, `controls.ts`) | The HTTP controller, credentials and the contract's request checks (runtime commands and replies, and the core's credentials) |
+| `codex_hooks.py` | | Codex hook registration, retired (owner decision, 2026-10-05) |
+| `wall_server.py`, `wall.html`, `prism*.js`, `assets/` | | The web server is replaced by the runtime; the wall pages, their view and assets move with #844 |
+| `launcher.py` | | Process launch (runtime module host) |
+| `diagnostics.py` | | Runtime observability |
+| `install_*.py`, `runtime_*.py` | | Install and packaging (the extended installer, #840) |
+| `vendor/`, `mcp/`, `contracts/`, `scripts/` | | Vendored package copies, the Node MCP host, the integration contract, and repository tooling |
 
 ### Python test files
 
 Translated tests keep the Python class as the suite name and the method as the test name.
-"Partly" means the translated test drops assertions about a later slice, an unported layer or
-legacy input; each such test says so in a comment. [Dropped assertions](#dropped-assertions) and
+"Partly" means the translated test drops assertions about an unported layer or legacy input; each
+such test says so in a comment. [Dropped assertions](#dropped-assertions) and
 [Partly translated for shared input only](#partly-translated-for-shared-input-only) list them.
 
 | Python test file | Cases | Translated | Rest |
@@ -113,8 +114,8 @@ legacy input; each such test says so in a comment. [Dropped assertions](#dropped
 | `test_panels.py` | 15 | 15: in slice 1, `GeometryTest` (5) and `test_six_triangle_reservation_and_shared_overflow` (`devices.test.ts`); in 2a, `DiscoveryTest` (2, `configuration.test.ts`), `PayloadTest` (6) and `test_render_config_gives_triangles_no_signature` (`renderer.test.ts`) | |
 | `test_project_map.py` | 27 | 23: in slice 1, the 8 placement and metadata cases (`project-map.test.ts`); in 2a, `test_split_base_status_half_and_swap`, `test_whole_wave_and_comet_restore_project_color`, `test_idle_reserved_signature_and_quiet`, `test_status_coverage_keeps_unknown_project_half_blue` (`renderer.test.ts`); in 3b, `test_active_comet_defers_mapping_and_style`, `test_color_changes_do_not_restart_task`, `test_locate_waits_for_comet_and_free_rejects`, `test_api_validation_and_no_credentials`, `test_pending_half_edit_preserves_pending_owner`, `test_preferences_persist_after_reopen`, `test_rendering_endpoint_reports_pending_failed_free_and_unknown` (`project-map.test.ts`); in 3c, `test_partial_effect_acceptance_keeps_prior_receipt_and_reports_failure` (`project-map.test.ts`), `test_color_edit_invalidates_display_without_pulse_or_comet_replay`, `test_idle_locate_returns_scene_after_one_second`, `test_project_early_read_comet_finishes_before_scene_restore` (`scenes.test.ts`). Partly: `test_api_validation_and_no_credentials`, and the 3c cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported: `test_turn_elapsed_not_status_elapsed` (shared input only), and `test_rendering_endpoint_is_readonly_and_restart_safe`, `test_http_origin_host_and_token_checks`, `test_map_retries_missing_geometry` (wall server) |
 | `test_controller_controls.py` | 20 | 16 in 3d (`controls.test.ts`): all but the four below. Partly: `test_brightness_executes_once_through_worker_and_governs_work_indicators`, `test_discovery_is_bounded_named_only_in_extension_and_quiet_between_changes`, `test_control_admitted_after_observation_is_seen_by_the_same_pass_guards` | Not ported (ledger snapshot and admission): `test_capabilities_declare_power_brightness_and_scenes_with_constraints`, `test_admission_replays_power_and_reports_desired_state_before_send`, `test_ledger_without_scene_key_publishes_new_ids_with_an_event`, `test_scene_ids_are_not_recoverable_from_published_snapshot_fields` |
-| `test_controller_worker.py` | 10 | 7 in 3d (`controls.test.ts`): `test_machine_quiet_records_actual_transmission`, `test_same_free_noop_never_sends`, `test_uncertain_transport_is_not_retried_by_worker`, `test_worker_restart_marks_attempt_uncertain`, `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries`, `test_partial_failure_retains_completed_operations`, `test_expiry_during_unread_cannot_fall_back_to_legacy_send`. Partly: the last three | Not ported (credentials stay with the core, coordinator decision 2026-10-06): `test_revoked_unsent_mode_cannot_run_as_legacy_work`, `test_revocation_during_observe_cannot_fall_back_to_legacy_send`, `test_disable_during_observe_cannot_fall_back_to_legacy_send` |
-| `test_panels_controller.py` | 28 | | Slice 3e, moved from 3d because they need the multi-device worker harness (`WorkerOwnershipTest`): `test_a_command_runs_only_on_its_own_devices_worker`, `test_commands_admitted_mid_pass_stay_with_their_own_device`, `test_panels_override_governs_only_the_panels`, `test_panels_mode_command_is_journaled_by_the_panels_worker`, `test_uncertain_panels_mode_write_holds_only_the_panels`, `test_panels_hold_leaves_the_lines_running`, `test_lines_hold_leaves_panels_commands_running`, `test_each_worker_discovers_only_its_own_scenes`, `test_panels_scene_follows_the_panels_mode`, `test_panels_instance_still_owns_no_shared_ingestion`; and `LedgerTest.test_local_mode_change_cancels_only_that_devices_controls`. Not ported: `test_revoke_or_disable_that_missed_the_panels_ledger_ends_its_request` (credentials), the other eleven `LedgerTest` cases, `IntegrationTest` (3), `HttpTest` (1) and `CompatibilityTest` (1) (the ledger, integration API and HTTP routes) |
+| `test_controller_worker.py` | 10 | 7 in 3d (`controls.test.ts`): `test_machine_quiet_records_actual_transmission`, `test_same_free_noop_never_sends`, `test_uncertain_transport_is_not_retried_by_worker`, `test_worker_restart_marks_attempt_uncertain`, `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries`, `test_partial_failure_retains_completed_operations`, `test_expiry_during_unread_cannot_fall_back_to_legacy_send`. Partly: the last two. `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries` was partly translated in 3d and is translated fully in 3e, through `superviseWorker` | Not ported (credentials stay with the core, coordinator decision 2026-10-06): `test_revoked_unsent_mode_cannot_run_as_legacy_work`, `test_revocation_during_observe_cannot_fall_back_to_legacy_send`, `test_disable_during_observe_cannot_fall_back_to_legacy_send` |
+| `test_panels_controller.py` | 28 | 11 in 3e (`device-worker.test.ts`): `WorkerOwnershipTest` (10), all but the revocation case below, and `LedgerTest.test_local_mode_change_cancels_only_that_devices_controls`. Partly: `test_a_command_runs_only_on_its_own_devices_worker`, `test_commands_admitted_mid_pass_stay_with_their_own_device`, `test_panels_mode_command_is_journaled_by_the_panels_worker`, `test_each_worker_discovers_only_its_own_scenes`, `test_panels_scene_follows_the_panels_mode`, `test_panels_instance_still_owns_no_shared_ingestion`, `test_local_mode_change_cancels_only_that_devices_controls` | Not ported: `test_revoke_or_disable_that_missed_the_panels_ledger_ends_its_request` (credentials), the other eleven `LedgerTest` cases, `IntegrationTest` (3), `HttpTest` (1) and `CompatibilityTest` (1) (the ledger, integration API and HTTP routes) |
 | `test_wall_devices.py` | 9 | 4 in 3b (`edits.test.ts`): `test_actions_address_the_named_device`, `test_mode_changes_address_the_named_device_and_leave_the_other_scene_alone`, `test_one_zone_elements_reject_coverage_and_half_swaps`, `test_eviction_is_routed_to_the_named_device`. Partly: all but `test_one_zone_elements_reject_coverage_and_half_swaps` | Not ported (the wall server and its view, #844): `test_untargeted_state_addresses_lines_and_lists_registered_devices`, `test_targeted_panels_state_uses_cached_triangle_geometry`, `test_registered_device_without_saved_layout_reports_an_error_without_contact`, `test_unknown_device_is_rejected_without_fallback_or_change`, `test_http_state_query_rejections_and_privacy` |
 | `test_integration_api.py` | 15 | 2 in 3b (`edits.test.ts`), each partly: `test_all_operations_preserve_unrelated_state_and_scene`, `test_shared_mapping_source_and_notices_survive_edits` | Not ported (integration admission, processing, snapshot, receipts and HTTP): the other 13, including `test_actual_worker_applies_configuration` and `test_concurrent_wall_edit_wins_without_overwrite` |
 | `test_controller_animations.py` | 19 | 14 in 3d (`controls.test.ts`): 8 of `WorkerTest`, all but the two below, and 6 of `AdmissionTest` through `admitCommand`. Partly: `test_plays_once_after_the_free_handoff_and_never_again`, `test_cancel_revocation_and_expiry_retire_before_send`, `test_unsent_animation_restores_the_hold_like_unsent_v1_work`, and every `AdmissionTest` translation: they drop request tickets, the receipt's replay and the join of a repeated request, the conflict of a changed one, `revision-conflict` for a stale expected revision, and the receipt's shape and launch (the runtime's requests and replies and the module host, #844); `test_invalid_stale_oversized_and_unplaced_requests_consume_no_ticket` refuses a wall too wide for the animation instead of patching `MAX_BYTES` | Not ported: `WorkerTest.test_mode_committed_while_the_attempt_is_recorded_prevents_the_send` (in one process nothing commits between the recorded attempt and its write, which follow each other with no wait), `WorkerTest.test_revocation_or_disable_while_the_attempt_is_recorded_prevents_the_send` (credentials stay with the core), `AdmissionTest.test_remembered_scene_id_is_read_only_and_null_when_unavailable` and `AdmissionTest.test_options_route_is_pure_and_the_snapshot_shape_is_unchanged` (the animation options view, #844) and `HTTPTest` (1) |
@@ -124,7 +125,7 @@ legacy input; each such test says so in a comment. [Dropped assertions](#dropped
 | `test_modes.py` | 15 | 15: 1 in 2a (`renderer.test.ts`), `test_quiet_frames_are_steady_paired_colors`; the other 14 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
 | `test_effects.py` | 18 | 18: 1 in 2a, `EncoderTest.test_display_encodes_zone_frames`, with the display encoder; 17 in 2b. All in `effects.test.ts`. Partly: `test_presets_resolve_to_identical_bounded_explicit_frames` | |
 | `test_animation_favorites.py` | 7 | 4 in 2b (`favorites.test.ts`), each partly: `test_save_freezes_recipe_survives_reopen_and_replays`, `test_collision_atomic_rename_delete_bound_and_name_identity`, `test_preset_defaults_are_frozen_without_snapshot_or_display_mutation`, `test_malformed_names_recipes_mixed_selectors_and_bounds_are_rejected` | Not ported: `test_stale_authority_replay_cancel_expiry_and_hold`, `test_worker_applies_save_without_light_write_and_rejects_changed_revision`, `test_revocation_and_wrong_target_never_save_or_play` (integration admission, processing and credentials) |
-| `test_device_worker.py` | 40 | 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order`, whose mode command 3b restored | Slice 3e; its CLI, installer and controller API checks are not ported |
+| `test_device_worker.py` | 40 | 36: 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order`, whose mode command 3b restored; 33 in 3e (`device-worker.test.ts`), all the rest but four. Partly: `test_launch_starts_one_instance_per_registered_device`, `test_unreadable_registry_launches_the_original_device`, `test_cli_mode_and_status_accept_a_device_target`, `test_unknown_target_is_rejected_without_state_change`, `test_panels_preview_is_scoped_to_panels`, `test_panels_never_runs_controller_integration_or_scene_discovery`, `test_lines_outage_keeps_panels_comets_in_shared_input`, and the 3e cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported: `test_uninstall_frees_every_device_and_rejects_a_target` (installer), `test_refresh_clears_only_its_target_display_cache` and `test_reset_says_it_resets_every_device` (the setup command line), `test_panels_instance_never_polls_the_shared_feed` (the feed poller: the runtime delivers sessions to the module, and no worker polls) |
 | `test_edit_parity.py` | 4 | 3 in 3b (`edits.test.ts`), each partly: `test_equivalent_edits_save_equivalent_state`, `test_active_comet_defers_browser_edit_and_holds_machine_edit`, `test_browser_only_edits_keep_their_ledger_scope` | Not ported: `test_browser_edit_after_admission_is_a_machine_revision_conflict` (integration admission) |
 | `test_scene_restore.py` | 13 | 13 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
 | `test_controller_state.py`, `test_controller_api.py`, `test_controller_cli.py`, `test_controller_contracts.py`, `test_integration_geometry.py`, `test_codex_links.py`, `test_prism_assets.py` | | | Not ported: the controller ledger, HTTP controller, integration API and wall server. Wall view and link behavior moves with #844 |
@@ -153,7 +154,7 @@ The port adds tests of its own:
   outcome against the profile's outcome rules. The checks:
   - recorded from Python: a requested animation plays only on the Lines, with a Panels device in
     Free; a saved layout too large refuses an animation before the Free gate; an animation in flight
-    refuses another in any mode;
+    refuses another in any mode; the worker command runs a worker that ended at a hold again;
   - a mode command that needs no device write succeeds with observed evidence;
   - commands that commit while a write is out: a command retired during its write ends uncertain and
     is not written again; a mode command committed during a control's write stops that pass's display
@@ -169,6 +170,11 @@ The port adds tests of its own:
   - a mode command after a failed pass is applied, not taken as unchanged; a replaced sender's send is
     one journaled write; a favorite forgotten before its play fails without a write; admission refuses
     what the device cannot take;
+- `supervisor checks the port adds`, in `device-worker.test.ts`: recorded from Python, the worker
+  command ends when shared input is paused, and a stop during the retry wait ends the worker command;
+  the port's own, a removed device's supervisor ends instead of polling it, a supervisor whose device
+  another instance holds ends at once, a failure as the supervisor stops is not recorded, and a
+  supervisor that cannot record a failure ends;
 - `edits recorded from Python` and `mode command checks the port adds` (an explicit mode command ends
   overrides on every device; an unknown mode changes nothing), in `edits.test.ts`;
 - the recorded values in `compat.test.ts` and the replay in `trace.test.ts`;
@@ -213,8 +219,6 @@ as counts and the outcome's evidence reports. They also drop:
   `test_expiry_during_unread_cannot_fall_back_to_legacy_send`: the legacy unread read in which Python
   admitted or expired the command (shared input only). Both run during the observation's last or
   first request instead.
-- `test_cli_worker_automatic_retry_keeps_hold_and_explicit_same_mode_retries`: the `worker` command's
-  retry loop, which 3e ports. A second run stands in for its retry.
 - `test_plays_once_after_the_free_handoff_and_never_again`: the animation options view's mode.
 - `test_cancel_revocation_and_expiry_retire_before_send`: the integration API's cancel route and
   revocation. The expiry is translated.
@@ -226,6 +230,30 @@ as counts and the outcome's evidence reports. They also drop:
   options view's mode (the runtime's requests and replies and the module host, #844). An animation
   names no revision. Python patched `effects.MAX_BYTES` to 100 for the byte bound; both sides refuse a
   wall too wide for the animation instead (`record.WIDE`).
+
+Slice 3e's translations drop the command line, its output and the process launcher, which #844's module
+host replaces by starting `superviseWorker` for each registered device, and the controller snapshot's
+`lastSuccessfulSend`, desired mode and pending list, the extension snapshot and the refused request's
+replay (#844's device state and the runtime's requests). They also drop:
+
+- `test_launch_starts_one_instance_per_registered_device` and
+  `test_unreadable_registry_launches_the_original_device`: the launch itself. The devices the host
+  starts, `registeredDevices`, are checked.
+- `test_cli_mode_and_status_accept_a_device_target`: the command line; mode commands and status
+  address one device.
+- `test_unknown_target_is_rejected_without_state_change`: the command line's exit. The target goes
+  through admission instead: an unregistered device is refused as `not-found`, where Python's
+  credential check refused it as `forbidden`, and a malformed device ID as `invalid-request`.
+- `test_panels_preview_is_scoped_to_panels`: the setup command that queued the preview; the step
+  saves the Panels' preview key as that command did.
+- `test_panels_never_runs_controller_integration_or_scene_discovery` and
+  `test_panels_instance_still_owns_no_shared_ingestion`: the patched integration processing, feed
+  poller, ledger recovery and controller execution, none of which the port has. Each device keeps its
+  own scene list; the Lines' never holds the Panels' scenes, and the Panels' pass still draws.
+- `test_lines_outage_keeps_panels_comets_in_shared_input`: the feed is accepted as steps instead of
+  polled at each attempt.
+- `test_commands_admitted_mid_pass_stay_with_their_own_device`: shared input reads no unread file, so
+  both commands are admitted while the Panels' worker waits instead of during its pass's unread read.
 
 Not ported (the layer that held them is replaced):
 
@@ -458,6 +486,18 @@ From slice 3c the worker cases run on shared input, and each replays a case reco
   configuration: `test_start_time_survives_failed_send_and_restart`,
   `test_queued_comets_play_sequentially_in_worker`.
 
+From slice 3e the two-device cases also run on shared input (`devices.json`). These change:
+
+- `test_one_task_occupies_one_element_on_each_device`: the task starts a second after shared input is
+  selected, so its outward wave is newer than the selection's wave cutoff and crosses every triangle.
+- `test_reading_clears_both_devices_and_drops_queued_comets`: read evidence drops every device's
+  queued comet when it is accepted, where Python's legacy reader left the Panels' queued comet for
+  the Panels' own pass, and the read task stays idle where the legacy reader ended it.
+- `test_panels_plays_its_own_comet_from_its_own_triangle`: the read evidence also drops the Lines'
+  queued comet, and the comet the completion started is sent again by the next pass while it runs.
+- `test_panels_scene_returns_after_a_recoverable_failure`: the completed task keeps the Panels until
+  the run ends, so the scene's return is checked by the Panels' saved scene.
+
 ## Recorded comparisons
 
 Where the translated tests leave behavior open, the port is compared with Python on recorded inputs.
@@ -500,7 +540,7 @@ retires with codex-nanoleaf (#839). It writes:
   recording holds each step's outcome, every device request with its time and payload, each send a
   run captured, and the rows (`display_v3` parsed), scene file, device state and clock at the end.
   The port must match all of it exactly.
-- `controls.json`, one member per line to a fixed depth (`control-support.ts`): 46 control cases on
+- `controls.json`, one member per line to a fixed depth (`control-support.ts`): 48 control cases on
   the worker cases' Lines and fake device, one or more per translated controls, controller worker,
   animation worker and animation admission test, and one with a Panels device registered for the
   Lines-only rule. Python's controller is configured, and its admission, integration extension
@@ -515,6 +555,17 @@ retires with codex-nanoleaf (#839). It writes:
   controller receipt rule to the outcome the port must have reported last, with the two differences
   [Known differences](#known-differences) lists under Controls. Each command ends at most once, and
   each outcome follows the profile's outcome rules.
+- `devices.json`, one member per line to a fixed depth (`device-support.ts`): 44 cases on two devices,
+  one per translated `test_device_worker.py`, `WorkerOwnershipTest` and `LedgerTest` case and two the
+  port adds, with the setup files they start from. The 15 straight Lines and the first 18 (or 6)
+  triangles of the NL22 fixture are registered as two devices, each with its own fake at its own
+  address, as `DeviceWorkerTest` set them up, and shared input is selected with no session at 1000.
+  Python's hook events become shared feed changes and its unread set the feed's read evidence. Steps
+  address either device's fake, worker runs name their device, and `supervise` runs Python's `worker`
+  command (`bridge.main`) around the real worker on the case's clock. The recording holds each step's
+  and hook's outcome, both fakes' requests, every request's address, the rows, both scene files and
+  devices, the clock and each admitted command's final receipt. The port must match all of it, and
+  each command's outcome goes through MAPPING.md's controller receipt rule as for `controls.json`.
 - `rendering.json`, one member per line to a fixed depth:
   - Line pairing of the real Lines layout in six orientations, and of two zones moved just inside,
     onto and just beyond the 3-unit collinearity threshold in eight orientations (`geometry.test.ts`);
@@ -739,6 +790,25 @@ on a read-only export of that commit, since the Python tests import from their o
   - The worker ends when a hold stops its writes without shared input selected, or when a hold
     arrives during a pass, as Python's did. #844 starts it again when a command is accepted, as
     Python's admission launched it.
+- Multiple devices and the worker command (3e):
+  - `superviseWorker` is `main`'s `worker` command loop. It records a failed pass for its device, waits
+    2 s and runs the worker again; after a worker ends, it waits 1 s and runs it again while shared
+    input is selected. Its waits are on the runtime's scheduler and end at the stop signal. It never
+    rejects for a failed pass, since a failure that escapes a module stops the whole module (module
+    failure policy A), and it resolves with why it ended: `stopped`, `locked` (another instance holds
+    the device), `paused` (shared input is no longer selected), `unregistered` or `unrecorded` (the
+    failure could not be written).
+  - No feed state is carried between attempts. Python handed every attempt the same feed state, so a
+    failed Lines pass could not force a resync; the core's sync replaces the feed.
+  - A removed device's supervisor ends after its worker ends. Python's command ran the removed
+    device's worker again every second until it was stopped.
+  - `recordFailure` writes on the module's connection in one transaction. Python's diagnostic event
+    for a failed pass is not ported; #844 owns observability.
+  - Admission refuses a malformed device ID as `invalid-request` and an unregistered device as
+    `not-found`. Python's contract refused the first the same way; its credential check refused the
+    second as `forbidden`, and credentials stay with the core.
+  - Every device keeps its own scene list and journal. Python kept them only for a device with a
+    controller ledger, so a Panels device without one discovered no scenes.
 - The display worker (3c):
   - It takes the runtime's clock in epoch milliseconds and its scheduler, and keeps seconds inside.
     Each of Python's sleeps is a timer of s * 1000 milliseconds, and the stop signal ends the worker
@@ -761,9 +831,12 @@ on a read-only export of that commit, since the Python tests import from their o
   `wall_server.App.state`. No Python recording checks that helper; #844 ports the real view.
 - The worker's per-device lock is Python's lock file in the state directory, which also excludes a
   second process. #844 may replace it with an in-process guard.
-- The `worker` command's retry loop (record the failure, wait two seconds, run again while the device
-  is registered) is not ported yet; `recordFailure` is. 3e ports it with the multi-device worker
-  cases, or #844's module host takes it over.
+- Nothing starts `superviseWorker` yet. #844's module host starts one for each registered device and
+  for a newly enrolled one, and maps a recorded `control_error` to the device's `unavailable`
+  availability in its `device/2.0` state (#918); a successful pass clears it. A supervisor ends
+  `paused` when a new configuration pauses shared input, so the configuration wiring that selects
+  shared input again also starts the supervisors again. `locked` means another instance holds the
+  device, so one process starts one supervisor per device.
 - A queued command fails `expired` only when the worker next checks after its `expiresat`: at its
   start, in a pass, or while it waits on a hold. While the device's worker is stopped, because it
   ended on a hold or has not started, nothing expires that device's queued commands. #844's host must
