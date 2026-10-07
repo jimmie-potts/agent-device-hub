@@ -55,6 +55,10 @@ Actual Windows-host qualification belongs to
 ## Operations
 
 Every operation prints one JSON result line on stdout and progress on stderr.
+A refusal line keeps its `error` and `detail` and also carries `errorBody`, the
+shared 2.0 error body of [ADR 0012](decisions/0012-bunny-event-platform.md);
+the [core README](../packages/app-verify/README.md#refusal-error-body) maps each
+refusal to its registry code.
 No operation prints a token, a private path outside the receipt's two declared
 roots, or personal data. For lifecycle operations, exit status 0 means the
 outcome was verified, not merely requested; 1 is a failed outcome, 2 a usage

@@ -1907,6 +1907,9 @@ The suite has two parts:
   The lock file also forces a prepared lock directory swept
   mid-acquire and a stale dead-breaker record, and `tests/inputs.test.mjs`
   runs its input refusals and `runCaptureStep` inputs test here.
+  `tests/error-body.test.mjs` checks the shared error body on each refusal
+  that needs no run, and checks every body against
+  `@jimmie-potts/event-contracts`' `errorBody` (Hub #921).
 - **Only on a host with a user manager** (`systemctl --user
   is-system-running` answering `running`, `degraded`, `starting` or
   `initializing`): every lifecycle test. These start real transient units
@@ -2329,7 +2332,9 @@ For `apps/maintenance`, use Node 24 from the repository root. Run `npm ci`,
 `npm run test:workflow`. All must exit zero. CI runs the intake tests in its
 core job. This suite covers the owning tracker-closeout adapter, full
 installation receipts, canonical Python recommendation tooling and all five
-fixed repository closeout policies in the extracted package. Policy cases cover
+fixed repository closeout policies in the extracted package. It also checks
+the shared error body on blocked intake responses against
+`@jimmie-potts/event-contracts`' `errorBody` (Hub #921). Policy cases cover
 wrong runtime/repository/revision/owner, tool plan digests and file/link readback,
 protected paths, owning instruction fingerprints, unchanged client/physical
 acceptance and tool repositories without portfolio writes. The same suite covers

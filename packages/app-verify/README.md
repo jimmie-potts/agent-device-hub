@@ -217,7 +217,8 @@ from 0.05 to 1440. Main result fields:
 | `scenario`, `extend`, `stop` | The new scenario, port, `inputs` and `endpoints`; the new expiry and timer; or the final state and `cleanup` |
 
 An error that stops an operation before it acts prints
-`{"operation", "error", "detail"}`, for example `run-not-running`, or
+`{"operation", "error", "detail"}` and the shared `errorBody` (see
+[Refusal error body](#refusal-error-body)), for example `run-not-running`, or
 `receipt-locked` when another live operation holds the run's receipt for
 more than 10 s. The lock is created atomically with its holder's PID, start
 time and a nonce. A lock left by a killed operation breaks at once, one
@@ -231,6 +232,55 @@ for over a minute while acquiring the lock, whose prepared directory another
 operation's sweep removed, prepares a new one and restarts its 10 s wait,
 because a suspension is not a wait on a holder. The receipt is written only while the lock still names
 the writer, so a race can refuse an update but never lose one silently.
+
+### Refusal error body
+
+Every refusal line also carries `errorBody`, the shared 2.0 error body of
+[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)
+([Hub #921](https://github.com/jimmie-potts/agent-device-hub/issues/921)). It
+sits beside the 1.x `error` and `detail`, which do not change:
+
+```json
+{"operation":"extend","error":"run-not-running","detail":"hub-20260927T060259Z-3f9a1c is stopped","errorBody":{"error":{"code":"invalid-state","retryable":false,"detail":"run-not-running: hub-20260927T060259Z-3f9a1c is stopped"}}}
+```
+
+A refusal line is one that prints `error`: the `{"operation", "error",
+"detail"}` line above, and a `stop` that reports `receipt-locked` with its
+cleanup, which `restart` passes on. Failed outcomes, such as a `start` with
+`state: failed` and a `cause`, are unchanged. Receipts stay
+`app-verification/1`, and the exit codes stay the same.
+
+- `code` is the registry code for the 1.x refusal in the table below, and
+  `retryable` is that code's registry flag.
+- `detail` is `<error>: <detail>`, cut to 1024 characters, so the body still
+  names the 1.x refusal.
+- The package still has no runtime dependencies. It copies the registry codes
+  it uses and their flags from `@jimmie-potts/event-contracts`, and
+  `tests/error-body.test.mjs` checks that each body equals that package's
+  `errorBody`. In an isolated consumer, where that package is not installed,
+  the check skips with a printed reason.
+
+When 1.x retires ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)),
+`error` becomes this object and `errorBody` goes away.
+
+| 1.x `error` | 2.0 `code` | Retryable |
+| --- | --- | --- |
+| `usage` | `invalid-request` | no |
+| `unknown-scenario` | `invalid-request` | no |
+| `unknown-run` | `not-found` | no |
+| `invalid-receipt` | `invalid-state` | no |
+| `run-not-running` | `invalid-state` | no |
+| `scenario-mismatch` | `invalid-state` | no |
+| `already-frozen` | `invalid-state` | no |
+| `proof-conflict` | `invalid-state` | no |
+| `proof-irregular` | `invalid-state` | no |
+| `proof-root-unusable` | `invalid-state` | no |
+| `runtime-root-unusable` | `invalid-state` | no |
+| `capture-in-progress` | `capacity` | yes |
+| `receipt-locked` | `capacity` | yes |
+| `lease-failed` | `unavailable` | yes |
+| `internal` | `internal` | no |
+| Any other | `internal` | no |
 
 ## Capture without a supervisor
 
@@ -265,10 +315,11 @@ outside every Git checkout (for example `~/.cache/agent-device-hub/<task>-tmp`):
 the tests' runtime roots live under it, and the core refuses runtime state
 inside a checkout.
 
-- `tests/unsupervised.test.mjs`, `tests/lock.test.mjs`, the receipt tests,
-  `help`, the no-manager `start` refusal and the usage and `runCaptureStep`
-  tests in `tests/inputs.test.mjs` need no user manager and always run,
-  including in the Hub's CI. They cover:
+- `tests/unsupervised.test.mjs`, `tests/lock.test.mjs`,
+  `tests/error-body.test.mjs`, the receipt tests, `help`, the no-manager
+  `start` refusal and the usage and `runCaptureStep` tests in
+  `tests/inputs.test.mjs` need no user manager and always run, including in
+  the Hub's CI. They cover:
   - the reference and `control-*` steps, and `false` predicates;
   - a broken app and a silent step;
   - missing Playwright, Chromium and ffmpeg;
@@ -277,7 +328,10 @@ inside a checkout.
     a prepared lock directory swept mid-acquire and a stale dead-breaker record;
   - undeclared, secret-like, missing, duplicate and non-ASCII inputs, and
     inputs given to `runCaptureStep`;
-  - a served artifact that changed before or during a step.
+  - a served artifact that changed before or during a step;
+  - the shared error body on each refusal reachable without a run: usage,
+    an unknown run, an invalid receipt, a stopped run, an unusable root, a
+    `stop` under a live lock and an internal error.
 - Every other test drives real transient units named `app-verify-avt-<6 hex>-*`
   with a fixture counter application. While the suite runs, those units exist.
   Each test stops the units of its own app name when it ends and fails if any

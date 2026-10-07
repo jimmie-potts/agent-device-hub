@@ -1,5 +1,6 @@
 import {capture} from './capture.js';
 import {handoff} from './handoff.js';
+import {refusalBody} from './error-body.js';
 import {checkDeclarations, checkGiven, declaresInputs, parseInputs, resolveInputs} from './inputs.js';
 import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
 import {LockedError} from './receipt.js';
@@ -136,19 +137,21 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
     if (outcome.exitSoon) setTimeout(() => process.exit(outcome.code), 250).unref();
     return outcome.code;
   } catch (error) {
+    // The 1.x `error` and `detail` stay until #839; `errorBody` adds the shared 2.0 body (#921).
+    const refuse = (code: string, detail: string) => io.result({operation, error: code, detail, errorBody: refusalBody(code, detail)});
     if (error instanceof UsageError) {
-      io.result({operation, error: 'usage', detail: error.message});
+      refuse('usage', error.message);
       return EXIT.usage;
     }
     if (error instanceof Failure) {
-      io.result({operation, error: error.code, detail: error.detail});
+      refuse(error.code, error.detail);
       return EXIT.failed;
     }
     if (error instanceof LockedError) {
-      io.result({operation, error: 'receipt-locked', detail: error.message});
+      refuse('receipt-locked', error.message);
       return EXIT.failed;
     }
-    io.result({operation, error: 'internal', detail: errorText(error)});
+    refuse('internal', errorText(error));
     stderr(error instanceof Error && error.stack ? error.stack : String(error));
     return EXIT.failed;
   }
