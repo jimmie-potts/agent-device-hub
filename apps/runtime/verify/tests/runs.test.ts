@@ -3,7 +3,7 @@
 // these tests skip with the reason (#873); steps.test.ts still judges every capture step.
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {access, readFile} from 'node:fs/promises';
+import {access, readFile, stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {validateReceipt} from '@jimmie-potts/app-verify';
@@ -80,13 +80,24 @@ void test('a run serves the runtime with the fixture modules and, reseeded, with
   const zero = await verify('capture', runId, 'scenario-zero-modules');
   assert.equal(zero.result.outcome, 'passed', JSON.stringify(zero.result));
 
+  // One request through the run's own diagnostics, in each case, as the proof keeps it; the run's spans are in a private
+  // file of its runtime directory, which stop removes with it.
+  const followed = await verify('capture', runId, 'follow-one-request');
+  assert.equal(followed.result.outcome, 'passed', JSON.stringify(followed.result));
+  const attachments = (followed.result.attachments as string[]).map(file => file.slice(file.lastIndexOf('/') + 1)).sort();
+  assert.deepEqual(attachments, ['follow-capped.json', 'follow-crash.json', 'follow-missing.json', 'follow-refusal.json', 'follow-replayed.json',
+    'follow-success.json', 'follow-trace.json', 'follow-uncertain.json']);
+  const spansFile = join(runtimeDir, 'data/state/spans.ndjson');
+  assert.equal((await stat(spansFile)).mode & 0o777, 0o600, 'the spans are in a private file');
+
   const ports = [new URL(String(started.result.url)).port, new URL(String(started.result.endpoints?.harness)).port].map(Number);
   const stopped = await verify('stop', runId);
   assert.equal(stopped.result.state, 'stopped');
   assert.equal(units(runId), '', 'no unit or timer is left');
   await assert.rejects(access(runtimeDir), 'the runtime directory is gone');
+  await assert.rejects(access(spansFile), 'and the span file with it');
   for (const port of ports) assert.equal(await listening(port), false, `port ${port} is closed`);
-  const outputs = [started, doctor, captured, reseeded, zero, stopped].map(call => call.output).join('\n') + JSON.stringify(receipt);
+  const outputs = [started, doctor, captured, reseeded, zero, followed, stopped].map(call => call.output).join('\n') + JSON.stringify(receipt);
   for (const {token} of grants.grants) assert.equal(outputs.includes(token), false, 'no grant reaches a result, card or receipt');
 });
 
