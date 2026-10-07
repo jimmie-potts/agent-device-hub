@@ -34,16 +34,21 @@ and exits 1, and the service manager restarts it whole.
   (`src/core/store.ts`) is copied from the old Hub's `apps/hub/src/storage.ts`
   and keeps its format: the durable 2.1 state as one JSON row in `state`. Its
   lease is an exclusive transaction on the lock database `core.sqlite-owner`
-  beside it; a second runtime on the same state directory waits for it until
-  agent-state's three-second deadline, and its core then fails.
+  beside it, which has no rollback journal, so taking it writes nothing. The
+  core holds it from its start until it stops, including while it opens
+  agent-state's owner again after a failed commit. A second runtime on the same
+  state directory waits for it until agent-state's three-second deadline, and
+  its core then fails. A file that holds another owner's state is refused
+  before anything is written to it.
 - **Intake.** It subscribes to `bunny.event.lifecycle.*`, checks each message
   against profile 2.0, drops a duplicate by `(source, id)` and refuses the same
   `(source, id)` with other content as `duplicate-conflict`, then reduces the
   observation as the lifecycle 1.2 envelope that
   [MAPPING.md](../../packages/event-contracts/MAPPING.md) describes. It keeps
-  each observation's `(source, id)` for 24 hours, the time agent-state still
-  admits it, in the same store, so a duplicate after a restart is still
-  dropped.
+  each observation's `(source, id)` in the same store for 24 hours past the
+  later of the commit and the observation's own `observedAtMs`, as long as
+  agent-state still admits it, so a duplicate after a restart, or from a hook
+  whose clock runs ahead, is still dropped. A duplicate is logged at DEBUG.
 - **Publication.** Each change derives its `session` state, removal and
   occurrence messages. One SQLite transaction commits the change with those
   messages (through the SDK's outbox), the published records, a history row for
@@ -54,25 +59,41 @@ and exits 1, and the service manager restarts it whole.
   serves.
 - **Failures.** A full disk refuses the change before anything reports it
   accepted: nothing commits, nothing is published, and the intake is logged
-  `rejected` with `capacity`. The core then opens agent-state's faulted owner
-  again on what committed, so the next observation is taken once there is room.
-  A publication refused after a commit is logged `operation.failed` with the
-  outcome `queued`: the change stands, and its messages go out at the next
-  commit or start, with their stored `id`, `time` and trace context. A crash
-  between a commit and its publication sends them at the next start, once.
+  `rejected` with `capacity` (an acknowledgment is refused with `capacity`).
+  The core then opens agent-state's faulted owner again on what committed,
+  keeping its lease. The core never fails on a full disk:
+  - if opening the owner fails, as when maintenance falls due, the core refuses
+    durable work with `capacity` or `unavailable` and tries again on demand
+    after a backoff that doubles from 1 s to 60 s;
+  - at the start, a full disk leaves the core running in that state, and a
+    failed refresh of the restart's uncertainty makes syncs answer `unavailable`
+    until a later attempt, on the same backoff, succeeds.
+
+  While the store refuses durable work, the core logs one `operation.failed`
+  record (`bunny.operation` `storage`, WARN, or ERROR for `internal`), then a
+  summary at most once a minute with the refusals since (`bunny.attempt_count`),
+  and one `operation.completed` once a change commits again; each attempt is
+  DEBUG. A publication refused after a commit is recorded as `outbox.deferred`:
+  the change stands, and its messages go out at the next commit or start, with
+  their stored `id`, `time` and trace context. A crash between a commit and its
+  publication sends them at the next start, once.
 - **Freshness.** Each record's `freshness` holds at the `time` of the message
   that carries it. A timer publishes a record again, at a new revision, when it
   turns uncertain five minutes after its last evidence, and a sync brings
   freshness up to date first. After a restart every stored session is
-  `restartUncertain` until fresh lifecycle evidence.
+  `restartUncertain` until fresh lifecycle evidence. One limit: a sync provider
+  cannot name the time the SDK stamps on its answer, a microtask after the core
+  computed the records, so a record that turns uncertain within that
+  millisecond can disagree with its envelope by one millisecond. The core's
+  timer usually publishes the change first.
 - **Sync and acknowledgment.** It serves `session` through sync, and answers
   `notice-acknowledge` through agent-state's `acknowledge` with `accepted`,
   `not-found` for an unknown session or notice, `invalid-request` for an unknown
   consumer, and `forbidden` when the sender's source does not end in that
   consumer ID: a consumer acknowledges for itself only. The acknowledgment
-  commits before the reply, and the session's state at its new revision is its
-  evidence; no outcome follows. The consumers are `DEFAULT_CONSUMERS`
-  (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
+  commits before the reply, and the session's state at its new revision, in the
+  command's trace, is its evidence; no outcome follows. The consumers are
+  `DEFAULT_CONSUMERS` (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
   store and refuses a store whose list differs, so changing it needs a
   migration.
 - **Extension point.** A `CorePart` (Hub #782's tracker and history, #923's

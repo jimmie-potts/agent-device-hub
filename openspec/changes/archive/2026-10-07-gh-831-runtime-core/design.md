@@ -48,13 +48,23 @@ deadline turn a slow publication into a reported rollback.
 
 **The lease.** The Hub held an exclusive transaction on a separate lock database; the core does the same with
 `core.sqlite-owner` beside its store, and waits for another holder until agent-state's deadline instead of refusing at
-once. Holding SQLite's exclusive locking mode on the store itself was tried first: it blocked a runtime restarted in
+once. The store takes the lock with agent-state's first lease and keeps it until the core stops: agent-state's release
+ends only its lease, so a faulted owner is opened again on a store the core never let go of (PR #962 review). The first
+version released the lock with each lease, which let a waiting runtime win it in the gap and left the first core's
+cached revision and records stale. Each lease now reloads them from the file. The lock database has no rollback
+journal, because `BEGIN EXCLUSIVE` otherwise opens one, which fails on a full disk. Holding SQLite's exclusive locking mode on the store itself was tried first: it blocked a runtime restarted in
 the same process (the in-memory harness's crash) from even opening the file. In-process holders are tracked by path,
 so a waiting attempt never opens the file while another lease holds it.
 
 **Full disk.** A transaction that fails with `SQLITE_FULL` rolls back; the store names the failure, agent-state faults,
-and the core logs the intake `rejected` with `capacity` and opens the owner again on what committed. Tests make SQLite
-itself refuse: small pages and a page limit at the file's size after `VACUUM`.
+and the core logs the intake `rejected` with `capacity` and opens the owner again on what committed. A full disk never
+fails the core (PR #962 review): an owner that cannot be opened again, as when maintenance falls due, a full disk at the
+start and a refresh the store refuses all leave it running, refusing durable work and trying again after a backoff that
+doubles from 1 s to 60 s. Otherwise a full disk would end the runtime and loop on restart. The condition is recorded
+once, summarized at most once a minute and closed on recovery, per ADR 0012's repetition rule. Tests make SQLite itself
+refuse: small pages and a page limit at the file's size after `VACUUM`. That limit lets a change that frees space
+through, which a real full disk would refuse for want of room for its journal, so the maintenance tests have a part
+fail every change with SQLite's full-disk code instead.
 
 **Restart uncertainty and host session IDs live in the core.** agent-state keeps both in memory and offers no way to
 read them inside a commit. The core marks every session it loads at start restart-uncertain and clears the mark on a

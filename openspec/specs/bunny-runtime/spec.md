@@ -450,7 +450,7 @@ Each record's freshness SHALL hold at the `time` of the message that carries it.
 
 ### Requirement: Core store transactions and failures
 
-The core store SHALL keep agent-state's durable 2.1 state in the old Hub adapter's format, one JSON row in the table `state`, checked on every load and commit under a compare-and-swap on the revision. It SHALL hold a lease, an exclusive transaction on the lock database `core.sqlite-owner` beside it, for the owner's life, and a second owner, in another process or this one, SHALL wait for it until agent-state's deadline. Each change SHALL commit with the 2.0 messages it publishes, the published records, a history row for each occurrence and removal and the `(source, id)` of the intake it took, kept for 24 hours, in one SQLite transaction through the SDK's outbox, and its messages SHALL go out only after the commit, in order. A change that does not commit SHALL change nothing and publish nothing. On a full disk the core SHALL refuse the change before anything reports it accepted, log the intake `rejected` with `capacity`, and open agent-state's owner again on what committed, so the next observation is taken once there is room. A publication refused after a commit SHALL leave the change standing, be reported once per run of refusals as committed and awaiting publication, and go out at the next commit or start with the message's stored `id`, `time` and trace context. After a crash between a commit and its publication, the next start SHALL send each stored message once.
+The core store SHALL keep agent-state's durable 2.1 state in the old Hub adapter's format, one JSON row in the table `state`, checked on every load and commit under a compare-and-swap on the revision. It SHALL hold a lease, an exclusive transaction on the lock database `core.sqlite-owner` beside it, taken without writing anything, from the core's start until it stops, including while it opens agent-state's owner again after a failed commit; a second owner, in another process or this one, SHALL wait for it until agent-state's deadline and never get it meanwhile. Each lease SHALL reload the store's revision, commit count and records from the file, and a file that holds another owner's state SHALL be refused before anything is written to it. Each change SHALL commit with the 2.0 messages it publishes, the published records, a history row for each occurrence and removal and the `(source, id)` of the intake it took, kept for 24 hours past the later of the commit and the observation's own instant, in one SQLite transaction through the SDK's outbox, and its messages SHALL go out only after the commit, in order. A change that does not commit, a failed rollback included, SHALL change nothing, publish nothing and never be reported committed. On a full disk the core SHALL refuse the change before anything reports it accepted, log the intake `rejected` with `capacity`, and open agent-state's owner again on what committed, so the next observation is taken once there is room. A full disk SHALL never fail the core: an owner that cannot be opened again, a full disk at the start and a refresh the store refuses SHALL leave it running, refusing durable work with `capacity` or `unavailable` and syncs with `unavailable`, and trying again after a backoff that doubles from 1 s to 60 s. While the store refuses durable work, the core SHALL record the transition once, then a summary at most once a minute, then the recovery, with each attempt at DEBUG. A publication refused after a commit SHALL leave the change standing, be recorded once per run of refusals as `outbox.deferred`, and go out at the next commit or start with the message's stored `id`, `time` and trace context. After a crash between a commit and its publication, the next start SHALL send each stored message once.
 
 #### Scenario: One transaction
 - **WHEN** an observation commits a session and an attention item
@@ -479,6 +479,26 @@ The core store SHALL keep agent-state's durable 2.1 state in the old Hub adapter
 #### Scenario: The lease
 - **WHEN** a second owner opens the store while the first holds it, and again once the first lets go
 - **THEN** the first attempt is refused at agent-state's deadline, and the second reads what the first committed
+
+#### Scenario: The lease through a failed commit
+- **WHEN** a second core waits for the lease while the first has a commit refused on a full disk and opens its owner again, with a pause in which the second keeps trying
+- **THEN** the second is refused, the refused change leaves the revision as it was and takes nothing, and the first's next change commits at a higher revision
+
+#### Scenario: A lock that cannot keep a journal
+- **WHEN** the lock database's rollback journal cannot be written
+- **THEN** the lease is still taken
+
+#### Scenario: A full disk that persists
+- **WHEN** maintenance falls due while the disk is full, the core restarts with stored sessions on a full disk, or its start-up maintenance falls on one
+- **THEN** the core keeps running and health shows it running; intake is refused with `capacity` and syncs with `unavailable`; within the backoff the core does not try again; and once there is room the next attempt succeeds and the condition ends with one record
+
+#### Scenario: Retries back off
+- **WHEN** the store refuses the freshness change for two minutes
+- **THEN** the core tries at 0, 1, 3, 7, 15, 31, 63 and 123 s, logs the transition and two summaries with the refusals since, and publishes the record at the next attempt once there is room
+
+#### Scenario: The (source, id) window
+- **WHEN** a hook whose clock runs two hours ahead sends an observation, and a day and an hour later another intake prunes what is due
+- **THEN** the observation's `(source, id)` is still a duplicate, and one from the commit's own instant is pruned exactly 24 hours on
 
 ### Requirement: Core extension point
 

@@ -129,8 +129,8 @@ Two kinds never select or retire a turn:
 
 A `notice-acknowledge` command is not an observation either. The core answers it
 through agent-state's `acknowledge`, which adds the consumer to the notice's
-`acknowledgedBy` and publishes the session record at a new revision, with no
-occurrence and no turn handling. Acknowledgments are recorded per consumer, and
+`acknowledgedBy` and publishes the session record at a new revision, in the
+command's trace, with no occurrence and no turn handling. Acknowledgments are recorded per consumer, and
 each consumer's policy decides which acknowledgments clear what it shows, as today:
 LIFX and Tidbyt clear a finished turn on any consumer's acknowledgment.
 

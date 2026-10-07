@@ -34,3 +34,13 @@
 - [x] 5.1 Document the core in the runtime README, the decisions in MAPPING.md and the event contracts README, the persisted host session ID in docs/architecture.md, and the fixture core in the adapter README and docs/app-verification.md.
 - [x] 5.2 Run build, typecheck, lint, the agent-state, SDK, runtime, scenario, verification, Hub, event and workflow checks, and OpenSpec validation.
 - [x] 5.3 Synchronize the affected specifications and archive the change.
+
+## 6. Review fixes (PR #962)
+
+- [x] 6.1 Keep the store's lock from the first lease until the core stops, open a faulted owner again without letting go of it, reload the cached revision, commit count and records at every lease, take the lock with no journal, and leave the core running on a full disk with a capped backoff; tests: the lease through a failed commit (store and core), a lock that cannot keep a journal, maintenance falling due on a full disk, a restart on a full disk and start-up maintenance on one.
+- [x] 6.2 Carry the acknowledgment command as its change's cause, so the session state joins its trace; the acknowledgment test asserts the trace.
+- [x] 6.3 Back freshness retries off from 1 s to 60 s, record the store's condition once, then a summary a minute with `bunny.attempt_count`, then its recovery; the backoff test counts eight attempts in two minutes.
+- [x] 6.4 Keep an observation's `(source, id)` 24 hours past the later of the commit and its own instant, and test the skewed clock, the retention and its pruning.
+- [x] 6.5 Clear a commit's failure at its start, never read a failed rollback as a commit, refuse another owner's file before writing, keep only a refused message's well-formed fields, test DEBUG duplicates and an acknowledgment refused with `capacity`, guard the fixture write, and note the other fixtures' revisions.
+- [x] 6.6 After rebasing onto #949, give the core's outbox its log and tracing, so a refused publish is `outbox.deferred`.
+- [x] 6.7 Negative controls, each restored, failed their named test: the lock released at every lease end (the store contention test; the core-level one passes either way, since its gap is too short to lose); a lock database with a journal; `REFRESH_RETRY_MS = 0`; the `(source, id)` kept from the commit's instant; no pruning; no expiry; a failure not cleared per commit; no guard on an open transaction; no owner check; the acknowledgment outside a cause; an unvalidated message ID in the record; a fatal start-up refresh; a fatal reopen; and a fatal full disk at the start.
