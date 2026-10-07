@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {contain} from './host.js';
 import {LogWriter, errorFields, stderrSink} from './log.js';
-import {buildModules, type ModuleFactory} from './modules.js';
+import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {LEVELS, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
 
@@ -36,12 +36,13 @@ function integer(value: string | undefined, name: string, min: number, max: numb
 }
 
 export function parseArguments(argv: readonly string[]): ProcessOptions {
-  let values: {port?: string; 'state-dir'?: string; 'lag-limit-ms'?: string; 'log-level'?: string};
+  let values: {port?: string; 'state-dir'?: string; 'lag-limit-ms'?: string; 'log-level'?: string; simulate?: boolean; edge?: boolean};
   try {
     ({values} = parseArgs({
       args: [...argv], strict: true, allowPositionals: false,
       options: {
         'port': {type: 'string'}, 'state-dir': {type: 'string'}, 'lag-limit-ms': {type: 'string'}, 'log-level': {type: 'string'},
+        'simulate': {type: 'boolean'}, 'edge': {type: 'boolean'},
       },
     }));
   } catch (error) {
@@ -54,8 +55,8 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
     stateDir: values['state-dir'] ?? DEFAULT_STATE_DIR,
     lagLimitMs: values['lag-limit-ms'] === undefined ? DEFAULT_LAG_LIMIT_MS : integer(values['lag-limit-ms'], 'lag-limit-ms', 1, 3_600_000),
     logLevel,
-    simulate: false,
-    edge: false,
+    simulate: values.simulate === true,
+    edge: values.edge === true,
   };
 }
 
@@ -99,7 +100,8 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   try {
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
-      logLevel: options.logLevel, lagCheck: {limitMs: options.lagLimitMs},
+      logLevel: options.logLevel, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
+      ...(options.edge ? {edge: {schemas: {...options.schemas, ...moduleSchemas(options.modules)}}} : {}),
     });
   } catch (error) {
     return fail(error);

@@ -1,12 +1,16 @@
 // The runtime (ADR 0012, "Runtime and transport"): one process, one in-process bus and a fixed list of modules, with a
-// loopback health endpoint. It runs with zero modules.
-import {createServer, type Server} from 'node:http';
+// loopback health endpoint. It runs with zero modules. With an edge (#920), remote parts make the SDK calls over SSE and
+// HTTP on the same listener, each with a grant from the state directory.
+import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {MODULE_API_VERSION, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
+import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
+import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {
+  MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type EdgeLogRecord, type Scheduler,
+} from '@jimmie-potts/sdk';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {LogWriter, errorFields, stderrSink, type LogLevel, type LogSink} from './log.js';
-import {RuntimeError, prepareStateDirectory} from './state.js';
+import {LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type RuntimeLogger} from './log.js';
+import {RuntimeError, prepareStateDirectory, readEdgeGrants, type EdgeGrant} from './state.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
 export type {ModuleHealth, ModuleState} from './host.js';
@@ -50,9 +54,13 @@ export type RuntimeOptions = {
   stopTimeoutMs?: number;
   /** Runs the event-loop lag check with this limit. `worker` replaces the watchdog thread's file, for tests. */
   lagCheck?: {limitMs: number; worker?: URL};
-  /** Not built yet (#920). */
+  /** The modules were built with their simulated transports (`--simulate`); the `runtime.started` record says so. */
   simulate?: boolean;
-  /** Not built yet (#920). */
+  /**
+   * Serves the SDK edge on the health listener once every module has started, with the grants in the state
+   * directory's `edge-grants.json` (`readEdgeGrants`). `schemas` are the modules' own payload schemas; the edge checks
+   * remote parts' messages against them and the core families.
+   */
   edge?: {schemas: Readonly<Record<string, object>>};
 };
 
@@ -69,21 +77,38 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 
+/** Where the listener sends the SDK edge's routes: nowhere without an edge, a refusal while modules start, or the edge. */
+type EdgeRoute = {state: 'off'} | {state: 'starting'} | {state: 'serving'; edge: RemoteEdge};
+
 /**
- * Serves health on loopback. A request must name this listener as its host and carry no browser origin or cross-site
- * fetch metadata, as the Hub and local controllers require, so that a page on a rebinding name cannot read it.
+ * Serves health, and the SDK edge when there is one, on loopback. A request must name this listener as its host and
+ * carry no browser origin or cross-site fetch metadata, as the Hub and local controllers require, so that a page on a
+ * rebinding name cannot read it or reach the edge.
  */
-function serve(port: number, health: () => RuntimeHealth): Promise<Server> {
+function serve(port: number, health: () => RuntimeHealth, edge: () => EdgeRoute): Promise<Server> {
   let hosts: readonly string[] = [];
-  const server = createServer((request, response) => {
+  const answer = (response: ServerResponse, status: number, body: object): void => {
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
+  };
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const site = request.headers['sec-fetch-site'];
     // A host name is not case-sensitive; the port must match exactly.
     const host = (request.headers.host ?? '').toLowerCase();
     const local = hosts.includes(host) && request.headers.origin === undefined && (site === undefined || site === 'none');
+    const route = edge();
+    const remote = route.state !== 'off' && (request.url ?? '').startsWith(`${REMOTE_PATH}/`);
+    if (!local) {
+      answer(response, 403, errorBody('forbidden', {detail: `${remote ? 'the edge' : 'health'} answers only local requests that name this listener`}));
+      return;
+    }
+    if (remote) {
+      if (route.state === 'serving') route.edge.handle(request, response);
+      else answer(response, 503, errorBody('unavailable', {detail: 'the edge serves once every module has started'}));
+      return;
+    }
     const found = request.method === 'GET' && request.url === HEALTH_PATH;
-    const [status, body] = !local ? [403, errorBody('forbidden', {detail: 'health answers only local requests that name this listener'})]
-      : found ? [200, health()] : [404, errorBody('not-found', {detail: 'no such route'})];
-    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
+    if (found) answer(response, 200, health());
+    else answer(response, 404, errorBody('not-found', {detail: 'no such route'}));
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -103,7 +128,37 @@ function close(server: Server): Promise<void> {
   });
 }
 
-/** Prepares the state directory, serves health, then starts the modules and resolves when each start has settled. */
+/** The edge's records in the runtime's log. They never carry a credential. */
+function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
+  return ({event, route, code, source, detail}) => {
+    const fields = {'bunny.route': route, ...(code === undefined ? {} : {'bunny.code': code}), ...(source === undefined ? {} : {'bunny.source': source}),
+      ...(detail === undefined ? {} : {'bunny.detail': detail})};
+    switch (event) {
+      case 'edge.refused':
+        log.warn('runtime.edge.refused', fields);
+        return;
+      case 'edge.connected':
+        log.info('runtime.edge.connected', fields);
+        return;
+      case 'edge.disconnected':
+        log.info('runtime.edge.disconnected', fields);
+        return;
+    }
+  };
+}
+
+/** The edge's validator: profile 2.0, the core families and the modules' own payload schemas. */
+function edgeValidator(schemas: Readonly<Record<string, object>>): MessageValidator {
+  const validator = new MessageValidator();
+  registerCoreFamilies(validator);
+  for (const [dataschema, schema] of Object.entries(schemas)) validator.register(dataschema, schema);
+  return validator;
+}
+
+/**
+ * Prepares the state directory and reads the edge's grants, if any, serves health, then starts the modules and
+ * resolves when each start has settled. The edge serves only once every start has settled.
+ */
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
@@ -112,6 +167,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const logs = new LogWriter(options.log ?? stderrSink, options.logLevel ?? 'info', clock);
   const log = logs.logger('bunny.runtime');
   const stateDir = await prepareStateDirectory(options.stateDir);
+  const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
+  const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
   const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs});
   const startedAtMs = clock.now();
   let lagCheck: RuntimeHealth['lagCheck'] = {status: 'off'};
@@ -127,7 +184,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       modules: modulesHealth,
     };
   };
-  const server = await serve(port, health);
+  let edge: EdgeRoute = {state: grants === undefined ? 'off' : 'starting'};
+  const server = await serve(port, health, () => edge);
   const url = `http://${HOST}:${(server.address() as AddressInfo).port}`;
   let watchdog: Watchdog | undefined;
   if (options.lagCheck !== undefined) {
@@ -142,13 +200,27 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       },
     }, worker);
   }
-  log.info('runtime.started', {'bunny.url': url, 'bunny.modules': modules.length});
+  log.info('runtime.started', {'bunny.url': url, 'bunny.modules': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
   await host.start();
+  if (grants !== undefined && validator !== undefined) {
+    try {
+      edge = {state: 'serving', edge: new RemoteEdge({bus: host.bus, validator, grants, log: edgeLog(log), now: () => clock.now(), scheduler})};
+    } catch (error) {
+      // The grants were checked when read; the edge refuses only what they could not show, such as a malformed one.
+      await host.stop();
+      await close(server);
+      throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
+    }
+  }
   let stopping: Promise<void> | undefined;
   return {
     url,
     health,
     stop: () => stopping ??= (async () => {
+      // Remote parts go first, so none acts on a module that is stopping.
+      const serving = edge;
+      edge = {state: 'off'};
+      if (serving.state === 'serving') await serving.edge.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
       log.info('runtime.stopped');
