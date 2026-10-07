@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/media-control/2.0",
+  "description": "Command: one player action on the device's media (Hub #918), from controller v1's `media.control`. The envelope subject names the device; the payload names no device, controller, address or credential. The optional `expectedConfigurationRevision` and `expectedGeneration` refuse the request with `revision-conflict` when the device's configuration revision or generation has moved on. The module refuses an operation the device does not offer with `unsupported-capability` (`commandSupported`). The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/device/2.0#/$defs/command",
+  "unevaluatedProperties": false,
+  "required": ["action"],
+  "properties": {"action": {"$ref": "https://bunny.invalid/events/device/2.0#/$defs/mediaAction"}}
+}

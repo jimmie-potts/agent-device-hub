@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback-control/2.0",
+  "description": "Command: play, pause, next or previous on the presented playback source (Hub #918). The envelope subject is the `playback` record's `id`, and the owner of that record (#929) answers it. The owner sends it once, to the source presented at admission, and never redirects or retries it; it refuses an action the source does not offer now with `unsupported-capability`. `expectedRevision`, when present, refuses the request with `revision-conflict` if the playback record has moved on. The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "action"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "action": {"$ref": "https://bunny.invalid/events/playback/2.0#/$defs/action"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+  }
+}

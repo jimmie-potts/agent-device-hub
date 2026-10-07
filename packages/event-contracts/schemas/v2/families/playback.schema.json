@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/playback/2.0",
-  "description": "State: the presented playback source, the full record (Hub #842). The owner publishes a new record when availability changes as its last observation ages: stale after 5 s, unavailable after 30 s, when it withholds old metadata. `controls` are the actions the source offers now.",
+  "description": "State: the presented playback source, the full record (Hub #842). The owner publishes a new record when availability changes as its last observation ages: stale after 5 s, unavailable after 30 s, when it withholds old metadata. `controls` are the actions the source offers now; `playback-control` requests one of them (Hub #918).",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "revision", "availability", "playback"],
@@ -19,7 +19,7 @@
           "title": {"$ref": "#/$defs/text"},
           "artist": {"$ref": "#/$defs/text"},
           "album": {"$ref": "#/$defs/text"},
-          "controls": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"enum": ["play", "pause", "next", "previous"]}}
+          "controls": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/action"}}
         }}
     ]}
   },
@@ -29,6 +29,7 @@
     {"if": {"properties": {"availability": {"enum": ["available", "stale"]}}}, "then": {"required": ["observedAtMs"], "properties": {"observedAtMs": true}}}
   ],
   "$defs": {
-    "text": {"type": "string", "minLength": 1, "maxLength": 256}
+    "text": {"type": "string", "minLength": 1, "maxLength": 256},
+    "action": {"enum": ["play", "pause", "next", "previous"]}
   }
 }

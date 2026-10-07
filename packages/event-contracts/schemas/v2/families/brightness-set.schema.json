@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/brightness-set/2.0",
+  "description": "Command: set a device's brightness in percent (Hub #918), from controller v1's `brightness.set`. Brightness is mode-independent. The envelope subject names the device; the payload names no device, controller, address or credential. The optional `expectedConfigurationRevision` and `expectedGeneration` refuse the request with `revision-conflict` when the device's configuration revision or generation has moved on. The module refuses an operation the device does not offer with `unsupported-capability` (`commandSupported`). The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/device/2.0#/$defs/command",
+  "unevaluatedProperties": false,
+  "required": ["percent"],
+  "properties": {"percent": {"$ref": "https://bunny.invalid/events/device/2.0#/$defs/percent"}}
+}

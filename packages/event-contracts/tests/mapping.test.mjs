@@ -533,7 +533,11 @@ test('every service health, external control owner and capability shape the 1.x 
   const corpus = read('../../contracts/fixtures/controller-v1.json');
   const shapes = corpus.schemaCases.filter(item => item.valid && ['capabilities', 'capabilitiesV1_1'].includes(item.definition));
   assert.ok(shapes.length >= 5);
-  for (const {id, value} of shapes) valid(deviceState({...deviceRecord(base), capabilities: capabilities(value)}), id);
+  // A desired mode must be advertised, so the shapes without modes carry an unknown one.
+  for (const {value} of shapes) {
+    const record = deviceRecord(base);
+    valid(deviceState({...record, capabilities: capabilities(value), desired: {...record.desired, mode: {status: 'unknown'}}}));
+  }
 });
 
 test('every 1.x general command converts to its 2.0 family, and the capability rule agrees with 1.x admission', () => {
@@ -544,6 +548,9 @@ test('every 1.x general command converts to its 2.0 family, and the capability r
     if (['request', 'requestV1_1'].includes(item.definition)) commands.push([item.value.command, item.value]);
   }
   for (const snapshot of controllerSnapshots()) for (const pending of snapshot.state.pending) commands.push([pending.command, {requestId: pending.requestId}]);
+  for (const {input} of corpus.semanticCases.filter(item => item.input.operation === 'admit' && validateController('request', item.input.request))) {
+    commands.push([input.request.command, input.request]);
+  }
   const kinds = new Set();
   for (const [command, request] of commands.filter(([each]) => each.kind !== 'moment')) {
     valid(deviceCommand(command, request));
