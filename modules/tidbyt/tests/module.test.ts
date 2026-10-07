@@ -222,6 +222,15 @@ test('a wall clock set back never holds a tile\'s next write or refresh longer t
   await until(() => pushes(h) === 3, 'the refresh 10 minutes after the last push');
   const [first = 0, second = 0, third = 0] = shown(h, STATUS).pushedAtMs;
   assert.deepEqual([second - first, third - second], [15 * SECOND, 10 * MINUTE]);
+
+  // An unchanged frame: the refresh comes within the refresh period and one poll of the push, not ten minutes later.
+  const still = await host(context, {sessions: [working({label: label('still')})], section: STATUS_ONLY});
+  await until(() => pushes(still) === 1, 'the first push');
+  still.stepWall(-10 * MINUTE);
+  await still.advance(10 * MINUTE + 40 * SECOND, 10 * SECOND);
+  await until(() => pushes(still) === 2, 'the refresh, whatever the wall clock says');
+  const [pushed = 0, refreshed = 0] = shown(still, STATUS).pushedAtMs;
+  assert.ok(refreshed - pushed <= 10 * MINUTE + 30 * SECOND, `the refresh came ${refreshed - pushed} ms after the push`);
 });
 
 test('a fault of the module\'s own is logged once per run, with one record when it clears', async context => {
