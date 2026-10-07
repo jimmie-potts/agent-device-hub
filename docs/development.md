@@ -1109,10 +1109,12 @@ exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
 Automation helper, the composer, Codex selected-thread, approval-card and
 card-button observations, the read-only model and effort picker reads (#906) with the UI Automation patterns each
-client's controls expose, and the installed client versions. Its Win32 surface replaces `SendInput` and `ShellExecute`
+client's controls expose, the read-only shape of Claude's next-step band and composer (#907: counts, focus, the
+level where the band was found and emptiness, never text), and the installed client versions. Its Win32 surface replaces `SendInput` and `ShellExecute`
 with throwing guards, so it types nothing and opens no link. It checks the volume, client-tap and chord key tables and
 that malformed volume requests and client taps are refused before any attempt, without sending a key. It
-reads card buttons only; it never focuses or presses one, and calls no model or effort setting action.
+reads card buttons only; it never focuses or presses one, calls no model or effort setting action, and focuses or
+invokes no next-step suggestion.
 It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
 Windows HID, named pipes, FFI or UI Automation.
@@ -1132,7 +1134,9 @@ Attention click on knob 4 and volume knob (#865: first-seen order across pages, 
 Record), the model and effort knobs (#906, `routing-knobs.test.mjs`: per-detent UI Automation steps, selection only
 of a confirmed focused option, readback outcomes, range ends, unsupported effort, Codex chords first and the Power
 fallback, a single Codex Escape even with every read lagging, no stray key, refusals and closing before other
-controls), loss handling,
+controls), the next-step knob (#907, the same suite: per-detent suggestion focus stopping at the ends, a still click
+invoking only the confirmed highlighted suggestion into an empty composer, one Right arrow for the ghost text into a
+focused empty composer, no suggestion text in logs, refusals, lagging reads and closing to the composer), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or

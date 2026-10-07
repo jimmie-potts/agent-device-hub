@@ -112,7 +112,7 @@ host timeout; on a timeout, lights off, frame 0 and reported keys forgotten; key
 until pressed again; sequence wraps from 65535 to 1. `ManualClock` runs the bridge and simulator in virtual time.
 `FakeTransport` is the lower-level test double.
 
-The OS adapter (`OsAdapter`, interface version 5, `src/os-adapter.ts`) is the seam between the portable routing core
+The OS adapter (`OsAdapter`, interface version 6, `src/os-adapter.ts`) is the seam between the portable routing core
 and the desktop. Every observation is `known` or `unknown`, and titles are compared inside the adapter, so no title or
 conversation text crosses it; since version 5 the clients' own model and effort labels do. Version 3 (#821) adds the card operations. Version 4 (#865) adds `sendVolumeKey`, which
 taps the Windows volume keys (`VK_VOLUME_UP` 0xAF, `VK_VOLUME_DOWN` 0xAE, `VK_VOLUME_MUTE` 0xAD) 1-10 times. They act
@@ -139,6 +139,18 @@ Version 5 (#906) adds the model and effort operations, keystroke-free wherever t
   holds a key or the user holds a modifier. The knobs use it only for Codex's one closing Escape, the owner's effort
   chords and, without chords, Right and Left on a focused Power entry.
 - `claudeSettings(localId)` reads one Claude Desktop session record's `model` and `effort` keys.
+
+Version 6 (#907) adds Claude's next-step suggestions, as counts and booleans only: the suggestions are model output, so
+no suggestion text crosses the adapter.
+
+- `suggestionState('claude')` reads, without changing anything, the qualified band above Claude's composer (how many
+  suggestions, which one holds keyboard focus) and the composer itself (focused, empty). Empty means the composer's
+  value is empty or only one trailing line break: Claude's empty composer reads as one `\n` (2026-10-06), and its ghost
+  text never shows in the value.
+- `focusSuggestion('claude', index, count)` moves keyboard focus to one suggestion (`SetFocus`, read back), and
+  `invokeSuggestion('claude', index, count)` invokes it only while it holds focus and the composer is empty. Each
+  re-reads the band just before acting and refuses when it is gone, out of shape or no longer has `count` suggestions.
+- Codex answers `invalid-client`: Codex next steps are #908's.
 
 The shortcut key names gain `Equal` (`VK_OEM_PLUS`, 0xBB) and `Minus` (`VK_OEM_MINUS`, 0xBD) for the owner's Codex
 effort chords.
@@ -260,11 +272,12 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | `keys` (optional, not in the shipped profile) | None: no black key does anything. Maps black-key controls 16-25 to `attention` (the same action as the Attention click) or `back` (what Loop does), for later #744 presets; a key without an entry does nothing. A control already mapped elsewhere (slots, Record, Send, Back) is rejected |
 | `volume` (optional, not in the shipped profile) | `stepCounts` 1 (1-96 volume knob counts per volume key; Windows moves 2 points per key) and `invert` `false` (clockwise raises the volume). The volume knob's turn (46) and click (34) are reserved: with a `volume` section, `controls.scroll` 46 or `controls.record` or `controls.back` 34 is rejected; an earlier profile without one that maps them keeps its mapping, and the knob sends no volume key |
 | `model` (optional, not in the shipped profile) | Knob 1 (#906): `stepCounts` 6 (1-96 knob 1 counts per menu step), `invert` `false` (clockwise moves down the menu) and `clickStillMs` 250 (0-2000 ms of stillness before knob 1's click picks the focused model). Knob 1's turn (44) and click (32) are reserved like the volume knob's: with a `model` section, `controls.scroll` 44 or `controls.record` or `controls.back` 32 is rejected; an earlier profile without one that maps them keeps its mapping, and knob 1 sets no model |
-| `effort` (optional, not in the shipped profile) | Knob 2 (#906): `stepCounts` 6 (1-96 knob 2 counts per effort level) and `invert` `false` (clockwise raises the effort). Knob 2's turn (41) and click (29) are reserved the same way. Knobs 1-3 have not been measured on the device, so both defaults use the conservative card step constant, which knob 4 also pages with: a light touch never changes a setting. #745 measures them |
+| `effort` (optional, not in the shipped profile) | Knob 2 (#906): `stepCounts` 6 (1-96 knob 2 counts per effort level) and `invert` `false` (clockwise raises the effort). Knob 2's turn (41) and click (29) are reserved the same way. Knobs 1-3 have not been measured on the device, so their defaults use the conservative card step constant, which knob 4 also pages with: a light touch never changes a setting. #745 measures them |
+| `nextSteps` (optional, not in the shipped profile) | Knob 3 (#907): `stepCounts` 6 (1-96 knob 3 counts per suggestion step), `invert` `false` (clockwise moves to the next suggestion) and `clickStillMs` 250 (0-2000 ms of stillness before knob 3's click fills a draft). Knob 3's turn (42) and click (30) are reserved the same way; an earlier profile that maps them keeps its mapping, and knob 3 picks nothing |
 | `cards` (optional, not in the shipped profile) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly; one slow full turn each way measured about 25 counts per revolution on the trial device (2026-10-05), so 6 is about a quarter turn. The step default lives in one constant, `DEFAULT_CARD_STEP_COUNTS` in `src/routing/profile.ts`; a profile value overrides it |
 | `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows`. `codexEffortIncrease` and `codexEffortDecrease` (optional, both or neither, not in the shipped profile) name the owner's own Codex "Increase reasoning effort" and "Decrease reasoning effort" chords, such as `["LeftControl", "LeftAlt", "Equal"]` and `["LeftControl", "LeftAlt", "Minus"]`: `LeftControl`, `LeftAlt` or `LeftWindows` with exactly one other key, never `Enter`. Knob 2 sends them first, with Codex in front (owner decision on #906); absent, Codex effort uses its picker's Power entry |
 | `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `colors.pages` (optional) lists knob 4's LED color per page, page 1 first, at least one per page; the defaults are cyan, magenta, green, grey-white, blue, pink, lime and teal, none of them the attention orange. `colors.applied` (optional, default `[0, 255, 120]`) is the knob 1 and knob 2 flash for a change the client confirmed (#906). `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
-| `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s. `attentionRepeatMs` (optional, 500-30000, default 4000) is the Attention click's repeat window. `menuTimeoutMs` (optional, 1000-30000, default 5000) is how long a knob's model menu, effort slider or picker stays open after its last turn (#906). The knobs read back within `verifyTimeoutMs`, polled every `verifyPollMs` |
+| `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s. `attentionRepeatMs` (optional, 500-30000, default 4000) is the Attention click's repeat window. `menuTimeoutMs` (optional, 1000-30000, default 5000) is how long a knob's model menu, effort slider or picker stays open, or knob 3's highlight stays, after its last turn (#906, #907). The knobs read back within `verifyTimeoutMs`, polled every `verifyPollMs` |
 | `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone; see [Qualify a client update](#qualify-a-client-update) |
 
 Validation rejects unknown fields and bad values with a path, for example
@@ -273,10 +286,10 @@ Validation rejects unknown fields and bad values with a path, for example
 rejected, for example `profile.shortcuts.codexComposer[1]: "F13" is not an allowed key name (...)`. Only
 `shortcuts.send` may contain `Enter`, and dictation keys must be modifiers. Send can never be a small-knob click (29-32), the volume click (34), a turn, a slot, Record or
 Back. The profile has no URIs, paths, commands or package identities, so loading it runs nothing. Fields added after
-the first release (`cards`, `pages`, `colors.pages`, `keys`, `volume`, `timing.attentionRepeatMs`, and for #906
+the first release (`cards`, `pages`, `colors.pages`, `keys`, `volume`, `timing.attentionRepeatMs`, for #906
 `model`, `effort`, `shortcuts.codexEffortIncrease` and `shortcuts.codexEffortDecrease`, `timing.menuTimeoutMs` and
-`colors.applied`) are optional, so an earlier profile still loads, and the installed owner profile gets both knobs
-without edits. An earlier bridge rejects them as unknown fields, so remove them before rolling back. The bridge polls the file; a valid change
+`colors.applied`, and for #907 `nextSteps`) are optional, so an earlier profile still loads, and the installed owner
+profile gets knobs 1-3 without edits. An earlier bridge rejects them as unknown fields, so remove them before rolling back. The bridge polls the file; a valid change
 is swapped in whole, cancels pending actions and releases held keys; an invalid or unreadable file is reported once and
 the last good profile stays.
 
@@ -455,6 +468,44 @@ client allows it; model lists and level names come from each client and are neve
   through `tapInClient` into Codex. The remaining windows between the confirming read and those keys are in
   [UIA-NOTES.md](src/windows/UIA-NOTES.md#residual-windows). No personal setting or key binding is changed.
 
+#### Next-step knob
+
+Small knob 3 (`ENC_2`: turn 42, click 30, LED 28) picks Claude's suggested next step (owner decision on #744,
+2026-10-06; #907). Claude Desktop's `next-steps` mod shows up to three suggested prompts as buttons above the composer
+after a turn. The #907 qualification (Claude Desktop 2.19675.0.0) recorded the band as a `Group` beside the composer's
+group holding a `Text` "next:", one `Button` per suggestion and a `Button` "dismiss"; the buttons take keyboard focus,
+and Claude draws its own focus ring.
+
+- **Turn.** With Claude qualified and in front, no card and no model or effort control open, a band showing and the
+  composer empty, the first detent moves keyboard focus to the first suggestion (`SetFocus`, read back) and knob 3's
+  LED shows `active`. Each further detent moves focus one suggestion, stopping at the first and last; "dismiss" is
+  never a stop.
+- **Click with a suggestion highlighted.** After `nextSteps.clickStillMs` without a turn, a fresh read confirms the
+  same band, that suggestion focused and the composer empty; then `invokeSuggestion`, which the helper performs only
+  on the focused suggestion into an empty composer. The mod writes the suggestion into the composer as a draft, the
+  composer gets focus back and the readback waits for it to hold a draft (`filled`, else `unverified`). Play then
+  sends it.
+- **Click with nothing highlighted.** Claude's ghost text (its own prompt suggestion, which with the mod is the top
+  suggestion) is invisible to UI Automation, and a Right arrow accepts it (owner check on #907). The click sends one
+  Right arrow through `tapInClient`, only when a fresh read shows Claude in front with its composer focused and empty
+  and no card or menu open. The bridge cannot tell whether ghost text is showing: the readback reports `filled` when
+  the composer then holds a draft and `unverified` (`composer-empty`) when it stays empty, as with no ghost text,
+  where the arrow does nothing (owner-accepted rule on #907).
+- **Refusals.** Knob 3 refuses with its LED flashing the error color and nothing typed: Codex in front
+  (`codex-no-next-steps`; Codex next steps are #908's), another app (`not-agent-client`), an unqualified client, a card
+  open or unknown, a model or effort control open (`menu-open`), no band on a turn (`no-suggestions`), a draft in the
+  composer (`draft-present`), an unfocused composer on a ghost click (`composer-unfocused`), an unreadable band
+  (`suggestions-unknown`), Record held (`dictating`), a Send or task focus in progress, a click while the knob moves
+  (`knob-moving`) or while a step runs (`knob-busy`). A highlighted suggestion that lost focus, a band that changed or
+  went away and a refused invoke (`focus-moved`, `band-changed`, `band-gone`, `suggestion-changed`) end the highlight.
+- **Closing.** The highlight drops after `timing.menuTimeoutMs` without a turn and before any other control acts, as
+  the knob 1 and 2 flows close (another control, Record, a profile reload or a controller loss); input waits in order,
+  so two flows never act at once. Dropping it gives the composer focus (`focusComposer`), so Play sends, even when the
+  owner moved focus elsewhere in Claude meanwhile.
+- **Keys and text.** Knob 3 never presses Enter and never sends. Its only key is the one Right arrow into Claude's
+  focused, empty composer; the remaining window between the confirming read and that arrow is in
+  [UIA-NOTES.md](src/windows/UIA-NOTES.md#residual-windows). Logs carry indexes and counts, never suggestion text.
+
 ### Lights
 
 | State | Meaning |
@@ -467,7 +518,7 @@ client allows it; model lists and level names come from each client and are neve
 | `unknown` | Unknown activity, uncertain freshness or restart uncertainty |
 | `ended` | The Hub no longer lists the session, or it ended; the slot is kept |
 | `stale` | The feed is stale or unavailable |
-| `error` | A refused slot press on its key, a refused or uncertain Send or card press on both big-wheel LEDs, a refused Attention click on knob 4's LED (or on a black key mapped to `attention`), an ignored or failed volume key on the volume knob's LED, or a refused, mismatched, unsupported or at-limit model or effort change on knob 1's or knob 2's LED, for 1.5 s |
+| `error` | A refused slot press on its key, a refused or uncertain Send or card press on both big-wheel LEDs, a refused Attention click on knob 4's LED (or on a black key mapped to `attention`), an ignored or failed volume key on the volume knob's LED, a refused, mismatched, unsupported or at-limit model or effort change on knob 1's or knob 2's LED, or a refused next step on knob 3's LED, for 1.5 s |
 
 Slot keys show the visible page's slots, and keys for its empty slots stay off. Small knob 4's LED shows the visible
 page in its `colors.pages` color; while a task on any other page has attention, it alternates between the page color
@@ -478,7 +529,9 @@ The Attention click has no light of its own: a waiting task on the visible page 
 page alternates knob 4's LED as above. A black key mapped to `attention` shows the `attention` color, steady, while
 any task on a page waits, and is off otherwise or while the feed is not current. A Back key has no light. The volume
 knob's LED lights only for its error flash. Knob 1's and knob 2's LEDs show `active` while their control is open and
-then flash the change's outcome (see Model and effort knobs); knob 3 has no light.
+then flash the change's outcome (see Model and effort knobs). Knob 3's LED shows `active` while a suggestion is
+highlighted, then `applied` for a filled draft, the `unknown` color for an unconfirmed fill and the error color for a
+refusal (see Next-step knob).
 
 Slot keys show task state only. Nothing marks a selected task, because Send acts on whatever is in front, so a
 focused key with attention keeps pulsing and focusing never looks like acknowledging. The Record LED shows `record`
@@ -555,12 +608,12 @@ shows what is in front and the card's own focus ring. The disconnected pattern i
   mouse-wheel primitive, which acts only while that client is in front with the pointer inside it. The wheel never
   types or selects a task, never runs while Record is held, and is not retried when the adapter answers `false` or
   unknown. Small knob 4's turn pages the slot keys (see Task pages), and the volume knob steps the system volume (see
-  Attention click and volume knob), and knobs 1 and 2 set the model and effort (see Model and effort knobs); knob 3's
-  turn and click are inert. Knob 4's click is the Attention click.
+  Attention click and volume knob), knobs 1 and 2 set the model and effort (see Model and effort knobs), and knob 3
+  picks Claude's next step into the composer, never sending (see Next-step knob). Knob 4's click is the Attention click.
 - A controller `stale`, `session-restart` or `disconnected`, Back, a profile swap and an overflowed subscription
   release every held key and cancel pending wheel steps, pending volume keys, pending knob steps and a focus in
-  progress. A loss also drops input waiting for a knob flow to close, and the flow's open control gets its confirmed
-  Escape. Nothing pressed
+  progress. A loss also drops input waiting for a knob flow to close, and the flow's open control closes the way its
+  knob closes it (knob 3's highlight drops to the composer). Nothing pressed
   before them is replayed: after a reconnect, each control acts on a fresh press, evaluated at that press.
 - Stopping: SIGINT, SIGTERM, SIGHUP and, on Windows, SIGBREAK (console close) stop the bridge, which releases every
   held key before closing. On any process exit the adapter's synchronous `releaseAllSync()` runs as well, and an
@@ -597,13 +650,14 @@ Exit codes: 0 success, 1 failure, 2 usage, 3 another instance holds the lock.
 [#853](https://github.com/jimmie-potts/agent-device-hub/issues/853) lets a bridge change be tried before it merges,
 without the controller, the Windows desktop or the installed Hub:
 
-- `src/sim/desktop.ts` is a simulated desktop behind OS adapter interface version 5. It has Codex, Claude and one
+- `src/sim/desktop.ts` is a simulated desktop behind OS adapter interface version 6. It has Codex, Claude and one
   other app, each with a package family and a qualified version. It models the foreground window, the selected
   task, composers with focus and text, approval and question cards with stops and focus, Claude `lastFocusedAt`,
   Codex thread names, synthetic dictation on the chord's release, a synthetic system volume and mute that the volume
-  keys change, each client's model and effort controls (`src/sim/pickers.ts`, #906), and a key and press log.
-  `tests/adapter-contract.test.mjs` holds it and the router tests' fake adapter to the same adapter behavior; the fake
-  uses the same picker model.
+  keys change, each client's model and effort controls (`src/sim/pickers.ts`, #906), Claude's next-step band and
+  ghost text (`src/sim/suggestions.ts`, #907), and a key and press log. `tests/adapter-contract.test.mjs` holds it and
+  the router tests' fake adapter to the same adapter behavior; the fake uses the same picker and suggestion models,
+  each with a mode in which reads lag one change behind.
 - `src/sim/hub.ts` is a synthetic Hub feed: the sessions snapshot (1.3 and 1.2) and change stream in the Hub's
   released format, with a run-generated bearer token, served in memory or over loopback HTTP.
 - `src/sim/scenarios.ts` is the scenario catalog. It is shared by the in-memory runner
@@ -639,8 +693,9 @@ The suite runs every protocol fixture vector, the connection rules above against
 clock, a simulator roundtrip, the lock across processes, the node-hid adapter against a stand-in module, the CLI,
 and the routing core: profile validation and reload, the feed client against a fake Hub, slots, lights, every row of
 the no-misrouting matrix against a scripted fake adapter, press-time Send, Record, big-wheel card answers, the model and
-effort knobs (`routing-knobs.test.mjs`: each step, the single confirmed Escape and the no-Enter assertion, readback outcomes, refusals,
-fallbacks and the close before other controls), and an end-to-end routing run through the simulator. It also holds the simulated desktop and the fake adapter to one
+effort knobs and the next-step knob (`routing-knobs.test.mjs`: each step, the single confirmed Escape, knob 3's single
+Right arrow into an empty composer and the no-Enter assertion, readback outcomes, refusals, lagging reads, fallbacks
+and the close before other controls), and an end-to-end routing run through the simulator. It also holds the simulated desktop and the fake adapter to one
 adapter contract, reads the synthetic Hub feed with the real feed client, checks that `--desktop sim` is the only
 way the CLI loads `src/sim`, and tests the scenario runner. `test:chompi-bridge:scenarios` runs the catalog (Tier 1).
 The verification run's own checks are in [`verify/README.md`](verify/README.md#checks).
@@ -654,7 +709,9 @@ observations (koffi load, foreground identity, a UI Automation helper ping, comp
 and card-button observations and client versions, with `SendInput` and `ShellExecute` replaced by throwing guards; it
 never focuses or presses a card button; it checks the volume key table and that malformed volume requests are refused
 before any attempt, sending no volume key; it records which model and effort controls each running client exposes,
-with their UI Automation patterns, through the read-only picker read and calls no setting action, checks the
+with their UI Automation patterns, through the read-only picker read and calls no setting action; it records the shape
+of Claude's next-step band (suggestion count, focus, the level above the composer it was found at) and the composer's
+focus and emptiness, read-only and without text, and focuses or invokes no suggestion; checks the
 `tapInClient` and chord key tables, and checks that malformed client taps are refused before any attempt, sending no
 key), and reruns the
 portable suites except the codec fixtures (whose workspace symlink Windows does not follow on a `\\wsl.localhost`

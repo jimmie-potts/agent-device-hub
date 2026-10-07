@@ -77,7 +77,7 @@ and [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741#issuecomm
 | Second row, 10 black keys | `KEY_16`-`KEY_25` | #744 utility actions through the profile's `keys` map, which maps none by default; they do nothing until a later #744 slice maps them |
 | Top-left CHOMPI key | `KEY_26` | TAPE's record/shift key. Proposed Record (Wispr hold) control |
 | Play, Loop | `KEY_27`, `KEY_28` | Send (with the big-wheel click); proposed Back |
-| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knob 1 (`ENC_4`, turn 44, click 32, LED 26) sets the model and knob 2 (`ENC_1`, turn 41, click 29, LED 27) the effort of the task in front (#906); knob 3 (`ENC_2`) is for a later #744 slice. Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
+| Four small knobs, left to right | `ENC_4`, `ENC_1`, `ENC_2`, `ENC_3` | Knob 1 (`ENC_4`, turn 44, click 32, LED 26) sets the model and knob 2 (`ENC_1`, turn 41, click 29, LED 27) the effort of the task in front (#906); knob 3 (`ENC_2`, turn 42, click 30, LED 28) picks Claude's suggested next step into the composer as a draft, never sending (#907). Knob 4 (`ENC_3`, turn 43, LED 29) pages task slots (#822); its click (31) is the Attention click (#865), and a refused click flashes LED 29 red. Clicks are on the button chain |
 | Bottom-board encoder | `ENC_5` | Direct GPIOs, separate click. Very likely the big wheel (`?`) |
 | Rightmost knob | `ENC_6` | Volume (#865): turn 46 sends the system volume keys, click 34 toggles mute, LED 34 flashes on an ignored or failed volume key. Holding its click at boot enters test mode |
 | Far-left two-position switch | `SW_TOG` | Stays unmapped |
@@ -245,6 +245,7 @@ observation before anything depends on it in installed use.
 | Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
 | Model and effort change | Supported | The `Model: <name>` button supports ExpandCollapse (Expand opens the menu, Collapse closes it unchanged); model options support SelectionItem, and `Select()` applies one and closes the menu. The `Effort: <level>` button supports ExpandCollapse, and its `Effort` slider supports RangeValue (0-5, SmallChange 1), where `SetValue` applies a level at once. A model without an effort setting (Haiku 4.5) shows no Effort button. `Ctrl+Shift+I` and `Ctrl+Shift+E` also open them. Knobs 1 and 2 use the UI Automation route (#906) | `D`, `L` (2026-10-06, [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6027688512)) |
 | Model and effort readback | Supported, undocumented | The composer's `Model: <name>` and `Effort: <level>` buttons, and the session record's `model` and `effort`, which updated within about 1 s of a change | `S`, `L` (2026-10-06, #906) |
+| Next-step suggestions | Supported, undocumented | With the `next-steps` mod, a `Group` directly above the composer's group holds a `Text` `next:`, one `Button` per suggestion (named with its label) and a `Button` `dismiss`; the buttons accept keyboard focus (`IsKeyboardFocusable`, `HasKeyboardFocus` after `SetFocus`) and Claude draws its own focus ring. Sending a message hides the band. Claude's ghost text is not exposed to UI Automation (the empty `Prompt` editor's Value reads one line break), and a Right arrow accepts it without sending. Knob 3 uses `SetFocus` and `Invoke` on the band and one Right arrow for the ghost text (#907) | `L` (2026-10-06, [#907](https://github.com/jimmie-potts/agent-device-hub/issues/907)), `O` (Right arrow accepts; the knob 3 click rule) |
 | Mods controlling a session from outside | Unsupported | A mod can fill and submit its own session's prompt and fetch outbound, but cannot select a session, raise the window or listen. Enabling one is a personal plugin change outside the epic's current authority | `D`: [Claude mods](https://claude.com/blog/claude-code-mods); `S` |
 
 ## Routing design
@@ -580,6 +581,40 @@ owner's Codex effort chords for checks 4 and 6.
 8. **Refusals.** With a harmless card open, and then with another app in front, turn both knobs: each gives a red
    flash and nothing happens in any window.
 
+## Installed checks for #907
+
+These belong to #745's batched installation. Run them after the bridge with the next-step knob is installed, with
+Claude Desktop at the qualified version and the `next-steps` mod enabled, in a throwaway task after a turn long enough
+for the band to show.
+
+1. **Read-only band read.** With the band showing, run the native check (`test:chompi-bridge:native:built`) and
+   record its `claudeSuggestions` shape: the suggestion count, the focused suggestion (-1), the `level` above the
+   composer where the band was found, and `composerFocused` and `composerEmpty` (true with an empty composer). Repeat
+   with a draft typed (`composerEmpty` false) and after sending a message (`suggestions` 0). A refusal such as
+   `suggestion-band-unqualified` or `suggestion-band-ambiguous` is evidence for
+   [UIA-NOTES.md](../apps/chompi-bridge/src/windows/UIA-NOTES.md#next-step-suggestions), not a pass.
+2. **Highlight.** Turn knob 3 one slow detent at a time.
+   - The first detent highlights the first suggestion with Claude's own focus ring, and knob 3's LED shows `active`.
+   - Each further detent moves one suggestion, "dismiss" is never reached, and a light touch moves nothing. If a
+     detent moves more or less than one suggestion, set `nextSteps.stepCounts` (and `nextSteps.invert` if the direction
+     is wrong) and record the value.
+   - Leave it: after about 5 s the highlight drops and the composer has focus (caret visible).
+3. **Pick.** Highlight the second suggestion and click knob 3 after holding it still.
+   - The suggestion appears in the composer as a draft, nothing is sent, the composer has focus, and knob 3 flashes
+     the applied color. The bridge logs `next-step` `filled` with route `suggestion`, index and count, and no text.
+   - Record where Claude leaves focus right after the `Invoke` (before the bridge returns it to the composer), and
+     whether the band stays.
+   - Press Play: the draft is sent, and the band hides.
+4. **Ghost text.** With a suggestion showing as ghost text in the empty composer and nothing highlighted, click knob
+   3. The ghost text becomes the draft, nothing is sent, and the bridge logs `next-step` `filled` with route `ghost`.
+   With no ghost text showing (for example right after sending), a click logs `unverified` (`composer-empty`) and
+   changes nothing.
+5. **Refusals.** Each gives a red knob 3 flash and no input: Codex in front (`codex-no-next-steps`), a draft in
+   Claude's composer (turn and click), a harmless card open, no band (turn), and the model menu open by mouse.
+6. **Other controls.** Highlight a suggestion, then hold Record and dictate a few words: the highlight drops to the
+   composer first, so the dictation lands there. Highlight again and press a slot key or turn knob 1: each drops the
+   highlight to the composer before it acts.
+
 ## Findings for dependent work
 
 GitHub issues own status and blocked-by relationships. These are the findings
@@ -613,4 +648,8 @@ each dependent issue must use.
   name. The owner bound Codex's effort chords, which knob 2 uses first, with
   Codex in front only.
   [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906) delivers
-  the knobs from source; #745 runs the installed checks for #906 above.
+  the knobs from source; #745 runs the installed checks for #906 above. The
+  2026-10-06 qualification on #907 recorded Claude's next-step band and its
+  ghost text; [#907](https://github.com/jimmie-potts/agent-device-hub/issues/907)
+  delivers knob 3 from source, and #745 runs the installed checks for #907
+  above.
