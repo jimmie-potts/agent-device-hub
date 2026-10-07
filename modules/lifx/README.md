@@ -99,7 +99,9 @@ runs both. The conversion:
 
 Each bulb publishes its `device/2.0` record (#918) on `bunny.state.device.<id>`
 and its `lifx-light/2.0` record on `bunny.state.lifx-light.<id>`, and serves both
-through sync. `lifx-light` holds the color capabilities (color, and 1500 to 9000 K)
+through sync. `device` is a shared family that every device module serves for its
+own devices, so a consumer syncs it from this module by name, with
+`{owner: 'bunny/modules/lifx'}` (#967). `lifx-light` holds the color capabilities (color, and 1500 to 9000 K)
 and the last LightGet reading in degrees, percent and kelvin.
 
 | Family | Key | Device work | Outcome type |

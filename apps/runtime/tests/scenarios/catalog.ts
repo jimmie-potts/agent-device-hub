@@ -26,11 +26,17 @@ export type Role = (typeof ROLES)[number];
 /** The modules a run can start, each built by its factory with its simulated transport. */
 export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx';
 
+/**
+ * One copy the reader keeps: one owner's families, synced from their only owner, or from the owner named by its source
+ * when several owners serve one of them, as every device module serves `device` (Hub #967).
+ */
+export type Follow = readonly string[] | {readonly owner: string; readonly families: readonly string[]};
+
 export type Seed = {
   /** The modules the runtime starts with, in order. The core comes first (#831). */
   readonly modules: readonly ModuleName[];
-  /** The families the reader keeps a copy of, one list per owner. */
-  readonly follows: readonly (readonly string[])[];
+  /** The families the reader keeps a copy of, one entry per owner. */
+  readonly follows: readonly Follow[];
   /**
    * The runtime's configuration file, when the seed has one (Hub #919): each configured module's section, without its
    * `secrets` member. Each harness writes the file privately, with a token file per module holding the synthetic token,
@@ -48,10 +54,13 @@ export type Seed = {
 export interface ReaderView {
   /** Every family the reader copies, as the seed's `follows` names them. */
   families(): readonly string[];
-  /** The current state messages of one family in the reader's copy. */
-  states<T>(family: string): Message<T>[];
-  /** How often the copy that holds `family` has synced, the first sync included. */
-  syncs(family: string): number;
+  /**
+   * The current state messages of one family in the reader's copies: in every copy that holds it, or only in the copy
+   * synced from `owner` when one is named.
+   */
+  states<T>(family: string, owner?: string): Message<T>[];
+  /** How often the copy that holds `family`, from `owner` when one is named, has synced, the first sync included. */
+  syncs(family: string, owner?: string): number;
   /** Every occurrence and outcome the reader heard, in order. */
   heard(): readonly Message[];
   /**
@@ -830,7 +839,10 @@ const pendantShows = (h: Harness, expected: {hue?: number; saturation?: number; 
   const close = Object.entries(expected).every(([key, value]) => Math.abs(shown[key as keyof typeof shown] - value) <= 1);
   return close || `pendant-1 shows ${show(shown)}`;
 };
-const lifxDevice = (h: Harness, id: string): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device').find(state => state.data.id === id)?.data;
+/** The LIFX module's source: `device` is a shared family, so its reader names the owner it syncs from (Hub #967). */
+const LIFX_OWNER = 'bunny/modules/lifx';
+const lifxDevice = (h: Harness, id: string): DeviceRecord | undefined =>
+  h.reader.states<DeviceRecord>('device', LIFX_OWNER).find(state => state.data.id === id)?.data;
 
 /**
  * The LIFX module (Hub #928) with a simulated pendant-1 and Beam: in Work the bulb follows the core's sessions, painting
@@ -841,7 +853,7 @@ const lifxDevice = (h: Harness, id: string): DeviceRecord | undefined => h.reade
 const lifxBulbs: Scenario = {
   id: 'lifx-bulbs',
   title: 'the LIFX bulbs follow agent status in Work, rest in Free, take a color, and report an unreachable bulb',
-  seed: {modules: ['core', 'lifx'], follows: [CORE_FAMILIES, ['device', 'lifx-light']], config: {lifx: LIFX_SECTION}},
+  seed: {modules: ['core', 'lifx'], follows: [CORE_FAMILIES, {owner: LIFX_OWNER, families: ['device', 'lifx-light']}], config: {lifx: LIFX_SECTION}},
   steps: [
     expect('the core and the LIFX module are running', h => running(h, ['core', 'lifx'])),
     expect('the reader holds pendant-1 available, in free, with its controls, and the Beam with none', h => {
@@ -897,10 +909,80 @@ const lifxBulbs: Scenario = {
   ],
 };
 
+const LAMP_OWNER = 'bunny/modules/lamp';
+const SIGN_OWNER = 'bunny/modules/sign';
+/** The devices in the reader's copy of `device` from `owner`, as `<id> <availability>`. */
+const devicesFrom = (h: Harness, owner: string): string[] =>
+  h.reader.states<DeviceRecord>('device', owner).map(state => `${state.data.id} ${state.data.availability}`).sort();
+const holdsDevices = (h: Harness, owner: string, expected: readonly string[]): Outcome =>
+  show(devicesFrom(h, owner)) === show(expected) || `the copy from ${owner} holds ${show(devicesFrom(h, owner))}`;
+/** The answers to the syncs a scenario asked for itself, by label: the refusal's code and the request's ID. */
+const asked = new WeakMap<Harness, Map<string, {code: string; requestId: string}>>();
+/** The reader asks once for `device`, naming `owner` if given, and keeps the refusal it expects under `label`. */
+async function askForDevices(h: Harness, label: string, owner?: string): Promise<void> {
+  const result = await h.sdk('reader').sync(['device'], () => {}, {timeoutMs: 1000, ...owner === undefined ? {} : {owner}});
+  if (result.status === 'synced') {
+    await result.copy.close();
+    throw new Error('the sync was served');
+  }
+  const answers = asked.get(h) ?? new Map<string, {code: string; requestId: string}>();
+  answers.set(label, {code: result.error.error.code, requestId: result.requestId});
+  asked.set(h, answers);
+}
+/** The sync under `label` was refused with `code`, and the runtime recorded its refusal as `records`, `<event> <severity> <code>`. */
+const refusedSync = (h: Harness, label: string, code: string, records: readonly string[]): Outcome => {
+  const answer = asked.get(h)?.get(label);
+  if (answer === undefined) return `no ${label} sync was asked for`;
+  if (answer.code !== code) return `the ${label} sync is ${answer.code}`;
+  const recorded = h.logs().map(({record}) => record)
+    .filter(record => record.event_name.startsWith('runtime.sync.') && record.attributes['bunny.request.id'] === answer.requestId)
+    .map(record => [record.event_name, record.severity_text, record.attributes['bunny.code']].filter(part => part !== undefined).join(' '));
+  return show(recorded) === show(records) || `the ${label} sync's records: ${show(recorded)}`;
+};
+
+/**
+ * Two device modules serve `device`, each for its own devices (Hub #967): the lamp for lamp-1, and the configured sign,
+ * offline at first, for sign-1. Both run, and the reader keeps one copy of each module's devices, synced by name, which
+ * holds only that module's records, live changes included. A sync of `device` that names no owner is refused with
+ * `invalid-request`, and one that names the core, which serves no devices, with `unavailable`.
+ */
+const deviceOwners: Scenario = {
+  id: 'device-owners',
+  title: 'two device modules serve their own device records, and a reader syncs each by name',
+  seed: {
+    modules: ['core', 'lamp', 'sign'], config: {sign: SIGN_SECTION},
+    follows: [CORE_FAMILIES, {owner: LAMP_OWNER, families: ['device']}, {owner: SIGN_OWNER, families: ['device']}],
+  },
+  steps: [
+    expect('the core, the lamp and the sign are running, though the lamp and the sign both serve device', h => running(h, ['core', 'lamp', 'sign'])),
+    expect('health names the lamp and the sign, and no other module, as serving device', async h => {
+      const owners = (await h.health()).filter(module => module.serves?.includes('device') === true).map(module => module.name);
+      return show(owners) === show(['lamp', 'sign']) || `health names ${show(owners)}`;
+    }),
+    expect('the reader\'s copy from the lamp holds lamp-1 only', h => holdsDevices(h, LAMP_OWNER, ['lamp-1 unknown'])),
+    expect('the reader\'s copy from the sign holds sign-1 only, unavailable once the sign\'s deadline passed', h => holdsDevices(h, SIGN_OWNER, ['sign-1 unavailable']), 5000),
+    act('the sign comes online', h => { h.simulate({device: 'sign', action: 'online'}); }),
+    expect('the copy from the sign shows sign-1 available', h => holdsDevices(h, SIGN_OWNER, ['sign-1 available']), 10_000),
+    holds('the copy from the lamp still holds lamp-1 only, and each copy synced once', h => {
+      const lamp = holdsDevices(h, LAMP_OWNER, ['lamp-1 unknown']);
+      if (lamp !== true) return lamp;
+      const syncs = [h.reader.syncs('device', LAMP_OWNER), h.reader.syncs('device', SIGN_OWNER)];
+      return show(syncs) === show([1, 1]) || `the copies synced ${show(syncs)} times`;
+    }, 300),
+    act('the reader asks for device without naming an owner', h => askForDevices(h, 'unnamed')),
+    expect('it is refused with invalid-request, and the runtime recorded the refusal once, at INFO', h =>
+      refusedSync(h, 'unnamed', 'invalid-request', ['runtime.sync.refused INFO invalid-request'])),
+    act('the reader asks for device from the core, which serves no devices', h => askForDevices(h, 'core', 'bunny/core')),
+    expect('it is refused with unavailable, and the runtime recorded the refusal once, at WARN', h =>
+      refusedSync(h, 'core', 'unavailable', ['runtime.sync.refused WARN unavailable'])),
+    expect('the core, the lamp and the sign are still running', h => running(h, ['core', 'lamp', 'sign'])),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
-  configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs,
+  configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs, deviceOwners,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

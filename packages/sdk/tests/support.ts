@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {test, type TestContext} from 'node:test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
   InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type LogFields, type Logger, type Participant,
   type RequestOptions, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
@@ -41,6 +43,9 @@ validator.register(SESSION_SCHEMA, closed({id: block('id'), revision: block('rev
 validator.register(TURN_SCHEMA, closed({sessionId: block('id')}));
 validator.register(MODE_SCHEMA, closed({requestId: block('requestId'), mode: {enum: ['work', 'quiet', 'free']}}));
 validator.register(BLOB_SCHEMA, closed({id: block('id'), revision: block('revision'), pad: {type: 'string', maxLength: 400_000}}));
+// `device/2.0`, which every device module serves for its own devices (Hub #918, #967), after the core families it needs.
+registerCoreFamilies(validator);
+registerDeviceFamilies(validator);
 
 /** Checks one message against profile 2.0 and its payload schema. */
 export function assertValid(message: unknown): void {
@@ -114,6 +119,28 @@ export type Outcome = {requestId: string; result: 'succeeded' | 'failed' | 'unce
 export const modeSet = (requestId: string): Draft<Outcome> => ({
   kind: 'outcome', type: 'org.bunny.mode.set.completed', subject: 'wall', dataschema: `${BASE}outcome/2.0`,
   data: {requestId, result: 'succeeded', evidence: 'observed'},
+});
+
+export const DEVICE_FAMILY = 'device';
+const UNSUPPORTED = {supported: false} as const;
+const UNKNOWN = {status: 'unknown'} as const;
+/** One device's full `device/2.0` record, as the module that controls it serves and publishes it. Nothing is known of it. */
+export const device = (id: string, revision: number, availability: DeviceRecord['availability'] = 'unknown'): Draft<DeviceRecord> => ({
+  kind: 'state', type: 'org.bunny.device.updated', subject: id, dataschema: `${BASE}device/2.0`,
+  data: {
+    id, revision, kind: 'test-device', availability, configurationRevision: 1, generation: {epoch: 'boot-1', sequence: revision},
+    capabilities: {
+      power: UNSUPPORTED, brightness: UNSUPPORTED, modes: UNSUPPORTED, moments: UNSUPPORTED, media: UNSUPPORTED, scenes: UNSUPPORTED, zones: UNSUPPORTED,
+      preview: UNSUPPORTED,
+    },
+    desired: {power: UNKNOWN, brightness: UNKNOWN, mode: UNKNOWN}, observed: UNKNOWN, pending: 0, pendingKinds: [], lastOutcome: UNKNOWN,
+    lastTransmission: UNKNOWN, externalControl: UNKNOWN,
+  },
+});
+/** A removal of one device, which only its own module should ever publish. */
+export const deviceRemoved = (id: string, revision: number): Draft<Removal> => ({
+  kind: 'removal', type: 'org.bunny.device.removed', subject: id, dataschema: `${BASE}removal/2.0`,
+  data: {entity: {family: DEVICE_FAMILY, id}, revision, reason: 'retired'},
 });
 
 /** A bus whose handler errors are collected, with checked core and wall participants. */

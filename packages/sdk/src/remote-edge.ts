@@ -13,7 +13,7 @@ import {refusalOf, replyOf} from './refusal.js';
 import {parseKey} from './routing.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
-import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
+import {isSource, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
 import {childOf} from './trace.js';
 
 /** One remote participant's credential: a bearer token that lets it act as `source`. */
@@ -118,6 +118,14 @@ function identifier(body: Fields, name: string): string {
   const value = text(body, name);
   if (!ID.test(value)) throw refuse('invalid-request', `${name} is not an identifier`);
   return value;
+}
+
+/** A sync call's `owner`: absent, or a participant source. */
+function ownerOf(body: Fields): string | undefined {
+  const {owner} = body;
+  if (owner === undefined) return undefined;
+  if (!isSource(owner)) throw refuse('invalid-request', 'owner is not a participant source');
+  return owner;
 }
 
 /**
@@ -355,7 +363,9 @@ export class RemoteEdge {
       case 'sync': {
         const request = this.#inbound(source, body.request) as Message<SyncRequest>;
         if (request.subject !== request.data.families.join(',')) throw refuse('invalid-message', 'a sync request\'s subject names its families, joined by commas');
-        const answer = await this.#bus.syncMessage(source, request, this.#remaining(request), signal);
+        // The owner the request is for, when the remote part names one (Hub #967): part of the call, beside the message.
+        const owner = ownerOf(body);
+        const answer = await this.#bus.syncMessage(source, request, this.#remaining(request), signal, owner);
         if (answer.status === 'served') this.#capped(answer);
         return {answer};
       }

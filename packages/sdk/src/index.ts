@@ -12,9 +12,9 @@ export {
   type Participant, type PublishedKind, type RejectedReply, type Reply, type RequestOptions, type RequestResult, type Responder,
   type Scheduler, type Sdk, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
 } from './sdk.js';
-export type {
-  Keyed, Removal, Snapshot, StateDraft, SyncChange, SyncCompleted, SyncedCopy, SyncHandler, SyncOptions, SyncProvider,
-  SyncRequest, SyncResult,
+export {
+  SHARED_FAMILIES, type Keyed, type Removal, type Snapshot, type StateDraft, type SyncChange, type SyncCompleted, type SyncedCopy, type SyncHandler,
+  type SyncOptions, type SyncProvider, type SyncRequest, type SyncResult,
 } from './sync.js';
 export {
   MAX_SECRETS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkManifest, checkModuleName, type BunnyModule,

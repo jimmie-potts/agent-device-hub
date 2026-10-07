@@ -1,13 +1,15 @@
 // The fixture module (Hub #882, #846): a lamp, the stand-in device module that later stories use. It shows the module
 // factory convention: `createLampModule({transport})` takes how the module reaches its device, so a test or a run passes
-// a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, follows
-// the core's mode and sessions, switches a lamp on command, in a device span whose context never reaches the device, and
-// reports the change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet
-// mode keeps the lamps off, and its indicator shows when an agent session waits for a person.
+// a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, with
+// their `device/2.0` records, as every device module serves its own (Hub #918, #967). It follows the core's mode and
+// sessions, and switches a lamp on command, in a device span whose context never reaches the device. It reports the
+// change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet mode keeps
+// the lamps off, and its indicator shows when an agent session waits for a person.
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';
 import {followStandInAcks, type ConformanceSpec} from '@jimmie-potts/sdk/testing';
+import {DEVICE_FAMILY, deviceRecord, deviceSchemas, deviceState} from './device.js';
 
 const BASE = 'https://bunny.invalid/events/';
 export const LAMP_SCHEMA = `${BASE}lamp/2.0`;
@@ -170,7 +172,12 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       }, {timeoutMs: 5000});
       if (follow.status === 'rejected') throw new Error(`the lamp could not sync the core's mode and sessions: ${follow.error.error.code}`);
 
-      await sdk.serveSync(['lamp'], (): Snapshot => ({revision: revision(), states: lamps().map(lampState)}));
+      // A lamp's device record says only that it is a lamp: the lamp module never asks its lamps whether they answer.
+      await sdk.serveSync(['lamp', DEVICE_FAMILY], ({data: {families}}): Snapshot => {
+        const rows = lamps();
+        const devices = rows.map(({id}) => deviceState(deviceRecord(id, 0, 'lamp', 'unknown')));
+        return {revision: revision(), states: [...families.includes('lamp') ? rows.map(lampState) : [], ...families.includes(DEVICE_FAMILY) ? devices : []]};
+      });
       await sdk.respond<{power: Power}>('bunny.cmd.lamp.*', async (command: Command<{power: Power}>): Promise<{status: 'accepted'} | ErrorBody> => {
         const {requestId, power: wanted} = command.data;
         log.info('command.executing', {'bunny.device.id': command.subject, 'bunny.operation': 'power', 'bunny.request.id': requestId}, command);
@@ -233,8 +240,8 @@ export const modeState = (mode: ModeRecord['mode'], selectedAtMs = Date.parse('2
 /** The kit's description of the lamp, on a fresh simulated device. */
 export const lampSpec = (options: Omit<LampOptions, 'transport'> = {}): ConformanceSpec => ({
   create: () => createLampModule({...options, transport: new SimulatedLamps(options.lamps)}),
-  schemas: lampSchemas,
-  serves: ['lamp'],
+  schemas: {...deviceSchemas, ...lampSchemas},
+  serves: ['lamp', DEVICE_FAMILY],
   copies: {families: ['mode', 'session'], snapshot: {revision: 1, states: [modeState('work')]}},
   accepted: switchLamp('lamp-1', 'on'),
   refused: {...switchLamp('lamp-9', 'on'), code: 'not-found'},

@@ -3,6 +3,9 @@
 // stand-in owner for the families it copies, and checks every message it sees against profile 2.0. Only
 // `moduleConformance` loads node:test, so another runner, such as Vitest, can run `conformanceChecks` itself.
 //
+// Several modules serve one family, such as `device`, each for its own devices (Hub #967), so the kit syncs a module's
+// families from the module by name, and its stand-in owner can serve under the owner a module names.
+//
 // Under ADR 0012's failure isolation (policy A), a device's errors and timeouts are not module failures: a module turns
 // them into outcomes and an `unavailable` device state. Only an error that escapes the module, from its start, a
 // handler, a responder, a timer or a worker, stops it, so the kit fails a module whose handler, timer or worker fails.
@@ -38,8 +41,12 @@ export type ConformanceSpec = {
   schemas?: Readonly<Record<string, object>>;
   /** The families the module serves with `serveSync`, if any. */
   serves?: readonly string[];
-  /** The families the module copies with `sync` at start, and the snapshot the kit's stand-in owner, `bunny/core`, serves. */
-  copies?: {families: readonly string[]; snapshot: Snapshot};
+  /**
+   * The families the module copies with `sync` at start, and the snapshot the kit's stand-in owner serves. The stand-in
+   * is `bunny/core` unless `owner` names the source the module syncs them from, such as `bunny/modules/lifx` for a
+   * module that copies one device module's `device` records.
+   */
+  copies?: {families: readonly string[]; snapshot: Snapshot; owner?: string};
   /** A command the module accepts, if it answers any. It must report the command's outcome through its outbox. */
   accepted?: {key: string; draft: CommandDraft<object>};
   /** A command the module refuses, and the registry code it refuses it with, if it answers any. */
@@ -158,7 +165,7 @@ class World {
     });
     const {copies} = spec;
     if (copies !== undefined) {
-      await world.#connect('bunny/core').serveSync(copies.families, request => {
+      await world.#connect(copies.owner ?? 'bunny/core').serveSync(copies.families, request => {
         world.check(request, 'a sync request');
         world.syncRequests.push(request);
         return copies.snapshot;
@@ -317,7 +324,7 @@ const lifecycle = (spec: ConformanceSpec): Promise<void> => inWorld(spec, async 
     assert.equal(request.status === 'rejected' && request.error.error.code, 'unavailable', 'no responder is left');
   }
   if (spec.serves !== undefined) {
-    const sync = await world.probe.sync(spec.serves, () => {}, {timeoutMs: world.timeoutMs});
+    const sync = await world.probe.sync(spec.serves, () => {}, {timeoutMs: world.timeoutMs, owner: world.harness.source});
     assert.equal(sync.status === 'rejected' && sync.error.error.code, 'unavailable', 'no sync owner is left');
   }
   assert.equal(world.harness.pendingTimers(), 0, 'no timer is left');
@@ -327,7 +334,8 @@ const lifecycle = (spec: ConformanceSpec): Promise<void> => inWorld(spec, async 
 
 const serves = (spec: ConformanceSpec, families: readonly string[]): Promise<void> => inWorld(spec, async world => {
   await world.start();
-  const result = await world.probe.sync(families, () => {}, {timeoutMs: world.timeoutMs});
+  // By name, as a consumer of a family that several modules serve, such as `device`, syncs each of them.
+  const result = await world.probe.sync(families, () => {}, {timeoutMs: world.timeoutMs, owner: world.harness.source});
   assert.equal(result.status, 'synced', 'the module serves a sync of its families');
   if (result.status !== 'synced') return;
   world.check(result.message, 'sync.completed');
@@ -340,13 +348,19 @@ const serves = (spec: ConformanceSpec, families: readonly string[]): Promise<voi
   await result.copy.close();
 });
 
-const copies = (spec: ConformanceSpec, families: readonly string[]): Promise<void> => inWorld(spec, async world => {
+const copies = (spec: ConformanceSpec, {families, owner}: NonNullable<ConformanceSpec['copies']>): Promise<void> => inWorld(spec, async world => {
   await world.start();
   const asked = world.syncRequests.filter(request => request.source === world.harness.source);
   assert.ok(asked.length > 0, 'the module syncs the families it copies when it starts');
   for (const request of asked) {
     const requested = (request.data as {families?: unknown}).families;
     assert.ok(Array.isArray(requested) && requested.every(family => families.includes(String(family))), 'it asks only for the families it copies');
+  }
+  // Here the stand-in is their only owner, but in the runtime other owners may serve them too, and a sync that names
+  // none is then refused.
+  if (owner !== undefined) {
+    const unnamed = world.harness.sent.filter(sent => sent.call === 'sync' && sent.families.some(family => families.includes(family)) && sent.owner !== owner);
+    assert.deepEqual(unnamed, [], `it syncs them from ${owner} by name`);
   }
 });
 
@@ -417,7 +431,7 @@ export function conformanceChecks(spec: ConformanceSpec): ConformanceCheck[] {
   const {serves: served, copies: copied, accepted, refused, offline: unreachable} = spec;
   if (unreachable !== undefined) checks.push({name: CHECKS.offline, run: () => offline(spec, unreachable)});
   if (served !== undefined) checks.push({name: CHECKS.serves, run: () => serves(spec, served)});
-  if (copied !== undefined) checks.push({name: CHECKS.copies, run: () => copies(spec, copied.families)});
+  if (copied !== undefined) checks.push({name: CHECKS.copies, run: () => copies(spec, copied)});
   if (accepted !== undefined) checks.push({name: CHECKS.accepts, run: () => accepts(spec, accepted)});
   if (refused !== undefined) checks.push({name: CHECKS.refuses, run: () => refuses(spec, refused)});
   if (accepted !== undefined) checks.push({name: CHECKS.outbox, run: () => outbox(spec, accepted)});

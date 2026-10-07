@@ -155,9 +155,13 @@ while the process serves. Its `status` is `ok` when every module runs and the
 lag check, if any, is active, and `degraded` otherwise. Each module has a
 `state` (`refused`, `starting`, `running`, `stopping`, `stopped` or `failed`),
 `healthy`, `syncRestarts` (how often an overflow restarted one of its sync
-copies, so a restart loop shows) and, when refused or failed, a `reason` with a
-code from the 2.0 error registry. `lagCheck` is `off`, or `active` or `stopped`
-with its `limitMs`. `memory` reports the whole process from
+copies, so a restart loop shows), `serves` (the families it serves through sync
+now, when it serves any) and, when refused or failed, a `reason` with a code
+from the 2.0 error registry. A module's `name` gives its source on the bus,
+`bunny/modules/<name>`, or `bunny/core` for the core. A consumer of a family
+that several modules serve, such as `device`, syncs it from each module whose
+`serves` lists it, by that source (#967). `lagCheck` is `off`, or `active` or
+`stopped` with its `limitMs`. `memory` reports the whole process from
 `process.memoryUsage()`.
 
 A request must name the listener as its host (`127.0.0.1:<port>` or
@@ -533,7 +537,9 @@ stories build on. `createLampModule({transport})` takes a `LampTransport`.
 restarts, as a real lamp would, and a test can hold its switches or make the
 next one fail. The lamp passes the
 [module test kit](../../packages/sdk/README.md#module-test-kit):
-- it serves its lamps (family `lamp`) through sync;
+- it serves its lamps (family `lamp`) through sync, and their `device/2.0`
+  records, which say only that each is a lamp, as every device module serves
+  `device` for its own devices (#918, #967);
 - it copies the core's `mode` and `session`, keeps the lamps off in quiet mode,
   and shows on its indicator whether a session waits for a person;
 - it switches a lamp on `bunny.cmd.lamp.<id>`, refusing an unknown lamp with
@@ -561,15 +567,17 @@ module with settings, a secret and private files (#919).
 offline, never answering, and accepts only the synthetic token. Its
 `configureSign` takes a greeting, the signs' IDs and addresses, and its token's
 file as `secrets.token`. Its start reads the token, keeps its layout in its
-private folder and serves its signs (family `sign`), and returns without
-reaching a sign. It then reaches each sign on the runtime's scheduler with a
-1 s deadline, to show the greeting it rendered with a worker call: a sign that
-does not answer is `unavailable` and is tried again with capped backoff, and
-one that shows the greeting is `available`. A render that fails, past its
-deadline included, is no evidence about the sign: its availability stays as it
-was, the failure is logged against the sign with the call's code, and the
-attempt is tried again. It logs each change and each run of failed renders once,
-not each attempt. `signSpec()` runs it through the kit, policy A's check included.
+private folder, serves its signs (family `sign`) and their `device/2.0` records,
+and returns without reaching a sign. It then reaches each sign on the runtime's
+scheduler with a 1 s deadline, to show the greeting it rendered with a worker
+call: a sign that does not answer is `unavailable` and is tried again with
+capped backoff, and one that shows the greeting is `available`. It publishes
+each change of a sign's availability as the sign's state and its device record.
+A render that fails, past its deadline included, is no evidence about the sign:
+its availability stays as it was, the failure is logged against the sign with
+the call's code, and the attempt is tried again. It logs each change and each
+run of failed renders once, not each attempt. `signSpec()` runs it through the
+kit, policy A's check included.
 
 `tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
 stand-in parts through its extension point. Each part goes when its owner
@@ -598,14 +606,16 @@ sends the command again.
 
 `tests/scenarios/catalog.ts` is the runtime's one scenario catalog (#846). Each
 scenario says what a person or a device should see, as a seed and named steps.
-The seed names the modules to start and the families the reader copies. A step
-acts through the harness, expects an observation within a time bound, or
-expects one to hold. A failed step names what it observed and stops the
-scenario. Each run type has one execution adapter that runs the same
-definitions unchanged: `tests/scenarios/memory.ts`, the in-memory harness
-(tier 1, in CI), and the [disposable runs](verify/README.md) of #920 (tier 2),
-whose run adapter is `verify/adapter.ts`. Every runtime story adds its scenarios
-to the catalog.
+The seed names the modules to start and the families the reader copies, one copy
+per owner. A copy of a family that several modules serve, such as `device`,
+names its owner, `{owner: 'bunny/modules/lamp', families: ['device']}`, and
+`reader.states(family, owner)` reads that owner's copy alone (#967). A step acts
+through the harness, expects an observation within a time bound, or expects one
+to hold. A failed step names what it observed and stops the scenario. Each run
+type has one execution adapter that runs the same definitions unchanged:
+`tests/scenarios/memory.ts`, the in-memory harness (tier 1, in CI), and the
+[disposable runs](verify/README.md) of #920 (tier 2), whose run adapter is
+`verify/adapter.ts`. Every runtime story adds its scenarios to the catalog.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built by its factory with its simulated transport, on a manual clock and
