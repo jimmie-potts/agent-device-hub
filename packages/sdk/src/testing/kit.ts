@@ -2,11 +2,15 @@
 // the same under ADR 0012. Each check hosts a fresh instance of the module on its own bus and state directory, with a
 // stand-in owner for the families it copies, and checks every message it sees against profile 2.0. Only
 // `moduleConformance` loads node:test, so another runner, such as Vitest, can run `conformanceChecks` itself.
+//
+// Under ADR 0012's failure isolation (policy A), a device's errors and timeouts are not module failures: a module turns
+// them into outcomes and an `unavailable` device state. Only an error that escapes the module, from its start, a
+// handler, a responder, a timer or a worker, stops it, so the kit fails a module whose handler, timer or worker fails.
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {MessageValidator, compareDelivery, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, compareDelivery, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus} from '../in-process.js';
 import {checkManifest, type BunnyModule} from '../module.js';
@@ -27,8 +31,8 @@ export type ConformanceSpec = {
   copies?: {families: readonly string[]; snapshot: Snapshot};
   /** A command the module accepts, if it answers any. It must report the command's outcome through its outbox. */
   accepted?: {key: string; draft: CommandDraft<object>};
-  /** A command the module refuses, and the error code it refuses it with, if it answers any. */
-  refused?: {key: string; draft: CommandDraft<object>; code: string};
+  /** A command the module refuses, and the registry code it refuses it with, if it answers any. */
+  refused?: {key: string; draft: CommandDraft<object>; code: ErrorCode};
   /** How long a start, stop, request, sync or awaited message may take, in milliseconds. Defaults to 5000. */
   timeoutMs?: number;
 };

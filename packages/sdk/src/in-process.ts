@@ -46,11 +46,15 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 
 /**
  * What a forwarding responder, such as a remote edge's, may return in place of a reply. `unanswered`: its handler had
- * the command and gave no reply, so the request is `uncertain`, never a refusal. `undelivered`: the command never
+ * the command and gave no reply, so the request is `uncertain`, never a refusal. `failed`: its handler had the command
+ * and failed, as a local responder that throws does, so the request is `uncertain` too. `undelivered`: the command never
  * reached a handler, so it is refused as `unavailable`, with no reply message. Internal to the SDK; not exported.
  */
 export const unanswered: unique symbol = Symbol('unanswered');
+export const failed: unique symbol = Symbol('failed');
 export const undelivered: unique symbol = Symbol('undelivered');
+/** Why a request whose responder threw, or answered with something other than a reply, is uncertain. */
+const FAILED_DETAIL = 'the responder failed after it started';
 
 /** Whether a message of this kind travels through publish. */
 const isPublished = (kind: MessageKind): kind is PublishedKind => keyClassOf(kind) !== undefined;
@@ -359,13 +363,20 @@ export class InProcessBus {
         settle({status: 'rejected', requestId, error: body('expired', 'the command reached the responder after its expiry', ids)});
         return;
       }
+      const {requestId} = command.data;
+      const ids = {requestId, traceId: traceIdOf(command.traceparent)};
+      // The handler has started, so an exception may come after an effect: the request is uncertain, never a refusal.
+      // Only a typed refusal, an error body the responder returns, proves that nothing happened (ADR 0012).
+      const uncertain = (detail: string): RequestResult => ({status: 'uncertain', requestId, error: body('uncertain-result', detail, ids)});
       let answer: Reply;
       try {
         const given: unknown = await responder(command as Command<T>);
-        const {requestId} = command.data;
-        const ids = {requestId, traceId: traceIdOf(command.traceparent)};
         if (given === unanswered) {
-          settle({status: 'uncertain', requestId, error: body('uncertain-result', 'the responder gave no reply', ids)});
+          settle(uncertain('the responder gave no reply'));
+          return;
+        }
+        if (given === failed) {
+          settle(uncertain(FAILED_DETAIL));
           return;
         }
         if (given === undelivered) {
@@ -376,7 +387,8 @@ export class InProcessBus {
         answer = given;
       } catch (error) {
         this.#report(error, scope);
-        answer = body('internal', 'the responder failed');
+        settle(uncertain(FAILED_DETAIL));
+        return;
       }
       settle(this.#reply(source, command, answer));
     })};

@@ -415,6 +415,15 @@
    "detail": "envelope / additionalProperties extra"
   },
   {
+   "name": "tracestate, which profile 2.0 does not define",
+   "base": "state",
+   "patch": {
+    "tracestate": "bunny=1"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope / additionalProperties tracestate"
+  },
+  {
    "name": "time without milliseconds",
    "base": "state",
    "patch": {

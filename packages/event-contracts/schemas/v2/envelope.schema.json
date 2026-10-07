@@ -17,7 +17,6 @@
     "datacontenttype": {"const": "application/json"},
     "dataschema": {"type": "string", "pattern": "^https://bunny\\.invalid/events/[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*/[0-9]+\\.[0-9]+$", "maxLength": 256},
     "traceparent": {"type": "string", "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"},
-    "tracestate": {"type": "string", "maxLength": 512},
     "expiresat": {"$ref": "#/$defs/timestamp"},
     "data": {"type": "object"}
   },

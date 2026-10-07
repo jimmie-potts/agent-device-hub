@@ -9,8 +9,11 @@ import type {SyncHandler, SyncOptions, SyncProvider, SyncResult} from './sync.js
  */
 export const MAX_TIMEOUT_MS = 86_400_000;
 
-/** W3C trace context. A received message is a valid parent, because it carries both fields. */
-export type TraceContext = {traceparent: string; tracestate?: string};
+/**
+ * W3C trace context. A received message is a valid parent, because it carries `traceparent`. Profile 2.0 has no
+ * `tracestate` or baggage, so none is ever forwarded (ADR 0012, "Envelope and conventions").
+ */
+export type TraceContext = {traceparent: string};
 
 /** Message kinds sent with `publish`. Commands go through `request`, replies come from `respond`, and sync messages from `sync`. */
 export type PublishedKind = 'state' | 'removal' | 'occurrence' | 'outcome';
@@ -35,14 +38,19 @@ export type Command<T extends object> = Message<T & {requestId: string}>;
 export type AcceptedReply = {requestId: string; status: 'accepted'};
 export type RejectedReply = {requestId: string; error: ErrorDetail};
 
-/** A responder's answer: accepted, or a refusal in the shared error body from `errorBody`. */
+/**
+ * A responder's answer: accepted, or a refusal in the shared error body from `errorBody`, given before the handler
+ * acted. A responder that throws once it started leaves the request `uncertain`, never refused.
+ */
 export type Reply = {status: 'accepted'} | ErrorBody;
 
 /**
- * How a request ended. `rejected` carries the owner's refusal, or the bus's own when the command never reached the
- * responder's handler: `unavailable`, `capacity`, `expired` when its deadline passed while it waited, or `cancelled`
- * when the requester closed. `uncertain` (`uncertain-result`) means the handler had the command when the deadline
- * passed or the requester closed: it may have taken effect, and nothing retries it.
+ * How a request ended (ADR 0012, "Errors, effects and outcomes"). `rejected` proves no effect: it carries the owner's
+ * typed refusal, an error body from `errorBody`, or the bus's own when the command never reached the responder's
+ * handler: `unavailable`, `capacity`, `expired` when its deadline passed while it waited, or `cancelled` when the
+ * requester closed. `uncertain` (`uncertain-result`) means the handler had the command and it may have taken effect:
+ * the handler threw or answered with something other than a reply, or still had the command when the deadline passed
+ * or the requester closed. Nothing retries it.
  */
 export type RequestResult =
   | {status: 'accepted'; requestId: string; reply: Message<AcceptedReply>}

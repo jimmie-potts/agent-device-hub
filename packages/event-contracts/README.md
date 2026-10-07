@@ -63,7 +63,8 @@ follows the strict profile for new code.
 
 - `schemas/v2/envelope.schema.json`: the envelope every message uses. It has
   a required `subject` and `traceparent`, an absolute `dataschema` URI and a
-  `kind`. Commands and sync requests require `expiresat`; no other kind may
+  `kind`. It defines no `tracestate` or baggage, so a message that carries
+  `tracestate` is refused like any other undeclared attribute. Commands and sync requests require `expiresat`; no other kind may
   carry it. The `type` suffix must match the kind, for example
   `org.bunny.<entity>.<verb>.requested` for a command. Only sync messages may use
   `org.bunny.sync.requested` and `org.bunny.sync.completed`. A sync request's
@@ -96,9 +97,15 @@ follows the strict profile for new code.
     with `invalid-message`, and validation never throws. `validate(input, {nowMs})`
     returns `{ok:true,value}` or `{ok:false,error}`, where `error` is the
     registry's error detail.
+  - `ErrorCode`, the registry's codes as a literal type, and `RETRYABLE`, each
+    code's fixed `retryable` flag, from `src/v2/errors.ts`. A test keeps that
+    table equal to `errors.json`, code for code and flag for flag. A code
+    outside the registry fails to compile wherever an `ErrorCode` is expected,
+    including `errorBody`'s code and an `ErrorDetail`'s. `isErrorCode(value)`
+    checks a code read from data that has not been validated.
   - `errorBody(code, extra)`, which builds `{"error":{...}}`, takes
     `retryable` from the registry and throws on extras the error block would
-    refuse.
+    refuse, and on an unregistered code from an untyped caller.
   - `compareDelivery(prior, next)`, which classifies a retry under the
     identity `(source, id)` as `new`, `duplicate` or `conflict`. It compares
     every attribute and the payload, ignoring key order, so an outbox resends

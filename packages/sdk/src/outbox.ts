@@ -1,9 +1,10 @@
 // The per-module outbox (ADR 0012, "Ownership and publication"). A module's messages commit in its own SQLite
-// transaction together with the change they report, and go out only after the commit, unchanged, with the `id` and
-// `time` they were stored with. A message that a crash kept from going out goes out at the next start. An outcome is
-// kept until the core acknowledges it and goes out again at every start until then; the core drops duplicates by
-// `(source, id)`, so a crash or a failed core never loses an outcome. Nothing else is ever sent again, so a restart
-// replays no state or occurrence, and a command never goes in.
+// transaction together with the change they report, and go out only after the commit, unchanged, with the `id`,
+// `time` and trace context they were stored with. Committed is not published: a publish refused after the commit leaves
+// the work standing and its messages stored, and the next transaction or start sends them. A message that a crash kept
+// from going out goes out at the next start. An outcome is kept until the core acknowledges it and goes out again at
+// every start until then; the core drops duplicates by `(source, id)`, so a crash or a failed core never loses an
+// outcome. Nothing else is ever sent again, so a restart replays no state or occurrence, and a command never goes in.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MAX_DETAIL, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
@@ -68,10 +69,14 @@ export class Outbox {
 
   /**
    * Runs `work` in one transaction on the module's database. Each message it adds is stored in that transaction and,
-   * after the commit, published in order. A throw rolls back the work and its messages, so nothing goes out. `work`
-   * must be synchronous, and the outbox opens the transaction itself. Resolves with `work`'s result once the messages
-   * are published. If publishing is refused, for example because the module is stopping, the promise rejects although
-   * the work has committed; the messages stay stored, and the next transaction or start sends them.
+   * after the commit, published in order. A throw rolls back the work and its messages, so nothing goes out, and the
+   * promise rejects with it. `work` must be synchronous, and the outbox opens the transaction itself.
+   *
+   * Once the work commits, the promise resolves with `work`'s result after the publish ends, and never rejects: the
+   * work stands, so no caller may take a failed publish for a rollback and do it again (ADR 0012, "Committed is not
+   * published"). If publishing is refused, for example because the module is stopping, the messages stay stored,
+   * unpublished, with their `id`, `time` and trace context, and the next transaction or start sends them. Nothing
+   * sends them again on its own.
    */
   transaction<R>(work: (add: AddMessage) => Synchronous<R>): Promise<R> {
     let result: R;
@@ -80,7 +85,8 @@ export class Outbox {
     } catch (error) {
       return Promise.reject(error);
     }
-    return this.#send(this.#unpublished).then(() => result);
+    // A refused publish only delays the messages: they wait, stored, for the next send.
+    return this.#send(this.#unpublished).then(() => result, () => result);
   }
 
   /**

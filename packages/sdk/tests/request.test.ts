@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Command, type Reply} from '../src/index.js';
-import {assertValid, bus, deferred, flush, it, peek, setMode, trace, type Mode} from './support.js';
+import {START, assertValid, bus, deferred, flush, it, peek, session, setMode, trace, type Mode} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
@@ -52,16 +52,61 @@ it('a refusal comes back in the shared error body, naming the request and its tr
   assert.deepEqual(result.reply.data, {requestId: 'req-1', error: expected.error});
 });
 
-it('a responder that throws refuses with internal, and the error is reported', async () => {
+it('a responder that throws once its handler started leaves the request uncertain, sends it once, and reports the error', async context => {
+  context.mock.timers.enable({apis: ['setTimeout', 'Date'], now: START});
   const {core, wall, errors} = bus();
   const failure = new Error('device driver crashed');
-  await wall.respond('bunny.cmd.mode.wall', () => { throw failure; });
-  const result = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000});
-  assert.equal(result.status, 'rejected');
-  assert.equal(result.error.error.code, 'internal');
-  assert.ok(result.reply, 'the refusal comes in a reply');
-  assertValid(result.reply);
-  assert.deepEqual(errors, [{error: failure, scope: {source: 'bunny/wall', pattern: 'bunny.cmd.mode.wall'}}]);
+  const handled: string[] = [];
+  const effects: string[] = [];
+  let nested: unknown;
+  await wall.respond<Mode>('bunny.cmd.mode.wall', async command => {
+    const {requestId} = command.data;
+    handled.push(requestId);
+    switch (requestId) {
+      case 'req-before':
+        throw failure;
+      case 'req-after':
+        effects.push(requestId);
+        throw failure;
+      case 'req-nested':
+        // A nested SDK call that refuses with SdkError, after the effect: still an exception after the handler started.
+        effects.push(requestId);
+        try {
+          await wall.publish('not-a-key', session('s1', 1));
+        } catch (error) {
+          nested = error;
+          throw error;
+        }
+        return {status: 'accepted'};
+      case 'req-garbage':
+        effects.push(requestId);
+        return 'done' as unknown as Reply;
+      default:
+        // A typed refusal before acting is a rejection: it proves no effect.
+        return errorBody('invalid-state', {detail: 'the wall is off'});
+    }
+  });
+  const uncertain = ['req-before', 'req-after', 'req-nested', 'req-garbage'];
+  for (const requestId of uncertain) {
+    const result = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId, parent: PARENT});
+    assert.deepEqual(result, {
+      status: 'uncertain', requestId,
+      error: errorBody('uncertain-result', {requestId, traceId: PARENT_TRACE, detail: 'the responder failed after it started'}),
+    }, `${requestId}: no reply, and never a refusal`);
+  }
+  const refusal = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'req-refused', parent: PARENT});
+  assert.equal(refusal.status, 'rejected', 'a typed refusal stays a rejection');
+  assert.ok(refusal.status === 'rejected' && refusal.reply !== undefined, 'the refusal comes in a reply');
+  assertValid(refusal.reply);
+  assert.deepEqual(effects, ['req-after', 'req-nested', 'req-garbage']);
+  assert.ok(nested instanceof SdkError && nested.body.error.code === 'invalid-request', 'the nested call refused with SdkError');
+  assert.deepEqual(errors.map(({error, scope}) => [error instanceof TypeError ? 'TypeError' : error, scope.pattern]), [
+    [failure, 'bunny.cmd.mode.wall'], [failure, 'bunny.cmd.mode.wall'], [nested, 'bunny.cmd.mode.wall'], ['TypeError', 'bunny.cmd.mode.wall'],
+  ], 'each exception is reported once');
+  // Past every deadline, nothing sent any command again.
+  context.mock.timers.tick(60_000);
+  await flush();
+  assert.deepEqual(handled, [...uncertain, 'req-refused'], 'each command reached the handler exactly once');
 });
 
 it('a request nobody responds to is refused as unavailable at once', async () => {

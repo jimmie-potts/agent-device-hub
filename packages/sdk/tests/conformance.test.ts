@@ -1,6 +1,7 @@
 // One conformance suite for every transport (Hub #883, ADR 0012 "Portability"): the same SDK calls behave the same
 // in process and over SSE and HTTP. Where a transport must answer differently, the transport names its expectation.
 import assert from 'node:assert/strict';
+import {setTimeout as delay} from 'node:timers/promises';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {MAX_TIMEOUT_MS, SdkError, type Command, type Overflow, type Reply, type Snapshot, type SyncChange, type SyncRequest} from '../src/index.js';
 import {SESSION_FAMILY, blob, deferred, flush, it, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
@@ -96,6 +97,30 @@ function suite(transport: Transport): void {
     assert.deepEqual(rejected.error, errorBody('invalid-state', {detail: 'the wall is off', requestId: 'req-2', traceId: PARENT_TRACE}));
     assert.equal(trace(commands[1]?.traceparent ?? '').traceId, PARENT_TRACE);
     assert.equal(commands.length, 2, 'each command reached the responder once');
+  }));
+
+  it(name('a responder that throws before or after its effect leaves the request uncertain-result, and nothing sends it again'), () => using(transport, {}, async world => {
+    const requester = await world.connect('bunny/core');
+    const responder = await world.connect('bunny/wall');
+    const handled: string[] = [];
+    const effects: string[] = [];
+    await responder.respond<Mode>('bunny.cmd.mode.*', command => {
+      handled.push(command.data.requestId);
+      if (command.data.mode === 'quiet') effects.push(command.data.requestId);
+      throw new Error('the device driver failed');
+    });
+    const cases = [['req-before', 'work'], ['req-after', 'quiet']] as const;
+    for (const [requestId, mode] of cases) {
+      const result = await requester.request('bunny.cmd.mode.wall', setMode(mode), {timeoutMs: 5000, requestId, parent: PARENT});
+      assert.deepEqual(result, {
+        status: 'uncertain', requestId,
+        error: errorBody('uncertain-result', {requestId, traceId: PARENT_TRACE, detail: 'the responder failed after it started'}),
+      }, `${requestId}: uncertain with no reply, never a refusal`);
+    }
+    assert.deepEqual(effects, ['req-after']);
+    assert.equal(world.errors.length, 2, 'each exception is reported once, where the responder ran');
+    await delay(200);
+    assert.deepEqual(handled, ['req-before', 'req-after'], 'each command reached the handler exactly once');
   }));
 
   it(name('a request nobody responds to is refused as unavailable'), () => using(transport, {}, async world => {

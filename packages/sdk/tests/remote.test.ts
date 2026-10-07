@@ -183,6 +183,28 @@ it('a sync answer over 256 KiB is refused at the edge as too-large, and the copy
   assert.equal(first.status === 'rejected' ? first.error.error.code : first.status, 'too-large', 'a first sync is refused the same way');
 }));
 
+it('an exception inside the edge reaches the remote part and the edge\'s log only as fixed text, never its message', () => withEdge({}, async edge => {
+  const SECRET = 'tok_SYNTHETIC123';
+  // The owner's state cannot be serialized: the edge's own size check throws while it encodes the answer.
+  const poisoned = {id: 's1', revision: 1, toJSON: (): never => { throw new Error(`the vault refused ${SECRET}`); }};
+  await edge.bus.connect('bunny/core').serveSync([FAMILY], () => ({revision: 1, states: [{...session('s1', 1), data: poisoned}]}));
+  const consumer = await edge.connect('bunny/wall');
+  const synced = await consumer.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000});
+  assert.equal(synced.status, 'rejected');
+  if (synced.status !== 'rejected') return;
+  assert.deepEqual(synced.error, errorBody('internal', {detail: 'the edge failed', requestId: synced.requestId, traceId: synced.error.error.traceId ?? ''}));
+  const sentAtMs = Date.now();
+  const request = buildMessage('bunny/wall', 'sync-request', {
+    type: 'org.bunny.sync.requested', subject: FAMILY, dataschema: 'https://bunny.invalid/events/sync-request/2.0',
+    data: {requestId: 'sync-raw', families: [FAMILY]},
+  }, TRACE, sentAtMs, sentAtMs + 5000);
+  const raw = await call(edge, 'sync', {schema: REMOTE_SCHEMA, request}, tokenOf(edge, 'bunny/wall'));
+  assert.deepEqual(raw, {status: 500, body: errorBody('internal', {detail: 'the edge failed'})}, 'the response carries fixed text');
+  const refusals = edge.logs.filter(record => record.event === 'edge.refused');
+  assert.deepEqual(refusals, [1, 2].map(() => ({event: 'edge.refused', route: 'sync', code: 'internal', source: 'bunny/wall', detail: 'the edge failed'})));
+  const evidence = JSON.stringify({synced, raw, logs: edge.logs, errors: edge.errors.map(({error}) => error instanceof SdkError ? error.body : String(error))});
+  assert.equal(evidence.includes(SECRET), false, 'the exception\'s message stays in memory');
+}));
 
 const codeOf = (result: {status: string; error?: {error: {code: string}}}): string => result.error?.error.code ?? result.status;
 const detailOf = (result: RequestResult): string | undefined => result.status === 'accepted' ? undefined : result.error.error.detail;

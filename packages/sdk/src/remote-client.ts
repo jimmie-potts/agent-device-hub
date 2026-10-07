@@ -3,7 +3,7 @@
 // live on one event stream; after a lost stream the client reconnects, registers them again and tells every
 // subscription of the gap, so a sync copy resyncs. Nothing is replayed.
 import {randomUUID} from 'node:crypto';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
@@ -343,14 +343,20 @@ class RemoteClient {
     return {close: () => this.#unregister(id, () => answering.queue.close(), () => this.#answering.delete(id))};
   }
 
+  /**
+   * Runs the remote responder and sends its answer. A handler that throws, or answers with something other than a
+   * reply, has started and may have acted, so it sends `{status: 'uncertain'}`, which the edge settles as `uncertain`
+   * with `uncertain-result`, as the bus does in process; never a refusal.
+   */
   async #reply<T extends object>(command: Command<T>, responder: Responder<T>, id: string): Promise<void> {
-    let reply: Reply;
+    let reply: Reply | {status: 'uncertain'};
     try {
-      reply = await responder(command);
-      if (!isReply(reply)) throw new TypeError('a responder returned something other than a reply');
+      const given: unknown = await responder(command);
+      if (!isReply(given)) throw new TypeError('a responder returned something other than a reply');
+      reply = given;
     } catch (error) {
       this.#report(error, `respond ${command.type}`);
-      reply = body('internal', 'the responder failed');
+      reply = {status: 'uncertain'};
     }
     await this.#post('reply', {connection: await this.#connected, responder: id, command: command.id, requestId: command.data.requestId, reply});
   }
@@ -511,8 +517,7 @@ class RemoteClient {
 
   async #refusal(response: Response): Promise<ErrorBody> {
     const parsed = fields(await response.json().catch(() => ({})));
-    const code = fields(parsed.error).code;
-    return typeof code === 'string' ? parsed as ErrorBody : body('internal', `the edge answered ${response.status}`);
+    return isErrorCode(fields(parsed.error).code) ? parsed as ErrorBody : body('internal', `the edge answered ${response.status}`);
   }
 
   #report(error: unknown, pattern: string): void {

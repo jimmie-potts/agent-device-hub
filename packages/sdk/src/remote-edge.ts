@@ -4,10 +4,10 @@
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
-  MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, errorCodes, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
+  MAX_DETAIL, MAX_MESSAGE_BYTES, RETRYABLE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
 import {buildMessage, type Content} from './envelope.js';
-import {unanswered, undelivered, type InProcessBus} from './in-process.js';
+import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
@@ -15,8 +15,11 @@ import {childOf} from './trace.js';
 
 /** One remote participant's credential: a bearer token that lets it act as `source`. */
 export type RemoteGrant = {source: string; token: string};
-/** What the edge logs. It never carries a credential. */
-export type EdgeLogRecord = {event: 'edge.refused' | 'edge.connected' | 'edge.disconnected'; route: string; code?: string; source?: string; detail?: string};
+/**
+ * What the edge logs. It never carries a credential, and its `detail` is the refusal's fixed text, never an exception's
+ * message.
+ */
+export type EdgeLogRecord = {event: 'edge.refused' | 'edge.connected' | 'edge.disconnected'; route: string; code?: ErrorCode; source?: string; detail?: string};
 export type EdgeOptions = {
   bus: InProcessBus;
   /** Validates every inbound message: profile 2.0, the registered payload schemas and the 256 KiB cap. */
@@ -51,6 +54,11 @@ class Refusal extends Error {
   }
 }
 const refuse = (code: ErrorCode, detail: string): Refusal => new Refusal(errorBody(code, {detail: detail.slice(0, MAX_DETAIL)}));
+/**
+ * The edge's answer to an exception it did not expect: fixed text, because an exception's message may hold anything,
+ * such as a credential a library quoted. The exception itself stays in memory; it reaches no response or log record.
+ */
+const FAILED: ErrorBody = errorBody('internal', {detail: 'the edge failed'});
 const digest = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 const isCall = (value: string): value is Call => (CALLS as readonly string[]).includes(value);
 type Fields = Record<string, unknown>;
@@ -75,7 +83,7 @@ function identifier(body: Fields, name: string): string {
 function rebuilt(value: unknown): ErrorBody | undefined {
   const error = fields(fields(value)?.error);
   const code = error?.code;
-  if (typeof code !== 'string' || errorCodes[code]?.retryable !== error?.retryable) return undefined;
+  if (!isErrorCode(code) || RETRYABLE[code] !== error?.retryable) return undefined;
   const detail = typeof error?.detail === 'string' && error.detail.length > 0 ? error.detail.slice(0, MAX_DETAIL) : undefined;
   return errorBody(code, detail === undefined ? {} : {detail});
 }
@@ -84,7 +92,7 @@ function rebuilt(value: unknown): ErrorBody | undefined {
  * What a forward settles with: the remote part's reply or snapshot, a refusal, or for a command one of the bus's
  * markers, so that a command is never answered as a refusal the remote responder did not give.
  */
-type Forwarded = Reply | Snapshot | ErrorBody | typeof unanswered | typeof undelivered;
+type Forwarded = Reply | Snapshot | ErrorBody | typeof unanswered | typeof failed | typeof undelivered;
 /** A forwarded command or sync request, waiting for the remote part's answer. */
 type Waiting = {kind: 'command' | 'sync'; connection: string; finish: (answer: Forwarded) => void};
 
@@ -190,8 +198,8 @@ export class RemoteEdge {
       if (response.closed) dropped.abort();
       this.#write(response, 200, {schema: REMOTE_SCHEMA, ...await this.#call(source, route, body, dropped.signal)});
     } catch (error) {
-      const refused = error instanceof Refusal || error instanceof SdkError ? error.body
-        : errorBody('internal', {detail: `the edge failed: ${error instanceof Error ? error.message : 'unknown'}`.slice(0, MAX_DETAIL)});
+      // Only the edge's and the SDK's own refusals carry their text on; anything else is the fixed `internal` answer.
+      const refused = error instanceof Refusal || error instanceof SdkError ? error.body : FAILED;
       const {code, detail} = refused.error;
       this.#log({event: 'edge.refused', route, code, ...(source === undefined ? {} : {source}), ...(detail === undefined ? {} : {detail})});
       // A body over its limit is left unread, so the connection closes after the refusal.
@@ -293,8 +301,9 @@ export class RemoteEdge {
       case 'reply': {
         this.#connection(source, body);
         const requestId = identifier(body, 'requestId');
-        const reply = this.#reply(source, requestId, body.reply);
-        this.#waiting.get(this.#key(source, identifier(body, 'responder'), identifier(body, 'command')))?.finish(reply);
+        // A remote handler that failed once it started answers `uncertain`; the bus settles that as it does in process.
+        const answer = fields(body.reply)?.status === 'uncertain' ? failed : this.#reply(source, requestId, body.reply);
+        this.#waiting.get(this.#key(source, identifier(body, 'responder'), identifier(body, 'command')))?.finish(answer);
         return {status: 'received'};
       }
       case 'answer': {
@@ -330,10 +339,13 @@ export class RemoteEdge {
     return Math.max(1, Math.ceil(Date.parse(message.expiresat ?? '') - this.#now()));
   }
 
-  /** A remote responder's reply: accepted, or a refusal rebuilt as the shared error body, checked as its reply payload. */
+  /**
+   * A remote responder's reply: accepted, or a refusal rebuilt as the shared error body, checked as its reply payload.
+   * The `uncertain` answer of a handler that failed is taken before this, since it makes no reply message.
+   */
   #reply(source: string, requestId: string, value: unknown): Reply {
     const reply: Reply | undefined = fields(value)?.status === 'accepted' ? {status: 'accepted'} : rebuilt(value);
-    if (reply === undefined) throw refuse('invalid-request', 'a reply is accepted or a registered error body');
+    if (reply === undefined) throw refuse('invalid-request', 'a reply is accepted, uncertain or a registered error body');
     const data = 'error' in reply ? {requestId, error: reply.error} : {requestId, status: reply.status};
     const candidate = buildMessage(source, 'reply', {type: 'org.bunny.remote.reply.replied', subject: requestId, dataschema: REPLY_SCHEMA, data}, childOf(undefined), this.#now());
     const result = this.#validator.validate(candidate);
