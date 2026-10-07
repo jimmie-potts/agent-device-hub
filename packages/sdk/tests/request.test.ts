@@ -109,6 +109,17 @@ it('a responder that throws once its handler started leaves the request uncertai
   assert.deepEqual(handled, [...uncertain, 'req-refused'], 'each command reached the handler exactly once');
 });
 
+it('a refusal is rebuilt from the registry in process too: its detail cut to the limit and anything else dropped', async () => {
+  const {core, wall} = bus();
+  const wild = {error: {code: 'invalid-state', retryable: false, detail: 'x'.repeat(5000), note: 'not in the error block'}} as unknown as Reply;
+  await wall.respond('bunny.cmd.mode.wall', () => wild);
+  const result = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'req-wild', parent: PARENT});
+  assert.equal(result.status, 'rejected');
+  if (result.status !== 'rejected' || result.reply === undefined) return assert.fail('a refusal in a reply');
+  assertValid(result.reply);
+  assert.deepEqual(result.error, errorBody('invalid-state', {detail: 'x'.repeat(1024), requestId: 'req-wild', traceId: PARENT_TRACE}));
+});
+
 it('a request nobody responds to is refused as unavailable at once', async () => {
   const {core} = bus();
   const result = await core.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 60_000});

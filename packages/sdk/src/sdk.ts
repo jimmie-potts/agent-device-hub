@@ -137,8 +137,9 @@ export interface Participant extends Sdk {
 export class SdkError extends Error {
   readonly body: ErrorBody;
 
-  constructor(body: ErrorBody) {
-    super(body.error.detail === undefined ? body.error.code : `${body.error.code}: ${body.error.detail}`);
+  /** `options.cause` keeps the error that led to this one in memory; it never enters the body. */
+  constructor(body: ErrorBody, options?: ErrorOptions) {
+    super(body.error.detail === undefined ? body.error.code : `${body.error.code}: ${body.error.detail}`, options);
     this.name = 'SdkError';
     this.body = body;
   }

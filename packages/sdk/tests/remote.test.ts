@@ -1,15 +1,28 @@
 // What only the remote transport has (Hub #883): authentication, validation at the edge, reconnects, a slow remote
 // consumer and the 256 KiB cap on a sync answer. The shared behavior is in conformance.test.ts.
 import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import {mkdtemp, rm} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import type {TestContext} from 'node:test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {MAX_DETAIL, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
-import {InProcessBus, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, type Command, type Overflow, type Reply, type RequestResult, type Scheduler, type SyncChange} from '../src/index.js';
+import {
+  InProcessBus, Outbox, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, connectRemote, type Command, type Overflow, type Reply, type RequestResult, type Scheduler,
+  type SyncChange,
+} from '../src/index.js';
+import {frame} from '../src/remote-protocol.js';
 import {MODE_SCHEMA, SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, validator, type Mode, type Session} from './support.js';
 import {startEdge, type Edge, type EdgeSetup} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
-const TRACE = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
+const TRACE_ID = '0af7651916cd43dd8448eb211c80319c';
+const TRACE = {traceparent: `00-${TRACE_ID}-b7ad6b7169203331-01`};
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
 async function withEdge(options: EdgeSetup, body: (edge: Edge) => Promise<void>): Promise<void> {
@@ -205,6 +218,128 @@ it('an exception inside the edge reaches the remote part and the edge\'s log onl
   const evidence = JSON.stringify({synced, raw, logs: edge.logs, errors: edge.errors.map(({error}) => error instanceof SdkError ? error.body : String(error))});
   assert.equal(evidence.includes(SECRET), false, 'the exception\'s message stays in memory');
 }));
+
+/** An edge that answers every call as `next` says, for answers a real edge never gives. Its stream only says it is ready. */
+async function fakeEdge(context: TestContext, next: () => {status: number; body: unknown}): Promise<string> {
+  const server = createServer((request, response) => {
+    if ((request.url ?? '').endsWith('/stream')) {
+      response.writeHead(200, {'content-type': 'text/event-stream'});
+      response.write(frame('ready', {connection: 'fake-connection'}));
+      return;
+    }
+    request.resume();
+    request.once('end', () => {
+      const {status, body} = next();
+      response.writeHead(status, {'content-type': 'application/json'});
+      response.end(JSON.stringify(body));
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(async () => {
+    server.closeAllConnections();
+    server.close();
+    await once(server, 'close');
+  });
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+it('the client takes an edge refusal only with a registered code and that code\'s flag; anything else is internal', async context => {
+  let answer: {status: number; body: unknown} = {status: 200, body: {}};
+  const url = await fakeEdge(context, () => answer);
+  const remote = await connectRemote({url, source: 'bunny/core', token: 'fake-token', onError: () => {}});
+  context.after(() => remote.close());
+  const publish = async (status: number, body: unknown): Promise<unknown> => {
+    answer = {status, body};
+    return remote.publish(`bunny.state.${FAMILY}.s1`, session('s1', 1)).then(() => 'published', (error: unknown) => error instanceof SdkError ? error.body : error);
+  };
+  assert.deepEqual(await publish(400, {error: {code: 'not-a-code', retryable: false}}), errorBody('internal', {detail: 'the edge answered 400'}));
+  assert.deepEqual(await publish(429, {error: {code: 'capacity', retryable: false}}), errorBody('internal', {detail: 'the edge answered 429'}), 'a wrong flag');
+  assert.deepEqual(await publish(500, {error: {}}), errorBody('internal', {detail: 'the edge answered 500'}));
+  assert.deepEqual(await publish(429, {error: {code: 'capacity', retryable: true, detail: 'busy', note: 'dropped'}}), errorBody('capacity', {detail: 'busy'}));
+});
+
+it('a command whose request the edge answers internal is uncertain, since the edge may have failed after sending it', async context => {
+  let answer: {status: number; body: unknown} = {status: 200, body: {}};
+  const url = await fakeEdge(context, () => answer);
+  const remote = await connectRemote({url, source: 'bunny/core', token: 'fake-token', onError: () => {}});
+  context.after(() => remote.close());
+  const request = async (status: number, body: ErrorBody, requestId: string): Promise<RequestResult> => {
+    answer = {status, body};
+    return remote.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId, parent: TRACE});
+  };
+  assert.deepEqual(await request(500, errorBody('internal', {detail: 'the edge failed'}), 'req-internal'), {
+    status: 'uncertain', requestId: 'req-internal',
+    error: errorBody('uncertain-result', {detail: 'the edge failed; the command may have run', requestId: 'req-internal', traceId: TRACE_ID}),
+  });
+  assert.deepEqual(await request(500, errorBody('uncertain-result', {detail: 'the edge failed after it sent the command'}), 'req-after'), {
+    status: 'uncertain', requestId: 'req-after',
+    error: errorBody('uncertain-result', {detail: 'the edge failed after it sent the command', requestId: 'req-after', traceId: TRACE_ID}),
+  });
+  assert.deepEqual(await request(400, errorBody('invalid-message', {detail: 'payload / required mode'}), 'req-invalid'), {
+    status: 'rejected', requestId: 'req-invalid',
+    error: errorBody('invalid-message', {detail: 'payload / required mode', requestId: 'req-invalid', traceId: TRACE_ID}),
+  }, 'a refusal the edge made before dispatch stays a rejection');
+});
+
+it('an edge that fails after it handed a command to its bus answers uncertain-result, with fixed text', () => {
+  const SECRET = 'tok_SYNTHETIC123';
+  // The bus ran the command, then its result cannot be encoded: the edge fails after dispatch.
+  class Unencodable extends InProcessBus {
+    override requestMessage(...call: Parameters<InProcessBus['requestMessage']>): Promise<RequestResult> {
+      return super.requestMessage(...call).then(result => ({...result, toJSON: (): never => { throw new Error(`cannot encode ${SECRET}`); }}));
+    }
+  }
+  return withEdge({bus: options => new Unencodable(options)}, async edge => {
+    const handled: string[] = [];
+    await checked(edge.bus.connect('bunny/wall')).respond<Mode>('bunny.cmd.mode.*', command => {
+      handled.push(command.data.requestId);
+      return {status: 'accepted'};
+    });
+    const requester = await edge.connect('bunny/core');
+    const result = await requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'req-ran', parent: TRACE});
+    assert.deepEqual(result, {
+      status: 'uncertain', requestId: 'req-ran',
+      error: errorBody('uncertain-result', {detail: 'the edge failed after it sent the command', requestId: 'req-ran', traceId: TRACE_ID}),
+    });
+    assert.deepEqual(handled, ['req-ran'], 'the handler ran the command once');
+    assert.deepEqual(edge.logs.filter(record => record.event === 'edge.refused'),
+      [{event: 'edge.refused', route: 'request', code: 'uncertain-result', source: 'bunny/core', detail: 'the edge failed after it sent the command'}]);
+    assert.equal(JSON.stringify({result, logs: edge.logs}).includes(SECRET), false);
+  });
+});
+
+it('an outbox over the edge reports a message the edge refuses as awaiting publication, and a validator keeps it out', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'bunny-remote-outbox-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const database = new DatabaseSync(join(dir, 'part.sqlite'));
+  context.after(() => { if (database.isOpen) database.close(); });
+  const waiting = (): unknown => database.prepare('SELECT COUNT(*) AS count FROM bunny_outbox WHERE published = 0').get()?.count;
+  await withEdge({}, async edge => {
+    const seen: Message[] = [];
+    await edge.bus.connect('bunny/wall').subscribe(`bunny.*.${FAMILY}.*`, message => { seen.push(message); });
+    const remote = await edge.connect('bunny/core');
+    const clock = {now: () => Date.now()};
+    const unknown = {...turnEnded('s1'), dataschema: 'https://bunny.invalid/events/not-registered/2.0'};
+    const reports: unknown[] = [];
+    const onError = (error: unknown): void => { reports.push(error instanceof SdkError ? error.body : error); };
+    const unchecked = new Outbox({sdk: remote, database, clock, onError});
+    await unchecked.transaction(add => [add(`bunny.event.${FAMILY}.s1`, unknown)]);
+    await unchecked.transaction(add => [add(`bunny.state.${FAMILY}.s1`, session('s1', 1))]);
+    assert.deepEqual(reports, [errorBody('unknown-schema', {detail: 'committed, awaiting publication'})], 'reported once for the run of refusals');
+    assert.equal(waiting(), 2, 'the refused message holds back the one behind it');
+    assert.deepEqual(seen, []);
+
+    database.exec('DELETE FROM bunny_outbox');
+    const outbox = new Outbox({sdk: remote, database, clock, validator, onError});
+    await assert.rejects(outbox.transaction(add => [add(`bunny.event.${FAMILY}.s1`, unknown)]), refused('unknown-schema'));
+    assert.equal(waiting(), 0, 'the refused message rolled back instead of waiting');
+    const [sent] = await outbox.transaction(add => [add(`bunny.state.${FAMILY}.s1`, session('s1', 1))]);
+    await until(() => seen.length === 1, 'the next message');
+    assert.deepEqual(seen, [sent]);
+    assert.equal(reports.length, 1);
+  });
+});
 
 const codeOf = (result: {status: string; error?: {error: {code: string}}}): string => result.error?.error.code ?? result.status;
 const detailOf = (result: RequestResult): string | undefined => result.status === 'accepted' ? undefined : result.error.error.detail;

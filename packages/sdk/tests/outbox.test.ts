@@ -9,8 +9,8 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {InProcessBus, Outbox, SdkError, type AddMessage, type Draft, type Participant, type SendOptions} from '../src/index.js';
-import {checked, flush, it, modeSet, session, trace, turnEnded} from './support.js';
+import {InProcessBus, Outbox, SdkError, type AddMessage, type Draft, type ErrorScope, type OutboxOptions, type Participant, type SendOptions} from '../src/index.js';
+import {checked, flush, it, modeSet, session, trace, turnEnded, validator} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
@@ -44,6 +44,8 @@ type StartOptions = {
   wrap?: (module: Participant) => Participant;
   /** False when the core has failed and listens to nothing in this run. */
   core?: boolean;
+  /** The outbox's own options. */
+  outbox?: Pick<OutboxOptions, 'onError' | 'validator'>;
 };
 
 async function world(context: TestContext): Promise<{core: Core; start: (options?: StartOptions) => Promise<Run>}> {
@@ -52,14 +54,14 @@ async function world(context: TestContext): Promise<{core: Core; start: (options
   const file = join(dir, 'lamp.sqlite');
   const core = new Core();
   // Each start is a new process: a new bus, clock and connection, on the same database file.
-  const start = async ({wrap = module => module, core: coreUp = true}: StartOptions = {}): Promise<Run> => {
+  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}}: StartOptions = {}): Promise<Run> => {
     const bus = new InProcessBus();
     if (coreUp) await core.attach(bus);
     const module = checked(bus.connect('bunny/modules/lamp'));
     const database = new DatabaseSync(file);
     context.after(() => { if (database.isOpen) database.close(); });
     database.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
-    const outbox = new Outbox({sdk: wrap(module), database, clock: {now: () => Date.now()}});
+    const outbox = new Outbox({sdk: wrap(module), database, clock: {now: () => Date.now()}, ...extra});
     return {bus, module, database, outbox};
   };
   return {core, start};
@@ -231,27 +233,73 @@ it('a publish refused after the commit resolves as committed, and the next start
   assert.ok(added.every(message => trace(message.traceparent).traceId === PARENT_TRACE));
 });
 
-it('a commit whose publish is refused resolves, and its messages go out unchanged with the next transaction, never resent on their own', async context => {
+it('a commit whose publish is refused resolves, is reported once as awaiting publication, and goes out unchanged later', async context => {
+  // The outbox keeps no timer: past any deadline, nothing sends again on its own.
+  context.mock.timers.enable({apis: ['setTimeout', 'setInterval']});
   const {core, start} = await world(context);
   const publishing = {refusing: true, attempts: 0};
-  const run = await start({wrap: module => refusing(module, publishing)});
+  const reports: {error: unknown; scope: ErrorScope}[] = [];
+  const run = await start({wrap: module => refusing(module, publishing), outbox: {onError: (error, scope) => { reports.push({error, scope}); }}});
   const added = await run.outbox.transaction(add => switchOn(add, run.database, {parent: PARENT}));
   assert.equal(added.length, 3, 'committed: it resolves with the work\'s result, never as a rollback');
   assert.deepEqual(lamps(run.database), [{id: 'lamp-1', power: 'on'}]);
   assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})), 'committed and awaiting publication');
   assert.equal(publishing.attempts, 1, 'the refusal stopped the send at its first message');
+  const [report] = reports;
+  assert.ok(report?.error instanceof SdkError);
+  assert.deepEqual(report.error.body, errorBody('invalid-state', {detail: 'committed, awaiting publication'}));
+  assert.ok(report.error.cause instanceof SdkError, 'the refusal stays in memory as the cause');
+  assert.deepEqual(report.scope, {source: 'bunny/modules/lamp', pattern: 'outbox'});
+  context.mock.timers.tick(24 * 60 * 60_000);
   await flush();
-  await new Promise(resolve => { setTimeout(resolve, 50); });
   assert.equal(publishing.attempts, 1, 'nothing sends again on its own');
   assert.deepEqual(core.raw, []);
+
+  // A second refused transaction in the same run is not reported again.
+  const [held] = await run.outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))]);
+  assert.equal(reports.length, 1, 'one report for the run of refusals');
+  assert.equal(publishing.attempts, 2);
 
   publishing.refusing = false;
   const [next] = await run.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 2))]);
   await flush();
-  assert.deepEqual(core.raw, [...added, next], 'the waiting messages first, exactly as stored: id, time and trace');
+  assert.deepEqual(core.raw, [...added, held, next], 'the waiting messages first, exactly as stored: id, time and trace');
   assert.ok(added.every(message => trace(message.traceparent).traceId === PARENT_TRACE), 'the stored trace context is kept');
-  assert.equal(publishing.attempts, 5, 'one refused attempt, then each message once');
+  assert.equal(publishing.attempts, 7, 'two refused attempts, then each message once');
   assert.deepEqual(rows(run.database), [{id: added[2]?.id, published: 1}], 'only the outcome stays, published, until the core acknowledges it');
+
+  // After a send went through, the next refusal is reported again.
+  publishing.refusing = true;
+  await run.outbox.transaction(add => [add('bunny.state.session.s3', session('s3', 1))]);
+  assert.equal(reports.length, 2);
+});
+
+it('a refused publish goes to a BunnySdkWarning by default, and a failing listener never fails the transaction', async context => {
+  const {start} = await world(context);
+  const publishing = {refusing: true, attempts: 0};
+  const warnings: Error[] = [];
+  const listen = (warning: Error): void => { warnings.push(warning); };
+  process.on('warning', listen);
+  context.after(() => { process.off('warning', listen); });
+  const quiet = await start({wrap: module => refusing(module, publishing)});
+  await quiet.outbox.transaction(add => switchOn(add, quiet.database));
+  await new Promise(resolve => { setImmediate(resolve); });
+  const warning = warnings.find(entry => entry.name === 'BunnySdkWarning');
+  assert.equal(warning?.message, 'bunny/modules/lamp on outbox: invalid-state: committed, awaiting publication');
+  const throwing = await start({wrap: module => refusing(module, publishing), outbox: {onError: () => { throw new Error('the listener failed'); }}});
+  assert.equal((await throwing.outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))])).length, 1);
+});
+
+it('with a validator, a message the profile refuses rolls its transaction back instead of waiting in the outbox', async context => {
+  const {core, start} = await world(context);
+  const run = await start({outbox: {validator}});
+  const unknown = {...turnEnded('s1'), dataschema: 'https://bunny.invalid/events/not-registered/2.0'};
+  await assert.rejects(run.outbox.transaction(add => switchOn(add, run.database).concat(add('bunny.event.session.s1', unknown))), refused('unknown-schema'));
+  assert.deepEqual(lamps(run.database), [], 'the work rolled back with it');
+  assert.deepEqual(rows(run.database), [], 'nothing waits in the outbox');
+  const added = await run.outbox.transaction(add => switchOn(add, run.database));
+  await flush();
+  assert.deepEqual(core.raw, added, 'a later transaction is not held back');
 });
 
 it('only published kinds on their own key class go in, so no command is ever stored or sent again', async context => {

@@ -3,10 +3,11 @@
 // live on one event stream; after a lost stream the client reconnects, registers them again and tells every
 // subscription of the gap, so a sync copy resyncs. Nothing is replayed.
 import {randomUUID} from 'node:crypto';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
+import {refusalOf, replyOf} from './refusal.js';
 import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.js';
 import {parseKey} from './routing.js';
 import {
@@ -55,7 +56,6 @@ const body = (code: ErrorCode, detail: string, ids: {requestId?: string; traceId
 const invalid = (detail: string): SdkError => new SdkError(body('invalid-request', detail));
 type Fields = Record<string, unknown>;
 const fields = (value: unknown): Fields => typeof value === 'object' && value !== null ? value as Fields : {};
-const isReply = (value: unknown): value is Reply => fields(value).status === 'accepted' || typeof fields(fields(value).error).code === 'string';
 
 /** An edge's refusal as the shared error body, or `unavailable` when the edge could not be reached. */
 function bodyOf(error: unknown): ErrorBody {
@@ -345,14 +345,15 @@ class RemoteClient {
 
   /**
    * Runs the remote responder and sends its answer. A handler that throws, or answers with something other than a
-   * reply, has started and may have acted, so it sends `{status: 'uncertain'}`, which the edge settles as `uncertain`
-   * with `uncertain-result`, as the bus does in process; never a refusal.
+   * valid reply, such as an error body with an unregistered code or the wrong flag, has started and may have acted. It
+   * sends `{status: 'uncertain'}`, which the edge settles as `uncertain` with `uncertain-result`, as the bus does in
+   * process; never a refusal.
    */
   async #reply<T extends object>(command: Command<T>, responder: Responder<T>, id: string): Promise<void> {
     let reply: Reply | {status: 'uncertain'};
     try {
-      const given: unknown = await responder(command);
-      if (!isReply(given)) throw new TypeError('a responder returned something other than a reply');
+      const given = replyOf(await responder(command));
+      if (given === undefined) throw new TypeError('a responder returned something other than a reply');
       reply = given;
     } catch (error) {
       this.#report(error, `respond ${command.type}`);
@@ -397,8 +398,13 @@ class RemoteClient {
         try {
           return fields(await this.#post('request', {key, command}, signal)).result as RequestResult;
         } catch (error) {
-          if (error instanceof SdkError) return {status: 'rejected', requestId, error: named(error.body, ids)};
-          return silent;
+          if (!(error instanceof SdkError)) return silent;
+          const {code} = error.body.error;
+          // The edge failed. The requester cannot tell whether that was before or after the command reached a handler,
+          // so it may have run: uncertain, never a refusal that claims no effect.
+          if (code === 'internal') return {status: 'uncertain', requestId, error: body('uncertain-result', 'the edge failed; the command may have run', ids)};
+          if (code === 'uncertain-result') return {status: 'uncertain', requestId, error: named(error.body, ids)};
+          return {status: 'rejected', requestId, error: named(error.body, ids)};
         }
       }, {signal: abandon.signal, answer: abandoned});
     } finally {
@@ -515,9 +521,9 @@ class RemoteClient {
     return await response.json() as unknown;
   }
 
+  /** The edge's refusal, rebuilt; a body with an unregistered code or the wrong flag is not one, and becomes `internal`. */
   async #refusal(response: Response): Promise<ErrorBody> {
-    const parsed = fields(await response.json().catch(() => ({})));
-    return isErrorCode(fields(parsed.error).code) ? parsed as ErrorBody : body('internal', `the edge answered ${response.status}`);
+    return refusalOf(await response.json().catch(() => ({}))) ?? body('internal', `the edge answered ${response.status}`);
   }
 
   #report(error: unknown, pattern: string): void {

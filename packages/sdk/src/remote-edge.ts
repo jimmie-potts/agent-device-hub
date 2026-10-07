@@ -4,10 +4,11 @@
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
-  MAX_DETAIL, MAX_MESSAGE_BYTES, RETRYABLE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
+  MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
 import {buildMessage, type Content} from './envelope.js';
 import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
+import {refusalOf, replyOf} from './refusal.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
@@ -16,7 +17,8 @@ import {childOf} from './trace.js';
 /** One remote participant's credential: a bearer token that lets it act as `source`. */
 export type RemoteGrant = {source: string; token: string};
 /**
- * What the edge logs. It never carries a credential, and its `detail` is the refusal's fixed text, never an exception's
+ * What the edge logs. It never carries a credential. Its `detail` is the refusal's own text, which may quote what the
+ * caller sent, such as a path, a claimed source, an id or the attribute a validator refused, and never an exception's
  * message.
  */
 export type EdgeLogRecord = {event: 'edge.refused' | 'edge.connected' | 'edge.disconnected'; route: string; code?: ErrorCode; source?: string; detail?: string};
@@ -59,6 +61,11 @@ const refuse = (code: ErrorCode, detail: string): Refusal => new Refusal(errorBo
  * such as a credential a library quoted. The exception itself stays in memory; it reaches no response or log record.
  */
 const FAILED: ErrorBody = errorBody('internal', {detail: 'the edge failed'});
+/**
+ * The same answer once the edge has handed a command to its bus: a handler may have run it, so the edge cannot claim
+ * that nothing happened (ADR 0012, "Errors, effects and outcomes").
+ */
+const FAILED_AFTER_DISPATCH: ErrorBody = errorBody('uncertain-result', {detail: 'the edge failed after it sent the command'});
 const digest = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 const isCall = (value: string): value is Call => (CALLS as readonly string[]).includes(value);
 type Fields = Record<string, unknown>;
@@ -74,18 +81,6 @@ function identifier(body: Fields, name: string): string {
   const value = text(body, name);
   if (!ID.test(value)) throw refuse('invalid-request', `${name} is not an identifier`);
   return value;
-}
-
-/**
- * A remote responder's or owner's refusal, rebuilt as the shared error body: a registered code with its flag, and at
- * most `MAX_DETAIL` characters of detail. Anything else it carried is dropped. Undefined when it is not a refusal.
- */
-function rebuilt(value: unknown): ErrorBody | undefined {
-  const error = fields(fields(value)?.error);
-  const code = error?.code;
-  if (!isErrorCode(code) || RETRYABLE[code] !== error?.retryable) return undefined;
-  const detail = typeof error?.detail === 'string' && error.detail.length > 0 ? error.detail.slice(0, MAX_DETAIL) : undefined;
-  return errorBody(code, detail === undefined ? {} : {detail});
 }
 
 /**
@@ -183,6 +178,8 @@ export class RemoteEdge {
     const path = new URL(request.url ?? '/', 'http://edge').pathname;
     const route = path.startsWith(`${REMOTE_PATH}/`) ? path.slice(REMOTE_PATH.length + 1) : path;
     let source: string | undefined;
+    // Set once a command is handed to the bus: from then on a failure may follow a handler's effect.
+    const progress = {dispatched: false};
     try {
       source = this.#authenticate(request);
       if (request.method === 'GET' && route === 'stream') {
@@ -196,10 +193,11 @@ export class RemoteEdge {
       response.once('close', () => { if (!response.writableEnded) dropped.abort(); });
       // The remote part may have gone while its body was read.
       if (response.closed) dropped.abort();
-      this.#write(response, 200, {schema: REMOTE_SCHEMA, ...await this.#call(source, route, body, dropped.signal)});
+      this.#write(response, 200, {schema: REMOTE_SCHEMA, ...await this.#call(source, route, body, dropped.signal, progress)});
     } catch (error) {
-      // Only the edge's and the SDK's own refusals carry their text on; anything else is the fixed `internal` answer.
-      const refused = error instanceof Refusal || error instanceof SdkError ? error.body : FAILED;
+      // The edge's and the SDK's own refusals keep their text, which may quote what the caller sent. Anything else gets
+      // fixed text: `internal`, or `uncertain-result` once a command was handed to the bus.
+      const refused = error instanceof Refusal || error instanceof SdkError ? error.body : progress.dispatched ? FAILED_AFTER_DISPATCH : FAILED;
       const {code, detail} = refused.error;
       this.#log({event: 'edge.refused', route, code, ...(source === undefined ? {} : {source}), ...(detail === undefined ? {} : {detail})});
       // A body over its limit is left unread, so the connection closes after the refusal.
@@ -252,7 +250,7 @@ export class RemoteEdge {
     return body;
   }
 
-  async #call(source: string, call: Call, body: Fields, signal: AbortSignal): Promise<object> {
+  async #call(source: string, call: Call, body: Fields, signal: AbortSignal, progress: {dispatched: boolean}): Promise<object> {
     switch (call) {
       case 'publish':
         await this.#participant(source).publishMessage(text(body, 'key'), this.#inbound(source, body.message));
@@ -261,7 +259,10 @@ export class RemoteEdge {
         // The edge answers when its bus settles: the reply, `expired` if the command was still queued at its deadline,
         // or `uncertain-result` if a handler had it. The remote requester waits a little longer, so it hears this.
         const command = this.#inbound(source, body.command) as Command<object>;
-        const result = await this.#bus.requestMessage(source, text(body, 'key'), command, this.#remaining(command), signal);
+        const key = text(body, 'key');
+        // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal.
+        progress.dispatched = true;
+        const result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), signal);
         return {result};
       }
       case 'sync': {
@@ -308,7 +309,7 @@ export class RemoteEdge {
       }
       case 'answer': {
         this.#connection(source, body);
-        const answer = rebuilt(body.answer) ?? this.#snapshot(source, body.answer);
+        const answer = refusalOf(body.answer) ?? this.#snapshot(source, body.answer);
         this.#waiting.get(this.#key(source, identifier(body, 'server'), identifier(body, 'request')))?.finish(answer);
         return {status: 'received'};
       }
@@ -344,7 +345,7 @@ export class RemoteEdge {
    * The `uncertain` answer of a handler that failed is taken before this, since it makes no reply message.
    */
   #reply(source: string, requestId: string, value: unknown): Reply {
-    const reply: Reply | undefined = fields(value)?.status === 'accepted' ? {status: 'accepted'} : rebuilt(value);
+    const reply = replyOf(value);
     if (reply === undefined) throw refuse('invalid-request', 'a reply is accepted, uncertain or a registered error body');
     const data = 'error' in reply ? {requestId, error: reply.error} : {requestId, status: reply.status};
     const candidate = buildMessage(source, 'reply', {type: 'org.bunny.remote.reply.replied', subject: requestId, dataschema: REPLY_SCHEMA, data}, childOf(undefined), this.#now());
@@ -490,9 +491,11 @@ export class RemoteEdge {
     });
   }
 
+  /** Writes one JSON answer. The body is encoded first, so a body that cannot be encoded leaves the answer unsent. */
   #write(response: ServerResponse, status: number, body: object, close = false): void {
     if (response.headersSent || response.destroyed) return;
+    const text = JSON.stringify(body);
     response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', ...(close ? {connection: 'close'} : {})});
-    response.end(JSON.stringify(body));
+    response.end(text);
   }
 }

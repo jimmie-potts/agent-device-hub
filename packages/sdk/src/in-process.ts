@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {SyncOwners} from './in-process-sync.js';
 import {DeliveryQueue} from './queue.js';
+import {replyOf} from './refusal.js';
 import {keyClassOf, overlaps, parseKey, parsePattern, type Pattern, type RoutingKey} from './routing.js';
 import {
   MAX_TIMEOUT_MS, SdkError, type Command, type CommandDraft, type Draft, type Handler, type PublishedKind, type Reply, type RequestOptions,
@@ -53,7 +54,7 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 export const unanswered: unique symbol = Symbol('unanswered');
 export const failed: unique symbol = Symbol('failed');
 export const undelivered: unique symbol = Symbol('undelivered');
-/** Why a request whose responder threw, or answered with something other than a reply, is uncertain. */
+/** Why a request whose responder threw, or answered with something other than a valid reply, is uncertain. */
 const FAILED_DETAIL = 'the responder failed after it started';
 
 /** Whether a message of this kind travels through publish. */
@@ -61,9 +62,6 @@ const isPublished = (kind: MessageKind): kind is PublishedKind => keyClassOf(kin
 
 const foreign = (source: string, message: Message<unknown>): SdkError =>
   new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
-
-const isReply = (value: unknown): value is Reply => typeof value === 'object' && value !== null
-  && (('status' in value && value.status === 'accepted') || ('error' in value && typeof value.error === 'object' && value.error !== null));
 
 /** Runs a call so that a thrown refusal becomes a rejected promise, as a remote transport would report it. */
 function attempt<T>(call: () => T | Promise<T>): Promise<T> {
@@ -383,8 +381,10 @@ export class InProcessBus {
           settle({status: 'rejected', requestId, error: body('unavailable', 'the command never reached the responder', ids)});
           return;
         }
-        if (!isReply(given)) throw new TypeError('a responder returned something other than a reply');
-        answer = given;
+        // A refusal must be a valid error body: one with an unregistered code or a wrong flag claims nothing.
+        const reply = replyOf(given);
+        if (reply === undefined) throw new TypeError('a responder returned something other than a reply');
+        answer = reply;
       } catch (error) {
         this.#report(error, scope);
         settle(uncertain(FAILED_DETAIL));
