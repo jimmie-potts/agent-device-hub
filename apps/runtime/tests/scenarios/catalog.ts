@@ -3,7 +3,7 @@
 // CI) and #920's disposable runs (tier 2). A step acts through the harness, expects an observation within a time bound,
 // or expects one to hold for a while. Time is virtual in memory and real in a run; only the harness differs.
 import type {InboxItem, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {controlPlayback, type PlaybackSection, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
+import {SIMULATED_SECTION, controlPlayback, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
 import type {CommandDraft, Participant} from '@jimmie-potts/sdk';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
@@ -709,11 +709,8 @@ const misconfiguredModule: Scenario = {
 
 // The playback module (Hub #929): one owner for the HT-A9 and the Move, presenting the speaker the phone plays to.
 
-/** The playback section: the Move first, then the HT-A9, at loopback addresses the simulated speakers never use. */
-export const PLAYBACK_SECTION: PlaybackSection = {
-  id: 'living-room',
-  sources: [{kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control'}, {kind: 'sony', endpoint: 'http://127.0.0.1:10000/sony'}],
-};
+/** The playback section: the factory's simulated section, the Move first, then the HT-A9. */
+export const PLAYBACK_SECTION = SIMULATED_SECTION;
 const playbackCommand = (action: 'play' | 'pause' | 'next' | 'previous') => controlPlayback(PLAYBACK_SECTION.id, action);
 /** The reader's copy of the playback record, as `availability player "title" [controls]`. */
 const playbackShown = (h: Harness): string => {

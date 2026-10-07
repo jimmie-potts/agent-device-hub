@@ -34,7 +34,7 @@ the runtime's health does. Ending a stream takes only a part's source, `bunny/pa
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list and no configuration file: the core, with the playback module `refused` |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers) |
 | one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`) and `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 

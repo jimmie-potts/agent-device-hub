@@ -12,7 +12,7 @@ import {
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
 import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
-import {SimulatedSpeakers} from './simulated.js';
+import {SIMULATED_SECTION, SimulatedSpeakers} from './simulated.js';
 import {createSource, type Deadline} from './sources.js';
 import {httpSpeakers, type SpeakerTransport} from './transport.js';
 
@@ -354,9 +354,13 @@ BunnyModule<PlaybackConfig> {
   };
 }
 
-/** The shipped list's factory: the real speakers over HTTP, or the simulated ones under `--simulate`. */
+/**
+ * The shipped list's factory: the real speakers over HTTP, or the simulated ones under `--simulate`, with the section
+ * that configures the simulated build.
+ */
 export const playbackFactory = {
   name: PLAYBACK_MODULE,
   create: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: httpSpeakers()}),
   simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers()}),
+  simulatedSection: SIMULATED_SECTION,
 } as const;

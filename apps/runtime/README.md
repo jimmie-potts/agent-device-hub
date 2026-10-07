@@ -16,7 +16,9 @@ Modules are written against the [module API](../../packages/sdk/README.md#module
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
 subscription: adding or removing a module is a code change in `src/modules.ts`.
 Each entry there is the module's factory, which creates it with its real device
-transport, or with its simulated one under `--simulate`. Each module's settings
+transport, or with its simulated one under `--simulate`. A factory whose module
+takes a configuration also gives a `simulatedSection`, which configures its
+simulated build; tests and the `shipped` disposable run use it. Each module's settings
 and secrets come from one private [configuration file](#configuration).
 
 ## Agent-session core

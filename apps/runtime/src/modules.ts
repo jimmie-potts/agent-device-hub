@@ -15,6 +15,11 @@ export type ModuleFactory = {
   readonly simulate: () => BunnyModule;
   /** The module's own payload schemas by `dataschema`, which the SDK edge checks remote parts' messages against. */
   readonly schemas?: Readonly<Record<string, object>>;
+  /**
+   * For a module that takes a configuration: a section, without its `secrets` member, that configures its simulated
+   * build, whose secret files each hold the synthetic token. Tests and disposable runs of the shipped list use it.
+   */
+  readonly simulatedSection?: object;
 };
 
 /**

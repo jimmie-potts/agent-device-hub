@@ -4,10 +4,20 @@
 // recorded, so the module's own parsing runs on them. Like real speakers, they keep their state when the runtime
 // restarts. A test can play, pause or stop either one, switch it to another input, make it stop answering, or make
 // its next command fail or never answer. They ignore the endpoint they are called at.
+import type {PlaybackSection} from './configuration.js';
 import type {PlaybackAction} from './playback.js';
 import {SONOS_SERVICE, type SonosReply, type SonyReply, type SpeakerTransport} from './transport.js';
 
 export type SimulatedKind = 'sony' | 'sonos';
+
+/**
+ * A section that configures the module for the simulated speakers: the Move first, then the HT-A9, at loopback
+ * addresses they never use. Tests, the scenario catalog and disposable runs of the shipped list use it.
+ */
+export const SIMULATED_SECTION: PlaybackSection = {
+  id: 'living-room',
+  sources: [{kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control'}, {kind: 'sony', endpoint: 'http://127.0.0.1:10000/sony'}],
+};
 /** What one simulated speaker shows, as plain data. */
 export type SpeakerState = {
   /** Whether it answers. One that does not never replies, until the call's signal aborts. */

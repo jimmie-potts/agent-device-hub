@@ -4,7 +4,7 @@
 import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {EDGE_GRANTS_FILE} from '../src/index.js';
+import {EDGE_GRANTS_FILE, shippedModules} from '../src/index.js';
 import {ROLES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {sourceOf, writeConfiguration} from '../tests/scenarios/parts.js';
 
@@ -13,7 +13,7 @@ export const RUN_SCHEMA = 'runtime-run/1.0';
 /** How a boundary negative control crosses its boundary. */
 export type Fault = 'real-transports' | 'installed-port' | 'default-state';
 /**
- * Which runtime a run starts: `shipped`, the runtime's own entry point with the shipped module list (empty today), or
+ * Which runtime a run starts: `shipped`, the runtime's own entry point with the shipped module list, or
  * `fixtures`, the same runtime with the fixture modules and families the scenario catalog uses.
  */
 export type RunRuntime = 'shipped' | 'fixtures';
@@ -28,9 +28,16 @@ export const homeOf = (dataDir: string): string => join(dataDir, 'home');
 /** Where a configured run keeps its configuration file and token files (Hub #919): `<data>/config`. */
 export const configDirOf = (dataDir: string): string => join(dataDir, 'config');
 
+/** Each shipped module's simulated section (Hub #844), so a run of the shipped list starts every module. */
+const SHIPPED_SECTIONS: NonNullable<Seed['config']> = Object.fromEntries(shippedModules.flatMap(({name, simulatedSection}) =>
+  simulatedSection === undefined ? [] : [[name, simulatedSection]]));
+
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
-  shipped: {description: 'The runtime\'s own entry point with the shipped module list: the core alone, with no device module', runtime: 'shipped', modules: []},
+  shipped: {
+    description: 'The runtime\'s own entry point with the shipped module list: the core and each device module, configured for its simulated devices',
+    runtime: 'shipped', modules: [], config: SHIPPED_SECTIONS,
+  },
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}),

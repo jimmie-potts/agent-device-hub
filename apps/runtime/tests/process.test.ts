@@ -13,7 +13,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, parseArguments, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {entry, health, it, stateDir, waitFor} from './support.js';
 
@@ -50,19 +50,17 @@ async function launch(context: TestContext, script: string, args: readonly strin
 
 const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
 
-it('the shipped runtime starts with the core, refuses the playback module without its configuration, serves health and stops cleanly on SIGTERM', async context => {
+/** Each shipped device module, which the shipped runtime refuses while no configuration gives it a section (Hub #919). */
+const UNCONFIGURED = shippedModules.slice(1).map(({name}) => ({
+  name, apiVersion: '1.1', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
+}));
+
+it('the shipped runtime starts the core, refuses each device module that has no configuration, serves health and stops cleanly on SIGTERM', async context => {
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)]);
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
-  // Without a configuration file, a module that takes one is refused and never reaches a device (Hub #919, #929).
-  assert.equal(body.status, 'degraded');
-  assert.deepEqual(body.modules, [
-    {name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
-    {
-      name: 'playback', apiVersion: '1.1', state: 'refused', healthy: false, syncRestarts: 0,
-      reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
-    },
-  ]);
+  assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -349,8 +347,7 @@ it('--edge refuses a missing grants file and a grant that acts as the core or a 
 
 it('--config reads a private configuration file, and a file the runtime cannot trust names its reason in runtime.failed', async context => {
   const root = await stateDir(context);
-  // The shipped playback module's section, at a loopback address; the runtime runs it with --simulate, so nothing is reached.
-  const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {playback: {id: 'living-room', sources: [{kind: 'sony', endpoint: 'http://127.0.0.1:10000/sony'}]}}});
+  const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {}});
   const write = async (name: string, text: string, mode = 0o600): Promise<string> => {
     await writeFile(join(root, name), text, {mode});
     await chmod(join(root, name), mode);
@@ -371,8 +368,10 @@ it('--config reads a private configuration file, and a file the runtime cannot t
       {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, file);
     assert.equal(runtime.stdout(), '', `${file}: no ready line`);
   }
-  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good, '--simulate']);
-  assert.equal((await health(runtime.url)).body.status, 'ok');
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
+  // The file names no module, so the core runs and each shipped device module is refused for want of its section.
+  assert.deepEqual((await health(runtime.url)).body.modules.slice(1), UNCONFIGURED);
+  assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running');
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
 });
