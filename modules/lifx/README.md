@@ -259,8 +259,8 @@ status colors:
 - A bulb switched off stays dark after a status change: a paint never turns it on.
 - A color set in the LIFX app stays until the next status change.
 - A bulb that was off the network while powered during a status change keeps
-  its last color when it comes back, until the next status change or mode command: a failed
-  paint is not repeated.
+  its last color when it comes back, until the next status change or mode
+  command: a failed paint is not repeated.
 
 The Beam is not qualified: it must never change, and its record shows no controls.
 
