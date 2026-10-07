@@ -6,6 +6,7 @@ import {MonitorPresentation} from '../../src/presentation/monitor-presentation.j
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 import {syntheticDashboardViews} from '../../src/presentation/dashboard-examples.js';
+import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
 import {PixooControl} from '../../src/module/control.js';
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
 it('retains paused context and renders only after explicit Monitor activation',async()=>{
@@ -135,4 +136,36 @@ it.each(['stop','pause','clear'] as const)('immediately cancels a pending Media 
   expect(await stopping).toEqual({result:'succeeded',evidence:'observed'});for(let i=0;i<100;i++)await Promise.resolve();
   expect(player.getSession()).toBeNull();expect(device.operations.filter(x=>x.kind==='uploadAnimation')).toHaveLength(0);
  }finally{release();control.close();await monitor.close();await player.close();}
+});
+it('renders the dashboard only while Monitor participates, though its layout stays current',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});const player=await Player.open({store,device,clock});
+ let renders=0;
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),renderDashboard:layout=>{renders++;return renderDashboard(layout);}});
+ try{
+  const view=present(syntheticDashboardViews()[0]).view;
+  // In Media, a session's every change updates the layout and renders nothing.
+  for(let i=0;i<5;i++){present(view.snapshot).revision++;present(present(view.snapshot).sessions[0]).label=`Media ${i}`;monitor.submit(view);clock.advance(1000);monitor.tick();await flush(clock);}
+  expect(renders).toBe(0);expect(monitor.layout()?.rows[0]?.label).toBe('Media 4');
+  // Selecting Monitor renders the current layout at once, and its upload follows on the next tick.
+  await monitor.configure({operation:'mode',mode:'monitor'});await flush(clock);expect(renders).toBe(1);
+  monitor.tick();await flush(clock);expect(device.operations.filter(o=>o.kind==='uploadAnimation')).toHaveLength(1);
+  present(view.snapshot).revision++;present(present(view.snapshot).sessions[0]).label='Monitor';monitor.submit(view);clock.advance(1000);monitor.tick();await flush(clock);
+  expect(renders).toBe(2);
+ }finally{await monitor.close();await player.close();}
+});
+it('reports a change only when something it shows changed, not at every tick',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});const player=await Player.open({store,device,clock});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ try{
+  // One session, so the dashboard has one page and never pages on its own.
+  const view=present(syntheticDashboardViews()[0]).view;present(view.snapshot).sessions.splice(1);monitor.submit(view);await monitor.configure({operation:'mode',mode:'monitor'});
+  for(let i=0;i<30;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  let changes=0;monitor.onChange=()=>{changes++;};
+  // Steady: the picture is on the device and nothing changes, so a hundred ticks report nothing.
+  for(let i=0;i<100;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  expect(changes).toBe(0);
+  present(present(view.snapshot).sessions[0]).label='Changed';present(view.snapshot).revision++;monitor.submit(view);
+  for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  expect(changes).toBeGreaterThan(0);
+ }finally{await monitor.close();await player.close();}
 });

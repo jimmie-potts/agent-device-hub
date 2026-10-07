@@ -225,7 +225,14 @@ start stays passive, as the Pixoo service's simulator did.
   more pixels than the limit fails as `too-large` from its header.
 - **Rendering.** Monitor dashboards and Now Playing cards render in worker
   calls. A failed render keeps the last picture, is tried again at the next
-  cadence, and logs one warning per run of failures.
+  cadence, and logs one warning per run of failures. The dashboard renders only
+  while Monitor participates; in Media its layout stays current for the display
+  record, but nothing renders, where a session that changed every second cost
+  57 renders a minute before. A changed card keeps the card already shown until
+  it is ready, so a pop-up never flashes the dashboard. A tick reports a change
+  only when something shown changed, and the module reads the layout and Now
+  Playing without copying their pixels: a still Monitor went from 14 to 2 ms of
+  CPU a second, and Media with a session changing every second from 34 to 3.
 
 ### Simulated transport
 

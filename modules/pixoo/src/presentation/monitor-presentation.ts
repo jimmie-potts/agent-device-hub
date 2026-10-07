@@ -48,6 +48,8 @@ export class MonitorPresentation {
  private lastOutcome:PresentationStatus['lastOutcome']=null;
  /** The current card's frame: null while it renders, or after a failed render until `retryAt`. */
  private card:{key:string;rgb:Uint8Array|null;retryAt:number}|null=null;
+ /** The last card that finished rendering, which stays on the display while a changed card renders. */
+ private previousCard:{key:string;rgb:Uint8Array}|null=null;
  private tail:Promise<unknown>=Promise.resolve();
  private closed=false;
  private interrupts=0;
@@ -57,7 +59,7 @@ export class MonitorPresentation {
  constructor(private player:Player,private options:Options){
   this.configuration=presentationConfiguration.parse(options.configuration??defaultPresentation);
   this.clock=options.clock??(()=>performance.now());
-  this.dashboard=new DashboardService({clock:this.clock,cadenceMs:options.renderCadenceMs??1000,...(options.renderDashboard===undefined?{}:{render:options.renderDashboard})});
+  this.dashboard=new DashboardService({clock:this.clock,cadenceMs:options.renderCadenceMs??1000,onChange:()=>{this.onChange();},...(options.renderDashboard===undefined?{}:{render:options.renderDashboard})});
   this.nowPlaying=structuredClone(options.nowPlaying??defaultNowPlaying);
   this.unsubscribe=player.subscribe(()=>{
    const state=player.getState();
@@ -66,9 +68,12 @@ export class MonitorPresentation {
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
   });
  }
- status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.status().rendition?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
+ status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
  rendition(){return this.dashboard.status();}
- submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter);if(this.attention())this.popupUntil=0;this.onChange();}
+ /** The dashboard's latest layout, rendered or not, not copied: the sessions, matches and page the display record reports. */
+ layout():Readonly<DashboardLayout>|null{return this.dashboard.layout();}
+ /** The dashboard renders only while Monitor participates; its layout follows every input. */
+ submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter,this.active);if(this.attention())this.popupUntil=0;this.onChange();}
  interrupt(){this.interrupts++;this.dropTakeover();this.suspend();}
  suspend(){this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;this.onChange();}
  private attention():boolean{return this.view?.snapshot?.sessions.some(session=>session.attention.some(item=>blocking.has(item.kind)))??false;}
@@ -84,6 +89,11 @@ export class MonitorPresentation {
   if(this.nowPlaying.media==='whole'&&view.card)this.beginTakeover('whole');
   this.settleTakeover();this.onChange();
  }
+ /** What the display record reports of Now Playing, without the card's pixels. */
+ nowPlayingSummary():Omit<NowPlayingStatus,'card'|'lastTakeover'|'source'>{
+  const frame=this.frame();
+  return {setting:this.nowPlaying,view:this.playback.view,showing:frame===null?'none':frame.card?'card':'dashboard',takeover:this.takeover?.kind??null};
+ }
  nowPlayingStatus():NowPlayingStatus{
   const frame=this.frame(),card=this.cardFrame(this.playback.view);
   return {setting:structuredClone(this.nowPlaying),source:this.playback.source,view:structuredClone(this.playback.view),
@@ -98,6 +108,7 @@ export class MonitorPresentation {
   if(!view.card)return null;
   const key='card:'+JSON.stringify(view),current=this.card;
   if(current?.key===key&&(current.rgb!==null||this.clock()<current.retryAt))return current.rgb;
+  if(current!==null&&current.rgb!==null)this.previousCard={key:current.key,rgb:current.rgb};
   const render=this.options.renderCard??renderNowPlaying;
   let rendered:Uint8Array|Promise<Uint8Array>;
   try{rendered=render(view);}catch{this.card={key,rgb:null,retryAt:this.clock()+CARD_RETRY_MS};return null;}
@@ -145,13 +156,16 @@ export class MonitorPresentation {
  private dropTakeover(){if(!this.takeover)return;this.takeover=null;this.lastTakeover='dropped';this.lastFrame='';this.onChange();}
  /** The picture the display should show now, if the presentation owns it. */
  private frame():{key:string;frames:ReadonlyArray<Uint8Array|number[]>;generation:number;card:boolean}|null{
-  const view=this.playback.view,card=this.cardFrame(view);
+  const view=this.playback.view,ready=this.cardFrame(view);
+  // While a changed card renders, the card the display already shows stays, under its own key, so nothing is sent again.
+  const previous=this.previousCard;
+  const card=ready!==null?{key:'card:'+JSON.stringify(view),rgb:ready}:view.card&&previous!==null&&this.lastFrame===previous.key?{key:previous.key,rgb:previous.rgb}:null;
   if(this.active){
-   if(this.popupUntil!==0&&card!==null)return {key:'card:'+JSON.stringify(view),frames:[card],generation:this.playerGeneration,card:true};
-   const rendition=this.dashboard.status().rendition;
+   if(this.popupUntil!==0&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.playerGeneration,card:true};
+   const rendition=this.dashboard.current();
    return rendition?{key:'dashboard:'+rendition.generation,frames:rendition.frames,generation:this.playerGeneration,card:false}:null;
   }
-  if(this.takeover!==null&&card!==null)return {key:'card:'+JSON.stringify(view),frames:[card],generation:this.takeover.generation,card:true};
+  if(this.takeover!==null&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.takeover.generation,card:true};
   return null;
  }
  private enqueue<T>(work:()=>Promise<T>):Promise<T>{
@@ -171,6 +185,8 @@ export class MonitorPresentation {
     if(this.view)this.dashboard.submit(this.view,next.filter);
     this.playerGeneration=generation;
     this.active=!this.closed&&this.player.getState().generation===generation&&this.player.getState().requestedScreenOn&&next.mode==='monitor'&&(action.operation==='mode'||wasActive);
+    // Monitor now shows the dashboard, so its current layout renders at once.
+    if(this.active)this.dashboard.tick(true);
    }finally{this.pendingMode=null;this.onChange();}
   });
  }
@@ -183,6 +199,7 @@ export class MonitorPresentation {
    this.suspend();const paused=this.player.pause(),generation=this.player.getState().generation;
    await paused;this.playerGeneration=generation;
    this.active=!this.closed&&this.player.getState().generation===generation&&this.player.getState().requestedScreenOn;
+   if(this.active)this.dashboard.tick(true);
    this.onChange();
   });
  }
@@ -209,15 +226,16 @@ export class MonitorPresentation {
   });
   return pending.result;
  }
+ /** One render-timer step: pages, ends pop-ups and takeovers, and sends a changed picture. It reports only a change. */
  tick(){
   if(this.closed)return;
-  this.dashboard.tick();
-  if(this.popupUntil!==0&&(this.clock()>=this.popupUntil||!this.playback.view.card))this.popupUntil=0;
+  let changed=this.dashboard.tick(this.active);
+  if(this.popupUntil!==0&&(this.clock()>=this.popupUntil||!this.playback.view.card)){this.popupUntil=0;changed=true;}
   this.settleTakeover();
   // A song already playing when Media starts takes the display over too; the owner publishes nothing new to start it.
   if(this.nowPlaying.media==='whole'&&this.playback.view.card)this.beginTakeover('whole');
   const frame=this.frame();
-  this.onChange();
+  if(changed)this.onChange();
   if(!frame||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;
   const generation=this.generation,playerGeneration=frame.generation,takeover=this.active?null:this.takeover;
   const renditionGeneration=this.dashboard.status().rendition?.generation??0;

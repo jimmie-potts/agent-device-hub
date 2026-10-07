@@ -22,7 +22,7 @@ import {
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
 import {Player, LibraryPlaybackStore} from '../playback/index.js';
-import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView, type DashboardLayout} from '../presentation/index.js';
+import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
 import type {RenderRequest} from './render-worker.js';
@@ -551,8 +551,8 @@ class PixooRuntime {
   #displayRecord(): Omit<DisplayRecord, 'revision'> | undefined {
     const monitor = this.#monitor, player = this.#player;
     if (monitor === undefined || player === undefined) return undefined;
-    const status = monitor.status(), playing = monitor.nowPlayingStatus(), state = player.getState();
-    const layout: DashboardLayout | undefined = monitor.rendition().rendition?.layout;
+    const status = monitor.status(), playing = monitor.nowPlayingSummary(), state = player.getState();
+    const layout = monitor.layout() ?? undefined;
     const item = player.getSession()?.playlist.items.find(entry => entry.id === state.itemId);
     const {filter, cadenceMs, mode} = status.configuration;
     return {

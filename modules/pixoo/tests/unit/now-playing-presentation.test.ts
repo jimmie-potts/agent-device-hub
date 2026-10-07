@@ -193,3 +193,24 @@ it('uploads a repeated identical card once, and a changed card once more',async(
   expect(s.frames().filter(frame=>JSON.stringify(frame)===JSON.stringify(s.card(paused))).length).toBe(1);
  }finally{await s.close();}
 });
+it('keeps the previous card on the display while a changed card renders, never flashing the dashboard',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
+ const pending:{view:Extract<NowPlayingView,{card:true}>;resolve:(rgb:Uint8Array)=>void}[]=[];
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),renderCard:view=>new Promise<Uint8Array>(resolve=>{pending.push({view,resolve});})});
+ const frames=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
+ const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
+ const answer=()=>{for(const job of pending.splice(0))job.resolve(renderNowPlaying(job.view));};
+ try{
+  monitor.submit(quietView);await flush(clock);await monitor.configure({operation:'mode',mode:'monitor'});await run(1100);
+  const dashboard=frames().at(-1);
+  monitor.submitPlayback(playing());await run(200);answer();await run(1000);
+  const first=Array.from(renderNowPlaying(playing().view));expect(frames().at(-1)).toEqual(first);
+  // The song changes: its card renders slowly, and the display keeps the first card until it is ready.
+  const before=frames().length;
+  monitor.submitPlayback(playing('OLD KING'));await run(1500);
+  expect(frames().slice(before).some(frame=>JSON.stringify(frame)===JSON.stringify(dashboard))).toBe(false);
+  expect(monitor.nowPlayingStatus().showing).toBe('card');
+  answer();await run(1100);
+  expect(frames().at(-1)).toEqual(Array.from(renderNowPlaying(playing('OLD KING').view)));
+ }finally{await monitor.close();await player.close();}
+});

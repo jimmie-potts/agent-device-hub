@@ -49,4 +49,4 @@ The safe-error rules from #953 (PR #963) arrived during the work and now cover t
 - **Outcomes grow until the core acknowledges them** (#782). Tests use the kit's stand-in acknowledgment.
 - **The library migration may meet schema v3** (#931). Attaching an older catalog runs the same migrations; #931 owns verifying the installed revision.
 - **Observed for module-local effects** might be read as a device observation. The module README and this design state the rule, and it is listed for review.
-- **Card renders can briefly lag.** A card shows once its worker call answers; until then a pop-up over Monitor keeps the dashboard.
+- **Card renders can briefly lag.** A card shows once its worker call answers. A changed card keeps the card already shown until then; a first pop-up over Monitor keeps the dashboard until its card is ready.
