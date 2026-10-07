@@ -79,6 +79,10 @@ subscriber other than the core may act on a resent occurrence.
   locking needs a new `-shm` file, and on a full disk that open failed with `disk I/O error`, so the core failed into a
   restart loop, against `bunny-runtime`'s "A full disk SHALL never fail the core". With exclusive locking the open needs
   no new space. The module holds the file's lock until it stops, so another connection is refused with `SQLITE_BUSY`.
+  That lock is a POSIX lock, which closing any descriptor of the file in the same process drops, so the runtime never
+  opens an existing module file outside SQLite: it checks the file with `lstat` and creates a missing one with
+  `O_EXCL`. Before, the opener's own check opened and closed the file, so a refused second open in the same process
+  freed the file for another process to write beside the live connection.
   No supported reader needs shared access: AGENTS.md rules out concurrent access to a component's SQLite file, and
   #935's backups copy stopped stores. A second runtime on the same state directory now fails its core when it opens
   the core's database, at once, instead of at agent-state's 3 s lease deadline; the lease still orders owners that

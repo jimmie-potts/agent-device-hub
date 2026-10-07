@@ -27,7 +27,7 @@ A scheduler delay SHALL be an integer from 0 to 2147483647; any other SHALL thro
 
 #### Scenario: The module's own database
 - **WHEN** a module writes to its database, the runtime stops, and a runtime on the same state directory starts the module again
-- **THEN** the file is `modules/<name>.sqlite` with mode 600 in a mode 700 directory, with exclusive locking and in WAL mode at `synchronous = FULL` with foreign keys on, its `-wal` file has mode 600 and there is no `-shm` file, another connection cannot read it while the module runs, the second start reads the row, and a module that never asks has no file
+- **THEN** the file is `modules/<name>.sqlite` with mode 600 in a mode 700 directory, with exclusive locking and in WAL mode at `synchronous = FULL` with foreign keys on, its `-wal` file has mode 600 and there is no `-shm` file, another connection cannot read it while the module runs, a second open in the same process is refused and another process is still refused after it, the second start reads the row, and a module that never asks has no file
 
 #### Scenario: A worker thread
 - **WHEN** a module starts a worker thread and messages it

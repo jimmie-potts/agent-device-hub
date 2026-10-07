@@ -12,7 +12,9 @@ const errcode = (error: unknown): number | undefined =>
  * - `locking_mode = EXCLUSIVE`, set before anything reads the file: the connection keeps the file to itself, so SQLite
  *   keeps the log's index in memory and never creates `<file>-shm`. A start on a full disk therefore needs no new space
  *   to open its database, and a second connection to the file, in this process or another, is refused with
- *   `SQLITE_BUSY` while this one is open. A component's database has one connection (AGENTS.md).
+ *   `SQLITE_BUSY` while this one is open. A component's database has one connection (AGENTS.md). The lock is a POSIX
+ *   lock: closing any descriptor of the file that this process opened outside SQLite drops it, so a caller never opens
+ *   an existing file another way while a connection is open.
  * - `journal_mode = WAL` at `synchronous = FULL`: each commit appends to `<file>-wal` and syncs it once before it
  *   returns, so a commit survives a power loss. A clean close checkpoints the log into the file and removes it.
  *   `NORMAL` would skip that sync, and a power loss could then undo a committed outcome (ADR 0012).

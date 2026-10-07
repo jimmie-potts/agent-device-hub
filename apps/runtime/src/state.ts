@@ -1,7 +1,7 @@
 // The runtime's private state directory, each module's own SQLite file and private folder in it, and the private files
 // it reads: its configuration file and the modules' secret files (Hub #919). Runtime state stays outside every Git
 // checkout and off Windows mounts, private to its owner, as the Hub's stores are (AGENTS.md, ADR 0011).
-import {closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
+import {closeSync, constants, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
 import {lstat, mkdir, open, readlink, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
@@ -90,19 +90,41 @@ export async function prepareStateDirectory(dir: string): Promise<string> {
  * when it returns. SQLite creates the log, `<name>.sqlite-wal`, with the file's own permissions. A clean stop
  * checkpoints the log into the file and removes it; after a crash the file alone may lack commits that are still in
  * the log, so a copy takes the `-wal` file too, or uses SQLite's backup.
+ *
+ * Only SQLite opens an existing file. Closing any other descriptor of it would drop every POSIX lock this process holds
+ * on it, the live connection's exclusive lock included, and let another process write beside that connection. So an
+ * existing file is checked by `lstat`, and a missing one is created with `O_EXCL`, whose descriptor no lock can be on
+ * yet. A link, a file with a second name, one owned by another user or one others can open is refused with
+ * `module-db-not-private`.
  */
 export function openModuleDatabase(stateDir: string, name: string): DatabaseSync {
   const dir = join(stateDir, 'modules');
   mkdirSync(dir, {recursive: true, mode: 0o700});
   const file = join(dir, `${name}.sqlite`);
-  const descriptor = openSync(file, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
-  try {
-    const info = fstatSync(descriptor);
-    if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o077) !== 0) throw new RuntimeError('module-db-not-private', `${file} must be a private file with one link`);
-  } finally {
-    closeSync(descriptor);
+  let info = statOf(file);
+  if (info === undefined) {
+    try {
+      closeSync(openSync(file, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW, 0o600));
+    } catch (error) {
+      // Another opener created it meanwhile: it is checked as an existing file.
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+    }
+    info = statOf(file);
+  }
+  if (info === undefined || !info.isFile() || info.nlink !== 1 || (info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) {
+    throw new RuntimeError('module-db-not-private', `${file} must be a private file with one link`);
   }
   return openModuleDatabaseFile(file);
+}
+
+/** The file's own status, never a link's target's, or undefined when nothing is there. */
+function statOf(file: string): Stats | undefined {
+  try {
+    return lstatSync(file);
+  } catch (error) {
+    if (missing(error)) return undefined;
+    throw error;
+  }
 }
 
 /**

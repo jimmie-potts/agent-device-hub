@@ -599,7 +599,11 @@ does:
   and SQLite keeps the log's index in memory, with no `<name>.sqlite-shm`.
   Opening the database therefore needs no new space, and a start on a full disk
   opens it. Another connection to the file, such as a second runtime's or the
-  `sqlite3` shell's, is refused with `SQLITE_BUSY` until the module stops.
+  `sqlite3` shell's, is refused with `SQLITE_BUSY` until the module stops. The
+  runtime never opens an existing module file outside SQLite: closing such a
+  descriptor would drop every POSIX lock the process holds on the file, this
+  one included. It checks the file with `lstat` and creates a missing one with
+  `O_EXCL`.
 - A database first created on a full disk cannot take WAL mode, whose header it
   cannot write, and keeps SQLite's rollback journal at the same level until the
   module opens it again with room.
@@ -658,7 +662,7 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `state-dir-not-directory` | It, or a part of it, is a file. |
 | `state-dir-not-private` | Others can open it. |
 | `posix-host-required` | The host has no POSIX user IDs. |
-| `module-db-not-private` | A module's SQLite file is not a private file with one link. |
+| `module-db-not-private` | A module's SQLite file is a link, or not a private file with one link that the runtime's user owns. |
 | `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`, `config-invalid` | The configuration file; see [Configuration](#configuration). |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
 | `edge-config-missing`, `edge-credentials-missing`, `edge-credentials-not-private`, `edge-credentials-invalid`, `edge-credential-source` | The edge's section and credentials file; see [Credentials](#credentials). |

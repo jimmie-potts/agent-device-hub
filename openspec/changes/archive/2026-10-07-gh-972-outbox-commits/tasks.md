@@ -34,3 +34,4 @@
 - [x] 6.4 Open the kit's module databases as the runtime does, move the LIFX and playback tests to the module's own connection, and close a crashed generation's module databases at once in the in-memory scenario harness.
 - [x] 6.5 Report commit times per sync level and checkpoints in the probe, warm the delay monitor up, and correct the measurements, risks and hand-offs in `design.md`.
 - [x] 6.6 Show the fix round's negative controls fail named tests.
+- [x] 6.7 Open an existing module file through SQLite only, so a refused second open in the same process keeps the live connection's lock, with a test that another process is still refused (`apps/runtime/tests/context.test.ts`).
