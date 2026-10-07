@@ -270,7 +270,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
     // Only the device's locked worker ends its unfinished attempts: one without a result may have reached the device.
     // A native control unsent past its expiry fails here; an animation's expiry waits for the pass, as in Python.
     const heldAtStart = await transact(report => {
-      recoverAttempts(db, device, report);
+      recoverAttempts(db, device, report, clock.now());
       expireQueued(db, device, now(), report, true);
       return held(db, controlState(db, device).revision, device) && !selected(db);
     });
@@ -383,7 +383,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
       if (pass === HELD) return true;
       if (pass === undefined) continue;
       // The pass's own mode command, if one was admitted, journals each write this pass makes for it.
-      const execution = new Execution(db, control.revision, pass.command, device, transact);
+      const execution = new Execution(db, control.revision, pass.command, device, transact, () => clock.now());
       // A replaced sender is one write; the device's own sender makes each of its requests through the execution.
       const guarded: Sender = options.send === undefined ? sender
         : (value, snapshot, instant, loop) => execution.call(() => sender(value, snapshot, instant, loop));
@@ -424,7 +424,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
             await end(row.id, 'unsupported-capability');
             continue;
           }
-          const one = new Execution(db, control.revision, row.id, device, transact);
+          const one = new Execution(db, control.revision, row.id, device, transact, () => clock.now());
           active = one;
           await controllerRequest(address(config), 'PUT', target[0], target[1]);
           await one.complete();

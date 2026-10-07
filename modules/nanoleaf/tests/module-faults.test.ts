@@ -11,7 +11,7 @@ import {checkModuleRecord, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {LINES_ADDRESS, NANOLEAF_FAMILIES, OBSERVE_MAX_MS, OBSERVE_MS, RESTART_MAX_MS, SYNTHETIC_TOKEN, TRANSMISSION_MS} from '../src/index.js';
 import {identityKey} from '../src/shared-input.js';
 import {nextTransmission, type ShownTransmission, type Transmission} from '../src/module/views.js';
-import {deviceCommand, ModuleWorld, moduleCommand, type WallState} from './module-support.js';
+import {deviceCommand, ModuleWorld, moduleCommand, publishedSchema, type WallState} from './module-support.js';
 import {suite, test} from './support.js';
 
 type Ended = {requestId: string; result: string; evidence: string; error?: {code: string; retryable: boolean; requestId: string}};
@@ -31,7 +31,7 @@ const transmission = (world: ModuleWorld): {transmittedAtMs: number; requestId?:
   const shown = world.device_()?.lastTransmission;
   return shown?.status === 'known' ? shown : undefined;
 };
-const DEVICE_SCHEMA = 'https://bunny.invalid/events/device/2.1';
+const DEVICE_SCHEMA = publishedSchema('device');
 const deviceRecords = (world: ModuleWorld): number => world.seen.filter(message => message.kind === 'state' && message.dataschema === DEVICE_SCHEMA).length;
 /** The device record's hold (`device/2.1`, Hub #975), or undefined when the record has none. */
 const heldOf = (world: ModuleWorld): {requestId: string; heldAtMs: number} | undefined => world.device_()?.held;

@@ -10,7 +10,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {LINES_ADDRESS, NANOLEAF_FAMILIES, PANELS_ADDRESS, SessionFeed, sharedConfig, SIMULATED_TRIANGLES} from '../src/index.js';
 import {PRESETS} from '../src/effects.js';
 import {identityKey} from '../src/shared-input.js';
-import {deviceCommand, ModuleWorld, moduleCommand, NANOLEAF_OWNER, QUALIFIED, READ_FAMILIES, SECTION, UNQUALIFIED, type WallState} from './module-support.js';
+import {deviceCommand, ModuleWorld, moduleCommand, NANOLEAF_OWNER, publishedSchema, QUALIFIED, READ_FAMILIES, SECTION, UNQUALIFIED, type WallState} from './module-support.js';
 import {query, suite, temporary, test} from './support.js';
 
 suite('the Nanoleaf module follows the core\'s sessions', () => {
@@ -163,7 +163,7 @@ suite('animations and favorites', () => {
       await world.until(() => result !== undefined, 5000, `the sync of ${family}`);
       assert.equal(result?.status, 'synced', family);
       if (result?.status === 'synced') {
-        assert.deepEqual([...new Set(result.copy.states().map(state => state.dataschema))], [`https://bunny.invalid/events/${family}/2.0`], family);
+        assert.deepEqual([...new Set(result.copy.states().map(state => state.dataschema))], [publishedSchema(family)], family);
         await result.copy.close();
       }
     }

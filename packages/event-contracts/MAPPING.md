@@ -339,7 +339,7 @@ Hub's controller configuration.
 
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
-| `apiVersion` | envelope `dataschema` | `https://bunny.invalid/events/device/2.0`. |
+| `apiVersion` | envelope `dataschema` | `https://bunny.invalid/events/device/2.0`, or `device/2.1` for a module that reports holds in `held` (Hub #975). |
 | `identity`, `identity.deviceId` | `device /id` | The envelope subject. It is also the last token of the device's routing keys, so 2.0 narrows it to the blocks' `routingId`: lowercase letters and digits with single hyphens, at most 128 characters. 1.x allowed any neutral ID. It must be unique across modules, because SDK responders may not overlap. |
 | `identity.controllerId`, `identity.sourceId` | envelope `source` | `bunny/modules/<module>`. Controller and source IDs become module-internal. |
 | `identity.controllerEpoch` | owner's store | The module's own continuity. Consumers follow `revision` and resync instead. |
@@ -349,7 +349,7 @@ Hub's controller configuration.
 | `nextRequestId` | **no 2.0 home** | #918: the requester chooses a command's string `requestId`, and the retry identity is `(source, id)`. After a lost reply a client reads the device record or the tracker ([#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)) instead of resubmitting. |
 | `cursor` | **no 2.0 home** | #918: the sync revision replaces the feed cursor (`sync-completed /revision`, `device /revision`). |
 | `sampleClock`, `sampleClock.domain`, `sampleClock.epoch`, `sampleClock.sampledAtMs` | envelope `time` | Modules share the runtime's clock, so the controller-monotonic clock goes away, as for the moment start (coordinator decision, 2026-10-06). |
-| `serviceHealth` | `device /availability` | `ready` becomes `available`; `unknown`, `degraded` and `unavailable` are unchanged. `unavailable` means the module cannot reach the device, which never fails the module (module failure policy A, owner decision 2026-10-06). A health check is never an observation. |
+| `serviceHealth` | `device /availability` | `ready` becomes `available`; `unknown`, `degraded` and `unavailable` are unchanged. `unavailable` means the module cannot reach the device, which never fails the module (module failure policy A, owner decision 2026-10-06). A health check is never an observation. 1.x has no field for a hold after an uncertain write; `device/2.1`'s `held` names it (Hub #975): present exactly while the module withholds the device's writes, with the held operation's `requestId` and `heldAtMs`, and gone once a person's later command or a later definitive outcome for that operation releases it. A held device is never `available`. |
 | `capabilities` | `device /capabilities` | Every capability is required in 2.0. |
 | `capabilities.power`, `capabilities.power.supported` | `device /capabilities/power` | Unchanged. |
 | `capabilities.brightness`, `capabilities.brightness.supported`, `capabilities.brightness.minimum`, `capabilities.brightness.maximum` | `device /capabilities/brightness` | Unchanged: 0 to 100. |

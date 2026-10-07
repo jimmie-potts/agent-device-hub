@@ -870,7 +870,7 @@ settles of the limits this port left:
   when none runs and when shared input is selected again. A newly enrolled device appears at the next
   start, since enrollment is offline (#933) and the configuration file has no reload. `onFailure`
   logs a failed pass once per run of failures; a recorded `control_error` makes the device
-  `degraded` in its `device/2.0` record until a successful pass clears it, and a link that does not
+  `degraded` in its `device` record until a successful pass clears it, and a link that does not
   answer makes it `unavailable`. A supervisor that ends `locked` or `unrecorded`, or rejects, starts
   again after a wait that doubles from 1 s to 30 s.
 - Each accepted command's expiry runs `expireQueued` on a timer, so a command expires on time while
@@ -900,6 +900,10 @@ The module's own differences from Python:
   port's outcomes instead of being replayed, and the port's tests of a hold's effect on a pass set
   the hold directly, as an uncertain write sets it. A power or brightness command that fails takes
   its desired value with it.
+- A hold also records the operation it waits on, the held write's request ID and the time the hold
+  began, in the journal's own `control_holds` table (`holdOf`), which Python's hold did not have.
+  The device record's `held` names it (`device/2.1`, Hub #975). The hold itself stays Python's
+  `controller_hold_revision` row in `meta`, which the recorded cases compare row for row.
 - A device that answers a write with an HTTP error status heard it: the command fails with
   `transmitted` evidence and the status's code (`answerCode`), and nothing holds the device. Python
   took any failed write as uncertain and held the device.

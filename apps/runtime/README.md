@@ -1059,7 +1059,8 @@ The catalog holds:
   meanwhile succeeds as observed, since a mode is the module's own state, and holds
   nothing, so once the wall answers it shows Quiet and a second session takes a
   Line; a write whose answer is lost is uncertain and shows the wall held and
-  degraded until the next mode command.
+  degraded, its `device/2.1` record's `held` naming that write (#975), until the
+  next mode command.
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

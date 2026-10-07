@@ -29,7 +29,7 @@ import {admitCommand, Refused as PortRefused} from '../controls.js';
 import {initialize} from '../database.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
-import {expireQueued, finish, held, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
+import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {presented} from '../shared-input.js';
@@ -289,7 +289,7 @@ export class NanoleafRuntime {
     return this.#transact(report => {
       const db = this.#db;
       for (const device of this.#ids) {
-        recoverAttempts(db, device, report);
+        recoverAttempts(db, device, report, this.#context.clock.now());
         for (const row of journal(db, device, "AND phase='queued'")) finish(db, row, {kind: 'refused', code: 'cancelled'}, report);
       }
       for (const [id, device] of rows(db, 'SELECT id,device FROM nanoleaf_machine_edits').map(row => [text(row, 0), text(row, 1)] as const)) {
@@ -369,7 +369,7 @@ export class NanoleafRuntime {
       this.#publish('device', id, deviceRecord(db, link, epoch, presence, this.#transmission(id)));
       this.#publish(NANOLEAF_FAMILIES.wall.family, id, wallView(db, this.#feed.copy, this.#directory, id, section.kind, presence));
       if (id === LINES) this.#publish(NANOLEAF_FAMILIES.animations.family, id, animationsView(db, this.#directory));
-      this.#noteHold(id, presence.held);
+      this.#noteHold(id, presence.hold !== undefined);
     }
   }
 
@@ -389,9 +389,13 @@ export class NanoleafRuntime {
     return next.transmission;
   }
 
-  /** Whether the module presents the device now: a hold after an uncertain write stops its writes, or no worker runs for it. */
+  /**
+   * Whether the module presents the device now: a hold after an uncertain write stops its writes, named by the operation
+   * it waits on, or no worker runs for it.
+   */
   #presence(device: string): Presence {
-    return {held: held(this.#db, controlState(this.#db, device).revision, device), workerDown: this.#restarts.has(device) && !this.#supervisors.has(device)};
+    return {hold: holdOf(this.#db, controlState(this.#db, device).revision, device),
+      workerDown: this.#restarts.has(device) && !this.#supervisors.has(device)};
   }
 
   /** A hold is logged once as it begins and once as an explicit choice releases it. */

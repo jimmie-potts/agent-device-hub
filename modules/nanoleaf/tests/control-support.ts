@@ -234,7 +234,7 @@ export class ControlCase extends WorkerCase {
    */
   holdNow(): null {
     const db = this.database();
-    transaction(db, () => { hold(db, DEFAULT, controlState(db).revision); });
+    transaction(db, () => { hold(db, DEFAULT, controlState(db).revision, {requestId: 'held-directly', heldAtMs: 0}); });
     return null;
   }
 
