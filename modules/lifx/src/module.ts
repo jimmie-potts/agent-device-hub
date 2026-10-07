@@ -19,7 +19,7 @@ import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
 import {
   DeviceAvailability, errorType, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
-  type Reply, type Sdk, type Snapshot, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
+  type Reply, type Sdk, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
 import {DEVICE_SCHEMA, LIFX_COLOR_SET_SCHEMA, LIFX_LIGHT_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, lifxValidator, OUTCOME_SCHEMA, type LifxLight} from './families.js';
@@ -504,7 +504,14 @@ class LifxRun {
       ...(spec.operation === undefined ? {} : {'bunny.operation': spec.operation}),
     };
     const deadline = Date.parse(command.expiresat ?? '');
-    const within = Number.isNaN(deadline) ? {} : {deadlineMs: deadline};
+    // The device work begins when the command's turn comes within its deadline, and only then: one that expired waiting
+    // never began, so it has no `command.executing` record and no device call span.
+    let call: Span | undefined;
+    const onTurn = (): void => {
+      log.info('command.executing', fields, command);
+      if (family !== 'device-mode-set') call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
+    };
+    const within = {...(Number.isNaN(deadline) ? {} : {deadlineMs: deadline}), onTurn};
     let attempt: Attempt;
     if (family === 'device-mode-set') {
       attempt = await reservation.run({kind: 'turn'}, within);
@@ -523,11 +530,9 @@ class LifxRun {
           return false;
         }
       };
-      log.info('command.executing', fields, command);
-      const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
       attempt = await reservation.run(operationOf(family, command.data), {...within, beforeWrite});
-      call.end(attempt.failure === undefined ? 'unset' : 'error');
-      this.#observe(bulb, attempt, spec.sent, requestId, call.context);
+      call?.end(attempt.failure === undefined ? 'unset' : 'error');
+      this.#observe(bulb, attempt, spec.sent, requestId, call?.context ?? trace.span(command));
       if (attempt.failure === 'unrecorded') {
         const error = errorBody(unrecorded, {detail: 'the module could not record the work before it began'}).error;
         await this.#complete(bulb, family, command, {requestId, result: 'failed', evidence: 'none', error}, attempt.observed !== undefined);
@@ -535,7 +540,6 @@ class LifxRun {
       }
     }
     if (family === 'device-mode-set' && attempt.failure === undefined) {
-      log.info('command.executing', fields, command);
       await this.#changeMode(bulb, command);
       return;
     }
@@ -581,15 +585,16 @@ class LifxRun {
 
   /**
    * Reports, at start, each command a stop or a crash left without a stored outcome: `uncertain` when its write may have
-   * begun, and `failed` with `cancelled` when the records prove it never did. None runs again. Only the commands of bulbs
-   * whose lease this instance holds are its to report: another instance on the same state directory that holds a bulb's
-   * lease still has that bulb's commands in hand, and reports them itself.
+   * begun, and `failed` with `cancelled` when the records prove it never did. None runs again. The commands it reports
+   * are those of the bulbs whose lease it holds, of a bulb no longer configured, and of a bulb whose lease it could not
+   * take for a reason other than another holder. It skips only the commands of a bulb whose lease another holder has
+   * (`busy`): another instance on the same state directory may still have that work in hand, and reports it itself.
    */
   async #settle(): Promise<void> {
     const {store} = this;
     let rows;
     try {
-      rows = store.unfinished().filter(row => this.#bulbs.get(row.bulb)?.lease !== undefined);
+      rows = store.unfinished().filter(row => this.#bulbs.get(row.bulb)?.leaseRefusal !== 'busy');
     } catch (error) {
       this.#storageFailed(storageCode(error));
       return;

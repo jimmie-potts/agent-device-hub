@@ -3,6 +3,7 @@
 // the on-demand read. Every test runs on a manual clock with simulated bulbs, and checks every message against profile
 // 2.0 with the core, device and LIFX families.
 import assert from 'node:assert/strict';
+import {chmod, mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterEach} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -153,6 +154,9 @@ it('a command whose deadline passes while it waits for its bulb ends failed with
     }, requestId);
   }
   assert.deepEqual(world.device(PENDANT.id)?.desired.mode, {status: 'known', value: 'free'}, 'the expired mode change changed nothing');
+  const executing = (requestId: string): number => world.logs('command.executing').filter(entry => entry.fields['bunny.request.id'] === requestId).length;
+  assert.deepEqual([executing('req-ahead'), executing('req-late'), executing('req-mode-late')], [1, 0, 0],
+    'only a command whose turn came within its deadline began its device work');
 });
 
 it('a command to a bulb that does not answer its read fails with no evidence, and the bulb shows unavailable', async () => {
@@ -274,6 +278,46 @@ it('a second instance on the same state directory leaves the live instance\'s co
   assert.equal(world.outcomes('req-live').length, 1, 'the live instance reports its own command, once');
   assert.equal(outcome(world, 'req-live')?.result, 'uncertain');
   assert.deepEqual(second.failures, []);
+});
+
+it('a command left unfinished for a bulb no longer configured is still reported at the next start, once', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-orphan'}));
+  accepted(await world.send(command.color(PENDANT.id, 10, 10), {requestId: 'req-orphan-waiting'}));
+  // The runtime dies, and the pendant leaves the configuration before the next start.
+  const after = await open({dir: await world.crashCopy(), network: world.network, section: {bulbs: [BEAM]}});
+  await after.clock.advance(1);
+  assert.deepEqual(outcome(after, 'req-orphan'), {
+    requestId: 'req-orphan', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the runtime stopped while the write was under way'},
+  });
+  assert.deepEqual(outcome(after, 'req-orphan-waiting'), {
+    requestId: 'req-orphan-waiting', result: 'failed', evidence: 'none',
+    error: {code: 'cancelled', retryable: false, detail: 'the runtime stopped before the command reached the bulb'},
+  });
+  await after.restart();
+  await after.clock.advance(1);
+  assert.deepEqual([after.outcomes('req-orphan').length, after.outcomes('req-orphan-waiting').length], [1, 1], 'reported once, not at every start');
+});
+
+it('a command left unfinished for a bulb whose lease is refused as not private is still reported at the next start', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-unleased'}));
+  const dir = await world.crashCopy();
+  // The next start finds the lease folder readable by others, so it cannot take the pendant's lease.
+  await mkdir(join(dir, 'lifx', 'leases'), {recursive: true, mode: 0o700});
+  await chmod(join(dir, 'lifx', 'leases'), 0o750);
+  const after = await open({dir, network: world.network});
+  await after.clock.advance(1);
+  assert.deepEqual(outcome(after, 'req-unleased'), {
+    requestId: 'req-unleased', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the runtime stopped while the write was under way'},
+  }, 'no other instance can hold a lease the folder refuses, so this start reports it');
+  assert.equal(after.logs('operation.failed').filter(entry => entry.fields['bunny.reason'] === 'unauthorized' && entry.fields['bunny.device.id'] === PENDANT.id).length, 1);
 });
 
 it('a store that cannot record the work before its write fails the command with no effect', async () => {

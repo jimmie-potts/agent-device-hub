@@ -35,3 +35,10 @@
 - [x] 5.10 Assert, red before the fix, that reads which change nothing publish nothing; publish after a read only the records it changed.
 - [x] 5.8 Show each fix's mutant fails its named tests, synchronize the specifications and rerun the gate.
 
+## 6. Review fixes, round 2 (PR #965)
+
+- [x] 6.1 Assert, red before the fix, that a start reports the unfinished commands of a bulb no longer configured and of a bulb whose lease is refused as not private; skip only a bulb whose lease is busy.
+- [x] 6.2 Assert, red before the fix, that a clock that moves on after the check before a write still sends the write; read the deadline once for the check and the write's first attempt.
+- [x] 6.3 Assert that an expired job's work is never marked begun.
+- [x] 6.4 Assert, red before the fix, that a command that expired waiting has no `command.executing` record; log it, and start the device call span, at the command's turn.
+

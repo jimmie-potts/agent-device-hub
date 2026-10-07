@@ -229,6 +229,36 @@ it('a write whose read outlasted the command\'s deadline is never sent', async (
   assert.deepEqual(types, [101], 'the LightGet only, never the LightSetColor');
 });
 
+it('the work of an expired job is never marked begun', async () => {
+  let marks = 0;
+  const beforeWrite = (): boolean => { marks += 1; return true; };
+  let answer: () => void = () => {};
+  const {queue, clock} = setup((type, _payload, _expected, signal) =>
+    type === 101 ? new Promise<Buffer>(resolve => { answer = () => { resolve(state()); }; }) : silence(signal), {timeoutMs: 500});
+  // One job whose read outlasts its deadline, and one that waits behind it past its own.
+  const slow = run(queue, {kind: 'brightness', percent: 10}, {deadlineMs: clock.now() + 50, beforeWrite});
+  const waiting = run(queue, {kind: 'power', on: true}, {deadlineMs: clock.now() + 50, beforeWrite});
+  await clock.advance(100);
+  answer();
+  assert.deepEqual([(await slow).failure, (await waiting).failure], ['expired', 'expired']);
+  assert.equal(marks, 0, 'neither job was marked begun');
+});
+
+it('the deadline is read once before a write: a clock that moves on after the check still sends the write', async () => {
+  // Each reading of this clock is 1 ms later than the one before. The turn's check and the check before the write pass;
+  // the deadline falls on the reading after them, which must not be taken before the first packet goes out.
+  let now = 1000;
+  const clock: ManualClock = {...manualClock(), now: () => { now += 1; return now; }};
+  const types: number[] = [];
+  let marks = 0;
+  const {queue} = setup(type => {
+    types.push(type);
+    return Promise.resolve(Buffer.alloc(0));
+  }, {}, clock);
+  const attempt = await run(queue, {kind: 'power', on: false}, {deadlineMs: now + 3, beforeWrite: () => { marks += 1; return true; }});
+  assert.deepEqual([attempt.effect, attempt.failure, marks, types], ['sent', undefined, 1, [21]]);
+});
+
 it('the store remembers the newest completed commands and forgets older ones', () => {
   const store = new LifxStore(new DatabaseSync(':memory:'));
   for (let index = 0; index <= REMEMBERED; index += 1) {

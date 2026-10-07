@@ -60,6 +60,8 @@ export type RunOptions = {
    * answers false, nothing is written and the job ends `unrecorded` with no effect.
    */
   beforeWrite?: () => boolean;
+  /** Runs once, when the job's turn comes within its deadline, before it sends anything: its device work begins. */
+  onTurn?: () => void;
 };
 
 /** A place in the queue, held before the job is known to run, such as while the module stores a command it accepts. */
@@ -178,13 +180,14 @@ export class BulbQueue {
     this.#draining = undefined;
   }
 
-  async #execute(operation: Operation, {deadlineMs, beforeWrite}: RunOptions): Promise<Attempt> {
+  async #execute(operation: Operation, {deadlineMs, beforeWrite, onTurn}: RunOptions): Promise<Attempt> {
     const counter: Counter = {exchanges: 0};
     let written = false;
     let observed: Observation | undefined;
     try {
       this.#live();
       this.#within(deadlineMs);
+      onTurn?.();
       if (operation.kind === 'turn') return {effect: 'none', exchanges: 0};
       if (operation.kind === 'read') {
         observed = await this.#read(counter, deadlineMs);
@@ -211,12 +214,14 @@ export class BulbQueue {
         payload = encodeColor(color);
       }
       // The last checks before anything can change on the bulb: the queue is open, the deadline has not passed and the
-      // module has recorded that the work began.
+      // module has recorded that the work began. The write's first attempt takes this check as its own, so one reading of
+      // the clock decides it: a second reading could find the deadline passed after the work was marked begun, and report
+      // a write that never went out as possibly applied.
       this.#live();
       this.#within(deadlineMs);
       if (beforeWrite !== undefined && !beforeWrite()) throw new Unrecorded();
       written = true;
-      await this.#exchange(type, payload, PACKET.acknowledgment, counter, deadlineMs);
+      await this.#exchange(type, payload, PACKET.acknowledgment, counter, deadlineMs, true);
       return {effect: 'sent', ...(observed === undefined ? {} : {observed}), transmittedAtMs: this.#now(), exchanges: counter.exchanges};
     } catch (error) {
       return {effect: written ? 'possible' : 'none', failure: this.#failure(error, written), ...(observed === undefined ? {} : {observed}), exchanges: counter.exchanges};
@@ -250,12 +255,13 @@ export class BulbQueue {
 
   /**
    * Sends one packet and waits for its answer, with at most `retries` more attempts of the same absolute payload, each
-   * with its own deadline. No attempt starts once `deadlineMs`, the command's own deadline, has passed.
+   * with its own deadline. No attempt starts once `deadlineMs`, the command's own deadline, has passed; `checked` says
+   * the caller checked it for the first attempt just before.
    */
-  async #exchange(type: number, payload: Buffer, expected: number, counter: Counter, deadlineMs: number | undefined): Promise<Buffer> {
+  async #exchange(type: number, payload: Buffer, expected: number, counter: Counter, deadlineMs: number | undefined, checked = false): Promise<Buffer> {
     for (let attempt = 0; ; attempt += 1) {
       this.#live();
-      this.#within(deadlineMs);
+      if (attempt > 0 || !checked) this.#within(deadlineMs);
       const abort = new AbortController();
       this.#active = abort;
       counter.exchanges += 1;

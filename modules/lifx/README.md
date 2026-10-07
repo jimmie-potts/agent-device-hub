@@ -146,13 +146,18 @@ by MAPPING.md's receipt rule:
 Each packet gets at most `retries` more attempts with the same absolute payload
 inside its queue turn. No attempt starts after the command's own deadline, the
 first included, and the deadline is checked again just before a read-modify-write's
-write. After that nothing sends a command again: not the module, a restart or the
-outbox. The module marks a command's work begun inside its turn, just before its
-write. At a start, a command the records show accepted without an outcome is
-reported `uncertain` when its write had begun and `failed` with `cancelled` when it
-never had, as one that still waited in the queue. The start reports only the
-commands of bulbs whose lease it holds: another instance on the same state
-directory that holds a bulb's lease still has that bulb's commands in hand. The outbox sends a stored outcome again at each start until the core
+write; that one reading of the clock also decides the write's first attempt, so a
+write the check let through is never reported as possibly applied without having
+gone out. After that nothing sends a command again: not the module, a restart or
+the outbox. The module marks a command's work begun inside its turn, just before its
+write, and never for a command that expired. At a start, a command the records show
+accepted without an outcome is reported `uncertain` when its write had begun and
+`failed` with `cancelled` when it never had, as one that still waited in the queue.
+The start reports these for the bulbs whose lease it holds, for a bulb no longer
+configured and for a bulb whose lease it could not take for another reason than
+another holder. It skips only the commands of a bulb whose lease another holder has
+(`busy`): another instance on the same state directory may still have that work in
+hand. The outbox sends a stored outcome again at each start until the core
 acknowledges it; until [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)
 defines that acknowledgment, tests and the fixture core pass the kit's stand-in
 through the `acknowledgments` option, and the shipped module keeps its outcomes.
@@ -221,7 +226,7 @@ The module logs registered `bunny.module` records (ADR 0012, "Observability"):
 
 | Record | Level | When |
 | --- | --- | --- |
-| `command.executing` | INFO | An accepted command's device work begins, with its request, device and routing key. |
+| `command.executing` | INFO | An accepted command's device work begins: its turn in the bulb's queue came within its deadline. It carries the request, device and routing key. A command that expired waiting has none. |
 | `outcome.published`, `outbox.deferred` | INFO or WARN, WARN | The outbox's records of an outcome's first publication and of a deferred publish. |
 | `device.unavailable`, `device.available` | WARN, then DEBUG summaries; INFO | `DeviceAvailability`: one degradation and one recovery per outage, not one warning per read. |
 | `feed.changed` | INFO | A bulb's shown status key changes. |
