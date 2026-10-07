@@ -16,7 +16,8 @@ jobs:
   guide:
     name: Work guide build and browser checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The job takes 3 to 9 minutes; the limit leaves room for two stalled browser-install attempts (#862).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -30,10 +31,18 @@ jobs:
       - run: python3 docs/work-guide/work/test_maintenance.py
       - name: Check system design documents
         run: python3 docs/system-design/check.py
+      # Hosted runners sometimes stall in apt-get update inside the browser install until the job's limit (#862). Each
+      # attempt gets 300 s, above the slowest successful install's 232 s, and a stalled or failed attempt is retried twice.
       - name: Prepare the pinned browser checker
+        timeout-minutes: 17
         run: |
           npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0
-          node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          for attempt in 1 2 3; do
+            if timeout --kill-after=10 300 node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium; then exit 0; fi
+            echo "::warning::Browser install attempt $attempt of 3 failed or ran past 300 s"
+            sleep 10
+          done
+          exit 1
       - name: Check epic browser adapters and generated fixtures
         run: |
           npm ci

@@ -215,6 +215,15 @@ const guideTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
   pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
 };
+// Hub #862: hosted runners sometimes stall in apt-get update inside a browser install until the job's limit. Each
+// attempt gets 300 s, above the slowest successful install's 232 s; a stalled or failed attempt is retried twice, and
+// the step's 17-minute limit sits just above the three attempts, their kill grace and pauses (16 minutes).
+const browserInstall = command => ['for attempt in 1 2 3; do', `  if timeout --kill-after=10 300 ${command}; then exit 0; fi`,
+  '  echo "::warning::Browser install attempt $attempt of 3 failed or ran past 300 s"', '  sleep 10', 'done', 'exit 1', ''].join('\n');
+const browserInstallMinutes = 17;
+const playwrightInstall = browserInstall('npx playwright install --with-deps chromium');
+const guideBrowserInstall = 'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\n'
+  + browserInstall('node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium');
 // Hub #861: the heavy Checks workflow also skips Markdown-only changes.
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
@@ -283,7 +292,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built', 'npm run test:dashboard'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
+    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
       'npm run test:dashboard:smoke', 'npm run test:observability:browser'],
   };
   const names = {
@@ -318,8 +327,12 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     // The core job runs every kept Node and Python suite once; it took about 12 minutes on 2026-10-07 before the old
     // system's checks left CI (#827). App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
-    // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite.
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 25 : id === 'core' ? 15 : 10);
+    // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
+    // leave room for two stalled browser-install attempts before a slow successful one (#862).
+    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 30 : id === 'core' ? 15 : 10);
+    const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
+    assert.deepEqual(installs, id === 'app-verify' ? [{ name: 'Install Chromium with its system dependencies',
+      'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
@@ -448,13 +461,45 @@ test('the standalone wrapper runs its payload only after a successful build', (t
   assert.equal(fs.existsSync(path.join(directory, 'payload-ran')), false);
 });
 
+// Hub #862: run App verification's install loop itself, its 300 s attempt and 10 s pause shortened to 1 s and 0 s,
+// against a fake npx whose attempts hang (h), fail (f) or succeed (s) in turn.
+test('a stalled or failed browser install is retried, and three bad attempts fail the step', (t) => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8'));
+  const step = workflow.jobs['app-verify'].steps.find(item => item.name === 'Install Chromium with its system dependencies');
+  const script = step.run.replace('timeout --kill-after=10 300 ', 'timeout --kill-after=1 1 ').replace('sleep 10', 'sleep 0');
+  assert.notEqual(script, step.run);
+  assert.equal(script.replace('timeout --kill-after=1 1 ', 'timeout --kill-after=10 300 ').replace('sleep 0', 'sleep 10'), step.run);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-install-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const bin = path.join(directory, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'npx'), [
+    '#!/bin/bash', 'n=$(( $(cat "$COUNT" 2>/dev/null || echo 0) + 1 ))', 'echo "$n" > "$COUNT"',
+    'case "${PLAN:n-1:1}" in h) exec sleep 30;; f) exit 1;; esac', 'echo "installed $*"', ''].join('\n'), { mode: 0o755 });
+  for (const [plan, status, attempts] of [['s', 0, 1], ['hs', 0, 2], ['fhs', 0, 3], ['hhh', 1, 3], ['fff', 1, 3]]) {
+    const count = path.join(directory, `count-${plan}`);
+    const started = Date.now();
+    // GitHub runs a step's script with `bash -e`.
+    const result = spawnSync('bash', ['-e', '-c', script], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PLAN: plan, COUNT: count }, encoding: 'utf8', timeout: 20000,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, status, `${plan}: ${result.stdout}${result.stderr}`);
+    assert.equal(fs.readFileSync(count, 'utf8').trim(), String(attempts), plan);
+    assert.equal((result.stdout.match(/::warning::Browser install attempt \d of 3/g) ?? []).length, status ? 3 : attempts - 1, plan);
+    assert.equal(result.stdout.includes('installed playwright install --with-deps chromium'), status === 0, plan);
+    assert.ok(Date.now() - started < 15000, `${plan}: a hung attempt is stopped by its own limit`);
+  }
+});
+
 // Keep guide build, browser and retained review evidence under regression coverage.
 test('guide CI retains its validation and review artifacts', () => {
   const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide.yml'), 'utf8'));
   assert.deepEqual(workflow.jobs, { guide:
      { name: 'Work guide build and browser checks',
        'runs-on': 'ubuntu-latest',
-       'timeout-minutes': 10,
+       // The job takes 3 to 9 minutes; 25 leave room for two stalled browser-install attempts (#862).
+       'timeout-minutes': 25,
        steps:
         [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
           { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
@@ -465,9 +510,7 @@ test('guide CI retains its validation and review artifacts', () => {
           { run: 'python3 docs/work-guide/work/test_maintenance.py' },
           { name: 'Check system design documents',
             run: 'python3 docs/system-design/check.py' },
-          { name: 'Prepare the pinned browser checker',
-            run:
-             'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Prepare the pinned browser checker', 'timeout-minutes': browserInstallMinutes, run: guideBrowserInstall },
           { name: 'Check epic browser adapters and generated fixtures',
             run: 'npm ci\nnode --test docs/work-guide/browser/tests/*.test.mjs\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs\nnode docs/work-guide/browser/build.mjs --check\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs\n' },
           { name: 'Check the guide and capture review evidence',
