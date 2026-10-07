@@ -754,3 +754,12 @@ it('a call its caller drops while the edge reads it is a cancellation, never an 
   await until(() => edge.diagnostics.some(record => record.event.startsWith('edge.')), 'the edge\'s record');
   assert.deepEqual(edge.diagnostics, [{event: 'edge.refused', level: 'info', route: 'publish', code: 'cancelled', source: 'bunny/core'}]);
 }));
+
+it('a record the edge makes before it authenticates a call carries only the route and the code', () => withEdge({}, async edge => {
+  const marker = 'caller-sent-7f3a91';
+  const body = {schema: REMOTE_SCHEMA, key: marker, message: {traceparent: TRACE.traceparent, source: marker}};
+  const response = await fetch(`${edge.url}${REMOTE_PATH}/${marker}`, {method: 'POST', body: JSON.stringify(body), headers: {'content-type': 'application/json'}});
+  assert.equal(response.status, 401);
+  await response.body?.cancel();
+  assert.deepEqual(edge.diagnostics, [{event: 'edge.refused', level: 'warn', route: 'other', code: 'unauthenticated'}], 'no source, trace or anything the caller sent');
+}));

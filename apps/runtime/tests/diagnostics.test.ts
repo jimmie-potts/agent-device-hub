@@ -116,16 +116,33 @@ it('a sync makes one record of its answer, and a deadline that passes while a ha
   assert.deepEqual(about(logs, 'req-held'), ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN'], 'the late reply adds nothing');
 });
 
-it('a secret in a handler\'s exception reaches no record: the bus records the uncertain result, the host the module\'s failure', async context => {
+it('a secret in a handler\'s or a device call\'s exception reaches no record or span', async context => {
   const caller = fixture('caller');
-  const {runtime, logs} = await run(context, {modules: [wall(() => { throw new Error(`the device said ${SECRET}`); }), caller]});
+  // A device call that fails is the device's failure, not the module's (policy A): its span ends with an error, and the
+  // module reports it; the exception's message stays in memory.
+  const panel = fixture('panel', async ({sdk, trace, log}) => {
+    await sdk.respond<{mode: string}>('bunny.cmd.mode.panel', command => {
+      const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: {'bunny.device.id': 'panel-1'}});
+      try {
+        throw new Error(`GET http://192.0.2.7/?token=${SECRET} refused`);
+      } catch {
+        call.end('error');
+        log.warn('operation.failed', {'bunny.device.id': 'panel-1', 'bunny.reason': 'unavailable'}, command);
+      }
+      return {status: 'accepted'};
+    });
+  });
+  const {runtime, logs} = await run(context, {modules: [wall(() => { throw new Error(`the device said ${SECRET}`); }), panel, caller]});
   const result = await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000, requestId: 'req-throws'});
   assert.equal(result.status === 'uncertain' && result.error.error.code, 'uncertain-result');
+  assert.equal((await contextOf(caller).sdk.request('bunny.cmd.mode.panel', setMode, {timeoutMs: 1000})).status, 'accepted');
   await runtime.stop();
   assert.deepEqual(about(logs, 'req-throws'), ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN']);
   const failed = logs.find(record => record.event_name === 'runtime.module.failed');
   assert.equal(failed?.attributes['error.type'], 'Error');
-  assert.equal(JSON.stringify([logs, runtime.spans()]).includes(SECRET), false, 'the exception\'s message stays in memory');
+  const spans = runtime.spans();
+  assert.ok(spans.some(line => line.includes('"bunny.device.call"') && line.includes('"code":2')), 'the failed device call\'s span ended with an error');
+  assert.equal(JSON.stringify([logs, spans]).includes(SECRET), false, 'the exceptions\' messages stay in memory');
 });
 
 it('a polled device that stays offline writes one degradation and one recovery at INFO and above, as module records', async context => {
