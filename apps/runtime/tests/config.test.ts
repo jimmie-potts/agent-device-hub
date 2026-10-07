@@ -4,12 +4,13 @@
 // the reason. #880's state rules apply to the file, the secrets and the folders: no link, private to the owner, a size
 // bound, and nothing inside a Git checkout. No secret reaches a log record, a health body or an error body.
 import assert from 'node:assert/strict';
-import {chmod, link, lstat, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {chmod, link, lstat, mkdir, readFile, rename, rm, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type BunnyModule, type ModuleContext} from '@jimmie-potts/sdk';
 import {CONFIG_SCHEMA, RuntimeError, startRuntime, type LogRecord, type RuntimeHealth} from '../src/index.js';
+import {PrivateFileError, readPrivateFile} from '../src/state.js';
 import {contextOf, entry, fixture, health, it, manualClock, run, stateDir, waitFor, type Fixture} from './support.js';
 
 /** The synthetic secret every test writes into a token file. It must never reach a record, health or an error body. */
@@ -78,22 +79,24 @@ it('each module gets only its own section, the secrets it names and its own priv
 it('a module whose section is missing or invalid is refused alone, and health names the registry code', async context => {
   const lacking = configured('lacking');
   const malformed = configured('malformed');
+  const secretless = fixture('secretless');
   const refusing = configuring('refusing', () => errorBody('invalid-request', {detail: 'the sign needs an address'}));
   const throwing = configuring('throwing', () => { throw new TypeError(`a configure bug quoting ${SECRET}`); });
   const steady = fixture('steady', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.steady', () => ({status: 'accepted'})); });
-  const file = await configFile(context, {malformed: ['not', 'an', 'object'], refusing: {}, throwing: {}, steady: {}});
-  const {runtime, logs} = await run(context, {modules: [lacking, malformed, refusing, throwing, steady], configFile: file});
+  const file = await configFile(context, {malformed: ['not', 'an', 'object'], secretless: {secrets: 'token'}, refusing: {}, throwing: {}, steady: {}});
+  const {runtime, logs} = await run(context, {modules: [lacking, malformed, secretless, refusing, throwing, steady], configFile: file});
   const report = runtime.health();
   assert.equal(report.status, 'degraded');
   const reasons = Object.fromEntries(report.modules.map(module => [module.name, [module.state, module.reason?.code, module.reason?.detail]]));
   assert.deepEqual(reasons, {
     lacking: ['refused', 'not-found', 'the configuration has no section for this module'],
     malformed: ['refused', 'invalid-request', 'the module\'s section of the configuration must be a JSON object'],
+    secretless: ['refused', 'invalid-request', 'the section\'s secrets must map at most 16 names to absolute file paths'],
     refusing: ['refused', 'invalid-request', 'the sign needs an address'],
     throwing: ['refused', 'internal', 'the module\'s configure failed'],
     steady: ['running', undefined, undefined],
   });
-  for (const module of [lacking, malformed, refusing, throwing]) assert.equal(module.context, undefined, `${module.manifest.name} never started`);
+  for (const module of [lacking, malformed, secretless, refusing, throwing]) assert.equal(module.context, undefined, `${module.manifest.name} never started`);
   assert.deepEqual(refusedRecord(logs, 'lacking')?.attributes, {'bunny.module': 'lacking', 'bunny.code': 'not-found', 'bunny.phase': 'manifest', 'bunny.provenance': 'source'});
   assert.deepEqual(refusedRecord(logs, 'throwing')?.attributes, {
     'bunny.module': 'throwing', 'bunny.code': 'internal', 'bunny.phase': 'manifest', 'error.type': 'TypeError', 'bunny.provenance': 'source',
@@ -143,16 +146,19 @@ it('a secret file that is missing, a link, readable by others, oversized, has a 
   await mkdir(join(root, 'checkout', '.git'), {recursive: true});
   await privateFile(join(root, 'checkout', 'token'), SECRET);
   await mkdir(join(root, 'folder'), {mode: 0o700});
+  await privateFile(join(root, 'unreadable'), SECRET, 0o000);
   const cases: Readonly<Record<string, readonly [string, string, string]>> = {
     missing: [join(root, 'nowhere'), 'not-found', 'the secret file for token does not exist'],
     linked: [join(root, 'linked'), 'forbidden', 'the secret file for token must not be reached through a link'],
     'dir-link': [join(root, 'dir-link', 'token'), 'forbidden', 'the secret file for token must not be reached through a link'],
-    shared: [join(root, 'shared'), 'forbidden', 'the secret file for token must be private to its owner: mode 600 and one link'],
+    shared: [join(root, 'shared'), 'forbidden', 'the secret file for token must be private to its owner: readable by it, with no permissions for group or others and one link'],
     big: [join(root, 'big'), 'invalid-request', 'the secret file for token must be at most 65536 bytes'],
-    twice: [join(root, 'twice'), 'forbidden', 'the secret file for token must be private to its owner: mode 600 and one link'],
+    twice: [join(root, 'twice'), 'forbidden', 'the secret file for token must be private to its owner: readable by it, with no permissions for group or others and one link'],
     checkout: [join(root, 'checkout', 'token'), 'forbidden', 'the secret file for token must be outside every Git checkout'],
     folder: [join(root, 'folder'), 'forbidden', 'the secret file for token must be a regular file'],
     mounted: ['/mnt/bunny-runtime-test/token', 'forbidden', 'the secret file for token must not be on a Windows mount'],
+    // Root reads any file, so only another user sees this refusal.
+    ...(process.getuid?.() === 0 ? {} : {unreadable: [join(root, 'unreadable'), 'forbidden', 'the secret file for token must be private to its owner: readable by it, with no permissions for group or others and one link'] as const}),
   };
   const modules = Object.keys(cases).map(name => configured(name));
   const fine = configured('fine');
@@ -196,9 +202,13 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   await privateFile(join(root, 'big.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {pad: 'x'.repeat(1_048_576)}}));
   await mkdir(join(root, 'checkout', '.git'), {recursive: true});
   await privateFile(join(root, 'checkout', 'config.json'), valid);
-  await privateFile(join(root, 'text.json'), 'not json');
-  await privateFile(join(root, 'other.json'), JSON.stringify({schema: 'runtime-config/2.0', modules: {}}));
-  await privateFile(join(root, 'extra.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, edge: {}}));
+  // The refusals never quote the file: these hold the synthetic token where a malformed file might hold a secret.
+  await privateFile(join(root, 'text.json'), `not json ${SECRET}`);
+  await privateFile(join(root, 'other.json'), JSON.stringify({schema: SECRET, modules: {}}));
+  await privateFile(join(root, 'extra.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, edge: {token: SECRET}}));
+  await privateFile(join(root, 'hard.json'), valid);
+  await link(join(root, 'hard.json'), join(root, 'hard-again.json'));
+  await privateFile(join(root, 'unreadable.json'), valid, 0o000);
   await privateFile(join(root, 'list.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: []}));
   await privateFile(join(root, 'none.json'), JSON.stringify({schema: CONFIG_SCHEMA}));
   const cases: readonly (readonly [string, string])[] = [
@@ -208,6 +218,8 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     [join(root, 'linked.json'), 'config-link'],
     [join(holder, 'via', 'good.json'), 'config-link'],
     [join(root, 'shared.json'), 'config-not-private'],
+    [join(root, 'hard.json'), 'config-not-private'],
+    ...(process.getuid?.() === 0 ? [] : [[join(root, 'unreadable.json'), 'config-not-private'] as const]),
     [join(root, 'big.json'), 'config-too-large'],
     [join(root, 'checkout', 'config.json'), 'config-checkout'],
     [root, 'config-not-file'],
@@ -222,7 +234,7 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     // A runtime that starts after all is stopped after the test, so a failure here cannot keep the process alive.
     const starting = startRuntime({port: 0, stateDir: await stateDir(context), modules: [started], configFile: file, log: () => {}});
     context.after(async () => { await (await starting.catch(() => undefined))?.stop(); });
-    await assert.rejects(starting, runtimeCode(expected), file);
+    await assert.rejects(starting, error => runtimeCode(expected)(error) && error instanceof Error && !error.message.includes(SECRET), file);
     assert.equal(started.context, undefined, `${file}: no module started`);
   }
   const fine = await startRuntime({port: 0, stateDir: await stateDir(context), modules: [], configFile: good, log: () => {}});
@@ -259,7 +271,7 @@ it('a module\'s private folder sits beside its database, is mode 700, keeps its 
   assert.throws(() => contextOf(again).files(), runtimeCode('module-folder-not-private'));
 });
 
-it('a worker call returns its reply, ends at its deadline on the runtime\'s scheduler, and is cancelled when its module stops', async context => {
+it('a worker call returns its reply, ends at its deadline on the runtime\'s scheduler, and ends uncertain when its module stops', async context => {
   const clock = manualClock();
   const results: string[] = [];
   const caller = fixture('caller', async ({workers}) => {
@@ -273,11 +285,11 @@ it('a worker call returns its reply, ends at its deadline on the runtime\'s sche
   await new Promise(resolve => { setTimeout(resolve, 100); });
   clock.advance(2000);
   await assert.rejects(late, code('uncertain-result'));
-  await assert.rejects(workers.call(new URL('call-worker.js', WORKERS), {act: 'throw'}, {timeoutMs: 5000}), code('internal'));
+  await assert.rejects(workers.call(new URL('call-worker.js', WORKERS), {act: 'throw'}, {timeoutMs: 5000}), code('uncertain-result'));
   assert.equal(entry(runtime.health(), 'caller').state, 'running', 'a failed call never fails its module');
   const held = workers.call(new URL('call-worker.js', WORKERS), {act: 'silent'}, {timeoutMs: 60_000}).then(() => 'resolved', (error: unknown) => error);
   await runtime.stop();
-  assert.ok(code('cancelled')(await held), 'the stop cancelled the call');
+  assert.ok(code('uncertain-result')(await held), 'the stop ended the call, which the worker had, as uncertain');
   await assert.rejects(workers.call(new URL('call-worker.js', WORKERS), {act: 'answer'}, {timeoutMs: 1000}), code('invalid-state'));
 });
 
@@ -328,4 +340,20 @@ it('no log record, health body or error body carries a secret, and a record that
   assert.ok(logs.some(record => record.event_name === 'operation.completed' && record.attributes['bunny.operation'] === 'setup'), 'the module\'s other records arrive');
   assert.equal(entry(report, 'exposed').reason?.code, 'forbidden');
   assert.deepEqual(entry(report, 'leaky').reason, {code: 'internal', detail: 'start failed'});
+});
+
+it('a directory along a private file\'s path swapped for a link after the path\'s checks is refused, not followed', async context => {
+  const root = await stateDir(context);
+  await mkdir(join(root, 'dir'), {mode: 0o700});
+  await mkdir(join(root, 'other'), {mode: 0o700});
+  await privateFile(join(root, 'dir', 'token'), SECRET);
+  await privateFile(join(root, 'other', 'token'), 'tok_OTHER_FILE');
+  assert.equal((await readPrivateFile(join(root, 'dir', 'token'), 1024)).toString(), SECRET, 'the file itself, unswapped');
+  // As a rename race would, between the checks and the open: dir becomes a link to another private file's directory.
+  const swap = async (): Promise<void> => {
+    await rename(join(root, 'dir'), join(root, 'dir-moved'));
+    await symlink(join(root, 'other'), join(root, 'dir'));
+  };
+  await assert.rejects(readPrivateFile(join(root, 'dir', 'token'), 1024, {beforeOpen: swap}),
+    error => error instanceof PrivateFileError && error.problem === 'link' && !error.message.includes('tok_OTHER_FILE'));
 });

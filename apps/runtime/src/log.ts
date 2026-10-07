@@ -46,19 +46,55 @@ export const stderrSink: LogSink = entry => {
 
 const saturating = (value: number): number => Math.min(Number.MAX_SAFE_INTEGER, value + 1);
 
+/**
+ * The secrets the process's modules have read, which no record may carry (Hub #919). The process shares one registry
+ * among all its writers, so that the record of a failure the runtime cannot contain is checked too. A secret file holds
+ * one token, used whole, so a record carries a secret when an attribute's text contains that token: a string, or the
+ * digits of a number.
+ */
+export class Redactions {
+  readonly #secrets = new Set<string>();
+
+  add(secret: string): void {
+    if (secret !== '') this.#secrets.add(secret);
+  }
+
+  /** Whether `value` holds one of the secrets. */
+  holds(value: string | number | boolean): boolean {
+    if (this.#secrets.size === 0 || typeof value === 'boolean') return false;
+    const text = String(value);
+    return [...this.#secrets].some(secret => text.includes(secret));
+  }
+
+  /** Whether any of `attributes` holds a secret. */
+  carried(attributes: LogFields): boolean {
+    return Object.values(attributes).some(value => this.holds(value));
+  }
+
+  /** `attributes` without those that hold a secret. */
+  without(attributes: Readonly<Record<string, string>>): Record<string, string> {
+    return Object.fromEntries(Object.entries(attributes).filter(([, value]) => !this.holds(value)));
+  }
+}
+
 export class LogWriter {
   readonly #sink: LogSink;
   readonly #minimum: number;
   readonly #clock: Clock;
   readonly #resource: Resource;
-  /** The secrets modules have read, which no record may carry (Hub #919). */
-  readonly #secrets = new Set<string>();
+  readonly #redactions: Redactions;
   #written = 0;
   #dropped = 0;
   #failed = 0;
 
-  /** `resource` defaults to this process's instance in the `development` environment. */
-  constructor(sink: LogSink, minimum: LogLevel, clock: Clock, resource: Resource = runtimeResource('development', INSTANCE_ID)) {
+  /**
+   * `resource` defaults to this process's instance in the `development` environment, and `redactions` to a registry of
+   * this writer's own.
+   */
+  constructor(
+    sink: LogSink, minimum: LogLevel, clock: Clock, resource: Resource = runtimeResource('development', INSTANCE_ID), redactions = new Redactions(),
+  ) {
+    this.#redactions = redactions;
     this.#sink = sink;
     this.#minimum = LEVELS.indexOf(minimum);
     this.#clock = clock;
@@ -79,12 +115,7 @@ export class LogWriter {
    * and counted, as one the contract refuses. The runtime calls it with each secret a module reads.
    */
   redact(secret: string): void {
-    if (secret !== '') this.#secrets.add(secret);
-  }
-
-  #carriesSecret(attributes: LogFields): boolean {
-    if (this.#secrets.size === 0) return false;
-    return Object.values(attributes).some(value => typeof value === 'string' && [...this.#secrets].some(secret => value.includes(secret)));
+    this.#redactions.add(secret);
   }
 
   /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
@@ -94,7 +125,7 @@ export class LogWriter {
       let entry: LogRecord | undefined;
       try {
         const attributes = {...fields, ...base};
-        entry = this.#carriesSecret(attributes) ? undefined
+        entry = this.#redactions.carried(attributes) ? undefined
           : record(level, scope, event, attributes, this.#clock.now(), this.#resource, trace === undefined ? undefined : traceFields(trace));
       } catch {
         entry = undefined;

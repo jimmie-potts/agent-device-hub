@@ -2,7 +2,7 @@
 // it reads: its configuration file and the modules' secret files (Hub #919). Runtime state stays outside every Git
 // checkout and off Windows mounts, private to its owner, as the Hub's stores are (AGENTS.md, ADR 0011).
 import {closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
-import {lstat, mkdir, open, realpath} from 'node:fs/promises';
+import {lstat, mkdir, open, readlink, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 
@@ -103,9 +103,9 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
 }
 
 /**
- * Creates a module's private folder, `modules/<name>/` in the state directory beside its SQLite file, owner-only, and
+ * Creates a module's private folder, `modules/<name>/` in the state directory beside its SQLite file, with mode 700, and
  * returns its absolute path. Refuses, with `module-folder-not-private`, a `modules` directory or a folder that is a link,
- * is not a directory, belongs to another user or that others can open.
+ * is not a directory, belongs to another user or has any permission for group or others.
  */
 export function openModuleFolder(stateDir: string, name: string): string {
   const parent = join(stateDir, 'modules');
@@ -113,7 +113,7 @@ export function openModuleFolder(stateDir: string, name: string): string {
   const check = (dir: string): void => {
     const info = lstatSync(dir);
     if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-      throw new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner (mode 700), not a link`);
+      throw new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner, with no permissions for group or others, not a link`);
     }
   };
   // Each level is checked before anything is created inside it, so nothing is ever created through a link.
@@ -142,13 +142,19 @@ export class PrivateFileError extends Error {
   }
 }
 
+const denied = (error: unknown): boolean => error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM');
+
 /**
  * Reads a private file whole, as #880's state rules require: an absolute path, off Windows mounts, with no link anywhere
- * along it, outside every Git checkout, and a regular file with one link and no permission for group or others, owned
- * by the runtime's user, of at most `maxBytes`. It never follows a link, and it checks the file it opened, so a file
- * swapped in between is checked too. Throws `PrivateFileError` naming the problem.
+ * along it, outside every Git checkout, and a regular file with one link and no permissions for group or others, owned
+ * by the runtime's user, of at most `maxBytes`. It opens the last part without following a link, and then checks that
+ * the file it opened is the one at `file`, through `/proc/self/fd`, so a directory along the path swapped for a link
+ * after the checks is refused too. It checks the opened file's type, owner, permissions, links and size, so a file
+ * swapped in after the checks is checked as well. A file the runtime's user may not read is not private. Throws
+ * `PrivateFileError` naming the problem. `beforeOpen` runs between the path's checks and the open, where such a swap
+ * would happen; only tests pass it.
  */
-export async function readPrivateFile(file: string, maxBytes: number): Promise<Buffer> {
+export async function readPrivateFile(file: string, maxBytes: number, {beforeOpen}: {beforeOpen?: () => Promise<void>} = {}): Promise<Buffer> {
   if (!isAbsolute(file)) throw new PrivateFileError('relative', file);
   const path = resolve(file);
   if (onWindowsMount(path)) throw new PrivateFileError('mount', path);
@@ -157,10 +163,12 @@ export async function readPrivateFile(file: string, maxBytes: number): Promise<B
     parent = await realpath(dirname(path));
   } catch (error) {
     if (missing(error)) throw new PrivateFileError('missing', path);
+    if (denied(error)) throw new PrivateFileError('not-private', path);
     throw error;
   }
   if (parent !== dirname(path)) throw new PrivateFileError('link', path);
   if (await checkoutOf(dirname(path)) !== undefined) throw new PrivateFileError('checkout', path);
+  await beforeOpen?.();
   let handle;
   try {
     // Nonblocking, so that a FIFO in its place cannot hold the open; the check below refuses it.
@@ -168,9 +176,14 @@ export async function readPrivateFile(file: string, maxBytes: number): Promise<B
   } catch (error) {
     if (missing(error)) throw new PrivateFileError('missing', path);
     if (error instanceof Error && 'code' in error && error.code === 'ELOOP') throw new PrivateFileError('link', path);
+    if (denied(error)) throw new PrivateFileError('not-private', path);
     throw error;
   }
   try {
+    // O_NOFOLLOW guards only the last part. A directory along the path swapped for a link after the checks above would
+    // lead the open elsewhere, so the file opened must still be the one at `path`. Without procfs it cannot be shown.
+    const opened = await readlink(`/proc/self/fd/${handle.fd}`).catch(() => undefined);
+    if (opened !== path) throw new PrivateFileError('link', path);
     const info = await handle.stat();
     if (!info.isFile()) throw new PrivateFileError('not-file', path);
     if (info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new PrivateFileError('not-private', path);
@@ -204,6 +217,7 @@ export function sectionOf(config: RuntimeConfig | undefined, name: string): unkn
   return config !== undefined && Object.hasOwn(config.modules, name) ? config.modules[name] : undefined;
 }
 
+/** The configuration file's refusal codes. One the runtime's user may not read is `config-not-private`. */
 const CONFIG_CODES: Readonly<Record<FileProblem, string>> = {
   relative: 'config-relative', mount: 'config-mount', missing: 'config-missing', link: 'config-link', checkout: 'config-checkout',
   'not-file': 'config-not-file', 'not-private': 'config-not-private', 'too-large': 'config-too-large',

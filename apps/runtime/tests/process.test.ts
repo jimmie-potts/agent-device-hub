@@ -367,3 +367,19 @@ it('--config reads a private configuration file, and a file the runtime cannot t
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
 });
+
+it('an error that escapes every module carrying a secret a module read leaves that secret out of runtime.failed', async context => {
+  // The reviewer's case: an error code copied from a credential, thrown by a listener on an emitter outside every module.
+  const secret = 'tok_SYNTHETIC919';
+  const dir = await stateDir(context);
+  await writeFile(join(dir, 'token'), `${secret}\n`, {mode: 0o600});
+  await chmod(join(dir, 'token'), 0o600);
+  await writeFile(join(dir, 'config.json'), JSON.stringify({schema: 'runtime-config/1.0', modules: {leaker: {secrets: {token: join(dir, 'token')}}}}), {mode: 0o600});
+  await chmod(join(dir, 'config.json'), 0o600);
+  const runtime = spawnRuntime(context, FIXTURE, ['secret-escape', '--port', '0', '--state-dir', await stateDir(context), '--config', join(dir, 'config.json')]);
+  assert.deepEqual(await runtime.exited, {code: 1, signal: null}, 'an error outside every module is the runtime\'s own failure');
+  const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
+  assert.deepEqual(fatal?.attributes, {'error.type': 'Error', 'bunny.provenance': 'source'}, 'the record is written, without the code that holds the secret');
+  assert.equal(runtime.records().some(record => JSON.stringify(record).includes(secret)), false, 'no record holds the secret');
+  assert.equal(runtime.stdout().includes(secret), false);
+});

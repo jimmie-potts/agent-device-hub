@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import type {RemoteEdge} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
-import {INSTANCE_ID, LogWriter, errorFields, stderrSink} from './log.js';
+import {INSTANCE_ID, LogWriter, Redactions, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
@@ -89,10 +89,14 @@ export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (
  * once the ready line is on stdout, or once a signal during startup has begun the stop.
  */
 export async function runProcess(options: ProcessOptions & ProcessInputs): Promise<void> {
-  // One resource for the process: these records, the runtime's and the watchdog thread's share its instance ID.
-  const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}, runtimeResource(options.environment, INSTANCE_ID)).logger(RUNTIME_SCOPE);
+  // One resource for the process: these records, the runtime's and the watchdog thread's share its instance ID. One
+  // redaction registry too: an error that escapes every module may carry a secret a module read, such as an error code
+  // a device library copied from its credential, so `runtime.failed` leaves out an attribute that holds one (Hub #919).
+  const redactions = new Redactions();
+  const resource = runtimeResource(options.environment, INSTANCE_ID);
+  const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}, resource, redactions).logger(RUNTIME_SCOPE);
   const fail = (error: unknown): never => {
-    log.fatal('runtime.failed', errorFields(error));
+    log.fatal('runtime.failed', redactions.without(errorFields(error)));
     process.exit(1);
   };
   const escaped = (error: unknown): void => { if (!contain(error)) fail(error); };
@@ -118,7 +122,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       ...(options.config === undefined ? {} : {configFile: options.config}),
-      logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
+      logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,
       // The runtime cannot continue without the one owner of agent sessions: the service manager restarts it whole.
       onCoreFailure: () => { fail(new RuntimeError('core-failed', 'the core failed')); },
       ...(options.edge ? {edge: {

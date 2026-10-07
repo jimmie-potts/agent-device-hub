@@ -3,12 +3,12 @@
 // file. Its start reads its token, keeps its layout in its private folder and serves its signs' availability, and
 // returns without reaching a sign (policy A). It reaches each sign afterwards, on the runtime's scheduler with a
 // deadline, to show the greeting it rendered in a worker thread: a sign that never answers is `unavailable` and is
-// tried again with capped backoff, and one that shows the greeting is `available`. It passes the module test kit,
-// policy A's check included.
+// tried again with capped backoff, and one that shows the greeting is `available`. A render that fails is reported
+// against the sign and tried again, never a module failure. It passes the module test kit, policy A's check included.
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import type {BunnyModule, Configured, StateDraft} from '@jimmie-potts/sdk';
+import {SdkError, type BunnyModule, type Configured, type StateDraft} from '@jimmie-potts/sdk';
 import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
 
 const BASE = 'https://bunny.invalid/events/';
@@ -119,10 +119,13 @@ export function configureSign(section: unknown): Configured<SignConfig> | ErrorB
   return {config: {greeting, signs: listed}, devices: listed.map(sign => sign.id)};
 }
 
-export function createSignModule({transport}: {transport: SignTransport}): BunnyModule<SignConfig> {
+/** `renderWorker` replaces the render worker's file, so a test can make every render fail. */
+export function createSignModule({transport, renderWorker = RENDER_WORKER}: {transport: SignTransport; renderWorker?: URL}): BunnyModule<SignConfig> {
   return {
     manifest: {name: 'sign', apiVersion: '1.1', configure: configureSign},
     async start({sdk, config, secrets, files, scheduler, workers, signal, log}) {
+      // The runtime starts a module with `configure` only with what `configure` accepted.
+      if (config === undefined) throw new Error('the sign started without its configuration');
       // Local resources only: the token's file, the private folder and the bus.
       const token = await secrets.read('token');
       await writeFile(join(files(), 'layout.json'), JSON.stringify({greeting: config.greeting, signs: config.signs.map(sign => sign.id)}), {mode: 0o600});
@@ -131,16 +134,30 @@ export function createSignModule({transport}: {transport: SignTransport}): Bunny
       await sdk.serveSync(['sign'], () => ({revision: Math.max(0, ...signs.map(({sign}) => sign.revision)), states: signs.map(({sign}) => state(sign))}));
 
       let frame: Promise<string> | undefined;
-      const render = (): Promise<string> => frame ??= workers.call<string>(RENDER_WORKER, {greeting: config.greeting}, {timeoutMs: RENDER_MS});
+      const render = (): Promise<string> => frame ??= workers.call<string>(renderWorker, {greeting: config.greeting}, {timeoutMs: RENDER_MS});
+      /** Whether the last render failed, so a run of failures is logged once. */
+      let renderFailing = false;
+      const again = (address: string, sign: Sign, attempt: number): void => {
+        scheduler.after(Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** attempt), () => reach(address, sign, attempt + 1));
+      };
       const reach = async (address: string, sign: Sign, attempt: number): Promise<void> => {
         let shown: string;
         try {
           shown = await render();
+          renderFailing = false;
         } catch (error) {
           frame = undefined;
-          // A render the module's stop cancelled is no failure; any other is the module's own, and fails it.
           if (signal.aborted) return;
-          throw error;
+          // A failed render, even one past its deadline, is no evidence about the sign: its availability stays as it was.
+          // It is an outcome of this attempt, reported against the sign once per run of failures, and tried again
+          // (policy A), never a module failure.
+          if (!renderFailing) {
+            renderFailing = true;
+            const code = error instanceof SdkError ? error.body.error.code : 'internal';
+            log.warn('operation.failed', {'bunny.device.id': sign.id, 'bunny.operation': 'media', 'bunny.code': code});
+          }
+          again(address, sign, attempt);
+          return;
         }
         const deadline = new AbortController();
         const cancel = scheduler.after(REACH_MS, () => { deadline.abort(); });
@@ -167,7 +184,7 @@ export function createSignModule({transport}: {transport: SignTransport}): Bunny
           if (reached) log.info('operation.completed', {'bunny.device.id': sign.id, 'bunny.operation': 'status', 'bunny.outcome': 'succeeded'});
           else log.warn('operation.failed', {'bunny.device.id': sign.id, 'bunny.operation': 'status', 'bunny.reason': 'unavailable'});
         }
-        if (!reached) scheduler.after(Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** attempt), () => reach(address, sign, attempt + 1));
+        if (!reached) again(address, sign, attempt);
       };
       for (const {address, sign} of signs) scheduler.after(0, () => reach(address, sign, 0));
     },

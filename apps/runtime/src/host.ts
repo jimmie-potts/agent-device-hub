@@ -112,7 +112,7 @@ const SECRET_PROBLEMS: Readonly<Record<FileProblem, readonly [ErrorCode, string]
   link: ['forbidden', 'must not be reached through a link'],
   checkout: ['forbidden', 'must be outside every Git checkout'],
   'not-file': ['forbidden', 'must be a regular file'],
-  'not-private': ['forbidden', 'must be private to its owner: mode 600 and one link'],
+  'not-private': ['forbidden', 'must be private to its owner: readable by it, with no permissions for group or others and one link'],
   'too-large': ['invalid-request', `must be at most ${MAX_SECRET_BYTES} bytes`],
 };
 const secretError = (name: string, [code, what]: readonly [ErrorCode, string], cause?: unknown): SdkError =>

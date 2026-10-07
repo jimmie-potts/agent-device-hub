@@ -34,6 +34,11 @@ export type Seed = {
    * and starts the runtime with it (`writeConfiguration`).
    */
   readonly config?: Readonly<Partial<Record<ModuleName, object>>>;
+  /**
+   * The modules the runtime should refuse at start, such as one the seed configures badly. A harness refuses to start a
+   * scenario in which any other module is unhealthy.
+   */
+  readonly refused?: readonly ModuleName[];
 };
 
 /** What the reader has: its copies' current states and the occurrences and outcomes it heard. */
@@ -680,7 +685,9 @@ const configuredModule: Scenario = {
 const misconfiguredModule: Scenario = {
   id: 'misconfigured-module',
   title: 'a module whose configuration is invalid is refused, and the others run',
-  seed: {modules: ['core', 'sign'], follows: [CORE_FAMILIES], config: {sign: {...SIGN_SECTION, signs: [{id: 'Sign 1', address: SIGN_ADDRESS}]}}},
+  seed: {
+    modules: ['core', 'sign'], follows: [CORE_FAMILIES], config: {sign: {...SIGN_SECTION, signs: [{id: 'Sign 1', address: SIGN_ADDRESS}]}}, refused: ['sign'],
+  },
   steps: [
     expect('health shows the sign refused with invalid-request', async h => {
       const sign = (await h.health()).find(module => module.name === 'sign');

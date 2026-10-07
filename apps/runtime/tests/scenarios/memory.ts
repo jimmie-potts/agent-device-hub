@@ -139,8 +139,10 @@ class Memory implements MemoryHarness {
       this.url = `http://127.0.0.1:${await listenLoopback(server)}`;
     }
     await this.#boot();
-    // A module the seed configures badly is refused on purpose; its scenario checks the refusal.
-    const report = this.#current().host.health().filter(module => !module.healthy && module.state !== 'refused');
+    // Only a module the seed expects the runtime to refuse, such as one it configures badly, may be unhealthy here; its
+    // scenario checks the refusal.
+    const expected: readonly string[] = this.#seed.refused ?? [];
+    const report = this.#current().host.health().filter(module => !module.healthy && !(module.state === 'refused' && expected.includes(module.name)));
     if (report.length > 0) throw new Error(`the runtime did not start: ${JSON.stringify(report)}`);
     for (const part of this.#parts.values()) await this.#connect(part);
   }

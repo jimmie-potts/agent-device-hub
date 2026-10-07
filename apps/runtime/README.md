@@ -223,12 +223,18 @@ serves (Hub #919). It holds each module's own section, by module name:
 
 The file follows the [state](#state) rules: an absolute path off `/mnt`, no
 link anywhere along it, outside every Git checkout, and a regular file with one
-link and mode 600, owned by the runtime's user, of at most 1 MiB. It has only
+link and no permissions for group or others, owned and readable by the
+runtime's user, of at most 1 MiB. The runtime opens the file's last part without
+following a link, then refuses it unless the file it opened, as `/proc/self/fd`
+shows, is the one at the path, so a directory swapped for a link after the
+checks is refused too. The operator chooses the paths of this file and the
+secret files; the runtime does not check the modes of their directories. It has only
 `schema` and `modules`; #835 adds the edge's section. Otherwise the runtime
 refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,
-`config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`
-or `config-invalid`. No refusal quotes the file. The cutover's installer (#935)
+`config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
+user may not read included), `config-too-large` or `config-invalid`. No refusal
+quotes the file. The cutover's installer (#935)
 writes the file from today's files. There is no reload: a change takes effect
 when the runtime restarts.
 
@@ -246,22 +252,27 @@ detail, while the others start, when:
 - it names a device that is not a routing ID, or one that a module before it
   already named (`invalid-request`);
 - a secret file its section names is missing (`not-found`), is not private by
-  the rules above (`forbidden`), or is larger than 64 KiB or not UTF-8 text
-  (`invalid-request`).
+  the rules above or not readable by the runtime's user (`forbidden`), or is
+  larger than 64 KiB or not UTF-8 text (`invalid-request`).
 
 Its `runtime.module.refused` record carries `bunny.code` and the `manifest`
 phase, and, for a `configure` that threw, the error's type. A module then gets
 its configuration as `config`, reads only the secret files its section names
 with `secrets.read(name)`, which checks the file again on every read, and keeps
 its own files in `files()`. A module never sees another module's section or
-secrets. The [module API](../../packages/sdk/README.md#secrets) says what each
-read refuses.
+secrets through its context; a module's own code is not sandboxed, as the
+[module API](../../packages/sdk/README.md#secrets) explains, which also says
+what each read refuses.
 
 No secret reaches a log record, health or an error body. The runtime logs no
-part of the file and no secret, refusals carry fixed text, and the log writer
-drops, and counts in `runtime.stopped`, any record whose attribute holds a
-secret a module read. Its tests and every disposable run scan records, health,
-error bodies and proof for the synthetic token `tok_SYNTHETIC919`.
+part of the file and no secret, and refusals carry fixed text. One registry of
+the secrets modules read serves every writer in the process: the runtime's
+writer drops, and counts in `runtime.stopped`, any record whose attribute holds
+one, as text or as a number's digits, and the process's `runtime.failed` record
+leaves such an attribute out, so an error that escapes every module carrying a
+module's token is still recorded, without it. Its tests and every disposable run
+scan records, health, error bodies and proof for the synthetic token
+`tok_SYNTHETIC919`.
 
 ## State
 
@@ -497,8 +508,11 @@ private folder and serves its signs (family `sign`), and returns without
 reaching a sign. It then reaches each sign on the runtime's scheduler with a
 1 s deadline, to show the greeting it rendered with a worker call: a sign that
 does not answer is `unavailable` and is tried again with capped backoff, and
-one that shows the greeting is `available`. It logs each change once, not each
-attempt. `signSpec()` runs it through the kit, policy A's check included.
+one that shows the greeting is `available`. A render that fails, past its
+deadline included, is no evidence about the sign: its availability stays as it
+was, the failure is logged against the sign with the call's code, and the
+attempt is tried again. It logs each change and each run of failed renders once,
+not each attempt. `signSpec()` runs it through the kit, policy A's check included.
 
 `tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
 stand-in parts through its extension point. Each part goes when its owner

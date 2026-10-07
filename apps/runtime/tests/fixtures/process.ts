@@ -1,5 +1,6 @@
 // A runtime process with in-test fixture modules, run as `node process.js <scenario> <runtime arguments>`. It goes
 // through the same entry point as the shipped runtime, with these modules instead of the shipped list.
+import {EventEmitter} from 'node:events';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {createCoreModule as createRealCore, runMain, type ModuleFactory} from '../../src/index.js';
 import {approvalPrompt, observation} from './agents.js';
@@ -36,6 +37,17 @@ const spin = (ms: number): number => {
   while (performance.now() < until) spins += 1;
   return spins;
 };
+
+/**
+ * An emitter outside every module's async flow, as a client library's shared socket would be. A listener a module adds
+ * runs in whatever flow emits, here the scenario's own timer, so an error it throws escapes as the runtime's own.
+ */
+const outside = new EventEmitter();
+/** Reads its token, then throws, from a listener on the outside emitter, an error whose code is that token. */
+const leaker = module('leaker', async ({secrets}) => {
+  const token = await secrets.read('token');
+  outside.once('tick', () => { throw Object.assign(new Error(`the device refused ${token}`), {code: token}); });
+});
 
 /** Switches lamp-1 on once, shortly after the modules have started. */
 const driver = module('driver', ({sdk, scheduler, log}) => {
@@ -99,6 +111,8 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
   stuck: [module('spinner', () => { setTimeout(() => { spin(Number.POSITIVE_INFINITY); }, 200); })],
   // One busy spell of 150 ms.
   busy: [module('spinner', () => { setTimeout(() => { spin(150); }, 100); })],
+  // An error carrying a secret a module read escapes every module's flow (Hub #919). Its section names the token's file.
+  'secret-escape': [leaker],
 };
 
 const [scenario = '', ...args] = process.argv.slice(2);
@@ -106,6 +120,7 @@ const modules = scenarios[scenario];
 if (modules === undefined) throw new Error(`unknown scenario ${scenario}`);
 // Each fixture module is already built with the transport its scenario needs, whether or not the runtime simulates.
 await runMain(args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})));
+if (scenario === 'secret-escape') setInterval(() => { outside.emit('tick'); }, 50).unref();
 if (scenario === 'runtime-error') {
   setTimeout(() => { throw Object.assign(new RangeError('a bug outside every module, quoting http://device.invalid/?token=secret'), {code: 'EFIXTURE'}); }, 50);
 }
