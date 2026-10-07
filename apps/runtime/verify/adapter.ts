@@ -7,6 +7,7 @@
 // until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
 import {readFile} from 'node:fs/promises';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {SimulatedPixoo} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
@@ -92,7 +93,7 @@ class Run implements RunHarness {
   #state: HarnessState = {
     generation: 0, devices: {
       lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
-      playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(),
+      playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(), pixoo: new SimulatedPixoo().state(),
     },
     logs: [], published: [],
   };

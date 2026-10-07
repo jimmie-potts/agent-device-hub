@@ -18,6 +18,7 @@ import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
+import {SimulatedPixoo, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
@@ -65,6 +66,8 @@ const cloud = new SimulatedCloud();
 const cloudCalls = new Map<string, AbortController>();
 /** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const exchanges = new Map<string, AbortController>();
+/** What the child's simulated Pixoo shows, as it last reported, and the mode each new runtime's Pixoo starts in (Hub #843). */
+let pixoo: SimulatedPixooState = new SimulatedPixoo().state();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 /** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -216,6 +219,9 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
     case 'published':
       published.push({generation: number, message: message.message});
       return;
+    case 'pixoo.state':
+      if (number === generation) pixoo = message.state;
+      return;
     case 'applied':
     case 'flushed':
       waiting.get(message.id)?.();
@@ -228,7 +234,7 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
 function spawnRuntime(): Promise<string> {
   generation += 1;
   const number = generation;
-  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', '--', ...runtimeArgs()] : runtimeArgs();
+  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', pixoo.mode, '--', ...runtimeArgs()] : runtimeArgs();
   const child = fork(fixtures ? CHILD : MAIN, args, {
     execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
@@ -422,6 +428,10 @@ async function body(request: IncomingMessage): Promise<unknown> {
 
 async function simulate(request: SimulateRequest): Promise<boolean> {
   switch (request.device) {
+    case 'pixoo':
+      await ask(id => ({type: 'simulate', id, simulation: request}));
+      pixoo = {...pixoo, mode: request.action};
+      return true;
     case 'chime':
       await control('chime-fault');
       return true;
@@ -471,7 +481,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state()},
+        generation, devices: {
+          lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state(), pixoo,
+        },
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);

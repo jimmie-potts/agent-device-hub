@@ -3,6 +3,7 @@
 // run (#920) touches no device. Adding or removing a module is a code change here; nothing loads modules at run time.
 import {lifxModuleFactory} from '@jimmie-potts/lifx';
 import {playbackFactory} from '@jimmie-potts/playback';
+import {pixooFactory} from '@jimmie-potts/pixoo';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {tidbytFactory} from '@jimmie-potts/tidbyt';
 import {CORE_MODULE, createCoreModule} from './core/core.js';
@@ -38,6 +39,7 @@ export const shippedModules: readonly ModuleFactory[] = [
   lifxModuleFactory,
   // After the playback module, whose record its now-playing tile follows (Hub #930).
   tidbytFactory,
+  pixooFactory,
 ];
 
 /** Each factory's module, with its simulated transport when `simulate` is set and its real one otherwise. */

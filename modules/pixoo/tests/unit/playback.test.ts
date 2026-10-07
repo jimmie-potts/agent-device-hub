@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
-import {Player} from '../../packages/playback/src/index.js';
-import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
+import {Player} from '../../src/playback/index.js';
+import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 async function flush(clock:ManualClock){for(let i=0;i<80;i++){await Promise.resolve();clock.advance(0);}}
@@ -16,16 +16,16 @@ it('charges three effective loops only after upload and estimated readiness',asy
   clock.advance(49);await flush(clock);expect(player.getState().state).toBe('loading');
   clock.advance(1);await flush(clock);expect(player.getState().state).toBe('playing');
   expect(player.getState().dwellDeadlineMs).toBe(2170);
-  expect(store.loads).toContain(store.playlist.items[1]!.renditionId);
+  expect(store.loads).toContain(store.item(1).renditionId);
   expect(device.operations.filter(o=>o.kind==='uploadAnimation')).toHaveLength(1);
-  clock.advance(2099);await flush(clock);expect(player.getState().itemId).toBe(store.playlist.items[0]!.id);
-  clock.advance(1);await flush(clock);expect(player.getState().itemId).toBe(store.playlist.items[1]!.id);
+  clock.advance(2099);await flush(clock);expect(player.getState().itemId).toBe(store.item(0).id);
+  clock.advance(1);await flush(clock);expect(player.getState().itemId).toBe(store.item(1).id);
  }finally{await player.close();}
 });
 
 it('keeps brightness serialized through an automatic transition with a short dwell',async()=>{
  const clock=new ManualClock(),store=new MemoryPlaybackStore();
- store.playlist.items[0]!.playback={mode:'duration',durationMs:1};
+ store.item(0).playback={mode:'duration',durationMs:1};
  const device=new FakeDeviceAdapter({clock,latencyMs:10});const player=await Player.open({store,device,clock});
  try{
   await player.start(store.playlist.id);await flush(clock);
@@ -35,7 +35,7 @@ it('keeps brightness serialized through an automatic transition with a short dwe
   expect(await brightness).toMatchObject({ok:true});
   expect(device.effects.filter(e=>e.kind==='brightness')).toMatchObject([{percent:42,atMs:30}]);
   clock.advance(20);await flush(clock);
-  expect(device.operations.filter(o=>o.kind==='uploadAnimation')[1]!.timing.startedAtMs).toBe(30);
+  expect(device.operations.filter(o=>o.kind==='uploadAnimation')[1]?.timing.startedAtMs).toBe(30);
  }finally{await player.close();}
 });
 
@@ -55,7 +55,7 @@ it('pause holds context and resume reuploads with the full policy',async()=>{
  try{
   await player.start(store.playlist.id);await flush(clock);clock.advance(1000);await flush(clock);
   await player.pause();clock.advance(100000);await flush(clock);
-  expect(player.getState()).toMatchObject({state:'paused',intent:'paused',dwellDeadlineMs:null,itemId:store.playlist.items[0]!.id});
+  expect(player.getState()).toMatchObject({state:'paused',intent:'paused',dwellDeadlineMs:null,itemId:store.item(0).id});
   expect(device.operations.filter(o=>o.kind==='uploadAnimation')).toHaveLength(1);
   await player.resume();await flush(clock);
   expect(player.getState().dwellDeadlineMs).toBe(clock.now()+2100);
@@ -79,11 +79,11 @@ it('command spam retires pending uploads and previous follows only started items
  try{
   await player.start(store.playlist.id);await flush(clock);clock.advance(20);await flush(clock);
   const commands=Array.from({length:5},()=>player.next());await Promise.all(commands);await flush(clock);
-  expect(player.getState().itemId).toBe(store.playlist.items[1]!.id);
+  expect(player.getState().itemId).toBe(store.item(1).id);
   // Skip back before B finishes: it has not entered playback history.
   await player.previous();await flush(clock);clock.advance(20);await flush(clock);
-  expect(player.getState().itemId).toBe(store.playlist.items[0]!.id);
-  expect(store.record!.history).toEqual([store.playlist.items[0]!.id]);
+  expect(player.getState().itemId).toBe(store.item(0).id);
+  expect(store.record?.history).toEqual([store.item(0).id]);
   expect(device.operations.filter(o=>o.kind==='uploadAnimation'&&o.outcome==='success')).toHaveLength(2);
  }finally{await player.close();}
 });
@@ -92,7 +92,7 @@ it('finishes repeat-off idle and never bursts through missed intervals',async()=
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
  try{
   await player.start(store.playlist.id);await flush(clock);clock.advance(100000);await flush(clock);
-  expect(player.getState()).toMatchObject({state:'playing',itemId:store.playlist.items[1]!.id,dwellDeadlineMs:101000});
+  expect(player.getState()).toMatchObject({state:'playing',itemId:store.item(1).id,dwellDeadlineMs:101000});
   expect(device.operations.filter(o=>o.kind==='uploadAnimation')).toHaveLength(2);
   clock.advance(1000);await flush(clock);expect(player.getState()).toMatchObject({state:'idle',intent:'stopped'});
   expect(device.effects).toHaveLength(4);
@@ -101,7 +101,7 @@ it('finishes repeat-off idle and never bursts through missed intervals',async()=
 
 it('shuffle covers each cycle without adjacent repeats and preserves actual history',async()=>{
  const clock=new ManualClock(),store=new MemoryPlaybackStore();store.playlist.repeat=true;store.playlist.shuffle=true;
- store.playlist.items.push({...structuredClone(store.playlist.items[1]!),id:'00000000-0000-4000-8000-000000000004'});
+ store.playlist.items.push({...structuredClone(store.item(1)),id:'00000000-0000-4000-8000-000000000004'});
  for(const item of store.playlist.items)item.playback={mode:'duration',durationMs:10};
  const device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock,random:()=>0});
  try{
@@ -118,7 +118,7 @@ it('saved edits apply only to explicit restart-with-changes',async()=>{
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
  try{
   await player.start(store.playlist.id);await flush(clock);const session=player.getState().sessionId;
-  store.playlist.revision=2;store.playlist.items[0]!.playback={mode:'duration',durationMs:10};
+  store.playlist.revision=2;store.item(0).playback={mode:'duration',durationMs:10};
   await player.pause();await player.resume();await flush(clock);
   expect(player.getState()).toMatchObject({sessionId:session,playlistRevision:1,dwellDeadlineMs:2100});
   await player.restartWithChanges();await flush(clock);
@@ -148,7 +148,7 @@ it('reconnect restarts the intended item but stop retires an outstanding probe',
   clock.advance(10);await flush(clock);device.setOnline(true);await player.stop();clock.advance(10000);await flush(clock);
   expect(device.effects.filter(e=>e.kind==='frame')).toHaveLength(0);expect(player.getState().state).toBe('idle');
   await player.resume();await flush(clock);clock.advance(20);await flush(clock);
-  expect(player.getState()).toMatchObject({state:'playing',itemId:store.playlist.items[0]!.id,dwellDeadlineMs:clock.now()+2100});
+  expect(player.getState()).toMatchObject({state:'playing',itemId:store.item(0).id,dwellDeadlineMs:clock.now()+2100});
  }finally{await player.close();}
 });
 
@@ -219,7 +219,7 @@ it('keeps one retry budget when successful probes are followed by failed uploads
 });
 
 it('rejects overflowing total-play dwell without device output',async()=>{
- const clock=new ManualClock(),store=new MemoryPlaybackStore();store.playlist.items=store.playlist.items.slice(0,1);store.playlist.items[0]!.playback={mode:'plays',totalPlays:Number.MAX_SAFE_INTEGER};
+ const clock=new ManualClock(),store=new MemoryPlaybackStore();store.playlist.items=store.playlist.items.slice(0,1);store.item(0).playback={mode:'plays',totalPlays:Number.MAX_SAFE_INTEGER};
  const device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
  try{
   await player.start(store.playlist.id);await flush(clock);expect(player.getState()).toMatchObject({state:'error',lastError:{code:'invalid-input'}});
@@ -247,8 +247,8 @@ it('suspends dwell as soon as a display control observes connectivity loss',asyn
 });
 
 it('uses still duration independently from its positive transport placeholder',async()=>{
- const clock=new ManualClock(),store=new MemoryPlaybackStore();store.playlist.items=store.playlist.items.slice(0,1);store.playlist.items[0]!.playback={mode:'duration',durationMs:50};
- store.load=async()=>({frames:[{rgb:new Uint8Array(12288),delayMs:100}]});
+ const clock=new ManualClock(),store=new MemoryPlaybackStore();store.playlist.items=store.playlist.items.slice(0,1);store.item(0).playback={mode:'duration',durationMs:50};
+ store.load=()=>Promise.resolve({frames:[{rgb:new Uint8Array(12288),delayMs:100}]});
  const device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
  try{await player.start(store.playlist.id);await flush(clock);expect(player.getState().dwellDeadlineMs).toBe(50);clock.advance(50);await flush(clock);expect(player.getState().state).toBe('idle');}
  finally{await player.close();}
@@ -259,8 +259,8 @@ it('does not retain completed preparation promises beyond the two-rendition cach
   override uploadAnimation(...args:Parameters<FakeDeviceAdapter['uploadAnimation']>){this.failNextUpload();return super.uploadAnimation(...args);}
  }
  const clock=new ManualClock(),store=new MemoryPlaybackStore();
- store.playlist.items.push({...structuredClone(store.playlist.items[1]!),id:'00000000-0000-4000-8000-000000000004',renditionId:'c'.repeat(64)},
-  {...structuredClone(store.playlist.items[0]!),id:'00000000-0000-4000-8000-000000000005'});
+ store.playlist.items.push({...structuredClone(store.item(1)),id:'00000000-0000-4000-8000-000000000004',renditionId:'c'.repeat(64)},
+  {...structuredClone(store.item(0)),id:'00000000-0000-4000-8000-000000000005'});
  const device=new RejectingDevice({clock}),player=await Player.open({store,device,clock});
  try{
   await player.start(store.playlist.id);await flush(clock);
@@ -274,7 +274,7 @@ it('does not upload an uncommitted transition after checkpoint persistence fails
  const save=store.save.bind(store);
  try{
   await player.start(store.playlist.id);await flush(clock);const effects=device.effects.length;
-  store.save=async()=>{throw Object.assign(new Error('storage failed'),{code:'database-error'});};
+  store.save=()=>Promise.reject(Object.assign(new Error('storage failed'),{code:'database-error'}));
   await expect(player.next()).rejects.toMatchObject({code:'database-error'});await flush(clock);clock.advance(100000);await flush(clock);
   expect(player.getState()).toMatchObject({state:'error',intent:'paused',dwellDeadlineMs:null});expect(device.effects).toHaveLength(effects);
  }finally{store.save=save;await player.close();}
@@ -287,7 +287,7 @@ it.each([false,true])('rejects resume after queued clear with subsequent previou
   const uploads=device.operations.filter(operation=>operation.kind==='uploadAnimation').length;
   const commands=[player.clear(),player.resume()];if(navigate)commands.push(player.previous());
   const [cleared,resumed]=await Promise.allSettled(commands);
-  expect(cleared!.status).toBe('fulfilled');
+  expect(cleared?.status).toBe('fulfilled');
   expect(resumed).toMatchObject({status:'rejected',reason:{code:'no-context'}});
   await flush(clock);clock.advance(100000);await flush(clock);
   expect(player.getState()).toMatchObject({state:'idle',intent:'stopped',sessionId:null,itemId:null,dwellDeadlineMs:null});

@@ -4,14 +4,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {randomUUID} from 'node:crypto';
-import {Library} from '../../packages/library/src/index.js';
+import {Library} from '../../src/library/index.js';
 import {gifFixture} from '../helpers/media-fixtures.js';
 const roots:string[]=[];const libraries:Library[]=[];
 afterEach(async()=>{for(const library of libraries)await library.close();libraries.length=0;for(const root of roots)await rm(root,{recursive:true,force:true});roots.length=0;});
 it('captures immutable context and retains renditions after playlist deletion and reopen',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'pixoo-checkpoint-'));roots.push(directory);
  const library=await Library.open({directory});libraries.push(library);
- async function* source(){yield gifFixture(1,1,[{width:1,height:1,pixels:[1]}]);}
+ async function* source(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1]}]));}
  const {asset,rendition}=await library.importMedia(source(),'still.gif');
  const p=await library.createPlaylist('Snapshot');
  const edited=await library.replaceItems(p.id,1,[{renditionId:rendition.id}]);
@@ -27,7 +27,7 @@ it('captures immutable context and retains renditions after playlist deletion an
 it('rejects stale or mutated checkpoints and protects owned retention until explicit clear',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'pixoo-checkpoint-'));roots.push(directory);
  const library=await Library.open({directory});libraries.push(library);
- async function* source(){yield gifFixture(1,1,[{width:1,height:1,pixels:[1]}]);}
+ async function* source(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1]}]));}
  const {asset,rendition}=await library.importMedia(source(),'still.gif');
  const p=await library.createPlaylist('Saved');await library.replaceItems(p.id,1,[{renditionId:rendition.id}]);
  const first=await library.createPlaybackCheckpoint(p.id);
@@ -47,7 +47,7 @@ it('rejects stale or mutated checkpoints and protects owned retention until expl
 it('rejects a checkpoint whose payload no longer matches retained session ownership',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'pixoo-checkpoint-'));roots.push(directory);
  const library=await Library.open({directory});libraries.push(library);
- async function* source(){yield gifFixture(1,1,[{width:1,height:1,pixels:[1]}]);}
+ async function* source(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1]}]));}
  const {rendition}=await library.importMedia(source(),'still.gif');
  const p=await library.createPlaylist('Corruption');await library.replaceItems(p.id,1,[{renditionId:rendition.id}]);
  const record=await library.createPlaybackCheckpoint(p.id);
@@ -60,7 +60,7 @@ it('rejects a checkpoint whose payload no longer matches retained session owners
 it('rolls back failed snapshot replacement with the previous retention intact',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'pixoo-checkpoint-'));roots.push(directory);
  const library=await Library.open({directory});libraries.push(library);
- async function* source(){yield gifFixture(1,1,[{width:1,height:1,pixels:[1]}]);}
+ async function* source(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1]}]));}
  const {rendition}=await library.importMedia(source(),'still.gif');const p=await library.createPlaylist('Atomic');
  await library.replaceItems(p.id,1,[{renditionId:rendition.id}]);const record=await library.createPlaybackCheckpoint(p.id);
  const db=new DatabaseSync(join(directory,'catalog.sqlite'));

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FakeDeviceAdapter, type DeviceAdapter } from '@pixoo/device';
+import { FakeDeviceAdapter, type DeviceAdapter } from '../../src/device/index.js';
 
 it('exports a usable adapter from the built workspace with the default clock', async () => {
   const fake = new FakeDeviceAdapter();

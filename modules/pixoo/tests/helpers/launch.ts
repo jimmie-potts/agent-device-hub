@@ -28,7 +28,7 @@ async function launchOnce(spec:LaunchSpec,timeoutMs:number):Promise<LaunchedProc
  try{
   const url=await new Promise<string>((resolve,reject)=>{
    const timer=setTimeout(()=>reject(new Error('readiness timeout')),timeoutMs);
-   createInterface({input:child.stdout}).on('line',line=>{stdout.push(line);const ready=spec.ready(line);if(ready){clearTimeout(timer);resolve(ready);}});
+   createInterface({input:child.stdout}).on('line',line=>{stdout.push(line);const ready=spec.ready(line);if(ready!==undefined&&ready!==''){clearTimeout(timer);resolve(ready);}});
    child.once('error',error=>{clearTimeout(timer);reject(error);});
    // 'close' follows the end of stdout and stderr, so the failure carries all of stderr.
    child.once('close',code=>{clearTimeout(timer);reject(new StartError(`exited ${code}: ${stderr.join(' | ')}`,stderr));});

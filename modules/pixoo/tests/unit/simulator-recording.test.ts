@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
+import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 it('can simulate repeated uploads without retaining frame or operation history',async()=>{
  const clock=new ManualClock(),device=new FakeDeviceAdapter({clock,recordHistory:false});

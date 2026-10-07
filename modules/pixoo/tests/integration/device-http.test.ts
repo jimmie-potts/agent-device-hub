@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createDeviceTransport, sendJson } from '../../packages/device/src/http-transport.js';
+import { createDeviceTransport, sendJson } from '../../src/device/http-transport.js';
 import { deviceServer } from '../helpers/http-device-server.js';
 
 const cleanup: (() => Promise<void>)[] = [];
@@ -25,7 +25,7 @@ describe('device HTTP transport', () => {
     [200, '[]', 'protocol-error'], [200, 'x'.repeat(17000), 'protocol-error'],
   ])('rejects status %s and invalid response as %s', async (status, body, code) => {
     const target = await deviceServer((_, res) => { res.end('{"error_code":0}'); }); cleanup.push(target.close);
-    const server = await deviceServer((_, res) => { res.statusCode = status as number; res.setHeader('location', 'http://127.0.0.1:' + target.port + '/post'); res.end(body as string); }); cleanup.push(server.close);
+    const server = await deviceServer((_, res) => { res.statusCode = status; res.setHeader('location', 'http://127.0.0.1:' + target.port + '/post'); res.end(body); }); cleanup.push(server.close);
     await expect(sendJson('127.0.0.1', server.port, { Command: 'Channel/GetIndex' }, new AbortController().signal)).rejects.toMatchObject({ code });
     expect(target.requests).toHaveLength(0);
   });

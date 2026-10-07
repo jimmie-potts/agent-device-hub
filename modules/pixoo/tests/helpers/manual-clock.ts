@@ -1,4 +1,4 @@
-import type { Clock } from '../../packages/device/src/index.js';
+import type { Clock } from '../../src/device/index.js';
 
 export class ManualClock implements Clock {
   private time = 0;
@@ -13,7 +13,7 @@ export class ManualClock implements Clock {
   advance(ms: number) {
     const end = this.time + ms;
     for (;;) {
-      const next = [...this.timers].sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+      const next = [...this.timers].sort((a, b) => { const byTime = a[1].at - b[1].at; return byTime === 0 || Number.isNaN(byTime) ? a[0] - b[0] : byTime; })[0];
       if (!next || next[1].at > end) break;
       this.time = next[1].at;
       this.timers.delete(next[0]);

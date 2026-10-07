@@ -5,9 +5,9 @@ import {once} from 'node:events';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {Library,type PlaybackCheckpoint} from '@pixoo/library';
-import {Player,LibraryPlaybackStore} from '@pixoo/playback';
-import {FakeDeviceAdapter} from '@pixoo/device';
+import {Library,type PlaybackCheckpoint} from '../../src/library/index.js';
+import {Player,LibraryPlaybackStore} from '../../src/playback/index.js';
+import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {gifFixture} from '../helpers/media-fixtures.js';
 
@@ -15,11 +15,11 @@ it.each([false,true])('recovers a killed process paused with retained media and 
  const directory=await mkdtemp(join(tmpdir(),'pixoo-player-restart-'));
  let library=await Library.open({directory});let player:Player|undefined;
  try{
-  async function* bytes(){yield gifFixture(1,1,[{width:1,height:1,pixels:[1]}]);}
+  async function* bytes(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1]}]));}
   const imported=await library.importMedia(bytes(),'original.gif');
   const playlist=await library.createPlaylist('Persistent');await library.replaceItems(playlist.id,1,[{renditionId:imported.rendition.id}]);
   await library.close();
-  const imports={library:pathToFileURL(resolve('packages/library/dist/index.js')).href,player:pathToFileURL(resolve('packages/playback/dist/index.js')).href,device:pathToFileURL(resolve('packages/device/dist/index.js')).href};
+  const imports={library:pathToFileURL(resolve('dist/src/library/index.js')).href,player:pathToFileURL(resolve('dist/src/playback/index.js')).href,device:pathToFileURL(resolve('dist/src/device/index.js')).href};
   const child=spawn(process.execPath,['--expose-gc','--input-type=module','-e',`
     import {Library} from ${JSON.stringify(imports.library)};
     import {Player,LibraryPlaybackStore} from ${JSON.stringify(imports.player)};
@@ -57,7 +57,7 @@ it.each([false,true])('recovers a killed process paused with retained media and 
   await expect(library.deleteAsset(imported.asset.id)).rejects.toMatchObject({code:'asset-referenced'});
   await expect(Player.open({store:new LibraryPlaybackStore(library),device:new FakeDeviceAdapter({clock}),clock})).rejects.toMatchObject({code:'busy'});
   await player.resume();
-  await vi.waitFor(()=>{clock.advance(0);expect(player!.getState().state).toBe('playing');},{timeout:5000,interval:10});
+  await vi.waitFor(()=>{clock.advance(0);expect(player?.getState().state).toBe('playing');},{timeout:5000,interval:10});
   expect(player.getState().dwellDeadlineMs).toBe(30000);
   await player.clear();await library.deleteAsset(imported.asset.id);
  }finally{await player?.close();await library.close();await rm(directory,{recursive:true,force:true});}

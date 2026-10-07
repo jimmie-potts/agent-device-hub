@@ -14,8 +14,8 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
 | Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
 | Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
-| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, and a harness module that reports what the bus publishes |
-| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
+| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), and a harness module that reports what the bus publishes |
+| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
@@ -24,7 +24,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -35,8 +35,8 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, and the Tidbyt module's simulated cloud) |
-| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam) and `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud) |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, and the Pixoo's simulated device `pixoo-1`) |
+| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), and the four Pixoo scenarios below |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
 ## Capture steps
@@ -223,6 +223,21 @@ blue, `G` green, `W` white or grey, lower case when dimmed), how often it was pu
 heard. `POST /api/harness/v1/simulate` with `{"device": "tidbyt", "action": "offline"}` or `"online"` takes the cloud
 away or brings it back, and the speakers' and the hook's actions above drive what the tiles show. A remote part with the
 reader's grant syncs `device` from the edge and finds the Tidbyt's record from `bunny/modules/tidbyt`.
+
+To check the Pixoo module (#843) as a reviewer would, start each Pixoo scenario's run, capture its scenario, and read
+the harness state's `devices.pixoo` (what the simulated Pixoo shows) and health:
+
+```bash
+npm run -s verify:runtime -- start --scenario pixoo-monitor        # Monitor follows the core's sessions
+npm run -s verify:runtime -- capture <run-id> scenario-pixoo-monitor
+npm run -s verify:runtime -- stop <run-id>
+npm run -s verify:runtime -- start --scenario pixoo-media          # a media command accepted, then completed
+npm run -s verify:runtime -- capture <run-id> scenario-pixoo-media
+npm run -s verify:runtime -- stop <run-id>
+npm run -s verify:runtime -- start --scenario pixoo-now-playing    # a Now Playing card over Monitor
+npm run -s verify:runtime -- capture <run-id> scenario-pixoo-now-playing
+npm run -s verify:runtime -- stop <run-id>
+```
 
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { systemClock } from '../../packages/device/src/index.js';
+import { systemClock } from '../../src/device/index.js';
 
 afterEach(() => { vi.useRealTimers(); });
 it('does not collapse a long scheduled delay to an immediate callback', () => {

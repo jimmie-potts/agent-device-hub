@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
-import {Player} from '../../packages/playback/src/index.js';
-import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
+import {Player} from '../../src/playback/index.js';
+import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}

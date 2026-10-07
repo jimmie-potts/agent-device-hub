@@ -58,13 +58,13 @@ void test('build-current watches every source the run loads, and the served cand
   const packages = new Set<string>();
   const unwatched: string[] = [];
   for (const path of inputs) {
-    // A workspace package, or a shipped module's package (#929), loaded from its build.
+    // A workspace package's or a shipped module's build, such as `modules/playback/dist/` (#929) or `modules/pixoo/dist/` (#843).
     const built = /^((?:packages|modules)\/[^/]+)\/dist\//.exec(path);
     if (built?.[1] !== undefined) packages.add(built[1]);
     else if (!watched.has(path)) unwatched.push(path);
   }
   assert.deepEqual(unwatched, [], 'every runtime source the run loads is a build source');
-  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'modules/playback', 'modules/lifx', 'modules/tidbyt']) {
+  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'modules/playback', 'modules/lifx', 'modules/tidbyt', 'modules/pixoo']) {
     assert.ok(packages.has(name), `the run loads ${name}: ${[...packages].join(', ')}`);
   }
   const candidate = artifactFiles();

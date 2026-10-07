@@ -1,23 +1,16 @@
 {
-  "files": [],
-  "references": [
-    {
-      "path": "packages/core"
-    },
-    {
-      "path": "packages/device"
-    },
-    {
-      "path": "packages/media"
-    },
-    {
-      "path": "packages/library"
-    },
-    {
-      "path": "packages/playback"
-    },
-    {
-      "path": "packages/presentation"
-    }
+  "extends": "../../tsconfig.strict.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "rootDir": ".",
+    "outDir": "dist",
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
   ]
 }

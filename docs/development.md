@@ -198,7 +198,7 @@ Normal CI has five GitHub-hosted Linux jobs, and each suite runs in exactly one 
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the old dashboard's unit tests, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the old dashboard's unit tests, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the old dashboard's smoke check and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
@@ -336,15 +336,15 @@ longer lints are not reported.
 
 Never use `--suppress-all` or `--suppress-rule` to pass new findings. Fix the
 code instead. The one exception is existing code moved in from another
-repository as a snapshot, such as `modules/pixoo/`. Pass only the imported files
-to `--suppress-all`, and fix findings in code written for the move.
+repository as a snapshot, as the Pixoo's was until its module story cleared it
+(#843). Pass only the imported files to `--suppress-all`, and fix findings in
+code written for the move.
 
 | Baselined rules | Why they remain | Triage owner |
 | --- | --- | --- |
 | `no-unsafe-*`, `no-explicit-any`, `restrict-*`, `no-base-to-string`, `unbound-method`, `no-redundant-type-constituents` | Untyped parsed or external data passes through code that predates the rules. Typing it means a refactor in each module, not a mechanical fix. | [#770](https://github.com/jimmie-potts/agent-device-hub/issues/770). Code that the B.U.N.N.Y. runtime replaces drops its entries when retired. |
 | `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
 | Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
-| Every rule in the files imported into `modules/pixoo/` from divoom-app-upgrade | The snapshot keeps the source as it was ([#25](https://github.com/jimmie-potts/agent-device-hub/issues/25)). | [#843](https://github.com/jimmie-potts/agent-device-hub/issues/843), which brings the Pixoo module under the strict profile |
 
 ### Strict profile for new code
 
@@ -352,8 +352,9 @@ New code for the runtime follows a stricter profile from its first commit
 ([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
 `apps/runtime/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
 `packages/event-contracts/src/v2/`, and starts with no baseline entries. Staged
-imported code, currently `modules/pixoo/`, keeps the shared rules until its
-module story converts it. To cover another path, add its glob to `strict` in
+imported code keeps the shared rules until its module story converts it; none
+is staged now, since the Pixoo module joined the profile
+([#843](https://github.com/jimmie-potts/agent-device-hub/issues/843)). To cover another path, add its glob to `strict` in
 `eslint.config.mjs`; the guard tests read that list.
 
 - **Lint (`bunny/strict`):**
@@ -372,8 +373,8 @@ module story converts it. To cover another path, add its glob to `strict` in
 - **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
   Node built-ins and third-party packages. Workspace packages are those in
-  `workspaceScopes` (`@jimmie-potts/`, and `@pixoo/` for the staged Pixoo
-  snapshot); every workspace package must use one of them. It checks static, re-export, type and
+  `workspaceScopes` (`@jimmie-potts/`); every workspace package must use one of
+  them. It checks static, re-export, type and
   literal dynamic imports, including `file:` URLs, and rejects non-literal
   dynamic imports. Paths resolve from the repository root, so the rule works
   from any directory. `createRequire` and `.cjs` files are not checked.
@@ -492,7 +493,6 @@ name or this listing, and on a file exception that no longer hides a finding.
 | `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), at its pickup |
 | `bunny/safe-errors/verification-harness` | `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, at its pickup |
 | `bunny/safe-errors/nanoleaf-outcomes` | `modules/nanoleaf/src/journal.ts` | `error-body-from-registry` | The staged port's outcome drafts carry a bare `{code}` error block without the registry's `retryable` flag, because the module does not depend on the contracts package yet. | [#844](https://github.com/jimmie-potts/agent-device-hub/issues/844), when it publishes them through the SDK's outbox |
-| `ignores` in `bunny/safe-errors` | Staged `modules/pixoo/` | All three | The snapshot keeps its source, as for the strict rules. | #843 |
 
 The table understates what the verification harness quotes.
 `apps/runtime/verify/adapter.ts` also turns exceptions into text, through
@@ -2365,30 +2365,40 @@ change; unchanged app lifecycle/consumer behavior keeps its existing CI checks.
 
 ## Pixoo module checks
 
-`modules/pixoo/` holds the Pixoo packages and presentation imported for #25. Its
-[README](../modules/pixoo/README.md) records the source commit and every file
-left in divoom-app-upgrade. Use Node 24 and run `npm ci`, `npm run build`,
-`npm run typecheck`, `npm run lint:js` and `npm run test:pixoo` from the worktree
-root, plus `check:workflow` and `test:workflow`. The build runs
-`tsc -b modules/pixoo/tsconfig.json` for the six `@pixoo/*` workspace packages,
-and typecheck adds the tests' project. The core CI job runs `test:pixoo:built`
-after its fresh build.
+`modules/pixoo/` is the Pixoo runtime module, `@jimmie-potts/pixoo` (#843), built
+from the packages and presentation imported for #25. Its
+[README](../modules/pixoo/README.md) describes the module and records the
+source commit, the edits and every file left in divoom-app-upgrade. Use Node 24
+and run `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:pixoo` from the worktree root, plus the runtime's checks
+(`test:runtime:built`, `test:runtime:scenarios:built`, and
+`test:runtime:verify:built` alone), `test:maintenance:built`, `check:workflow`
+and `test:workflow`. The build compiles the module and its tests
+(`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
+core CI job runs `test:pixoo:built` after its fresh build.
 
-The moved tests keep Vitest and run from `modules/pixoo/`, because some resolve
-built packages relative to it. They cover:
-- the fake (simulator) adapter, and the HTTP adapter against loopback stand-ins;
-- rendering through sharp's prebuilt libvips binaries;
-- the SQLite library and its migrations;
-- playback and recovery;
-- hosted GIF transfer;
-- Monitor and Now Playing presentation.
+`test:pixoo:built` runs two suites from the build:
+- The moved tests keep Vitest and run from `modules/pixoo/dist/tests`
+  (`vitest.config.mjs`), so files that the code forks or starts by path resolve
+  beside it. They cover:
+  - the fake (simulator) adapter, and the HTTP adapter against loopback stand-ins;
+  - rendering through sharp's prebuilt libvips binaries;
+  - the SQLite library and its migrations;
+  - playback and recovery;
+  - hosted GIF transfer;
+  - Monitor and Now Playing presentation over 2.0 records;
+  - the module's command handling, with the three restored cancellation cases.
+- The module's own tests run with node:test from `dist/tests/module`: the
+  module test kit's checks, policy A's included; its behavior on a test bus with
+  stand-in owners; and its configuration and settings conversion.
 
-No test contacts a device or the installed Pixoo service. Test listeners go
-through `modules/pixoo/tests/helpers/loopback.ts`. A test that launches a
-listening process uses `modules/pixoo/tests/helpers/launch.ts`. Both retry
-instead of keeping an installed service's port, such as 41230 or 41231. On 2026-10-06 the suite took about
-7 s locally for 30 files and 292 tests. The Pixoo build and the tests'
-typecheck took about 2 s each.
+No test contacts a device or the installed Pixoo service: the module runs with
+`SimulatedPixoo`. Test listeners go through
+`modules/pixoo/tests/helpers/loopback.ts`. A test that launches a listening
+process uses `modules/pixoo/tests/helpers/launch.ts`. Both retry instead of
+keeping an installed service's port, such as 41230 or 41231. On 2026-10-07 the
+Vitest suite took about 7 s locally for 31 files and 302 tests, and the module's
+node:test suites about 25 s for 28 tests.
 
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
 

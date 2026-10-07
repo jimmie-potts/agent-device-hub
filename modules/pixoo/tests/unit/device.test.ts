@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FakeDeviceAdapter } from '../../packages/device/src/index.js';
+import { FakeDeviceAdapter } from '../../src/device/index.js';
+import { present } from '../helpers/present.js';
 import { rgbFrame } from '../helpers/rgb-fixtures.js';
 import { ManualClock } from '../helpers/manual-clock.js';
 
@@ -22,14 +23,14 @@ describe('fake device adapter', () => {
     const frames = [rgbFrame(11, 40), rgbFrame(22, 90)];
     const expected = frames.map(frame => ({ rgb: frame.rgb.slice(), delayMs: frame.delayMs }));
     const pending = device.uploadAnimation({ frames }, { generation: 0 });
-    frames[0]!.rgb.fill(255);
+    present(frames[0]).rgb.fill(255);
     frames.pop();
     clock.advance(10);
     expect(await pending).toMatchObject({ ok: true, value: { estimatedReadyAtMs: 13 } });
     const recorded = device.effects.filter(effect => effect.kind === 'frame');
     expect(recorded.map(effect => effect.frame)).toEqual(expected);
-    expect(recorded[0]!.frame.rgb.slice(63 * 3, 65 * 3)).toEqual(new Uint8Array([63, 0, 11, 0, 1, 11]));
-    recorded[0]!.frame.rgb.fill(99);
+    expect(present(recorded[0]).frame.rgb.slice(63 * 3, 65 * 3)).toEqual(new Uint8Array([63, 0, 11, 0, 1, 11]));
+    present(recorded[0]).frame.rgb.fill(99);
     expect(device.effects).not.toEqual(recorded);
   });
   it.each([
@@ -179,8 +180,8 @@ describe('fake device adapter', () => {
     const result = await pending;
     result.timing.completedAtMs = 999;
     const records = device.operations;
-    records[0]!.timing.queueMs = 999;
-    expect(device.operations[0]!.timing).toEqual({ submittedAtMs: 0, startedAtMs: 0, completedAtMs: 0, queueMs: 0, serviceMs: 0 });
+    present(records[0]).timing.queueMs = 999;
+    expect(device.operations[0]?.timing).toEqual({ submittedAtMs: 0, startedAtMs: 0, completedAtMs: 0, queueMs: 0, serviceMs: 0 });
   });
   it('rejects invalid screen and generation values without scheduling effects', async () => {
     const clock = new ManualClock();

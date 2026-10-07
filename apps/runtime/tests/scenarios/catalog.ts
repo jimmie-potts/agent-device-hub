@@ -21,6 +21,7 @@ import type {ChimeDeviceState} from '../fixtures/chime.js';
 import type {HistoryEntry} from '../fixtures/core.js';
 import {switchLamp, type Lamp, type LampDeviceState, type Power} from '../fixtures/lamp.js';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, type Availability, type Sign, type SignDeviceState} from '../fixtures/sign.js';
+import {FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SIMULATED, frameDigest, renderNowPlaying, schemaOf, type DisplayRecord, type PlaylistRecord, type RenditionRecord, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 
 export const TRANSPORTS = ['in-process', 'remote'] as const;
 /** How the scenario's parts reach the runtime: on its bus, or through its SDK edge over SSE and HTTP. */
@@ -29,7 +30,7 @@ export type TransportName = (typeof TRANSPORTS)[number];
 export const ROLES = ['hook', 'operator', 'panel', 'reader'] as const;
 export type Role = (typeof ROLES)[number];
 /** The modules a run can start, each built by its factory with its simulated transport. */
-export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx' | 'tidbyt';
+export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx' | 'tidbyt' | 'pixoo';
 
 /**
  * One copy the reader keeps: one owner's families, synced from their only owner, or from the owner named by its source
@@ -106,7 +107,10 @@ export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control'
 export const TOKEN_PREFIX = 'tok_SYNTHETIC835';
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
-export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState; lifx: LifxDeviceState; tidbyt: CloudState};
+export type DeviceStates = {
+  lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState; lifx: LifxDeviceState; tidbyt: CloudState;
+  pixoo: SimulatedPixooState;
+};
 /** What a scenario can make a simulated device do. */
 export type Simulation =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
@@ -121,7 +125,9 @@ export type Simulation =
   /** The simulated LIFX bulb at `address` goes off the network, as one switched off at the wall, or comes back. */
   | {device: 'lifx'; action: 'online' | 'offline'; address: string}
   /** The simulated Tidbyt cloud stops answering, or answers again (Hub #930). */
-  | {device: 'tidbyt'; action: 'online' | 'offline'};
+  | {device: 'tidbyt'; action: 'online' | 'offline'}
+  /** The simulated Pixoo (Hub #843) answers at once, refuses to connect, or never answers. */
+  | {device: 'pixoo'; action: SimulatedMode};
 export type Generational<T> = {generation: number} & T;
 
 /** What a scenario can touch. Each run type implements it; the in-memory harness is `memory.ts`. */
@@ -1399,11 +1405,162 @@ const moduleContributions: Scenario = {
   ],
 };
 
+// The Pixoo module (Hub #843): Monitor following the core's sessions, a media command accepted then completed, a Now
+// Playing card, and a start while the device is offline. Each runs the module with its simulated Pixoo.
+
+const PIXOO_ID = PIXOO_SIMULATED.config.device.id;
+/** The Pixoo's section: the module's simulated section, which names the observed GIF profile, with a label. */
+export const PIXOO_SECTION = {device: {...PIXOO_SIMULATED.config.device, label: 'Desk Pixoo'}} as const;
+/**
+ * The Pixoo's families, which the reader copies from the Pixoo. Once sync is owner-addressed (Hub #967), the reader names
+ * the Pixoo, `bunny/modules/pixoo`, as this group's owner, since every device module serves `device`.
+ */
+const PIXOO_FAMILIES = ['device', PIXOO.display, PIXOO.rendition, PIXOO.playlist] as const;
+/** A 1x1 red PNG, which the module renders to 64x64 in its media child process. */
+const RED_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const pixooCommand = (family: string, verb: string, data: object): {key: string; draft: CommandDraft<object>} => ({
+  key: `bunny.cmd.${family}.${PIXOO_ID}`, draft: {type: `org.bunny.${verb}.requested`, subject: PIXOO_ID, dataschema: schemaOf(family), data},
+});
+const pixooMode = (mode: 'monitor' | 'media'): {key: string; draft: CommandDraft<object>} => pixooCommand('device-mode-set', 'device-mode.set', {mode});
+const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device').find(state => state.data.id === PIXOO_ID)?.data;
+const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display).find(state => state.data.id === PIXOO_ID)?.data;
+/** The reader heard the request's outcome as `result` with `evidence`. */
+const completedAs = (h: Harness, requestId: string, result: string, evidence: string): Outcome => {
+  const outcome = h.reader.heard().find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId);
+  const data = outcome?.data as {result?: string; evidence?: string} | undefined;
+  return (data?.result === result && data.evidence === evidence) || `${requestId}'s outcome is ${show(data)}`;
+};
+const pixooAvailability = (h: Harness, availability: DeviceRecord['availability']): Outcome =>
+  pixooDevice(h)?.availability === availability || `the reader's copy shows the Pixoo ${String(pixooDevice(h)?.availability)}`;
+const shownFrames = (h: Harness, frames: number): Outcome => h.devices().pixoo.shown?.frames === frames || `the Pixoo shows ${show(h.devices().pixoo.shown)}`;
+const PIXOO_SEED: Seed = {modules: ['core', 'pixoo'], follows: [CORE_FAMILIES, PIXOO_FAMILIES], config: {pixoo: PIXOO_SECTION}};
+
+/** Monitor follows the core's sessions: a session that waits for approval pulses on the Pixoo, and calms once approved. */
+const pixooMonitor: Scenario = {
+  id: 'pixoo-monitor',
+  title: 'the Pixoo\'s Monitor follows the agent sessions the core holds',
+  seed: PIXOO_SEED,
+  steps: [
+    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    expect('the reader\'s copy shows the simulated Pixoo available', h => pixooAvailability(h, 'available')),
+    act('the operator selects Monitor', h => sendOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-1')),
+    expect('Monitor\'s selection completes as the module\'s own observed state', h => completedAs(h, 'pixoo-monitor-1', 'succeeded', 'observed')),
+    act('the hook observes a session start and an approval prompt', async h => {
+      await publish(h, sessionStarted);
+      await publish(h, approvalPrompt('approve-1'));
+    }),
+    expect('the reader\'s copy shows Monitor presenting one session that waits for a person', h => {
+      const display = pixooDisplay(h);
+      return (display?.mode === 'monitor' && display.participating && display.showing === 'dashboard' && display.monitor.matched === 1 && display.monitor.attention === 1) ||
+        `display ${show(display)}`;
+    }, 5000),
+    expect('the Pixoo shows the session\'s dashboard, pulsing in two frames for the approval', h => shownFrames(h, 2), 5000),
+    act('the hook observes the approval resolved', h => publish(h, approvalResolved('approve-1'))),
+    expect('the Pixoo shows the calm dashboard in one frame', h => shownFrames(h, 1), 8000),
+    expect('the core and the Pixoo are still running', h => running(h, ['core', 'pixoo'])),
+  ],
+};
+
+/** A media command: imported media in a playlist, started, accepted at once and completed once the media reached the Pixoo. */
+const pixooMedia: Scenario = {
+  id: 'pixoo-media',
+  title: 'a media command to the Pixoo is accepted, then completed once the media reaches the device',
+  seed: PIXOO_SEED,
+  steps: [
+    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    act('the operator imports a picture', h => sendOnce(h, 'operator', 'pixoo-import',
+      pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {change: {operation: 'import', name: 'Red', content: {inline: RED_PIXEL}}}), 'pixoo-import-1')),
+    expect('the import completes, decoded in the module\'s media process', h => completedAs(h, 'pixoo-import-1', 'succeeded', 'observed'), 20_000),
+    expect('the reader\'s copy of the catalog holds the rendition', h => h.reader.states<RenditionRecord>(PIXOO.rendition).length === 1 || 'no rendition'),
+    act('the operator creates a playlist', h => sendOnce(h, 'operator', 'pixoo-playlist',
+      pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {change: {operation: 'create', name: 'Desk'}}), 'pixoo-playlist-1')),
+    expect('the reader\'s copy holds the playlist', h => h.reader.states<PlaylistRecord>(PIXOO.playlist).length === 1 || 'no playlist'),
+    act('the operator puts the picture in the playlist', h => {
+      const [rendition] = h.reader.states<RenditionRecord>(PIXOO.rendition), [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
+      if (rendition === undefined || list === undefined) throw new Error('the catalog is missing');
+      return sendOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+        change: {operation: 'items', playlistId: list.data.id, revision: list.data.playlistRevision, items: [{renditionId: rendition.data.id}]},
+      }), 'pixoo-items-1');
+    }),
+    expect('the playlist is among the Pixoo\'s capabilities', h => {
+      const media = pixooDevice(h)?.capabilities.media;
+      return (media?.supported === true && media.playlistIds.length === 1) || `media ${show(media)}`;
+    }),
+    act('the operator starts the playlist', h => {
+      const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
+      if (list === undefined) throw new Error('no playlist');
+      return h.send('operator', 'pixoo-start', pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), {timeoutMs: 5000, requestId: 'pixoo-start-1'});
+    }),
+    expect('the start is accepted at once', h => answered(h, 'pixoo-start', 'accepted')),
+    expect('then completes, transmitted, once the media reached the Pixoo', h => completedAs(h, 'pixoo-start-1', 'succeeded', 'transmitted'), 8000),
+    expect('the Pixoo shows the picture', h => shownFrames(h, 1)),
+    expect('the reader\'s copy names the start as the device\'s last transmission', h => {
+      const last = pixooDevice(h)?.lastTransmission;
+      return (last?.status === 'known' && last.requestId === 'pixoo-start-1') || `last transmission ${show(last)}`;
+    }),
+  ],
+};
+
+/** The song the presented speaker plays, and the card the Pixoo shows for it while it plays and is current. */
+const PIXOO_SONG = 'Harvest Moon';
+const playingCard = (): string => frameDigest(renderNowPlaying({card: true, status: 'playing', title: 'HARVEST MOON', artist: '', stale: false}));
+/**
+ * Now Playing: the playback module's presented speaker plays a song, whose card pops up over Monitor for ten seconds;
+ * Monitor then returns, and the card stays current for as long as the song plays on unchanged, though the playback
+ * module publishes nothing more.
+ */
+const pixooNowPlaying: Scenario = {
+  id: 'pixoo-now-playing',
+  title: 'the Pixoo pops up the presented speaker\'s Now Playing card over Monitor',
+  seed: {
+    modules: ['core', 'playback', 'pixoo'], follows: [CORE_FAMILIES, PIXOO_FAMILIES],
+    config: {playback: PLAYBACK_SECTION, pixoo: {...PIXOO_SECTION, playback: PLAYBACK_SECTION.id}},
+  },
+  steps: [
+    expect('the core, the playback module and the Pixoo are running', h => running(h, ['core', 'playback', 'pixoo'])),
+    act('the operator selects Monitor', h => sendOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-2')),
+    act('the hook observes a session start', h => publish(h, sessionStarted)),
+    expect('the Pixoo shows the session\'s dashboard', h => (h.devices().pixoo.shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
+    act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: PIXOO_SONG}); }),
+    expect('the Pixoo shows the song\'s card', h => h.devices().pixoo.shown?.digests[0] === playingCard() || `the Pixoo shows ${show(h.devices().pixoo.shown)}`, 6000),
+    expect('the reader\'s copy shows the card as a pop-up over Monitor', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'card' && display.nowPlaying.card && display.nowPlaying.takeover === null) || `display ${show(display)}`;
+    }),
+    expect('after ten seconds Monitor shows the dashboard again', h => pixooDisplay(h)?.showing === 'dashboard' || `display ${show(pixooDisplay(h))}`, 15_000),
+  ],
+};
+
+/** The Pixoo module's records of `event` at `level` from the runtime's `from`th start on. */
+const pixooLogged = (h: Harness, event: string, level: string, from: number): number =>
+  logged(h, 'pixoo', event, from).filter(({record}) => record.severity_text === level).length;
+/** A start while the Pixoo is offline: the module runs, the device is unavailable with one warning, and it recovers once. */
+const pixooOffline: Scenario = {
+  id: 'pixoo-offline',
+  title: 'the Pixoo module starts while its device is offline, reports it unavailable, and recovers once it answers',
+  seed: PIXOO_SEED,
+  steps: [
+    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    act('the Pixoo goes offline, and the runtime restarts', async h => {
+      h.simulate({device: 'pixoo', action: 'offline'});
+      await h.restart();
+    }),
+    expect('the Pixoo module runs, though its device does not answer', h => running(h, ['core', 'pixoo'])),
+    expect('the reader\'s copy shows the Pixoo unavailable', h => pixooAvailability(h, 'unavailable'), 5000),
+    holds('it stays unavailable, and the module keeps running', async h => (pixooAvailability(h, 'unavailable') === true && await running(h, ['pixoo']) === true) || 'changed', 4000),
+    expect('the module logged one degradation, not a warning per probe', h => pixooLogged(h, 'device.unavailable', 'WARN', 2) === 1 || `${pixooLogged(h, 'device.unavailable', 'WARN', 2)} warnings`),
+    act('the Pixoo comes back online', h => { h.simulate({device: 'pixoo', action: 'online'}); }),
+    expect('the reader\'s copy shows the Pixoo available', h => pixooAvailability(h, 'available'), 35_000),
+    expect('the module logged one recovery', h => pixooLogged(h, 'device.available', 'INFO', 2) === 1 || `${pixooLogged(h, 'device.available', 'INFO', 2)} recoveries`),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs, deviceOwners, tidbytTiles, gatewayReads, grantsAndDuplicates,
   approvalRecovery, moduleContributions,
+  pixooMonitor, pixooMedia, pixooNowPlaying, pixooOffline,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);
