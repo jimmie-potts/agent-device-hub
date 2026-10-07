@@ -1,29 +1,22 @@
-// The runtime's SDK edge and simulated modules (Hub #920): with an edge, remote parts reach the module bus over SSE and
-// HTTP on the health listener, each with a run-generated grant read from a private file in the state directory. A
-// grant may not act as the core or a module. With `--simulate`, every module is built with its simulated transport.
+// The runtime's SDK edge and simulated modules (Hub #920, #835): with an edge, remote parts reach the module bus over SSE
+// and HTTP on the health listener, each with a client credential from the private file that the configuration file's
+// edge section names. A credential may not act as the core or a module. With `--simulate`, every module is built with
+// its simulated transport.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, link, symlink, writeFile} from 'node:fs/promises';
+import {link, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import {catalog} from '@jimmie-potts/bunny-observability';
 import {errorCodes} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, connectRemote, type BunnyModule} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, RuntimeError, buildModules, moduleSchemas, startRuntime, type LogRecord, type ModuleFactory} from '../src/index.js';
+import {RuntimeError, buildModules, moduleSchemas, startRuntime, tokenDigest, type LogRecord, type ModuleFactory} from '../src/index.js';
 import {REGISTRY_REASONS} from '../src/runtime.js';
 import {createCoreModule} from './fixtures/core.js';
-import {deferred, fixture, it, run, stateDir, waitFor} from './support.js';
+import {deferred, edgeConfig, fixture, it, run, stateDir, waitFor, type EdgePart} from './support.js';
 
 const token = (): string => randomBytes(32).toString('base64url');
-type Grant = {source: string; token: string};
-
-/** Writes the edge's grants into the state directory, owner-only unless `mode` says otherwise. */
-async function grant(dir: string, grants: readonly Grant[], mode = 0o600, text?: string): Promise<void> {
-  const file = join(dir, EDGE_GRANTS_FILE);
-  await writeFile(file, text ?? JSON.stringify({schema: 'edge-grants/1.0', grants}), {mode});
-  await chmod(file, mode);
-}
 
 /** A free loopback port, so a test can reach the listener before `startRuntime` resolves. */
 async function freePort(): Promise<number> {
@@ -36,11 +29,11 @@ async function freePort(): Promise<number> {
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof RuntimeError && error.code === code;
 
-/** Fails unless a runtime with an edge on `dir` refuses to start as `accept` expects; one that starts anyway is stopped. */
-async function refusesToStart(dir: string, accept: (error: unknown) => boolean, what: string): Promise<void> {
+/** Fails unless a runtime with an edge refuses to start as `accept` expects; one that starts anyway is stopped. */
+async function refusesToStart(dir: string, configFile: string | undefined, accept: (error: unknown) => boolean, what: string): Promise<void> {
   let runtime;
   try {
-    runtime = await startRuntime({modules: [], port: 0, stateDir: dir, edge: {schemas: {}}, log: () => {}});
+    runtime = await startRuntime({modules: [], port: 0, stateDir: dir, ...(configFile === undefined ? {} : {configFile}), edge: {schemas: {}}, log: () => {}});
   } catch (error) {
     assert.ok(accept(error), `${what}: ${String(error)}`);
     return;
@@ -50,10 +43,9 @@ async function refusesToStart(dir: string, accept: (error: unknown) => boolean, 
 }
 
 it('a remote part with a run grant connects and syncs the core\'s sessions; one without a grant is unauthenticated', async context => {
-  const dir = await stateDir(context);
   const reader = {source: 'bunny/parts/reader', token: token()};
-  await grant(dir, [reader]);
-  const {runtime, logs} = await run(context, {modules: [createCoreModule()], stateDir: dir, edge: {schemas: {}}});
+  const {config} = await edgeConfig(context, [reader]);
+  const {runtime, logs} = await run(context, {modules: [createCoreModule()], configFile: config, edge: {schemas: {}}});
 
   const remote = await connectRemote({url: runtime.url, source: reader.source, token: reader.token});
   context.after(() => remote.close());
@@ -79,11 +71,11 @@ it('a remote part with a run grant connects and syncs the core\'s sessions; one 
 it('the edge answers only requests that name the listener, and one part retrying across the start connects once it settles', async context => {
   const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
-  await grant(dir, [part]);
+  const {config} = await edgeConfig(context, [part]);
   const port = await freePort();
   const gate = deferred<undefined>();
   const slow = fixture('slow', () => gate.promise);
-  const starting = startRuntime({modules: [slow], port, stateDir: dir, edge: {schemas: {}}, log: () => {}});
+  const starting = startRuntime({modules: [slow], port, stateDir: dir, configFile: config, edge: {schemas: {}}, log: () => {}});
   // Registered first, so a failed check still stops the runtime once its start settles.
   context.after(async () => {
     gate.resolve(undefined);
@@ -132,57 +124,62 @@ it('without an edge, the SDK routes are not found', async context => {
   assert.equal(response.status, 404);
 });
 
-it('a grants file that is missing, not private, linked or malformed is refused before the runtime serves', async context => {
-  const good = {source: 'bunny/parts/reader', token: token()};
-  await refusesToStart(await stateDir(context), refused('edge-grants-missing'), 'missing');
+it('an edge without its configuration section, or with a credentials file that is missing, not private, linked or malformed, is refused before the runtime serves', async context => {
+  const good: EdgePart = {source: 'bunny/parts/reader', token: token()};
+  await refusesToStart(await stateDir(context), undefined, refused('edge-config-missing'), 'no configuration file');
+  const unconfigured = await edgeConfig(context, [good]);
+  await writeFile(unconfigured.config, JSON.stringify({schema: 'runtime-config/1.0', modules: {}}));
+  await refusesToStart(await stateDir(context), unconfigured.config, refused('edge-config-missing'), 'no edge section');
 
-  const shared = await stateDir(context);
-  await grant(shared, [good], 0o644);
-  await refusesToStart(shared, refused('edge-grants-not-private'), 'mode 644');
+  const missing = await edgeConfig(context, [good]);
+  await rm(missing.credentials);
+  await refusesToStart(await stateDir(context), missing.config, refused('edge-credentials-missing'), 'missing');
 
-  const linked = await stateDir(context);
-  const elsewhere = await stateDir(context);
-  await grant(elsewhere, [good]);
-  await symlink(join(elsewhere, EDGE_GRANTS_FILE), join(linked, EDGE_GRANTS_FILE));
-  await refusesToStart(linked, refused('edge-grants-not-private'), 'a symbolic link');
+  const shared = await edgeConfig(context, [good], {mode: 0o644});
+  await refusesToStart(await stateDir(context), shared.config, refused('edge-credentials-not-private'), 'mode 644');
 
-  const hard = await stateDir(context);
-  await grant(hard, [good]);
-  await link(join(hard, EDGE_GRANTS_FILE), join(hard, 'second-name'));
-  await refusesToStart(hard, refused('edge-grants-not-private'), 'a second hard link');
+  const linked = await edgeConfig(context, [good]);
+  const elsewhere = await edgeConfig(context, [good]);
+  await rm(linked.credentials);
+  await symlink(elsewhere.credentials, linked.credentials);
+  await refusesToStart(await stateDir(context), linked.config, refused('edge-credentials-not-private'), 'a symbolic link');
 
+  const hard = await edgeConfig(context, [good]);
+  await link(hard.credentials, join(hard.dir, 'second-name'));
+  await refusesToStart(await stateDir(context), hard.config, refused('edge-credentials-not-private'), 'a second hard link');
+
+  const credential = {id: 'reader', source: good.source, digest: tokenDigest(good.token), scopes: ['read'], devices: []};
   for (const [what, text] of [
-    ['not JSON', 'grants'],
-    ['another schema', JSON.stringify({schema: 'edge-grants/2.0', grants: [good]})],
-    ['no grants', JSON.stringify({schema: 'edge-grants/1.0', grants: []})],
-    ['a short token', JSON.stringify({schema: 'edge-grants/1.0', grants: [{source: good.source, token: 'short'}]})],
-    ['a malformed source', JSON.stringify({schema: 'edge-grants/1.0', grants: [{source: 'parts/reader', token: token()}]})],
-    ['a shared token', JSON.stringify({schema: 'edge-grants/1.0', grants: [good, {source: 'bunny/parts/hook', token: good.token}]})],
+    ['not JSON', 'credentials'],
+    ['another schema', JSON.stringify({schema: 'edge-credentials/2.0', credentials: [credential]})],
+    ['a digest that is not one', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, digest: good.token}]})],
+    ['a malformed source', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, source: 'parts/reader'}]})],
+    ['an unknown scope', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, scopes: ['read', 'owner']}]})],
+    ['a device that is not a routing ID', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, devices: ['Lamp 1']}]})],
+    ['a shared token', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [credential, {...credential, id: 'hook', source: 'bunny/parts/hook'}]})],
+    ['a repeated ID', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [credential, {...credential, digest: tokenDigest(token())}]})],
   ] as const) {
-    const dir = await stateDir(context);
-    await grant(dir, [], 0o600, text);
-    await refusesToStart(dir, error => refused('edge-grants-invalid')(error) && !String(error).includes(good.token), what);
+    const files = await edgeConfig(context, [], {credentials: text});
+    await refusesToStart(await stateDir(context), files.config, error => refused('edge-credentials-invalid')(error) && !String(error).includes(good.token), what);
   }
 });
 
-it('a grant may not act as the core or as a module', async context => {
-  for (const source of ['bunny/core', 'bunny/modules/lamp', 'bunny/modules/core']) {
-    const dir = await stateDir(context);
-    await grant(dir, [{source: 'bunny/parts/reader', token: token()}, {source, token: token()}]);
-    await refusesToStart(dir, refused('edge-grant-source'), source);
+it('a credential may not act as the core, a module or the runtime itself', async context => {
+  for (const source of ['bunny/core', 'bunny/modules/lamp', 'bunny/modules/core', 'bunny/runtime/gateway']) {
+    const {config} = await edgeConfig(context, [{source: 'bunny/parts/reader', token: token()}, {source, token: token()}]);
+    await refusesToStart(await stateDir(context), config, refused('edge-credential-source'), source);
   }
 });
 
 it('runtime.started says whether modules are simulated and the edge is configured; runtime.edge.serving follows once it serves', async context => {
-  const dir = await stateDir(context);
-  await grant(dir, [{source: 'bunny/parts/reader', token: token()}]);
+  const {config} = await edgeConfig(context, [{source: 'bunny/parts/reader', token: token()}]);
   const started = (logs: readonly LogRecord[]): LogRecord['attributes'] | undefined => logs.find(record => record.event_name === 'runtime.started')?.attributes;
   const events = (logs: readonly LogRecord[]): string[] => logs.map(record => record.event_name);
   const plain = await run(context, {modules: [fixture('one')]});
   assert.equal(started(plain.logs)?.['bunny.simulate'], false);
   assert.equal(started(plain.logs)?.['bunny.edge'], false);
   assert.equal(events(plain.logs).includes('runtime.edge.serving'), false, 'no edge, no serving record');
-  const simulated = await run(context, {modules: [fixture('one'), fixture('two')], stateDir: dir, simulate: true, edge: {schemas: {}}});
+  const simulated = await run(context, {modules: [fixture('one'), fixture('two')], configFile: config, simulate: true, edge: {schemas: {}}});
   assert.equal(started(simulated.logs)?.['bunny.simulate'], true);
   assert.equal(started(simulated.logs)?.['bunny.edge'], true);
   const order = events(simulated.logs);
@@ -196,13 +193,12 @@ it('runtime.started says whether modules are simulated and the edge is configure
 });
 
 it('while the runtime stops, the edge answers 503 with unavailable until the listener closes', async context => {
-  const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
-  await grant(dir, [part]);
+  const {config} = await edgeConfig(context, [part]);
   const gate = deferred<undefined>();
   const stopping: BunnyModule = {manifest: {name: 'stopping', apiVersion: '1.0'}, start: () => {}, stop: () => gate.promise};
   context.after(() => { gate.resolve(undefined); });
-  const {runtime} = await run(context, {modules: [stopping], stateDir: dir, edge: {schemas: {}}});
+  const {runtime} = await run(context, {modules: [stopping], configFile: config, edge: {schemas: {}}});
   const stopped = runtime.stop();
   const during = await fetch(new URL('/api/sdk/v1/stream', runtime.url), {headers: {authorization: `Bearer ${part.token}`}});
   assert.equal(during.status, 503, 'the edge is stopping, not missing');
@@ -214,10 +210,9 @@ it('while the runtime stops, the edge answers 503 with unavailable until the lis
 });
 
 it('an edge refusal is logged at its level with a known route, its registry code and that code\'s registered reason, never the refusal\'s detail', async context => {
-  const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
-  await grant(dir, [part]);
-  const {runtime, logs} = await run(context, {modules: [], stateDir: dir, edge: {schemas: {}}});
+  const {config} = await edgeConfig(context, [part]);
+  const {runtime, logs} = await run(context, {modules: [], configFile: config, edge: {schemas: {}}});
   const marker = 'caller-sent-7f3a91';
   const headers = {authorization: `Bearer ${part.token}`, 'content-type': 'application/json'};
   const unknown = await fetch(new URL(`/api/sdk/v1/${marker}`, runtime.url), {method: 'POST', headers, body: '{}'});

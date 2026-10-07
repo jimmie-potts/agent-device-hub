@@ -403,7 +403,7 @@ export const sign: BunnyModule<SignConfig> = {
   SQLite file, its private folder, its section of the runtime's configuration
   file and its log records. `apiVersion` is the module API version the module
   was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current one,
-  `1.1`. The runtime refuses a module with another major version or a newer
+  `1.2`. The runtime refuses a module with another major version or a newer
   minor one. Write the version as a literal, so a later major version refuses
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
@@ -428,6 +428,41 @@ export const sign: BunnyModule<SignConfig> = {
   and detail. `checkConfiguration(manifest, section)` is the check the runtime
   and the module test kit share: it returns `{status: 'accepted', config,
   devices, secrets}` or `{status: 'refused', problem}`.
+- **Pages, content, tools and settings (1.2, Hub #835).** A module written for
+  1.2 or later may contribute to the runtime's gateway; one written for 1.0 or
+  1.1 that declares any of them is refused with `invalid-request`, and still
+  runs without them.
+  - `pages`: at most `MAX_PAGES` (16), each `{id, title, render}`. The gateway
+    serves `render()`'s HTML at `/modules/<name>/<id>`, in a document whose
+    policy allows no script, frame, form or base, to a browser session or a
+    credential with `read`. An ID is lowercase letters and digits with single
+    hyphens, at most 64 characters, distinct, and never `content`
+    (`CONTENT_PATH`).
+  - `content(ref)`: content by reference, `{type, bytes}` or undefined, served
+    at `/modules/<name>/content/<ref>`, such as the preview a page shows with
+    `<img src="content/preview.png">`. The gateway serves images, plain text and
+    JSON of at most 16 MiB.
+  - `tools`: at most `MAX_TOOLS` (16) read tools, each `{name, description,
+    input, output, read}`, which MCP publishes as `<module>_<name>` to a
+    credential with `read`. `input` is an object schema that allows no other
+    member, and `output` an object schema; the runtime refuses a module whose
+    schemas do not compile as strict JSON Schema 2020-12 or whose arguments take
+    a name the gateway keeps (`deviceId`, `controllerId`, `url`, `ip`, `path`,
+    `credential`, `authorization`). `read(args)` returns the result or a refusal
+    from `errorBody`, and changes nothing; action tools come with #782's
+    dispatcher.
+  - `settings`: `{schema, show}`. A module has one configuration path: its
+    settings are what `configure` accepted from its section, so a module that
+    declares settings declares `configure`. The gateway shows
+    `show(config)` at `/api/v2/modules/<name>/settings`; a change is made in the
+    configuration file and takes effect when the runtime restarts. `show` never
+    returns a secret.
+
+  Each runs only while the module runs, in the module's own flow: an exception
+  that escapes one fails the module, as one from a handler does. A page,
+  settings or tool answer that holds a secret the module read is never served.
+  `checkContributions(manifest)`, within `checkManifest`, returns the runtime's
+  own reason for refusing them.
 - **`start(context)`** subscribes, responds and opens local resources: its
   database, its private folder and its secrets. A throw, a rejection or a start
   that outlasts the runtime's start deadline fails the module.
@@ -803,8 +838,8 @@ refusals a correct caller should never receive (`unauthenticated`,
 | `command.uncertain` | WARN | The bus, when a handler had the command and the request ended `uncertain-result`. |
 | `sync.served`, `sync.refused` | INFO; the code's level for a refusal | The bus, at a sync request's answer, refused by the bus or its owner. |
 | `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
-| `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
-| `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. A repeat with the same route, code and source is counted, and each minute that counted any ends with one summary whose `attempts` is that count; a quiet minute ends the run (`REFUSAL_WINDOW_MS`). The window runs on the edge's scheduler, so with the default `setTimeout` a host that never calls `edge.close()` stays alive up to a minute after a refusal; the runtime closes its edge. |
+| `edge.connected`, `edge.disconnected` | INFO; WARN with `capacity` for a stream the edge ended because its reader stopped | The edge, for a remote part's stream. |
+| `edge.refused` | The code's level | The edge, for a call it refused, a call outside its grant (`forbidden`) and a command sent again (`duplicate-conflict`) included. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. A repeat with the same route, code and source is counted, and each minute that counted any ends with one summary whose `attempts` is that count; a quiet minute ends the run (`REFUSAL_WINDOW_MS`). The window runs on the edge's scheduler, so with the default `setTimeout` a host that never calls `edge.close()` stays alive up to a minute after a refusal; the runtime closes its edge. |
 | `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type, never its message. After dispatch it also carries the command's key, request ID, message ID and trace. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
 | `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
@@ -867,7 +902,40 @@ HTTP status that fits its code.
   that two grants share. A call without a granted token is refused with
   `unauthenticated`, and a message or connection of another source with
   `forbidden`. Tokens appear only in the `authorization` header, never in a
-  message, diagnostic, log record or error body.
+  message, diagnostic, log record or error body. A host may authenticate calls
+  itself instead, with `authenticate(request)`, which returns the principal a
+  call acts as, `{source, id?, calls?, keys?}`, or undefined for
+  `unauthenticated`; the runtime's gateway does, for its credentials and
+  browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
+  principal opened, as when the host revokes it.
+- **Permissions (Hub #835).** A grant may list the `calls` it may make and the
+  routing-key patterns, `keys`, it may use; either left out allows all. A key it
+  publishes or requests must match a pattern; a pattern it subscribes or
+  responds to, and the state keys `bunny.state.<family>.*` of each family it
+  syncs or serves, must lie within one. `reply` comes with `respond`, `answer`
+  with `serve`, and every part may hold its stream and close what it opened on
+  it. Anything else is refused with `forbidden` before it reaches the bus, and
+  the edge refuses at start a grant whose calls or patterns it cannot read.
+- **Declared source.** The client names the source it acts as in every call's
+  `bunny-source` header (`SOURCE_HEADER`), and the edge refuses a token used
+  under another source with `forbidden` at once, before the stream opens.
+- **Commands are never sent twice.** The edge remembers each command it hands
+  its bus, by source and message ID, until its `expiresat`, and refuses the same
+  message again with `duplicate-conflict` before anything happens, even after
+  the first one settled. A raw HTTP client that repeats a command therefore
+  cannot make a responder run it twice. A command refused before it reached the
+  bus is not remembered. At most `MAX_REMEMBERED_COMMANDS` (16,384) are
+  remembered at once; past that a new command is refused with the retryable
+  `capacity`. A new edge, as after a restart, remembers none.
+- **Liveness.** The edge writes a heartbeat comment line on each stream every
+  `heartbeatMs` (`HEARTBEAT_MS`, 15 s). A stream whose socket stays full for
+  `stallMs` (`STALL_MS`, 30 s), its reader having stopped, is ended: its
+  subscriptions close and free their queued messages, and the edge reports
+  `edge.disconnected` as a warning with `capacity`. The client takes a stream
+  that delivers nothing, heartbeats included, for `idleMs` (`IDLE_MS`, 45 s) as
+  lost, reconnects and tells its subscriptions of the gap, so its copies sync
+  again. These timers run on `liveness`, which defaults to real timers that keep
+  no process alive, whatever `scheduler` is.
 - **Validation.** The client builds every message, so it keeps its own `id` and
   `time`. The edge checks each one against profile 2.0, its registered payload
   schema and the 256 KiB cap before it reaches the bus. A refused message gets

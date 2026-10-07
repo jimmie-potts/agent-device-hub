@@ -16,7 +16,7 @@ class TraceContext(TypedDict):
 
 
 class DiagnosticRecord(TypedDict):
-    schema_version: Literal['1.0', '1.1', '1.2', '1.3']
+    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4']
     timestamp: NotRequired[str]
     observed_timestamp: NotRequired[str]
     severity_number: int
@@ -30,7 +30,7 @@ class DiagnosticRecord(TypedDict):
     span_id: NotRequired[str]
     trace_flags: NotRequired[str]
 
-ARTIFACT_VERSION = '1.3.0'
+ARTIFACT_VERSION = '1.4.0'
 SCHEMA_VERSION = '1.1'
 SEMANTIC_CONVENTIONS_VERSION = '1.44.0'
 MAX_RECORD_BYTES = 8192

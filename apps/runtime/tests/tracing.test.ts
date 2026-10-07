@@ -4,15 +4,15 @@
 // failing span sink changes nothing.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, readdir, stat, symlink, writeFile} from 'node:fs/promises';
+import {readdir, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {connectRemote, traceFields, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, RECENT_SPANS, RuntimeError, startRuntime, type LogRecord} from '../src/index.js';
+import {RECENT_SPANS, RuntimeError, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
 import {RUNTIME_SCOPE} from '../src/record.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {startTracing} from '../src/tracing.js';
-import {contextOf, deferred, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
+import {contextOf, deferred, edgeConfig, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
@@ -77,7 +77,7 @@ it('the bus\'s and the modules\' spans reach the span sink through the host adap
   assert.equal(request.traceId, traceFields(PARENT)?.traceId);
   assert.equal(request.parentSpanId, traceFields(PARENT)?.spanId, 'the caller\'s parent');
   assert.deepEqual([attribute(request, 'bunny.request.id'), attribute(request, 'bunny.routing.key'), attribute(request, 'bunny.participant'),
-    attribute(request, 'bunny.schema.version')], ['req-1', KEY, 'bunny/modules/caller', '1.3']);
+    attribute(request, 'bunny.schema.version')], ['req-1', KEY, 'bunny/modules/caller', '1.4']);
   assert.equal(traceFields(commands[0] ?? {traceparent: ''})?.spanId, request.spanId, 'the command carries its request span\'s context');
   const [queue] = children(spans, request, 'bunny.command.queue');
   const [execute] = children(spans, request, 'bunny.command.execute');
@@ -151,14 +151,11 @@ it('concurrent requests from two traces have their own spans, and a failure ends
 });
 
 it('a remote part\'s command gets a server span that continues its authenticated, validated context', async context => {
-  const dir = await stateDir(context);
-  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url')};
-  const file = join(dir, EDGE_GRANTS_FILE);
-  await writeFile(file, JSON.stringify({schema: 'edge-grants/1.0', grants: [operator]}), {mode: 0o600});
-  await chmod(file, 0o600);
+  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url'), devices: ['wall']};
+  const {config} = await edgeConfig(context, [operator]);
   const lines: string[] = [];
   const commands: Command<{mode: string}>[] = [];
-  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'}), commands)], stateDir: dir, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
+  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'}), commands)], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
     spans: line => { lines.push(line); }});
   const remote = await connectRemote({url: runtime.url, source: operator.source, token: operator.token});
   context.after(() => remote.close());

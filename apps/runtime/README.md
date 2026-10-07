@@ -3,7 +3,8 @@
 Private workspace package `@jimmie-potts/runtime`. It is the one runtime process
 that [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) describes. It
 hosts a fixed list of modules on the SDK's in-process bus and serves health,
-and with `--edge` the SDK edge for remote parts, on a loopback port. The
+and with `--edge` its [gateway](#gateway) for remote parts, browsers and MCP
+clients, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
 and, after it, the device modules: the
 [playback module](../../modules/playback/README.md) (#929), the
@@ -104,6 +105,24 @@ and exits 1, and the service manager restarts it whole.
   computed the records, so a record that turns uncertain within that
   millisecond can disagree with its envelope by one millisecond. The core's
   timer usually publishes the change first.
+- **Approval recovery.** It answers `approval-recover` (#835), the old Hub's
+  operator recovery, through agent-state's `recoverApproval`. The command's
+  subject is the session's `id`, and its `expectedRevision` is the session
+  record's `revision` that the operator read. The core retires the one approval
+  marker without an attention ID that the session holds on `turnId`, only while
+  the session's evidence is uncertain: five minutes without evidence, or since a
+  restart. It commits before the reply and publishes `attention-cleared` with
+  cause `recovered` and the session at its new revision, in the command's
+  trace; no outcome follows. It refuses an unknown session with `not-found`, a
+  record that changed since it was read with `revision-conflict`, a session
+  with no such marker or with current evidence with `invalid-state`, and a full
+  or failing store as acknowledgments are refused. The gateway sends it for an
+  operator ([Gateway](#gateway)), and a remote part with the `control` scope may
+  request it through the SDK edge.
+- **Sessions tool.** Its manifest (module API 1.2) contributes the MCP read tool
+  `core_sessions`: the sessions it holds at its revision, optionally only one
+  provider's and those whose label, title, project or session ID contains `q`,
+  ignoring case.
 - **Sync and acknowledgment.** It serves `session` through sync, and answers
   `notice-acknowledge` through agent-state's `acknowledge` with `accepted`,
   `not-found` for an unknown session or notice, `invalid-request` for an unknown
@@ -137,12 +156,13 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
-| `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
+| `--edge` | Serve the [gateway](#gateway) on the health listener, for the client credentials that the configuration file's `edge` section names. It needs `--config`. |
 | `--record-spans` | Write each finished span to a [bounded, private span file](#the-span-file) in the state directory. Disposable verification runs use it; the installed runtime does not, and keeps its spans in memory. |
 
 Malformed arguments exit with status 2 and a usage line. Once the modules have
 started, the process writes one line to stdout, `{"event":"runtime.ready","url":...}`.
-SIGTERM or SIGINT stops every module and exits 0. The entry point imports only
+SIGTERM or SIGINT stops every module and exits 0. SIGHUP reads the edge's
+credentials file again ([Credentials](#credentials)). The entry point imports only
 a small launcher that catches both signals before the rest of the runtime
 loads. A signal that arrives while it loads exits 0 before anything is created.
 One that arrives while the modules start is remembered: once their starts
@@ -166,70 +186,224 @@ that several modules serve, such as `device`, syncs it from each module whose
 `stopped` with its `limitMs`. `memory` reports the whole process from
 `process.memoryUsage()`.
 
-A request must name the listener as its host (`127.0.0.1:<port>` or
-`localhost:<port>`, in any letter case, with the exact port) and carry no
-`Origin` and no `Sec-Fetch-Site` other than `none`, as the Hub and local controllers require, so a page on a rebinding name
-cannot read module state. Any other request answers 403 with the shared error
-body and `forbidden`. Every other route answers 404 with `not-found`, except the
-[SDK edge](#sdk-edge)'s routes when the edge is configured.
+Every request must name the listener as its host (`127.0.0.1:<port>` or
+`localhost:<port>`, in any letter case, with the exact port), so a page on a
+rebinding name reaches nothing. A health request also carries no `Origin` and
+no `Sec-Fetch-Site` other than `none`, as the Hub and local controllers require.
+Any other request answers 403 with the shared error body and `forbidden`.
+Without an edge, every other route answers 404 with `not-found`; with one, the
+[gateway](#gateway) serves every other route and checks each caller's own
+context.
 
-## SDK edge
+## Gateway
 
-With `--edge`, remote parts make the SDK calls over SSE and HTTP under
-`/api/sdk/v1/` on the health listener, through #883's `RemoteEdge` on the
-modules' bus. The listener's local-request rules apply to these routes too. The
-edge serves once every module has started; until then its routes answer 503
-with `unavailable`, so a remote part that reconnects never syncs from a module
-still starting. `runtime.started` says whether the edge is configured
-(`bunny.edge`); `runtime.edge.serving` follows once it serves. From the start
-of a stop until the listener closes, the routes answer 503 with `unavailable`
-again, not 404.
+With `--edge`, the runtime's gateway (#835) serves every route of the health
+listener but health, through `src/gateway/`. It follows
+[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md): every refusal is
+the shared error body with a code from the 2.0 registry, at the HTTP status that
+fits its code, and every route carries only its major version. It serves once
+every module has started; until then, and from the start of a stop until the
+listener closes, its routes answer 503 with `unavailable`, so a remote part that
+reconnects never syncs from a module still starting. `runtime.started` says
+whether the edge is configured (`bunny.edge`); `runtime.edge.serving` follows
+once it serves, with the number of credentials (`bunny.grant_count`).
 
-Each remote part has a grant: a source and a bearer token, in
-`edge-grants.json` in the state directory:
+The gateway listens on the runtime's port. At the cutover (#840) that is the old
+Hub's port, 8788, so the bookmark, hook endpoints and producer files keep their
+address.
 
-```json
-{"schema": "edge-grants/1.0", "grants": [{"source": "bunny/parts/reader", "token": "<at least 32 characters>"}]}
-```
+### Callers
 
-The file must be private: mode 600, one link, owned by the runtime's user and
-never reached through a link. A grant may not act as the core (`bunny/core`) or
-a module (`bunny/modules/<name>`), so a remote part can never publish as either.
-The runtime refuses to start otherwise, with `edge-grants-missing`,
-`edge-grants-not-private`, `edge-grants-invalid` or `edge-grant-source` in
-`runtime.failed`. No refusal or log record quotes a token. The edge checks every
-remote message against profile 2.0, the core families, the device families that
-every device module answers (#918) and the modules' own schemas (each factory's
-`schemas`), and logs `runtime.edge.connected`,
-`runtime.edge.disconnected`, `runtime.edge.refused` and `runtime.edge.failed`.
-A refusal's record holds `bunny.route` (one of the edge's routes, or `other`),
-`bunny.participant` when the caller had a grant, `bunny.code` from the error
-registry and `bunny.reason`, the diagnostic contract's registered reason for
-that code. `internal` and `uncertain-result`, whose effect may have happened,
-have none. A refusal takes its code's level from the SDK's one table, the
-same as the bus's and its owners': a refusal a correct caller should never
-receive (`unauthenticated`, `forbidden`, `too-large`, `duplicate-conflict`) or
-lost capacity (`capacity`, `unavailable`) is a warning, `internal` is an
-error, and a validation refusal is INFO. A refusal that repeats with the same
-route, code and source, such as a part whose token was revoked reconnecting
-every few seconds, is logged once, then once a minute with
-`bunny.attempt_count` counting the repeats, until a quiet minute. A refusal never holds the edge's detail, which may
-quote what the caller sent. The edge answers an exception it did not expect
-with fixed text, never its message: `internal`, or `uncertain-result` once it
-has handed a command to the bus. It logs one `runtime.edge.failed` record at
-ERROR with only its route, its granted source, that code and `error.type`,
-and after dispatch the command's routing key, request and message IDs and
-trace, so the failure sits in the request's trace beside the bus's records.
-Token rotation and grant permissions belong to #835.
+Two kinds of caller reach the gateway, and each acts as one source with the old
+Hub's scopes and device grants:
+
+- **A client credential**, from the edge's [credentials file](#credentials),
+  presents its bearer token from outside any browser page: a request with a
+  token must carry no `Origin` and no `Sec-Fetch-Site` other than `none`, so a
+  page can never use a credential. A made-up or revoked token answers 401 with
+  `unauthenticated`; a page that presents one answers 403 with `forbidden`.
+- **A browser session** acts as `bunny/parts/dashboard`, the dashboard's grant
+  (#922), with `read` and `control` and every device an admitted module names.
+  The `bunny-session` cookie carries it (`HttpOnly`, `SameSite=Strict`, eight
+  hours, at most 16 sessions, the oldest ending first). Only this origin's own
+  pages, and the browser itself for a navigation or bookmark, may present it:
+  another site's `Origin` or `Sec-Fetch-Site` answers 403 with `forbidden`, and
+  a change (any method but GET or HEAD) must name this origin and carry
+  `bunny-request: 1`.
+
+A browser signs in two ways, with the same checks: the request comes from this
+origin's own page, names it in `Origin` and carries `bunny-request: 1`.
+
+| Route | Signs in |
+| --- | --- |
+| `POST /api/v2/browser/launch` `{"code"}` | With a launch code from the launcher. The runtime serves the launcher's socket, `bunny-launch.sock` in its state directory, owner-only, which hands each connection the runtime's origin and a code that is good once for 30 seconds (at most eight wait). `requestBrowserLaunch(stateDir)` asks for one; the dashboard's launcher (#922) opens the browser with it. A configuration whose edge section sets `"launcher": false` serves none, as a disposable run does, whose state directory is too deep for a socket; a socket path over 107 bytes refuses the start with `launcher-path-too-long`. |
+| `POST /api/v2/browser/session` `{}` | Without a code, when the edge section sets `"browserAccess": "trusted-loopback"` (Hub #276's opt-in); otherwise 404. |
+| `POST /api/v2/browser/logout` `{}` | Ends the cookie's session and its streams, and clears the cookie. |
+
+The session's token travels only in `Set-Cookie`, never in a body or record.
+
+### Grants at the SDK edge
+
+Remote parts make the SDK calls over SSE and HTTP under `/api/sdk/v1/`, through
+#883's `RemoteEdge` on the modules' bus. The gateway admits each call's caller
+and hands the edge the permissions its scopes give (`edgePermissions`):
+
+| Scope | Calls | Routing keys |
+| --- | --- | --- |
+| `read` | `subscribe`, `sync` | every state and event key, `bunny.state.*.*` and `bunny.event.*.*` |
+| `ingest` | `publish` | lifecycle observations only, `bunny.event.lifecycle.*` |
+| `control` | `request` | the core's operator commands, `bunny.cmd.approval-recover.*` and `bunny.cmd.notice-acknowledge.*`, and each granted device's commands, `bunny.cmd.*.<device>` |
+| `admin` | none | none: the old Hub's `quiesce` is dropped with the supervised migration |
+
+So a hook's credential, with `ingest` only, can publish lifecycle observations
+and nothing else: a command, a read or a subscription is refused with
+`forbidden` before anything reaches the bus. Device grants narrow commands, not
+reads: a `read` caller reads every family, as one operator's state is not
+secret from its own parts. No scope lets a remote part respond to commands or
+serve a family yet; a remote owner's grant comes with its own story, and #782
+decides which device commands a remote part may still request once its
+dispatcher lands. The edge also:
+
+- refuses a token used under another declared source (the SDK client sends
+  `bunny-source`) with `forbidden` at connect;
+- remembers each command it hands its bus, by source and message ID, until its
+  `expiresat`, and refuses the same message again with `duplicate-conflict`, so
+  a raw HTTP client cannot make a responder run it twice (at most 16,384
+  remembered; past that, `capacity`). A runtime restart forgets them;
+- writes a heartbeat comment on each stream every 15 s, and ends a stream whose
+  socket stays full for 30 s, its reader having stopped: its subscriptions free
+  their queued messages, and the reader reconnects and syncs again if it ever
+  reads. The SDK client takes a stream that stays silent for 45 s as lost.
+  `RuntimeOptions.edge.liveness` changes these limits for tests.
+
+The edge checks every remote message against profile 2.0, the core families,
+the device families that every device module answers (#918) and the modules'
+own schemas (each factory's `schemas`), and logs
+`runtime.edge.connected` and `runtime.edge.disconnected` (WARN with `capacity`
+for a stream it ended because its reader stopped), `runtime.edge.refused` and
+`runtime.edge.failed`.
+
+### Routes
+
+| Route | Scope | Answers |
+| --- | --- | --- |
+| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core or module state family, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`. |
+| `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept. |
+| `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, pages, MCP tools and whether it shows settings. |
+| `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
+| `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the caller's devices and the place links, from the edge section. |
+| `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as a producer's setup checks its credential (#926). |
+| `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
+| `GET /modules/<name>/<page>` | `read` | A module's page (module API 1.2): its HTML in a document whose policy allows no script, frame, form or base, and only images and styles from the runtime itself. |
+| `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference, such as the preview its page shows: an image, plain text or JSON of at most 16 MiB. |
+| `/mcp` | client credentials | [MCP](#mcp). |
+| `/api/sdk/v1/*` | per call | The SDK edge, above. |
+
+A module is called only while it runs (otherwise `unavailable`), within 5 s
+(otherwise `unavailable`). A contribution that throws fails its module, as a
+handler that throws does, and answers `internal`. A page, settings or tool
+answer that holds a secret a module read is never served: `internal`.
+
+### MCP
+
+`/mcp` serves MCP through `packages/mcp`, unchanged, for client credentials
+only: a browser session or a page's `Origin` is refused before MCP sees the
+request. Each module's read tools come from its manifest, as
+`<module>_<tool>`, and the core contributes `core_sessions`; a credential with
+`read` lists and calls them. With `control` it also gets
+`core_recover_approval`, which sends `approval-recover` to the core as the
+credential's source. Action tools for devices come with #782's dispatcher. A
+tool's result is `{kind: "extension", data: {result}}`, and a refusal
+`{kind: "extension", data: {error}}` with the shared error body and
+`isError: true`. Arguments a tool does not take are refused before it runs by the
+MCP package, with its `gateway-error` and the registry's `invalid-request`. MCP's
+own protocol errors, such as an unknown tool, keep the MCP specification.
+
+### Retired routes
+
+`src/gateway/retired.ts` maps every route of the old Hub, in
+`apps/hub/src/server.ts` and its route modules, to its 2.0 replacement or the
+reason it is dropped, and names the story that delivers each replacement. A
+test parses the Hub's sources and fails on a route the map lacks. A request to
+an old route answers 404 with `not-found`, whose detail names the replacement,
+and is logged as `runtime.edge.refused` with its route template in `http.route`
+and its method in `http.request.method`, never the path's values, for the
+retirement story's check (#839).
+
+### Records
+
+A refusal's record holds `bunny.route` (one of the edge's calls, `stream`, or
+`other` for a gateway route), `http.route` and `http.request.method` for a
+gateway route, `bunny.participant` when the caller was admitted, `bunny.code`
+from the error registry and `bunny.reason`, the diagnostic contract's
+registered reason for that code. `internal` and `uncertain-result`, whose
+effect may have happened, have none. A refusal takes its code's level from the
+SDK's one table: a refusal a correct caller should never receive
+(`unauthenticated`, `forbidden`, `too-large`, `duplicate-conflict`) or lost
+capacity (`capacity`, `unavailable`) is a warning, `internal` is an error, and
+a validation refusal is INFO. A refusal that repeats with the same route, code
+and caller is logged once, then once a minute with `bunny.attempt_count`
+counting the repeats, until a quiet minute. A refusal never holds its detail,
+which may quote what the caller sent. The edge answers an exception it did not
+expect with fixed text, never its message: `internal`, or `uncertain-result`
+once it has handed a command to the bus; it logs one `runtime.edge.failed`
+record at ERROR with only its route, its caller's source, that code and
+`error.type`, and after dispatch the command's routing key, request and message
+IDs and trace.
+
+No token, launch code, session token or digest reaches a record, an answer,
+health or a span. The gateway's tests and every disposable run scan for the
+synthetic token prefix `tok_SYNTHETIC835`.
 
 `runMain`'s `onEdge` option hands the caller the edge once it serves. A
 verification run's child uses it to end a part's stream, as a lost connection
 would; the shipped entry point does not pass it.
 
+### Credentials
+
+The configuration file's `edge` section names a private credentials file,
+`edge-credentials/1.0`:
+
+```json
+{"schema": "edge-credentials/1.0", "credentials": [
+  {"id": "hub-0123456789abcdef0123456789abcdef", "source": "bunny/parts/hook-claude", "digest": "<SHA-256 of the token, lowercase hex>", "scopes": ["ingest"], "devices": []}
+]}
+```
+
+It follows the configuration file's private-file rules, at most 64 KiB, and
+holds at most 32 credentials, each with a distinct ID and digest, a source that
+is not the core's (`bunny/core`), a module's (`bunny/modules/<name>`) or the
+runtime's own (`bunny/runtime/...`), distinct scopes from `read`, `control`,
+`ingest` and `admin`, and at most 64 distinct device routing IDs. It holds no
+token: a caller's token is compared with each digest in constant time. The
+runtime refuses to start with `edge-config-missing` (no edge section),
+`edge-credentials-missing`, `edge-credentials-not-private`,
+`edge-credentials-invalid` or `edge-credential-source` in `runtime.failed`; no
+refusal quotes the file.
+
+Credentials are granted, revoked and rotated by changing the file, as today:
+`grantCredential(file, credential)` and `revokeCredential(file, id)` rewrite it
+whole and owner-only, as a producer's setup does (#926). SIGHUP, or
+`Runtime.reload()`, reads it again: a new credential is taken, and one revoked
+or changed has its streams ended and its next call refused with
+`unauthenticated`. A file the runtime refuses keeps the credentials it had. Each
+reload logs one `runtime.edge.reloaded` record: INFO with `bunny.outcome`
+`succeeded` and the count, or ERROR with `failed` and the refusal's
+`error.code`. Automatic rotation is not built.
+
+At the cutover the installer (#935) runs `convertHubEdge(hubConfig)` offline on
+the old Hub's configuration: each credential keeps its ID, digest, scopes and
+device grants, and acts as `bunny/parts/<its ID in routing form>`, so the token
+its client holds authenticates unchanged; `browserAccess`, `editorLinks` and
+`placeLinks` become the edge section's. It refuses, with `convert-invalid`, IDs
+that would share a source and device grants or editor links that are not
+routing IDs, which the owner renames first.
+
 ## Configuration
 
 With `--config <file>`, the runtime reads one configuration file before it
-serves (Hub #919). It holds each module's own section, by module name:
+serves (Hub #919). It holds each module's own section, by module name, and the
+edge's section (#835):
 
 ```json
 {
@@ -240,9 +414,22 @@ serves (Hub #919). It holds each module's own section, by module name:
       "signs": [{"id": "sign-1", "address": "192.0.2.10"}],
       "secrets": {"token": "/home/owner/.config/agent-device-hub/secrets/sign-token"}
     }
+  },
+  "edge": {
+    "credentials": "/home/owner/.config/agent-device-hub/secrets/edge-credentials.json",
+    "browserAccess": "trusted-loopback",
+    "editorLinks": {"sign-1": "http://127.0.0.1:9100/editor"},
+    "placeLinks": {"kitchen": "http://127.0.0.1:9200/"}
   }
 }
 ```
+
+The `edge` section names the [credentials file](#credentials) by its absolute
+path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),
+`editorLinks` (at most 16, by device routing ID) and `placeLinks` (at most 8,
+with a port, never `bunny`): loopback `http` links without credentials, query
+or fragment. `"launcher": false` turns the launcher's socket off. `--edge`
+needs the section; anything else in it refuses the file with `config-invalid`.
 
 The file follows the [state](#state) rules: an absolute path off `/mnt`, no
 link anywhere along it, outside every Git checkout, and a regular file with one
@@ -252,7 +439,7 @@ following a link, then refuses it unless the file it opened, as `/proc/self/fd`
 shows, is the one at the path, so a directory swapped for a link after the
 checks is refused too. The operator chooses the paths of this file and the
 secret files; the runtime does not check the modes of their directories. It has only
-`schema` and `modules`; #835 adds the edge's section. Otherwise the runtime
+`schema`, `modules` and `edge`. Otherwise the runtime
 refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,
 `config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
@@ -365,7 +552,8 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `module-db-not-private` | A module's SQLite file is not a private file with one link. |
 | `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`, `config-invalid` | The configuration file; see [Configuration](#configuration). |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
-| `edge-grants-missing`, `edge-grants-not-private`, `edge-grants-invalid`, `edge-grant-source` | The edge's grants file; see [SDK edge](#sdk-edge). |
+| `edge-config-missing`, `edge-credentials-missing`, `edge-credentials-not-private`, `edge-credentials-invalid`, `edge-credential-source` | The edge's section and credentials file; see [Credentials](#credentials). |
+| `launcher-path-too-long` | The launcher's socket path in the state directory is over 107 bytes; see [Callers](#callers). |
 | `core-failed` | The [agent-session core](#agent-session-core) failed, such as on a store it cannot read or a lease another runtime holds. |
 
 A Node error keeps its own code, such as `EADDRINUSE` for a health port in use.
@@ -396,7 +584,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.3, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.4, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -525,6 +713,14 @@ runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
 
+`node apps/runtime/scripts/measure-edge-memory.mjs` measures the edge under a
+stalled reader (#835): the shipped core and its gateway, a reader that
+subscribes to large state messages and stops reading, and a module that
+publishes 2,000 messages of 64 KiB with distinct content. It collects garbage
+before each sample and reads the runtime's memory before the messages, while
+the reader is stalled, and once the 30 s stall limit has ended the stream.
+`--messages`, `--kib`, `--stall-s` and `--runs` change it.
+
 ## Fixture modules
 
 A module is created by a factory that takes its device transport,
@@ -580,6 +776,11 @@ its availability stays as it was, the failure is logged against the sign with
 the call's code, and the attempt is tried again. It logs each change and each
 run of failed renders once, not each attempt. `signSpec()` runs it through the
 kit, policy A's check included.
+Under module API 1.2 (#835) it contributes the page `preview`, which shows its
+signs and refers to its preview, `content/preview.png`, by reference; that
+content, a 1-pixel PNG; the read tool `status`, each sign's availability; and its
+settings, the greeting and the signs that `configureSign` accepted, never the
+token.
 
 `tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
 stand-in parts through its extension point. Each part goes when its owner
@@ -622,8 +823,13 @@ type has one execution adapter that runs the same definitions unchanged:
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built by its factory with its simulated transport, on a manual clock and
 scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
-and a reader) first join the host's bus, then reach it through a `RemoteEdge`
-on 127.0.0.1 with a run-generated token each. A crash between the lamp's commit
+and a reader) first join the host's bus, then reach it through the runtime's
+[gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
+whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle
+observations, the reader may only read, and the operator and the panel read and
+command their devices. The gateway's HTTP routes serve both runs, through the
+harness's `gateway` call, as a part, a browser signed in by a trusted loopback
+page, a stranger with a made-up token or a caller with none. A crash between the lamp's commit
 and its publish abandons the runtime and starts a new one on the same state
 directory behind the same port, as the service manager would restart it.
 Simulated devices keep their state across the crash. The harness can also lose
@@ -673,11 +879,28 @@ The catalog holds:
   the status rows come back dimmed as uncertain; the reader holds the Tidbyt's
   device record with no control; and neither the API key nor the cloud device
   appears anywhere. The simulated cloud shows each tile as text rows, and the
-  scenario compares them with the frames the reader's own copies call for.
+  scenario compares them with the frames the reader's own copies call for;
+- the gateway (#835): a part reads sessions on `/api/v2`, through the snapshot
+  read API and through the `core_sessions` MCP tool, and every refusal is a
+  registry code: a malformed or unknown family, a made-up or missing token, a
+  credential or browser session used from another site, a hook reading, and a
+  route of the old Hub, logged with its route;
+- a token outside its grant refused (a hook's command, a reader's command, the
+  operator's command to a device it may not command) and a command a raw HTTP
+  client sends again refused as `duplicate-conflict`, with the lamp running it
+  once;
+- an operator recovering an approval that a restart left uncertain, through
+  `POST /api/v2/commands/approval-recover`, after a stale revision is refused;
+- a module's page, the preview it loads by reference, its settings and its MCP
+  tool served from its manifest, with the page refused without a session.
+
+The gateway's scenarios scan every log record, message, health entry and
+answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.
 
 A seed's `config` gives configured modules their sections. Each harness writes
 them, as the installer would, into a private configuration file with a token
-file per module that holds the synthetic token, and starts the runtime with it.
+file per module that holds the synthetic token, and the edge's section with the
+parts' credentials, and starts the runtime with it.
 Both configured scenarios check that the token appears in no log record,
 message, health entry or reader copy.
 

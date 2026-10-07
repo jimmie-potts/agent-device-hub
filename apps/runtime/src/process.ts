@@ -15,7 +15,7 @@ export type ProcessOptions = {
   port: number; stateDir: string; lagLimitMs: number; logLevel: LogLevel;
   /** Build every module with its simulated transport, as a disposable verification run does (#920). */
   simulate: boolean;
-  /** Serve the SDK edge on the health listener, with the grants in the state directory's `edge-grants.json`. */
+  /** Serve the gateway on the health listener, with the credentials the configuration file's `edge` section names. */
   edge: boolean;
   /** Every record's `deployment.environment.name` (#903). The installed runtime runs as `production`. */
   environment: Environment;
@@ -124,6 +124,9 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
+  // SIGHUP reads the edge's credentials file again (#835): a grant, revocation or rotation takes effect without a
+  // restart. A file the runtime refuses keeps the credentials it had; the reload's record says so.
+  process.on('SIGHUP', () => { void runtime?.reload().catch(() => {}); });
   try {
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,

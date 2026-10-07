@@ -19,7 +19,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
-import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
+import {HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
@@ -34,7 +34,7 @@ import {
   type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {BurstLimit} from './restarts.js';
-import {RUN_FILE, homeOf, stateDirOf, type RunFile} from './seed.js';
+import {RUN_FILE, credentialsOf, homeOf, partTokensOf, stateDirOf, type RunFile} from './seed.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const CHILD = fileURLToPath(new URL('./child.js', import.meta.url));
@@ -96,15 +96,15 @@ function queue(task: () => Promise<void>): Promise<void> {
 }
 
 /**
- * The runtime's arguments, with the run's configuration file when its seed has one (Hub #919). A boundary negative
- * control leaves out what keeps its run inside its boundary.
+ * The runtime's arguments, with the run's configuration file, its modules' sections and its edge's (Hub #919, #835). A
+ * boundary negative control leaves out what keeps its run inside its boundary.
  */
 function runtimeArgs(): string[] {
   return [
     // A disposable run's records are a test environment's (Hub #903).
     '--port', String(runtimePort), '--environment', 'test', '--log-level', LOG_LEVEL, ...(run.fault === 'real-transports' ? [] : ['--simulate']),
     ...(run.fault === 'default-state' ? [] : ['--state-dir', stateDirOf(dataDir), '--edge']),
-    ...(run.config === undefined ? [] : ['--config', run.config]),
+    '--config', run.config,
     // Its spans go to a bounded private file in the state directory, which outlives a crash and which the follow query reads (Hub #950).
     '--record-spans',
   ];
@@ -380,9 +380,10 @@ function report(): BoundaryReport {
   const started = newest(generation, 'runtime.started')?.attributes['bunny.simulate'];
   let grantsMode: number | null = null;
   try {
-    grantsMode = statSync(join(stateDirOf(dataDir), EDGE_GRANTS_FILE)).mode & 0o777;
+    // The edge's credentials file and the parts' token file must both be owner-only; the wider mode is reported.
+    grantsMode = [credentialsOf(dataDir), partTokensOf(dataDir)].map(file => statSync(file).mode & 0o777).reduce((a, b) => a | b, 0);
   } catch {
-    // No grants file.
+    // No credentials or token file.
   }
   return {
     runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null, dataDir, home: observedHome,

@@ -9,7 +9,7 @@ import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {refusalOf, replyOf} from './refusal.js';
-import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.js';
+import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER} from './remote-protocol.js';
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
@@ -40,6 +40,14 @@ export type RemoteOptions = {
   reconnectDelayMs?: number;
   /** Runs request and sync deadlines and reconnect delays. Defaults to the global `setTimeout`. */
   scheduler?: Scheduler;
+  /**
+   * How long the stream may stay silent before the client takes it as lost and reconnects, so that its copies sync
+   * again (Hub #835). The edge writes a heartbeat every 15 s, so a live stream is never silent that long. Defaults to
+   * 45 s.
+   */
+  idleMs?: number;
+  /** Runs the idle limit. It concerns a real socket, so it defaults to the global `setTimeout`, whatever `scheduler` is. */
+  liveness?: Scheduler;
 };
 
 /**
@@ -51,9 +59,16 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
 }};
+/** Real timers that never keep the process alive, for the liveness of the real stream. */
+const realTimers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs).unref();
+  return () => { clearTimeout(timer); };
+}};
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const MAX_RECONNECT_DELAY_MS = 5000;
+/** How long a stream may stay silent before the client reconnects: three of the edge's heartbeats (Hub #835). */
+export const IDLE_MS = 45_000;
 /**
  * How long past its deadline a remote requester waits for the edge's answer. The edge answers when its bus settles,
  * at the deadline, so this only decides when the edge cannot be heard.
@@ -89,6 +104,8 @@ class RemoteClient {
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
   readonly #diagnose: OnDiagnostic;
   readonly #firstDelayMs: number;
+  readonly #idleMs: number;
+  readonly #liveness: Scheduler;
   #delayMs: number;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -117,6 +134,9 @@ class RemoteClient {
     this.#scheduler = options.scheduler ?? timers;
     this.#firstDelayMs = options.reconnectDelayMs ?? 100;
     this.#delayMs = this.#firstDelayMs;
+    this.#idleMs = options.idleMs ?? IDLE_MS;
+    this.#liveness = options.liveness ?? realTimers;
+    if (!Number.isSafeInteger(this.#idleMs) || this.#idleMs < 1 || this.#idleMs > MAX_TIMEOUT_MS) throw new RangeError(`idleMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   }
 
   async start(): Promise<RemoteParticipant> {
@@ -159,6 +179,13 @@ class RemoteClient {
     this.#stream = controller;
     return new Promise<string>((resolve, reject) => {
       let ready = false;
+      // A stream that stays silent past `idleMs`, heartbeats included, is lost without a close, as when the runtime's
+      // host slept: the client ends it and reconnects.
+      let idle: Cancel = () => {};
+      const watch = (): void => {
+        idle();
+        idle = this.#liveness.after(this.#idleMs, () => { controller.abort(); });
+      };
       void (async () => {
         try {
           const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), signal: controller.signal});
@@ -170,6 +197,7 @@ class RemoteClient {
           const decoder = new TextDecoder();
           const parser = new EventStreamParser();
           for (;;) {
+            watch();
             const {value, done} = await reader.read();
             if (done) break;
             for (const {event, data} of parser.push(decoder.decode(value, {stream: true}))) {
@@ -185,6 +213,7 @@ class RemoteClient {
         } catch (error) {
           if (!ready) reject(new SdkError(bodyOf(error)));
         }
+        idle();
         if (!ready) reject(new SdkError(body('unavailable', 'the stream ended before it was ready')));
         else this.#lost(controller);
       })();
@@ -532,8 +561,9 @@ class RemoteClient {
     if (this.#closed) throw new SdkError(body('invalid-state', `${this.#source} is closed`));
   }
 
+  /** Every call names the source the part acts as, so that the edge refuses a token used under another one at once. */
   #headers(): Record<string, string> {
-    return {authorization: `Bearer ${this.#token}`, 'content-type': 'application/json'};
+    return {authorization: `Bearer ${this.#token}`, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source};
   }
 
   /** One call to the edge. An edge refusal throws `SdkError` with its error body; a lost connection throws as fetch does. */

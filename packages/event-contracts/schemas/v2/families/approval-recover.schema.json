@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/approval-recover/2.0",
+  "description": "Command: on an operator's explicit request, retire the one uncertain approval marker without an attention ID that a session holds on one turn (Hub #835, carrying the old Hub's recover-approval operation). The envelope subject is the session's `id` (validator). `expectedRevision` is the session record's `revision` that the operator read, so a record that changed meanwhile is refused with `revision-conflict`. The core (#831) clears the marker only while the session's evidence is uncertain (five minutes without evidence, or since a restart), publishes `attention-cleared` with cause `recovered` and the session record at a new revision, and replies `accepted` once that has committed; no outcome follows. It approves or denies nothing at the agent, and fresh approval evidence can raise a new marker. The reply uses the profile's reply payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "turnId", "expectedRevision"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "turnId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+  }
+}

@@ -13,7 +13,7 @@ build time and works without `unsafe-eval`. Python 3.14 consumers add the
 artifact's `python` directory to their module path and install the pinned
 `requirements-contracts.txt` in their own environment.
 
-Artifact 1.3.0 holds profiles 1.0, 1.1, 1.2 and 1.3. Profile 1.2 registers the
+Artifact 1.4.0 holds profiles 1.0, 1.1, 1.2, 1.3 and 1.4. Profile 1.2 registers the
 B.U.N.N.Y. runtime: the `runtime` service, its `bunny.runtime` and
 `bunny.module` scopes, their events and attributes (see "The runtime's records"
 in `CONTRACT.md`). Profile 1.3 adds the runtime's decision records, the outbox's
@@ -22,8 +22,10 @@ and a device's module records, three attributes and two span names (see
 adds, span names included, and `scope_rules` lists the service and events each
 runtime scope allows. A span's name must belong to its metadata's profile: the
 host adapter and the Python helper record no `bunny.device.call` or
-`bunny.outcome.publish` span at profile 1.2 or earlier. Producers still default to profile 1.1; a 1.2 or 1.3
-producer sets `schema_version` itself.
+`bunny.outcome.publish` span at profile 1.2 or earlier. Profile 1.4 adds the
+runtime gateway's `http.route` and `http.request.method` and its
+`runtime.edge.reloaded` record (see "The gateway's records"). Producers still
+default to profile 1.1; a 1.2, 1.3 or 1.4 producer sets `schema_version` itself.
 
 `createRecord` / `create_record` selects registered fields before serialization,
 keeping only the attributes the record's own profile registers.

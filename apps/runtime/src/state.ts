@@ -214,8 +214,29 @@ export const MAX_CONFIG_BYTES = 1_048_576;
 /** The largest secret file a module may read, 64 KiB. */
 export const MAX_SECRET_BYTES = 65_536;
 
-/** The runtime's configuration file (`--config`): each module's own section, by module name. */
-export type RuntimeConfig = {readonly modules: Readonly<Record<string, unknown>>};
+/**
+ * The configuration file's `edge` section (Hub #835): where the edge's client credentials are, whether a loopback page
+ * may sign a browser in without a launch code, and the links the dashboard shows, as the old Hub's `browserAccess`,
+ * `editorLinks` and `placeLinks`.
+ */
+export type EdgeConfig = {
+  /** The absolute path of the private credentials file (`edge-credentials/1.0`). */
+  readonly credentials: string;
+  /** `trusted-loopback` lets a same-origin loopback page open a browser session without a launch code (Hub #276). */
+  readonly browserAccess?: 'trusted-loopback';
+  /**
+   * Whether the launcher's socket, `bunny-launch.sock` in the state directory, hands out launch codes, as the old Hub's
+   * did. On unless `false`; a disposable run, whose state directory's path is too long for a socket, turns it off.
+   */
+  readonly launcher: boolean;
+  /** An editor link per device, by routing ID: a loopback `http` URL without credentials, query or fragment. */
+  readonly editorLinks: Readonly<Record<string, string>>;
+  /** A link per local place, by ID: a loopback `http` URL with a port and without credentials, query or fragment. */
+  readonly placeLinks: Readonly<Record<string, string>>;
+};
+
+/** The runtime's configuration file (`--config`): each module's own section, by module name, and the edge's section. */
+export type RuntimeConfig = {readonly modules: Readonly<Record<string, unknown>>; readonly edge?: EdgeConfig};
 
 /** A module's own section of the configuration, or undefined when the file has none for it. */
 export function sectionOf(config: RuntimeConfig | undefined, name: string): unknown {
@@ -255,72 +276,62 @@ export async function readRuntimeConfig(file: string): Promise<RuntimeConfig> {
   if (!isRecord(parsed) || parsed.schema !== CONFIG_SCHEMA) throw new RuntimeError('config-invalid', `the configuration file is not ${CONFIG_SCHEMA}`);
   const {modules} = parsed;
   if (!isRecord(modules)) throw new RuntimeError('config-invalid', 'the configuration file\'s modules must be an object of sections by module name');
-  if (Object.keys(parsed).some(key => key !== 'schema' && key !== 'modules')) {
-    throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema and modules');
+  if (Object.keys(parsed).some(key => key !== 'schema' && key !== 'modules' && key !== 'edge')) {
+    throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema, modules and edge');
   }
-  return {modules};
+  return {modules, ...(Object.hasOwn(parsed, 'edge') ? {edge: edgeSection(parsed.edge)} : {})};
 }
 
-/** The file in the state directory that holds the SDK edge's grants (Hub #920). */
-export const EDGE_GRANTS_FILE = 'edge-grants.json';
-const GRANTS_SCHEMA = 'edge-grants/1.0';
-const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
-// A run-generated token: at least 32 characters, so 24 random bytes in base64url.
-const MIN_TOKEN = 32;
+const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PLACE = /^[A-Za-z0-9_.-]{1,128}$/;
+const invalidEdge = (detail: string): RuntimeError => new RuntimeError('config-invalid', `the configuration file's edge section ${detail}`);
 
-/** One remote source and the bearer token that lets a remote part act as it. */
-export type EdgeGrant = {source: string; token: string};
+/** A loopback `http` link without credentials, query or fragment, with a port when `port` is set; undefined otherwise. */
+function loopbackLink(value: unknown, port: boolean): string | undefined {
+  if (typeof value !== 'string' || value.length > 2048) return undefined;
+  let link: URL;
+  try {
+    link = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (link.protocol !== 'http:' || link.hostname !== '127.0.0.1' || (port && link.port === '') || link.username !== '' || link.password !== '' ||
+    link.search !== '' || link.hash !== '') return undefined;
+  return link.href;
+}
 
-const invalidGrants = (detail: string): RuntimeError => new RuntimeError('edge-grants-invalid', `${EDGE_GRANTS_FILE} ${detail}`);
+/** The links of one kind, at most `max`, keyed as `key` allows; refuses the whole section otherwise. */
+function links(value: unknown, max: number, key: (name: string) => boolean, port: boolean, what: string): Record<string, string> {
+  if (value === undefined) return {};
+  if (!isRecord(value) || Object.keys(value).length > max) throw invalidEdge(`'s ${what} must be an object of at most ${max} links`);
+  const checked: Record<string, string> = {};
+  for (const [name, href] of Object.entries(value)) {
+    const link = loopbackLink(href, port);
+    if (!key(name) || link === undefined) throw invalidEdge(`has ${what} that are not loopback http links without credentials, query or fragment`);
+    checked[name] = link;
+  }
+  return checked;
+}
 
 /**
- * Reads the SDK edge's grants from `<stateDir>/edge-grants.json`: `{"schema": "edge-grants/1.0", "grants": [{source,
- * token}]}`, a private file with one link (mode 600), never reached through a link. Refuses a grant whose source is the
- * core's or a module's, so a remote part can never publish as either. No refusal quotes a token.
+ * The edge's section: `{"credentials": <absolute path>, "browserAccess"?: "trusted-loopback", "launcher"?: false,
+ * "editorLinks"?: {...}, "placeLinks"?: {...}}`, the old Hub's settings of the same names and the launcher's switch (Hub #835). Refuses, with `config-invalid`, anything
+ * else; no refusal quotes a value.
  */
-export async function readEdgeGrants(stateDir: string): Promise<EdgeGrant[]> {
-  const file = join(stateDir, EDGE_GRANTS_FILE);
-  let text: string;
-  try {
-    const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const info = await handle.stat();
-      if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-        throw new RuntimeError('edge-grants-not-private', `${file} must be a private file with one link (mode 600)`);
-      }
-      text = await handle.readFile('utf8');
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    if (error instanceof RuntimeError) throw error;
-    if (missing(error)) throw new RuntimeError('edge-grants-missing', `the edge needs its grants in ${file}`);
-    if (error instanceof Error && 'code' in error && error.code === 'ELOOP') {
-      throw new RuntimeError('edge-grants-not-private', `${file} must not be a link`);
-    }
-    throw error;
+function edgeSection(value: unknown): EdgeConfig {
+  if (!isRecord(value)) throw invalidEdge('must be an object');
+  if (Object.keys(value).some(key => !['credentials', 'browserAccess', 'launcher', 'editorLinks', 'placeLinks'].includes(key))) {
+    throw invalidEdge('has a member other than credentials, browserAccess, launcher, editorLinks and placeLinks');
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw invalidGrants('is not JSON');
+  const {credentials, browserAccess, launcher = true} = value;
+  if (typeof launcher !== 'boolean') throw invalidEdge('\'s launcher must be true or false');
+  if (typeof credentials !== 'string' || !isAbsolute(credentials) || credentials.length > 4096 || credentials.includes('\0')) {
+    throw invalidEdge('must name its credentials file by an absolute path');
   }
-  const document = typeof parsed === 'object' && parsed !== null ? parsed as {schema?: unknown; grants?: unknown} : {};
-  if (document.schema !== GRANTS_SCHEMA) throw invalidGrants(`is not ${GRANTS_SCHEMA}`);
-  const listed: unknown = document.grants;
-  if (!Array.isArray(listed) || listed.length === 0) throw invalidGrants('lists no grants');
-  const grants = listed.map((entry: unknown): EdgeGrant => {
-    const {source, token} = typeof entry === 'object' && entry !== null ? entry as {source?: unknown; token?: unknown} : {};
-    if (typeof source !== 'string' || !SOURCE.test(source) || source.length > 256) throw invalidGrants('names a malformed source');
-    if (typeof token !== 'string' || token.length < MIN_TOKEN || token.length > 512 || /\s/.test(token)) {
-      throw invalidGrants(`has a token for ${source} that is not ${MIN_TOKEN} to 512 characters without spaces`);
-    }
-    if (source === 'bunny/core' || source.startsWith('bunny/modules/')) {
-      throw new RuntimeError('edge-grant-source', `a grant may not act as ${source}: the core's and the modules' sources belong to the runtime`);
-    }
-    return {source, token};
-  });
-  if (new Set(grants.map(grant => grant.token)).size !== grants.length) throw invalidGrants('gives two grants one token');
-  return grants;
+  if (browserAccess !== undefined && browserAccess !== 'trusted-loopback') throw invalidEdge('\'s browserAccess may only be trusted-loopback');
+  return {
+    credentials, ...(browserAccess === undefined ? {} : {browserAccess}), launcher,
+    editorLinks: links(value.editorLinks, 16, name => ROUTING_ID.test(name) && name.length <= 128, false, 'editorLinks'),
+    placeLinks: links(value.placeLinks, 8, name => PLACE.test(name) && name !== 'bunny', true, 'placeLinks'),
+  };
 }

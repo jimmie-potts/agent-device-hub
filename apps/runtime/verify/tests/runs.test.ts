@@ -61,7 +61,7 @@ void test('a run serves the runtime with the fixture modules and, reseeded, with
   assert.equal(preview.pathname, HEALTH_PATH, 'the preview links the runtime\'s health page');
   assert.equal((await fetch(preview)).status, 200, 'and the page answers');
   const runtimeDir = join(root, 's', runId);
-  const grants = JSON.parse(await readFile(join(runtimeDir, 'data/state/edge-grants.json'), 'utf8')) as {grants: {token: string}[]};
+  const grants = {grants: Object.values(JSON.parse(await readFile(join(runtimeDir, 'data/config/part-tokens.json'), 'utf8')) as Record<string, string>).map(token => ({token}))};
   const receipt = JSON.parse(await readFile(join(root, 'p', runId, 'receipt.json'), 'utf8')) as {checks?: {id: string; outcome: string}[]};
   assert.ok(validateReceipt(receipt).ok, 'the receipt is valid');
   assert.deepEqual(receipt.checks?.filter(check => check.id !== 'windows-loopback').map(check => [check.id, check.outcome]), [

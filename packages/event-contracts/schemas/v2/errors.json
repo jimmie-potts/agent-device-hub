@@ -12,7 +12,7 @@
     "not-found": {"retryable": false, "meaning": "The target entity or route does not exist."},
     "invalid-state": {"retryable": false, "meaning": "The target's current state does not allow this operation."},
     "revision-conflict": {"retryable": false, "meaning": "The caller's revision is stale; read again before deciding."},
-    "duplicate-conflict": {"retryable": false, "meaning": "A message reuses (source, id) with different content."},
+    "duplicate-conflict": {"retryable": false, "meaning": "A message reuses (source, id) with different content, or a command that was already sent is sent again before its expiry (Hub #835)."},
     "expired": {"retryable": false, "meaning": "A command or sync request arrived after its expiry."},
     "cancelled": {"retryable": false, "meaning": "The request was cancelled or superseded before it completed."},
     "capacity": {"retryable": true, "meaning": "The target is busy or a bounded queue is full."},

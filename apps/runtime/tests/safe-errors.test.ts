@@ -4,21 +4,15 @@
 // secret, stays in memory.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE} from '../src/index.js';
-import {entry, fixture, health, it, run, stateDir} from './support.js';
+import {edgeConfig, entry, fixture, health, it, run} from './support.js';
 
 const SECRET = 'tok_SYNTHETIC123';
 
 it('an exception inside the edge reaches the remote part and health only as its code and fixed text, and the log only as its type', async context => {
-  const dir = await stateDir(context);
   const reader = {source: 'bunny/parts/reader', token: randomBytes(32).toString('base64url')};
-  const grants = join(dir, EDGE_GRANTS_FILE);
-  await writeFile(grants, JSON.stringify({schema: 'edge-grants/1.0', grants: [reader]}), {mode: 0o600});
-  await chmod(grants, 0o600);
+  const {config} = await edgeConfig(context, [reader]);
   // The module's state cannot be serialized: the edge's own size check throws while it encodes the sync answer.
   const vault = fixture('vault', async ({sdk}) => {
     const poisoned = {id: 'v1', revision: 1, toJSON: (): never => { throw new Error(`the vault refused ${SECRET}`); }};
@@ -26,7 +20,7 @@ it('an exception inside the edge reaches the remote part and health only as its 
       revision: 1, states: [{type: 'org.bunny.vault.updated', subject: 'v1', dataschema: 'https://bunny.invalid/events/vault/2.0', data: poisoned}],
     }));
   });
-  const {runtime, logs} = await run(context, {modules: [vault], stateDir: dir, edge: {schemas: {}}});
+  const {runtime, logs} = await run(context, {modules: [vault], configFile: config, edge: {schemas: {}}});
 
   const remote = await connectRemote({url: runtime.url, source: reader.source, token: reader.token});
   context.after(() => remote.close());

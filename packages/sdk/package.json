@@ -15,7 +15,7 @@
     }
   },
   "dependencies": {
-    "@jimmie-potts/bunny-observability": "1.3.0",
+    "@jimmie-potts/bunny-observability": "1.4.0",
     "@jimmie-potts/event-contracts": "1.0.0"
   }
 }

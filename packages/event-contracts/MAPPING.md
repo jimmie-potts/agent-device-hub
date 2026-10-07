@@ -182,6 +182,9 @@ The owner also changes records without an observation:
 - Expiry after 24 hours without evidence publishes a removal with reason `expired`.
 - Displacing a finished child subtree publishes removals with reason `retired`.
 - Explicit approval recovery publishes `attention-cleared` with cause `recovered`.
+  The 1.x `recover-approval` operation of `/api/monitor/v1/commands` becomes
+  the `approval-recover` command (Hub #835), whose `expectedRevision` is the
+  session record's `revision`, not the 1.x snapshot's.
 - Startup settlement of approvals on already retired turns publishes
   `attention-cleared` with cause `turn-retired`.
 - Freshness turning `uncertain` publishes the record at a new revision.

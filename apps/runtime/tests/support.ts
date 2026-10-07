@@ -2,13 +2,16 @@
 // after their test. These helpers serve only this package's tests.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {chmod, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import type {BunnyModule, CommandDraft, Draft, ModuleContext, Scheduler} from '@jimmie-potts/sdk';
-import {HEALTH_PATH, startRuntime, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth, type RuntimeOptions} from '../src/index.js';
+import {
+  CONFIG_SCHEMA, CREDENTIALS_SCHEMA, HEALTH_PATH, startRuntime, tokenDigest, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth,
+  type RuntimeOptions, type Scope,
+} from '../src/index.js';
 
 /**
  * Checks a test registers to run once everything else has stopped and closed. node:test skips the after hooks that
@@ -41,6 +44,42 @@ export async function stateDir(context: TestContext): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-runtime-')));
   context.after(() => rm(dir, {recursive: true, force: true}));
   return dir;
+}
+
+/** A test part's grant at the edge (Hub #835): its source, its token and the Hub's scopes and devices, all by default. */
+export type EdgePart = {source: string; token: string; id?: string; scopes?: readonly Scope[]; devices?: readonly string[]};
+export const ALL_SCOPES: readonly Scope[] = ['read', 'control', 'ingest', 'admin'];
+
+/** Writes a private file, owner-only whatever the umask. */
+async function writePrivate(file: string, text: string, mode = 0o600): Promise<void> {
+  await writeFile(file, text, {mode});
+  await chmod(file, mode);
+}
+
+/**
+ * A private configuration file with an `edge` section and the credentials file it names, as the installer writes them,
+ * in a new private directory outside every checkout, removed after the test. Each part's credential keeps its token's
+ * digest only. `credentials` replaces the credentials file's text, and `mode` its permissions, for tests that refuse it.
+ */
+export async function edgeConfig(context: TestContext, parts: readonly EdgePart[], options: {
+  modules?: Record<string, unknown>; browserAccess?: 'trusted-loopback'; editorLinks?: Record<string, string>; placeLinks?: Record<string, string>;
+  credentials?: string; mode?: number;
+} = {}): Promise<{config: string; credentials: string; dir: string}> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-config-')));
+  await chmod(dir, 0o700);
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const credentials = join(dir, 'edge-credentials.json');
+  const listed = parts.map((part, index) => ({
+    id: part.id ?? `part-${index + 1}`, source: part.source, digest: tokenDigest(part.token), scopes: [...(part.scopes ?? ALL_SCOPES)], devices: [...(part.devices ?? [])],
+  }));
+  await writePrivate(credentials, options.credentials ?? JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}), options.mode);
+  const config = join(dir, 'runtime-config.json');
+  const edge = {
+    credentials, ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}),
+    ...(options.editorLinks === undefined ? {} : {editorLinks: options.editorLinks}), ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
+  };
+  await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: options.modules ?? {}, edge}));
+  return {config, credentials, dir};
 }
 
 /** An in-test module. Its start keeps the context for the test, then runs `body`; it counts its stops. */

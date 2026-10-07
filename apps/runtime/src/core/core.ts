@@ -8,11 +8,11 @@ import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, sessionEntityId, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionRecord,
+  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
-  type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type Reply,
-  type Sdk, type Snapshot, type StateDraft, type SyncRequest,
+  type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+  type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {CORE_MODULE} from '../host.js';
 import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
@@ -144,11 +144,37 @@ class Backoff {
   }
 }
 
+/** The longest text a `sessions` call may search for. */
+const MAX_QUERY = 120;
+
+/**
+ * The core's MCP read tool (module API 1.2, Hub #835), `core_sessions`: the sessions it holds, as the old Hub's
+ * `hub_sessions` read them, optionally only one provider's and those whose label, title, project or session ID holds
+ * `q`, ignoring case. Reading changes nothing, acknowledges nothing and proves no readership.
+ */
+function sessionsTool(records: () => {revision: number; sessions: readonly SessionRecord[]} | undefined): ModuleTool {
+  return {
+    name: 'sessions',
+    description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
+      + 'Each record carries its revision, which approval recovery takes as expectedRevision. Reading changes nothing, and freshness, attention and unread state stay as observed.',
+    input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: ['codex', 'claude']}}},
+    output: {type: 'object', additionalProperties: false, required: ['revision', 'sessions'], properties: {revision: {type: 'integer', minimum: 0}, sessions: {type: 'array'}}},
+    read: ({q, provider}) => {
+      const held = records();
+      if (held === undefined) return errorBody('unavailable', {detail: 'the core is not serving its sessions now'});
+      const query = typeof q === 'string' ? q.toLowerCase() : '';
+      const sessions = held.sessions.filter(record => (provider === undefined || record.identity.provider === provider) &&
+        [record.label?.value, record.title?.value, record.project, record.identity.sessionId].some(text => text?.toLowerCase().includes(query) === true));
+      return {revision: held.revision, sessions};
+    },
+  };
+}
+
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): BunnyModule {
   let core: Core | undefined;
   return {
-    manifest: {name: CORE_MODULE, apiVersion: '1.0'},
+    manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions())]},
     start: context => {
       core = new Core(context, options);
       return core.start();
@@ -226,6 +252,7 @@ class Core {
       this.#sdk.serveSync(families, request => this.#serve(request)),
       this.#sdk.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => this.#observe(message)),
       this.#sdk.respond<NoticeAcknowledgeRequest>('bunny.cmd.notice-acknowledge.*', command => this.#acknowledge(command)),
+      this.#sdk.respond<ApprovalRecoverRequest>('bunny.cmd.approval-recover.*', command => this.#recover(command)),
       ...this.#parts.flatMap(part => part.start?.(handle) ?? []),
     ];
     this.#starting = (async () => {
@@ -471,6 +498,49 @@ class Core {
       const result = await this.#store.during(cause, () => this.#call(owner => owner.acknowledge(record.identity, noticeId, consumerId)));
       if (!result.ok) return refuse(result.refusal.code, result.refusal.detail);
       this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
+      return {status: 'accepted'};
+    });
+  }
+
+  /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */
+  sessions(): {revision: number; sessions: readonly SessionRecord[]} | undefined {
+    if (this.#owner === undefined || this.#stopped) return undefined;
+    return {revision: this.#store.revision, sessions: this.#store.records()};
+  }
+
+  /**
+   * Answers `approval-recover` (Hub #835), the old Hub's operator recovery, through agent-state's `recoverApproval`: it
+   * retires the one approval marker without an attention ID that the session holds on `turnId`, only while the
+   * session's evidence is uncertain. `expectedRevision` must be the session record's revision, so an operator who read a
+   * record that has changed since is refused with `revision-conflict` and reads again. The change commits before the
+   * reply, in the command's trace, with `attention-cleared` (cause `recovered`) and the session's new state as its
+   * evidence; no outcome follows. A session with no such marker, or whose evidence is current, is `invalid-state`.
+   */
+  async #recover(command: Command<ApprovalRecoverRequest>): Promise<Reply> {
+    await this.#ready;
+    if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
+    return this.#run(async () => {
+      const {requestId, turnId, expectedRevision} = command.data;
+      const fields: LogFields = {'bunny.participant': command.source, 'bunny.operation': 'status', ...requestField(requestId)};
+      const refuse = (code: ErrorCode, detail: string): ErrorBody => {
+        this.#log.info('command.rejected', {...fields, ...refused(code)}, command);
+        return errorBody(code, {detail});
+      };
+      const checked = this.#validator.validate(command);
+      if (!checked.ok) return refuse(checked.error.code, 'the recovery is not a valid approval-recover command');
+      const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
+      if (record === undefined) return refuse('not-found', 'no such session');
+      if (record.revision !== expectedRevision) return refuse('revision-conflict', 'the session changed since it was read; read it again');
+      const cause = {message: command, kind: 'attention.resolved', entity: record.id};
+      // The operator's guard is the record's revision; agent-state's own is taken as the core runs this change alone.
+      const result = await this.#store.during(cause, () => this.#call(owner => owner.recoverApproval(record.identity, turnId, owner.snapshot().revision)));
+      if (!result.ok) {
+        const {code, detail} = result.refusal;
+        // agent-state refuses a recovery whose preconditions do not hold as an invalid operation, which the core maps to
+        // `not-found`; the session exists, so it is the session's state that does not allow it.
+        return code === 'not-found' ? refuse('invalid-state', 'the session holds no uncertain approval without an ID on that turn') : refuse(code, detail);
+      }
+      this.#log.info('command.completed', {...fields, 'bunny.outcome': 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
   }

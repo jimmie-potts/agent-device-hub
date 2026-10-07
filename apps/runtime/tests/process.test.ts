@@ -13,10 +13,10 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
+import {parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {writeSimulatedConfiguration} from './fixtures/simulated.js';
-import {entry, health, it, stateDir, waitFor} from './support.js';
+import {edgeConfig, entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));
@@ -61,7 +61,7 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0, serves: ['session']}, ...UNCONFIGURED]);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session']}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -257,14 +257,6 @@ it('an outcome committed before a kill between commit and publish is taken exact
   assert.equal(of(again, 'lamp', 'command.executing').length, 0);
 });
 
-/** Writes the edge's grants, owner-only, into a state directory. */
-async function grants(dir: string, sources: readonly string[]): Promise<{source: string; token: string}[]> {
-  const list = sources.map(source => ({source, token: randomBytes(32).toString('base64url')}));
-  await writeFile(join(dir, EDGE_GRANTS_FILE), JSON.stringify({schema: 'edge-grants/1.0', grants: list}), {mode: 0o600});
-  await chmod(join(dir, EDGE_GRANTS_FILE), 0o600);
-  return list;
-}
-
 it('a kill between the core\'s commit and its publish loses and duplicates nothing: the restart sends each stored message once', async context => {
   // Hub #831: the core's outbox holds the session's state and occurrence across the kill.
   const dir = await stateDir(context);
@@ -330,29 +322,28 @@ it('a second runtime on the same state directory cannot take the core\'s lease: 
 });
 
 it('the shipped entry point runs with --simulate and --edge, and a remote part with a run grant reaches the edge', async context => {
-  const dir = await stateDir(context);
-  const [reader] = await grants(dir, ['bunny/parts/reader']);
-  assert.ok(reader);
-  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', dir, '--simulate', '--edge']);
+  const reader = {source: 'bunny/parts/reader', token: `tok_SYNTHETIC835_${randomBytes(16).toString('hex')}`, scopes: ['read'] as const};
+  const {config} = await edgeConfig(context, [reader]);
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', config, '--simulate', '--edge']);
   const remote = await connectRemote({url: runtime.url, source: reader.source, token: reader.token});
   await remote.close();
   const started = runtime.records().find(record => record.event_name === 'runtime.started');
   assert.deepEqual([started?.attributes['bunny.simulate'], started?.attributes['bunny.edge']], [true, true]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
-  assert.equal(runtime.records().some(record => JSON.stringify(record).includes(reader.token)), false, 'no token reaches a log record');
+  assert.equal(runtime.records().some(record => JSON.stringify(record).includes('tok_SYNTHETIC835')), false, 'no token reaches a log record');
 });
 
-it('--edge refuses a missing grants file and a grant that acts as the core or a module, naming the reason in runtime.failed', async context => {
-  const cases: readonly (readonly [readonly string[], string])[] = [
-    [[], 'edge-grants-missing'], [['bunny/parts/reader', 'bunny/core'], 'edge-grant-source'], [['bunny/modules/lamp'], 'edge-grant-source'],
+it('--edge refuses a configuration without its edge section and a credential that acts as the core or a module, naming the reason in runtime.failed', async context => {
+  const token = (): string => randomBytes(32).toString('base64url');
+  const cases: readonly (readonly [readonly string[] | undefined, string])[] = [
+    [undefined, 'edge-config-missing'], [['bunny/parts/reader', 'bunny/core'], 'edge-credential-source'], [['bunny/modules/lamp'], 'edge-credential-source'],
   ];
   for (const [sources, code] of cases) {
-    const dir = await stateDir(context);
-    if (sources.length > 0) await grants(dir, sources);
-    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir, '--edge']);
-    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, sources.join(' '));
-    assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], code, sources.join(' '));
+    const config = sources === undefined ? [] : ['--config', (await edgeConfig(context, sources.map(source => ({source, token: token()})))).config];
+    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), ...config, '--edge']);
+    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, code);
+    assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], code, code);
     assert.equal(runtime.stdout(), '', 'no ready line');
   }
 });

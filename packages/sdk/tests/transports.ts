@@ -6,8 +6,8 @@ import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
-  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type ErrorScope, type Participant, type RemoteParticipant,
-  type Scheduler, type SpanRecorder,
+  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type EdgePermissions, type ErrorScope, type Participant,
+  type RemoteParticipant, type Scheduler, type SpanRecorder,
 } from '../src/index.js';
 import {checked, flush, until, validator} from './support.js';
 
@@ -83,7 +83,7 @@ export type Edge = {
   diagnostics: Diagnostic[];
   errors: World['errors'];
   /** A remote participant, not wrapped by `checked`, for tests that send what the profile refuses. */
-  connect(source: Source, options?: {maxQueued?: number; scheduler?: Scheduler; now?: () => number}): Promise<RemoteParticipant>;
+  connect(source: Source, options?: {maxQueued?: number; scheduler?: Scheduler; now?: () => number; idleMs?: number; liveness?: Scheduler}): Promise<RemoteParticipant>;
   /** How many calls of each route the edge has read. */
   received(route: string): number;
   /** How many calls of each route the remote part dropped before the edge answered. */
@@ -107,11 +107,18 @@ export type EdgeSetup = {
   refuse?: (route: string, nth: number) => boolean;
   /** Every `onDiagnostic`, the bus's, the edge's and each remote client's, keeps its record and then throws. */
   failingDiagnostics?: boolean;
+  /** Each source's permissions; a source left out may do anything (Hub #835). */
+  permissions?: Partial<Record<Source, EdgePermissions>>;
+  /** The edge's heartbeat and stall limits, and the scheduler that runs them. */
+  heartbeatMs?: number;
+  stallMs?: number;
+  liveness?: Scheduler;
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
-  maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics,
+  maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
+  heartbeatMs, stallMs, liveness,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const diagnostics: Diagnostic[] = [];
@@ -123,8 +130,9 @@ export async function startEdge({
   });
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
   const edge = new RemoteEdge({
-    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), onDiagnostic: diagnose,
-    ...(scheduler === undefined ? {} : {scheduler}),
+    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token, ...permissions[source]})), onDiagnostic: diagnose,
+    ...(scheduler === undefined ? {} : {scheduler}), ...(heartbeatMs === undefined ? {} : {heartbeatMs}), ...(stallMs === undefined ? {} : {stallMs}),
+    ...(liveness === undefined ? {} : {liveness}),
   });
   const received = new Map<string, number>();
   const dropped = new Map<string, number>();
@@ -154,7 +162,8 @@ export async function startEdge({
         url, source, token: tokens.get(source) ?? '', onError: report, onDiagnostic: diagnose, reconnectDelayMs: 20,
         ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
         ...(options.scheduler === undefined ? {} : {scheduler: options.scheduler}),
-        ...(options.now === undefined ? {} : {now: options.now}),
+        ...(options.now === undefined ? {} : {now: options.now}), ...(options.idleMs === undefined ? {} : {idleMs: options.idleMs}),
+        ...(options.liveness === undefined ? {} : {liveness: options.liveness}),
       });
       opened.push(remote);
       return remote;

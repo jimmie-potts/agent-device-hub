@@ -1,10 +1,9 @@
 // Tier 1 of the runtime's scenario catalog (Hub #846): the in-memory harness. It hosts the scenario's modules in the
 // runtime's own module host, in this process, on a manual clock and scheduler, with simulated devices that outlive a
 // runtime crash as real ones would. The scenario's parts join the host's bus directly (in process), or reach it through
-// a RemoteEdge served on 127.0.0.1 with run-generated tokens (remote). Its state lives in a private temporary directory
-// outside every Git checkout, which `close` removes. Nothing reaches an installed service, port, personal state or
-// device.
-import {randomBytes} from 'node:crypto';
+// the runtime's gateway (#835) on 127.0.0.1, whose SDK edge checks each part's credential and grant (remote). The
+// gateway's HTTP routes serve both transports. Its state lives in a private temporary directory outside every Git
+// checkout, which `close` removes. Nothing reaches an installed service, port, personal state or device.
 import {mkdtemp, realpath, rm} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
@@ -13,23 +12,29 @@ import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
 import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
-import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
+import {connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
 import {SimulatedCloud, createTidbytModule} from '@jimmie-potts/tidbyt';
 import {followStandInAcks} from '@jimmie-potts/sdk/testing';
-import {diagnosticWriter} from '../../src/diagnostics.js';
+import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
+import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
 import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
-import {prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from '../../src/state.js';
+import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from '../../src/state.js';
 import {startTracing, type RuntimeTracing} from '../../src/tracing.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
 import {createCoreModule} from '../fixtures/core.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
-import {ROLES, type DeviceStates, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation, type TransportName} from './catalog.js';
-import {Reader, answerOf, describe, follow, scenarioValidator, simulatePlayback, sourceOf, writeConfiguration} from './parts.js';
+import {
+  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation,
+  type TransportName,
+} from './catalog.js';
+import {
+  GatewayClient, Reader, SCENARIO_SCHEMAS, answerOf, describe, follow, partTokens, scenarioValidator, simulatePlayback, sourceOf, writeConfiguration,
+} from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
@@ -41,7 +46,7 @@ const STEP_MS = 10;
 export interface MemoryHarness extends Harness {
   /** The private state directory the runtime uses across restarts. */
   readonly stateDir: string;
-  /** The edge's origin on loopback, remotely; undefined in process. */
+  /** The gateway's origin on loopback, which serves both transports. */
   readonly url: string | undefined;
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part or the runtime reported. */
   problems(): readonly string[];
@@ -80,7 +85,7 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
   throw new Error('found no free loopback port outside the installed services\' ports');
 }
 
-type Generation = {host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant; logs: LogWriter};
+type Generation = {host: ModuleHost; gateway: Gateway; watcher: Participant; logs: LogWriter};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
 
 class Memory implements MemoryHarness {
@@ -101,8 +106,11 @@ class Memory implements MemoryHarness {
   /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
   readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
   readonly #parts: ReadonlyMap<Role, Part>;
-  /** The seed's configuration file, read as the runtime reads it, if it has one. */
+  readonly #tokens = partTokens();
+  readonly #client: GatewayClient;
+  /** The run's configuration file, read as the runtime reads it: the seed's sections and the edge's. */
   #config: RuntimeConfig | undefined;
+  #edge: {config: EdgeConfig; credentials: readonly EdgeCredential[]} | undefined;
   readonly #generations: Generation[] = [];
   readonly #logs: Generational<{record: LogRecord}>[] = [];
   readonly #published: Generational<{message: Message}>[] = [];
@@ -118,8 +126,8 @@ class Memory implements MemoryHarness {
   /** What the retired runtimes and parts still release. */
   readonly #retiring: Promise<unknown>[] = [];
   #server: Server | undefined;
-  #edge: Promise<RemoteEdge>;
-  #edgeReady: (edge: RemoteEdge) => void = () => {};
+  #gateway: Promise<Gateway>;
+  #gatewayReady: (gateway: Gateway) => void = () => {};
   #armed = false;
   #loseAcknowledgment = false;
   #closing: Promise<void> | undefined;
@@ -129,8 +137,9 @@ class Memory implements MemoryHarness {
     this.transport = transport;
     this.stateDir = stateDir;
     this.reader = new Reader(seed.follows);
-    this.#parts = new Map(ROLES.map(role => [role, {role, source: sourceOf(role), token: randomBytes(32).toString('base64url'), participant: undefined, closed: false}]));
-    this.#edge = this.#nextEdge();
+    this.#parts = new Map(ROLES.map(role => [role, {role, source: sourceOf(role), token: this.#tokens[role], participant: undefined, closed: false}]));
+    this.#client = new GatewayClient(() => this.url ?? '', this.#tokens);
+    this.#gateway = this.#nextGateway();
   }
 
   async open(): Promise<void> {
@@ -139,14 +148,15 @@ class Memory implements MemoryHarness {
     const opening = new LogWriter(record => { this.#logs.push({generation: 1, record}); }, 'info', {now: this.#clock.now}).logger(RUNTIME_SCOPE);
     this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); }, opening);
     const {config} = this.#seed;
-    if (config !== undefined) this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), config));
-    if (this.transport === 'remote') {
-      const server = createServer((request, response) => { this.#serve(request, response); });
-      // The edge never closes an idle connection under a remote part that is about to reuse it.
-      server.keepAliveTimeout = 0;
-      this.#server = server;
-      this.url = `http://127.0.0.1:${await listenLoopback(server)}`;
-    }
+    this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), {...(config === undefined ? {} : {modules: config}), tokens: this.#tokens}));
+    const edge = this.#config.edge;
+    if (edge === undefined) throw new Error('the harness wrote no edge section');
+    this.#edge = {config: edge, credentials: await readEdgeCredentials(edge.credentials)};
+    const server = createServer((request, response) => { this.#serve(request, response); });
+    // The edge never closes an idle connection under a remote part that is about to reuse it.
+    server.keepAliveTimeout = 0;
+    this.#server = server;
+    this.url = `http://127.0.0.1:${await listenLoopback(server)}`;
     await this.#boot();
     // Only a module the seed expects the runtime to refuse, such as one it configures badly, may be unhealthy here; its
     // scenario checks the refusal.
@@ -245,6 +255,11 @@ class Memory implements MemoryHarness {
     return this.#edgeLog;
   }
 
+  async gateway(call: GatewayCall): Promise<GatewayAnswer> {
+    await this.#settled();
+    return this.#client.call(call);
+  }
+
   async spans(): Promise<readonly string[]> {
     // The bounded queue hands each finished span to the sink a few turns after it ends.
     await settle();
@@ -279,7 +294,7 @@ class Memory implements MemoryHarness {
     const part = this.#part(role);
     if (this.transport === 'remote') {
       // The edge ends the part's stream; the remote client reconnects after its backoff and tells its copies to sync.
-      this.#current().edge?.disconnect(part.source);
+      this.#current().gateway.edge.disconnect(part.source);
       return;
     }
     await this.#retire(part, false);
@@ -304,12 +319,15 @@ class Memory implements MemoryHarness {
   async restart(): Promise<void> {
     await this.#settled();
     const old = this.#current();
-    this.#edge = this.#nextEdge();
+    this.#gateway = this.#nextGateway();
+    // As the runtime's stop does: the gateway first, then the modules. Its browser sessions end with it.
+    await old.gateway.close();
+    this.#client.forget();
     await old.host.stop();
     // The stopped process's connections end with it.
     this.#server?.closeAllConnections();
     if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#retire(part, false);
-    this.#release(old.edge?.close(), old.watcher.close());
+    this.#release(old.watcher.close());
     await this.#boot();
     if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#connect(part);
   }
@@ -323,7 +341,7 @@ class Memory implements MemoryHarness {
         part.closed = true;
         await this.#retire(part, false);
       }
-      for (const generation of this.#generations) await generation.edge?.close();
+      for (const generation of this.#generations) await generation.gateway.close();
       const server = this.#server;
       if (server !== undefined) {
         server.closeAllConnections();
@@ -348,24 +366,23 @@ class Memory implements MemoryHarness {
       ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
       ...(this.#config === undefined ? {} : {config: this.#config}),
     });
-    const written = diagnosticWriter(logs.logger(RUNTIME_SCOPE));
     const watcher = host.bus.connect('bunny/harness/watcher');
     await watcher.subscribe('bunny.*.*.*', message => {
       this.#check(message, 'a published message');
       this.#published.push({generation: number, message});
     });
     await host.start();
-    const edge = this.transport === 'remote' ? new RemoteEdge({
-      bus: host.bus, validator: this.#validator, grants: [...this.#parts.values()].map(({source, token}) => ({source, token})),
-      // As the runtime does, the edge's decisions become its records.
-      onDiagnostic: diagnostic => {
-        this.#edgeLog.push(diagnostic);
-        written(diagnostic);
-      },
-      now: this.#clock.now, scheduler: this.#clock.scheduler,
-    }) : undefined;
-    this.#generations.push({host, edge, watcher, logs});
-    if (edge !== undefined) this.#edgeReady(edge);
+    const edge = this.#edge;
+    if (edge === undefined) throw new Error('the harness has no edge');
+    // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
+    const gateway = new Gateway({
+      bus: host.bus, host, validator: this.#validator, families: readableFamilies(SCENARIO_SCHEMAS), edge: edge.config, credentials: edge.credentials,
+      log: logs.logger(RUNTIME_SCOPE), redactions: logs.redactions, clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir,
+      onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); },
+    });
+    await gateway.start(this.url ?? '', [new URL(this.url ?? 'http://127.0.0.1').host]);
+    this.#generations.push({host, gateway, watcher, logs});
+    this.#gatewayReady(gateway);
   }
 
   /** Each module from its factory, with its simulated transport. */
@@ -405,27 +422,30 @@ class Memory implements MemoryHarness {
     if (!this.#armed) return;
     this.#armed = false;
     const old = this.#current();
-    this.#edge = this.#nextEdge();
+    this.#gateway = this.#nextGateway();
     this.#server?.closeAllConnections();
     // Marked at once, before the old bus can answer any of their requests.
     for (const {participant} of this.#parts.values()) if (this.transport === 'in-process' && participant !== undefined) this.#crashed.add(participant);
     this.#track((async () => {
       if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#retire(part, true);
-      // Nothing of the old runtime is used again; its host is stopped only to release what it holds.
-      this.#release(old.edge?.close(), old.watcher.close(), old.host.stop());
+      // Nothing of the old runtime is used again. Its gateway closes first, as the process's end would close its
+      // launcher's socket and its connections; its host is stopped only to release what it holds.
+      await old.gateway.close();
+      this.#client.forget();
+      this.#release(old.watcher.close(), old.host.stop());
       await this.#boot();
       if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#connect(part);
     })());
     throw new Error('the runtime crashed');
   }
 
-  /** A request to the edge waits while the runtime restarts, as a remote part's connection would wait for the port. */
+  /** A request to the gateway waits while the runtime restarts, as a remote part's connection would wait for the port. */
   #serve(request: IncomingMessage, response: ServerResponse): void {
-    void this.#edge.then(edge => { edge.handle(request, response); });
+    void this.#gateway.then(gateway => { gateway.handle(request, response); });
   }
 
-  #nextEdge(): Promise<RemoteEdge> {
-    return new Promise(resolve => { this.#edgeReady = resolve; });
+  #nextGateway(): Promise<Gateway> {
+    return new Promise(resolve => { this.#gatewayReady = resolve; });
   }
 
   async #connect(part: Part): Promise<void> {

@@ -3,15 +3,13 @@
 // module or a remote part sent the command. A request ID that the 1.x attribute refuses is left out, and the record kept.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {DeviceAvailability, connectRemote, traceFields, type Command, type Reply} from '@jimmie-potts/sdk';
 import {diagnosticWriter} from '../src/diagnostics.js';
-import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
+import type {LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from '../src/record.js';
-import {contextOf, deferred, fixture, it, manualClock, run, setMode, stateDir} from './support.js';
+import {contextOf, deferred, edgeConfig, fixture, it, manualClock, run, setMode} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
@@ -43,7 +41,7 @@ it('a module\'s accepted request makes one admission and one reply record, contr
   await runtime.stop();
   const records = logs.filter(record => record.event_name.startsWith('runtime.command.'));
   assert.deepEqual(records.map(record => [record.event_name, record.severity_text, record.scope.name, record.schema_version]), [
-    ['runtime.command.admitted', 'INFO', 'bunny.runtime', '1.3'], ['runtime.command.replied', 'INFO', 'bunny.runtime', '1.3'],
+    ['runtime.command.admitted', 'INFO', 'bunny.runtime', '1.4'], ['runtime.command.replied', 'INFO', 'bunny.runtime', '1.4'],
   ]);
   const [command] = commands;
   assert.ok(command);
@@ -58,13 +56,10 @@ it('a module\'s accepted request makes one admission and one reply record, contr
 });
 
 it('a remote part\'s refused request, and one with no responder, make their records at their levels', async context => {
-  const dir = await stateDir(context);
-  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url')};
-  const file = join(dir, EDGE_GRANTS_FILE);
-  await writeFile(file, JSON.stringify({schema: 'edge-grants/1.0', grants: [operator]}), {mode: 0o600});
-  await chmod(file, 0o600);
+  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url'), devices: ['wall', 'none']};
+  const {config} = await edgeConfig(context, [operator]);
   const {runtime, logs} = await run(context, {
-    modules: [wall(() => errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'}))], stateDir: dir, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
+    modules: [wall(() => errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'}))], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
   });
   const remote = await connectRemote({url: runtime.url, source: operator.source, token: operator.token});
   context.after(() => remote.close());

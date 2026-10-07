@@ -1,13 +1,12 @@
 // The seeds of a disposable runtime run (Hub #920): which modules the runtime starts and the parts' run-generated
-// grants. Each catalog scenario seeds its own modules; `fixtures` starts the core with its stand-in parts, the lamp and the chime for
+// credentials (Hub #835). Each catalog scenario seeds its own modules; `fixtures` starts the core with its stand-in parts, the lamp and the chime for
 // exploring. Names starting with `control-` cross a boundary on purpose, so their start fails a boundary check.
-import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {EDGE_GRANTS_FILE, shippedModules, type ModuleFactory} from '../src/index.js';
-import {writeSimulatedConfiguration} from '../tests/fixtures/simulated.js';
-import {ROLES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
-import {sourceOf, writeConfiguration} from '../tests/scenarios/parts.js';
+import {shippedModules, type ModuleFactory} from '../src/index.js';
+import {simulatedSections} from '../tests/fixtures/simulated.js';
+import {SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
+import {partTokens, writeConfiguration} from '../tests/scenarios/parts.js';
 
 export const RUN_FILE = 'run.json';
 export const RUN_SCHEMA = 'runtime-run/1.0';
@@ -18,8 +17,8 @@ export type Fault = 'real-transports' | 'installed-port' | 'default-state';
  * `fixtures`, the same runtime with the fixture modules and families the scenario catalog uses.
  */
 export type RunRuntime = 'shipped' | 'fixtures';
-/** What the supervisor reads from the run's data directory. `config` is the run's configuration file, when it has one. */
-export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: ModuleName[]; fault?: Fault; config?: string};
+/** What the supervisor reads from the run's data directory. `config` is the run's configuration file. */
+export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: ModuleName[]; fault?: Fault; config: string};
 /**
  * `config` gives a catalog seed's sections; `simulated` configures each of those factories from its simulated section
  * instead, as the shipped run does.
@@ -32,8 +31,15 @@ export type RunScenario = {
 export const stateDirOf = (dataDir: string): string => join(dataDir, 'state');
 /** The private home the runtime's child gets: `<data>/home`. */
 export const homeOf = (dataDir: string): string => join(dataDir, 'home');
-/** Where a configured run keeps its configuration file and token files (Hub #919): `<data>/config`. */
+/** Where a run keeps its configuration file, its edge's credentials file and its token files (Hub #919, #835): `<data>/config`. */
 export const configDirOf = (dataDir: string): string => join(dataDir, 'config');
+/** The edge's credentials file a run's configuration names, with each part's grant under its token's digest (Hub #835). */
+export const credentialsOf = (dataDir: string): string => join(configDirOf(dataDir), 'edge-credentials.json');
+/**
+ * The parts' tokens, by role, which the run's adapter reads to connect its parts and the runtime never reads: the
+ * credentials file holds only their digests. Owner-only, and never printed.
+ */
+export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDir), 'part-tokens.json');
 
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
@@ -64,27 +70,27 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
 export const START_ONLY: readonly string[] = Object.keys(RUN_SCENARIOS).filter(name => RUN_SCENARIOS[name]?.fault !== undefined);
 
 /**
- * Writes the scenario's run file, the runtime's state directory and private home, one run-generated grant for each part
- * in the state directory's `edge-grants.json`, owner-only, and, for a scenario with a configuration, its private
- * configuration file and token files under `<data>/config`. The grants are never printed, and the token files hold
- * only the synthetic token.
+ * Writes the scenario's run file, the runtime's state directory and private home, and under `<data>/config` the run's
+ * private configuration file: the scenario's module sections, with a token file per configured module holding only the
+ * synthetic token, and the edge's section (Hub #835), whose credentials file grants each part, as the catalog's `GRANTS`
+ * say, under a run-generated token's digest. The parts' tokens go to a private file of their own for the adapter, and
+ * are never printed.
  */
 export async function seedRun(dataDir: string, name: string): Promise<void> {
   const scenario = RUN_SCENARIOS[name];
   if (scenario === undefined) throw new Error(`no run scenario ${name}`);
-  const config = scenario.simulated !== undefined ? await writeSimulatedConfiguration(configDirOf(dataDir), scenario.simulated) :
-    scenario.config === undefined ? undefined : await writeConfiguration(configDirOf(dataDir), scenario.config);
-  const run: RunFile = {
-    schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}),
-    ...(config === undefined ? {} : {config}),
-  };
+  const tokens = partTokens();
+  const dir = configDirOf(dataDir);
+  const config = await writeConfiguration(dir, {
+    ...(scenario.config === undefined ? {} : {modules: scenario.config}),
+    ...(scenario.simulated === undefined ? {} : {sections: await simulatedSections(dir, scenario.simulated)}), tokens,
+  });
+  await writeFile(partTokensOf(dataDir), `${JSON.stringify(tokens)}\n`, {mode: 0o600});
+  await chmod(partTokensOf(dataDir), 0o600);
+  const run: RunFile = {schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}), config};
   await writeFile(join(dataDir, RUN_FILE), `${JSON.stringify(run)}\n`, {mode: 0o600});
   for (const dir of [stateDirOf(dataDir), homeOf(dataDir)]) {
     await mkdir(dir, {mode: 0o700});
     await chmod(dir, 0o700);
   }
-  const grants = ROLES.map(role => ({source: sourceOf(role), token: randomBytes(32).toString('base64url')}));
-  const file = join(stateDirOf(dataDir), EDGE_GRANTS_FILE);
-  await writeFile(file, `${JSON.stringify({schema: 'edge-grants/1.0', grants})}\n`, {mode: 0o600});
-  await chmod(file, 0o600);
 }

@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.4",
+      "name": "unsupported-1.5",
       "valid": false,
       "record": {
-        "schema_version": "1.4",
+        "schema_version": "1.5",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -4303,6 +4303,278 @@
           "bunny.routing.key": "bunny.cmd.lamp.lamp-1",
           "bunny.request.id": "_req-1",
           "bunny.message.id": "6f1c2d4e-8a9b-4c3d-9e2f-0a1b2c3d4e5f"
+        }
+      }
+    },
+    {
+      "name": "runtime-gateway-retired-route",
+      "valid": true,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "/api/monitor/v1/sessions",
+          "http.request.method": "GET",
+          "bunny.code": "not-found",
+          "bunny.reason": "invalid-input"
+        }
+      }
+    },
+    {
+      "name": "runtime-gateway-forbidden",
+      "valid": true,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "/api/v2/families/{family}",
+          "http.request.method": "GET",
+          "bunny.code": "forbidden",
+          "bunny.reason": "unauthorized",
+          "bunny.participant": "bunny/parts/hook"
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-reloaded",
+      "valid": true,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.reloaded",
+        "body": "Edge credentials reloaded",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.outcome": "succeeded",
+          "bunny.grant_count": 3
+        }
+      }
+    },
+    {
+      "name": "runtime-edge-reload-failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.edge.reloaded",
+        "body": "Edge credentials reloaded",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.outcome": "failed",
+          "error.type": "RuntimeError",
+          "error.code": "edge-credentials-invalid"
+        }
+      }
+    },
+    {
+      "name": "runtime-route-labeled-1.3",
+      "valid": false,
+      "record": {
+        "schema_version": "1.3",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "/api/monitor/v1/sessions",
+          "http.request.method": "GET",
+          "bunny.code": "not-found",
+          "bunny.reason": "invalid-input"
+        }
+      }
+    },
+    {
+      "name": "runtime-reloaded-labeled-1.3",
+      "valid": false,
+      "record": {
+        "schema_version": "1.3",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.reloaded",
+        "body": "Edge credentials reloaded",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.outcome": "succeeded",
+          "bunny.grant_count": 3
+        }
+      }
+    },
+    {
+      "name": "runtime-route-with-a-query",
+      "valid": false,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "/api/v2/families/session?token=tok_SYNTHETIC123",
+          "http.request.method": "GET",
+          "bunny.code": "not-found",
+          "bunny.reason": "invalid-input"
+        }
+      }
+    },
+    {
+      "name": "runtime-route-full-url",
+      "valid": false,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "http://127.0.0.1:8788/mcp",
+          "http.request.method": "GET",
+          "bunny.code": "not-found",
+          "bunny.reason": "invalid-input"
+        }
+      }
+    },
+    {
+      "name": "runtime-method-unregistered",
+      "valid": false,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.edge.refused",
+        "body": "Edge call refused",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.route": "other",
+          "http.route": "/api/monitor/v1/sessions",
+          "http.request.method": "TRACE",
+          "bunny.code": "not-found",
+          "bunny.reason": "invalid-input"
         }
       }
     }

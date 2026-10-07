@@ -6,7 +6,14 @@ export {buildModules, coreFactory, moduleSchemas, shippedModules, type ModuleFac
 export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type EdgeInputs, type ProcessInputs, type ProcessOptions} from './process.js';
 export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './record.js';
 export {SEGMENT_BYTES, SEGMENT_SPANS, SPANS_FILE, SPANS_PREVIOUS_FILE, readSpanFile, type SpanFileRead} from './span-file.js';
+export {CONFIG_SCHEMA, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from './state.js';
 export {
-  CONFIG_SCHEMA, EDGE_GRANTS_FILE, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, readEdgeGrants, readRuntimeConfig, type EdgeGrant, type RuntimeConfig,
-} from './state.js';
+  CREDENTIALS_SCHEMA, MAX_CREDENTIALS, SCOPES, credentialsDocument, grantCredential, parseCredentials, readEdgeCredentials, revokeCredential, tokenDigest,
+  writeEdgeCredentials, type EdgeCredential, type Scope,
+} from './credentials.js';
+export {BROWSER_SOURCE, REQUEST_HEADER, SESSION_COOKIE, edgePermissions, type Principal} from './gateway/access.js';
+export {convertHubEdge, sourceForHubId, type ConvertedEdge} from './convert.js';
+export {GATEWAY_SOURCE, Gateway} from './gateway/gateway.js';
+export {LAUNCH_SOCKET, requestBrowserLaunch, type BrowserLaunch} from './gateway/launcher.js';
+export {RETIRED_ROUTES, retiredRoute, type RetiredRoute} from './gateway/retired.js';
 export {HEALTH_PATH, RECENT_SPANS, startRuntime, type RecentSpans, type Runtime, type RuntimeHealth, type RuntimeOptions} from './runtime.js';

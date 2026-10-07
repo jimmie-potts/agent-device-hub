@@ -119,7 +119,7 @@ A module SHALL register its payload schemas under `https://bunny.invalid/events/
 The profile SHALL define the core payload families, each a closed schema built from the shared blocks, registered under `https://bunny.invalid/events/<family>/2.0` and bound to one kind and one type:
 - state: `session`, `mode`, `inbox-item` and `playback`, as `org.bunny.<family>.updated`;
 - occurrence: `lifecycle` as `org.bunny.lifecycle.observed`, plus `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` and `moment-ended`, as `org.bunny.attention.raised`, `org.bunny.attention.cleared`, `org.bunny.turn.ended`, `org.bunny.session.ended` and `org.bunny.moment.ended`;
-- command: `mode-set` as `org.bunny.mode.set.requested`, `moment-play` as `org.bunny.moment.play.requested`, `notice-acknowledge` as `org.bunny.notice.acknowledge.requested` and `playback-control` as `org.bunny.playback.control.requested`.
+- command: `mode-set` as `org.bunny.mode.set.requested`, `moment-play` as `org.bunny.moment.play.requested`, `notice-acknowledge` as `org.bunny.notice.acknowledge.requested`, `approval-recover` as `org.bunny.approval.recover.requested` and `playback-control` as `org.bunny.playback.control.requested`.
 
 A message of a core family that uses another kind or type SHALL be refused with `invalid-message`. No core family SHALL carry a device-specific payload.
 
@@ -345,3 +345,19 @@ The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` fo
 #### Scenario: The same colors and ranking as 1.x
 - **WHEN** the 2.0 and 1.x helpers judge the same sessions and their colors are compared
 - **THEN** they agree
+
+### Requirement: Approval recovery command
+
+The profile SHALL define `approval-recover`, a core command sent as `org.bunny.approval.recover.requested` with a `requestId`, a `turnId` and an `expectedRevision`, the session record's revision that the operator read, and nothing else. Its envelope subject SHALL be the session's entity ID, a SHA-256 hash. It carries the old Hub's `recover-approval` operation (Hub #835): the core retires the one approval marker without an attention ID that the session holds on that turn, and approves or denies nothing at the agent. Its reply SHALL use the profile's payload.
+
+#### Scenario: A valid recovery and its refusals
+- **WHEN** the shared fixtures validate an approval recovery, one whose subject is not a session ID, one without `expectedRevision`, and one that names a decision
+- **THEN** the first is accepted and the others are refused with `invalid-message` and a detail naming the subject, the missing revision or the extra member
+
+### Requirement: A command sent again is a duplicate
+
+The registry's `duplicate-conflict` SHALL mean a message that reuses `(source, id)` with different content, or a command that was already sent and is sent again before its expiry. Its flag SHALL stay `retryable` false.
+
+#### Scenario: The registry's meaning
+- **WHEN** the registry file is read
+- **THEN** `duplicate-conflict` is not retryable and its meaning names both a reused `(source, id)` and a command sent again
