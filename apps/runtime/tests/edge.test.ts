@@ -58,8 +58,12 @@ it('a remote part with a run grant connects and syncs the stand-in core\'s sessi
   assert.equal(synced.status, 'synced', 'the stand-in core serves its sessions to the remote part');
   if (synced.status === 'synced') await synced.copy.close();
 
-  await assert.rejects(connectRemote({url: runtime.url, source: reader.source, token: token()}),
-    (error: unknown) => error instanceof SdkError && error.body.error.code === 'unauthenticated');
+  // A part that connects anyway is closed, so a failed check leaves no stream open.
+  const without = await connectRemote({url: runtime.url, source: reader.source, token: token()}).then(
+    async remote => { await remote.close(); return 'connected'; },
+    (error: unknown) => error instanceof SdkError ? error.body.error.code : 'failed',
+  );
+  assert.equal(without, 'unauthenticated');
   const bare = await fetch(new URL('/api/sdk/v1/publish', runtime.url), {method: 'POST', body: '{}'});
   assert.equal(bare.status, 401);
   assert.equal(((await bare.json()) as {error: {code: string}}).error.code, 'unauthenticated');
