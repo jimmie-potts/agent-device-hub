@@ -293,7 +293,7 @@ The source is the Hub's `/api/playback/v1/snapshot`. The 2.0 home is
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
 | `apiVersion` | envelope `dataschema` | |
-| `sourceId` | `playback /id` | The envelope subject. It is also the record's routing-key token, so 2.0 narrows it to lowercase letters and digits with single hyphens (the blocks' `routingId`, Hub #918); 1.x allowed any neutral ID. A configured ID outside that form is renamed when the installer converts the configuration (#929, [#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)). |
+| `sourceId` | `playback /id` | The envelope subject. It is also the record's routing-key token, so 2.0 narrows it to lowercase letters and digits with single hyphens (the blocks' `routingId`, Hub #918); 1.x allowed any neutral ID. A configured ID outside that form is renamed when the installer converts the configuration (#929, [#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)): the playback module's `routingIdOf` lowercases it and turns each run of other characters into one hyphen, so `HT-A9` becomes `ht-a9`. |
 | `availability` | `playback /availability` | The owner publishes a new revision when it changes. Decided by the coordinator, 2026-10-06. |
 | `observedAtMs` | `playback /observedAtMs` | Absent rather than null. |
 | `ageMs` | derived | Read context, like `observationAgeMs`. Decided by the coordinator, 2026-10-06: consumers derive it. |

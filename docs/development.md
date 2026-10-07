@@ -872,7 +872,7 @@ job judges the fourth layer's capture steps without a user manager.
 
 | Layer | Command | What it runs |
 | --- | --- | --- |
-| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built` | The package's and its modules' own tests, moved tests included |
+| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built` | The package's and its modules' own tests, moved tests included |
 | Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
 | End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
 | Acceptance | `npm run -s verify:runtime -- <operation>`, with `npm run test:runtime:verify:built` in CI | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
@@ -1883,6 +1883,25 @@ differ by 1e-12 times its magnitude, or by 1e-12 below magnitude 1, because
 last bit.
 `modules/nanoleaf/tests/fixtures/record.py` re-records them from a codex-nanoleaf
 checkout, as PORTING.md describes; CI does not run it.
+
+## Playback module checks
+
+Hub #929 moves the old Hub's shared playback, with its Sony HT-A9 and Sonos Move
+sources and their tests, into the runtime as `modules/playback`, under the
+[strict profile](#strict-profile-for-new-code). The runtime ships it; its
+[README](../modules/playback/README.md) covers the record, the commands, the
+configuration and its conversion, and the provenance.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:playback` from the worktree root. `test:playback` builds, then runs
+`test:playback:built`: the compiled tests in `modules/playback/dist/tests/`. The
+core CI job runs `npm run test:playback:built` after its fresh build. The suite
+needs no speaker: the HTTP tests use fake speakers on the loopback interface,
+and the module tests use the simulated speakers on a manual clock and run the
+module test kit. The runtime's `speaker-playback` catalog scenario runs the
+module in `test:runtime:scenarios:built` and in disposable runs. The old Hub's
+`apps/hub/tests/playback.test.mjs` keeps testing the Hub's own copy, which stays
+until #839.
 
 ## Local controller host checks
 
