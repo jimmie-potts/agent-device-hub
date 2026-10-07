@@ -89,6 +89,8 @@ it('#842\'s root session fixtures are what the real owner published in one refer
   if (process.env.BUNNY_WRITE_REFERENCE === '1') {
     const oldNotice = (fixtures.valid.session?.data as SessionRecord).notices[0]?.id ?? '';
     const newNotice = String(named.get('turn-ended')?.data.noticeId);
+    // Replacing an empty string would splice the new ID between every character of the file.
+    assert.match(oldNotice, /^[0-9a-f]{64}$/, 'the fixtures name a notice to replace');
     for (const [name, published] of named) {
       const fixture = fixtures.valid[name];
       assert.ok(fixture, name);
