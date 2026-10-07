@@ -4,7 +4,7 @@ import { MAX_VOLUME_PRESSES, type CardButtons, type ClaudeDesktopSession, type C
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
 import { renderFrame, slotState, type SettingKnob, type SlotLight, type SlotState } from './lights.js';
-import { EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
+import { EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, NEXT_CLICK, NEXT_TURN, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
 import { Detent } from './detent.js';
 import { SettingKnobs } from './knobs.js';
 import { SLOT_COUNT, candidatesFromSessions, sessionsForSlot, slotKey, type SlotReleaseReason, type SlotRecord, type SlotStore } from './slots.js';
@@ -105,8 +105,8 @@ function strictlyNewest(desktop: readonly ClaudeDesktopSession[], localId: strin
  * Turns bridge events and Hub feed views into slot lights, fail-closed task focus, dictation, Send and big-wheel card
  * answers. A slot press opens and verifies its task; it arms nothing. Send and card answers are evaluated against the
  * window in front when they are pressed, and Record holds the dictation chord like a keyboard shortcut (#821). Knob 1
- * sets the model and knob 2 the effort of the client in front (#906, `SettingKnobs`). Any doubt refuses and types
- * nothing. It has no Hub write path.
+ * sets the model and knob 2 the effort of the client in front (#906), and knob 3 picks Claude's suggested next step
+ * (#907), all through `SettingKnobs`. Any doubt refuses and types nothing. It has no Hub write path.
  */
 export class TaskRouter {
   readonly #adapter: OsAdapter;
@@ -170,7 +170,7 @@ export class TaskRouter {
   #volumeBusy = false;
   #volumeErrorUntil = Number.NEGATIVE_INFINITY;
   readonly #errors = new Map<number, number>();
-  /** Knob 1 (model) and knob 2 (effort), #906. */
+  /** Knob 1 (model) and knob 2 (effort), #906, and knob 3 (next steps), #907. */
   readonly #knobs: SettingKnobs;
   /** Input that waits while a knob flow closes; it then runs in order. */
   readonly #queue: Queued[] = [];
@@ -254,7 +254,7 @@ export class TaskRouter {
 
   /**
    * Applies a validated profile whole: cancels pending actions, releases keys and replays nothing. An open model menu,
-   * effort slider or picker closes with Escape before any later input acts.
+   * effort slider or picker, or a highlighted next step, closes before any later input acts.
    */
   setProfile(profile: RoutingProfile): void {
     const archiveChanged = profile.timing.archiveCheckMs !== this.#profile.timing.archiveCheckMs;
@@ -327,18 +327,20 @@ export class TaskRouter {
 
   // Knob flows and other input (#906)
 
-  /** Knob 1's or knob 2's turn or click, when the profile has that knob. */
+  /** The turn or click of knob 1, 2 or 3, when the profile has that knob. */
   #knobOf(event: InputEvent): SettingKnob | null {
     if (event.kind === 'release') return null;
-    const { model, effort } = this.#profile;
-    if (event.kind === 'turn') return model && event.control === MODEL_TURN ? 'model' : effort && event.control === EFFORT_TURN ? 'effort' : null;
-    return model && event.control === MODEL_CLICK ? 'model' : effort && event.control === EFFORT_CLICK ? 'effort' : null;
+    const { model, effort, nextSteps } = this.#profile;
+    const [modelControl, effortControl, nextControl] = event.kind === 'turn' ? [MODEL_TURN, EFFORT_TURN, NEXT_TURN] : [MODEL_CLICK, EFFORT_CLICK, NEXT_CLICK];
+    if (model && event.control === modelControl) return 'model';
+    if (effort && event.control === effortControl) return 'effort';
+    return nextSteps && event.control === nextControl ? 'next' : null;
   }
 
   /**
-   * Any control other than the open flow's own knob closes the flow first: its menu, slider or picker gets Escape, and
-   * only then does the control act. Input that arrives meanwhile waits in order, so two flows never send at once.
-   * Releases never close a flow.
+   * Any control other than the open flow's own knob closes the flow first: its menu, slider or picker closes, or knob 3's
+   * highlight drops to the composer, and only then does the control act. Input that arrives meanwhile waits in order, so
+   * two flows never act at once. Releases never close a flow.
    */
   #input(event: InputEvent): void {
     const passes = event.kind === 'release' || !this.#knobs.busy || this.#knobs.owns(this.#knobOf(event));
@@ -384,7 +386,7 @@ export class TaskRouter {
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
       // Knob 4 pages tasks (#822); the big wheel scrolls or answers a card; the volume knob steps the system volume
-      // (#865); knob 1 steps the model and knob 2 the effort (#906); knob 3's turn is inert.
+      // (#865); knob 1 steps the model and knob 2 the effort (#906); knob 3 moves across Claude's next steps (#907).
       if (event.control === PAGE_TURN) this.#pageTurn(event.delta);
       else if (event.control === controls.scroll) this.#wheelTurn(event.delta);
       else if (this.#profile.volume && event.control === VOLUME_TURN) this.#volumeTurn(event.delta);
@@ -418,7 +420,7 @@ export class TaskRouter {
       // Knob 4's click is the Attention click (#865) unless the profile turns it off.
       if (this.#profile.pages.attentionClick) this.#attentionPress(event.control);
     } else {
-      // Black keys act as the profile maps them (#865); other controls, such as knob 3's click, are inert.
+      // Black keys act as the profile maps them (#865); other controls are inert.
       const action = this.#profile.keys[String(event.control)];
       if (action === 'attention') this.#attentionPress(event.control);
       else if (action === 'back') this.#back();

@@ -7,7 +7,7 @@ import { readBoundedFile } from './files.js';
 /**
  * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app
  * shortcuts they use, colors, timings, big-wheel card navigation, task pages, black-key actions, the volume knob and
- * the model and effort knobs.
+ * the model, effort and next-step knobs.
  * Fields added after the first release are optional. It is data only: no URIs, paths, commands or package
  * identities, and key names come from an allowlist, so loading it can never run anything.
  */
@@ -50,6 +50,13 @@ export const MODEL_TURN = 44;
 export const MODEL_CLICK = 32;
 export const EFFORT_TURN = 41;
 export const EFFORT_CLICK = 29;
+/**
+ * Small knob 3 (`ENC_2`) picks Claude's suggested next step (owner decision on #744, 2026-10-06; #907). A turn moves
+ * keyboard focus across the suggestions above Claude's composer; a still click fills the highlighted one into the
+ * composer as a draft, or, with none highlighted, accepts Claude's ghost text. It never sends.
+ */
+export const NEXT_TURN = 42;
+export const NEXT_CLICK = 30;
 
 /** The ten second-row black keys (#865), which the optional `keys` map can give an action. */
 export const BLACK_KEYS: readonly number[] = Object.freeze(Array.from({ length: 10 }, (_, i) => 16 + i));
@@ -81,7 +88,10 @@ export interface VolumeSettings {
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = Object.freeze({ stepCounts: 1, invert: false });
 /** How soon a second Attention click moves on to the next waiting task instead of the earliest again. */
 export const DEFAULT_ATTENTION_REPEAT_MS = 4000;
-/** How long an open model menu, effort slider or picker stays open after the knob's last turn before the bridge closes it. */
+/**
+ * How long an open model menu, effort slider or picker, or a highlighted next step, stays after the knob's last turn
+ * before the bridge closes it.
+ */
 export const DEFAULT_MENU_TIMEOUT_MS = 5000;
 
 export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
@@ -137,12 +147,22 @@ export interface EffortKnobSettings {
   /** False: clockwise raises the effort. */
   readonly invert: boolean;
 }
+/** Knob 3, the next-step knob (#907). */
+export interface NextStepKnobSettings {
+  /** Encoder counts per suggestion step; the count restarts on a direction reversal. */
+  readonly stepCounts: number;
+  /** False: clockwise moves to the next suggestion. */
+  readonly invert: boolean;
+  /** How long knob 3 must be still before its click fills a draft. */
+  readonly clickStillMs: number;
+}
 /**
- * Knobs 1-3 have not been measured on the device, so both knobs step once per `DEFAULT_CARD_STEP_COUNTS` counts, the
- * conservative default knob 4 pages with: a light touch never changes a setting. #745 measures them.
+ * Knobs 1-3 have not been measured on the device, so each steps once per `DEFAULT_CARD_STEP_COUNTS` counts, the
+ * conservative default knob 4 pages with: a light touch never changes a setting or a highlight. #745 measures them.
  */
 export const DEFAULT_MODEL_SETTINGS: ModelKnobSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false, clickStillMs: 250 });
 export const DEFAULT_EFFORT_SETTINGS: EffortKnobSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false });
+export const DEFAULT_NEXT_STEP_SETTINGS: NextStepKnobSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false, clickStillMs: 250 });
 
 export const DEFAULT_PAGE_SETTINGS: PageSettings = Object.freeze({ count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS, attentionClick: true });
 const PAGE_BOUNDS: Record<'count' | 'stepCounts', [number, number]> = { count: [1, 8], stepCounts: [1, 96] };
@@ -232,6 +252,8 @@ export interface RoutingProfile {
    */
   readonly model: ModelKnobSettings | null;
   readonly effort: EffortKnobSettings | null;
+  /** Knob 3 picks Claude's next steps (#907). Optional in the file, with the same rule as `model` and `effort`. */
+  readonly nextSteps: NextStepKnobSettings | null;
   readonly brightnessPercent: number;
   readonly timing: Readonly<RoutingTiming>;
   /** Both clients' UI selectors and links depend on the client version; an unlisted or unknown version disables that client. */
@@ -450,14 +472,20 @@ function volume(value: unknown, controls: RoutingProfile['controls'] | undefined
   return { ...DEFAULT_VOLUME_SETTINGS, ...value as Partial<VolumeSettings> };
 }
 
+/** Each small knob section's controls and its knob number. */
+const KNOB_CONTROLS: Readonly<Record<'model' | 'effort' | 'nextSteps', readonly [turn: number, click: number, knob: number]>> = {
+  model: [MODEL_TURN, MODEL_CLICK, 1], effort: [EFFORT_TURN, EFFORT_CLICK, 2], nextSteps: [NEXT_TURN, NEXT_CLICK, 3],
+};
+
 /**
- * Knob 1 (model) or knob 2 (effort), #906. Like the volume knob, an earlier profile without the section that maps the
- * knob's turn (as `controls.scroll`) or click (as Record or Back) keeps that mapping and the knob is off (null).
+ * Knob 1 (model), knob 2 (effort), #906, or knob 3 (next steps), #907. Like the volume knob, an earlier profile without
+ * the section that maps the knob's turn (as `controls.scroll`) or click (as Record or Back) keeps that mapping and the
+ * knob is off (null).
  */
-function knob<T extends ModelKnobSettings | EffortKnobSettings>(name: 'model' | 'effort', value: unknown, controls: RoutingProfile['controls'] | undefined,
-  defaults: T, issues: Issues): T | null | undefined {
+function knob<T extends ModelKnobSettings | EffortKnobSettings | NextStepKnobSettings>(name: 'model' | 'effort' | 'nextSteps', value: unknown,
+  controls: RoutingProfile['controls'] | undefined, defaults: T, issues: Issues): T | null | undefined {
   const path = `profile.${name}`;
-  const [turn, click] = name === 'model' ? [MODEL_TURN, MODEL_CLICK] : [EFFORT_TURN, EFFORT_CLICK];
+  const [turn, click, number] = KNOB_CONTROLS[name];
   const turnTaken = controls?.scroll === turn;
   const clickTaken = controls?.record === click ? 'record' : controls?.back === click ? 'back' : undefined;
   if (value === undefined) return turnTaken || clickTaken ? null : defaults;
@@ -467,8 +495,8 @@ function knob<T extends ModelKnobSettings | EffortKnobSettings>(name: 'model' | 
   if ('stepCounts' in value && !isInt(value.stepCounts, 1, 96)) issues.push(`${path}.stepCounts: must be an integer 1-96`);
   if ('invert' in value && typeof value.invert !== 'boolean') issues.push(`${path}.invert: must be true or false`);
   if ('clickStillMs' in value && !isInt(value.clickStillMs, 0, 2000)) issues.push(`${path}.clickStillMs: must be an integer 0-2000 ms`);
-  if (turnTaken) issues.push(`profile.controls.scroll: ${turn} is knob ${name === 'model' ? 1 : 2}'s turn`);
-  if (clickTaken) issues.push(`profile.controls.${clickTaken}: ${click} is knob ${name === 'model' ? 1 : 2}'s click`);
+  if (turnTaken) issues.push(`profile.controls.scroll: ${turn} is knob ${number}'s turn`);
+  if (clickTaken) issues.push(`profile.controls.${clickTaken}: ${click} is knob ${number}'s click`);
   if (issues.length > before) return undefined;
   return { ...defaults, ...value as Partial<T> };
 }
@@ -528,7 +556,7 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (!isObject(input)) throw new ProfileError(['profile: must be a JSON object']);
   const value = structuredClone(input) as Record<string, unknown>;
   const required = ['schemaVersion', 'profileVersion', 'controls', 'shortcuts', 'scroll', 'colors', 'brightnessPercent', 'timing', 'qualifiedVersions'];
-  fields(value, 'profile', required, ['cards', 'pages', 'keys', 'volume', 'model', 'effort'], issues);
+  fields(value, 'profile', required, ['cards', 'pages', 'keys', 'volume', 'model', 'effort', 'nextSteps'], issues);
   if ('schemaVersion' in value && value.schemaVersion !== PROFILE_SCHEMA_VERSION) issues.push(`profile.schemaVersion: must be ${PROFILE_SCHEMA_VERSION}`);
   if ('profileVersion' in value && !isInt(value.profileVersion, 0, 0xffffffff)) issues.push('profile.profileVersion: must be an integer 0-4294967295');
   if ('brightnessPercent' in value && !isInt(value.brightnessPercent, 0, 100)) issues.push('profile.brightnessPercent: must be an integer 0-100');
@@ -542,6 +570,7 @@ export function validateProfile(input: unknown): RoutingProfile {
     volume: undefined as VolumeSettings | null | undefined,
     model: undefined as ModelKnobSettings | null | undefined,
     effort: undefined as EffortKnobSettings | null | undefined,
+    nextSteps: undefined as NextStepKnobSettings | null | undefined,
     colors: 'colors' in value ? colors(value.colors, issues) : undefined,
     timing: 'timing' in value ? timing(value.timing, issues) : undefined,
     qualifiedVersions: 'qualifiedVersions' in value ? versions(value.qualifiedVersions, issues) : undefined,
@@ -552,6 +581,7 @@ export function validateProfile(input: unknown): RoutingProfile {
     parts.volume = volume(value.volume, parts.controls, issues);
     parts.model = knob('model', value.model, parts.controls, DEFAULT_MODEL_SETTINGS, issues);
     parts.effort = knob('effort', value.effort, parts.controls, DEFAULT_EFFORT_SETTINGS, issues);
+    parts.nextSteps = knob('nextSteps', value.nextSteps, parts.controls, DEFAULT_NEXT_STEP_SETTINGS, issues);
   }
   if (parts.pages && parts.colors && parts.colors.pages.length < parts.pages.count) {
     issues.push(`profile.colors.pages: must list a color for each of the ${parts.pages.count} pages`);
@@ -562,6 +592,7 @@ export function validateProfile(input: unknown): RoutingProfile {
     controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, cards: { ...parts.cards! }, pages: { ...parts.pages! }, colors: parts.colors!,
     keys: { ...parts.keys! }, volume: parts.volume ? { ...parts.volume } : null,
     model: parts.model ? { ...parts.model } : null, effort: parts.effort ? { ...parts.effort } : null,
+    nextSteps: parts.nextSteps ? { ...parts.nextSteps } : null,
     timing: parts.timing!,
     qualifiedVersions: parts.qualifiedVersions!,
   });

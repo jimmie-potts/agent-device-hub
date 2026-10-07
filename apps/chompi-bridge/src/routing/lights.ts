@@ -56,17 +56,18 @@ export interface RenderInput {
   keyErrors?: ReadonlySet<number>;
   /** A volume key ignored during Record or failed: the volume knob's LED shows the error color. */
   volumeError?: boolean;
-  /** What knob 1's and knob 2's LEDs show (#906); a knob without an entry is off. */
+  /** What the LEDs of knobs 1-3 show (#906, #907); a knob without an entry is off. */
   knobs?: Partial<Record<SettingKnob, KnobLight>>;
   pulseOn: boolean;
 }
 
-/** The model knob (knob 1) and the effort knob (knob 2), #906. */
-export type SettingKnob = 'model' | 'effort';
+/** The model knob (knob 1) and the effort knob (knob 2), #906, and the next-step knob (knob 3), #907. */
+export type SettingKnob = 'model' | 'effort' | 'next';
 /**
- * A setting knob's LED: `open` (the `active` color) while its menu, slider or picker is open, then for the error flash
- * time `applied` (the `applied` color) for a change the client confirmed, `unverified` (the `unknown` color) for one it
- * could not confirm, and `error` for a refusal, a mismatch, an unsupported setting or the end of the range.
+ * A small knob's LED: `open` (the `active` color) while its menu, slider or picker is open or a next step is
+ * highlighted, then for the error flash time `applied` (the `applied` color) for a change the client confirmed or a
+ * filled draft, `unverified` (the `unknown` color) for one that could not be confirmed, and `error` for a refusal, a
+ * mismatch, an unsupported setting or the end of the range.
  */
 export type KnobLight = 'open' | 'applied' | 'unverified' | 'error';
 
@@ -78,8 +79,8 @@ export const WHEEL_LEDS: readonly number[] = [30, 31];
 export const PAGE_LED = 29;
 /** The volume knob's LED (protocol LED index 34): it lights only to flash an ignored or failed volume key (#865). */
 export const VOLUME_LED = 34;
-/** Knob 1's and knob 2's LEDs (protocol LED indices 26 and 27): the model and effort knobs (#906). */
-export const KNOB_LEDS: Readonly<Record<SettingKnob, number>> = Object.freeze({ model: 26, effort: 27 });
+/** The LEDs of knobs 1-3 (protocol LED indices 26-28): the model and effort knobs (#906) and the next-step knob (#907). */
+export const KNOB_LEDS: Readonly<Record<SettingKnob, number>> = Object.freeze({ model: 26, effort: 27, next: 28 });
 
 /** The black-key controls the profile gives `action`, in control order. */
 export function keyControls(keys: Readonly<Partial<Record<string, string>>>, action: string): number[] {
