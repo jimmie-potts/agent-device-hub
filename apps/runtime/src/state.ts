@@ -84,7 +84,11 @@ export async function prepareStateDirectory(dir: string): Promise<string> {
 
 /**
  * Opens a module's own database, `modules/<name>.sqlite` in the state directory, creating it owner-only. Writes are
- * durable when their transaction commits.
+ * durable when their transaction commits: the database is in WAL mode at `synchronous = FULL`, so each commit syncs its
+ * log once before it returns (Hub #972). `NORMAL` would skip that sync and let a power loss or a stopped WSL VM undo a
+ * committed outcome or an accepted command's record, which ADR 0012 rules out. SQLite creates the log and its index,
+ * `<name>.sqlite-wal` and `<name>.sqlite-shm`, with the file's own permissions. A copy of the file alone, while the
+ * module runs or after a crash, may miss commits still in the log; a clean stop checkpoints them into the file.
  */
 export function openModuleDatabase(stateDir: string, name: string): DatabaseSync {
   const dir = join(stateDir, 'modules');
@@ -98,7 +102,7 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
     closeSync(descriptor);
   }
   const database = new DatabaseSync(file);
-  database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
+  database.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
   return database;
 }
 

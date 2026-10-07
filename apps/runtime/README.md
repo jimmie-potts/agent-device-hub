@@ -75,9 +75,11 @@ and exits 1, and the service manager restarts it whole.
   messages (through the SDK's outbox), the published records, a history row for
   each occurrence and removal, and the intake's `(source, id)`. The messages go
   out after the commit, in order: a session's end, then its removals, then
-  states, then the other occurrences. A record carries the core's revision of
-  its last change; the core keeps one revision counter for every family it
-  serves.
+  states, then the other occurrences. Once they have gone out, the outbox
+  forgets them in one more commit, without its own sync (Hub #972). A crash
+  between the sends and that commit sends them again at the next start, with
+  the same `id`s. A record carries the core's revision of its last change; the
+  core keeps one revision counter for every family it serves.
 - **Failures.** A full disk refuses the change before anything reports it
   accepted: nothing commits, nothing is published, and the intake is logged
   `rejected` with `capacity` (an acknowledgment is refused with `capacity`).
@@ -580,7 +582,15 @@ checkout, a path with a link anywhere along it (including a dangling one), a
 file, and a directory that others can open. It checks the whole path before it
 creates anything, so a refused path creates nothing, and it never creates
 through a link. Each module's SQLite file is `modules/<name>.sqlite` in it, mode
-600, created when the module first calls `database()`. Beside it, the module's
+600, created when the module first calls `database()`. It is in WAL mode at
+`synchronous = FULL` (Hub #972): each commit is durable when it returns, with one
+sync of the log, `<name>.sqlite-wal`, which SQLite creates beside the file with
+its index, `<name>.sqlite-shm`, and the same mode. A clean stop checkpoints the
+log into the file and removes it. While a module runs, or after a crash, the
+file alone may lack commits that are still in the log, so a copy takes the
+`-wal` file too, or uses SQLite's backup. `synchronous = NORMAL` would skip the
+sync, and a power loss or a stopped WSL VM could then undo a committed outcome
+or an accepted command's record, which ADR 0012 rules out. Beside it, the module's
 private folder `modules/<name>/` is created with mode 700 when the module first
 calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
@@ -804,6 +814,25 @@ publishes 2,000 messages of 64 KiB with distinct content. It collects garbage
 before each sample and reads the runtime's memory before the messages, while
 the reader is stalled, and once the 30 s stall limit has ended the stream.
 `--messages`, `--kib`, `--stall-s` and `--runs` change it.
+
+## Commits
+
+`node apps/runtime/scripts/measure-commits.mjs` measures the SQLite commits the
+runtime makes on its event loop, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123)
+and [#972](https://github.com/jimmie-potts/agent-device-hub/issues/972): the
+commits per observation or command, the time the loop spends in SQLite and the
+event-loop delay. Its `intake` scenario runs the core alone and publishes hooks'
+lifecycle observations at 20 a second for 30 s; `lifx` sends 20 power-set
+commands to the LIFX module on simulated bulbs, each waiting for its outcome;
+and `outbox` runs the SDK's outbox alone, as a module that stores a pending
+state and then a state, an outcome and a pending count, with a stand-in core
+acknowledging each outcome. `--scenario`, `--seconds`, `--rate`, `--commands`
+and `--runs` change them; each runs three times. It counts a `COMMIT`, or a
+write outside a transaction that changed a row, on a module database, by
+wrapping `node:sqlite` in its own process. The event-loop delay is meaningful
+for `intake`, whose load is paced by timers; the other two run as chains of
+promises that the delay monitor does not see. It needs a build and a TMPDIR
+outside every Git checkout.
 
 ## Fixture modules
 

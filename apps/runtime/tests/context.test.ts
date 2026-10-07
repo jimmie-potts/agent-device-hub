@@ -132,16 +132,22 @@ it('a module timer needs a whole delay that a timer can wait', async context => 
 
 it('a module gets its own SQLite file in the runtime\'s private state directory, kept across restarts', async context => {
   const dir = await stateDir(context);
+  let settings: unknown;
   const writer = fixture('notes', ({database}) => {
     const db = database();
     assert.equal(database(), db, 'one connection per module');
+    // WAL with a sync at every commit (Hub #972): a commit is durable when it returns, with one sync of the log.
+    const pragma = (name: string): unknown => Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0];
+    settings = {journal: pragma('journal_mode'), synchronous: pragma('synchronous'), foreignKeys: pragma('foreign_keys')};
     db.exec('CREATE TABLE notes (text TEXT)');
     db.prepare('INSERT INTO notes VALUES (?)').run('kept');
   });
   const quiet = fixture('quiet');
   const first = await startRuntime({modules: [writer, quiet], port: 0, stateDir: dir, log: () => {}});
   const file = join(dir, 'modules', 'notes.sqlite');
+  assert.deepEqual(settings, {journal: 'wal', synchronous: 2, foreignKeys: 1}, 'WAL, synchronous FULL and foreign keys');
   assert.equal((await stat(file)).mode & 0o777, 0o600);
+  for (const companion of [`${file}-wal`, `${file}-shm`]) assert.equal((await stat(companion)).mode & 0o777, 0o600, `${companion} is as private as the file`);
   assert.equal((await stat(join(dir, 'modules'))).mode & 0o777, 0o700);
   await assert.rejects(access(join(dir, 'modules', 'quiet.sqlite')), 'a module that never asks gets no file');
   await first.stop();

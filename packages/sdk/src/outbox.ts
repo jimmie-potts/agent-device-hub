@@ -8,6 +8,12 @@
 // a restart replays no state or occurrence, and a command never goes in. Given the module's log and tracing (Hub #949),
 // the outbox records an outcome's first publication once and a deferral once per run of refusals, and a publish span
 // for each outcome it sends.
+//
+// Each publication batch's bookkeeping, forgetting what went out and marking the outcomes, commits once, after its sends
+// settle (Hub #972): a commit is a sync to disk on the event loop. A crash after a send and before that commit sends the
+// batch again at the next start, with the same `id`s. When the database is in WAL mode, the bookkeeping and
+// acknowledgments commit without their own sync; a power loss can only undo them, which sends again and never loses a
+// message. The work's own commit keeps the module's level.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MAX_DETAIL, errorBody, type ErrorCode, type Message, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
@@ -59,6 +65,8 @@ export type AddMessage = <T extends object>(key: string, draft: Draft<T>, option
 export type Synchronous<R> = R extends PromiseLike<unknown> ? never : R;
 
 type Row = {seq: number; routing_key: string; message: string; kind: string; published: number};
+/** A row that went out in the current publication batch, with its message and stored trace context. */
+type Sent = {row: Row; message: Message; stored: TraceContext};
 type Level = 'info' | 'warn';
 const OUTCOMES: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
 const AWAITING = 'committed, awaiting publication';
@@ -91,6 +99,8 @@ export class Outbox {
   readonly #forget: StatementSync;
   readonly #acknowledge: StatementSync;
   readonly #waiting: StatementSync;
+  readonly #journalMode: StatementSync;
+  readonly #synchronous: StatementSync;
   /** Sends run one at a time, so a message never goes out twice in one run or out of order. */
   #sending: Promise<unknown> = Promise.resolve();
 
@@ -119,6 +129,8 @@ export class Outbox {
     this.#forget = database.prepare('DELETE FROM bunny_outbox WHERE seq = ?');
     this.#acknowledge = database.prepare('DELETE FROM bunny_outbox WHERE id = ? AND kind = \'outcome\'');
     this.#waiting = database.prepare('SELECT COUNT(*) AS waiting FROM bunny_outbox WHERE published = 0');
+    this.#journalMode = database.prepare('PRAGMA journal_mode');
+    this.#synchronous = database.prepare('PRAGMA synchronous');
   }
 
   /**
@@ -166,7 +178,8 @@ export class Outbox {
    */
   acknowledge(id: string): boolean {
     if (!this.#database.isOpen) return false;
-    return Number(this.#acknowledge.run(id).changes) > 0;
+    // Undoing it only sends the outcome again at the next start, and the core acknowledges a duplicate again.
+    return this.#relaxed(() => Number(this.#acknowledge.run(id).changes) > 0);
   }
 
   /** Commits `work` and its messages; `own` receives the id of each message this transaction stored. */
@@ -211,12 +224,15 @@ export class Outbox {
 
   /**
    * Publishes the rows `query` selects, one after another. An outcome is kept until acknowledged; any other row is
-   * deleted once it has gone out. A refusal stops the send, and the rest stay stored. `own` holds the ids the calling
-   * transaction stored, whose publish spans continue their stored context; everything else is linked to it.
+   * deleted once it has gone out. A refusal stops the send, and the rest stay stored. Once the sends settle, what went
+   * out is marked or forgotten in one commit, refused or not, and only then is an outcome's first publication recorded.
+   * `own` holds the ids the calling transaction stored, whose publish spans continue their stored context; everything
+   * else is linked to it.
    */
   #send(query: StatementSync, own: ReadonlySet<string> = new Set()): Promise<number> {
     const sending = this.#sending.then(async () => {
-      let sent = 0;
+      const sent: Sent[] = [];
+      let refusal: {error: unknown} | undefined;
       for (const row of query.all() as Row[]) {
         const message = JSON.parse(row.message) as Message;
         const stored = {traceparent: message.traceparent};
@@ -228,20 +244,78 @@ export class Outbox {
           await this.#sdk.publishMessage(row.routing_key, message);
         } catch (error) {
           span?.end('error');
-          throw error;
+          refusal = {error};
+          break;
         }
         span?.end();
-        if (row.kind === 'outcome') this.#published.run(row.seq);
-        else this.#forget.run(row.seq);
-        // An outcome's first publication is recorded once; a replay of one already published is not.
-        if (row.kind === 'outcome' && row.published === 0) this.#publication(message, stored);
-        sent += 1;
+        sent.push({row, message, stored});
       }
+      try {
+        this.#settle(sent);
+      } catch (error) {
+        // Nothing was marked: what went out goes out again with the next send or start, with the same ids.
+        throw refusal === undefined ? error : refusal.error;
+      }
+      // An outcome's first publication is recorded once; a replay of one already published is not.
+      for (const {row, message, stored} of sent) if (row.kind === 'outcome' && row.published === 0) this.#publication(message, stored);
+      if (refusal !== undefined) throw refusal.error;
       this.#refused = undefined;
-      return sent;
+      return sent.length;
     });
     this.#sending = sending.catch(() => {});
     return sending;
+  }
+
+  /**
+   * Commits one publication batch's bookkeeping: each state, removal or occurrence that went out is deleted, and each
+   * outcome that went out for the first time is marked published. An outcome already marked needs no write, so a
+   * republish of outcomes the core has not acknowledged commits nothing. Inside a transaction someone else holds open,
+   * the rows join it, as a single statement would.
+   */
+  #settle(sent: readonly Sent[]): void {
+    const changed = sent.filter(({row}) => row.kind !== 'outcome' || row.published === 0);
+    if (changed.length === 0) return;
+    const database = this.#database;
+    this.#relaxed(() => {
+      const ownTransaction = !database.isTransaction;
+      if (ownTransaction) database.exec('BEGIN IMMEDIATE');
+      try {
+        for (const {row} of changed) (row.kind === 'outcome' ? this.#published : this.#forget).run(row.seq);
+        if (ownTransaction) database.exec('COMMIT');
+      } catch (error) {
+        if (ownTransaction && database.isTransaction) {
+          try {
+            database.exec('ROLLBACK');
+          } catch {
+            // The connection's next transaction fails in turn; nothing was marked.
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Runs bookkeeping that only forgets or marks stored rows. In WAL mode, outside a transaction, it commits at
+   * `synchronous = NORMAL`, without its own sync, and the connection's level comes back at once, so the work's own
+   * commits keep the module's level. A later sync of the WAL, at the next commit at that level or a checkpoint, makes it
+   * durable with everything before it; a power loss before then can only undo it, which leaves the rows stored to go
+   * out again. In rollback journal mode NORMAL saves less, and a power loss at the wrong moment can corrupt the file, so
+   * the level stays as it is there.
+   */
+  #relaxed<R>(work: () => R): R {
+    const database = this.#database;
+    if (database.isTransaction) return work();
+    const mode = (this.#journalMode.get() as {journal_mode?: unknown} | undefined)?.journal_mode;
+    const level = Number((this.#synchronous.get() as {synchronous?: unknown} | undefined)?.synchronous);
+    // NORMAL is 1; FULL (2) and EXTRA (3) sync each commit.
+    if (mode !== 'wal' || !(level > 1)) return work();
+    database.exec('PRAGMA synchronous = NORMAL');
+    try {
+      return work();
+    } finally {
+      database.exec(`PRAGMA synchronous = ${String(level)}`);
+    }
   }
 
   /**
