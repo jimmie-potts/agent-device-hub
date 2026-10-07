@@ -150,7 +150,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-core, dashboard and App verification jobs' fifteen. Branch pushes do not duplicate PR checks.
+core and dashboard jobs' fifteen and the App verification job's twenty-five. Branch pushes do not duplicate PR checks.
 The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
 because GitHub keeps the manually disabled state of the retired `ci.yml` and
 `work-guide.yml` copies, whose earlier billing-blocked runs do not validate a
