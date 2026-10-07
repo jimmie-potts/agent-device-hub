@@ -154,6 +154,7 @@ carries a device-specific payload: modules define those.
 | occurrence | `lifecycle` (a hook observation for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
+| occurrence | `outcome-recorded` (the core's outcome acknowledgment) | `org.bunny.outcome.recorded` |
 | command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
 | command | `notice-acknowledge`, `playback-control` | `org.bunny.notice.acknowledge.requested`, `org.bunny.playback.control.requested` |
 | command | `approval-recover` | `org.bunny.approval.recover.requested` |
@@ -195,6 +196,18 @@ The rules:
   admission, and never redirects or retries it. The record's `id`, and so the
   command's `subject`, is a routing ID.
 - A `moment-play` request's `subject` is the target device's ID.
+- `outcome-recorded` is the outcome acknowledgment
+  ([Hub #782](https://github.com/jimmie-potts/agent-device-hub/issues/782)): the
+  core tells a module that it recorded one of the module's outcomes, `{source, id}`,
+  on `bunny.event.outcome-recorded.<module>` (`outcomeRecordedKey(source)`), with
+  the outcome's message `id` as its `subject`. Only the core sends it
+  (`CORE_SOURCE`, `bunny/core`), after it committed the outcome and its
+  `(source, id)`, and again for each exact duplicate. A module's outbox forgets
+  the outcome only when the sender is the core.
+- `inbox-item` holds a failed or uncertain operation, a result a person must
+  decide on. A finished turn is never an inbox item: its unread state stays on
+  the session record, and #782 removed the turn-ended item, so the validator
+  refuses one with `invalid-message`.
 - A removal event, with reason `expired`, `retired` or `deleted`, drops an
   entity. A sync replaces the consumer's membership of the synced families.
 
@@ -204,9 +217,10 @@ for rules a schema cannot state. The core families use it to refuse:
 - a known parent in another provider, client, host or source, or with the same
   session ID (cross-source parentage);
 - known ordering whose `authority` is not the identity's `sourceId`;
-- a session `id` or `subject` that is not the identity key, an occurrence or a
-  turn-ended inbox item whose `session` is not, and a state event whose
-  `subject` is not its `id`;
+- a session `id` or `subject` that is not the identity key, an occurrence whose
+  `session` is not, and a state event whose `subject` is not its `id`;
+- an outcome acknowledgment from any source but the core, or whose `subject` is
+  not the outcome's `id`;
 - a session `generation` after its `revision`;
 - freshness that disagrees with the envelope `time`: `current` five minutes or
   more after the last evidence, or `uncertain` before that without a restart;
