@@ -71,10 +71,10 @@ export async function migrateLibrary(source: InstalledLibrary, destination: Dest
 
 /** Copies every file, a few at a time, and returns each one's path in the folder and SHA-256. */
 async function copyAll(source: InstalledLibrary, media: string): Promise<{path: string; sha256: string}[]> {
-  const queue = [...source.files];
+  let next = 0;
   const copied: {path: string; sha256: string}[] = [];
   const worker = async (): Promise<void> => {
-    for (let file = queue.shift(); file !== undefined; file = queue.shift()) copied.push(await copyOne(source, media, file));
+    for (let file = source.files[next++]; file !== undefined; file = source.files[next++]) copied.push(await copyOne(source, media, file));
   };
   await Promise.all(Array.from({length: COPIES}, worker));
   return copied;
