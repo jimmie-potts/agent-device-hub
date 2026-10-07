@@ -168,11 +168,11 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   with unknown playback, from each start until every speaker's first read has
   settled, so a playing card is neither removed nor pushed again across a
   restart, even when the speaker that plays answers after the other. A speaker
-  that misses its 1.5 s read deadline counts as not playing: if the other
-  reports another input, the card is removed, and pushed again once the speaker
-  answers and the gate opens. A record still `unavailable` 30 s after the start
-  removes the card. The module follows the record it is given; the window never
-  holds a card the record says has stopped.
+  whose first read fails, as when a call gets no answer within 1.5 s, counts as
+  not playing: if the other reports another input, the card is removed, and
+  pushed again once the speaker answers and the gate opens. A record still
+  `unavailable` 30 s after the start removes the card. The module follows the
+  record it is given; the window never holds a card the record says has stopped.
 
 ## Writes
 

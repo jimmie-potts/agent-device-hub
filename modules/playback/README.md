@@ -133,12 +133,14 @@ freshness by `availability`, never by the age of `observedAtMs`: the module
 publishes the change to `stale` and to `unavailable` when the last read crosses
 each threshold. Each start publishes a new `unavailable` revision and keeps it
 until every configured speaker's first read has settled, by answering or by
-failing; a speaker that does not answer fails at its call's 1.5 s deadline. Then
-it publishes what those reads present. A speaker that answers first never stands
-in for one still being read, so after a restart an HT-A9 on another input never
-publishes `inactive` while the Move, read more slowly, plays. A speaker that
-does not answer by its deadline releases the record with what the others report:
-with no observation since the start, it is `unavailable` and ranks last
+failing. A read fails at the latest when one of its calls gets no answer within
+that call's 1.5 s deadline, so the HT-A9's one-call read settles within 1.5 s
+and the Move's three-call read within about 4.5 s. Then the module publishes
+what those reads present. A speaker that answers first never stands in for one
+still being read, so after a restart an HT-A9 on another input never publishes
+`inactive` while the Move, read more slowly, plays. A speaker whose first read
+failed has no observation since the start, so it is `unavailable` and ranks
+last, and the record shows what the others report
 ([#930](https://github.com/jimmie-potts/agent-device-hub/issues/930)).
 
 ### Which speaker is presented
@@ -237,7 +239,8 @@ reply can take about 6 s. A requester whose deadline passes first gets
 `uncertain-result` from the SDK, and the outcome still follows. A command whose
 deadline passed while it waited for a read is never sent: the module records it,
 and its outcome is `failed` with evidence `none` and `expired`, the definitive
-answer after the SDK's `uncertain-result`.
+answer after the SDK's `uncertain-result`. A stop ends either wait at once, and
+the waiting command is refused `unavailable`.
 
 The module handles one command at a time: the SDK queues a second command until
 the first has its outcome. It is then admitted against the speaker presented at
