@@ -48,18 +48,23 @@ export function unreadSessions(text: string): Set<string> | null {
 /** The file's version: its modification time in nanoseconds and its size. */
 const stampOf = (info: {mtimeNs: bigint; size: bigint}): string => `${info.mtimeNs}:${info.size}`;
 
-/** The marker's bytes, read through one descriptor without blocking on a special file, or undefined when it outgrew the bound. */
+/**
+ * The marker's bytes, read through one descriptor without blocking on a special file, or undefined when it is not a
+ * regular file, is over the bound or grew while it was read. The buffer fits the file, so a read holds no more memory
+ * than the marker needs.
+ */
 function readBounded(path: string): Buffer | undefined {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
-    if (!fstatSync(fd).isFile()) return undefined;
-    const buffer = Buffer.alloc(MAX_MARKER_BYTES + 1);
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.size > MAX_MARKER_BYTES) return undefined;
+    const buffer = Buffer.alloc(info.size + 1);
     let size = 0;
     for (;;) {
       const read = readSync(fd, buffer, size, buffer.length - size, null);
       if (read === 0) return buffer.subarray(0, size);
       size += read;
-      if (size > MAX_MARKER_BYTES) return undefined;
+      if (size > info.size) return undefined;
     }
   } finally {
     closeSync(fd);

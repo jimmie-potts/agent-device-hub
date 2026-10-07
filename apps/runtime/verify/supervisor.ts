@@ -27,7 +27,7 @@ import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
-import {simulateMarker, simulatePlayback} from '../tests/scenarios/parts.js';
+import {simulateMarker, simulatePlayback, writeProducer} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
@@ -37,7 +37,7 @@ import {
   type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {BurstLimit} from './restarts.js';
-import {RUN_FILE, credentialsOf, homeOf, partTokensOf, stateDirOf, type RunFile} from './seed.js';
+import {RUN_FILE, configDirOf, credentialsOf, homeOf, partTokensOf, stateDirOf, type RunFile} from './seed.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const CHILD = fileURLToPath(new URL('./child.js', import.meta.url));
@@ -304,6 +304,9 @@ async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
   runtimePort = Number(new URL(runtimeUrl).port);
   observedHome = environmentOf(current?.pid, 'HOME');
+  // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
+  const {producer} = JSON.parse(readFileSync(partTokensOf(dataDir), 'utf8')) as {producer?: unknown};
+  if (typeof producer === 'string') await writeProducer(configDirOf(dataDir), runtimePort, producer);
 }
 
 const startFailed = (error: unknown): void => {

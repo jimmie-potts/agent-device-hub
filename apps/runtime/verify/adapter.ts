@@ -17,9 +17,9 @@ import {
   ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/catalog.js';
-import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, runHookScript, scenarioValidator, sourceOf, writeProducer} from '../tests/scenarios/parts.js';
+import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
-import {configDirOf, partTokensOf} from './seed.js';
+import {partTokensOf, producerOf} from './seed.js';
 
 /** Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. */
 export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed};
@@ -110,15 +110,11 @@ class Run implements RunHarness {
   #refreshing: Promise<void> = Promise.resolve();
 
   readonly #client: GatewayClient;
-  /** The agent hooks' producer token (Hub #926), and the producer file the adapter writes for the run's port. */
-  readonly #producer: string;
-  #producerFile: string | undefined;
 
   constructor(target: RunTarget, tokens: PartTokens) {
     this.#target = target;
     this.#grants = new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
     this.#origin = new URL(target.url).origin;
-    this.#producer = tokens.producer;
     this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
     this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler()}]));
@@ -244,15 +240,15 @@ class Run implements RunHarness {
   }
 
   /**
-   * Runs the hook script against the run's runtime. While it runs `stopped`, the supervisor holds the runtime stopped:
-   * the adapter asks for a restart that waits before it starts the runtime again, and runs the hook once the runtime's
-   * port refuses connections.
+   * Runs the hook script against the run's runtime, with the producer file the supervisor wrote. While it runs
+   * `stopped`, the supervisor holds the runtime stopped: the adapter asks for a restart that waits before it starts the
+   * runtime again, and runs the hook once the runtime's port refuses connections.
    */
   async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
     await this.#actions;
-    this.#producerFile ??= await writeProducer(configDirOf(this.#target.dataDir), Number(new URL(this.#origin).port), this.#producer);
+    const producer = producerOf(this.#target.dataDir);
     if (runtime === 'running') {
-      const ran = await runHookScript(this.#producerFile, payload);
+      const ran = await runHookScript(producer, payload);
       await this.#refresh();
       return ran;
     }
@@ -264,7 +260,7 @@ class Run implements RunHarness {
       if (Date.now() > deadline) throw new Error('the runtime did not stop');
       await sleep(25);
     }
-    const ran = await runHookScript(this.#producerFile, payload);
+    const ran = await runHookScript(producer, payload);
     await restarted;
     // The restart ended the browser's session with the runtime that opened it.
     this.#client.forget();

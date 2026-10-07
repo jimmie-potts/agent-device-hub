@@ -47,6 +47,11 @@ export const credentialsOf = (dataDir: string): string => join(configDirOf(dataD
  * their digests. Owner-only, and never printed.
  */
 export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDir), 'part-tokens.json');
+/**
+ * The agent hooks' producer file (Hub #926), unchanged 1.x, which the supervisor writes once the runtime's port is
+ * known and the hook script takes as its argument: `<data>/config/producer/producer.json`.
+ */
+export const producerOf = (dataDir: string): string => join(configDirOf(dataDir), 'producer', 'producer.json');
 
 /** Where the `pixoo-migrated` run keeps its synthetic Pixoo library, `<data>/pixoo-library` (Hub #931). */
 export const pixooLibraryOf = (dataDir: string): string => join(dataDir, 'pixoo-library');
