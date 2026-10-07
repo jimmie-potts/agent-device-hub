@@ -1,4 +1,10 @@
-// The watchdog's decision, kept apart from its thread so that it can be tested with chosen times.
+// The watchdog's decision, kept apart from its thread so that it can be tested with chosen times, and the slots of the
+// memory both threads share. The thread imports this file and record.ts only, so it never loads the SDK.
+
+/** The shared slot the main thread counts its beats in. */
+export const BEATS = 0;
+/** The shared slot the main thread sets to stop the watchdog. */
+export const STOP = 1;
 
 /** What the watchdog remembers: the last beat count it saw, and since when, in its own monotonic milliseconds. */
 export type LagState = {seen: number; since: number};

@@ -1,10 +1,12 @@
 // Shared helpers for the runtime suites: small in-test fixture modules, private state directories and runtimes that stop
 // after their test. These helpers serve only this package's tests.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {mkdtemp, realpath, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {parseRecord} from '@jimmie-potts/bunny-observability';
 import type {BunnyModule, CommandDraft, Draft, ModuleContext, Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, startRuntime, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth, type RuntimeOptions} from '../src/index.js';
 
@@ -42,13 +44,28 @@ export function contextOf(module: Fixture): ModuleContext {
   return module.context;
 }
 
-/** A runtime on a free loopback port with a fresh state directory, collecting its log records. It stops after the test. */
+/** The runtime package's version, which its records carry as `service.version`. */
+export const RUNTIME_PACKAGE_VERSION = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {version: string}).version;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Fails unless each record, as the one JSON line the runtime writes, passes the diagnostic contract's validator. */
+export function assertContractRecords(records: readonly LogRecord[]): void {
+  for (const record of records) assert.equal(parseRecord(JSON.stringify(record)).ok, true, `${record.event_name} is a contract record`);
+}
+
+/**
+ * A runtime on a free loopback port with a fresh state directory, collecting its log records. It stops after the test,
+ * and every record it wrote must then pass the diagnostic contract's validator.
+ */
 export async function run(
   context: TestContext, options: Partial<RuntimeOptions> & {modules: readonly BunnyModule[]},
 ): Promise<{runtime: Runtime; logs: LogRecord[]}> {
   const logs: LogRecord[] = [];
   const runtime = await startRuntime({port: 0, stateDir: await stateDir(context), log: record => { logs.push(record); }, ...options});
-  context.after(() => runtime.stop());
+  context.after(async () => {
+    await runtime.stop();
+    assertContractRecords(logs);
+  });
   return {runtime, logs};
 }
 

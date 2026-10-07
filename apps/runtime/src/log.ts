@@ -1,13 +1,19 @@
-// The runtime's log records: one JSON object per line, with OpenTelemetry field names, carrying the trace and span IDs of
-// the work being handled (ADR 0012, Observability). A failing sink never changes what the runtime does.
+// The runtime's log records: diagnostic-contract records (ADR 0012, Observability), one JSON object per line, carrying
+// the trace and span IDs of the work being handled. A failing sink never changes what the runtime does.
+import {randomUUID} from 'node:crypto';
 import {SdkError, traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
-import {LEVELS, record, type LogLevel, type LogRecord} from './record.js';
+import {LEVELS, record, runtimeResource, type LogLevel, type LogRecord, type Resource} from './record.js';
 
-export type {LogLevel, LogRecord} from './record.js';
+export type {Environment, LogLevel, LogRecord, Resource} from './record.js';
 
 export type LogSink = (record: LogRecord) => void;
 /** A logger that can also report the runtime's own fatal failures. */
 export type RuntimeLogger = Logger & {fatal(event: string, fields?: LogFields, trace?: TraceContext): void};
+/** Records a writer passed to its sink, records the contract refused, and records its sink threw on. */
+export type LogCounts = {written: number; dropped: number; failed: number};
+
+/** This process's neutral `service.instance.id`. Every writer in the process and the watchdog's thread share it. */
+export const INSTANCE_ID = randomUUID();
 
 // A type or code that is a plain identifier; anything else is not stringified into a record.
 const IDENTIFIER = /^[A-Za-z0-9_.$-]{1,64}$/;
@@ -25,28 +31,67 @@ export function errorFields(error: unknown): Record<string, string> {
   };
 }
 
-/** Writes each record as one JSON line on stderr, where the service manager's journal keeps it. */
-export const stderrSink: LogSink = entry => { process.stderr.write(`${JSON.stringify(entry)}\n`); };
+let stderrGuarded = false;
+/**
+ * Writes each record as one JSON line on stderr, where the service manager's journal keeps it. A stderr that closes, as
+ * when its reader goes away, reports EPIPE as a stream error; that error is dropped, so it never ends the runtime.
+ */
+export const stderrSink: LogSink = entry => {
+  if (!stderrGuarded) {
+    stderrGuarded = true;
+    process.stderr.on('error', () => {});
+  }
+  process.stderr.write(`${JSON.stringify(entry)}\n`);
+};
+
+const saturating = (value: number): number => Math.min(Number.MAX_SAFE_INTEGER, value + 1);
 
 export class LogWriter {
   readonly #sink: LogSink;
   readonly #minimum: number;
   readonly #clock: Clock;
+  readonly #resource: Resource;
+  #written = 0;
+  #dropped = 0;
+  #failed = 0;
 
-  constructor(sink: LogSink, minimum: LogLevel, clock: Clock) {
+  /** `resource` defaults to this process's instance in the `development` environment. */
+  constructor(sink: LogSink, minimum: LogLevel, clock: Clock, resource: Resource = runtimeResource('development', INSTANCE_ID)) {
     this.#sink = sink;
     this.#minimum = LEVELS.indexOf(minimum);
     this.#clock = clock;
+    this.#resource = resource;
+  }
+
+  /** The resource every record of this writer carries. */
+  get resource(): Resource {
+    return this.#resource;
+  }
+
+  counts(): LogCounts {
+    return {written: this.#written, dropped: this.#dropped, failed: this.#failed};
   }
 
   /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
   logger(scope: string, base: LogFields = {}): RuntimeLogger {
     const at = (level: LogLevel) => (event: string, fields: LogFields = {}, trace?: TraceContext): void => {
       if (LEVELS.indexOf(level) < this.#minimum) return;
+      let entry: LogRecord | undefined;
       try {
-        this.#sink(record(level, scope, event, {...fields, ...base}, this.#clock.now(), trace === undefined ? undefined : traceFields(trace)));
+        entry = record(level, scope, event, {...fields, ...base}, this.#clock.now(), this.#resource, trace === undefined ? undefined : traceFields(trace));
+      } catch {
+        entry = undefined;
+      }
+      if (entry === undefined) {
+        this.#dropped = saturating(this.#dropped);
+        return;
+      }
+      try {
+        this.#sink(entry);
+        this.#written = saturating(this.#written);
       } catch {
         // Telemetry is never acknowledged: a sink that fails loses the record, and the work goes on.
+        this.#failed = saturating(this.#failed);
       }
     };
     return {debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error'), fatal: at('fatal')};

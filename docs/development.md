@@ -754,8 +754,10 @@ start the runtime in child processes, as the service manager would; one kills it
 between the fixture lamp's commit and publish. The fixture lamp and chime run the
 module test kit. Some start the runtime with `--edge` and `--simulate`: a remote
 part with a run-generated grant reaches its SDK edge, and grants files that are
-missing, not private or that act as the core or a module are refused. They need
-no device or network. `node apps/runtime/scripts/measure-memory.mjs` measures the
+missing, not private or that act as the core or a module are refused. The
+runtime's records must pass the diagnostic contract's validator (#903), as
+maintenance intake reads them. They need no device or network.
+`node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123; the README's Memory section says how.
 
 ### Runtime test layers
@@ -2201,8 +2203,11 @@ the shared controller/lifecycle/workflow and affected consumer checks required
 by the final change.
 
 Fixtures cover safe canonical records, exact OTLP mappings, strict version
-projections, privacy, context isolation and bounded sink failures. The package
-check verifies immutable archive contents and independent TypeScript/Python
+projections, privacy, context isolation and bounded sink failures. Profile 1.2
+fixtures cover the runtime's records and their negative controls, and
+`tests/profile.test.mjs` checks that the schema and catalog agree, that every
+earlier profile rejects each profile's additions, and the runtime scopes' rules.
+The package check verifies immutable archive contents and independent TypeScript/Python
 consumers. These checks use synthetic records, no collector, device or live
 state. Real ingestion and Grafana queries belong to the separately bounded functional
 pilot; passing fixtures do not establish adoption. Performance is unqualified.
@@ -2370,7 +2375,9 @@ the shared error body on blocked intake responses against
 `@jimmie-potts/event-contracts`' `errorBody` (Hub #921). Policy cases cover
 wrong runtime/repository/revision/owner, tool plan digests and file/link readback,
 protected paths, owning instruction fingerprints, unchanged client/physical
-acceptance and tool repositories without portfolio writes. The same suite covers
+acceptance and tool repositories without portfolio writes. It also runs the
+built runtime and reads its stderr lines as a synthetic journal (#903). The same
+suite covers
 the Hub supervisor installer wrapper;
 its native deadline guard also requires the Standalone hub, Standalone hub MCP
 and Shared monitoring setup checks above. Fixtures use synthetic journal data

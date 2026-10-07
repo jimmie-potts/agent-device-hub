@@ -144,10 +144,10 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       });
       // Until Hub #782 defines the core's acknowledgment, the stand-in core's lets the outbox forget a recorded outcome.
       const acknowledgments = {acknowledge: (id: string): boolean => onAcknowledgment?.() !== 'lose' && outbox.acknowledge(id)};
-      await followStandInAcks(sdk, acknowledgments, id => { log.info('lamp.outcome.acknowledged', {id}); });
+      await followStandInAcks(sdk, acknowledgments, id => { log.info('outbox.acknowledged', {'bunny.message.id': id}); });
       // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.
       const count = await outbox.republish();
-      log.info('lamp.outbox.republished', {count});
+      log.info('outbox.republished', {'bunny.message.count': count});
 
       // The core's mode and sessions: quiet mode keeps the lamps off, and the indicator shows a session that waits.
       let mode = 'work';
@@ -164,7 +164,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
         if (indicator !== shown) {
           shown = indicator;
           transport.show(indicator);
-          log.info('lamp.indicator.shown', {indicator});
+          log.info('feed.changed');
         }
       }, {timeoutMs: 5000});
       if (follow.status === 'rejected') throw new Error(`the lamp could not sync the core's mode and sessions: ${follow.error.error.code}`);
@@ -172,13 +172,13 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       await sdk.serveSync(['lamp'], (): Snapshot => ({revision: revision(), states: lamps().map(lampState)}));
       await sdk.respond<{power: Power}>('bunny.cmd.lamp.*', async (command: Command<{power: Power}>): Promise<{status: 'accepted'} | ErrorBody> => {
         const {requestId, power: wanted} = command.data;
-        log.info('lamp.command.received', {lamp: command.subject, power: wanted, requestId}, command);
+        log.info('command.executing', {'bunny.device.id': command.subject, 'bunny.operation': 'power', 'bunny.request.id': requestId}, command);
         const found = lamps().find(row => row.id === command.subject);
         if (found === undefined) return errorBody('not-found', {detail: 'no such lamp'});
         // A command the lamp already handled, such as a retry with the same requestId, is accepted again and changes
         // nothing: its outcome went out once.
         if (handled.get(command.source, requestId) !== undefined) {
-          log.info('lamp.command.duplicate', {lamp: found.id, requestId}, command);
+          log.info('command.completed', {'bunny.device.id': found.id, 'bunny.request.id': requestId, 'bunny.outcome': 'duplicate'}, command);
           return {status: 'accepted'};
         }
         if (mode === 'quiet' && wanted === 'on') return errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'});
@@ -206,7 +206,10 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
             kind: 'outcome', type: 'org.bunny.lamp.switch.completed', subject: found.id, dataschema: OUTCOME_SCHEMA, data: outcome,
           }, {parent: command});
         });
-        log.info(next === undefined ? 'lamp.switch.failed' : 'lamp.switched', {lamp: found.id, power: wanted, requestId}, command);
+        log.info('command.completed', {
+          'bunny.device.id': found.id, 'bunny.request.id': requestId,
+          ...(next === undefined ? {'bunny.outcome': 'failed', 'bunny.reason': 'unavailable'} : {'bunny.outcome': 'succeeded'}),
+        }, command);
         return {status: 'accepted'};
       });
     },

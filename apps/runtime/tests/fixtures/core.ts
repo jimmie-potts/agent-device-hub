@@ -48,6 +48,8 @@ type Family = keyof typeof FAMILIES;
 type Entity = {id: string; revision: number};
 type Outcome = {requestId: string; result: HistoryEntry['result']; evidence: HistoryEntry['evidence']; error?: ErrorDetail};
 const isFamily = (family: string): family is Family => Object.hasOwn(FAMILIES, family);
+/** How the core took a message, as its `message.received` record's outcome: once, as a duplicate, or not, as a conflict. */
+const TAKEN = {new: 'accepted', duplicate: 'duplicate', conflict: 'rejected'} as const satisfies Record<ReturnType<typeof compareDelivery>, string>;
 const draftOf = (family: Family, record: Entity): StateDraft =>
   ({type: FAMILIES[family].type, subject: record.id, dataschema: FAMILIES[family].dataschema, data: record});
 /** An entity ID that is also a routing key token, whatever the source and ID it names. */
@@ -117,8 +119,9 @@ export function createCoreModule({mode = 'work'}: CoreOptions = {}): BunnyModule
         const row = prior.get(message.source, message.id) as {message: string} | undefined;
         const verdict = compareDelivery(row === undefined ? undefined : JSON.parse(row.message) as Message, message);
         const requestId = (message.data as {requestId?: unknown}).requestId;
-        log.info(`core.message.${verdict === 'new' ? 'taken' : verdict}`, {
-          source: message.source, id: message.id, kind: message.kind, ...(typeof requestId === 'string' ? {requestId} : {}),
+        log.info('message.received', {
+          'bunny.source': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.outcome': TAKEN[verdict],
+          ...(verdict === 'conflict' ? {'bunny.reason': 'invalid-input'} : {}), ...(typeof requestId === 'string' ? {'bunny.request.id': requestId} : {}),
         });
         if (verdict === 'conflict' || (verdict === 'duplicate' && message.kind !== 'outcome')) return;
         await outbox.transaction(add => {

@@ -16,9 +16,10 @@ it('under the runtime, the lamp switches on command and the core takes its outco
   const {key, draft} = switchLamp('lamp-1', 'on');
   const result = await contextOf(requester).sdk.request(key, draft, {timeoutMs: 5000});
   assert.equal(result.status, 'accepted');
-  const taken = () => logs.filter(record => record.event_name === 'core.message.taken' && record.attributes.kind === 'outcome');
+  const taken = () => logs.filter(record => record.attributes['bunny.module'] === 'core' && record.event_name === 'message.received'
+    && record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
   await waitFor(() => taken().length === 1, 5000, 'the core to take the outcome');
-  assert.equal(taken()[0]?.attributes.requestId, result.requestId);
+  assert.equal(taken()[0]?.attributes['bunny.request.id'], result.requestId);
 });
 
 it('under the runtime, the lamp copies the core\'s mode and stays off in quiet mode', async context => {

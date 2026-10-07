@@ -41,7 +41,7 @@ const driver = module('driver', ({sdk, scheduler, log}) => {
   scheduler.after(100, async () => {
     const {key, draft} = switchLamp('lamp-1', 'on');
     const result = await sdk.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
-    log.info('driver.result', {status: result.status});
+    log.info('command.completed', {'bunny.request.id': 'req-crash', 'bunny.outcome': result.status});
   });
 });
 

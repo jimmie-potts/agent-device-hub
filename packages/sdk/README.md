@@ -292,7 +292,7 @@ export const lamp: BunnyModule = {
   async start({sdk, log, database}) {
     database().exec('CREATE TABLE IF NOT EXISTS scenes (id TEXT PRIMARY KEY)');
     await sdk.respond('bunny.cmd.scene.lamp', command => {
-      log.info('scene.requested', {}, command);
+      log.info('command.executing', {'bunny.operation': 'mode'}, command);
       return {status: 'accepted'};
     });
   },
@@ -328,7 +328,7 @@ The context:
 | Member | What it gives |
 | --- | --- |
 | `sdk` | The module's own participant on the runtime's bus. |
-| `log` | `debug`, `info`, `warn` and `error(event, fields?, trace?)`. Records name the module, and `trace` adds its trace and span IDs. Never put a secret in a field or an error message. |
+| `log` | `debug`, `info`, `warn` and `error(event, fields?, trace?)`. The runtime writes each as a diagnostic-contract record with scope `bunny.module` and the module's name in `bunny.module`, and `trace` adds its trace and span IDs. `event` must be one the catalog registers for modules, and `fields` registered attributes; the runtime drops a record with another event or an invalid value and leaves out unregistered fields. Never put a secret, message or personal content in a field. |
 | `trace.span(parent?)` | A new span: in the parent's trace when one is given, otherwise a new trace. Use it as the `parent` of messages the work sends and the `trace` of its log records. |
 | `clock.now()` | The runtime's clock, which the bus also uses for `time` and `expiresat`. |
 | `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
@@ -423,9 +423,18 @@ returns the same checks as `{name, run}` for another runner, such as Vitest.
 Each check hosts a fresh instance of the module on its own bus and state
 directory, with a stand-in owner, `bunny/core`, serving the families it copies.
 Every message the check sees must follow profile 2.0, with the core families,
-the stand-in acknowledgment and `spec.schemas` registered. No handler, timer or
-worker of the module may fail, and its stop may not throw or outlast its
-deadline.
+the stand-in acknowledgment and `spec.schemas` registered. Every record the
+module logs must be one the runtime writes whole as a
+[diagnostic-contract](../../docs/observability-contract.md) record (#903): an
+event the catalog registers for the `bunny.module` scope, and only registered
+attributes with values of their registered types. No handler, timer or worker
+of the module may fail, and its stop may not throw or outlast its deadline.
+
+`checkModuleRecord(name, record)` is that record check on its own. It returns
+why the runtime would not write one of the module's records whole, naming the
+event and attribute keys but never a value, or undefined. A module that needs
+another event or attribute asks for a catalog change in
+`@jimmie-potts/bunny-observability`; it never logs one the catalog lacks.
 
 `serves`, `copies`, `accepted` and `refused` are optional, so a module that
 only consumes runs the checks that apply to it. The checks:

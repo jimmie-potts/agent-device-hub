@@ -26,8 +26,12 @@ it('refuses a module whose API version does not match, and starts the others', a
     {name: 'current', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
   ]);
   assert.equal(modules.reduce((stops, module) => stops + module.stops, 0), 0, 'a refused module is never stopped, and the running one not yet');
-  assert.equal(logs.filter(record => record.event_name === 'runtime.module.refused').length, 4);
-  assert.equal(logs.find(record => record.event_name === 'runtime.module.refused')?.severity_text, 'ERROR');
+  const refusals = logs.filter(record => record.event_name === 'runtime.module.refused');
+  assert.deepEqual(refusals.map(record => record.attributes), [
+    ...['newer-major', 'newer-minor', 'older-major'].map(name => ({'bunny.module': name, 'bunny.code': 'unsupported-version', 'bunny.phase': 'manifest', 'bunny.provenance': 'source'})),
+    {'bunny.module': 'malformed', 'bunny.code': 'invalid-request', 'bunny.phase': 'manifest', 'bunny.provenance': 'source'},
+  ], 'a refusal names the module and its registry code, never the sentence');
+  assert.equal(refusals[0]?.severity_text, 'ERROR');
 });
 
 it('a refused module gets no participant, so nothing it would answer reaches it', async context => {
@@ -44,8 +48,11 @@ it('refuses a malformed name and a second module with the same name', async cont
   const first = fixture('wall');
   const second = fixture('wall');
   const badNames = ['Wall', 'wall_2', '-wall', 'wall-', '', 'x'.repeat(65)].map(name => fixture(name));
-  const {runtime} = await run(context, {modules: [first, second, ...badNames]});
+  const {runtime, logs} = await run(context, {modules: [first, second, ...badNames]});
   assert.ok(first.context, 'the first module with a name runs');
+  // A malformed name is no identity, so its refusal leaves the name out rather than lose the record.
+  assert.deepEqual(logs.filter(record => record.event_name === 'runtime.module.refused').map(record => record.attributes['bunny.module']),
+    ['wall', ...badNames.map(() => undefined)]);
   assert.equal(second.context, undefined);
   const report = runtime.health();
   assert.deepEqual(report.modules[1], {

@@ -11,6 +11,7 @@ import {
   type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
 import {errorFields, type LogWriter, type RuntimeLogger} from './log.js';
+import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
 import {openModuleDatabase} from './state.js';
 
 export type ModuleState = 'refused' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -27,7 +28,15 @@ export type HostOptions = {
   stopTimeoutMs: number;
 };
 
-type Flow = {fail: (reason: Reason, error: unknown) => void};
+/**
+ * Where a module's refusal, failure or stop problem arose, as the `bunny.phase` attribute of its record: its manifest,
+ * its start, a handler or responder, a scheduled callback, a worker thread, its own async flow, or the two bounded steps
+ * of its stop (the participant's close, which waits for its handlers, and its `stop`).
+ */
+type Phase = 'manifest' | 'start' | 'handler' | 'timer' | 'worker' | 'async' | 'handlers' | 'stop';
+/** A failure: the reason health shows, and where it arose, which only the log record carries. */
+type Failure = Reason & {phase: Phase};
+type Flow = {fail: (failure: Failure, error: unknown) => void};
 type Slot = {
   readonly module: BunnyModule;
   readonly name: string;
@@ -66,6 +75,11 @@ function attempt(call: () => unknown): Promise<unknown> {
   }
 }
 
+/** A module's name in a record, when it is a valid name; a malformed one is no identity, so its record leaves it out. */
+const named = (name: string): Record<string, string> => checkModuleName(name) === undefined ? {'bunny.module': name} : {};
+/** A record's fields for a reason: its 2.0 registry code and where it arose, never the sentence. */
+const reasonFields = ({code, phase}: Failure): Record<string, string> => ({'bunny.code': code, 'bunny.phase': phase});
+
 /** Why a manifest is refused, or undefined when the module may start. `taken` holds the names already in use. */
 function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
   const named = checkModuleName(name);
@@ -81,7 +95,7 @@ function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet
 export function contain(error: unknown): boolean {
   const flow = running.getStore();
   if (flow === undefined) return false;
-  flow.fail({code: 'internal', detail: 'an error escaped the module'}, error);
+  flow.fail({code: 'internal', detail: 'an error escaped the module', phase: 'async'}, error);
   return true;
 }
 
@@ -97,7 +111,7 @@ export class ModuleHost {
 
   constructor(modules: readonly BunnyModule[], options: HostOptions) {
     this.#options = options;
-    this.#log = options.logs.logger('bunny.runtime');
+    this.#log = options.logs.logger(RUNTIME_SCOPE);
     this.#bus = new InProcessBus({
       now: () => options.clock.now(), scheduler: options.scheduler,
       onError: (error, scope) => { this.#reported(error, scope); },
@@ -110,8 +124,8 @@ export class ModuleHost {
     for (const module of modules) {
       const {name, apiVersion} = module.manifest;
       const slot: Slot = {
-        module, name, apiVersion, log: options.logs.logger(`bunny.modules.${name}`, {'bunny.module': name}),
-        flow: {fail: (reason, error) => { this.#fail(slot, reason, error); }},
+        module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}),
+        flow: {fail: (failure, error) => { this.#fail(slot, failure, error); }},
         controller: new AbortController(), timers: new Set(), workers: new Set(),
         state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
       };
@@ -120,7 +134,7 @@ export class ModuleHost {
       if (reason !== undefined) {
         slot.state = 'refused';
         slot.reason = reason;
-        this.#log.error('runtime.module.refused', {'bunny.module': name, 'bunny.reason': reason.detail});
+        this.#log.error('runtime.module.refused', {...named(name), ...reasonFields({...reason, phase: 'manifest'})});
       }
       this.#slots.push(slot);
     }
@@ -170,10 +184,10 @@ export class ModuleHost {
         this.#log.info('runtime.module.started', {'bunny.module': slot.name});
         return;
       case 'failed':
-        this.#fail(slot, {code: 'internal', detail: 'start failed'}, outcome.error);
+        this.#fail(slot, {code: 'internal', detail: 'start failed', phase: 'start'}, outcome.error);
         return;
       case 'timed-out':
-        this.#fail(slot, {code: 'unavailable', detail: `start did not finish within ${startTimeoutMs} ms`}, undefined);
+        this.#fail(slot, {code: 'unavailable', detail: `start did not finish within ${startTimeoutMs} ms`, phase: 'start'}, undefined);
         return;
     }
   }
@@ -216,7 +230,7 @@ export class ModuleHost {
         inner = scheduler.after(delayMs, () => {
           slot.timers.delete(cancel);
           void inFlow(() => attempt(callback)).catch((error: unknown) => {
-            this.#fail(slot, {code: 'internal', detail: 'a scheduled callback failed'}, error);
+            this.#fail(slot, {code: 'internal', detail: 'a scheduled callback failed', phase: 'timer'}, error);
           });
         });
         slot.timers.add(cancel);
@@ -226,7 +240,7 @@ export class ModuleHost {
         live();
         const worker = inFlow(() => new Worker(file, options));
         slot.workers.add(worker);
-        worker.on('error', error => { this.#fail(slot, {code: 'internal', detail: 'a worker failed'}, error); });
+        worker.on('error', error => { this.#fail(slot, {code: 'internal', detail: 'a worker failed', phase: 'worker'}, error); });
         worker.once('exit', () => { slot.workers.delete(worker); });
         return worker;
       }},
@@ -252,7 +266,7 @@ export class ModuleHost {
       this.#log.error('runtime.handler.failed', {'bunny.source': scope.source, 'bunny.pattern': scope.pattern, ...errorFields(error)});
       return;
     }
-    this.#fail(slot, {code: 'internal', detail: 'a handler threw'}, error);
+    this.#fail(slot, {code: 'internal', detail: 'a handler threw', phase: 'handler'}, error);
   }
 
   #dropped(scope: ErrorScope): void {
@@ -291,15 +305,15 @@ export class ModuleHost {
   }
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */
-  #fail(slot: Slot, reason: Reason, error: unknown): void {
+  #fail(slot: Slot, failure: Failure, error: unknown): void {
     const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : errorFields(error))};
     if (slot.state === 'failed' || slot.state === 'stopped' || slot.state === 'refused') {
-      this.#log.warn('runtime.module.error-after-stop', fields);
+      this.#log.warn('runtime.module.error-after-stop', {...fields, 'bunny.phase': failure.phase});
       return;
     }
     slot.state = 'failed';
-    slot.reason = reason;
-    this.#log.error('runtime.module.failed', {...fields, 'bunny.reason': reason.detail});
+    slot.reason = {code: failure.code, detail: failure.detail};
+    this.#log.error('runtime.module.failed', {...fields, ...reasonFields(failure)});
     void this.#teardown(slot);
   }
 
@@ -328,7 +342,7 @@ export class ModuleHost {
     if (closed.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'handlers'});
     const ended = await this.#within(running.run(slot.flow, () => attempt(() => slot.module.stop())), stopTimeoutMs);
     if (ended.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'stop'});
-    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, ...errorFields(ended.error)});
+    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...errorFields(ended.error)});
     await Promise.allSettled([...slot.workers].map(worker => worker.terminate()));
     if (slot.database?.isOpen === true) slot.database.close();
     if (slot.state === 'stopping') slot.state = 'stopped';

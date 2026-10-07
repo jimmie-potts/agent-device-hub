@@ -87,7 +87,7 @@ it('an error that no module raised exits with a failure, for the service manager
   assert.deepEqual(await runtime.exited, {code: 1, signal: null});
   const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
   assert.equal(fatal?.severity_text, 'FATAL');
-  assert.deepEqual(fatal.attributes, {'error.type': 'RangeError', 'error.code': 'EFIXTURE'}, 'the type and code, never the raw message');
+  assert.deepEqual(fatal.attributes, {'error.type': 'RangeError', 'error.code': 'EFIXTURE', 'bunny.provenance': 'source'}, 'the type and code, never the raw message');
 });
 
 it('an abort listener that throws or rejects stays with its own module, on a handler error, a failed start and the runtime\'s stop', async context => {
@@ -190,7 +190,7 @@ it('a refused state directory names its reason in the runtime.failed record, so 
     const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
     assert.deepEqual(await runtime.exited, {code: 1, signal: null}, dir);
     const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
-    assert.deepEqual(fatal?.attributes, {'error.type': 'RuntimeError', 'error.code': code}, dir);
+    assert.deepEqual(fatal?.attributes, {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, dir);
   }
 });
 
@@ -208,32 +208,34 @@ it('an outcome committed before a kill between commit and publish is taken exact
   // Hub #882: the lamp's outbox holds the outcome across the kill; the stand-in core keeps what it took in its own file.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
-  const named = (runtime: Spawned, event: string): LogRecord[] => runtime.records().filter(record => record.event_name === event);
-  const outcomes = (runtime: Spawned, event: string): LogRecord[] => named(runtime, event).filter(record => record.attributes.kind === 'outcome');
+  const of = (runtime: Spawned, module: string, event: string): LogRecord[] =>
+    runtime.records().filter(record => record.attributes['bunny.module'] === module && record.event_name === event);
+  const taken = (runtime: Spawned): LogRecord[] => of(runtime, 'core', 'message.received')
+    .filter(record => record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
 
   const crashed = spawnRuntime(context, FIXTURE, ['lamp-crash', ...args]);
   assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
-  assert.equal(named(crashed, 'lamp.command.received').length, 1, 'the lamp had the command once');
-  assert.equal(named(crashed, 'core.message.taken').length, 0, 'nothing was published before the kill');
+  assert.equal(of(crashed, 'lamp', 'command.executing').length, 1, 'the lamp had the command once');
+  assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');
 
   const restarted = await launch(context, FIXTURE, ['lamp-restart', ...args]);
-  assert.equal(named(restarted, 'lamp.outbox.republished')[0]?.attributes.count, 3, 'the state, the occurrence and the outcome');
-  await waitFor(() => named(restarted, 'lamp.outcome.acknowledged').length > 0, 10_000, 'the core\'s acknowledgment');
+  assert.equal(of(restarted, 'lamp', 'outbox.republished')[0]?.attributes['bunny.message.count'], 3, 'the state, the occurrence and the outcome');
+  await waitFor(() => of(restarted, 'lamp', 'outbox.acknowledged').length > 0, 10_000, 'the core\'s acknowledgment');
   restarted.child.kill('SIGTERM');
   assert.deepEqual(await restarted.exited, {code: 0, signal: null});
-  const [taken] = outcomes(restarted, 'core.message.taken');
-  assert.equal(outcomes(restarted, 'core.message.taken').length, 1);
-  assert.equal(taken?.attributes.requestId, 'req-crash');
-  assert.equal(named(restarted, 'lamp.outcome.acknowledged')[0]?.attributes.id, taken?.attributes.id);
-  assert.equal(named(restarted, 'lamp.command.received').length, 0, 'no command was sent again');
+  const [outcome] = taken(restarted);
+  assert.equal(taken(restarted).length, 1);
+  assert.equal(outcome?.attributes['bunny.request.id'], 'req-crash');
+  assert.equal(of(restarted, 'lamp', 'outbox.acknowledged')[0]?.attributes['bunny.message.id'], outcome?.attributes['bunny.message.id']);
+  assert.equal(of(restarted, 'lamp', 'command.executing').length, 0, 'no command was sent again');
 
   // Acknowledged, the outcome is forgotten: the next start sends nothing again, and the core takes nothing more.
   const again = await launch(context, FIXTURE, ['lamp-restart', ...args]);
   again.child.kill('SIGTERM');
   assert.deepEqual(await again.exited, {code: 0, signal: null});
-  assert.equal(named(again, 'lamp.outbox.republished')[0]?.attributes.count, 0);
-  assert.equal(named(again, 'core.message.taken').length + named(again, 'core.message.duplicate').length, 0, 'exactly once across all three runs');
-  assert.equal(named(again, 'lamp.command.received').length, 0);
+  assert.equal(of(again, 'lamp', 'outbox.republished')[0]?.attributes['bunny.message.count'], 0);
+  assert.equal(of(again, 'core', 'message.received').length, 0, 'exactly once across all three runs');
+  assert.equal(of(again, 'lamp', 'command.executing').length, 0);
 });
 
 /** Writes the edge's grants, owner-only, into a state directory. */

@@ -54,6 +54,8 @@ export class ModuleHarness {
    * that threw or a close or `stop` that outlasted its deadline, which the runtime logs as a warning.
    */
   readonly failures: unknown[] = [];
+  /** The module's name, from its manifest. */
+  readonly name: string;
   readonly source: string;
   readonly #module: BunnyModule;
   readonly #options: HarnessOptions;
@@ -67,7 +69,8 @@ export class ModuleHarness {
   constructor(module: BunnyModule, options: HarnessOptions) {
     this.#module = module;
     this.#options = options;
-    this.source = `bunny/modules/${module.manifest.name}`;
+    this.name = module.manifest.name;
+    this.source = `bunny/modules/${this.name}`;
   }
 
   /** Connects the module's participant and runs its start. */
