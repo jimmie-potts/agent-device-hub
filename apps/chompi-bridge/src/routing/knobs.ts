@@ -1,32 +1,34 @@
 import type { Clock } from '../clock.js';
-import type { ClaudeSettings, Client, KeyName, OsAdapter, PickerMenu, PickerState } from '../os-adapter.js';
+import type { ClaudeSettings, Client, KeyName, MenuKind, Observation, OsAdapter, PickerMenu, PickerState, SettingControl } from '../os-adapter.js';
 import { Detent } from './detent.js';
 import type { KnobLight, SettingKnob } from './lights.js';
 import type { RoutingProfile } from './profile.js';
 
 /**
  * Knob 1 sets the model and knob 2 the reasoning effort of the Codex or Claude task in front (#906), through each
- * client's own controls as the 2026-10-06 qualification on #906 recorded them:
+ * client's own controls as the 2026-10-06 keystroke-free qualification on #906 recorded them. UI Automation actions do
+ * the work wherever the client allows it; each re-reads its target before acting and refuses on any difference.
  *
- * - Claude model: `LeftControl`+`LeftShift`+`I` opens the `Model: <current>` menu; Up and Down move its focus; Enter on a
- *   focused model option applies it. Readback: the composer's `Model: <name>` button and the session record's `model`.
- * - Claude effort: `LeftControl`+`LeftShift`+`E` opens the `Effort` slider; Right and Left apply one level at once.
- *   Readback: the composer's `Effort: <level>` button and the session record's `effort`. No Effort button (Haiku) is
- *   unsupported.
- * - Codex: `LeftControl`+`LeftShift`+`M` opens the `Select effort` picker with "Select model" focused. Model: Enter there
- *   opens the model list; Up and Down move; Enter applies the focused model and the picker stays open, so the bridge
- *   closes it. Effort: Down to "Power", then Right or Left. Readback: the picker's announcement
- *   (`<model> <level>, <n> of <count>.`), whose count is read each time. Without the picker, the owner's effort chords
- *   from the profile are a fallback that cannot be confirmed.
+ * - Claude model: expand the `Model: <name>` button, move focus over the model options (`SetFocus`, read back), and on
+ *   knob 1's still click `Select` the focused option, which applies it and closes the menu. Without a pick, `Collapse`.
+ *   Either way the composer gets focus back, so Play still works. Readback: the button and the session record's `model`.
+ * - Claude effort: expand the `Effort: <level>` button and set the slider one `SmallChange` per detent within its range;
+ *   at an end nothing is set (`at-limit`). Readback: the button and the record's `effort`. Then `Collapse`.
+ * - Codex model: expand the picker button, invoke "Select model", move focus over the model list and `Select` the
+ *   focused option; Codex returns to its picker. Readback: the closed picker button's `<model> <effort>` name.
+ * - Codex effort: the owner's chords, sent only with Codex in front, no card and the picker closed, confirmed by the
+ *   picker button's name. Without chords, the picker's Power entry with Right and Left, read from its announcement.
+ * - Codex's picker does not close on `Collapse`: the bridge sends exactly one Escape, only after a fresh read shows its
+ *   picker holding focus, then waits a bounded time for the button to read collapsed and never sends a second one. A
+ *   model list left without a pick first gets `Select` on the current model, which returns to the picker unchanged.
  *
- * Every keystroke goes through `tapInClient`, so it reaches only the expected client in front. Enter is pressed only on
- * a focused entry of the menu this flow opened, and Escape only into an open menu or slider this flow opened, each
- * confirmed by a fresh read just before. One flow runs at a time; the router closes it before any other control acts.
- * Applied, mismatch, unverified and unsupported outcomes are logged apart, and nothing is retried.
+ * The knobs never press Enter. Their only keys are that one Escape, the owner's chords and, without chords, Right and
+ * Left on a focused Power entry, all through `tapInClient`. One flow runs at a time; the router closes it before any
+ * other control acts. Applied, mismatch, unverified, unsupported and at-limit outcomes are logged apart; nothing is
+ * retried, and an end of range, a mismatch or a lost control drops the detents still waiting.
  */
 
 export type Call<T> = { ok: true; value: T } | { ok: false; reason: 'timeout' | 'rejected' };
-type Check = { ok: true } | { ok: false; reason: string };
 
 /** What the knobs need from the router. */
 export interface KnobHost {
@@ -44,7 +46,6 @@ export interface KnobHost {
   versionGate(client: Client): Promise<{ ok: true } | { ok: false; reason: string; observed: string | null }>;
   /** Whether the client's window shows an approval or question card. */
   card(client: Client): Promise<'none' | 'card' | 'unknown'>;
-  composer(client: Client): Promise<Check>;
   /** The Claude Desktop session in front, when the router can tell it from the sessions it knows; null otherwise. */
   claudeFront(): Promise<string | null>;
   /** Why knob input must not run now (Record held, a Send or a task focus in progress), or null. */
@@ -55,41 +56,40 @@ export interface KnobHost {
   requestClose(reason: string): void;
 }
 
-const CLAUDE_MODEL_SHORTCUT: readonly KeyName[] = ['LeftControl', 'LeftShift', 'I'];
-const CLAUDE_EFFORT_SHORTCUT: readonly KeyName[] = ['LeftControl', 'LeftShift', 'E'];
-const CODEX_PICKER_SHORTCUT: readonly KeyName[] = ['LeftControl', 'LeftShift', 'M'];
-const CLAUDE_MODEL_MENU = 'Model: ';
-const CLAUDE_EFFORT_SLIDER = 'Effort';
-const CODEX_PICKER = 'Select effort';
-const CODEX_SELECT_MODEL = 'Select model';
 const CODEX_POWER = 'Power';
 /** Bound on knob steps waiting while a step runs. */
 const MAX_PENDING_STEPS = 16;
-/** How long a step waits to see menu focus move before it reads the menu as it is. */
-const FOCUS_READBACK_MS = 400;
-/** Escapes per close: the Codex model list closes to the picker, which then closes. */
-const MAX_ESCAPES = 2;
+/** Floating-point slack for slider bounds. */
+const EPSILON = 1e-9;
+/**
+ * How long a read that gates an action waits for its condition. UI Automation can lag a change (F1 on #915): one stale
+ * read must neither trigger a second action nor make the bridge skip closing what it opened, so these reads poll briefly.
+ */
+const SETTLE_MS = 400;
 
-type Surface = 'claude-model' | 'claude-effort' | 'codex-main' | 'codex-list' | 'codex-chord';
+type Surface = 'claude-model' | 'claude-effort' | 'codex-picker' | 'codex-models' | 'codex-power';
 interface Flow {
   knob: SettingKnob;
   client: Client;
   surface: Surface;
-  /** The Codex model list's label and options, read when it opened. */
-  list?: { label: string; options: string[] };
   /** Claude: the session in front, for the record readback; null when not identified. */
   session: string | null;
+  /** The menu entry the knob last moved focus to, confirmed by read-back; null when none is confirmed. */
+  candidate: number | null;
+  /** The Codex model list's option labels when it opened, for the readback. */
+  options: string[];
 }
 type Outcome = 'applied' | 'mismatch' | 'unverified';
 type Pressed = 'sent' | 'not-front' | 'uncertain';
 
 const LIGHT_OF: Readonly<Record<Outcome | 'unsupported' | 'at-limit', KnobLight>> = { applied: 'applied', unverified: 'unverified', mismatch: 'error', unsupported: 'error', 'at-limit': 'error' };
+const MENU_OF: Partial<Record<Surface, MenuKind>> = { 'claude-model': 'claude-model', 'codex-picker': 'codex-picker', 'codex-models': 'codex-models', 'codex-power': 'codex-picker' };
 
-const focusedItem = (menu: PickerMenu) => menu.focused === null ? undefined : menu.items[menu.focused];
+const optionIndexes = (menu: PickerMenu) => menu.items.flatMap((item, i) => item.kind === 'option' ? [i] : []);
 
-/** The longest option label the announcement starts with: `GPT-6 Astra` in `GPT-6 Astra Extended`. */
-function announcedOption(announcement: string, options: readonly string[]): string | undefined {
-  return [...options].sort((a, b) => b.length - a.length).find(option => announcement === option || announcement.startsWith(`${option} `));
+/** The longest option label a Codex picker name starts with: `GPT-6 Astra` in `GPT-6 Astra Extra High`. */
+function namedOption(name: string, options: readonly string[]): string | undefined {
+  return [...options].sort((a, b) => b.length - a.length).find(option => name === option || name.startsWith(`${option} `));
 }
 
 export class SettingKnobs {
@@ -122,7 +122,7 @@ export class SettingKnobs {
     for (const knob of ['model', 'effort'] as const) {
       const flash = this.#flash[knob];
       if (flash && flash.until > now) lights[knob] = flash.light;
-      else if (this.#flow?.knob === knob && this.#flow.surface !== 'codex-chord') lights[knob] = 'open';
+      else if (this.#flow?.knob === knob) lights[knob] = 'open';
     }
     return lights;
   }
@@ -156,16 +156,13 @@ export class SettingKnobs {
     if (!settings) return;
     if (this.#worker) return this.#refuse('model', 'knob-busy');
     const flow = this.#flow;
-    if (!flow || flow.knob !== 'model' || (flow.surface !== 'claude-model' && flow.surface !== 'codex-list')) return this.#refuse('model', 'menu-not-open');
+    if (!flow || flow.knob !== 'model' || (flow.surface !== 'claude-model' && flow.surface !== 'codex-models')) return this.#refuse('model', 'menu-not-open');
     if (pressedAt - this.#lastTurnAt.model < settings.clickStillMs) return this.#refuse('model', 'knob-moving', { client: flow.client });
     this.#clearTimer();
     this.#startWorker('model', () => this.#pick(flow));
   }
 
-  /**
-   * Stops the running flow and closes what it opened, with Escape only into a menu or slider confirmed open. Concurrent
-   * calls share one close.
-   */
+  /** Stops the running flow and closes what it opened (see the class comment). Concurrent calls share one close. */
   close(reason: string): Promise<void> {
     if (this.#closing) return this.#closing;
     if (!this.#flow && !this.#worker) return Promise.resolve();
@@ -218,7 +215,10 @@ export class SettingKnobs {
     })();
   }
 
-  /** The single knob worker: turns that arrive while it waits for the client coalesce. */
+  /**
+   * The single knob worker: turns that arrive while it waits for the client coalesce. A step that cannot go on (the end
+   * of the range, a mismatch, a lost control) drops the detents still waiting, so nothing queues at an end.
+   */
   async #drain(knob: SettingKnob): Promise<void> {
     while (this.#pending !== 0 && this.#pendingKnob === knob && this.#live()) {
       const blocked = this.#host.blocked();
@@ -228,14 +228,19 @@ export class SettingKnobs {
       }
       const direction = Math.sign(this.#pending);
       this.#pending -= direction;
+      let goOn: boolean;
       if (!this.#flow) {
-        if (!(await this.#open(knob))) { this.#pending = 0; return; }
-        // The first model detent only opens the menu (its first Down focuses the first entry); an effort detent opens
-        // the control and applies its step.
-        if (knob === 'model' || !this.#live() || !this.#flow) continue;
-      }
-      if (knob === 'model') await this.#modelStep(direction);
-      else await this.#effortStep(direction);
+        const checked = await this.#precheck(knob);
+        if (!checked) { this.#pending = 0; return; }
+        const { codexEffortIncrease, codexEffortDecrease } = this.#host.profile().shortcuts;
+        if (knob === 'effort' && checked.client === 'codex' && codexEffortIncrease && codexEffortDecrease) goOn = await this.#chordStep(direction, checked.state);
+        else {
+          if (!(await this.#open(knob, checked.client, checked.state))) { this.#pending = 0; return; }
+          // The first knob 1 detent opens the menu on the current model; a knob 2 detent opens the control and steps.
+          goOn = knob === 'model' || !this.#flow ? true : await this.#effortStep(direction);
+        }
+      } else goOn = knob === 'model' ? await this.#modelStep(direction) : await this.#effortStep(direction);
+      if (!goOn) this.#pending = 0;
     }
   }
 
@@ -243,7 +248,7 @@ export class SettingKnobs {
 
   // Opening
 
-  /** The client in front when knob input may open its control: qualified, no card, no open menu; Claude's composer focused. */
+  /** The client in front when knob input may act: qualified, no card, its controls readable and none of them open. */
   async #precheck(knob: SettingKnob): Promise<{ client: Client; state: PickerState } | null> {
     const front = await this.#host.frontClient();
     if (!this.#live()) return null;
@@ -255,273 +260,261 @@ export class SettingKnobs {
     const card = await this.#host.card(client);
     if (!this.#live()) return null;
     if (card !== 'none') { this.#refuse(knob, card === 'card' ? 'card-open' : 'card-unknown', { client }); return null; }
-    const state = await this.#state(client);
+    const nothingOpen = (s: PickerState) => !s.menu && !s.slider && !s.model?.expanded && !s.effort?.expanded;
+    let last = null as PickerState | null;
+    const state = await this.#waitFor(client, s => { last = s; return nothingOpen(s) ? s : null; }, SETTLE_MS);
     if (!this.#live()) return null;
-    if (!state) { this.#refuse(knob, 'picker-unknown', { client }); return null; }
-    if (state.menu || state.slider) { this.#refuse(knob, 'menu-open', { client }); return null; }
-    if (client === 'claude') {
-      const composer = await this.#host.composer(client);
-      if (!this.#live()) return null;
-      if (!composer.ok) { this.#refuse(knob, composer.reason, { client }); return null; }
-    }
+    if (!last) { this.#refuse(knob, 'picker-unknown', { client }); return null; }
+    if (!state) { this.#refuse(knob, 'menu-open', { client }); return null; }
     return { client, state };
   }
 
-  async #open(knob: SettingKnob): Promise<boolean> {
-    const checked = await this.#precheck(knob);
-    if (!checked) return false;
-    const { client, state } = checked;
-    if (knob === 'effort' && client === 'claude' && state.effort === null) {
-      // Claude shows no Effort button for a model without an effort setting, such as Haiku.
-      this.#host.log({ type: 'effort', client, route: 'slider', outcome: 'unsupported', reason: 'no-effort-control' });
+  async #open(knob: SettingKnob, client: Client, state: PickerState): Promise<boolean> {
+    if (client === 'claude') {
+      const button = knob === 'model' ? state.model : state.effort;
+      if (!button) {
+        if (knob === 'model') this.#refuse(knob, 'model-control-missing', { client });
+        else {
+          // Claude shows no Effort button for a model without an effort setting, such as Haiku.
+          this.#host.log({ type: 'effort', client, route: 'slider', outcome: 'unsupported', reason: 'no-effort-control' });
+          this.#show(knob, LIGHT_OF.unsupported);
+        }
+        return false;
+      }
+      const session = await this.#host.claudeFront();
+      if (!this.#live()) return false;
+      this.#flow = { knob, client, surface: knob === 'model' ? 'claude-model' : 'claude-effort', session, candidate: null, options: [] };
+      if (!(await this.#expand(knob, client, knob === 'model' ? 'claude-model' : 'claude-effort'))) return false;
+      if (knob === 'effort') {
+        const slider = await this.#waitFor('claude', s => s.slider, this.#verifyMs());
+        if (!this.#live()) return false;
+        if (!slider) return this.#abort(knob, 'slider-not-open');
+        this.#opened({ position: slider.value - slider.min + 1, count: Math.round((slider.max - slider.min) / slider.step) + 1 });
+        return true;
+      }
+      return this.#openList(knob, 'claude-model');
+    }
+    if (!state.model) {
+      this.#refuse(knob, 'picker-button-missing', { client });
+      return false;
+    }
+    this.#flow = { knob, client, surface: 'codex-picker', session: null, candidate: null, options: [] };
+    if (!(await this.#expand(knob, client, 'codex-picker'))) return false;
+    const main = await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' ? s.menu : null, this.#verifyMs());
+    if (!this.#live()) return false;
+    if (!main) return this.#abort(knob, 'menu-not-open');
+    if (knob === 'model') {
+      const invoked = await this.#act(() => this.#host.adapter.invokeSelectModel('codex'));
+      if (!this.#live()) return false;
+      if (invoked !== true) return this.#abort(knob, 'select-model-failed');
+      return this.#openList(knob, 'codex-models');
+    }
+    // No chords: the picker's Power entry, focused by UI Automation, then Right and Left.
+    const power = main.items.findIndex(item => item.kind === 'action' && item.label === CODEX_POWER);
+    if (power < 0) {
+      await this.#closeFlow('power-unavailable');
+      this.#host.log({ type: 'effort', client, route: 'picker', outcome: 'unsupported', reason: 'power-unavailable' });
       this.#show(knob, LIGHT_OF.unsupported);
       return false;
     }
-    if (client === 'claude') {
-      const session = await this.#host.claudeFront();
-      if (!this.#live()) return false;
-      return knob === 'model' ? this.#openClaude('model', session) : this.#openClaude('effort', session);
-    }
-    return knob === 'model' ? this.#openCodexList() : this.#openCodexPower();
-  }
-
-  async #openClaude(knob: SettingKnob, session: string | null): Promise<boolean> {
-    this.#flow = { knob, client: 'claude', surface: knob === 'model' ? 'claude-model' : 'claude-effort', session };
-    if (!(await this.#pressOpening(knob, 'claude', knob === 'model' ? CLAUDE_MODEL_SHORTCUT : CLAUDE_EFFORT_SHORTCUT))) return false;
-    const flow = this.#flow;
-    const opened = await this.#waitFor('claude', s => (knob === 'model' ? this.#flowMenu(flow, s) : s.slider === CLAUDE_EFFORT_SLIDER) ? s : null, this.#verifyMs());
+    const focused = await this.#act(() => this.#host.adapter.focusMenuEntry('codex', 'codex-picker', power, main.items.length));
     if (!this.#live()) return false;
-    if (!opened) { await this.#abort(knob, knob === 'model' ? 'menu-not-open' : 'slider-not-open'); return false; }
-    this.#opened(flow, knob === 'model' ? { count: opened.menu!.items.length } : {});
+    if (focused !== power) return this.#abort(knob, 'power-not-focused');
+    this.#flow.surface = 'codex-power';
+    this.#flow.candidate = power;
+    this.#opened({ count: main.items.length });
     return true;
   }
 
-  /** Opens Codex's picker and waits for it with "Select model" focused; false (and logged) when it does not open. */
-  async #openCodexPicker(knob: SettingKnob): Promise<PickerMenu | null> {
-    this.#flow = { knob, client: 'codex', surface: 'codex-main', session: null };
-    if (!(await this.#pressOpening(knob, 'codex', CODEX_PICKER_SHORTCUT))) return null;
-    const flow = this.#flow;
-    const main = await this.#waitFor('codex', s => {
-      const menu = this.#flowMenu(flow, s);
-      const item = menu && focusedItem(menu);
-      return item?.kind === 'action' && item.label === CODEX_SELECT_MODEL ? menu : null;
-    }, this.#verifyMs());
-    return this.#live() ? main : null;
+  /** Expands a setting button; on failure closes anything that opened and refuses. */
+  async #expand(knob: SettingKnob, client: Client, control: SettingControl): Promise<boolean> {
+    const expanded = await this.#call(() => this.#host.adapter.expandSetting(client, control));
+    if (!this.#live()) return false;
+    if (expanded.status === 'known' && expanded.value) return true;
+    return this.#abort(knob, expanded.status === 'known' ? 'menu-not-open' : expanded.reason);
   }
 
-  async #openCodexList(): Promise<boolean> {
-    const main = await this.#openCodexPicker('model');
-    if (!this.#live() || !this.#flow) return false;
-    if (!main) { await this.#abort('model', 'menu-not-open'); return false; }
-    // Enter only on the picker's focused "Select model", confirmed by the read just above.
-    const pressed = await this.#press('codex', ['Enter']);
-    if (pressed !== 'sent') { await this.#abort('model', pressed === 'not-front' ? 'foreground-changed' : 'key-uncertain'); return false; }
-    const flow = this.#flow;
-    const list = await this.#waitFor('codex', s => {
-      const menu = s.menu;
-      const item = menu && focusedItem(menu);
-      return menu && menu.label !== CODEX_PICKER && item?.kind === 'option' ? menu : null;
-    }, this.#verifyMs());
+  /** Waits for the flow's model menu, then focuses its current model: the knob's first candidate. */
+  async #openList(knob: SettingKnob, kind: 'claude-model' | 'codex-models'): Promise<boolean> {
+    const flow = this.#flow!;
+    const menu = await this.#waitFor(flow.client, s => s.menu?.kind === kind && optionIndexes(s.menu).length > 0 ? s.menu : null, this.#verifyMs());
     if (!this.#live()) return false;
-    if (!list) { await this.#abort('model', 'list-not-open'); return false; }
-    flow.surface = 'codex-list';
-    flow.list = { label: list.label, options: list.items.filter(item => item.kind === 'option').map(item => item.label) };
-    this.#opened(flow, { count: list.items.length });
+    if (!menu) return this.#abort(knob, kind === 'claude-model' ? 'menu-not-open' : 'list-not-open');
+    flow.surface = kind;
+    const options = optionIndexes(menu);
+    flow.options = options.map(i => menu.items[i].label);
+    const current = options.find(i => menu.items[i].selected) ?? options[0];
+    await this.#focusEntry(flow, kind, current, menu.items.length);
+    if (!this.#live()) return false;
+    this.#opened({ count: options.length });
     return true;
   }
 
-  async #openCodexPower(): Promise<boolean> {
-    const main = await this.#openCodexPicker('effort');
-    if (!this.#live() || !this.#flow) return false;
-    let menu = main;
-    const flow = this.#flow;
-    // Down from "Select model" to "Power", one entry at a time, each move read back; never Enter.
-    for (let moves = 0; menu && moves < menu.items.length && focusedItem(menu)?.label !== CODEX_POWER; moves++) {
-      const from = menu.focused;
-      const pressed = await this.#press('codex', ['Down']);
-      if (!this.#live()) return false;
-      if (pressed !== 'sent') { await this.#abort('effort', pressed === 'not-front' ? 'foreground-changed' : 'key-uncertain'); return false; }
-      menu = await this.#waitFor('codex', s => { const m = this.#flowMenu(flow, s); return m && m.focused !== from ? m : null; }, FOCUS_READBACK_MS);
-      if (!this.#live()) return false;
-    }
-    const power = menu && focusedItem(menu);
-    if (power?.kind === 'action' && power.label === CODEX_POWER) {
-      this.#opened(flow, { count: menu!.items.length });
-      return true;
-    }
-    // No picker or no Power entry: close what opened, then use the owner's chords, or report unsupported.
-    await this.#closeFlow(main ? 'power-unavailable' : 'menu-not-open');
-    if (!this.#live()) return false;
-    const { codexEffortIncrease, codexEffortDecrease } = this.#host.profile().shortcuts;
-    if (codexEffortIncrease && codexEffortDecrease) {
-      this.#flow = { knob: 'effort', client: 'codex', surface: 'codex-chord', session: null };
-      this.#host.log({ type: 'knob-menu', knob: 'effort', client: 'codex', action: 'opened', route: 'chord' });
-      return true;
-    }
-    this.#host.log({ type: 'effort', client: 'codex', route: 'picker', outcome: 'unsupported', reason: main ? 'power-unavailable' : 'menu-not-open' });
-    this.#show('effort', LIGHT_OF.unsupported);
-    return false;
-  }
-
-  /** Types an opening shortcut; on failure ends the flow (closing anything that opened) and refuses. */
-  async #pressOpening(knob: SettingKnob, client: Client, keys: readonly KeyName[]): Promise<boolean> {
-    const pressed = await this.#press(client, keys);
-    if (!this.#live()) return false;
-    if (pressed === 'sent') return true;
-    if (pressed === 'not-front') {
-      this.#flow = null;
-      this.#refuse(knob, 'foreground-changed', { client });
-    } else await this.#abort(knob, 'key-uncertain');
-    return false;
-  }
-
-  #opened(flow: Flow, extra: Record<string, unknown>): void {
+  #opened(extra: Record<string, unknown>): void {
+    const flow = this.#flow!;
     this.#host.log({ type: 'knob-menu', knob: flow.knob, client: flow.client, action: 'opened', ...extra });
     this.#host.render();
   }
 
   // Steps
 
-  async #modelStep(direction: number): Promise<void> {
+  /** Moves focus one model option, stopping at the first and last option ("More models" is never a stop). */
+  async #modelStep(direction: number): Promise<boolean> {
     const flow = this.#flow!;
-    const state = await this.#state(flow.client);
-    if (!this.#live()) return;
-    const menu = state && this.#flowMenu(flow, state);
-    if (!menu) return this.#lost(state ? 'menu-gone' : 'picker-unknown');
-    const count = menu.items.length;
-    let key: KeyName;
-    if (menu.focused === null) key = 'Down'; // Claude opens with no entry focused; the first Down focuses the first entry.
-    else {
-      const target = Math.max(0, Math.min(count - 1, menu.focused + direction));
-      if (target === menu.focused) {
-        this.#host.log({ type: 'model-step', client: flow.client, index: menu.focused, count, clamped: true });
-        return;
-      }
-      key = direction > 0 ? 'Down' : 'Up';
+    const kind = MENU_OF[flow.surface]!;
+    const menu = await this.#waitFor(flow.client, s => s.menu?.kind === kind ? s.menu : null, SETTLE_MS);
+    if (!this.#live()) return false;
+    if (!menu) return this.#lost('menu-gone');
+    const options = optionIndexes(menu);
+    const from = flow.candidate ?? options.find(i => menu.items[i].selected) ?? options[0];
+    const position = Math.max(0, options.indexOf(from));
+    const target = options[Math.max(0, Math.min(options.length - 1, position + direction))];
+    if (target === from) {
+      this.#host.log({ type: 'model-step', client: flow.client, index: position, count: options.length, clamped: true });
+      return true;
     }
-    const pressed = await this.#press(flow.client, [key]);
-    if (!this.#live()) return;
-    if (pressed !== 'sent') return this.#lost(pressed === 'not-front' ? 'foreground-changed' : 'key-uncertain', true);
-    const after = await this.#waitFor(flow.client, s => { const m = this.#flowMenu(flow, s); return m && m.focused !== menu.focused ? m : null; }, FOCUS_READBACK_MS)
-      ?? (await this.#menuNow(flow));
-    if (!this.#live()) return;
-    if (!after) return this.#lost('menu-gone');
-    this.#host.log({ type: 'model-step', client: flow.client, index: after.focused, count: after.items.length });
+    const focused = await this.#focusEntry(flow, kind, target, menu.items.length);
+    if (!this.#live()) return false;
+    if (focused === undefined) return this.#lost('menu-gone', true);
+    this.#host.log({ type: 'model-step', client: flow.client, index: focused === null ? null : options.indexOf(focused), count: options.length });
+    return true;
   }
 
-  /** Knob 1's still click: Enter on the focused model option of the open model menu or list, then the readback. */
+  /** Focuses a menu entry and records it as the candidate only when the read-back confirms it; undefined when unknown. */
+  async #focusEntry(flow: Flow, kind: MenuKind, index: number, count: number): Promise<number | null | undefined> {
+    const answer = await this.#call(() => this.#host.adapter.focusMenuEntry(flow.client, kind, index, count));
+    const focused = answer.status === 'known' ? answer.value : undefined;
+    flow.candidate = focused === index ? index : null;
+    return focused;
+  }
+
+  /** Knob 1's still click: `Select` on the confirmed focused model option, the readback, then closing. */
   async #pick(flow: Flow): Promise<void> {
-    const state = await this.#state(flow.client);
+    const kind = MENU_OF[flow.surface]! as 'claude-model' | 'codex-models';
+    const index = flow.candidate;
+    let last = null as PickerMenu | null;
+    const menu = await this.#waitFor(flow.client, s => {
+      last = s.menu?.kind === kind ? s.menu : null;
+      return last && index !== null && last.focused === index && last.items[index]?.kind === 'option' ? last : null;
+    }, SETTLE_MS);
     if (!this.#live()) return;
-    const menu = state && this.#flowMenu(flow, state);
-    if (!menu) return this.#lost(state ? 'menu-gone' : 'picker-unknown', true);
-    const item = focusedItem(menu);
-    if (!item || item.kind !== 'option') return this.#refuse('model', 'nothing-chosen', { client: flow.client });
-    const index = menu.focused!;
-    const count = menu.items.length;
+    if (!last) return void this.#lost('menu-gone', true);
+    if (index === null || !menu) return this.#refuse('model', 'nothing-chosen', { client: flow.client });
+    const options = optionIndexes(menu);
+    const picked = menu.items[index].label;
     const previous = menu.items.find(entry => entry.selected)?.label ?? null;
     const before = flow.client === 'claude' && flow.session ? await this.#settings(flow.session) : null;
     if (!this.#live()) return;
-    const pressed = await this.#press(flow.client, ['Enter']);
-    if (pressed === 'not-front') return this.#lost('foreground-changed', true);
     const log = (outcome: Outcome, extra: Record<string, unknown> = {}) => {
-      this.#host.log({ type: 'model', client: flow.client, outcome, index, count, ...extra });
+      this.#host.log({ type: 'model', client: flow.client, outcome, index: options.indexOf(index), count: options.length, ...extra });
       this.#show('model', LIGHT_OF[outcome]);
     };
-    if (pressed === 'uncertain') {
-      log('unverified', { reason: 'key-uncertain' });
+    const selected = await this.#call(() => this.#host.adapter.selectMenuOption(flow.client, kind, index, menu.items.length));
+    if (selected.status === 'known' && !selected.value) return this.#refuse('model', 'focus-moved', { client: flow.client });
+    if (selected.status !== 'known') {
+      log('unverified', { reason: 'select-uncertain' });
       return this.#closeFlow('picked');
     }
     if (flow.client === 'claude') {
-      // Applied: the composer's Model button names the pick, and the session record's `model` changed when the pick did.
+      // Applied: the Model button names the pick, and the session record's `model` changed when the pick did.
       const recordBefore = before?.model ?? null;
-      const needRecord = recordBefore !== null && item.label !== previous;
+      const needRecord = recordBefore !== null && picked !== previous;
       // Assigned inside the poll; the casts keep TypeScript from narrowing them to their first value.
       let button = null as string | null, record = 'unknown' as 'unchanged' | 'unknown';
       const applied = await this.#waitFor('claude', async s => {
         if (s.menu) return null;
-        button = s.model;
-        if (button !== item.label) return null;
+        button = s.model?.label ?? null;
+        if (button !== picked) return null;
         if (!needRecord) return true;
         const now = await this.#settings(flow.session!);
         record = now ? 'unchanged' : 'unknown';
         return now && now.model !== recordBefore ? true : null;
       }, this.#verifyMs());
-      // Enter closed Claude's menu: nothing is left to close.
+      // Select closed Claude's menu: the composer gets focus back, so Play still works.
       this.#flow = null;
+      if (!this.#host.closed()) await this.#focusComposer(flow);
       this.#host.render();
       if (!this.#live()) return log('unverified', { reason: 'interrupted' });
       if (applied) return log('applied', { evidence: needRecord ? 'button-and-record' : 'button' });
       if (button === null) return log('unverified', { reason: 'readback-unknown' });
-      if (button !== item.label) return log('mismatch', { reason: 'model-differs' });
+      if (button !== picked) return log('mismatch', { reason: 'model-differs' });
       return record === 'unknown' ? log('unverified', { reason: 'record-unknown' }) : log('mismatch', { reason: 'record-unchanged' });
     }
-    // Codex returns to its picker, which stays open, and announces the model and level.
-    const options = flow.list?.options ?? [];
-    let announced = undefined as string | undefined, heard = false as boolean;
-    const applied = await this.#waitFor('codex', s => {
-      if (s.menu?.label !== CODEX_PICKER || !s.announcement) return null;
-      heard = true;
-      announced = announcedOption(s.announcement.label, options);
-      return announced === item.label ? true : null;
-    }, this.#verifyMs());
-    // The picker stays open after a pick: the flow now closes it.
-    flow.surface = 'codex-main';
+    // Codex returns to its picker, which stays open: close it, then read the model from the closed button's name.
+    const main = await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' ? s.menu : null, this.#verifyMs());
+    flow.surface = 'codex-picker';
     if (!this.#live()) return log('unverified', { reason: 'interrupted' });
-    if (applied) log('applied', { evidence: 'announcement' });
-    else if (!heard) log('unverified', { reason: 'readback-unknown' });
-    else if (announced) log('mismatch', { reason: 'model-differs' });
-    else log('unverified', { reason: 'announcement-unmatched' });
-    await this.#closeFlow('picked');
+    if (!main) {
+      log('unverified', { reason: 'picker-not-back' });
+      return this.#closeFlow('picked');
+    }
+    this.#flow = null;
+    const closed = await this.#codexEscape(flow, 'picked');
+    const name = closed?.model?.label;
+    const named = name ? namedOption(name, flow.options) : undefined;
+    if (!closed || !name) log('unverified', { reason: 'picker-open' });
+    else if (named === picked) log('applied', { evidence: 'picker-name' });
+    else if (named) log('mismatch', { reason: 'model-differs' });
+    else log('unverified', { reason: 'name-unmatched' });
   }
 
-  async #effortStep(direction: number): Promise<void> {
+  async #effortStep(direction: number): Promise<boolean> {
     const flow = this.#flow!;
-    if (flow.surface === 'codex-chord') return this.#chordStep(direction);
     const route = flow.client === 'claude' ? 'slider' : 'picker';
     const log = (outcome: Outcome | 'at-limit', extra: Record<string, unknown> = {}) => {
       this.#host.log({ type: 'effort', client: flow.client, route, direction: direction > 0 ? 'up' : 'down', outcome, ...extra });
       this.#show('effort', LIGHT_OF[outcome]);
+      return outcome === 'applied';
     };
-    const state = await this.#state(flow.client);
-    if (!this.#live()) return;
-    const key: KeyName = direction > 0 ? 'Right' : 'Left';
     if (flow.client === 'claude') {
-      if (state?.slider !== CLAUDE_EFFORT_SLIDER) return this.#lost(state ? 'slider-gone' : 'picker-unknown');
-      const button = state.effort;
+      const state = await this.#waitFor('claude', s => s.slider ? s : null, SETTLE_MS);
+      if (!this.#live()) return false;
+      const slider = state?.slider;
+      if (!state || !slider) return this.#lost('slider-gone');
+      const count = Math.round((slider.max - slider.min) / slider.step) + 1;
+      const position = Math.round((slider.value - slider.min) / slider.step) + 1;
+      const to = slider.value + direction * slider.step;
+      // The range comes from the slider: at an end nothing is set and the waiting detents are dropped.
+      if (to < slider.min - EPSILON || to > slider.max + EPSILON) return log('at-limit', { position, count });
+      const button = state.effort?.label ?? null;
       const recordBefore = flow.session ? (await this.#settings(flow.session))?.effort ?? null : null;
-      if (!this.#live()) return;
-      const pressed = await this.#press('claude', [key]);
-      if (pressed !== 'sent') return this.#lost(pressed === 'not-front' ? 'foreground-changed' : 'key-uncertain', true);
+      if (!this.#live()) return false;
+      const set = await this.#call(() => this.#host.adapter.setSliderValue('claude', slider.value, to));
+      if (set.status !== 'known') return log('unverified', { reason: 'set-uncertain' });
       // Applied: the Effort button shows another level, and the session record's `effort` changed with it.
       let seen = null as string | null, record = 'unknown' as 'unchanged' | 'unknown';
       const applied = await this.#waitFor('claude', async s => {
-        if (s.effort === null) return null;
-        seen = s.effort;
-        if (button === null || seen === button) return null;
+        seen = s.effort?.label ?? null;
+        if (seen === null || button === null || seen === button) return null;
         if (recordBefore === null) return true;
         const now = await this.#settings(flow.session!);
         record = now ? 'unchanged' : 'unknown';
         return now && now.effort !== recordBefore ? true : null;
       }, this.#verifyMs());
       if (!this.#live()) return log('unverified', { reason: 'interrupted' });
-      if (applied) return log('applied', { evidence: recordBefore === null ? 'button' : 'button-and-record' });
+      const at = { position: position + direction, count };
+      if (applied) return log('applied', { evidence: recordBefore === null ? 'button' : 'button-and-record', ...at });
       if (seen === null || button === null) return log('unverified', { reason: 'readback-unknown' });
       if (seen === button) return log('mismatch', { reason: 'unchanged' });
       return record === 'unknown' ? log('unverified', { reason: 'record-unknown' }) : log('mismatch', { reason: 'record-unchanged' });
     }
-    const menu = state && this.#flowMenu(flow, state);
-    if (!menu || focusedItem(menu)?.label !== CODEX_POWER) return this.#lost(state ? 'power-gone' : 'picker-unknown');
+    // Codex without chords: Right or Left only while a fresh read shows its picker holding focus on Power.
+    const state = await this.#waitFor('codex', s => {
+      const menu = s.menu?.kind === 'codex-picker' ? s.menu : null;
+      return menu?.hasFocus && menu.focused !== null && menu.items[menu.focused].label === CODEX_POWER ? s : null;
+    }, SETTLE_MS);
+    if (!this.#live()) return false;
+    if (!state) return this.#lost('power-gone', true);
     const before = state.announcement;
     // The level count comes from the announcement each time: it differs by model.
     if (before && ((direction > 0 && before.position >= before.count) || (direction < 0 && before.position <= 1))) {
       return log('at-limit', { position: before.position, count: before.count });
     }
-    const pressed = await this.#press('codex', [key]);
+    const pressed = await this.#press('codex', [direction > 0 ? 'Right' : 'Left']);
     if (pressed !== 'sent') return this.#lost(pressed === 'not-front' ? 'foreground-changed' : 'key-uncertain', true);
     let after = null as PickerState['announcement'];
     const moved = await this.#waitFor('codex', s => {
-      if (s.menu?.label !== CODEX_PICKER || !s.announcement) return null;
+      if (s.menu?.kind !== 'codex-picker' || !s.announcement) return null;
       after = s.announcement;
       return before && (after.position !== before.position || after.count !== before.count) ? after : null;
     }, this.#verifyMs());
@@ -532,93 +525,127 @@ export class SettingKnobs {
     return log('mismatch', { reason: moved ? 'level-differs' : 'unchanged', position: heard.position, count: heard.count });
   }
 
-  /** The owner's Codex effort chord, only with Codex qualified and confirmed in front and no card. It cannot be confirmed. */
-  async #chordStep(direction: number): Promise<void> {
-    const front = await this.#host.frontClient();
-    if (!this.#live()) return;
-    if (!front.ok || front.client !== 'codex') return this.#lost(front.ok ? 'not-codex' : front.reason, true);
-    const gate = await this.#host.versionGate('codex');
-    if (!this.#live()) return;
-    if (!gate.ok) return this.#lost(gate.reason, true);
-    const card = await this.#host.card('codex');
-    if (!this.#live()) return;
-    if (card !== 'none') return this.#lost(card === 'card' ? 'card-open' : 'card-unknown', true);
+  /**
+   * Codex effort with the owner's chords: one chord per detent, only with Codex qualified and in front, no card and the
+   * picker closed (checked just before), confirmed by the picker button's name changing within the readback bound.
+   */
+  async #chordStep(direction: number, state: PickerState): Promise<boolean> {
     const { codexEffortIncrease, codexEffortDecrease } = this.#host.profile().shortcuts;
     const keys = direction > 0 ? codexEffortIncrease : codexEffortDecrease;
-    if (!keys) return this.#lost('chords-removed', true);
+    const log = (outcome: Outcome, extra: Record<string, unknown> = {}) => {
+      this.#host.log({ type: 'effort', client: 'codex', route: 'chord', direction: direction > 0 ? 'up' : 'down', outcome, ...extra });
+      this.#show('effort', LIGHT_OF[outcome]);
+      return outcome === 'applied';
+    };
+    if (!keys) return false;
+    const before = state.model?.label ?? null;
     const pressed = await this.#press('codex', keys);
-    if (!this.#live()) return;
-    if (pressed === 'not-front') return this.#lost('foreground-changed', true);
-    this.#host.log({ type: 'effort', client: 'codex', route: 'chord', direction: direction > 0 ? 'up' : 'down', outcome: 'unverified', reason: pressed === 'sent' ? 'no-readback' : 'key-uncertain' });
-    this.#show('effort', LIGHT_OF.unverified);
+    if (pressed === 'not-front') { this.#refuse('effort', 'foreground-changed', { client: 'codex' }); return false; }
+    if (pressed === 'uncertain') return log('unverified', { reason: 'key-uncertain' });
+    if (!this.#live()) return false;
+    if (before === null) return log('unverified', { reason: 'no-readback' });
+    const name = await this.#waitFor('codex', s => s.model && !s.model.expanded && s.model.label !== before ? s.model.label : null, this.#verifyMs());
+    if (!this.#live()) return log('unverified', { reason: 'interrupted' });
+    // An unchanged name is usually the end of the range; Codex gives no range to tell it from an unbound chord.
+    return name ? log('applied', { evidence: 'picker-name' }) : log('mismatch', { reason: 'unchanged' });
   }
 
   // Closing
 
   /** Ends the flow after a failure while opening: closes anything that opened, then refuses. */
-  async #abort(knob: SettingKnob, reason: string): Promise<void> {
+  async #abort(knob: SettingKnob, reason: string): Promise<false> {
     const client = this.#flow?.client;
     await this.#closeFlow(reason);
     this.#refuse(knob, reason, client ? { client } : {});
+    return false;
   }
 
   /** The flow ended without the bridge closing anything: the control is gone, unreadable or no longer in front. */
-  #lost(reason: string, flash = false): void {
+  #lost(reason: string, flash = false): false {
     const flow = this.#flow;
     this.#flow = null;
     this.#pending = 0;
     this.#clearTimer();
-    if (flow) this.#host.log({ type: 'knob-menu', knob: flow.knob, client: flow.client, action: 'closed', reason, escapes: 0 });
+    if (flow) this.#host.log({ type: 'knob-menu', knob: flow.knob, client: flow.client, action: 'closed', reason, method: 'none' });
     if (flash && flow) this.#show(flow.knob, 'error');
     this.#host.render();
+    return false;
   }
 
-  /** Escape, at most twice, each only into this flow's menu or slider confirmed open in the client in front. */
+  /**
+   * Closes the flow's control: Claude by `Collapse` and then composer focus; Codex by its model list's current option
+   * (`Select`) and then exactly one Escape into its confirmed-focused picker. A control already closed gets nothing.
+   */
   async #closeFlow(reason: string): Promise<void> {
     const flow = this.#flow;
     this.#flow = null;
     this.#clearTimer();
-    if (!flow) return;
-    let escapes = 0;
-    if (flow.surface !== 'codex-chord') {
-      while (escapes < MAX_ESCAPES && !this.#host.closed()) {
-        const state = await this.#state(flow.client);
-        if (!state || !this.#closable(flow, state)) break;
-        const pressed = await this.#press(flow.client, ['Escape']);
-        if (pressed !== 'sent') break;
-        escapes += 1;
+    if (!flow || this.#host.closed()) return;
+    if (flow.client === 'claude') {
+      const control: SettingControl = flow.surface === 'claude-effort' ? 'claude-effort' : 'claude-model';
+      const button = await this.#waitFor('claude', s => {
+        const own = control === 'claude-model' ? s.model : s.effort;
+        return own?.expanded ? own : null;
+      }, SETTLE_MS);
+      let method = 'none', verified = false;
+      if (button) {
+        const collapsed = await this.#call(() => this.#host.adapter.collapseSetting('claude', control));
+        method = 'collapse';
+        verified = collapsed.status === 'known' && collapsed.value;
+        await this.#focusComposer(flow);
+      }
+      this.#host.log({ type: 'knob-menu', knob: flow.knob, client: flow.client, action: 'closed', reason, method, verified });
+      this.#host.render();
+      return;
+    }
+    if (flow.surface === 'codex-models') {
+      // Leaving the model list: Select its current model, which returns to the picker with nothing changed. Escape is
+      // never sent from the list.
+      const menu = await this.#waitFor('codex', s => s.menu?.kind === 'codex-models' ? s.menu : null, SETTLE_MS);
+      const current = menu ? menu.items.findIndex(item => item.kind === 'option' && item.selected) : -1;
+      if (menu && current >= 0) {
+        const focused = await this.#act(() => this.#host.adapter.focusMenuEntry('codex', 'codex-models', current, menu.items.length));
+        if (focused === current) await this.#act(() => this.#host.adapter.selectMenuOption('codex', 'codex-models', current, menu.items.length));
+        await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' ? true : null, this.#verifyMs());
       }
     }
-    this.#host.log({ type: 'knob-menu', knob: flow.knob, client: flow.client, action: 'closed', reason, escapes });
-    this.#host.render();
+    await this.#codexEscape(flow, reason);
   }
 
-  /** Whether this flow's own control is open with focus in it, so Escape closes it and nothing else. */
-  #closable(flow: Flow, state: PickerState): boolean {
-    if (flow.surface === 'claude-effort') return state.slider === CLAUDE_EFFORT_SLIDER;
-    if (flow.surface === 'claude-model') return this.#flowMenu(flow, state) !== null;
-    // Codex: the picker, or a model list opened from it (its label is known once it was confirmed).
-    const menu = state.menu;
-    if (!menu) return false;
-    return menu.label === CODEX_PICKER || (flow.list ? menu.label === flow.list.label : menu.items.some(item => item.kind === 'option'));
+  /**
+   * Codex's single closing Escape: only when a fresh read shows its picker open and holding focus (focus is first moved
+   * into it when it is open without focus), then a bounded wait for the picker button to read collapsed. Never a second
+   * Escape: a picker still open after the wait is logged as closed unverified. Answers the closed state, or null.
+   */
+  async #codexEscape(flow: Flow, reason: string): Promise<PickerState | null> {
+    const done = (method: string, verified: boolean, state: PickerState | null) => {
+      this.#host.log({ type: 'knob-menu', knob: flow.knob, client: 'codex', action: 'closed', reason, method, verified });
+      this.#host.render();
+      return verified ? state : null;
+    };
+    let state = await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' ? s : null, SETTLE_MS);
+    if (!state) {
+      const now = await this.#state('codex');
+      return done('none', !!now && !now.menu && !now.model?.expanded, now);
+    }
+    if (!state.menu!.hasFocus) {
+      const count = state.menu!.items.length;
+      await this.#act(() => this.#host.adapter.focusMenuEntry('codex', 'codex-picker', 0, count));
+      state = await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' && s.menu.hasFocus ? s : null, SETTLE_MS);
+      if (!state) return done('none', false, null);
+    }
+    const pressed = await this.#press('codex', ['Escape']);
+    if (pressed !== 'sent') return done('none', false, null);
+    const closed = await this.#waitForEnd('codex', s => s.model && !s.model.expanded && !s.menu ? s : null);
+    return done('escape', closed !== null, closed);
   }
 
-  // Reads and keys
-
-  /** The flow's own menu when it holds focus: Claude's `Model: ...` menu, Codex's picker or the model list it opened. */
-  #flowMenu(flow: Flow, state: PickerState): PickerMenu | null {
-    const menu = state.menu;
-    if (!menu) return null;
-    if (flow.surface === 'claude-model') return menu.label.startsWith(CLAUDE_MODEL_MENU) && menu.items.some(item => item.kind === 'option') ? menu : null;
-    if (flow.surface === 'codex-main') return menu.label === CODEX_PICKER ? menu : null;
-    if (flow.surface === 'codex-list') return flow.list && menu.label === flow.list.label ? menu : null;
-    return null;
+  async #focusComposer(flow: Flow): Promise<void> {
+    const focused = await this.#call(() => this.#host.adapter.focusComposer(flow.client));
+    if (focused.status !== 'known' || !focused.value) this.#host.log({ type: 'knob-composer-unfocused', client: flow.client });
   }
 
-  async #menuNow(flow: Flow): Promise<PickerMenu | null> {
-    const state = await this.#state(flow.client);
-    return state && this.#flowMenu(flow, state);
-  }
+  // Reads, actions and keys
 
   async #state(client: Client): Promise<PickerState | null> {
     const answer = await this.#host.call(() => this.#host.adapter.pickerState(client));
@@ -630,6 +657,18 @@ export class SettingKnobs {
     return answer.ok && answer.value.status === 'known' ? answer.value.value : null;
   }
 
+  /** One adapter action: its observation, unknown on a failed call. */
+  async #call<T>(operation: () => Promise<Observation<T>>): Promise<Observation<T>> {
+    const answer = await this.#host.call(operation);
+    return answer.ok ? answer.value : { status: 'unknown', reason: answer.reason };
+  }
+
+  /** One adapter action's known value, or undefined. */
+  async #act<T>(operation: () => Promise<Observation<T>>): Promise<T | undefined> {
+    const answer = await this.#call(operation);
+    return answer.status === 'known' ? answer.value : undefined;
+  }
+
   async #press(client: Client, keys: readonly KeyName[]): Promise<Pressed> {
     const sent = await this.#host.tap(() => this.#host.adapter.tapInClient(client, keys, 1));
     if (!sent.ok || sent.value.status !== 'known') return 'uncertain';
@@ -637,18 +676,27 @@ export class SettingKnobs {
   }
 
   /** Polls the client's controls every `verifyPollMs` until `test` answers, within `withinMs`; null on timeout or cancel. */
-  async #waitFor<T>(client: Client, test: (state: PickerState) => T | null | Promise<T | null>, withinMs: number): Promise<T | null> {
+  async #waitFor<T>(client: Client, test: (state: PickerState) => T | null | undefined | Promise<T | null | undefined>, withinMs: number): Promise<T | null> {
+    return this.#poll(client, test, withinMs, () => this.#live());
+  }
+
+  /** As `#waitFor`, but a close in progress does not cut it short: only the router's shutdown does. */
+  async #waitForEnd<T>(client: Client, test: (state: PickerState) => T | null | undefined): Promise<T | null> {
+    return this.#poll(client, test, this.#verifyMs(), () => !this.#host.closed());
+  }
+
+  async #poll<T>(client: Client, test: (state: PickerState) => T | null | undefined | Promise<T | null | undefined>, withinMs: number, live: () => boolean): Promise<T | null> {
     const { verifyPollMs } = this.#host.profile().timing;
     const start = this.#host.clock.now();
     for (;;) {
       const state = await this.#state(client);
-      if (!this.#live()) return null;
+      if (!live()) return null;
       const found = state ? await test(state) : null;
-      if (!this.#live()) return null;
-      if (found !== null) return found;
+      if (!live()) return null;
+      if (found !== null && found !== undefined) return found;
       if (this.#host.clock.now() - start + verifyPollMs > withinMs) return null;
       await this.#host.sleep(verifyPollMs);
-      if (!this.#live()) return null;
+      if (!live()) return null;
     }
   }
 

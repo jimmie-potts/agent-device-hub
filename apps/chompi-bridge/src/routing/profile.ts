@@ -19,8 +19,8 @@ const MODIFIERS = ['LeftShift', 'LeftControl', 'LeftAlt', 'LeftWindows'] as cons
 /**
  * Platform-neutral key names, exactly the set the Windows adapter can type (`VIRTUAL_KEYS`). Nothing else can appear
  * in a profile, so a profile can never ask the adapter for a key it would refuse at runtime. `Equal` and `Minus` are
- * the `=` and `-` keys of the owner's Codex effort chords (#906). Menu navigation keys (`NAVIGATION_KEYS`) are typed
- * only by the router's model and effort knobs and are never profile key names.
+ * the `=` and `-` keys of the owner's Codex effort chords (#906). The keys only `tapInClient` types (`NAVIGATION_KEYS`:
+ * Left, Right and Escape) are never profile key names.
  */
 export const KEY_NAMES: readonly string[] = Object.freeze([
   'Enter', ...MODIFIERS,

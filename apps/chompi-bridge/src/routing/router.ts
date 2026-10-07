@@ -203,7 +203,6 @@ export class TaskRouter {
       frontClient: () => this.#frontClient(),
       versionGate: client => this.#versionGate(client),
       card: async client => (await this.#observeCard(client)).kind,
-      composer: client => this.#composer(client),
       claudeFront: () => this.#claudeFront(),
       blocked: () => this.#recordHeld || this.#chordDown ? 'dictating' : this.#sending ? 'send-in-progress' : this.#focusing !== null ? 'focus-in-progress' : null,
       closed: () => this.#closed,
