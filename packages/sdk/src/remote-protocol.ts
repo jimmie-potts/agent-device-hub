@@ -17,7 +17,7 @@ export type StreamEventName = 'ready' | 'message' | 'overflow' | 'command' | 'sy
 
 const STATUS: Partial<Record<ErrorCode, number>> = {
   'too-large': 413, unauthenticated: 401, forbidden: 403, 'not-found': 404, 'invalid-state': 409, 'revision-conflict': 409,
-  'duplicate-conflict': 409, capacity: 429, unavailable: 503, internal: 500,
+  'duplicate-conflict': 409, capacity: 429, unavailable: 503, 'uncertain-result': 500, internal: 500,
 };
 /** The HTTP status that carries an error code; other refusals are 400. */
 export const statusOf = (code: ErrorCode): number => STATUS[code] ?? 400;

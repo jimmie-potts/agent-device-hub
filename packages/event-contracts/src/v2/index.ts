@@ -1,6 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import type {ErrorObject, ValidateFunction} from 'ajv';
+import {RETRYABLE, isErrorCode, type ErrorCode} from './errors.js';
 
 /** B.U.N.N.Y. profile 2.0 (ADR 0012): one envelope, shared building blocks, one error body and code registry. */
 export const PROFILE_VERSION = '2.0';
@@ -15,22 +16,21 @@ export const schemas = {
   kinds: read('kinds.schema.json'),
 };
 
-type ErrorRegistry = {codes: Record<string, {retryable: boolean; meaning: string}>};
+export {RETRYABLE, isErrorCode, type ErrorCode};
+type ErrorRegistry = {codes: Readonly<Record<ErrorCode, {retryable: boolean; meaning: string}>>};
+/** The registry file, `schemas/v2/errors.json`: each code's flag and meaning. `RETRYABLE` is the same table as a type. */
 export const errorCodes = (read('errors.json') as ErrorRegistry).codes;
-/** A code from `schemas/v2/errors.json`; `errorBody` rejects any other. */
-export type ErrorCode = string;
 
 export type MessageKind = 'state' | 'removal' | 'occurrence' | 'command' | 'reply' | 'outcome' | 'sync-request' | 'sync-completed';
 export type Ticket = {epoch: string; sequence: number};
 export type Unknown = {status: 'unknown'};
 export type Known<T> = {status: 'known'; value: T};
 export type EntityRef = {family: string; id: string};
-export type ErrorDetail = {code: string; retryable: boolean; requestId?: string; traceId?: string; detail?: string};
+export type ErrorDetail = {code: ErrorCode; retryable: boolean; requestId?: string; traceId?: string; detail?: string};
 export type ErrorBody = {error: ErrorDetail};
 export type Message<T = Record<string, unknown>> = {
   specversion: '1.0'; bunnyprofile: '2.0'; id: string; source: string; type: string; subject: string; time: string;
-  kind: MessageKind; datacontenttype: 'application/json'; dataschema: string; traceparent: string; tracestate?: string;
-  expiresat?: string; data: T;
+  kind: MessageKind; datacontenttype: 'application/json'; dataschema: string; traceparent: string; expiresat?: string; data: T;
 };
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -39,15 +39,15 @@ export const MAX_DETAIL = 1024;
 
 /**
  * The error body every boundary returns. `retryable` comes from the registry, and the validator refuses received
- * bodies whose code or flag disagrees with it. Extras that the error block would refuse throw here.
+ * bodies whose code or flag disagrees with it. A code outside the registry fails to compile, and throws when an
+ * untyped caller passes one. Extras that the error block would refuse throw here.
  */
 export function errorBody(code: ErrorCode, extra: {requestId?: string; traceId?: string; detail?: string} = {}): ErrorBody {
-  const entry = errorCodes[code];
-  if (entry === undefined) throw new Error(`unregistered error code: ${code}`);
+  if (!isErrorCode(code)) throw new Error(`unregistered error code: ${String(code)}`);
   if (extra.requestId !== undefined && !ID.test(extra.requestId)) throw new Error('requestId is not an identifier');
   if (extra.traceId !== undefined && !TRACE_ID.test(extra.traceId)) throw new Error('traceId is not 32 lowercase hex digits');
   if (extra.detail !== undefined && (extra.detail.length === 0 || extra.detail.length > MAX_DETAIL)) throw new Error(`detail must have 1 to ${MAX_DETAIL} characters`);
-  return {error: {code, retryable: entry.retryable, ...extra}};
+  return {error: {code, retryable: RETRYABLE[code], ...extra}};
 }
 
 export type Validation<T = Record<string, unknown>> = {ok: true; value: Message<T>} | {ok: false; error: ErrorDetail};

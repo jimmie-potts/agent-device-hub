@@ -15,16 +15,16 @@ function nonzeroHex(bytes: number): string {
 }
 
 /**
- * The context for a message sent while handling `parent`: the same trace, flags and tracestate, in a new span. Without
- * a valid parent, a new trace starts with the sampled flag set, because the SDK has no sampler of its own.
+ * The context for a message sent while handling `parent`: the same trace and flags, in a new span. Only `traceparent`
+ * is passed on; a `tracestate` the parent carries is dropped, as the diagnostic contract disables its propagation.
+ * Without a valid parent, a new trace starts with the sampled flag set, because the SDK has no sampler of its own.
  */
 export function childOf(parent: TraceContext | undefined): TraceContext {
   const [, traceId, spanId, flags] = TRACEPARENT.exec(parent?.traceparent ?? '') ?? [];
   if (parent === undefined || traceId === undefined || spanId === undefined || flags === undefined || ZERO.test(traceId) || ZERO.test(spanId)) {
     return {traceparent: `00-${nonzeroHex(16)}-${nonzeroHex(8)}-01`};
   }
-  const traceparent = `00-${traceId}-${nonzeroHex(8)}-${flags}`;
-  return parent.tracestate === undefined ? {traceparent} : {traceparent, tracestate: parent.tracestate};
+  return {traceparent: `00-${traceId}-${nonzeroHex(8)}-${flags}`};
 }
 
 /** The trace id of a traceparent built by `childOf`. */

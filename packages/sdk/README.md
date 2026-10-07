@@ -79,7 +79,7 @@ The `Sdk` calls:
 | `publishMessage(key, message)` | Publishes a message built earlier, unchanged: its `id`, `time` and trace stay. An outbox resends a stored message this way. A message from another source is refused with `forbidden`, and one that is not published with `invalid-request`. |
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
-| `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}` or an error body from `errorBody`. |
+| `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
 | `sync(families, handler, {timeoutMs, maxBuffered?, parent?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. See [Sync](#sync). |
 | `serveSync(families, provider)` | Answers sync requests for `families` from the owner's current state. `provider` returns a snapshot or an error body. |
 
@@ -140,12 +140,26 @@ straight back to the requester, never to subscribers.
 | --- | --- | --- |
 | `accepted` | The responder accepted. `reply` is the reply message. | none |
 | `rejected` | The responder refused, with its error body and the `reply`. | the responder's |
-| `rejected` | The responder threw. The error also goes to `onError`. | `internal` |
 | `rejected` | No responder owns the key, or it closed before the command reached it. | `unavailable` |
 | `rejected` | The responder's queue is full. | `capacity` |
 | `rejected` | The deadline passed before the responder's handler started the command. | `expired` |
 | `rejected` | The requester closed before the responder's handler started the command. | `cancelled` |
-| `uncertain` | The handler had the command when the deadline passed or the requester closed. It may have taken effect. | `uncertain-result` |
+| `uncertain` | The handler threw, or answered with something other than a valid reply. The error also goes to `onError`. | `uncertain-result` |
+| `uncertain` | The handler had the command when the deadline passed or the requester closed. | `uncertain-result` |
+
+As ADR 0012's "Errors, effects and outcomes" says, `rejected` proves that the
+command had no effect: it never reached the handler, or the handler refused it
+with an error body before acting. Once the handler has started, an exception may
+come after an effect, so the request is `uncertain`, never a refusal. This holds
+for an `SdkError` from a call the handler makes, and for a throw before the
+handler acted: the SDK cannot tell a throw before an effect from one after it.
+A responder that can refuse should return its error body instead of throwing.
+
+A refusal is valid only with a registered code and that code's `retryable`
+flag, as `errorBody` builds it. The SDK rebuilds it with at most 1024
+characters of detail and nothing else. An error body with an unregistered code,
+the wrong flag or no code is not a reply, so its request is `uncertain`, on both
+transports.
 
 The SDK never sends a command twice, and a reply that arrives after the
 deadline is ignored. Error bodies carry the `requestId` and the command's trace
@@ -312,6 +326,13 @@ export const lamp: BunnyModule = {
 - **`start(context)`** subscribes, responds and opens devices. A throw, a
   rejection or a start that outlasts the runtime's start deadline fails the
   module.
+- **Device failures.** A device's errors and timeouts are not module failures
+  (policy A in [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)).
+  A module reaches its device lazily and turns those errors and timeouts into
+  outcomes and an `unavailable` device state. Only an error that escapes the
+  module stops it: a throw or rejection from its start, a handler, a responder,
+  a timer or a worker, or a start that outlasts its deadline. The module then
+  stays stopped until the runtime restarts.
 - **`stop()`** releases what the module holds. The runtime calls it once for
   every module whose start it called, even when start failed or has not
   finished. It runs after the module's participant has closed, which waits for
@@ -366,13 +387,28 @@ async start({sdk, database, clock}) {
 - `transaction(work)` runs `work` in one SQLite transaction. Each message that
   `add(key, draft, {parent?})` stores commits with the work's own changes, and
   goes out only after the commit, in order, through `publishMessage`, with the
-  `id` and `time` it was stored with. A throw rolls back the work and its
-  messages, and nothing goes out. `work` must be synchronous: its type refuses a
-  promise, and one returned anyway rolls the work back with a `TypeError`. The
-  outbox opens the transaction itself. The promise resolves with `work`'s result
-  once the messages are published. If publishing is refused, for example because
-  the module is stopping, it rejects although the work committed; the messages
-  stay stored, and the next transaction or start sends them.
+  `id`, `time` and trace context it was stored with. A throw rolls back the work
+  and its messages, nothing goes out, and the promise rejects with that error.
+  `work` must be synchronous: its type refuses a promise, and one returned anyway
+  rolls the work back with a `TypeError`. The outbox opens the transaction
+  itself.
+- A commit stands even when its publish fails. Once the work commits, the
+  promise resolves with `work`'s result after the publish ends, and never
+  rejects, so no caller takes a failed publish for a rollback and does the work
+  again. If publishing is refused, for example because the module is stopping,
+  the messages stay stored, unpublished, and the next transaction or start
+  sends them unchanged. Nothing sends them again on its own.
+- A refused publish is reported to the `onError` option, with the bus's
+  signature: an `SdkError` with the refusal's registry code (`internal` for an
+  error without one) and the fixed detail `committed, awaiting publication`,
+  with the refusal as its `cause`, and the scope
+  `{source, pattern: 'outbox'}`. It is reported once per run of refusals, and
+  again only after a send goes through or the code changes. Without an
+  `onError`, it becomes a `BunnySdkWarning` process warning.
+- The `validator` option checks each message as `add` stores it, so a message
+  it refuses throws `SdkError` with the validator's code and rolls the
+  transaction back. A remote part passes the validator its edge uses, with the
+  same schemas, so a message the edge would refuse never waits in the outbox.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One
@@ -396,6 +432,10 @@ Known limits:
   it should sync. A dropped outcome goes out again at the module's next start.
 - An outcome waits for the module's next start to go out again. A core that
   fails and recovers while the module keeps running gets it at that start.
+- A refusal that lasts, such as a schema the edge does not accept from an
+  outbox without a validator, holds back every later message, which waits
+  behind the refused one in commit order. Each send tries the oldest first, and
+  the report names the code. Hub #949 owns the diagnostic record for it.
 - The [outbox decisions](../../openspec/changes/archive/2026-10-06-gh-882-module-kit/design.md)
   record the reasons and what the core must do.
 
@@ -422,6 +462,11 @@ is the only part of the kit that loads `node:test`. `conformanceChecks(spec)`
 returns the same checks as `{name, run}` for another runner, such as Vitest.
 Each check hosts a fresh instance of the module on its own bus and state
 directory, with a stand-in owner, `bunny/core`, serving the families it copies.
+Under ADR 0012's failure isolation (policy A), a device's errors and timeouts
+become outcomes and an `unavailable` device state, never a module failure, and
+only an error that escapes the module stops it. The kit fails a module whose
+handler, timer or worker fails. A check that a device failure stays with the
+device belongs to [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919).
 Every message the check sees must follow profile 2.0, with the core families,
 the stand-in acknowledgment and `spec.schemas` registered. Every record the
 module logs must be one the runtime writes whole as a
@@ -480,10 +525,11 @@ await core.subscribe('bunny.state.session.*', message =>
   core.publish('bunny.event.session.s1', turnEnded, {parent: message}));
 ```
 
-The new message keeps the parent's trace ID, flags and `tracestate`, and gets a
-new span ID. A reply continues its command's trace the same way. Without a
-parent, or with a malformed or all-zero one, the message starts a new trace with
-the sampled flag set.
+The new message keeps the parent's trace ID and flags, and gets a new span ID.
+A reply continues its command's trace the same way. Without a parent, or with a
+malformed or all-zero one, the message starts a new trace with the sampled flag
+set. Only `traceparent` travels: profile 2.0 has no `tracestate` or baggage, so
+a `tracestate` that a parent carries is never passed on.
 
 ## Remote transport
 
@@ -526,6 +572,25 @@ HTTP status that fits its code.
 - **Remote refusals.** A remote responder's or owner's refusal is rebuilt at the
   edge as the shared error body: its registered code, and at most 1024
   characters of detail. Anything else it carried is dropped.
+- **A remote responder that fails.** When a remote handler throws, or answers
+  with something other than a valid reply, the client reports the error to its
+  `onError` and answers the `reply` call with `{"status": "uncertain"}`. The edge
+  settles the request `uncertain` with `uncertain-result`, as the bus does in
+  process, and sends no reply message.
+- **Safe errors.** An exception that the edge did not expect is answered with
+  `internal` and the fixed detail `the edge failed`, in the response and in the
+  edge's log record. Once the edge has handed a command to its bus, it answers
+  one with `uncertain-result` and the fixed detail
+  `the edge failed after it sent the command` instead, because a handler may
+  have run it. The exception's message, stack and cause stay in memory. The
+  edge's and the SDK's own refusals keep their text, which may quote what the
+  caller sent, such as a path, a claimed source, an id or an attribute the
+  validator refused.
+- **Edge answers at the client.** The client takes an edge refusal only with a
+  registered code and that code's flag, and reports any other body as
+  `internal`. A command whose request call the edge answers with `internal` or
+  `uncertain-result` is `uncertain`, because the edge may have failed after the
+  command reached a handler. Any other refusal of the call stays `rejected`.
 - **Subscriptions.** `subscribe` resolves once the edge has registered the
   subscription, so nothing published after it is missed. Messages come down the
   stream in order.

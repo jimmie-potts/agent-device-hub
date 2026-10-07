@@ -319,8 +319,9 @@ class Memory implements MemoryHarness {
 
   /**
    * The armed crash, between the lamp's commit and its publish. Remote parts see the runtime go away: every connection
-   * to its edge ends at once, with the calls in flight. In-process parts die with it. The throw ends the lamp's work
-   * there, as the process's end would, and the runtime starts again on the same state directory.
+   * to its edge ends at once, with the calls in flight. In-process parts die with it. The throw refuses the publish, as
+   * the process's end would stop it, so the lamp's messages stay stored, and the runtime starts again on the same state
+   * directory. The old lamp still answers on the old bus, where nobody hears it any more.
    */
   #crashPoint(): void {
     if (!this.#armed) return;

@@ -1,6 +1,7 @@
-// The module host (ADR 0012, "Runtime and transport"): manifests, contexts and supervision. A module's thrown error,
-// rejected promise or device timeout stops only that module, through its participant's close, and health shows it
-// unhealthy; the others keep working.
+// The module host (ADR 0012, "Runtime and transport"): manifests, contexts and supervision. A device's errors and
+// timeouts are not module failures: under policy A, a module turns them into outcomes and an `unavailable` device
+// state. Only an error that escapes a module, thrown, rejected or a start that outlasts its deadline, stops that module,
+// through its participant's close, and health shows it unhealthy; the others keep working.
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';

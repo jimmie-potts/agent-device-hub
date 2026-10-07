@@ -59,14 +59,16 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   await stillWorks(probe);
 });
 
-it('a module whose responder throws refuses that request with internal and is stopped, and the log keeps no raw message', async context => {
+it('a module whose responder throws leaves that request uncertain and is stopped, and the log keeps no raw message', async context => {
   const leak = Object.assign(new Error('GET http://192.0.2.7/api?token=secret-token refused'), {code: 'ECONNREFUSED'});
   const failing = fixture('failing', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.failing', () => { throw leak; }); });
   const probe = fixture('probe');
   const {runtime, logs} = await run(context, {modules: [failing, steady(), probe]});
   const result = await contextOf(probe).sdk.request('bunny.cmd.mode.failing', setMode, {timeoutMs: 1000});
-  assert.equal(result.status, 'rejected');
-  assert.equal(result.error.error.code, 'internal');
+  // The handler had started, so the command may have taken effect: uncertain, never a refusal (ADR 0012).
+  assert.equal(result.status, 'uncertain');
+  assert.equal(result.error.error.code, 'uncertain-result');
+  assert.equal(JSON.stringify(result).includes('secret-token'), false, 'the result carries no exception message');
   await failed(runtime, 'failing');
   assert.deepEqual(failure(logs, 'failing')?.attributes, {
     'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'error.code': 'ECONNREFUSED',

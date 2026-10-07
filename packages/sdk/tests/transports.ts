@@ -5,7 +5,8 @@ import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
-  InProcessBus, RemoteEdge, connectRemote, type EdgeLogRecord, type ErrorScope, type Participant, type RemoteParticipant, type Scheduler,
+  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type EdgeLogRecord, type ErrorScope, type Participant, type RemoteParticipant,
+  type Scheduler,
 } from '../src/index.js';
 import {checked, flush, until, validator} from './support.js';
 
@@ -28,9 +29,12 @@ export type World = {
   close(): Promise<void>;
 };
 
+/** `scheduler`, when given, runs every deadline and wait of the world: the bus's, the edge's and each remote client's. */
+export type WorldOptions = {maxQueued?: number; scheduler?: Scheduler};
+
 export type Transport = {
   name: 'in-process' | 'remote';
-  start(options?: {maxQueued?: number}): Promise<World>;
+  start(options?: WorldOptions): Promise<World>;
   /**
    * What a closing participant's request gets while its command still waits in the responder's queue: `cancelled` in
    * process, where the bus knows, and `uncertain-result` remotely, where the requester cannot.
@@ -41,9 +45,12 @@ export type Transport = {
 export const inProcess: Transport = {
   name: 'in-process',
   closedWhileQueued: 'cancelled',
-  start: ({maxQueued} = {}) => {
+  start: ({maxQueued, scheduler} = {}) => {
     const errors: World['errors'] = [];
-    const bus = new InProcessBus({onError: (error, scope) => { errors.push({error, scope}); }, ...(maxQueued === undefined ? {} : {maxQueued})});
+    const bus = new InProcessBus({
+      onError: (error, scope) => { errors.push({error, scope}); }, ...(maxQueued === undefined ? {} : {maxQueued}),
+      ...(scheduler === undefined ? {} : {scheduler}),
+    });
     const local = (source: Source): Participant => checked(bus.connect(source));
     return Promise.resolve({
       bus, errors, local, connect: source => Promise.resolve(local(source)), arrived: () => Promise.resolve(), dropped: () => Promise.resolve(),
@@ -72,16 +79,20 @@ export type EdgeSetup = {
   maxQueued?: number;
   /** The edge's own scheduler, apart from the bus's. */
   scheduler?: Scheduler;
+  /** The bus's scheduler. */
+  busScheduler?: Scheduler;
+  /** Builds the edge's bus from its options, for a test that injects a fault into the bus. */
+  bus?: (options: BusOptions) => InProcessBus;
   /** Holds the `nth` call of a route, counted from 1, until the returned promise settles, before the edge sees it. */
   before?: (route: string, nth: number) => Promise<void> | undefined;
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
-export async function startEdge({maxQueued, scheduler, before}: EdgeSetup = {}): Promise<Edge> {
+export async function startEdge({maxQueued, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before}: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const logs: EdgeLogRecord[] = [];
   const report = (error: unknown, scope: ErrorScope): void => { errors.push({error, scope}); };
-  const bus = new InProcessBus({onError: report, ...(maxQueued === undefined ? {} : {maxQueued})});
+  const bus = build({onError: report, ...(maxQueued === undefined ? {} : {maxQueued}), ...(busScheduler === undefined ? {} : {scheduler: busScheduler})});
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
   const edge = new RemoteEdge({
     bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), log: record => { logs.push(record); },
@@ -129,12 +140,14 @@ export async function startEdge({maxQueued, scheduler, before}: EdgeSetup = {}):
 export const remote: Transport = {
   name: 'remote',
   closedWhileQueued: 'uncertain-result',
-  start: async ({maxQueued} = {}) => {
-    const edge = await startEdge(maxQueued === undefined ? {} : {maxQueued});
+  start: async ({maxQueued, scheduler} = {}) => {
+    const queued = maxQueued === undefined ? {} : {maxQueued};
+    const scheduled = scheduler === undefined ? {} : {scheduler};
+    const edge = await startEdge({...queued, ...scheduled, ...(scheduler === undefined ? {} : {busScheduler: scheduler})});
     return {
       bus: edge.bus, errors: edge.errors, close: () => edge.close(),
       local: source => checked(edge.bus.connect(source)),
-      connect: async source => checked(await edge.connect(source, maxQueued === undefined ? {} : {maxQueued})),
+      connect: async source => checked(await edge.connect(source, {...queued, ...scheduled})),
       arrived: async (call, count) => {
         // The edge dispatches a call within microtasks of reading it.
         await until(() => edge.received(call) >= count, `${count} ${call} calls at the edge`);
@@ -149,7 +162,7 @@ export const remote: Transport = {
 };
 
 /** Runs `body` with a fresh world and always closes it. */
-export async function using(transport: Transport, options: {maxQueued?: number}, body: (world: World) => Promise<void>): Promise<void> {
+export async function using(transport: Transport, options: WorldOptions, body: (world: World) => Promise<void>): Promise<void> {
   const world = await transport.start(options);
   try {
     await body(world);

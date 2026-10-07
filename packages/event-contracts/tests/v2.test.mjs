@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {MessageValidator, compareDelivery, errorBody, errorCodes, schemas} from '../dist/v2/index.js';
+import {MessageValidator, RETRYABLE, compareDelivery, errorBody, errorCodes, isErrorCode, schemas} from '../dist/v2/index.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/messages.json', import.meta.url), 'utf8'));
 const validator = () => {
@@ -136,6 +136,15 @@ test('the error body takes retryable from the registry and refuses unregistered 
     assert.match(code, /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/);
     assert.equal(typeof entry.retryable, 'boolean');
   }
+});
+
+test('the typed code table holds exactly the registry codes, in order, each with the registry\'s retryable flag', () => {
+  assert.deepEqual(Object.entries(RETRYABLE), Object.entries(errorCodes).map(([code, entry]) => [code, entry.retryable]));
+  for (const code of Object.keys(errorCodes)) {
+    assert.equal(isErrorCode(code), true, code);
+    assert.equal(errorBody(code).error.retryable, errorCodes[code].retryable, `errorBody takes the registry's flag for ${code}`);
+  }
+  for (const value of ['not-a-code', 'Capacity', '', 'toString', 'constructor', undefined, 7]) assert.equal(isErrorCode(value), false, String(value));
 });
 
 test('the error block lists exactly the registry codes and retryable flags, so received bodies cannot disagree', () => {

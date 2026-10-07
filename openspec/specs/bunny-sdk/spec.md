@@ -38,8 +38,12 @@ The SDK SHALL build each envelope with the participant's `source`, a new `id`, t
 
 One responder SHALL own each command key. A `respond` whose pattern overlaps another responder's SHALL be refused with `invalid-state`. `request` SHALL refuse with `invalid-request` a key outside `bunny.cmd`, a command type that does not end in `.requested`, a `timeoutMs` that is not an integer from 1 to `MAX_TIMEOUT_MS`, 86400000 (one day), and a `requestId` that is not an identifier. It SHALL send one command with a `requestId` in its payload and `expiresat` set `timeoutMs` after its `time`, and SHALL resolve with exactly one result, the reply or a result in its place; the command's outcome is a separate published message:
 - `accepted`, with the reply message;
-- `rejected`, with the shared error body: the responder's refusal, `internal` when the responder throws, `unavailable` when no responder owns the key or it closed before the command reached it, `capacity` when its queue is full, `expired` when the command never reached the responder's handler before its expiry, or `cancelled` when the requester closed before the handler started the command;
-- `uncertain`, with `uncertain-result`, when the responder's handler had the command when the deadline passed or the requester closed.
+- `rejected`, with the shared error body, only when the command had no effect: the responder's typed refusal, a valid error body it returned from `errorBody`, `unavailable` when no responder owns the key or it closed before the command reached it, `capacity` when its queue is full, `expired` when the command never reached the responder's handler before its expiry, or `cancelled` when the requester closed before the handler started the command;
+- `uncertain`, with `uncertain-result`, once the responder's handler had the command: when the handler throws, an `SdkError` from a call it makes included, or answers with something other than a valid reply, and when the handler still had the command when the deadline passed or the requester closed.
+
+A valid refusal SHALL carry a registered code with that code's `retryable` flag. The SDK SHALL rebuild it with at most 1024 characters of detail and nothing else, and SHALL treat an error body with an unregistered code, the wrong flag or no code as no reply.
+
+A handler's exception SHALL be reported to `onError`, its request SHALL get no reply message, and the error body SHALL carry the fixed detail `the responder failed after it started`, never the exception's message.
 
 At the deadline, the SDK SHALL take a command that is still waiting in the responder's queue out of that queue and resolve its request as `rejected` with `expired`. The SDK SHALL never send a command again and SHALL ignore a reply that arrives after the deadline. Every error body in a result SHALL carry the `requestId` and the command's trace ID. A responder SHALL handle one command at a time. It SHALL ignore a command whose expiry has passed, at or after `expiresat`, send no reply to it and resolve its request as `rejected` with `expired` unless the request has already settled.
 
@@ -48,8 +52,16 @@ At the deadline, the SDK SHALL take a command that is still waiting in the respo
 - **THEN** the requester gets `accepted` with a reply of kind `reply` from the responder's source, whose type ends in `.replied` and whose payload names the command's `requestId`, and both messages validate against profile 2.0
 
 #### Scenario: A refusal in the shared error body
-- **WHEN** a responder returns an error body, or throws
-- **THEN** the requester gets `rejected` with that body, or with `internal` after the error is reported to `onError`, and the error carries the `requestId` and trace ID
+- **WHEN** a responder returns an error body
+- **THEN** the requester gets `rejected` with that body in a reply message, and the error carries the `requestId` and trace ID
+
+#### Scenario: A responder that fails once it started
+- **WHEN** a responder throws before or after its effect, throws the `SdkError` of a nested SDK call, returns something other than a reply, or returns an error body with an unregistered code, the wrong flag or no code
+- **THEN** each request resolves as `uncertain` with `uncertain-result`, its `requestId`, its trace ID and the fixed detail, with no reply message; each error is reported to `onError` once; and the handler received each command exactly once, with nothing sent again after every deadline has passed
+
+#### Scenario: A refusal rebuilt in process
+- **WHEN** a responder in process refuses with a registered code, a 5000-character detail and an extra field
+- **THEN** the requester gets `rejected` with that code, the detail cut to 1024 characters and no extra field, in a reply that follows profile 2.0
 
 #### Scenario: No responder
 - **WHEN** a request names a key that no responder owns
@@ -133,7 +145,7 @@ Each subscription and each responder SHALL have its own queue, which delivers on
 
 ### Requirement: Trace context on every message
 
-Every message SHALL carry a W3C version-00 `traceparent`. A message sent with a `parent` SHALL keep the parent's trace ID, flags and `tracestate` and get a new span ID. A reply SHALL continue its command's trace in the same way. Without a parent, or with a malformed or all-zero one, the message SHALL start a new trace with the sampled flag set and no `tracestate`.
+Every message SHALL carry a W3C version-00 `traceparent` and no `tracestate`, which profile 2.0 does not define. A message sent with a `parent` SHALL keep the parent's trace ID and flags and get a new span ID; a `tracestate` that the parent carries SHALL NOT be passed on. A reply SHALL continue its command's trace in the same way. Without a parent, or with a malformed or all-zero one, the message SHALL start a new trace with the sampled flag set.
 
 #### Scenario: A new trace
 - **WHEN** messages are published without a parent
@@ -141,7 +153,7 @@ Every message SHALL carry a W3C version-00 `traceparent`. A message sent with a 
 
 #### Scenario: A continued trace
 - **WHEN** a handler publishes with the received message as its parent
-- **THEN** the new message has the parent's trace ID, flags and `tracestate` and a different span ID
+- **THEN** the new message has the parent's trace ID and flags and a different span ID, and no `tracestate`, even when the parent carried one
 
 #### Scenario: A command and its reply
 - **WHEN** a request is sent with a parent
@@ -150,6 +162,10 @@ Every message SHALL carry a W3C version-00 `traceparent`. A message sent with a 
 #### Scenario: A parent that is not adopted
 - **WHEN** a parent has an all-zero trace or span ID, another version, uppercase hex digits or no valid shape
 - **THEN** the message starts a new trace and carries no `tracestate`
+
+#### Scenario: Only traceparent is passed on
+- **WHEN** `childOf` is given a parent that carries `tracestate`, and a message that carries `tracestate` is validated
+- **THEN** the child context holds only `traceparent`, in the parent's trace, and the message is refused with `invalid-message` naming `tracestate` as an undeclared attribute
 
 ### Requirement: Sync a consumer's copy from its owner
 
@@ -368,6 +384,9 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **Subscriptions:** `subscribe` SHALL resolve only once the edge has registered the subscription.
 - **A slow consumer:** the edge SHALL wait for a connection's socket to drain before it writes the next message of a subscription, so a remote part that stops reading fills only its own subscriptions' bounded queues. Their drops SHALL be reported to `onError` as `capacity` and sent to the remote part as an overflow notice with the count.
 - **Reconnects:** a client whose stream is lost SHALL reconnect, queue a gap notice with no count for each subscription before any message of the new stream, register its subscriptions, responders and sync owners again, and only then deliver the notices. Nothing missed SHALL be replayed. A call that needs the stream and meets a lost one SHALL be refused with the retryable `unavailable`, and a registration that failed SHALL leave nothing at the edge.
+- **A failed remote responder:** a remote responder whose handler throws, or answers with something other than a valid reply, SHALL report the error to its `onError` and answer the edge with `{"status": "uncertain"}`. The edge SHALL then settle the request `uncertain` with `uncertain-result` and the fixed detail, with no reply message, as in process; it SHALL NOT refuse it.
+- **Safe errors:** the edge SHALL answer an exception it did not expect with `internal` and the fixed detail `the edge failed`, in the response and in its log record. Once it has handed a command to its bus, it SHALL answer one with `uncertain-result` and the fixed detail `the edge failed after it sent the command` instead, because a handler may have run it. A refusal's detail MAY quote what the caller sent, such as a path, a claimed source, an id or an attribute the validator refused. An exception's message, stack and cause SHALL NOT reach any response or log record.
+- **Edge answers at the client:** the client SHALL take an edge refusal only with a registered code and that code's flag, and SHALL treat any other body as `internal`. It SHALL settle a command whose request call the edge answers with `internal` or `uncertain-result` as `uncertain` with `uncertain-result`, because the edge may have failed after the command reached a handler; any other refusal SHALL stay `rejected`.
 - **A dropped stream:** the edge SHALL NOT answer a forwarded command whose frame reached the socket as a refusal, whether its stream dropped, the edge closed or its own wait ran out. A reply that comes on the reconnected stream SHALL still reach the requester, matched by the forwarded command's message id, so a retry that reuses a `requestId` gets its own reply. Otherwise the request SHALL settle `uncertain` with `uncertain-result` and no reply message. A forwarded command whose frame never reached the socket, and a forwarded sync request, SHALL be refused with `unavailable`. A prepared command whose requester has already stopped waiting SHALL be refused with `cancelled` and never run.
 - **Deadlines:** the deadline answers SHALL be those in process. The edge SHALL answer when its bus settles: `expired` for a command still queued at its deadline, `uncertain-result` for one a handler had, otherwise the reply, and `unavailable` for a sync request. A remote requester SHALL wait `REQUESTER_GRACE_MS` (1 s) past its deadline, on its scheduler, for that answer, and only then settle a command as `uncertain-result` and a sync as `unavailable`. An edge `expired` refusal of a remote part's own sync request SHALL reach it as the retryable `unavailable`. A remote responder or owner SHALL ignore a command or sync request that reaches it past its expiry.
 - **Close:** a remote participant SHALL be a participant whose `close` returns the same promise every time. It SHALL first settle each request still waiting for the edge as `uncertain-result`, drop its call and cancel its deadline and the reconnect backoff; the edge SHALL then take a still-queued command out. It SHALL then close its sync copies, so a first sync still under way resolves `cancelled`; a copy's withdrawn request SHALL drop its HTTP call, and the edge SHALL take the request out of the owner's queue, so the owner never serves it. Every later call SHALL be refused with `invalid-state`.
@@ -438,6 +457,18 @@ The SDK SHALL offer a `RemoteEdge` on an in-process bus and a client, `connectRe
 - **WHEN** an owner's snapshot makes `sync.completed` larger than 256 KiB
 - **THEN** a remote copy that syncs again ends with `failed` and `too-large`, a first sync resolves `rejected` with `too-large`, and the edge logs the refusal
 
+#### Scenario: An exception inside the edge
+- **WHEN** the edge throws while it answers a sync, with an exception whose message holds a synthetic secret
+- **THEN** the remote part's sync and a raw call each get `internal` with the detail `the edge failed`, the edge logs each refusal with that detail, and the secret reaches no response, log record or reported error
+
+#### Scenario: An edge failure after dispatch
+- **WHEN** the edge's bus runs a remote part's command and the edge then fails while it answers
+- **THEN** the requester gets `uncertain` with `uncertain-result` and the detail `the edge failed after it sent the command`, the handler ran the command once, and the edge logs that refusal
+
+#### Scenario: Edge answers outside the registry
+- **WHEN** an edge answers a call with an unregistered code, the wrong flag or no code, or answers a command's request call with `internal`
+- **THEN** the client reports the first three as `internal`, and settles the command as `uncertain` with `uncertain-result`; an edge refusal such as `invalid-message` still makes the request `rejected`
+
 ### Requirement: One conformance suite for every transport
 
 One conformance suite SHALL run the same SDK calls against the in-process bus and the remote transport. A command still queued at its deadline SHALL be `expired` on both. Where a transport must answer differently, it SHALL state its own expectation: a closing participant's request whose command still waits in the responder's queue is `cancelled` in process, where the bus knows, and the command never runs; remotely it is `uncertain-result`, where the requester cannot know, and a command still queued when the edge sees the dropped call never runs.
@@ -449,6 +480,7 @@ One conformance suite SHALL run the same SDK calls against the in-process bus an
   - prepared messages;
   - subscriptions live before `subscribe` resolves;
   - request and respond, with refusals in the error body on the caller's trace;
+  - a responder that throws before or after its effect, throws a nested `SdkError`, answers with a non-reply or answers with a malformed refusal, leaving the request `uncertain-result` with no reply and its command handled once, with every deadline passed on an injected scheduler;
   - no responder, and both deadline cases;
   - sync, with an owner's refusal and the `unavailable` deadline;
   - an overflow count;
@@ -461,7 +493,7 @@ One conformance suite SHALL run the same SDK calls against the in-process bus an
 
 ### Requirement: Per-module outbox
 
-The SDK SHALL give a module an `Outbox` on its own SQLite database, participant and clock. `transaction(work)` SHALL run synchronous `work` in one transaction that the outbox opens. Each message that `add(key, draft, {parent?})` stores SHALL commit with the work's changes and SHALL be published only after the commit, in commit order, unchanged, with the `id` and `time` it was stored with. A throw SHALL roll back the work and its messages, so nothing goes out. The type of `work` SHALL refuse a promise, and work that returns one anyway SHALL roll back with a `TypeError`, leaving its promise handled. A database already in a transaction SHALL be refused with `invalid-state`. `add` SHALL refuse with `invalid-request`, rolling the transaction back, any kind other than state, removal, occurrence and outcome, and any key outside the kind's key class, so no command is ever stored or sent again. If publishing is refused after the commit, `transaction` SHALL reject, and the messages SHALL stay stored for the next transaction or start.
+The SDK SHALL give a module an `Outbox` on its own SQLite database, participant and clock. `transaction(work)` SHALL run synchronous `work` in one transaction that the outbox opens. Each message that `add(key, draft, {parent?})` stores SHALL commit with the work's changes and SHALL be published only after the commit, in commit order, unchanged, with the `id`, `time` and trace context it was stored with. A throw SHALL roll back the work and its messages, so nothing goes out, and `transaction` SHALL reject with it. The type of `work` SHALL refuse a promise, and work that returns one anyway SHALL roll back with a `TypeError`, leaving its promise handled. A database already in a transaction SHALL be refused with `invalid-state`. `add` SHALL refuse with `invalid-request`, rolling the transaction back, any kind other than state, removal, occurrence and outcome, and any key outside the kind's key class, so no command is ever stored or sent again. Once the work commits, `transaction` SHALL resolve with the work's result after the publish ends and SHALL NOT reject, so no caller takes a refused publish for a rollback and does the work again. If publishing is refused after the commit, the messages SHALL stay stored, unpublished, and the next transaction or start SHALL send them unchanged; nothing SHALL send them again on its own. The outbox SHALL report the refusal to its `onError` as an `SdkError` with the refusal's registry code, or `internal` for an error without one, the fixed detail `committed, awaiting publication` and the refusal as its `cause`, once per run of refusals with the same code; it SHALL report again only after a send went through or the code changed. Without an `onError`, the report SHALL become a `BunnySdkWarning` process warning. Given a validator, `add` SHALL check each message against it and refuse a message it refuses with the validator's code, rolling the transaction back. A refusal that lasts holds back every later message, which waits behind the refused one in commit order.
 
 A state, removal or occurrence message SHALL be deleted once it has gone out, so it is never sent again. An outcome SHALL stay stored after it goes out until `acknowledge(id)` deletes it; `acknowledge` SHALL return whether the outbox held that outcome. `republish()` SHALL send, in order, everything still stored: messages a crash kept from going out, and every outcome not yet acknowledged. It SHALL resolve with how many went out. The consumer drops duplicates by `(source, id)`. Nothing SHALL forget a message by time.
 
@@ -495,7 +527,15 @@ A state, removal or occurrence message SHALL be deleted once it has gone out, so
 
 #### Scenario: A refused publish keeps the message
 - **WHEN** the module's participant has closed and a transaction commits
-- **THEN** the transaction rejects with `invalid-state`, the work stays committed, and the next start sends the messages
+- **THEN** the transaction resolves with the work's result, the work stays committed, every message waits unpublished, and the next start sends them unchanged, with their trace context
+
+#### Scenario: Committed, then published with the next transaction
+- **WHEN** a transaction commits while its publish is refused, a second one commits while it is still refused, and a later transaction commits once publishing works again
+- **THEN** the first resolves with the work's result and is reported once as committed and awaiting publication, with the refusal's code; nothing sends again on its own past every deadline; the second is not reported again; the later transaction sends the waiting messages first, exactly as stored, then its own; and the next refusal is reported again
+
+#### Scenario: A message the edge refuses
+- **WHEN** an outbox over a remote participant stores an occurrence whose schema the edge does not know, and then a state
+- **THEN** both transactions resolve, the refusal is reported once with `unknown-schema`, and both messages wait; with the edge's validator, the same occurrence rolls its transaction back with `unknown-schema`, nothing waits, and the next message goes out
 
 #### Scenario: No command goes in
 - **WHEN** work adds a command, a command on an event key, an occurrence on a state key or a message on a malformed key

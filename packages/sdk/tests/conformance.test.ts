@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {MAX_TIMEOUT_MS, SdkError, type Command, type Overflow, type Reply, type Snapshot, type SyncChange, type SyncRequest} from '../src/index.js';
-import {SESSION_FAMILY, blob, deferred, flush, it, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
+import {REQUESTER_GRACE_MS} from '../src/remote-client.js';
+import {SESSION_FAMILY, blob, deferred, flush, it, manualClock, session, setMode, trace, turnEnded, until, type Mode, type Session} from './support.js';
 import {inProcess, remote, using, type Transport} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -97,6 +98,66 @@ function suite(transport: Transport): void {
     assert.equal(trace(commands[1]?.traceparent ?? '').traceId, PARENT_TRACE);
     assert.equal(commands.length, 2, 'each command reached the responder once');
   }));
+
+  it(name('a responder that fails once it started leaves the request uncertain-result, and nothing sends it again'), async () => {
+    // Every deadline and wait of the world runs on this scheduler, so the test can pass every deadline at once.
+    const clock = manualClock();
+    await using(transport, {scheduler: clock.scheduler}, async world => {
+      const requester = await world.connect('bunny/core');
+      const responder = await world.connect('bunny/wall');
+      const handled: string[] = [];
+      const effects: string[] = [];
+      let nested: unknown;
+      await responder.respond<Mode>('bunny.cmd.mode.*', async command => {
+        const {requestId} = command.data;
+        handled.push(requestId);
+        // Every handler but the first and the refusing one acts before it fails.
+        if (requestId !== 'req-before' && requestId !== 'req-refused') effects.push(requestId);
+        switch (requestId) {
+          case 'req-before':
+          case 'req-after':
+            throw new Error('the device driver failed');
+          case 'req-nested':
+            try {
+              await responder.publish('not-a-key', session('s1', 1));
+            } catch (error) {
+              nested = error;
+              throw error;
+            }
+            return {status: 'accepted'};
+          case 'req-garbage':
+            return 'done' as unknown as Reply;
+          case 'req-unregistered':
+            return {error: {code: 'not-a-code', retryable: false}} as unknown as Reply;
+          case 'req-wrong-flag':
+            return {error: {code: 'capacity', retryable: false}} as unknown as Reply;
+          case 'req-empty':
+            return {error: {}} as unknown as Reply;
+          default:
+            return errorBody('invalid-state', {detail: 'the wall is off'});
+        }
+      });
+      const failing = ['req-before', 'req-after', 'req-nested', 'req-garbage', 'req-unregistered', 'req-wrong-flag', 'req-empty'];
+      for (const requestId of failing) {
+        const result = await requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId, parent: PARENT});
+        assert.deepEqual(result, {
+          status: 'uncertain', requestId,
+          error: errorBody('uncertain-result', {requestId, traceId: PARENT_TRACE, detail: 'the responder failed after it started'}),
+        }, `${requestId}: uncertain with no reply, never a refusal`);
+      }
+      const refusal = await requester.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 5000, requestId: 'req-refused', parent: PARENT});
+      assert.deepEqual(refusal.status === 'rejected' ? refusal.error : refusal,
+        errorBody('invalid-state', {detail: 'the wall is off', requestId: 'req-refused', traceId: PARENT_TRACE}), 'a valid refusal stays a rejection');
+      assert.ok(nested instanceof SdkError && nested.body.error.code === 'invalid-request', 'the nested call refused with SdkError');
+      assert.deepEqual(effects, failing.slice(1));
+      assert.equal(world.errors.length, failing.length, 'each failure is reported once, where the responder ran');
+      // Past every deadline and the requester's grace: nothing is left that could send a command again.
+      assert.equal(clock.pending(), 0, 'no deadline or wait is left');
+      clock.advance(5000 + REQUESTER_GRACE_MS + 60_000);
+      await flush();
+      assert.deepEqual(handled, [...failing, 'req-refused'], 'each command reached the handler exactly once');
+    });
+  });
 
   it(name('a request nobody responds to is refused as unavailable'), () => using(transport, {}, async world => {
     const requester = await world.connect('bunny/core');
