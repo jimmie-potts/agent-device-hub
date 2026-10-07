@@ -58,8 +58,11 @@ const missingSecret = (detail: string): SdkError => new SdkError(errorBody('not-
 /** The runtime's stop deadline for a module's participant close and for its `stop`. */
 export const DEFAULT_STOP_TIMEOUT_MS = 5000;
 
-/** What a module sent that no subscriber sees: a command it requested, or the families it asked to sync. */
-export type HarnessSent = {call: 'request'; key: string; draft: CommandDraft<object>} | {call: 'sync'; families: readonly string[]};
+/**
+ * What a module sent that no subscriber sees: a command it requested, or the families it asked to sync, with the owner
+ * it named, if any.
+ */
+export type HarnessSent = {call: 'request'; key: string; draft: CommandDraft<object>} | {call: 'sync'; families: readonly string[]; owner?: string};
 
 /**
  * The module's SDK calls, without `close`: as in the runtime, only the host closes a module's participant. `saw` hears
@@ -83,7 +86,7 @@ const calls = (participant: Participant, saw: (context: TraceContext) => void, s
     return responder(command);
   }),
   sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
-    sent.push({call: 'sync', families: [...families]});
+    sent.push({call: 'sync', families: [...families], ...(options.owner === undefined ? {} : {owner: options.owner})});
     return participant.sync<T>(families, change => {
       if (change.type !== 'failed' && change.message !== undefined) saw(change.message);
       return handler(change);

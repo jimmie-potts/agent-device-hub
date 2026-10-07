@@ -1,6 +1,7 @@
 // Sync (ADR 0012, "Consumers and recovery"): a consumer's copy of one owner's families. The copy takes the owner's
-// current state at a revision, then follows live messages. This file is transport-neutral; a transport supplies the
-// live subscriptions and the sync request through `SyncTransport`.
+// current state at a revision, then follows live messages. Several owners may serve one family, such as `device`, each
+// for its own entities; a copy that names its owner follows only that owner. This file is transport-neutral; a
+// transport supplies the live subscriptions and the sync request through `SyncTransport`.
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DeliveryQueue} from './queue.js';
@@ -23,6 +24,12 @@ export type SyncProvider = (request: Message<SyncRequest>) => Snapshot | ErrorBo
 export type SyncOptions = {
   /** Each sync request's deadline, in milliseconds from when it is sent. Its `expiresat` is set from it. */
   timeoutMs: number;
+  /**
+   * The owner to sync from: its participant source, such as `bunny/modules/lifx`. Each request goes to that owner, and
+   * the copy follows only the live messages that owner publishes. Without one, the request goes to the families' only
+   * owner, and is refused with `invalid-request` when several owners serve one of them.
+   */
+  owner?: string;
   /** How many live messages may wait while a sync is on its way or the handler catches up. Defaults to 1024. */
   maxBuffered?: number;
   /** The trace the first sync request joins. */
@@ -60,9 +67,10 @@ export type SyncAnswer =
 
 /**
  * One sync request as the copy sends it. The request message carries `trace` as its own trace context. `signal` aborts
- * when the copy closes, and the transport then withdraws the request.
+ * when the copy closes, and the transport then withdraws the request. `owner`, when the copy names one, addresses the
+ * request, as a routing key addresses a command; the message itself does not carry it.
  */
-export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal};
+export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal; owner?: string};
 
 /** What sync needs from a transport. */
 export type SyncTransport = {
@@ -80,6 +88,9 @@ export type SyncTransport = {
 };
 
 const FAMILY = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+/** A participant's CloudEvents source, such as `bunny/core` or `bunny/modules/lifx`, of at most 256 characters. */
+const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
+const MAX_SOURCE = 256;
 // The profile's limits: 32 families of at most 64 characters, and a subject, which names them, of at most 256.
 const MAX_FAMILIES = 32;
 const MAX_FAMILY = 64;
@@ -97,6 +108,9 @@ export function checkFamilies(families: readonly string[]): string[] {
   if (new Set(families).size !== families.length) throw invalid('a family is named twice');
   return [...families];
 }
+
+/** Whether `value` is a participant source, as an owner a sync names must be. */
+export const isSource = (value: unknown): value is string => typeof value === 'string' && value.length <= MAX_SOURCE && SOURCE.test(value);
 
 /** The families of one sync request: also at most 32, which its subject names in at most 256 characters. */
 function checkRequested(families: readonly string[]): string[] {
@@ -153,10 +167,11 @@ export async function startSync<T extends object>(
   transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, options: SyncOptions,
 ): Promise<SyncResult<T>> {
   const requested = checkRequested(families);
-  const {timeoutMs, maxBuffered = 1024, parent} = options;
+  const {timeoutMs, maxBuffered = 1024, parent, owner} = options;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   if (!Number.isSafeInteger(maxBuffered) || maxBuffered < 1) throw invalid('maxBuffered must be a positive integer');
-  return new Copy(transport, requested, handler, timeoutMs, maxBuffered).start(parent);
+  if (owner !== undefined && !isSource(owner)) throw invalid('owner must be a participant source, such as bunny/modules/lifx');
+  return new Copy(transport, requested, handler, timeoutMs, maxBuffered, owner).start(parent);
 }
 
 type Held<T> = {entity: EntityRef; revision: number; message: Message<T>};
@@ -169,6 +184,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
   readonly #handler: SyncHandler<T>;
   readonly #timeoutMs: number;
   readonly #maxBuffered: number;
+  /** The owner the copy names, whose live messages alone it follows; undefined for the families' only owner. */
+  readonly #owner: string | undefined;
   readonly #held = new Map<string, Held<T>>();
   /** The revision of each entity removed since the last sync, so a late state cannot bring it back. */
   readonly #removed = new Map<string, number>();
@@ -203,12 +220,15 @@ class Copy<T extends object> implements SyncedCopy<T> {
   // queued item only wakes it, so one waiting item is enough.
   readonly #worker = new DeliveryQueue<object>(1, () => this.#work());
 
-  constructor(transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, timeoutMs: number, maxBuffered: number) {
+  constructor(
+    transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, timeoutMs: number, maxBuffered: number, owner: string | undefined,
+  ) {
     this.#transport = transport;
     this.#families = new Set(families);
     this.#handler = handler;
     this.#timeoutMs = timeoutMs;
     this.#maxBuffered = maxBuffered;
+    this.#owner = owner;
   }
 
   async start(parent: TraceContext | undefined): Promise<SyncResult<T>> {
@@ -268,6 +288,9 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   #arrive(message: Message): void {
     if (this.#phase === 'closed') return;
+    // Another owner's message on a shared family describes that owner's entities, never this copy's: it is not this
+    // copy's to apply, buffer or report.
+    if (this.#owner !== undefined && message.source !== this.#owner) return;
     // The buffer would lose a message, so sync again rather than combine partial state.
     if (this.#pending.length >= this.#maxBuffered) {
       this.#overflow();
@@ -319,7 +342,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#inflight = inflight;
     let sent: Promise<SyncAnswer>;
     try {
-      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal});
+      const owner = this.#owner === undefined ? {} : {owner: this.#owner};
+      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal, ...owner});
     } catch (error) {
       // A transport that throws instead of rejecting takes the same path.
       sent = Promise.reject(error);

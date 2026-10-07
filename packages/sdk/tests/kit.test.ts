@@ -198,6 +198,37 @@ it('a module that only consumes runs the checks that apply to it', async () => {
   assert.deepEqual(await failing(consumer), []);
 });
 
+it('a module that copies a family that several modules serve syncs it from its owner by name, and the kit checks that it does', async () => {
+  // A display that copies one bulb module's bulbs, as a dashboard copies `device` from each device module (Hub #967).
+  const display = (owner: string | undefined): BunnyModule => ({
+    manifest: {name: 'display', apiVersion: '1.0'},
+    async start({sdk}) {
+      const synced = await sdk.sync(['kit-bulb'], () => {}, {timeoutMs: 500, ...(owner === undefined ? {} : {owner})});
+      if (synced.status === 'rejected') throw new Error('the bulbs did not sync');
+    },
+    stop: () => {},
+  });
+  const bulbState: StateDraft<{id: string; revision: number; power: string}> = {
+    type: 'org.bunny.kit-bulb.updated', subject: 'b1', dataschema: BULB_SCHEMA, data: {id: 'b1', revision: 1, power: 'on'},
+  };
+  const copies = {families: ['kit-bulb'], snapshot: {revision: 1, states: [bulbState]}, owner: 'bunny/modules/bulb'};
+  const named = (owner: string | undefined): ConformanceSpec => ({create: () => display(owner), schemas, copies, timeoutMs: 500});
+  assert.deepEqual(await failing(named('bunny/modules/bulb')), [], 'the stand-in serves as the owner the module names');
+  assert.deepEqual(await failing(named(undefined)), [CHECKS.copies], 'a module that names no owner would be refused once a second owner serves the family');
+  assert.deepEqual(await failing(named('bunny/modules/lamp')), [CHECKS.lifecycle, CHECKS.copies], 'nobody serves the family as an owner nobody runs');
+
+  const stateDir = await mkdtemp(join(tmpdir(), 'bunny-kit-owner-'));
+  const harness = new ModuleHarness(display('bunny/modules/bulb'), {bus: new InProcessBus(), stateDir});
+  try {
+    // Nobody serves the bulbs on this bus, so the start fails; the harness has kept the sync all the same.
+    await assert.rejects(harness.start());
+    assert.deepEqual(harness.sent, [{call: 'sync', families: ['kit-bulb'], owner: 'bunny/modules/bulb'}], 'the harness keeps the owner the module named');
+  } finally {
+    await harness.stop();
+    await rm(stateDir, {recursive: true, force: true});
+  }
+});
+
 it('the harness stops a module as the runtime does: a participant without close, deadlines, and cleanup after errors', async context => {
   const dir = await mkdtemp(join(tmpdir(), 'bunny-harness-'));
   context.after(() => rm(dir, {recursive: true, force: true}));

@@ -442,7 +442,7 @@ class RemoteClient {
     }
   }
 
-  #syncRequest({families, requestId, timeoutMs, trace, signal}: OutgoingSync): Promise<SyncAnswer> {
+  #syncRequest({families, requestId, timeoutMs, trace, signal, owner}: OutgoingSync): Promise<SyncAnswer> {
     const sentAtMs = this.#now();
     const request = buildMessage(this.#source, 'sync-request', {
       type: 'org.bunny.sync.requested', subject: families.join(','), dataschema: SYNC_REQUEST, data: {requestId, families: [...families]},
@@ -456,7 +456,8 @@ class RemoteClient {
     const withdrawn: SyncAnswer = {status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)};
     return this.#within(waitMs, silent, async dropped => {
       try {
-        return fields(await this.#post('sync', {request}, dropped)).answer as SyncAnswer;
+        // The owner travels with the call, as a command's routing key does, so the request message stays as it was.
+        return fields(await this.#post('sync', {request, ...(owner === undefined ? {} : {owner})}, dropped)).answer as SyncAnswer;
       } catch (error) {
         const refused = bodyOf(error);
         // An edge whose clock is ahead finds the request expired. A sync only reads, so asking again is safe.

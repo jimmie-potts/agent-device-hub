@@ -13,7 +13,7 @@ import {
   type TraceContext,
 } from './sdk.js';
 import {noSpans, startSpan, type Span, type SpanAttributes, type SpanRecorder, type SpanStatus} from './spans.js';
-import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
+import {isSource, startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
 /** Which participant and subscription a reported error belongs to. */
@@ -236,17 +236,19 @@ export class InProcessBus {
   }
 
   /**
-   * Sends a sync request that a remote part prepared, unchanged, and waits `waitMs` for its answer. For a remote edge,
-   * which aborts `signal` when the remote part stops waiting, so the request is withdrawn.
+   * Sends a sync request that a remote part prepared, unchanged, to `owner` or to its families' only owner, and waits
+   * `waitMs` for its answer. For a remote edge, which aborts `signal` when the remote part stops waiting, so the request
+   * is withdrawn.
    */
-  syncMessage(source: string, request: Message<SyncRequest>, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
+  syncMessage(source: string, request: Message<SyncRequest>, waitMs: number, signal: AbortSignal, owner?: string): Promise<SyncAnswer> {
     return attempt(() => {
       if (request.source !== source) throw foreign(source, request);
       if (request.kind !== 'sync-request') throw invalid('a sync request has kind sync-request');
       const expiresAtMs = Date.parse(request.expiresat ?? '');
       if (Number.isNaN(expiresAtMs)) throw invalid('a sync request carries expiresat');
       if (!Number.isSafeInteger(waitMs) || waitMs <= 0 || waitMs > MAX_TIMEOUT_MS) throw invalid(`waitMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
-      return this.#sync.dispatch(request, expiresAtMs, waitMs, signal);
+      if (owner !== undefined && !isSource(owner)) throw invalid('owner must be a participant source');
+      return this.#sync.dispatch(request, expiresAtMs, waitMs, signal, owner);
     });
   }
 

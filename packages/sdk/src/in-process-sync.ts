@@ -1,5 +1,7 @@
-// The owner side of sync on the in-process bus. One owner serves each family. A sync request goes straight to that
-// owner, and its answer goes straight back to the requester, never to subscribers.
+// The owner side of sync on the in-process bus. Ownership is keyed by source and family: several owners may serve one
+// family, such as `device`, each for its own entities, and no source serves a family twice. A sync request goes straight
+// to the owner it names, or to its families' only owner, and its answer goes straight back to the requester, never to
+// subscribers. Nothing merges owners' records or spreads one request across owners.
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {levelOf, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
 import type {ErrorScope} from './in-process.js';
@@ -30,6 +32,8 @@ const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 
 type Delivery = {request: Message<SyncRequest>; expiresAtMs: number; settle: (answer: SyncAnswer) => void};
 type Owner = {families: ReadonlySet<string>; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
+/** Where a sync request goes: the one owner that serves all its families, or why it is refused. */
+type Route = {owner: Owner} | {code: ErrorCode; detail: string};
 
 /** A refusal of `request` in the shared error body, naming the request and its trace. */
 function refusal(request: Message<SyncRequest>, code: ErrorCode, detail: string): SyncAnswer {
@@ -65,9 +69,10 @@ export class SyncOwners {
 
   serve(source: string, families: readonly string[], provider: SyncProvider): Subscription {
     const served = checkFamilies(families);
+    // Another source may serve the same family for its own entities; one source serves each family once.
     for (const other of this.#owners) {
-      const taken = served.find(family => other.families.has(family));
-      if (taken !== undefined) throw new SdkError(errorBody('invalid-state', {detail: `${other.scope.source} already serves ${taken}`}));
+      const taken = other.scope.source === source ? served.find(family => other.families.has(family)) : undefined;
+      if (taken !== undefined) throw new SdkError(errorBody('invalid-state', {detail: `${source} already serves ${taken}`}));
     }
     const scope = {source, pattern: `sync ${served.join(',')}`};
     const owner: Owner = {families: new Set(served), scope, queue: new DeliveryQueue(this.#dependencies.maxQueued, async ({request, expiresAtMs, settle}) => {
@@ -84,36 +89,31 @@ export class SyncOwners {
   }
 
   /**
-   * Sends one sync request to the owner of `families`. Resolves with its answer or a refusal; never rejects. When
-   * `signal` aborts, the request is withdrawn: taken out of the owner's queue if it still waits there, and refused as
-   * `cancelled`.
+   * Sends one sync request to `owner`, or to the only owner of `families`. Resolves with its answer or a refusal; never
+   * rejects. When `signal` aborts, the request is withdrawn: taken out of the owner's queue if it still waits there, and
+   * refused as `cancelled`.
    */
-  request(source: string, {families, requestId, timeoutMs, trace, signal}: OutgoingSync): Promise<SyncAnswer> {
+  request(source: string, {families, requestId, timeoutMs, trace, signal, owner}: OutgoingSync): Promise<SyncAnswer> {
     const {now, envelope} = this.#dependencies;
     const sentAtMs = now(), expiresAtMs = sentAtMs + timeoutMs;
     const subject = families.join(',');
     const data = {requestId, families: [...families]};
     const request = envelope(source, 'sync-request', {type: 'org.bunny.sync.requested', subject, dataschema: SYNC_REQUEST, data}, trace, {sentAtMs, expiresAtMs});
-    return this.dispatch(request, expiresAtMs, timeoutMs, signal);
+    return this.dispatch(request, expiresAtMs, timeoutMs, signal, owner);
   }
 
   /**
-   * Hands a sync request to the one owner of its families, and settles at its answer or after `waitMs`. When `signal`
-   * aborts, the request is withdrawn as `request` describes.
+   * Hands a sync request to the owner it names, or to the one owner of its families, and settles at its answer or after
+   * `waitMs`. When `signal` aborts, the request is withdrawn as `request` describes.
    */
-  dispatch(request: Message<SyncRequest>, expiresAtMs: number, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
-    const {families} = request.data;
+  dispatch(request: Message<SyncRequest>, expiresAtMs: number, waitMs: number, signal: AbortSignal, named?: string): Promise<SyncAnswer> {
     const decided = (answer: SyncAnswer): SyncAnswer => {
       this.#dependencies.diagnose(decisionOf(request, answer));
       return answer;
     };
-    const owners = families.map(family => [...this.#owners].find(owner => owner.families.has(family)));
-    const missing = families.find((_, index) => owners[index] === undefined);
-    if (missing !== undefined) return Promise.resolve(decided(refusal(request, 'unavailable', `no owner serves ${missing}`)));
-    const [owner] = owners;
-    if (owner === undefined || owners.some(other => other !== owner)) {
-      return Promise.resolve(decided(refusal(request, 'invalid-request', 'one sync covers one owner\'s families')));
-    }
+    const route = this.#route(request.data.families, named);
+    if (!('owner' in route)) return Promise.resolve(decided(refusal(request, route.code, route.detail)));
+    const {owner} = route;
     if (signal.aborted) return Promise.resolve(decided(refusal(request, 'cancelled', 'the requester closed')));
     return new Promise(resolve => {
       let settled = false;
@@ -142,6 +142,25 @@ export class SyncOwners {
       });
       if (!owner.queue.push(delivery)) settle(refusal(request, 'capacity', 'the owner\'s queue is full'));
     });
+  }
+
+  /**
+   * The one owner a request for `families` goes to: the owner it names, or else each family's only owner. A family that
+   * no such owner serves is `unavailable`. With no owner named, a family that several owners serve is `invalid-request`,
+   * so the requester names one; the request is never spread across owners. Families that one owner serves through
+   * different `serveSync` calls are `invalid-request` too, since one answer has one revision.
+   */
+  #route(families: readonly string[], named: string | undefined): Route {
+    const candidates = [...this.#owners].filter(owner => named === undefined || owner.scope.source === named);
+    const serving = families.map(family => candidates.filter(owner => owner.families.has(family)));
+    const missing = families.find((_, index) => serving[index]?.length === 0);
+    if (missing !== undefined) return {code: 'unavailable', detail: named === undefined ? `no owner serves ${missing}` : `no owner serves ${missing} as ${named}`};
+    const shared = families.find((_, index) => (serving[index]?.length ?? 0) > 1);
+    if (shared !== undefined) return {code: 'invalid-request', detail: `several owners serve ${shared}; name the owner to sync from`};
+    const owners = serving.map(([owner]) => owner);
+    const [owner] = owners;
+    if (owner === undefined || owners.some(other => other !== owner)) return {code: 'invalid-request', detail: 'one sync covers one owner\'s families'};
+    return {owner};
   }
 
   /** The owner's states and `sync.completed`, or its refusal. A provider that throws or misfits is refused as internal. */

@@ -426,12 +426,14 @@ it('duplicates and stale revisions are dropped, and a late state does not bring 
   assert.deepEqual(held(copy), []);
 });
 
-it('one owner serves each family, and malformed sync calls are refused with invalid-request', async () => {
+it('an owner serves each family once, and malformed sync calls are refused with invalid-request', async () => {
   const {core, wall} = bus();
   const empty = (): Snapshot => ({revision: 0, states: []});
   await core.serveSync(['session', 'inbox-item'], empty);
-  await assert.rejects(wall.serveSync(['session'], empty), refused('invalid-state'));
-  await assert.rejects(wall.serveSync(['mode', 'inbox-item'], empty), refused('invalid-state'));
+  // Ownership is keyed by source and family (Hub #967): another source may serve the family too, as two device modules
+  // serve `device`; owners.test.ts covers that.
+  await assert.rejects(core.serveSync(['session'], empty), refused('invalid-state'));
+  await assert.rejects(core.serveSync(['mode', 'inbox-item'], empty), refused('invalid-state'));
   const malformed = [[], ['Session'], ['session', 'session'], ['bunny.session'], ['a'.repeat(65)]];
   for (const families of malformed) {
     await assert.rejects(wall.sync(families, () => {}, {timeoutMs: 5000}), refused('invalid-request'), JSON.stringify(families));

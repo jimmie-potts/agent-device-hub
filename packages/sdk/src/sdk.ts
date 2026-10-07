@@ -112,11 +112,15 @@ export interface Sdk {
   /** Answers commands whose keys match `pattern`. One responder owns each key; a command past its expiry is ignored. */
   respond<T extends object = Record<string, unknown>>(pattern: string, responder: Responder<T>): Promise<Subscription>;
   /**
-   * Keeps a copy of one owner's families: the owner's current state at a revision, then live messages. Resolves once
-   * the copy has synced, or with the refusal in the shared error body.
+   * Keeps a copy of one owner's families: the owner's current state at a revision, then live messages. `options.owner`
+   * names the owner, which a family that several owners serve, such as `device`, needs. Resolves once the copy has
+   * synced, or with the refusal in the shared error body.
    */
   sync<T extends object = Record<string, unknown>>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions): Promise<SyncResult<T>>;
-  /** Answers sync requests for `families` from the owner's current state. One owner serves each family. */
+  /**
+   * Answers sync requests for `families` from this participant's current state. Several participants may serve one
+   * family, each for its own entities, but a participant serves each family once.
+   */
   serveSync(families: readonly string[], provider: SyncProvider): Promise<Subscription>;
 }
 
