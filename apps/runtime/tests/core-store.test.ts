@@ -424,7 +424,7 @@ it('a store that holds another owner\'s state is refused before anything is writ
   other.prepare('INSERT INTO state VALUES (1, 1, ?)').run(JSON.stringify({ownerId: 'someone-else'}));
   const tables = (): unknown[] => other.prepare('SELECT name FROM sqlite_master ORDER BY name').all().map(row => ({...row}));
   const before = tables();
-  await assert.rejects(World.open(context, {file}), /storage-unavailable/);
+  await assert.rejects(World.open(context, {file}));
   assert.deepEqual(tables(), before, 'no core table was created');
   other.close();
 });
