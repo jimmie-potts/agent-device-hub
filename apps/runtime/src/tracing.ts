@@ -4,8 +4,8 @@
 // manager. A span's context never goes to a device or vendor.
 import {ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Context, type Link} from '@opentelemetry/api';
 import {createHostDiagnostics} from '@jimmie-potts/bunny-observability/host';
-import {noSpans, traceFields, type LogFields, type SpanKind as Kind, type SpanRecorder, type TraceContext} from '@jimmie-potts/sdk';
-import {errorFields, type RuntimeLogger} from './log.js';
+import {errorType, noSpans, traceFields, type LogFields, type SpanKind as Kind, type SpanRecorder, type TraceContext} from '@jimmie-potts/sdk';
+import type {RuntimeLogger} from './log.js';
 import {SCHEMA_VERSION, withoutForeignIds, type Resource} from './record.js';
 
 /** Receives each finished span as one projected OTLP JSON document, the contract's `projectSpan` output. */
@@ -40,18 +40,22 @@ const saturating = (value: number): number => Math.min(Number.MAX_SAFE_INTEGER, 
 /**
  * Starts recording the runtime's spans with `resource`, passing each finished span to `sink`. Undefined when the host
  * adapter cannot start: the runtime then runs without recorded spans, since diagnostics never stop the product, and
- * `log` gets one `runtime.tracing.failed` record with the exception's type, so the loss of every span is visible.
+ * `log` gets one `runtime.tracing.failed` record with only the exception's type, so the loss of every span is visible.
+ * `create` is the host adapter's constructor; a test passes one that fails as a broken install would.
  */
-export async function startTracing(resource: Resource, sink: SpanSink, log: RuntimeLogger): Promise<RuntimeTracing | undefined> {
+export async function startTracing(
+  resource: Resource, sink: SpanSink, log: RuntimeLogger, create: typeof createHostDiagnostics = createHostDiagnostics,
+): Promise<RuntimeTracing | undefined> {
   let host: Awaited<ReturnType<typeof createHostDiagnostics>>;
   try {
-    host = await createHostDiagnostics({
+    host = await create({
       enabled: true, resource, schemaVersion: SCHEMA_VERSION, tracing: true, samplingRatio: 1, globalContext: false,
       // The runtime writes its own records; the adapter's log pipeline stays empty.
       localSink: () => {}, localSpanSink: line => { sink(line); },
     });
   } catch (error) {
-    log.error('runtime.tracing.failed', errorFields(error));
+    // Only the type: an error's code, such as a module loader's, is not part of this record.
+    log.error('runtime.tracing.failed', {'error.type': errorType(error)});
     return undefined;
   }
   return {

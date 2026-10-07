@@ -2,7 +2,8 @@
 // its level, with the command's trace, the same in process and through the edge. A late reply, a second deadline or a
 // throwing callback adds nothing and changes nothing.
 import assert from 'node:assert/strict';
-import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {RETRYABLE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {levelOf} from '../src/diagnostics.js';
 import {InProcessBus, type Command, type Diagnostic, type Reply, type RequestResult} from '../src/index.js';
 import {START, SESSION_FAMILY, blob, deferred, flush, it, manualClock, peek, session, setMode, until, type Mode} from './support.js';
 import {inProcess, remote, using, type Transport, type World} from './transports.js';
@@ -317,4 +318,23 @@ it('without a callback the bus records nothing and every result is unchanged', a
   const result = await bus.connect('bunny/core').request(KEY, setMode('work'), {timeoutMs: 1000});
   advance(1000);
   assert.equal(result.status, 'accepted');
+});
+
+it('every registry code has the level ADR 0012 groups it under, in the one table every boundary uses', () => {
+  const groups: Readonly<Record<'info' | 'warn' | 'error', readonly ErrorCode[]>> = {
+    // Validation and domain refusals, and an expected cancellation.
+    info: [
+      'invalid-request', 'invalid-message', 'unsupported-version', 'unknown-schema', 'unsupported-capability', 'not-found', 'invalid-state',
+      'revision-conflict', 'cancelled',
+    ],
+    // Refusals a correct caller should never receive, lost capacity, queued expiry and uncertain outcomes.
+    warn: ['unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict', 'capacity', 'unavailable', 'expired', 'uncertain-result'],
+    // Internal faults.
+    error: ['internal'],
+  };
+  const grouped = Object.values(groups).flat();
+  assert.deepEqual([...grouped].sort(), Object.keys(RETRYABLE).sort(), 'each registry code in exactly one group');
+  for (const [level, codes] of Object.entries(groups)) {
+    for (const code of codes) assert.equal(levelOf(code), level, code);
+  }
 });

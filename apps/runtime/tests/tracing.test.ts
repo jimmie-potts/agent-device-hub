@@ -214,3 +214,16 @@ it('a tracing start that fails writes one record with the exception\'s type, and
     [['runtime.tracing.failed', 'ERROR', 'TypeError']]);
   assert.equal(JSON.stringify(written).includes('Invalid host'), false, 'never the exception\'s message');
 });
+
+it('a tracing start that fails records only the error\'s type, never its code or message', async () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', {now: () => Date.parse('2026-10-07T12:00:00.000Z')});
+  // As a broken install fails: the loader's error has a code and a message that names a path.
+  const missing = Object.assign(new Error('Cannot find package \'@opentelemetry/sdk-trace-base\' imported from /srv/private/host.mjs'),
+    {code: 'ERR_MODULE_NOT_FOUND'});
+  const tracing = await startTracing(writer.resource, () => {}, writer.logger(RUNTIME_SCOPE), () => Promise.reject(missing));
+  assert.equal(tracing, undefined);
+  assert.deepEqual(written.map(record => [record.event_name, record.severity_text, record.attributes]),
+    [['runtime.tracing.failed', 'ERROR', {'error.type': 'Error', 'bunny.provenance': 'source'}]], 'no error.code');
+  assert.equal(JSON.stringify(written).includes('/srv/private'), false, 'never the message');
+});
