@@ -5,6 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtemp, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, Outbox, type BunnyModule, type Command, type ModuleContext, type StateDraft} from '../src/index.js';
 import {CHECKS, ModuleHarness, checkModuleRecord, conformanceChecks, moduleConformance, type ConformanceSpec, type HarnessRecord} from '../src/testing/index.js';
@@ -257,6 +258,37 @@ it('the harness stops a module as the runtime does: a participant without close,
   assert.ok(performance.now() - started < 2000, 'the stop deadline ends the wait');
   assert.equal(hanging.databaseOpen(), false);
   assert.equal(hanging.failures.length, 1, 'a stop past its deadline is a failure');
+});
+
+it('the harness opens a module\'s database as the runtime does, and lends a test the module\'s own connection while it runs', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'bunny-harness-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const harness = new ModuleHarness({
+    manifest: {name: 'probe', apiVersion: '1.0'},
+    start: given => { given.database().exec('CREATE TABLE IF NOT EXISTS t (x INTEGER); INSERT INTO t VALUES (1)'); },
+    stop: () => {},
+  }, {bus: new InProcessBus(), stateDir: dir});
+  assert.equal(harness.moduleDatabase(), undefined, 'no connection before the module opens one');
+  await harness.start();
+  const db = harness.moduleDatabase();
+  assert.ok(db);
+  // Hub #972: exclusive locking and WAL at FULL, as `openModuleDatabaseFile` opens it for the runtime.
+  const pragma = (name: string): unknown => Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0];
+  assert.deepEqual([pragma('locking_mode'), pragma('journal_mode'), pragma('synchronous'), pragma('foreign_keys')], ['exclusive', 'wal', 2, 1]);
+  const other = new DatabaseSync(join(dir, 'probe.sqlite'));
+  try {
+    assert.throws(() => other.prepare('SELECT x FROM t').get(), /locked/, 'the module keeps its file to itself');
+  } finally {
+    other.close();
+  }
+  await harness.stop();
+  assert.equal(harness.moduleDatabase(), undefined, 'none once the module stops');
+  const after = new DatabaseSync(join(dir, 'probe.sqlite'), {readOnly: true});
+  try {
+    assert.deepEqual(after.prepare('SELECT x FROM t').all().map(row => ({...row})), [{x: 1}], 'and the file opens once it stops');
+  } finally {
+    after.close();
+  }
 });
 
 /** The synthetic secret the beacon's token file holds (Hub #919). It must never reach a message, record or reply. */

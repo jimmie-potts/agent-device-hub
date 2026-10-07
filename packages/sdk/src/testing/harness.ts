@@ -4,9 +4,10 @@
 // tests cannot import the runtime, so the kit hosts modules with this.
 import {mkdirSync} from 'node:fs';
 import {join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {openModuleDatabaseFile} from '../database.js';
 import type {InProcessBus} from '../in-process.js';
 import {checkConfiguration, type BunnyModule, type LogFields, type Logger, type ModuleContext, type WorkerCallOptions} from '../module.js';
 import {
@@ -169,6 +170,14 @@ export class ModuleHarness {
     return this.#database?.isOpen === true;
   }
 
+  /**
+   * The module's own database connection while it is open, for a test that reads or changes its rows. The module keeps
+   * its file to itself, as in the runtime, so no second connection can open the file until the module stops.
+   */
+  moduleDatabase(): DatabaseSync | undefined {
+    return this.#database?.isOpen === true ? this.#database : undefined;
+  }
+
   async #stop(): Promise<void> {
     this.#controller.abort();
     for (const cancel of [...this.#timers]) cancel();
@@ -241,8 +250,8 @@ export class ModuleHarness {
       database: () => {
         live();
         if (this.#database === undefined) {
-          this.#database = new DatabaseSync(join(stateDir, `${this.#module.manifest.name}.sqlite`));
-          this.#database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
+          // Opened as the runtime opens it (Hub #972), so a module's tests commit as it will.
+          this.#database = openModuleDatabaseFile(join(stateDir, `${this.#module.manifest.name}.sqlite`));
         }
         return this.#database;
       },

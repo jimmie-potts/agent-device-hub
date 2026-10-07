@@ -10,13 +10,13 @@ import {createAgentState, recoveryJournalKey, validateExport, type DurableState}
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError} from '@jimmie-potts/sdk';
+import {countCommits} from '@jimmie-potts/sdk/testing';
 import {CoreStore, type Deriver} from '../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../src/index.js';
 import {
   CHILD, CHILD_ID, IDENTITY, SESSION_ID, approvalPrompt, approvalResolved, lifecycleOf, runtimeEnded, sessionStarted, turnEnded, turnStarted,
   unknownApproval,
 } from './fixtures/agents.js';
-import {FULL, NORMAL, countCommits} from './fixtures/commits.js';
 import {fillDisk} from './fixtures/disk.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {START, flush, it, stateDir} from './support.js';
@@ -274,7 +274,10 @@ it('a crash between commit and publish loses and duplicates nothing: the restart
 });
 
 // Hub #972: each commit is a sync to disk on the event loop. A change commits once with everything it records, and what
-// it published is forgotten in one more commit, after the sends; in WAL mode that one skips its own sync.
+// it published is forgotten in one more commit, after the sends.
+
+/** SQLite's `synchronous = FULL`: each commit syncs to disk before it returns. */
+const FULL = 2;
 
 it('an observation commits its change once, and what it published once more, after the sends', async context => {
   const {wrap, commits} = countCommits();
@@ -284,19 +287,18 @@ it('an observation commits its change once, and what it published once more, aft
   await world.observe(approvalPrompt('approval-1'));
   assert.deepEqual(types(world.since(before.published)), ['org.bunny.session.updated', 'org.bunny.attention.raised']);
   assert.deepEqual(commits.slice(before.commits), [FULL, FULL],
-    'the change with its records, history and intake, then one for the two messages that went out; out of WAL mode both sync');
+    'the change with its records, history and intake, then one for the two messages that went out');
   assert.deepEqual(world.rows('SELECT * FROM bunny_outbox'), []);
 });
 
-it('in WAL mode a change commits at FULL and its publication bookkeeping at NORMAL', async context => {
+it('opened as the runtime opens it, a change and its publication bookkeeping each commit at FULL', async context => {
   const {wrap, commits} = countCommits();
   const world = await World.open(context, {wrap, wal: true});
-  assert.deepEqual(world.rows('PRAGMA journal_mode'), [{journal_mode: 'wal'}]);
+  assert.deepEqual([...world.rows('PRAGMA journal_mode'), ...world.rows('PRAGMA locking_mode')], [{journal_mode: 'wal'}, {locking_mode: 'exclusive'}]);
   const before = commits.length;
   await world.observe(sessionStarted);
   await world.observe(approvalPrompt('approval-1'));
-  assert.deepEqual(commits.slice(before), [FULL, NORMAL, FULL, NORMAL], 'each change synced, each bookkeeping left to the next sync');
-  assert.deepEqual(world.rows('PRAGMA synchronous'), [{synchronous: FULL}], 'the connection is back at FULL');
+  assert.deepEqual(commits.slice(before), [FULL, FULL, FULL, FULL], 'each change, then what it published, each synced');
 });
 
 it('a crash after the sends and before their bookkeeping committed sends the change again at the next start, and a consumer that drops duplicates takes it once', async context => {

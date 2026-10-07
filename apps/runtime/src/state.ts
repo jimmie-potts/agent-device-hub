@@ -4,7 +4,8 @@
 import {closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
 import {lstat, mkdir, open, readlink, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import type {DatabaseSync} from 'node:sqlite';
+import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
 
 /** A refusal the runtime makes itself. Its `code` names the reason in log records, which hold no messages. */
 export class RuntimeError extends Error {
@@ -83,12 +84,12 @@ export async function prepareStateDirectory(dir: string): Promise<string> {
 }
 
 /**
- * Opens a module's own database, `modules/<name>.sqlite` in the state directory, creating it owner-only. Writes are
- * durable when their transaction commits: the database is in WAL mode at `synchronous = FULL`, so each commit syncs its
- * log once before it returns (Hub #972). `NORMAL` would skip that sync and let a power loss or a stopped WSL VM undo a
- * committed outcome or an accepted command's record, which ADR 0012 rules out. SQLite creates the log and its index,
- * `<name>.sqlite-wal` and `<name>.sqlite-shm`, with the file's own permissions. A copy of the file alone, while the
- * module runs or after a crash, may miss commits still in the log; a clean stop checkpoints them into the file.
+ * Opens a module's own database, `modules/<name>.sqlite` in the state directory, creating it owner-only, with the SDK's
+ * `openModuleDatabaseFile`, as the module test kit does (Hub #972): exclusive locking, so SQLite never creates a
+ * `-shm` index and a start on a full disk needs no new space, and WAL at `synchronous = FULL`, so a commit is durable
+ * when it returns. SQLite creates the log, `<name>.sqlite-wal`, with the file's own permissions. A clean stop
+ * checkpoints the log into the file and removes it; after a crash the file alone may lack commits that are still in
+ * the log, so a copy takes the `-wal` file too, or uses SQLite's backup.
  */
 export function openModuleDatabase(stateDir: string, name: string): DatabaseSync {
   const dir = join(stateDir, 'modules');
@@ -101,9 +102,7 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
   } finally {
     closeSync(descriptor);
   }
-  const database = new DatabaseSync(file);
-  database.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
-  return database;
+  return openModuleDatabaseFile(file);
 }
 
 /**

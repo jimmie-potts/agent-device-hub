@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {access, stat} from 'node:fs/promises';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import {startRuntime} from '../src/index.js';
@@ -136,9 +137,10 @@ it('a module gets its own SQLite file in the runtime\'s private state directory,
   const writer = fixture('notes', ({database}) => {
     const db = database();
     assert.equal(database(), db, 'one connection per module');
-    // WAL with a sync at every commit (Hub #972): a commit is durable when it returns, with one sync of the log.
+    // Exclusive locking and WAL with a sync at every commit (Hub #972): a commit is durable when it returns, and no
+    // shared-memory index is ever created.
     const pragma = (name: string): unknown => Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0];
-    settings = {journal: pragma('journal_mode'), synchronous: pragma('synchronous'), foreignKeys: pragma('foreign_keys')};
+    settings = {locking: pragma('locking_mode'), journal: pragma('journal_mode'), synchronous: pragma('synchronous'), foreignKeys: pragma('foreign_keys')};
     db.exec('CREATE TABLE notes (text TEXT)');
     db.prepare('INSERT INTO notes VALUES (?)').run('kept');
   });
@@ -147,9 +149,16 @@ it('a module gets its own SQLite file in the runtime\'s private state directory,
   // A failed check still stops it; stopping again returns the same promise.
   context.after(() => first.stop());
   const file = join(dir, 'modules', 'notes.sqlite');
-  assert.deepEqual(settings, {journal: 'wal', synchronous: 2, foreignKeys: 1}, 'WAL, synchronous FULL and foreign keys');
+  assert.deepEqual(settings, {locking: 'exclusive', journal: 'wal', synchronous: 2, foreignKeys: 1}, 'exclusive locking, WAL, synchronous FULL and foreign keys');
   assert.equal((await stat(file)).mode & 0o777, 0o600);
-  for (const companion of [`${file}-wal`, `${file}-shm`]) assert.equal((await stat(companion)).mode & 0o777, 0o600, `${companion} is as private as the file`);
+  assert.equal((await stat(`${file}-wal`)).mode & 0o777, 0o600, 'the log is as private as the file');
+  await assert.rejects(access(`${file}-shm`), 'no shared-memory index');
+  const other = new DatabaseSync(file);
+  try {
+    assert.throws(() => other.prepare('SELECT 1 FROM notes').get(), /locked/, 'no second connection reads the file while the module has it');
+  } finally {
+    other.close();
+  }
   assert.equal((await stat(join(dir, 'modules'))).mode & 0o777, 0o700);
   await assert.rejects(access(join(dir, 'modules', 'quiet.sqlite')), 'a module that never asks gets no file');
   await first.stop();

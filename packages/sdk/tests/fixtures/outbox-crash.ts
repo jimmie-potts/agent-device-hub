@@ -1,19 +1,21 @@
-// One run of a module's process for the outbox's crash tests (Hub #972). It opens the module's database file in WAL mode
-// at `synchronous = FULL`, as the runtime does, and either commits one transaction that stores a state, an outcome and
+// One run of a module's process for the outbox's crash tests (Hub #972). It opens the module's database file as the
+// runtime does, with `openModuleDatabaseFile`, and either commits one transaction that stores a state, an outcome and
 // an occurrence, or republishes what the file still holds, as a module's start does. Each message it sends, and each
 // record its outbox writes, is appended to the wire file, which outlives the process as a consumer's copy and the
 // runtime's journal would. The process kills itself with SIGKILL where its mode says:
 //   node outbox-crash.js <database> <wire> commit before-send    between the commit and the first send
 //   node outbox-crash.js <database> <wire> commit after-send     after the last send, before the batch's bookkeeping commits
+//   node outbox-crash.js <database> <wire> commit ack-mid-batch  the same, once the core acknowledged the outcome mid-batch
 //   node outbox-crash.js <database> <wire> commit                and exits once the batch has gone out
 //   node outbox-crash.js <database> <wire> republish
 import {appendFileSync} from 'node:fs';
-import {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {Outbox, type LogFields, type Logger, type TraceContext} from '../../src/index.js';
+import {Outbox, openModuleDatabaseFile, type LogFields, type Logger, type TraceContext} from '../../src/index.js';
 
 const [file, wire, action, kill] = process.argv.slice(2);
-if (file === undefined || wire === undefined || (action !== 'commit' && action !== 'republish')) throw new Error('usage: outbox-crash.js <database> <wire> commit|republish [before-send|after-send]');
+if (file === undefined || wire === undefined || (action !== 'commit' && action !== 'republish')) {
+  throw new Error('usage: outbox-crash.js <database> <wire> commit|republish [before-send|after-send|ack-mid-batch]');
+}
 const BASE = 'https://bunny.invalid/events/';
 const append = (line: object): void => { appendFileSync(wire, `${JSON.stringify(line)}\n`); };
 const die = (): never => {
@@ -21,18 +23,22 @@ const die = (): never => {
   throw new Error('still alive after SIGKILL');
 };
 
-const database = new DatabaseSync(file);
-database.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
+const database = openModuleDatabaseFile(file);
+database.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
 let sent = 0;
+let outcome: string | undefined;
 const record = (level: string) => (event: string, fields: LogFields = {}, trace?: TraceContext): void => { append({record: event, level, fields, trace}); };
 const log: Logger = {debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error')};
 const outbox = new Outbox({
   sdk: {source: 'bunny/modules/lamp', publishMessage: <T extends object>(key: string, message: Message<T>): Promise<Message<T>> => {
     if (kill === 'before-send') die();
+    // The core's acknowledgment of the outcome lands while the next message goes out.
+    if (kill === 'ack-mid-batch' && outcome !== undefined) append({acknowledged: outbox.acknowledge(outcome)});
     append({sent: key, message});
     sent += 1;
+    if (message.kind === 'outcome') outcome = message.id;
     // The last message went out; the process dies before its batch's bookkeeping commits.
-    if (kill === 'after-send' && sent === 3) die();
+    if ((kill === 'after-send' || kill === 'ack-mid-batch') && sent === 3) die();
     return Promise.resolve(message);
   }},
   database, clock: {now: () => Date.now()}, log,

@@ -9,6 +9,7 @@ import {createServer, type IncomingMessage, type Server, type ServerResponse} fr
 import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
 import {SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
@@ -87,8 +88,18 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
   throw new Error('found no free loopback port outside the installed services\' ports');
 }
 
-type Generation = {host: ModuleHost; gateway: Gateway; watcher: Participant; logs: LogWriter};
+/** One runtime's life, with the module databases it opened, which its crash closes at once. */
+type Generation = {host: ModuleHost; gateway: Gateway; watcher: Participant; logs: LogWriter; databases: Set<DatabaseSync>};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
+
+/** The module, keeping each database it opens in `databases`, so a crash can close them as a process's end would. */
+function holding(module: BunnyModule, databases: Set<DatabaseSync>): BunnyModule {
+  return {...module, start: context => module.start({...context, database: () => {
+    const database = context.database();
+    databases.add(database);
+    return database;
+  }})};
+}
 
 class Memory implements MemoryHarness {
   readonly tier = 'memory';
@@ -373,7 +384,8 @@ class Memory implements MemoryHarness {
     const number = this.#generations.length + 1;
     const clock = {now: this.#clock.now};
     const logs = new LogWriter(record => { this.#logs.push({generation: number, record}); }, 'info', clock);
-    const modules = this.#seed.modules.map(name => this.#build(name));
+    const databases = new Set<DatabaseSync>();
+    const modules = this.#seed.modules.map(name => holding(this.#build(name), databases));
     const host = new ModuleHost(modules, {
       clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000,
       ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
@@ -394,7 +406,7 @@ class Memory implements MemoryHarness {
       onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); },
     });
     await gateway.start(this.url ?? '', [new URL(this.url ?? 'http://127.0.0.1').host]);
-    this.#generations.push({host, gateway, watcher, logs});
+    this.#generations.push({host, gateway, watcher, logs, databases});
     this.#gatewayReady(gateway);
   }
 
@@ -444,6 +456,9 @@ class Memory implements MemoryHarness {
     this.#server?.closeAllConnections();
     // Marked at once, before the old bus can answer any of their requests.
     for (const {participant} of this.#parts.values()) if (this.transport === 'in-process' && participant !== undefined) this.#crashed.add(participant);
+    // The process's end closes its databases at once. Each module keeps its file to itself while it runs (Hub #972), so
+    // the next generation could not open it otherwise.
+    for (const database of old.databases) if (database.isOpen) database.close();
     this.#track((async () => {
       if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#retire(part, true);
       // Nothing of the old runtime is used again. Its gateway closes first, as the process's end would close its

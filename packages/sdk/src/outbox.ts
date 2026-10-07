@@ -4,16 +4,17 @@
 // the work standing and its messages stored, the refusal is reported as committed and awaiting publication, and the
 // next transaction or start sends them. A message that a crash kept from going out goes out at the next start. An
 // outcome is kept until the core acknowledges it and goes out again at every start until then; the core drops
-// duplicates by `(source, id)`, so a crash or a failed core never loses an outcome. Nothing else is ever sent again, so
-// a restart replays no state or occurrence, and a command never goes in. Given the module's log and tracing (Hub #949),
-// the outbox records an outcome's first publication once and a deferral once per run of refusals, and a publish span
-// for each outcome it sends.
+// duplicates by `(source, id)`, so a crash or a failed core never loses an outcome. A command never goes in.
 //
-// Each publication batch's bookkeeping, forgetting what went out and marking the outcomes, commits once, after its sends
-// settle (Hub #972): a commit is a sync to disk on the event loop. A crash after a send and before that commit sends the
-// batch again at the next start, with the same `id`s. When the database is in WAL mode, the bookkeeping and
-// acknowledgments commit without their own sync; a power loss can only undo them, which sends again and never loses a
-// message. The work's own commit keeps the module's level.
+// What went out is forgotten, or for an outcome marked published, in one commit per publication batch once its sends
+// settle (Hub #972), at the connection's own `synchronous` level, so a power loss never undoes it: each commit is a sync
+// to disk on the event loop. That commit is the one point at which a state, removal or occurrence that went out can go
+// out again: a crash between a batch's sends and its commit sends the batch again at the next start, and a failed commit
+// sends it again with the next send, with the same `id`s. In process, the sends and the commit run in one turn of the
+// event loop; through a remote edge, the window spans the sends. Otherwise a restart replays no state or occurrence.
+// Given the module's log and tracing (Hub #949), the outbox records an outcome's first publication at most once, a
+// deferral once per run of refusals, and a publish span for each outcome it sends. One outbox serves one database
+// connection.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MAX_DETAIL, errorBody, type ErrorCode, type Message, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
@@ -65,8 +66,8 @@ export type AddMessage = <T extends object>(key: string, draft: Draft<T>, option
 export type Synchronous<R> = R extends PromiseLike<unknown> ? never : R;
 
 type Row = {seq: number; routing_key: string; message: string; kind: string; published: number};
-/** A row that went out in the current publication batch, with its message and stored trace context. */
-type Sent = {row: Row; message: Message; stored: TraceContext};
+/** A row that went out in the current publication batch, with its message, stored trace context and whether its first publication is recorded. */
+type Sent = {row: Row; message: Message; stored: TraceContext; recorded: boolean};
 type Level = 'info' | 'warn';
 const OUTCOMES: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
 const AWAITING = 'committed, awaiting publication';
@@ -99,8 +100,11 @@ export class Outbox {
   readonly #forget: StatementSync;
   readonly #acknowledge: StatementSync;
   readonly #waiting: StatementSync;
-  readonly #journalMode: StatementSync;
-  readonly #synchronous: StatementSync;
+  /**
+   * The rows of the batch under way that went out and are not yet marked or forgotten, by message `id`, so an
+   * acknowledgment that lands in between records the outcome's first publication itself.
+   */
+  readonly #inFlight = new Map<string, Sent>();
   /** Sends run one at a time, so a message never goes out twice in one run or out of order. */
   #sending: Promise<unknown> = Promise.resolve();
 
@@ -127,10 +131,8 @@ export class Outbox {
     this.#stored = database.prepare('SELECT seq, routing_key, message, kind, published FROM bunny_outbox ORDER BY seq');
     this.#published = database.prepare('UPDATE bunny_outbox SET published = 1 WHERE seq = ?');
     this.#forget = database.prepare('DELETE FROM bunny_outbox WHERE seq = ?');
-    this.#acknowledge = database.prepare('DELETE FROM bunny_outbox WHERE id = ? AND kind = \'outcome\'');
+    this.#acknowledge = database.prepare('DELETE FROM bunny_outbox WHERE id = ? AND kind = \'outcome\' RETURNING published');
     this.#waiting = database.prepare('SELECT COUNT(*) AS waiting FROM bunny_outbox WHERE published = 0');
-    this.#journalMode = database.prepare('PRAGMA journal_mode');
-    this.#synchronous = database.prepare('PRAGMA synchronous');
   }
 
   /**
@@ -174,12 +176,20 @@ export class Outbox {
 
   /**
    * Forgets the outcome with this message `id`, which the core has recorded, so it is never sent again. True when the
-   * outbox still held it. Only outcomes wait for an acknowledgment; any other message is gone once published.
+   * outbox still held it. Only outcomes wait for an acknowledgment; any other message is gone once published. An
+   * acknowledgment that lands after the outcome went out and before its batch's bookkeeping committed records the
+   * outcome's first publication itself, since no later send will.
    */
   acknowledge(id: string): boolean {
     if (!this.#database.isOpen) return false;
-    // Undoing it only sends the outcome again at the next start, and the core acknowledges a duplicate again.
-    return this.#relaxed(() => Number(this.#acknowledge.run(id).changes) > 0);
+    const forgotten = this.#acknowledge.get(id) as {published: number} | undefined;
+    if (forgotten === undefined) return false;
+    const sent = this.#inFlight.get(id);
+    if (forgotten.published === 0 && sent !== undefined && !sent.recorded) {
+      sent.recorded = true;
+      this.#publication(sent.message, sent.stored);
+    }
+    return true;
   }
 
   /** Commits `work` and its messages; `own` receives the id of each message this transaction stored. */
@@ -248,16 +258,24 @@ export class Outbox {
           break;
         }
         span?.end();
-        sent.push({row, message, stored});
+        const entry = {row, message, stored, recorded: false};
+        sent.push(entry);
+        this.#inFlight.set(message.id, entry);
       }
       try {
         this.#settle(sent);
       } catch (error) {
         // Nothing was marked: what went out goes out again with the next send or start, with the same ids.
         throw refusal === undefined ? error : refusal.error;
+      } finally {
+        for (const {message} of sent) this.#inFlight.delete(message.id);
       }
-      // An outcome's first publication is recorded once; a replay of one already published is not.
-      for (const {row, message, stored} of sent) if (row.kind === 'outcome' && row.published === 0) this.#publication(message, stored);
+      // An outcome's first publication is recorded once its batch committed; a replay of one already published is not.
+      for (const entry of sent) {
+        if (entry.row.kind !== 'outcome' || entry.row.published !== 0 || entry.recorded) continue;
+        entry.recorded = true;
+        this.#publication(entry.message, entry.stored);
+      }
       if (refusal !== undefined) throw refusal.error;
       this.#refused = undefined;
       return sent.length;
@@ -276,45 +294,20 @@ export class Outbox {
     const changed = sent.filter(({row}) => row.kind !== 'outcome' || row.published === 0);
     if (changed.length === 0) return;
     const database = this.#database;
-    this.#relaxed(() => {
-      const ownTransaction = !database.isTransaction;
-      if (ownTransaction) database.exec('BEGIN IMMEDIATE');
-      try {
-        for (const {row} of changed) (row.kind === 'outcome' ? this.#published : this.#forget).run(row.seq);
-        if (ownTransaction) database.exec('COMMIT');
-      } catch (error) {
-        if (ownTransaction && database.isTransaction) {
-          try {
-            database.exec('ROLLBACK');
-          } catch {
-            // The connection's next transaction fails in turn; nothing was marked.
-          }
-        }
-        throw error;
-      }
-    });
-  }
-
-  /**
-   * Runs bookkeeping that only forgets or marks stored rows. In WAL mode, outside a transaction, it commits at
-   * `synchronous = NORMAL`, without its own sync, and the connection's level comes back at once, so the work's own
-   * commits keep the module's level. A later sync of the WAL, at the next commit at that level or a checkpoint, makes it
-   * durable with everything before it; a power loss before then can only undo it, which leaves the rows stored to go
-   * out again. In rollback journal mode NORMAL saves less, and a power loss at the wrong moment can corrupt the file, so
-   * the level stays as it is there.
-   */
-  #relaxed<R>(work: () => R): R {
-    const database = this.#database;
-    if (database.isTransaction) return work();
-    const mode = (this.#journalMode.get() as {journal_mode?: unknown} | undefined)?.journal_mode;
-    const level = Number((this.#synchronous.get() as {synchronous?: unknown} | undefined)?.synchronous);
-    // NORMAL is 1; FULL (2) and EXTRA (3) sync each commit.
-    if (mode !== 'wal' || !(level > 1)) return work();
-    database.exec('PRAGMA synchronous = NORMAL');
+    const ownTransaction = !database.isTransaction;
+    if (ownTransaction) database.exec('BEGIN IMMEDIATE');
     try {
-      return work();
-    } finally {
-      database.exec(`PRAGMA synchronous = ${String(level)}`);
+      for (const {row} of changed) (row.kind === 'outcome' ? this.#published : this.#forget).run(row.seq);
+      if (ownTransaction) database.exec('COMMIT');
+    } catch (error) {
+      if (ownTransaction && database.isTransaction) {
+        try {
+          database.exec('ROLLBACK');
+        } catch {
+          // The connection's next transaction fails in turn; nothing was marked.
+        }
+      }
+      throw error;
     }
   }
 

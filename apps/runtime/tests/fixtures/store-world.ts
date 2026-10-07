@@ -7,7 +7,7 @@ import type {TestContext} from 'node:test';
 import {createAgentState} from '@jimmie-potts/agent-state';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type LifecycleEvent, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
-import type {SdkError} from '@jimmie-potts/sdk';
+import {openModuleDatabaseFile, type SdkError} from '@jimmie-potts/sdk';
 import {reducedKind, toEnvelope} from '../../src/core/mapping.js';
 import {CoreStore, type Deriver} from '../../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../../src/index.js';
@@ -62,11 +62,9 @@ export class World {
     this.store = this.#store(derivers);
   }
 
-  /** A connection to the store's file: in WAL mode at `synchronous = FULL` when asked, as the runtime opens it (Hub #972). */
+  /** A connection to the store's file: as the runtime opens it when asked (Hub #972), otherwise SQLite's defaults. */
   #connect(): DatabaseSync {
-    const db = new DatabaseSync(this.file);
-    if (this.#wal) db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL');
-    return db;
+    return this.#wal ? openModuleDatabaseFile(this.file) : new DatabaseSync(this.file);
   }
 
 
@@ -74,7 +72,7 @@ export class World {
     file?: string; clock?: ReturnType<typeof manualClock>; derivers?: readonly Deriver[];
     /** Stands in front of the store's connection, as a test that makes one of its calls fail does. */
     wrap?: (db: DatabaseSync) => DatabaseSync;
-    /** Opens the store's file in WAL mode, as the runtime does. */
+    /** Opens the store's file as the runtime does: exclusive locking, WAL and `synchronous = FULL`. */
     wal?: boolean;
   } = {}): Promise<World> {
     const file = options.file ?? join(await stateDir(context), 'core.sqlite');

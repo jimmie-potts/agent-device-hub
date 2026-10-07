@@ -242,24 +242,32 @@ export function hooked(speakers: SimulatedSpeakers, onCommand: (call: string) =>
   };
 }
 
-/** Takes the module database's write lock from another connection, as a busy or full disk refuses commits; returns its release. */
-export function lockDatabase(stateDir: string): () => void {
-  const lock = new DatabaseSync(join(stateDir, 'playback.sqlite'));
-  lock.exec('BEGIN IMMEDIATE');
+/**
+ * Makes the running module's own database connection refuse every write with `SQLITE_READONLY`, as a disk that fails
+ * would; returns its release, which the module's stop makes needless. The module keeps its file to itself, as in the
+ * runtime (Hub #972), so no other connection can take its lock.
+ */
+export function refuseWrites(hosted: Pick<Hosted, 'harness'>): () => void {
+  const database = hosted.harness.moduleDatabase();
+  if (database === undefined) throw new Error('the module has no open database');
+  database.exec('PRAGMA query_only = ON');
   return () => {
-    lock.exec('ROLLBACK');
-    lock.close();
+    if (database.isOpen) database.exec('PRAGMA query_only = OFF');
   };
 }
 
-/** The module's stored commands, read from another connection, as `request_id result`. */
-export function storedCommands(stateDir: string): string[] {
-  const database = new DatabaseSync(join(stateDir, 'playback.sqlite'), {readOnly: true});
+/**
+ * The module's stored commands, as `request_id result`: through the module's own connection while it runs, which keeps
+ * the file to itself (Hub #972), and otherwise from the file.
+ */
+export function storedCommands(hosted: Pick<Hosted, 'harness' | 'stateDir'>): string[] {
+  const running = hosted.harness.moduleDatabase();
+  const database = running ?? new DatabaseSync(join(hosted.stateDir, 'playback.sqlite'), {readOnly: true});
   try {
     return (database.prepare('SELECT request_id, result FROM playback_commands ORDER BY seq').all() as {request_id: string; result: string | null}[])
       .map(row => `${row.request_id} ${row.result ?? 'pending'}`);
   } finally {
-    database.close();
+    if (running === undefined) database.close();
   }
 }
 
