@@ -310,6 +310,36 @@ counts. The runtime's `--simulate` builds the module with them; the scenario
 catalog's `speaker-playback` scenario drives them
 ([runtime README](../../apps/runtime/README.md#scenario-catalog)).
 
+## What to see and hear at the cutover
+
+For #840's live check, the owner plays music from the iPhone over AirPlay to the
+HT-A9 or the Sonos Move. The speakers show little through the webcam, so the
+result is judged by ear and on the displays that follow the `playback` record:
+
+- **Playing:** within about 2 s of the music starting, the record shows the
+  title, the artist and the actions the speaker offers. The Tidbyt's now-playing
+  tile shows a green triangle at its next turn in the rotation, and in Monitor
+  the Pixoo shows the song's card as a pop-up for about 10 s.
+- **Pause:** a pause from the dashboard or MCP stops the audio within a few
+  seconds, and the record shows the session paused. The Tidbyt's marker turns
+  into two amber bars once its 15 s gate allows. On the HT-A9 a paused AirPlay
+  session offers only next and previous: play stays unavailable
+  ([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)), so
+  resume from the phone.
+- **Next:** the track changes audibly within a few seconds, and the title follows
+  at the next read.
+- **A restart of the runtime:** the record reads `unavailable` until each
+  speaker's first read settles, about 1.5 s for the HT-A9 and up to about 4.5 s
+  for the Move, then shows the same song, and the displays keep its card. A Move
+  that does not answer within its call deadline releases the record with the
+  HT-A9's report, so the Tidbyt card can drop and come back about 15 s later.
+- **A speaker that stops answering:** the record turns `stale` after 5 s and
+  `unavailable` at 30 s, and commands are refused `unavailable`. The audio itself
+  is unaffected.
+
+Source tests, a running module and command outcomes do not establish what the
+speakers play; the owner's listening check does.
+
 ## Tests
 
 `npm run test:playback` builds, then runs `test:playback:built`. The tests need
