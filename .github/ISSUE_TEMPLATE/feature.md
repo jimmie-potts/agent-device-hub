@@ -39,7 +39,12 @@ native parents or blockers. Preserve existing Guide metadata during migration.
 
 ## Behavior and protections to preserve
 
-<!-- If affected: preserve one state owner, one writer per device, manual control and private data. -->
+<!-- If affected: preserve one state owner, one writer per device, manual control and private data.
+Boundaries and outcomes, for work that crosses a component boundary (see docs/sdlc.md "Scope defaults"):
+name its entry points and hand-offs; its refusals and its succeeded, failed and uncertain outcomes, with the effects each may leave;
+its codes and retry policy; its diagnostic records and trace continuity; and its fault cases.
+Link the rules in docs/decisions/0012-bunny-event-platform.md and docs/observability-contract.md; do not copy them.
+Answer here, with a ### subheading at most. -->
 
 ## Observable acceptance and planned evidence
 
