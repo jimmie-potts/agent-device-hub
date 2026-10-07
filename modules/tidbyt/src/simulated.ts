@@ -3,8 +3,8 @@
 // them: a background push, an installation's removal and the installation list, with the cloud's status codes, so the
 // module's own classification runs on its answers. It accepts only its API key and its device, and shows what each
 // installation was last sent as text rows (`picture`). Like the real cloud, it keeps its installations when the
-// runtime restarts. A test or a run can make it stop answering, refuse connections, or answer the next call with a
-// status of its choice.
+// runtime restarts. A test or a run can make it stop answering, refuse connections, answer the next call with a status
+// of its choice, or carry out the next call and lose its answer.
 import {API, type CloudFetch} from './cloud.js';
 import {decodeLossless, picture} from './picture.js';
 
@@ -70,6 +70,7 @@ export class SimulatedCloud {
   readonly #answers: {status: number; retryAfter?: string}[] = [];
   #always: {status: number; retryAfter?: string} | undefined;
   #refusedKeys = 0;
+  #loseAnswers = 0;
 
   constructor({online = true, key = SIMULATED_API_KEY, device = SIMULATED_DEVICE, installations = [], now = Date.now}: SimulatedCloudOptions = {}) {
     this.#online = online;
@@ -102,6 +103,14 @@ export class SimulatedCloud {
     this.#answers.push({status, ...(retryAfter === undefined ? {} : {retryAfter})});
   }
 
+  /**
+   * The next call is carried out, but its answer is lost on the way back: the caller hears nothing until its deadline, as
+   * after a dropped connection, though the cloud applied the push or the removal.
+   */
+  loseNextAnswer(): void {
+    this.#loseAnswers += 1;
+  }
+
   /** Every call is answered with this status until it is cleared with undefined, as a cloud that keeps refusing. */
   answerAlways(status: number | undefined): void {
     this.#always = status === undefined ? undefined : {status};
@@ -125,6 +134,11 @@ export class SimulatedCloud {
     if (!this.#online) return await silence(init.signal);
     const response = this.#reply(route, init);
     call.answer = response.status;
+    if (this.#loseAnswers > 0) {
+      this.#loseAnswers -= 1;
+      call.answer = 'none';
+      return await silence(init.signal);
+    }
     return response;
   }
 

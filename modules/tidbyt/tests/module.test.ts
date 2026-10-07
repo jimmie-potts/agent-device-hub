@@ -126,18 +126,151 @@ test('a copy that stops following its owner dims the last rows and never removes
   await h.advance(5 * MINUTE, SECOND);
   assert.equal(calls(h).filter(call => call.startsWith('DELETE')).length, 0, 'an unavailable feed never removes the tile');
 
+  // A core that never serves: the tile writes nothing for 30 s after the start, then reads FEED ?.
   const lost = await host(context, {sessions: 'absent', section: STATUS_ONLY});
+  await lost.advance(29 * SECOND, SECOND);
+  await quiet();
+  assert.equal(pushes(lost), 0, 'nothing is shown while the sessions may still come');
+  await lost.advance(2 * SECOND, SECOND);
   await until(() => pushes(lost) === 1, 'FEED ?');
   assert.deepEqual(shown(lost, STATUS).picture, statusPicture([], false));
   // The core comes up; the module syncs again after its backoff, and the next push waits for the 15 s gate.
   const later = new StandIn<SessionRecord>(lost.bus.connect('bunny/core'), 'session');
   await later.open([working({label: label('back')})]);
-  await lost.advance(2 * SECOND);
-  await lost.advance(13 * SECOND);
+  await lost.advance(32 * SECOND, SECOND);
   await until(() => pushes(lost) === 2, 'the rows');
   assert.deepEqual(shown(lost, STATUS).picture, statusPicture(later.records()));
   assert.deepEqual(records(lost, 'operation.failed'), ['warn feed unavailable bunny/core']);
   assert.deepEqual(records(lost, 'operation.completed').filter(entry => entry.includes('feed')), ['info feed bunny/core']);
+});
+
+test('a core that serves a moment after the start never makes the status tile read FEED ? over the tile it shows', async context => {
+  const h = await host(context, {sessions: [working({label: label('kept')})], section: STATUS_ONLY});
+  await until(() => pushes(h) === 1, 'the first push');
+  await h.advance(20 * SECOND);
+  // The runtime restarts, and the core refuses the module's first syncs for a few seconds.
+  await h.stop();
+  core(h).refuse = true;
+  await h.start();
+  await h.advance(3 * SECOND, SECOND);
+  core(h).refuse = false;
+  await h.advance(20 * SECOND, SECOND);
+  await quiet();
+  assert.equal(pushes(h), 1, 'neither FEED ? nor the unchanged rows were pushed');
+  assert.deepEqual(shown(h, STATUS).picture, statusPicture(core(h).records()));
+  assert.deepEqual(calls(h).filter(call => call.startsWith('DELETE')), []);
+});
+
+test('a start never removes a playing card while the playback module publishes its start-time unavailable record', async context => {
+  const h = await host(context, {sessions: [], playback: playback('playing')});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the card');
+  await h.advance(20 * SECOND);
+  // The runtime restarts: the playback module publishes `unavailable`, with unknown playback, before its first read.
+  await h.stop();
+  await owner(h).set(unavailablePlayback());
+  await h.start();
+  await h.advance(5 * SECOND, SECOND);
+  await quiet();
+  assert.deepEqual(calls(h).filter(call => call.endsWith(NOW_PLAYING)), ['POST nowplaying'], 'the card was neither removed nor listed');
+  // The first read finds the same song playing: the card stands, and nothing is pushed.
+  await owner(h).set(playback('playing'));
+  await h.advance(20 * SECOND, SECOND);
+  await quiet();
+  assert.deepEqual(calls(h).filter(call => call.endsWith(NOW_PLAYING)), ['POST nowplaying']);
+
+  // From a fresh start, a leftover card waits for the first read too, and a speaker that stays unavailable for 30 s
+  // removes it.
+  const fresh = await host(context, {sessions: [], playback: unavailablePlayback(), cloud: {installations: [NOW_PLAYING]}});
+  await fresh.advance(29 * SECOND, SECOND);
+  await quiet();
+  assert.ok(!calls(fresh).some(call => call.endsWith(NOW_PLAYING)), 'nothing before the speakers had their 30 s');
+  await fresh.advance(6 * SECOND, SECOND);
+  await until(() => calls(fresh).includes('DELETE nowplaying'), 'the removal once the speaker stayed unavailable');
+});
+
+test('a stop while a push is in flight leaves the tile\'s presence unknown, so an idle restart lists and removes it', async context => {
+  const h = await host(context, {sessions: [], section: STATUS_ONLY});
+  await until(() => calls(h).length === 1, 'the idle start\'s listing');
+  // The next push reaches the cloud, but its answer is lost: the tile may be in the rotation.
+  h.cloud.loseNextAnswer();
+  await h.advance(20 * SECOND);
+  await core(h).set(working());
+  await until(() => calls(h).length === 2, 'the push whose answer is lost');
+  await h.stop();
+  assert.equal(h.cloud.state().installations[STATUS]?.pushes, 1, 'the cloud took the push');
+  const [only] = core(h).records();
+  if (only === undefined) throw new Error('no session');
+  await core(h).set({...only, activity: 'idle'});
+  await h.start();
+  await h.advance(16 * SECOND, SECOND);
+  await until(() => calls(h).includes('DELETE agentdevicehub'), 'the removal after the restart');
+  assert.deepEqual(calls(h).slice(2), ['GET list', 'DELETE agentdevicehub'], 'the restart read the list, then removed the tile');
+});
+
+test('a wall clock set back never holds a tile\'s next write or refresh longer than its wait', async context => {
+  const h = await host(context, {sessions: [working({label: label('one')})], section: STATUS_ONLY});
+  await until(() => pushes(h) === 1, 'the first push');
+  h.stepWall(-10 * MINUTE);
+  await h.advance(SECOND);
+  await core(h).set(asking({label: label('two')}));
+  await h.advance(14 * SECOND - 100);
+  await quiet();
+  assert.equal(pushes(h), 1);
+  await h.advance(100);
+  await until(() => pushes(h) === 2, 'the push 15 s after the first, whatever the wall clock says');
+  await h.advance(10 * MINUTE, 10 * SECOND);
+  await until(() => pushes(h) === 3, 'the refresh 10 minutes after the last push');
+  const [first = 0, second = 0, third = 0] = shown(h, STATUS).pushedAtMs;
+  assert.deepEqual([second - first, third - second], [15 * SECOND, 10 * MINUTE]);
+});
+
+test('a fault of the module\'s own is logged once per run, with one record when it clears', async context => {
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
+  await until(() => pushes(h) === 1, 'the first push');
+  // A record the core should never send: the status view cannot read its identity.
+  const broken = {...working(), identity: undefined} as unknown as SessionRecord;
+  await core(h).set(broken);
+  await h.advance(5 * MINUTE, SECOND);
+  const faults = h.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.code'] === 'internal');
+  assert.equal(faults.length, 1, 'one record for the run of faults');
+  assert.equal(faults[0]?.level, 'error');
+  await core(h).set({...working(), id: broken.id});
+  await h.advance(MINUTE, SECOND);
+  const cleared = h.logs().filter(entry => entry.event === 'operation.completed' && entry.fields['bunny.operation.id'] === undefined && entry.fields['bunny.operation'] === 'status');
+  assert.equal(cleared.length, 1, 'one record when it clears');
+});
+
+test('an authentication refusal inside a run of other failures is still logged, and no span is recorded for a held call', async context => {
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY, before: cloud => { cloud.answerNext(400); cloud.answerNext(401); }});
+  await until(() => calls(h).length === 1, 'the refused push');
+  await h.advance(15 * SECOND, SECOND);
+  await until(() => calls(h).length === 2, 'the push refused for its key');
+  assert.deepEqual(records(h, 'operation.failed'), ['warn status push invalid-request', 'warn status push unauthenticated']);
+  await core(h).set(asking());
+  await h.advance(10 * MINUTE, 10 * SECOND);
+  assert.equal(calls(h).length, 2, 'the hold sends nothing');
+  const callSpans = h.spans.spans.filter(span => span.name === 'bunny.device.call');
+  assert.equal(callSpans.length, 2, 'one device call span per request that went out');
+});
+
+test('a sync answers the last committed record, never one the database refused', async context => {
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
+  await until(() => pushes(h) === 1 && h.device().availability === 'available', 'the first push');
+  const committed = h.device();
+  const lock = new DatabaseSync(join(h.stateDir, 'tidbyt.sqlite'));
+  lock.exec('BEGIN IMMEDIATE');
+  await core(h).set(asking());
+  await h.advance(15 * SECOND);
+  await until(() => pushes(h) === 2, 'the push while the database is locked');
+  await until(() => records(h, 'operation.failed').length === 1, 'the refused commit');
+  const reader = h.bus.connect('bunny/parts/reader');
+  context.after(() => reader.close());
+  const options = {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'};
+  const synced = await reader.sync(['device'], () => {}, options);
+  assert.equal(synced.status, 'synced');
+  if (synced.status === 'synced') assert.deepEqual(synced.copy.states().map(state => state.data), [committed], 'the sync serves what committed');
+  lock.exec('ROLLBACK');
+  lock.close();
 });
 
 test('nothing is written before the first sync settles: a slow core holds the status tile', async context => {
@@ -285,9 +418,9 @@ test('a refused key holds every later call, and a rate limit holds them for its 
 });
 
 test('a cloud that does not answer at start never delays the start, makes the Tidbyt unavailable and logs one degradation and one recovery', async context => {
-  const started = performance.now();
+  // The call's deadline runs on the manual clock, which `host` does not move, so a start that waited on the cloud would
+  // never return.
   const h = await host(context, {sessions: [working()], section: STATUS_ONLY, cloud: {online: false}, module: {callTimeoutMs: 2000}});
-  assert.ok(performance.now() - started < 1000, 'start opens only local resources');
   await until(() => calls(h).length === 1, 'the push that hangs');
   await h.advance(2 * SECOND);
   await until(() => h.device().availability === 'unavailable', 'the device unavailable');

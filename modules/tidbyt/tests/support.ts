@@ -196,6 +196,12 @@ export type Hosted = {
   device: () => DeviceRecord;
   /** Every instance's log records, in order. */
   logs: () => HarnessRecord[];
+  /**
+   * The wall clock the module and the bus read: the manual clock plus an offset that `stepWall` changes, as a wall clock
+   * set back or forward while the runtime's timers keep their course.
+   */
+  wall: () => number;
+  stepWall: (ms: number) => void;
   /** Moves the manual clock in steps of at most `stepMs`, letting each step's work settle. */
   advance: (ms: number, stepMs?: number) => Promise<void>;
   start: () => Promise<void>;
@@ -218,11 +224,14 @@ export const STATUS_ONLY = (({nowPlaying: _nowPlaying, ...rest}) => rest)(SECTIO
 /** Hosts the Tidbyt module with the simulated cloud on a manual clock, with stand-in owners for its two copies. */
 export async function host(context: TestContext, options: HostOptions = {}): Promise<Hosted> {
   const clock = manualClock();
+  let offset = 0;
+  const wall = (): number => clock.now() + offset;
+  // The cloud stamps pushes with the manual clock's steady time, so the gaps between them never depend on the wall clock.
   const cloud = new SimulatedCloud({now: clock.now, ...options.cloud});
   const thrown: unknown[] = [];
   const spans = new RecordedSpans();
   const bus = new InProcessBus({
-    now: clock.now, scheduler: clock.scheduler, spans, ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
+    now: wall, scheduler: clock.scheduler, spans, ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
     onError: (error, {source}) => { if (source === 'bunny/modules/tidbyt') thrown.push(error); },
   });
   const stateDir = await mkdtemp(join(tmpdir(), 'tidbyt-module-'));
@@ -244,7 +253,7 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
   registerDeviceFamilies(validator);
   // A worker answers in real time while a test moves the manual clock fast, so renders get a deadline no test reaches.
   const build = (): ModuleHarness => new ModuleHarness(createTidbytModule({transport: cloud.fetch, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module}), {
-    bus, stateDir, clock: {now: clock.now}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
+    bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
   });
   const instances: ModuleHarness[] = [];
   /**
@@ -258,7 +267,8 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
     await flush();
   };
   const hosted: Hosted = {
-    harness: build(), clock, cloud, core, playback: owner, bus, published, spans, stateDir, instances, started: Promise.resolve(),
+    harness: build(), clock, cloud, core, playback: owner, bus, published, spans, stateDir, instances, started: Promise.resolve(), wall,
+    stepWall: ms => { offset += ms; },
     devices: () => published.filter(isDevice).map(message => message.data as DeviceRecord),
     device: () => {
       const last = hosted.devices().at(-1);
