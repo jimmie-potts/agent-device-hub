@@ -106,7 +106,7 @@ The Sonos source SHALL read `GetTransportInfo`, `GetPositionInfo` and `GetCurren
 
 ### Requirement: Playback commands
 
-The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`, one command at a time. It SHALL refuse, sending nothing: a subject other than the record's `id`, an unknown action or a non-integer `expectedRevision` with `invalid-request`; any command while it stops, and any while the presented speaker is not `available`, with `unavailable`; a `requestId` the same requester used for another command with `duplicate-conflict`; an `expectedRevision` other than the record's current revision with `revision-conflict`; an action the presented speaker does not offer now with `unsupported-capability`; and a command whose intent it cannot store with `capacity`. A command the same requester sent before with the same `requestId` SHALL be accepted again and send nothing; the module SHALL remember the last 64 commands. Otherwise the speaker presented at admission SHALL be fixed: the module SHALL store the command's intent, send the action to that speaker once within 1.5 seconds, and never redirect or retry it, even when another speaker takes over meanwhile. It SHALL commit the outcome, `org.bunny.playback.control.completed` on `bunny.event.playback-control.<id>`, through its outbox, then reply `accepted`: `succeeded` with evidence `transmitted` when the speaker took it, `failed` with evidence `none` and `invalid-state` when it refused, and `uncertain` with evidence `none` and `uncertain-result` when it did not answer. At its start the module SHALL report each stored intent that has no outcome as `uncertain` and never send it.
+The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`, one command at a time. It SHALL refuse, sending nothing: a subject other than the record's `id`, an unknown action or a non-integer `expectedRevision` with `invalid-request`; any command while it stops, and any while the presented speaker is not `available`, with `unavailable`; a `requestId` the same requester used for another command with `duplicate-conflict`; an `expectedRevision` other than the record's current revision with `revision-conflict`; an action the presented speaker does not offer now with `unsupported-capability`; and a command whose intent it cannot store with `capacity`. A command the same requester sent before with the same `requestId` SHALL be accepted again and send nothing; the module SHALL remember the last 64 commands, across restarts. A queued command's admission SHALL wait, at most 1.5 seconds, for the read of the speaker that follows the command ahead of it, so it is checked against what that speaker reports afterwards. Otherwise the speaker presented at admission SHALL be fixed: the module SHALL store the command's intent before the speaker hears it, send the action to that speaker once within 1.5 seconds, and never redirect or retry it, even when another speaker takes over meanwhile; the module's stop SHALL end the call at once. It SHALL commit the outcome, `org.bunny.playback.control.completed` on `bunny.event.playback-control.<id>`, and publish it through its outbox before it replies `accepted`: `succeeded` with evidence `transmitted` when the speaker took it, `failed` with evidence `transmitted` and `invalid-state` when the speaker answered with a refusal, because it heard the command, `failed` with evidence `none` and `unsupported-capability` when the speaker has no command for the action and nothing was sent, and `uncertain` with evidence `none` and `uncertain-result` when it did not answer. As an exception to ADR 0012's "Replies answer a command immediately", the reply SHALL come after the speaker's call and the outcome's commit: the responder handles one command at a time, the call is bounded at 1.5 seconds and the wait for the read ahead at another 1.5 seconds, inside a requester's usual 5-second deadline. When the database refuses the outcome after the speaker heard the command, the module SHALL still reply `accepted`, never a refusal, SHALL commit the outcome again after 1 second, doubling the wait up to 60 seconds, and SHALL NOT let the refusal escape the module. At its start the module SHALL report each stored intent that has no outcome as `uncertain` and never send it.
 
 #### Scenario: Pause goes to the presented speaker only
 - **WHEN** the HT-A9 alone plays and the operator pauses, then the Move plays and the operator pauses again
@@ -124,6 +124,30 @@ The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`,
 - **WHEN** a second command arrives while the first waits for the speaker
 - **THEN** the second waits, and is admitted against the speaker presented once the first has its outcome
 
+#### Scenario: A command queued behind another
+- **WHEN** two pauses reach the playing HT-A9 at once, and then a pause and a play reach the playing Move at once
+- **THEN** the first pause is sent and the second refused `unsupported-capability`, because the HT-A9 then reports paused, and both the Move's pause and its play are sent
+
+#### Scenario: A speaker that refuses
+- **WHEN** the HT-A9 answers a previous with a JSON-RPC error
+- **THEN** the outcome is `failed` with evidence `transmitted` and `invalid-state`
+
+#### Scenario: Intent first, reply last
+- **WHEN** a command is sent while the module's outcome publications are held
+- **THEN** the speaker hears it only after its intent is stored, and the requester hears `accepted` only once the outcome is committed and published
+
+#### Scenario: A stop during a call
+- **WHEN** the module stops while a speaker has not answered a command
+- **THEN** the stop ends the call at once, leaves no call or timer behind, stores the outcome as `uncertain`, and the next start publishes it
+
+#### Scenario: The database refuses the intent
+- **WHEN** another writer holds the module's database and two commands arrive, and then it lets go and a third arrives
+- **THEN** both are refused `capacity` with no speaker hearing them and one `operation.failed` warning, and the third is sent, with one `operation.completed` record
+
+#### Scenario: The database refuses the outcome
+- **WHEN** the database refuses commits from the moment the speaker hears a command until a few seconds later
+- **THEN** the requester hears `accepted`, the module keeps running with its intent stored, logs one `operation.failed` warning, commits and publishes the outcome once the database lets go, logs one `operation.completed`, and sends later commands
+
 #### Scenario: A crash between intent and outcome
 - **WHEN** the module starts with a stored intent that has no outcome
 - **THEN** it publishes that command's outcome as uncertain, sends nothing, and answers the same request again as accepted
@@ -134,7 +158,7 @@ The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`,
 
 ### Requirement: Speaker failures and diagnostics
 
-Under policy A a speaker's errors and timeouts SHALL become `unavailable` state and outcomes, never a module failure, and a module whose speakers are offline at start SHALL run, report `unavailable` and refuse commands. The module SHALL log through its context under `bunny.module` only registered events and attributes: one `device.unavailable` warning when a speaker's reads start failing and DEBUG summaries at most once a minute afterwards, one `device.available` record when it answers again, `command.executing` in the command's trace when it sends a command, the outbox's `outcome.published` and `outbox.republished`, and one `operation.failed` warning per run of database refusals. It SHALL name a speaker in `bunny.device.id` as `<id>.<kind>`, never by address, and SHALL NOT log an exception's text, a title or an address. It SHALL record a `bunny.device.call` span around each command's speaker call, the command's child, and SHALL give no trace context to a speaker.
+Under policy A a speaker's errors and timeouts SHALL become `unavailable` state and outcomes, never a module failure, and a module whose speakers are offline at start SHALL run, report `unavailable` and refuse commands. The module SHALL log through its context under `bunny.module` only registered events and attributes: one `device.unavailable` warning when a speaker's reads start failing and DEBUG summaries at most once a minute afterwards, one `device.available` record when it answers again, `command.executing` in the command's trace when it sends a command, the outbox's `outcome.published` and `outbox.republished`, one `operation.failed` record per run of database refusals of any commit, a record, an intent or an outcome (WARN, or ERROR for `internal`), and one `operation.completed` record when a commit works again. It SHALL name a speaker in `bunny.device.id` as `<id>.<kind>`, never by address, and SHALL NOT log an exception's text, a title or an address. It SHALL record a `bunny.device.call` span around each command's speaker call, the command's child, and SHALL give no trace context to a speaker.
 
 #### Scenario: Both speakers offline at start
 - **WHEN** neither speaker answers when the module starts, and for 20 seconds after

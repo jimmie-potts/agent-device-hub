@@ -126,10 +126,12 @@ messages. The record's fields:
 
 The module publishes a new revision only when `availability` or `playback`
 changes. A read that changes nothing else publishes nothing, so `observedAtMs`
-can be older than the last read. Judge freshness by `availability`: the module
-publishes the change to `stale` and to `unavailable` when the last read
-crosses each threshold. Each start publishes a new `unavailable` revision,
-then the first read's.
+can be minutes older than the last read while the speaker answers every poll.
+The old Hub's snapshot gave the latest read's time and its age instead. Judge
+freshness by `availability`, never by the age of `observedAtMs`: the module
+publishes the change to `stale` and to `unavailable` when the last read crosses
+each threshold. Each start publishes a new `unavailable` revision, then the
+first read's.
 
 ### Which speaker is presented
 
@@ -185,23 +187,56 @@ hears it, then sends it within a 1.5 s deadline:
 | Speaker's answer | Outcome |
 | --- | --- |
 | HT-A9 JSON-RPC result, or Move HTTP 200 | `succeeded`, evidence `transmitted` |
-| HT-A9 JSON-RPC error, or Move SOAP fault | `failed`, evidence `none`, `invalid-state` |
+| HT-A9 JSON-RPC error, or Move SOAP fault | `failed`, evidence `transmitted`, `invalid-state`: the speaker heard the command and refused it |
 | No answer by the deadline, or any other answer | `uncertain`, evidence `none`, `uncertain-result` |
+| Nothing sent, because the speaker has no command for the action | `failed`, evidence `none`, `unsupported-capability` |
+
+Admission keeps the last case from arising: neither speaker offers an action it
+has no command for. A stop of the module ends a call in progress at once, and
+the outcome is `uncertain`.
 
 The outcome is `org.bunny.playback.control.completed` on
 `bunny.event.playback-control.<id>`. It commits with the command's result in the
 module's database and goes out through its
 [outbox](../../packages/sdk/README.md#outbox). Then the module replies
-`accepted`. Neither the module nor a repeated `requestId` sends a failed or
-uncertain command again. If the runtime stopped between storing the intent and
-the outcome, the next start reports that command `uncertain` ("the module
-restarted before the speaker answered") and never sends it.
+`accepted`, so a requester that hears `accepted` can already find the outcome.
+Neither the module nor a repeated `requestId` sends a failed or uncertain
+command again. If the runtime stopped between storing the intent and the
+outcome, the next start reports that command `uncertain` ("the module restarted
+before the speaker answered") and never sends it.
+
+The database can refuse a commit, as when the disk is full:
+
+- If it refuses the intent, the command is refused `capacity`, and no speaker
+  hears it.
+- If it refuses the outcome after the speaker heard the command, the module
+  still replies `accepted`, never a refusal, because the command may have taken
+  effect. It commits the outcome again after 1 s, doubling the wait up to 60 s,
+  and publishes it once a commit works. If the module stops first, the stored
+  intent makes the next start report the command `uncertain`. Neither case
+  stops the module.
+
+**An exception to "Replies answer a command immediately" (ADR 0012).** The
+module replies after the speaker's call and the outcome's commit, not before.
+It handles one command at a time through the SDK's responder queue, so the next
+command is admitted only once the speaker has answered or the call's 1.5 s
+deadline has passed. The admission also waits, at most another 1.5 s, for the
+read that follows the command ahead. So a reply comes within about 3 s, inside
+a requester's usual 5 s deadline. A requester with a shorter deadline gets
+`uncertain-result` from the SDK, and the outcome still follows.
 
 The module handles one command at a time: the SDK queues a second command until
-the first has its outcome, and admits it against the speaker presented then. The
-old Hub refused a concurrent command with `capacity` instead. A command still
-queued at its deadline is refused `expired` by the bus. The module remembers the
-last 64 commands; an older `requestId` counts as new.
+the first has its outcome. It is then admitted against the speaker presented at
+that moment. After each command the module reads that speaker again, and the
+next command's admission waits for that read, so a queued command is checked
+against what the speaker reports after the command ahead of it. A second pause
+behind a pause is refused `unsupported-capability`, because the HT-A9 then
+reports paused, and a play behind a pause to the Move is sent. This is best
+effort: a speaker that reports its new state late is judged by what it reported.
+The old Hub refused a concurrent command with `capacity` instead. A command
+still queued at its deadline is refused `expired` by the bus. The module
+remembers the last 64 commands, across restarts too; an older `requestId`
+counts as new.
 
 Until the core acknowledges outcomes
 ([#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)), every
@@ -233,7 +268,8 @@ address, a title or an exception's text:
 | `command.executing` | INFO | A command is sent to a speaker, in the command's trace |
 | `outcome.published` | INFO, or WARN for failed and uncertain | The outbox publishes an outcome for the first time |
 | `outbox.republished` | INFO | Each start, with how many stored messages went out again |
-| `operation.failed`, `operation.completed` | WARN, INFO | The module's database refuses a commit, once per run of refusals, and recovers |
+| `operation.failed` | WARN, or ERROR for `internal` | The module's database refuses a commit of any kind (a record, an intent or an outcome), once per run of refusals, with `bunny.operation` `storage` and the code: `capacity` for a full disk, `unavailable` for a database another writer holds |
+| `operation.completed` | INFO | A commit works again after a run of refusals, once |
 
 A speaker is named in `bunny.device.id` as `<id>.<kind>`, such as
 `living-room.sonos`. The bus records each command's admission and reply. The

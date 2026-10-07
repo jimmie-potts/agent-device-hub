@@ -38,20 +38,35 @@ starts fresh). The issue stays aligned; the adjustments below are routine and wi
 - **A revision for each change of availability or playback, and one at each start.** Republishing on every unchanged
   read would publish a state event that changed nothing every two seconds, which ADR 0012's "Repetition" rule forbids.
   So `observedAtMs` is the last read when the revision was published, and consumers judge freshness by `availability`,
-  which the module publishes at each threshold through a timer. Each start publishes `unavailable` at a new revision,
+  which the module publishes at each threshold through a timer. The Hub's snapshot gave the latest read's time and its
+  age, so MAPPING.md's `ageMs` row now has no 2.0 home (review fix, PR #966). Each start publishes `unavailable` at a new revision,
   persisted in the module's database, so a restarted module never goes back in revision and a speaker offline at start
   is reported. Sync serves the last published record, so one revision never has two contents.
 - **Commands keep the Hub's protections under the platform's rules.** Admission fixes the presented speaker; the action
   is sent once and never redirected or retried. The module stores the command's intent before the speaker hears it, so
   a repeated `requestId` after a crash is not sent again, and a start reports an intent with no outcome as `uncertain`
   (ADR 0012: stored intent is responsibility). The outcome commits with the command's result in the module's outbox,
-  then the module replies `accepted`. Device refusals (a JSON-RPC error, a SOAP fault) are `failed` with `invalid-state`
-  and evidence `none`; no answer is `uncertain` with `uncertain-result`. A transmitted command is `succeeded` with
-  evidence `transmitted`, never `observed`.
+  then the module replies `accepted`. A device refusal (a JSON-RPC error, a SOAP fault) means the speaker heard the
+  command, so it is `failed` with `invalid-state` and evidence `transmitted`, as MAPPING.md's receipt rule gives a
+  failure after a confirmed transmission (review fix, PR #966; evidence `none` would claim nothing reached it). An
+  action the speaker has no command for is never sent: `failed` with evidence `none`. No answer is `uncertain` with
+  `uncertain-result`. A transmitted command is `succeeded` with evidence `transmitted`, never `observed`.
+- **The reply comes after the call and the outcome, an exception to "Replies answer a command immediately".** The
+  responder handles one command at a time, so the next command is admitted only after the speaker answered or the
+  1.5 s deadline passed, and its admission waits at most another 1.5 s for the read after the command ahead. A reply
+  therefore comes within about 3 s, inside a requester's usual 5 s deadline, and a requester that hears `accepted` can
+  already find the outcome. Alternative rejected: replying first and calling the speaker afterwards, which would need a
+  busy refusal or a second queue of the module's own to keep one command at a time (review fix, PR #966).
+- **A database refusal never escapes the module.** A refused intent refuses the command with `capacity` before any
+  effect. A refused outcome, after the speaker heard the command, still gets `accepted`, because the command may have
+  taken effect and the stored intent keeps the module responsible; the module commits the outcome again after 1 s,
+  doubling to 60 s, and if it stops first, the next start reports the intent `uncertain`. Every commit shares one run of
+  refusals: one `operation.failed`, then one `operation.completed` (review fix, PR #966).
 - **One command at a time, by the SDK's queue.** The SDK's responder handles one command at a time, so a second command
   waits and is admitted against the speaker presented then; a command still queued at its deadline is `expired`. The
   Hub instead refused a concurrent command with `capacity`. Queueing is the platform's rule, and every command still
-  reaches a speaker at most once.
+  reaches a speaker at most once. After each command the module reads that speaker again, and the next admission waits
+  for that read, so a second pause behind a pause is refused rather than sent (review fix, PR #966).
 - **Duplicates by `(source, requestId)`, bounded to 64.** As the Hub kept 64 receipts per principal. A different
   command under the same ID is `duplicate-conflict`, the registry's code for reused identity with other content.
 - **The conversion carries order and addresses only.** The Hub keeps no saved preference, so nothing else exists to
