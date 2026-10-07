@@ -438,8 +438,13 @@ presents transport success or a saved setting as physical output.
 
 The bounded authenticated change feed requests current monitor snapshots on state
 or resync events. A stream reconnect uses its last cursor and backs off up to ten
-seconds. Periodic reads recover observations; reads and writes share a bounded queue per
-device, with pending explicit writes ahead of polling. Devices remain independent.
+seconds. Periodic reads recover observations; reads and writes share one queue per
+device, with pending explicit writes ahead of polling and at most four writes waiting.
+A waiting read is never refused for the number of reads ahead of it; after five seconds
+of waiting it is refused with `capacity`. A read cancelled in flight
+releases its caller at once but keeps the device until the hub answers, because the hub
+holds its one controller slot until the controller does, and refuses a read that finds it
+busy with `capacity`. Devices remain independent.
 Definite pre-admission rejection retains an editable draft; partial receipts retain
 completed operations and known effects. Terminal integration outcomes update the
 submitted form. Target selection loads that target's current mapping or color

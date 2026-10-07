@@ -24,6 +24,15 @@ try{
  assert.equal(await grid.getByText('Preview available · playback outside configured profile',{exact:true}).count(),2);
  await grid.getByRole('button',{name:'Next page',exact:true}).click();await grid.getByText('26–30 of 30',{exact:true}).waitFor();assert.equal(await grid.locator('.pixoo-media-grid li').count(),5);
  await grid.getByRole('button',{name:'Previous page',exact:true}).click();await grid.getByRole('button',{name:/Aurora variable/}).waitFor();await grid.getByRole('button',{name:/Aurora variable/}).click();await grid.getByText('20 frames · 2000 ms per loop').waitFor();
+ // Cancelling a read does not free the hub's one controller slot. Next page cancels a slow preview read, and the page of media that follows waits for the controller's answer instead of being refused as capacity (Hub #946).
+ f.setDelay(300);
+ await grid.getByRole('button',{name:/Aurora variable/}).click();await grid.getByRole('button',{name:/Aurora variable/}).click();
+ const previewInFlight=()=>f.requests.some(r=>r.id==='pixel'&&r.url.includes('/preview.json')&&!r.finished);
+ for(let i=0;i<500&&!previewInFlight();i++)await page.waitForTimeout(10);
+ assert.equal(previewInFlight(),true,'the preview read is in flight when Next page cancels it');
+ await grid.getByRole('button',{name:'Next page',exact:true}).click();await grid.getByText('26–30 of 30',{exact:true}).waitFor();
+ f.setDelay(0);
+ await grid.getByRole('button',{name:'Previous page',exact:true}).click();await grid.getByRole('button',{name:/Aurora variable/}).waitFor();await grid.getByRole('button',{name:/Aurora variable/}).click();await grid.getByText('20 frames · 2000 ms per loop').waitFor();
  // Read-only source state changes are discovered by the established five-second integration poll.
  const frameReads=f.catalogData.reads.filter(path=>path.includes('/frames/')).length;
  f.catalogData.media[0].name='Updated aurora.gif';f.catalogData.revision++;

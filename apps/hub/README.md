@@ -626,7 +626,10 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.6.3 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.3 `launchOwner` accepts an optional
+Hub 0.6.4 uses agent-state 3.6.0 and lifecycle 1.2.0. In 0.6.4 the dashboard's per-device queue keeps a read
+cancelled in flight until the hub answers and never refuses a read for the number of reads ahead of it, so the
+Pixoo page's own reads no longer collide at the hub ([#946](https://github.com/jimmie-potts/agent-device-hub/issues/946)).
+In 0.6.3 `launchOwner` accepts an optional
 `startupTimeoutMs` ([#584](https://github.com/jimmie-potts/agent-device-hub/issues/584)). In 0.6.1 a full owner
 lets a new root task displace a finished subagent subtree without attention
 ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Durable 2.1 is not readable
