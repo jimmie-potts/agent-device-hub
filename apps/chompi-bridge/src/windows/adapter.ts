@@ -393,6 +393,14 @@ export function createWindowsAdapter(options: WindowsAdapterOptions = {}): Windo
       }, unknown(`${client}-not-foreground`));
     },
 
+    async invokeCurrentOption(client: Client, index: number, count: number): Promise<Observation<boolean>> {
+      if (closed) return unknown('adapter-closed');
+      if (client !== 'codex') return unknown('invalid-client');
+      if (!validMenuIndex(index, count)) return unknown('invalid-menu-index');
+      return windowQuery(client, 'invokeCurrentOption', { client, menu: 'codex-models', index, count }, value => record(value).invoked === true ? true : null,
+        unknown('codex-not-foreground'));
+    },
+
     async setSliderValue(client: Client, from: number, to: number): Promise<Observation<number | null>> {
       if (closed) return unknown('adapter-closed');
       if (client !== 'claude') return unknown('invalid-client');

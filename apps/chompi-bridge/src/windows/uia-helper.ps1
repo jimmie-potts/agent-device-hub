@@ -1,6 +1,6 @@
 # CHOMPI bridge UI Automation helper, protocol 1. Windows PowerShell 5.1, started by uia-helper.ts.
 # It never sends input or clicks. Only FocusCardButton and InvokeCardButton change UI state on a card, each on one
-# button of the open card (#821), and only the seven setting actions (#906) on the model and effort controls; every
+# button of the open card (#821), and only the eight setting actions (#906) on the model and effort controls; every
 # other operation is read-only.
 # One JSON request per stdin line; one JSON reply per stdout line. Replies carry only booleans, counts, indexes,
 # package versions and fixed reason codes, never names, values or other text read from a window. The one exception is
@@ -297,7 +297,7 @@ function InvokeCardButton($request) {
   return @{ invoked = $true }
 }
 
-# Model and effort controls (#906). PickerState reads; the seven setting actions below change UI state, each only on a
+# Model and effort controls (#906). PickerState reads; the eight setting actions below change UI state, each only on a
 # qualified control found afresh and checked against what the caller read: Claude's "Model: " and "Effort: " buttons,
 # its model menu and Effort slider, Codex's picker button, its "Select effort" menu, that menu's "Select model" entry and
 # the model list. Names are returned only for those, and only model and effort labels.
@@ -318,6 +318,9 @@ $ClaudeEffortButton = 'Effort: '
 $EffortSliderName = 'Effort'
 $CodexPickerName = 'Select effort'
 $CodexSelectModel = 'Select model'
+# Codex's collapsed picker button: "<model> <effort>", at least one word of model name, then an effort label at the end
+# (labels seen on the trial host, 2026-10-06; case and spacing tolerant). Labels are matched only to find this button.
+$CodexPickerClosedName = [regex]::new('^\S.*\s(minimal|low|medium|high|extra\s+high|light|standard|extended|max|ultra)$', 'IgnoreCase')
 # After a setting action, read its effect back every 25 ms for at most 400 ms, as FocusCardButton does.
 $SettlePollMs = 25
 $SettleMs = 400
@@ -407,8 +410,10 @@ function PrefixedButton($buttons, [string]$prefix) {
   return $match[0]
 }
 
-# Codex's picker button: among the expandable Buttons near its one composer (the nearest of up to 8 composer ancestors
-# that holds any), the one named "Select effort" while expanded, else the only one. Several are an error.
+# Codex's picker button, found by identity among ALL expandable Buttons under the composer's 8th ancestor (or the
+# window, when it is nearer): the composer area also holds other expandable buttons, such as "Add files and more" and
+# "Change permissions". It is the one named "Select effort" (expanded) or named "<model> <effort>" (collapsed), whose
+# name ends, after at least one word of model name, with a known effort label. None is $null; several are an error.
 function CodexPickerButton($window) {
   $cache = New-Object System.Windows.Automation.CacheRequest
   $cache.Add($AE::ClassNameProperty)
@@ -417,19 +422,25 @@ function CodexPickerButton($window) {
   $composers = @($edits | Where-Object { HasToken $_.Cached.ClassName $ComposerToken })
   if ($composers.Count -ne 1) { return $null }
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-  $node = $walker.GetParent($composers[0])
-  for ($depth = 0; $null -ne $node -and $depth -lt $MaxComposerAncestors; $depth++) {
-    $candidates = SettingButtons $node
-    if ($candidates.Count -gt 0) {
-      $open = @($candidates | Where-Object { [string]::Equals($_.Cached.Name, $CodexPickerName, $Ordinal) })
-      if ($open.Count -eq 1) { return $open[0] }
-      if ($candidates.Count -eq 1 -and $open.Count -eq 0) { return $candidates[0] }
-      Fail 'codex-picker-button-ambiguous'
-    }
-    if ([System.Windows.Automation.Automation]::Compare($node, $window)) { break }
-    $node = $walker.GetParent($node)
+  $root = $composers[0]
+  for ($depth = 0; $depth -lt $MaxComposerAncestors; $depth++) {
+    if ([System.Windows.Automation.Automation]::Compare($root, $window)) { break }
+    $parent = $walker.GetParent($root)
+    if ($null -eq $parent) { break }
+    $root = $parent
   }
-  return $null
+  $buttons = SettingButtons $root
+  $pickers = @($buttons | Where-Object { CodexPickerName $_.Cached.Name })
+  if ($pickers.Count -gt 1) { Fail 'codex-picker-button-ambiguous' }
+  if ($pickers.Count -eq 0) { return $null }
+  return $pickers[0]
+}
+
+# Whether a button name is Codex's picker: "Select effort", or "<model> <effort>" ending in a known effort label.
+function CodexPickerName([string]$name) {
+  if (-not $name) { return $false }
+  if ([string]::Equals($name, $CodexPickerName, $Ordinal)) { return $true }
+  return $CodexPickerClosedName.IsMatch($name)
 }
 
 function SettingButton($window, [string]$control) {
@@ -625,6 +636,19 @@ function SelectMenuOption($request) {
   return @{ selected = $true }
 }
 
+# Codex: Invoke on the model list's selected (current) option, which returns to the picker with nothing changed: the way
+# to leave the list without a pick, because Select on the selected option does nothing there (observed 2026-10-07).
+function InvokeCurrentOption($request) {
+  $window = TargetWindow $request
+  if ((PickerClient $request) -ne 'codex' -or [string]$request.menu -ne 'codex-models') { Fail 'invalid-menu' }
+  $entries = MenuRequest $request $window
+  $entry = $entries[[int]$request.index]
+  if ($entry.kind -ne 'option') { Fail 'not-an-option' }
+  if (-not $entry.selected) { Fail 'not-current-option' }
+  $entry.element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  return @{ invoked = $true }
+}
+
 function SetSliderValue($request) {
   $window = TargetWindow $request
   if ((PickerClient $request) -ne 'claude') { Fail 'invalid-client' }
@@ -686,6 +710,7 @@ while ($true) {
       'invokeSelectModel' { $value = InvokeSelectModel $request }
       'focusMenuEntry' { $value = FocusMenuEntry $request }
       'selectMenuOption' { $value = SelectMenuOption $request }
+      'invokeCurrentOption' { $value = InvokeCurrentOption $request }
       'setSliderValue' { $value = SetSliderValue $request }
       'focusComposer' { $value = FocusComposer $request }
       'clientVersions' { $value = ClientVersions }

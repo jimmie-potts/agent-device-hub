@@ -612,7 +612,7 @@ test('tapInClient types only into the named client in front, checked right befor
   assert.deepEqual(win32.state.sent, [[{ vk: 0x1b, up: false }, { vk: 0x1b, up: true }]]);
   assert.deepEqual(await instance.tapInClient('claude', ['LeftControl', 'LeftAlt', 'Minus'], 1), { status: 'known', value: false }, 'Claude is not in front');
   assert.equal(win32.state.sent.length, 1, 'nothing reached Claude');
-  for (const [client, keys, presses] of [['codex', ['Down'], 1], ['codex', ['Right'], 0], ['codex', [], 1], ['other', ['Escape'], 1]]) {
+  for (const [client, keys, presses] of [['codex', ['Down'], 1], ['codex', ['Enter'], 1], ['codex', ['Right'], 0], ['codex', [], 1], ['other', ['Escape'], 1]]) {
     await assert.rejects(instance.tapInClient(client, keys, presses), error => ['invalid-key-request', 'unknown-key'].includes(error.code), `${client} ${keys} x${presses}`);
   }
   // The window in front changes between the observation and the input.
@@ -698,7 +698,7 @@ test('the setting actions pass only the control, a menu kind, an index and count
   const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
   const replies = {
     expandSetting: { expanded: true }, collapseSetting: { collapsed: true }, focusMenuEntry: { focused: 2 }, selectMenuOption: { selected: false },
-    setSliderValue: { value: 2 }, focusComposer: { focused: true }, invokeSelectModel: { invoked: true },
+    setSliderValue: { value: 2 }, focusComposer: { focused: true }, invokeSelectModel: { invoked: true }, invokeCurrentOption: { invoked: true },
   };
   const helper = fakeHelper(op => ({ ok: true, value: replies[op] }));
   const instance = adapter(win32, helper);
@@ -730,11 +730,17 @@ test('the setting actions pass only the control, a menu kind, an index and count
     [() => instance.focusMenuEntry('claude', 'claude-model', 5, 5), 'invalid-menu-index'],
     [() => instance.selectMenuOption('claude', 'claude-model', 0, 65), 'invalid-menu-index'],
     [() => instance.setSliderValue('codex', 1, 2), 'invalid-client'],
+    [() => instance.invokeCurrentOption('claude', 0, 2), 'invalid-client'],
+    [() => instance.invokeCurrentOption('codex', 2, 2), 'invalid-menu-index'],
     [() => instance.setSliderValue('claude', 1, Number.NaN), 'invalid-slider-value'],
     [() => instance.focusComposer('other'), 'invalid-client'],
   ]) assert.deepEqual(await call(), { status: 'unknown', reason }, reason);
   assert.equal(helper.calls.length, calls);
   // A helper refusal (a changed or missing control) and a client not in front are unknown, and nothing is queried then.
+  win32.state.family = CODEX_PACKAGE_FAMILY;
+  assert.deepEqual(await instance.invokeCurrentOption('codex', 1, 4), known(true));
+  assert.deepEqual(helper.calls.at(-1), { op: 'invokeCurrentOption', client: 'codex', menu: 'codex-models', index: 1, count: 4, hwnd: 0x1234, processId: 4242 });
+  win32.state.family = CLAUDE_PACKAGE_FAMILY;
   helper.request = async () => ({ ok: false, reason: 'menu-changed' });
   assert.deepEqual(await instance.focusMenuEntry('claude', 'claude-model', 1, 5), { status: 'unknown', reason: 'menu-changed' });
   assert.deepEqual(await instance.expandSetting('codex', 'codex-picker'), { status: 'unknown', reason: 'codex-not-foreground' });

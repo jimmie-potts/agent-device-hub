@@ -264,5 +264,8 @@ test('a client chord is refused while keys are held, with a physically held modi
     assert.throws(() => chordCodes(keys, presses), error => error instanceof KeyboardError && error.code === 'invalid-key-request', `${JSON.stringify(keys)} x${presses}`);
   }
   for (const key of ['PageDown', 'Tab', 'VolumeUp', 'F4', 'Down', 'Up', 'right']) assert.throws(() => chordCodes([key], 1), error => error.code === 'unknown-key', key);
-  assert.deepEqual(chordCodes(['Enter'], 1), [0x0d]);
+  for (const keys of [['Enter'], ['LeftControl', 'Enter']]) {
+    assert.throws(() => chordCodes(keys, 1), error => error.code === 'invalid-key-request', `${keys.join('+')}: only Send types Enter (F7)`);
+  }
+  assert.throws(() => new Keyboard(fakeKeyboardApi()).tapChord(['Enter'], 1), error => error.code === 'invalid-key-request');
 });

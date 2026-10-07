@@ -51,10 +51,11 @@ export function virtualKeyCode(name: KeyName): number {
 
 /**
  * The virtual-key codes of a client-scoped chord (#906): 1-8 distinct `VIRTUAL_KEYS` or `NAVIGATION_KEY_CODES` names,
- * tapped 1-`MAX_CLIENT_PRESSES` times. Throws `invalid-key-request` or `unknown-key` before anything is observed or sent.
+ * tapped 1-`MAX_CLIENT_PRESSES` times, never `Enter`: only Send types Enter, so no knob can (F7 on #915). Throws
+ * `invalid-key-request` or `unknown-key` before anything is observed or sent.
  */
 export function chordCodes(keys: readonly KeyName[], presses: number): number[] {
-  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 || !Number.isInteger(presses) || presses < 1 || presses > MAX_CLIENT_PRESSES) {
+  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 || keys.includes('Enter') || !Number.isInteger(presses) || presses < 1 || presses > MAX_CLIENT_PRESSES) {
     throw new KeyboardError('invalid-key-request');
   }
   const codes = keys.map(key => {

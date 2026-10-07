@@ -127,6 +127,7 @@ test('Claude model: "More models" is never a stop; a click while knob 1 moves, w
   assert.equal(ctx.actions('selectMenuOption').length, 0);
   assert.equal(ctx.adapter.pickers.describe('claude').open, 'model-menu', 'the menu stays open');
   assert.deepEqual(ctx.led(MODEL_LED), PROFILE.colors.error);
+  noStrayKeys(ctx);
 });
 
 test('Claude model: the readback keeps applied, mismatch and unverified apart', async t => {
@@ -141,6 +142,8 @@ test('Claude model: the readback keeps applied, mismatch and unverified apart', 
   assert.deepEqual(ctx.logged('model').map(l => [l.outcome, l.reason]), [['mismatch', 'model-differs']]);
   assert.deepEqual(ctx.led(MODEL_LED), PROFILE.colors.error);
 
+  noStrayKeys(ctx);
+
   // Mismatch: the button agrees but the session record's model never changed.
   ctx = await setup(t);
   ctx.adapter.claudeSettings = async () => known({ model: 'claude-sonnet-5-5', effort: 'low' });
@@ -148,6 +151,8 @@ test('Claude model: the readback keeps applied, mismatch and unverified apart', 
   await ctx.click(MODEL_CLICK);
   await advance(ctx.clock, VERIFY_MS + 200);
   assert.deepEqual(ctx.logged('model').map(l => [l.outcome, l.reason]), [['mismatch', 'record-unchanged']]);
+
+  noStrayKeys(ctx);
 
   // Unverified: the controls cannot be read after the Select.
   ctx = await setup(t);
@@ -158,6 +163,7 @@ test('Claude model: the readback keeps applied, mismatch and unverified apart', 
   await advance(ctx.clock, VERIFY_MS + 200);
   assert.deepEqual(ctx.logged('model').map(l => [l.outcome, l.reason]), [['unverified', 'readback-unknown']]);
   assert.deepEqual(ctx.led(MODEL_LED), PROFILE.colors.unknown);
+  noStrayKeys(ctx);
 });
 
 // Claude effort (knob 2)
@@ -190,6 +196,7 @@ test('Claude effort: at the end of the slider range nothing is set, one at-limit
   assert.deepEqual(ctx.led(EFFORT_LED), PROFILE.colors.error);
   await ctx.turn(EFFORT_TURN, -STEP);
   assert.equal(ctx.adapter.pickers.describe('claude').effort, 'Higher', 'the other direction still works at once');
+  noStrayKeys(ctx);
 });
 
 test('Claude effort: a model without an Effort button (Haiku) is unsupported, with a red flash and nothing done', async t => {
@@ -199,6 +206,7 @@ test('Claude effort: a model without an Effort button (Haiku) is unsupported, wi
   assert.deepEqual(ctx.logged('effort').map(l => [l.client, l.outcome]), [['claude', 'unsupported']]);
   assert.deepEqual(ctx.actions('expandSetting'), []);
   assert.deepEqual(ctx.led(EFFORT_LED), PROFILE.colors.error);
+  noStrayKeys(ctx);
 });
 
 test('Claude: a menu left open collapses after the timeout and the composer gets focus; a menu the owner closed gets nothing', async t => {
@@ -215,6 +223,7 @@ test('Claude: a menu left open collapses after the timeout and the composer gets
   await advance(ctx.clock, MENU_TIMEOUT_MS + 200);
   assert.deepEqual(ctx.logged('knob-menu', { action: 'closed' }).at(-1).method, 'none');
   assert.equal(ctx.actions('collapseSetting').length, 1, 'no Collapse without a confirmed open control');
+  noStrayKeys(ctx);
 });
 
 // Codex model (knob 1)
@@ -237,7 +246,7 @@ test('Codex model: knob 1 expands the picker, invokes "Select model", moves focu
   noStrayKeys(ctx);
 });
 
-test('Codex model: a list left without a pick selects its current model to return to the picker, then one Escape; never Escape from the list', async t => {
+test('Codex model: a list left without a pick invokes its current model to return to the picker, then one Escape; never Escape from the list', async t => {
   const ctx = await setup(t);
   front(ctx, 'codex');
   await ctx.turn(MODEL_TURN, STEP);
@@ -245,9 +254,24 @@ test('Codex model: a list left without a pick selects its current model to retur
   await advance(ctx.clock, MENU_TIMEOUT_MS + 300);
   assert.equal(ctx.adapter.pickers.describe('codex').model, 'GPT-6 Luna', 'nothing changed');
   assert.equal(ctx.adapter.pickers.describe('codex').open, null);
-  assert.deepEqual(ctx.actions('selectMenuOption').map(c => c[3]), [2], 'the current model, to leave the list');
+  assert.deepEqual(ctx.actions('invokeCurrentOption').map(c => c.slice(1)), [['codex', 2, 4]], 'Invoke on the current model leaves the list (observed 2026-10-07)');
+  assert.deepEqual(ctx.actions('selectMenuOption'), [], 'never Select, which does nothing on the current model');
+  assert.equal(ctx.actions('focusMenuEntry').filter(c => c[2] === 'codex-picker').length, 1, 'focus is moved into the picker before its one Escape');
   assert.deepEqual(ctx.adapter.tapped('codex'), ['Escape']);
   assert.equal(ctx.adapter.pickerEvents.some(e => e.action === 'close-model-list'), false, 'no Escape reached the list');
+  noStrayKeys(ctx);
+});
+
+test('Codex model: picking the model already in use invokes it, since Select on it does nothing; the pick reads as applied (S906-4)', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'codex');
+  await ctx.turn(MODEL_TURN, STEP);
+  await ctx.still();
+  await ctx.click(MODEL_CLICK);
+  assert.deepEqual([ctx.actions('selectMenuOption').length, ctx.actions('invokeCurrentOption').length], [0, 1]);
+  assert.equal(ctx.adapter.pickers.describe('codex').open, null);
+  assert.deepEqual(ctx.logged('model').map(l => [l.outcome, l.evidence]), [['applied', 'picker-name']]);
+  assert.deepEqual(ctx.adapter.tapped('codex'), ['Escape']);
   noStrayKeys(ctx);
 });
 
@@ -260,6 +284,7 @@ test('Codex picker: a picker still open after its one Escape is logged closed an
   await advance(ctx.clock, MENU_TIMEOUT_MS + VERIFY_MS + 500);
   assert.deepEqual(ctx.adapter.tapped('codex'), ['Escape']);
   assert.deepEqual(ctx.logged('knob-menu', { action: 'closed' }).map(l => [l.method, l.verified]), [['escape', false]]);
+  noStrayKeys(ctx);
 });
 
 // Codex effort (knob 2)
@@ -297,6 +322,7 @@ test('Codex effort chords are never sent to Claude, with a card, or with the pic
   await ctx.turn(EFFORT_TURN, STEP);
   assert.deepEqual(ctx.logged('knob-refused').map(l => l.reason), ['card-open', 'menu-open']);
   assert.deepEqual(ctx.adapter.tapped('codex'), []);
+  noStrayKeys(ctx);
 });
 
 test('Codex effort without chords: the picker\'s Power entry, focused by UI Automation, with Right and Left; at the top nothing is sent; its click closes with one Escape', async t => {
@@ -379,6 +405,7 @@ test('the knobs refuse with a red flash and do nothing for another app, a card, 
   }
   assert.deepEqual(ctx.adapter.clientTaps, []);
   assert.deepEqual([ctx.actions('expandSetting').length, ctx.adapter.enters], [0, 0]);
+  noStrayKeys(ctx);
 });
 
 test('a light touch on a knob changes nothing: one step needs a full step of counts', async t => {
@@ -387,6 +414,7 @@ test('a light touch on a knob changes nothing: one step needs a full step of cou
   await ctx.turn(EFFORT_TURN, STEP - 1);
   await ctx.turn(EFFORT_TURN, -1);
   assert.deepEqual(ctx.actions('expandSetting'), []);
+  noStrayKeys(ctx);
 });
 
 test('any other control closes the open menu first, so Send types its Enter into the composer, never the menu', async t => {
@@ -414,6 +442,7 @@ test('knob 1 and knob 2 work independently: a knob 2 turn closes knob 1\'s menu 
     [['expandSetting', 'claude-model'], ['collapseSetting', 'claude-model'], ['expandSetting', 'claude-effort'], ['setSliderValue', 0]]);
   assert.deepEqual(ctx.adapter.pickers.describe('claude'), { model: 'Sonnet 5.5', effort: 'Medium', open: 'effort-slider', focus: null });
   assert.deepEqual(ctx.logged('knob-menu').map(l => [l.knob, l.action]), [['model', 'opened'], ['model', 'closed'], ['effort', 'opened']]);
+  noStrayKeys(ctx);
 });
 
 test('Record, knob 4 paging and a profile reload each close an open menu first; a knob turn while Record holds the chord is refused', async t => {
@@ -452,6 +481,7 @@ test('a controller loss drops waiting input and still closes the open menu, repl
   await advance(ctx.clock, 100);
   assert.equal(ctx.logged('knob-menu', { action: 'closed' }).at(-1).reason, 'disconnected');
   assert.equal(ctx.adapter.pickers.describe('claude').open, null);
+  noStrayKeys(ctx);
 });
 
 test('an older profile that maps knob 1\'s turn as the scroll wheel keeps it, and knob 1 sets no model', async t => {
@@ -462,4 +492,5 @@ test('an older profile that maps knob 1\'s turn as the scroll wheel keeps it, an
   await ctx.turn(MODEL_TURN, STEP);
   assert.deepEqual(ctx.actions('expandSetting'), []);
   assert.equal(ctx.adapter.scrolled.length, 1, 'the turn scrolls as before');
+  noStrayKeys(ctx);
 });

@@ -192,6 +192,8 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     assert.equal(d.typed(), 0);
     await assert.rejects(d.adapter.tapInClient('claude', ['Down'], 1), 'Up and Down are gone');
     await assert.rejects(d.adapter.tapInClient('claude', ['Escape'], 11));
+    for (const keys of [['Enter'], ['LeftControl', 'Enter']]) await assert.rejects(d.adapter.tapInClient('claude', keys, 1), 'only Send types Enter (F7)');
+    assert.equal(d.typed(), 0);
     const closed = await state('claude');
     assert.deepEqual([closed.menu, closed.slider, closed.model, closed.effort], [null, null, { label: 'Sonnet 5.5', expanded: false }, { label: 'Low', expanded: false }]);
     // Claude's model menu: Expand, SetFocus, Select on the focused option only; Collapse closes it unchanged.
@@ -231,6 +233,16 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     assert.deepEqual(await d.adapter.invokeSelectModel('codex'), known(true));
     const list = (await state('codex')).menu;
     assert.deepEqual([list.kind, list.items.find(i => i.selected).label], ['codex-models', 'GPT-6 Luna']);
+    // Select on the selected model does nothing; Invoke on it returns to the picker unchanged (observed 2026-10-07).
+    const current = list.items.findIndex(i => i.selected);
+    await d.adapter.focusMenuEntry('codex', 'codex-models', current, list.items.length);
+    assert.deepEqual(await d.adapter.selectMenuOption('codex', 'codex-models', current, list.items.length), known(true));
+    assert.equal((await state('codex')).menu.kind, 'codex-models', 'the list stays open');
+    assert.equal((await d.adapter.invokeCurrentOption('codex', 1, list.items.length)).status, 'unknown', 'only the current model is invoked');
+    assert.deepEqual(await d.adapter.invokeCurrentOption('codex', current, list.items.length), known(true));
+    const back = (await state('codex')).menu;
+    assert.deepEqual([back.kind, back.hasFocus, (await state('codex')).announcement.label], ['codex-picker', false, 'GPT-6 Luna Light'], 'back in the picker, unchanged, without focus');
+    await d.adapter.invokeSelectModel('codex');
     await d.adapter.focusMenuEntry('codex', 'codex-models', 1, list.items.length);
     assert.deepEqual(await d.adapter.selectMenuOption('codex', 'codex-models', 1, list.items.length), known(true));
     assert.deepEqual([(await state('codex')).menu.kind, (await state('codex')).announcement], ['codex-picker', { label: 'GPT-6 Astra Light', position: 1, count: 6 }], 'back in the picker, which stays open');

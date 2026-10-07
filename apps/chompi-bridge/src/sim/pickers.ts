@@ -12,8 +12,9 @@ import type { ClaudeSettings, Client, MenuKind, PickerItem, PickerMenu, PickerSt
  * - Codex: the picker button reads `<model> <level>` while collapsed and `Select effort` while expanded. Expanding opens
  *   the `Select effort` menu ("Select model", a fast mode check box, "Reset to default", "Power") with its announcement
  *   `<model> <level>, <n> of <count>.`. Invoking "Select model" opens the model list; `Select` on a focused option
- *   applies it and returns to the picker, which stays open. `Collapse` does not close the picker; one Escape into it
- *   does. Right and Left on a focused "Power" step the level, as do the owner's chords (`LeftControl`+`LeftAlt`+`Equal`
+ *   applies it and returns to the picker, which stays open, while `Select` on the selected option does nothing and
+ *   `Invoke` on it returns to the picker unchanged, without reporting focus there (observed 2026-10-07). `Collapse`
+ *   does not close the picker; one Escape into it does. Right and Left on a focused "Power" step the level, as do the owner's chords (`LeftControl`+`LeftAlt`+`Equal`
  *   or `Minus`) while Codex is in front.
  * - Keys that reach an open menu or slider act there: Enter on a focused option picks it, and Claude's
  *   `LeftControl`+`LeftAlt`+`Minus` splits a pane. These are the hazards the router must avoid.
@@ -45,7 +46,8 @@ export interface PickerSeed {
 }
 
 type ClaudeSurface = null | { kind: 'model-menu'; focused: number | null } | { kind: 'effort-slider' };
-type CodexSurface = null | { kind: 'main'; focused: number | null } | { kind: 'list'; focused: number | null };
+/** `focusIn: false` models a picker that holds no keyboard focus, as after leaving the list with Invoke. */
+type CodexSurface = null | { kind: 'main'; focused: number | null; focusIn?: boolean } | { kind: 'list'; focused: number | null };
 
 /** One picker change, for the desktop log; labels are model and level names only. */
 export interface PickerEvent { action: string; label?: string; position?: number; count?: number }
@@ -186,6 +188,7 @@ export class SimPickers {
       const surface = this.#menuSurface(client, kind, count);
       if (!Number.isInteger(index) || index < 0 || index >= count) throw new PickerRefusal('invalid-menu-index');
       surface.focused = index;
+      if ('focusIn' in surface) delete surface.focusIn;
       return { value: index, events: [{ action: 'focus', position: index + 1, count }] };
     });
   }
@@ -201,11 +204,23 @@ export class SimPickers {
         this.#claudeSurface = null;
         return { value: true, events: [{ action: 'pick-model', label: SIM_CLAUDE_MODELS[index] }] };
       }
+      // Select on the selected option does nothing: the list stays open (observed 2026-10-07).
+      if (SIM_CODEX_OPTIONS[index] === this.#codex.option) return { value: true, events: [] };
       this.#codex.option = SIM_CODEX_OPTIONS[index];
       // The level keeps its place, clamped to the new model's levels, as the qualification saw Extended stay Extended.
       this.#codex.level = Math.min(this.#codex.level, this.#codexLevels().length - 1);
       this.#codexSurface = { kind: 'main', focused: null };
       return { value: true, events: [{ action: 'pick-model', label: this.#codex.option }] };
+    });
+  }
+
+  /** Codex: Invoke on the list's selected option returns to the picker unchanged, with focus reported nowhere in it. */
+  invokeCurrent(client: Client, index: number, count: number): PickerResult<boolean> {
+    return this.#change(client, () => {
+      this.#menuSurface(client, 'codex-models', count);
+      if (SIM_CODEX_OPTIONS[index] !== this.#codex.option) throw new PickerRefusal('not-current-option');
+      this.#codexSurface = { kind: 'main', focused: null, focusIn: false };
+      return { value: true, events: [{ action: 'leave-model-list', label: this.#codex.option }] };
     });
   }
 
@@ -242,7 +257,7 @@ export class SimPickers {
     let menu: PickerMenu | null = null;
     if (surface?.kind === 'main') {
       menu = {
-        kind: 'codex-picker', label: 'Select effort', focused: surface.focused, hasFocus: true,
+        kind: 'codex-picker', label: 'Select effort', focused: surface.focused, hasFocus: surface.focusIn !== false,
         items: CODEX_MAIN.map(label => ({ kind: label === 'Enable fast mode' ? 'toggle' as const : 'action' as const, label, selected: label === 'Enable fast mode' && this.#codex.fast })),
       };
     } else if (surface?.kind === 'list') {

@@ -22,6 +22,7 @@ export function createUnsupportedAdapter(platform: NodeJS.Platform = process.pla
     invokeSelectModel: () => Promise.resolve(unknown),
     focusMenuEntry: () => Promise.resolve(unknown),
     selectMenuOption: () => Promise.resolve(unknown),
+    invokeCurrentOption: () => Promise.resolve(unknown),
     setSliderValue: () => Promise.resolve(unknown),
     focusComposer: () => Promise.resolve(unknown),
     claudeSettings: () => Promise.resolve(unknown),

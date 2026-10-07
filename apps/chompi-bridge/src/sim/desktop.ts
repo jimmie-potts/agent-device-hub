@@ -310,7 +310,7 @@ export class SimulatedDesktop {
    * Windows keyboard it is refused while any key is held.
    */
   clientTap(client: Client, keys: readonly string[], presses: number): boolean {
-    if (!isClient(client) || !isList(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key)) || new Set(keys).size !== keys.length
+    if (!isClient(client) || !isList(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key) && key !== 'Enter') || new Set(keys).size !== keys.length
       || !Number.isInteger(presses) || presses < 1 || presses > MAX_CLIENT_PRESSES) throw new Error('invalid-key-request');
     if (this.#held.size > 0) throw new Error('keys-held');
     if (!this.clientInFront(client)) return false;
@@ -562,6 +562,10 @@ export function createSimulatedOsAdapter(desktop: SimulatedDesktop): SimulatedOs
     selectMenuOption: (client, menu, index, count) => {
       enter('selectMenuOption');
       return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.selectOption(client, menu, index, count)));
+    },
+    invokeCurrentOption: (client, index, count) => {
+      enter('invokeCurrentOption');
+      return Promise.resolve(desktop.pickerAction(client, () => desktop.pickers.invokeCurrent(client, index, count)));
     },
     setSliderValue: (client, from, to) => { enter('setSliderValue'); return Promise.resolve(desktop.pickerAction<number | null>(client, () => desktop.pickers.setSlider(client, from, to))); },
     focusComposer: client => { enter('focusComposer'); return Promise.resolve(desktop.focusComposerFromBridge(client)); },

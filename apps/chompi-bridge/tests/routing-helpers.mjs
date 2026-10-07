@@ -230,7 +230,7 @@ export class FakeAdapter {
   async tapInClient(client, keys, presses) {
     const pending = this.#enter('tapInClient', [client, [...keys], presses]);
     if (pending) return pending;
-    if (!['codex', 'claude'].includes(client) || !Array.isArray(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key))
+    if (!['codex', 'claude'].includes(client) || !Array.isArray(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key) && key !== 'Enter')
       || new Set(keys).size !== keys.length || !Number.isInteger(presses) || presses < 1 || presses > 10) {
       throw new Error('invalid-key-request');
     }
@@ -270,6 +270,7 @@ export class FakeAdapter {
   invokeSelectModel(client) { return this.#action('invokeSelectModel', [client], client, () => this.pickers.invokeSelectModel(client)); }
   focusMenuEntry(client, menu, index, count) { return this.#action('focusMenuEntry', [client, menu, index, count], client, () => this.pickers.focusEntry(client, menu, index, count)); }
   selectMenuOption(client, menu, index, count) { return this.#action('selectMenuOption', [client, menu, index, count], client, () => this.pickers.selectOption(client, menu, index, count)); }
+  invokeCurrentOption(client, index, count) { return this.#action('invokeCurrentOption', [client, index, count], client, () => this.pickers.invokeCurrent(client, index, count)); }
   setSliderValue(client, from, to) { return this.#action('setSliderValue', [client, from, to], client, () => this.pickers.setSlider(client, from, to)); }
 
   async focusComposer(client) {

@@ -152,7 +152,7 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
-const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'WindowFocus', 'MenuEntries', 'SettingButtons', 'ButtonExpanded', 'PrefixedButton', 'CodexPickerButton', 'SettingButton', 'QualifiedMenu', 'EntryIndex', 'EffortSlider', 'SliderRange', 'PickerAnnouncement', 'PickerClient', 'PickerState'];
+const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'WindowFocus', 'MenuEntries', 'SettingButtons', 'ButtonExpanded', 'PrefixedButton', 'CodexPickerButton', 'CodexPickerName', 'SettingButton', 'QualifiedMenu', 'EntryIndex', 'EffortSlider', 'SliderRange', 'PickerAnnouncement', 'PickerClient', 'PickerState'];
 const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
 test('the shipped helper script changes UI state only inside the card operations and the setting actions, one kind of change each', () => {
@@ -161,7 +161,7 @@ test('the shipped helper script changes UI state only inside the card operations
   const script = readFileSync(helperScriptPath(), 'utf8');
   const actions = {
     FocusCardButton: /\.SetFocus\(\)/g, InvokeCardButton: /\.Invoke\(\)/g, ExpandSetting: /\.Expand\(\)/g, CollapseSetting: /\.Collapse\(\)/g,
-    InvokeSelectModel: /\.Invoke\(\)/g, FocusMenuEntry: /\.SetFocus\(\)/g, SelectMenuOption: /\.Select\(\)/g, SetSliderValue: /\.SetValue\(/g, FocusComposer: /\.SetFocus\(\)/g,
+    InvokeSelectModel: /\.Invoke\(\)/g, InvokeCurrentOption: /\.Invoke\(\)/g, FocusMenuEntry: /\.SetFocus\(\)/g, SelectMenuOption: /\.Select\(\)/g, SetSliderValue: /\.SetValue\(/g, FocusComposer: /\.SetFocus\(\)/g,
   };
   let rest = script;
   for (const [name, own] of Object.entries(actions)) {
@@ -378,7 +378,7 @@ test('the helper script escapes non-ASCII replies and answers a decode probe wit
 
 test('the picker read returns only the qualified shapes\' labels, and every setting action re-reads its target before acting (#906)', () => {
   const script = readFileSync(helperScriptPath(), 'utf8');
-  for (const op of ['pickerState', 'expandSetting', 'collapseSetting', 'invokeSelectModel', 'focusMenuEntry', 'selectMenuOption', 'setSliderValue', 'focusComposer']) {
+  for (const op of ['pickerState', 'expandSetting', 'collapseSetting', 'invokeSelectModel', 'focusMenuEntry', 'selectMenuOption', 'invokeCurrentOption', 'setSliderValue', 'focusComposer']) {
     const name = op[0].toUpperCase() + op.slice(1);
     assert.match(script, new RegExp(`'${op}' \\{ \\$value = ${name} \\$request \\}`), `${op} is dispatched`);
     assert.match(functionBody(script, name), /^\s+\$window = TargetWindow \$request$/m, `${name} refuses a window that is not the requested process`);
@@ -403,7 +403,7 @@ test('the picker read returns only the qualified shapes\' labels, and every sett
   assert.match(script, /^\$ClaudeModelButton = 'Model: '$/m);
   assert.match(script, /^\$ClaudeEffortButton = 'Effort: '$/m);
   assert.match(functionBody(script, 'PrefixedButton'), /Fail 'composer-setting-count'/);
-  assert.match(functionBody(script, 'CodexPickerButton'), /Fail 'codex-picker-button-ambiguous'/, 'the picker button is the one expandable button near the composer');
+  assert.match(functionBody(script, 'CodexPickerButton'), /Fail 'codex-picker-button-ambiguous'/, 'the picker button is the one near the composer named as the picker');
   // Fresh-read checks before each action (F1, F2).
   assert.match(functionBody(script, 'ExpandSetting'), /-ne \[System\.Windows\.Automation\.ExpandCollapseState\]::Collapsed\) \{ Fail 'setting-not-collapsed' \}/);
   const collapse = functionBody(script, 'CollapseSetting');
@@ -417,8 +417,38 @@ test('the picker read returns only the qualified shapes\' labels, and every sett
   assert.match(select, /if \(\$entry\.kind -ne 'option'\) \{ Fail 'not-an-option' \}/);
   const compare = select.indexOf('[System.Windows.Automation.Automation]::Compare($entry.element, $focused)');
   assert.ok(compare > 0 && compare < select.indexOf('.Select()'), 'Select only on the option holding keyboard focus');
+  const current = functionBody(script, 'InvokeCurrentOption');
+  assert.match(current, /\[string\]\$request\.menu -ne 'codex-models'\) \{ Fail 'invalid-menu' \}/, 'Codex model list only');
+  assert.ok(current.indexOf("Fail 'not-current-option'") > 0 && current.indexOf("Fail 'not-current-option'") < current.indexOf('.Invoke()'), 'only the selected (current) option is invoked');
   assert.match(functionBody(script, 'SetSliderValue'), /\$range\.value -ne \$from -or \[Math\]::Abs\(\$to - \$from\) -ne \$range\.step -or \$to -lt \$range\.min -or \$to -gt \$range\.max\) \{ Fail 'slider-changed' \}/);
   assert.match(functionBody(script, 'FocusComposer'), /if \(\$composers\.Count -ne 1\) \{ Fail 'composer-count' \}/);
   assert.match(script, /^\$SettleMs = 400$/m, 'actions read their effect back for at most 400 ms');
   assert.match(script, /ConvertTo-Json -InputObject \$value -Compress -Depth 6/, 'the reply keeps the menu entries');
+});
+
+test('Codex\'s picker button is identified by its name among all expandable buttons near the composer, never as a lone button (F5 on #915)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  const pattern = /^\$CodexPickerClosedName = \[regex\]::new\('(.+)', 'IgnoreCase'\)$/m.exec(script)?.[1];
+  assert.ok(pattern, 'the collapsed-name pattern is declared once');
+  const closed = new RegExp(pattern, 'i');
+  const isPicker = name => name === 'Select effort' || closed.test(name);
+  // Live names from the trial host (2026-10-06): the picker beside other expandable composer buttons.
+  for (const name of ['GPT-6 Astra High', 'GPT-6 Luna Extra High', 'GPT-6 Luna extra  high', 'GPT-5.5 Light', 'GPT-6 Astra Ultra', 'Default Minimal', 'Select effort']) {
+    assert.ok(isPicker(name), `${name} is the picker`);
+  }
+  for (const name of ['Add files and more', 'Change permissions', 'High', 'Low', 'GPT-6 Astra Highest', 'select effort', 'GPT-6 Astra High mode', '']) {
+    assert.equal(isPicker(name), false, `${JSON.stringify(name)} is not the picker`);
+  }
+  const body = functionBody(script, 'CodexPickerButton');
+  // Cross-level: the search climbs to the outermost of up to 8 composer ancestors first and reads every expandable
+  // button there once, rather than stopping at the nearest level that holds any expandable button.
+  const loop = body.slice(body.indexOf('for ($depth'), body.indexOf('$buttons = SettingButtons $root'));
+  assert.ok(loop.length > 0 && !/SettingButtons|return/.test(loop), 'the climb reads no buttons and returns nothing');
+  assert.equal(body.match(/SettingButtons/g)?.length, 1, 'one read of all expandable buttons, at the outermost level');
+  // Siblings: an attachments or permissions button beside the picker is filtered out by name, never taken as "the only one".
+  assert.match(body, /\$pickers = @\(\$buttons \| Where-Object \{ CodexPickerName \$_\.Cached\.Name \}\)/);
+  assert.match(body, /if \(\$pickers\.Count -gt 1\) \{ Fail 'codex-picker-button-ambiguous' \}/);
+  assert.match(body, /if \(\$pickers\.Count -eq 0\) \{ return \$null \}/);
+  assert.equal(/Count -eq 1 -and/.test(body), false, 'no lone-button shortcut');
+  assert.match(functionBody(script, 'CodexPickerName'), /\[string\]::Equals\(\$name, \$CodexPickerName, \$Ordinal\)/);
 });

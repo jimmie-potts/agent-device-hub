@@ -20,7 +20,8 @@ import type { RoutingProfile } from './profile.js';
  *   picker button's name. Without chords, the picker's Power entry with Right and Left, read from its announcement.
  * - Codex's picker does not close on `Collapse`: the bridge sends exactly one Escape, only after a fresh read shows its
  *   picker holding focus, then waits a bounded time for the button to read collapsed and never sends a second one. A
- *   model list left without a pick first gets `Select` on the current model, which returns to the picker unchanged.
+ *   model list left without a pick first gets `Invoke` on the current model, which returns to the picker unchanged;
+ *   `Select` on the current model does nothing there (both observed 2026-10-07).
  *
  * The knobs never press Enter. Their only keys are that one Escape, the owner's chords and, without chords, Right and
  * Left on a focused Power entry, all through `tapInClient`. One flow runs at a time; the router closes it before any
@@ -409,7 +410,11 @@ export class SettingKnobs {
       this.#host.log({ type: 'model', client: flow.client, outcome, index: options.indexOf(index), count: options.length, ...extra });
       this.#show('model', LIGHT_OF[outcome]);
     };
-    const selected = await this.#call(() => this.#host.adapter.selectMenuOption(flow.client, kind, index, menu.items.length));
+    // Codex: Select on the model already selected does nothing, so picking it again leaves the list with Invoke, which
+    // returns to the picker unchanged (observed 2026-10-07).
+    const selected = flow.client === 'codex' && menu.items[index].selected
+      ? await this.#call(() => this.#host.adapter.invokeCurrentOption('codex', index, menu.items.length))
+      : await this.#call(() => this.#host.adapter.selectMenuOption(flow.client, kind, index, menu.items.length));
     if (selected.status === 'known' && !selected.value) return this.#refuse('model', 'focus-moved', { client: flow.client });
     if (selected.status !== 'known') {
       log('unverified', { reason: 'select-uncertain' });
@@ -599,13 +604,12 @@ export class SettingKnobs {
       return;
     }
     if (flow.surface === 'codex-models') {
-      // Leaving the model list: Select its current model, which returns to the picker with nothing changed. Escape is
-      // never sent from the list.
+      // Leaving the model list: Invoke on its current model returns to the picker unchanged (observed 2026-10-07; Select
+      // on it does nothing). Escape is never sent from the list.
       const menu = await this.#waitFor('codex', s => s.menu?.kind === 'codex-models' ? s.menu : null, SETTLE_MS);
       const current = menu ? menu.items.findIndex(item => item.kind === 'option' && item.selected) : -1;
       if (menu && current >= 0) {
-        const focused = await this.#act(() => this.#host.adapter.focusMenuEntry('codex', 'codex-models', current, menu.items.length));
-        if (focused === current) await this.#act(() => this.#host.adapter.selectMenuOption('codex', 'codex-models', current, menu.items.length));
+        await this.#act(() => this.#host.adapter.invokeCurrentOption('codex', current, menu.items.length));
         await this.#waitFor('codex', s => s.menu?.kind === 'codex-picker' ? true : null, this.#verifyMs());
       }
     }

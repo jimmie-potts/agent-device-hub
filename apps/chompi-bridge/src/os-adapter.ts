@@ -12,7 +12,7 @@
  * system volume and mute keys, which target no window and need no window check. Version 5 (#906) adds the model and
  * effort operations: `pickerState`, a read-only view of the clients' model and effort controls; UI Automation actions on
  * those controls only (`expandSetting`, `collapseSetting`, `invokeSelectModel`, `focusMenuEntry`, `selectMenuOption`,
- * `setSliderValue`, `focusComposer`), each checked against a fresh read before it acts; `tapInClient`, which types a key
+ * `invokeCurrentOption`, `setSliderValue`, `focusComposer`), each checked against a fresh read before it acts; `tapInClient`, which types a key
  * only while the named client is in front, for Codex's one closing Escape and the owner's effort chords; and
  * `claudeSettings`, a Claude session record's `model` and `effort`. They return model and effort labels only.
  */
@@ -157,7 +157,7 @@ export interface OsAdapter {
   /**
    * Taps one chord `presses` times (1-`MAX_CLIENT_PRESSES`), but only while `client`'s window is in front, checked right
    * before the input goes in (#906): Codex's one closing Escape, the owner's Codex effort chords and the picker's arrows
-   * when no chords are configured. The keys are profile key names or `NAVIGATION_KEYS`. Known `true` when sent, known
+   * when no chords are configured. It never types `Enter`: only Send does. The keys are profile key names or `NAVIGATION_KEYS`. Known `true` when sent, known
    * `false` when the client is not in front (nothing sent). Rejects, sending nothing, on a malformed request, while this
    * adapter holds any key, or while the user holds a modifier.
    */
@@ -191,6 +191,12 @@ export interface OsAdapter {
    * `false`, with nothing done, when it does not.
    */
   selectMenuOption(client: Client, menu: MenuKind, index: number, count: number): Promise<Observation<boolean>>;
+  /**
+   * Codex: invokes model option `index` of the open model list of `count` entries, only when it is the selected (current)
+   * model. Codex then returns to its picker with nothing changed, the way to leave the list without a pick: `Select` on
+   * the selected option does nothing there (observed 2026-10-07).
+   */
+  invokeCurrentOption(client: Client, index: number, count: number): Promise<Observation<boolean>>;
   /**
    * Claude: sets the open Effort slider from `from` to `to` (`RangeValue.SetValue`), only when it reads `from` and `to`
    * is one step away within its range; the value read back, or null when it did not settle.
