@@ -914,12 +914,10 @@ scenarios pass in the in-memory harness and in a run. It also starts each
 boundary negative control and shows its check fails, shows the network guard
 refuses `net`, `http`, `https`, `fetch` and `dgram` in a worker thread and a
 child Node process too, and checks that `build-current` watches every source
-the run loads. It also judges the follow query of Hub #950, which reads one request's
-or trace's journal records and spans in a run: the `follow-one-request` step proves a success, a
-refusal, an uncertain effect and a replayed outcome, then a killed runtime, an absent request and a
-capped query; the supervisor tests cover its route, a clean restart and a kill; and the pure query's
-tests carry its negative controls. The runtime tests (`test:runtime:built`) cover the bounded,
-private span file that the run's runtime writes. The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
+the run loads. It also judges the follow query of Hub #950, which reads one request's or trace's journal
+records and spans in a run (see [Follow one request](../apps/runtime/verify/README.md#follow-one-request)),
+and the runtime tests (`test:runtime:built`) cover the bounded, private span file that the
+run's runtime writes. The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
 real transient units and skip with a printed reason without a user manager; the
 App verification CI job runs the rest. It needs Playwright Chromium and an
 outside-checkout `TMPDIR`, as the app verification tests do.
