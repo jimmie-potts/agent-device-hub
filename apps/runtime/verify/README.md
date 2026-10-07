@@ -61,12 +61,13 @@ and in `doctor`:
 | `no-outbound-connections` | The guard refused no outbound TCP connection or UDP datagram; the runtime only listens | `control-installed-port` | A probe module reaches for the installed Hub's port 8788 with `fetch` and with `node:http`; the guard refuses both before they connect |
 | `private-state` | What the run observes: the runtime's home, read from its environment, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the grants file is owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
 
-The guard loads through `NODE_OPTIONS`, so it runs first in the runtime, in each of its worker threads and in every
-Node process it starts. It refuses every outbound TCP connection made through `net`, `tls`, `http`, `https` or
-`fetch`, and every UDP send or connect through `dgram`, before anything leaves. Each attempt goes to the run's
-`guard-report.jsonl`, which the check reads. It does not cover a native addon, a non-Node binary, a Node process started
-with `NODE_OPTIONS` cleared, or a name lookup through `node:dns`. The runtime uses none of these today. A module story
-that adds a device transport adds its simulated one too.
+The guard loads through `NODE_OPTIONS`, so it runs first in the runtime, in each worker thread that inherits its
+environment (a file worker, as the runtime starts) and in every Node process it starts. It refuses every outbound TCP
+connection made through `net`, `tls`, `http`, `https` or `fetch`, and every UDP send or connect through `dgram`, before
+anything leaves. Each attempt goes to the run's `guard-report.jsonl`, which the check reads. It does not cover a native
+addon, a non-Node binary, a Node process or worker thread started with `NODE_OPTIONS` cleared or replaced (a worker
+given its own `env`, or an `eval` worker), or a name lookup through `node:dns`. The runtime uses none of these today.
+A module story that adds a device transport adds its simulated one too.
 
 The controls fail their start with `check-failed` by design, and are start-only: `scenario <run-id> <control>` and
 `handoff <run-id> --reset <control>` are refused with `start-only-scenario` (exit 2) before anything changes. The

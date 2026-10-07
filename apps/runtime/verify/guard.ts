@@ -1,5 +1,6 @@
 // The network guard of a verification run's runtime (Hub #920). `guardEnvironment` loads it through NODE_OPTIONS, so it
-// runs first in the runtime's main thread, in each of its worker threads and in every Node process the runtime starts.
+// runs first in the runtime's main thread, in each worker thread that inherits its environment (a file worker, as the
+// runtime starts) and in every Node process the runtime starts.
 // The runtime only listens; it never opens a connection itself, and its simulated devices are reached over the IPC
 // channel. So the guard refuses, before anything leaves, every outbound TCP connection (`net.Socket#connect`, which
 // net, tls, http, https and fetch all use) and every UDP datagram or connect (`dgram.Socket#send` and `#connect`), and
@@ -7,8 +8,8 @@
 // path is local and passes.
 //
 // It does not cover what bypasses those JavaScript APIs: a native addon, a non-Node binary the runtime executes, a Node
-// process started with NODE_OPTIONS cleared, or a name lookup through node:dns, which asks the system's resolver. The
-// runtime does none of these today.
+// process or worker thread started with NODE_OPTIONS cleared or replaced (a worker given its own `env`, or an `eval`
+// worker), or a name lookup through node:dns, which asks the system's resolver. The runtime does none of these today.
 import dgram from 'node:dgram';
 import {appendFileSync} from 'node:fs';
 import net from 'node:net';

@@ -36,5 +36,5 @@ See proposal.md for why. The app-verify core runs one process per run under a tr
 ## Risks / Trade-offs
 
 - [Real time.] Scenario bounds are real milliseconds in a run. A restart takes about half a second here; the catalog's default bound is 3 s. The capture steps were stress-run before merge.
-- [The guard patches `net.Socket#connect` and `dgram.Socket#send` and `#connect`.] Traffic that bypasses them would pass it: a native addon, a non-Node binary, a Node process started with `NODE_OPTIONS` cleared, or a name lookup through `node:dns`. The runtime uses none of these, and a module story that adds a device transport adds its own simulated one.
+- [The guard patches `net.Socket#connect` and `dgram.Socket#send` and `#connect`.] Traffic that bypasses them would pass it: a native addon, a non-Node binary, a Node process or worker thread started with `NODE_OPTIONS` cleared or replaced (a worker given its own `env`, or an `eval` worker), or a name lookup through `node:dns`. The runtime uses none of these, and a module story that adds a device transport adds its own simulated one.
 - [A stopped supervisor's child.] It stops itself on the IPC channel's disconnect and ignores the closed pipes; systemd's control-group kill covers a unit, and the guard covers a supervisor started directly.

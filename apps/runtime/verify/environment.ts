@@ -1,6 +1,7 @@
 // How a verification run's runtime loads its network guard (Hub #920): through NODE_OPTIONS, so the guard runs first in
-// the runtime's main thread, in each of its worker threads and in every Node process it starts, all of which inherit the
-// variable. Each refusal is appended to the run's report file, which the supervisor reads.
+// the runtime's main thread, in each worker thread that inherits its environment (a file worker, as the runtime starts)
+// and in every Node process it starts, all of which inherit the variable. Each refusal is appended to the run's report
+// file, which the supervisor reads.
 /** The guard module, as the file URL `--import` takes. */
 export const GUARD = new URL('./guard.js', import.meta.url).href;
 
