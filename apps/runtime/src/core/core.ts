@@ -11,7 +11,7 @@ import {
   registerCoreFamilies, sessionEntityId, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
-  SdkError, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type Reply,
+  type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type Reply,
   type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {CORE_MODULE} from '../host.js';
@@ -177,6 +177,8 @@ class Core {
   /** Since when the store has refused durable work, and when that was last summarized. */
   #degradedSince: number | undefined;
   #summarizedAt = 0;
+  /** The refusals since the condition was last recorded. */
+  #unrecorded = 0;
   /** The core's own operations run one at a time, so each commit is the reduction of the one observation under way. */
   #queue: Promise<unknown> = Promise.resolve();
   #timer: Cancel | undefined;
@@ -203,11 +205,9 @@ class Core {
       derivers: parts.flatMap(part => part.derive ?? []),
       open: parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
       ...(beforePublish === undefined ? {} : {beforePublish}),
-      // Committed is not published (ADR 0012): the change stands, and its messages go out at the next commit or start.
-      onError: error => {
-        const code = error instanceof SdkError ? error.body.error.code : 'internal';
-        this.#log.warn('operation.failed', {'bunny.operation': 'feed', 'bunny.outcome': 'queued', 'bunny.code': code});
-      },
+      // Committed is not published (ADR 0012): the change stands, its messages go out at the next commit or start, and
+      // the outbox records the refusal as `outbox.deferred`, once per run of refusals.
+      log: context.log, trace: context.trace,
     });
   }
 
@@ -368,12 +368,15 @@ class Core {
     if (this.#degradedSince === undefined) {
       this.#degradedSince = now;
       this.#summarizedAt = now;
+      this.#unrecorded = 0;
       record();
       return;
     }
+    this.#unrecorded += 1;
     if (now - this.#summarizedAt < SUMMARY_MS) return;
     this.#summarizedAt = now;
-    record({'bunny.duration_ms': Math.min(MAX_DURATION_MS, Math.max(0, now - this.#degradedSince))});
+    record({'bunny.duration_ms': Math.min(MAX_DURATION_MS, Math.max(0, now - this.#degradedSince)), 'bunny.attempt_count': this.#unrecorded});
+    this.#unrecorded = 0;
   }
 
   /** A durable change committed again: the condition ends, with one record. */

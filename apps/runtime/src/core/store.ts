@@ -24,7 +24,7 @@ import {
   registerCoreFamilies, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {Outbox, SdkError, type AddMessage, type Clock, type Draft, type OutboxOptions, type Sdk} from '@jimmie-potts/sdk';
+import {Outbox, SdkError, type AddMessage, type Clock, type Draft, type Logger, type OutboxOptions, type Sdk, type SpanRecorder} from '@jimmie-potts/sdk';
 import {
   REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
@@ -71,8 +71,14 @@ export type StoreOptions = {
   /** The core's participant: the outbox publishes with `publishMessage`, so a message keeps its stored `id` and `time`. */
   sdk: Pick<Sdk, 'source' | 'publishMessage'>;
   clock: Clock;
-  /** Hears that a publish was refused after its commit: committed, and awaiting publication. */
-  onError: NonNullable<OutboxOptions['onError']>;
+  /**
+   * The core's logger and tracing, which its outbox records with (Hub #949): a refused publish, committed and awaiting
+   * publication, as `outbox.deferred`, once per run of refusals.
+   */
+  log?: Logger;
+  trace?: SpanRecorder;
+  /** Without a logger, hears that a publish was refused after its commit: committed, and awaiting publication. */
+  onError?: OutboxOptions['onError'];
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -352,7 +358,10 @@ export class CoreStore implements Storage {
     for (const open of this.#options.open ?? []) open(db);
     const statements = prepare(db);
     const outbox = new Outbox({
-      sdk: this.#options.sdk, database: db, onError: this.#options.onError,
+      sdk: this.#options.sdk, database: db,
+      ...(this.#options.log === undefined ? {} : {log: this.#options.log}),
+      ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
+      ...(this.#options.onError === undefined ? {} : {onError: this.#options.onError}),
       // Every message of one transaction carries the instant its freshness was computed at.
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
@@ -420,7 +429,7 @@ export class CoreStore implements Storage {
   /**
    * Commits the plan and `extra` work in one transaction, then publishes its messages through the outbox. Resolves once
    * the transaction has committed, without waiting for the publication: committed is not published, and a refused
-   * publish is reported to `onError` and goes out later, unchanged. Rejects, with nothing changed, when the
+   * publish is reported once, as `outbox.deferred`, and goes out later, unchanged. Rejects, with nothing changed, when the
    * transaction does not commit.
    */
   async #commit(plan: Plan, atMs: number, extra: (tx: CoreTransaction) => void): Promise<void> {

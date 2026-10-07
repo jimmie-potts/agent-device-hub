@@ -29,8 +29,8 @@ const NO_NOTICE = 'f'.repeat(64);
 moduleConformance({
   create: () => createCoreModule(),
   serves: ['session'],
-  // The kit's probe is no consumer the core knows, so it may not acknowledge for one.
-  refused: {...acknowledge(SESSION_ID, 'pixoo', NO_NOTICE), code: 'forbidden'},
+  // The kit's probe, `bunny/kit`, is no consumer the core records acknowledgments for: a domain refusal, at INFO.
+  refused: {...acknowledge(SESSION_ID, 'kit', NO_NOTICE), code: 'invalid-request'},
 });
 
 const validator = new MessageValidator();
@@ -300,8 +300,8 @@ it('freshness the store cannot publish is tried again on a capped, doubling back
     await flush();
   }
   assert.equal(attempts(), 8, 'attempts at 0, 1, 3, 7, 15, 31, 63 and 123 s: doubling, capped at 60 s');
-  assert.deepEqual(storage(logs).map(record => [record.severity_text, record.attributes['bunny.duration_ms']]),
-    [['WARN', undefined], ['WARN', 63_000], ['WARN', 123_000]], 'the transition, then a summary at most once a minute');
+  assert.deepEqual(storage(logs).map(record => [record.severity_text, record.attributes['bunny.duration_ms'], record.attributes['bunny.attempt_count']]),
+    [['WARN', undefined, undefined], ['WARN', 63_000, 6], ['WARN', 123_000, 1]], 'the transition, then a summary at most once a minute with the refusals since');
   // Room again: the next attempt, 60 s after the last, publishes the record, and the condition ends with one record.
   database.exec(ROOM);
   clock.advance(60_000);
