@@ -302,15 +302,19 @@ npm run -s verify:runtime -- capture <run-id> scenario-agent-hooks
 ```
 
 By hand, from the checkout, with the run's producer file, which the supervisor writes once the runtime is ready, naming its
-port:
+port. Leave out the two Claude Code variables a shell inside an agent session carries, as a real hook would read them:
 
 ```bash
 producer=<runtime dir>/data/config/producer/producer.json
-echo '{"hook_event_name":"SessionStart","session_id":"by-hand-1","cwd":"/home/owner/projects/demo"}' | node apps/runtime/bin/monitor-hook.mjs "$producer"; echo "exit $?"
+hook() { env -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_HOST_SESSION_ID node apps/runtime/bin/monitor-hook.mjs "$producer"; }
+echo '{"hook_event_name":"SessionStart","session_id":"by-hand-1","cwd":"/home/owner/projects/demo"}' | hook; echo "exit $?"   # exit 0, nothing printed
 reader=$(node -p "require('<runtime dir>/data/config/part-tokens.json').reader")
-curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, from the producer's source
+curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, its project demo
+curl -s -X POST -H 'content-type: application/json' -d '{"holdMs":8000}' "<harness endpoint>api/harness/v1/restart" &   # the runtime stops for 8 s
+sleep 2; curl -s "<origin>/api/runtime/v1/health" || echo "the runtime is stopped"
+time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1"}' | hook); echo "exit $?"   # exit 0 at once, nothing printed
+wait
 npm run -s verify:runtime -- stop <run-id>
-time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1"}' | node apps/runtime/bin/monitor-hook.mjs "$producer"); echo "exit $?"   # exits 0, prints nothing
 ```
 
 To watch Codex Desktop's read marker (#926) become read evidence, start `codex-desktop-read`. Its capture step ends a
