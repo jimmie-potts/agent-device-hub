@@ -163,6 +163,23 @@ test('a command right after a start waits at most 1.5 s for every speaker\'s fir
   clean(hosted);
 });
 
+test('a command whose deadline passes while it waits for the first reads after a start is not sent, and gets a definitive outcome', async context => {
+  const clock = manualClock();
+  const speakers = new SimulatedSpeakers({sonos: playing('Move song'), sony: playing('Sony song')}, {scheduler: clock.scheduler});
+  speakers.slow('sonos', 1000);
+  const hosted = await host(context, speakers, {clock});
+  const expiring = hosted.send('pause', 'x-1', undefined, 1000);
+  await hosted.advance(1600);
+  assert.equal(answer(await expiring), 'uncertain-result', 'the SDK answered x-1 at its deadline');
+  assert.deepEqual(outcome(hosted, 'x-1'), [{
+    requestId: 'x-1', result: 'failed', evidence: 'none',
+    error: {code: 'expired', retryable: false, detail: 'the command\'s deadline passed before it reached the speaker'},
+  }], 'a definitive outcome follows the uncertain answer');
+  assert.deepEqual([speakers.state().sonos.commands, speakers.state().sony.commands], [[], []], 'x-1 reached no speaker');
+  assert.deepEqual(storedCommands(hosted.stateDir), ['x-1 failed']);
+  clean(hosted);
+});
+
 test('a speaker that never answers at start releases the record at its read deadline, with what the others report', async context => {
   const speakers = new SimulatedSpeakers({sony: playing('Sony song'), sonos: {answering: false}});
   const hosted = await host(context, speakers);

@@ -191,13 +191,13 @@ BunnyModule<PlaybackConfig> {
        * restart, an HT-A9 on another input would otherwise publish a record that says nothing plays while the Move does.
        */
       const firstRead = sources.map(() => false);
-      const started = (): boolean => firstRead.every(Boolean);
-      let markStarted: () => void = () => {};
-      const firstReads = new Promise<void>(resolve => { markStarted = resolve; });
+      const allFirstReadsSettled = (): boolean => firstRead.every(Boolean);
+      let markSettled: () => void = () => {};
+      const firstReads = new Promise<void>(resolve => { markSettled = resolve; });
       /** Publishes a new revision when availability or the presented playback changed. */
       let freshness: (() => void) | undefined;
       const evaluate = (): void => {
-        if (signal.aborted || !started()) return;
+        if (signal.aborted || !allFirstReadsSettled()) return;
         const next = recordOf(id, record.revision + 1, presentation.view());
         if (dirty || content(next) !== content(record)) {
           dirty = false;
@@ -227,7 +227,7 @@ BunnyModule<PlaybackConfig> {
           reach.unreachable(device, 'unavailable');
         }
         firstRead[index] = true;
-        if (started()) markStarted();
+        if (allFirstReadsSettled()) markSettled();
         evaluate();
       };
       /** The speaker's read in progress, or a new one. */
@@ -309,7 +309,7 @@ BunnyModule<PlaybackConfig> {
           }
           await settled();
           // A command right after the start waits for every speaker's first read, so it goes where the record will point.
-          if (!started()) await atMostOneCall(firstReads);
+          if (!allFirstReadsSettled()) await atMostOneCall(firstReads);
           if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
           // The SDK answered the requester `uncertain-result` if the deadline passed while the command waited for the read
           // ahead or the first reads. Nothing is sent then: the command is recorded as failed, and its outcome is the
@@ -333,7 +333,7 @@ BunnyModule<PlaybackConfig> {
             return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
           }
           // Until every speaker's first read settles, the record is unavailable, and no source is presented.
-          if (!started()) return errorBody('unavailable', {detail: 'not every speaker has answered since the module started'});
+          if (!allFirstReadsSettled()) return errorBody('unavailable', {detail: 'not every speaker has answered since the module started'});
           // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
           const index = presentation.presented();
           const source = sources[index], device = devices[index];
