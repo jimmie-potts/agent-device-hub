@@ -1,6 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06 (see [Amendments](#amendments)).
+Status: accepted on 2026-10-05, amended on 2026-10-06 and 2026-10-07 (see
+[Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -31,8 +32,8 @@ records that sequencing.
 
 This decision covers every message that crosses a component boundary in Hub,
 Nanoleaf, Pixoo and future repositories: events, commands, replies and errors.
-Log and trace conventions also follow it. Any new or changed communication
-between components follows this ADR.
+Error handling, retries, logs and traces also follow it. Any new or changed
+communication between components follows this ADR.
 
 Until the cutover, a component may extend its released 1.x contract
 additively. This includes the owner's CHOMPI work. It adds no new message
@@ -76,10 +77,14 @@ Existing formats move in one offline cutover:
   up. There is no broker.
 - A module imports only the SDK and the contracts packages, never another
   module.
-- **Failure isolation:** a module's thrown errors, rejected promises and device
-  timeouts stop only that module, which shows as unhealthy. A blocked event loop
-  or memory exhaustion affects the whole process, so the service manager
-  restarts the runtime.
+- **Failure isolation:** a device's errors and timeouts are not module
+  failures. A module reaches its device lazily and turns the device's errors
+  and timeouts into outcomes and an `unavailable` device state (policy A, owner
+  decision 2026-10-06). An error that escapes a module, whether thrown,
+  rejected or a start that outlasts its deadline, stops only that module. The
+  module shows as failed and stays stopped until the runtime restarts; nothing
+  restarts it automatically. A blocked event loop or memory exhaustion affects
+  the whole process, so the service manager restarts the runtime.
 - Everything is TypeScript. Nanoleaf is ported from Python, and the Python
   contract mirrors retire with it.
 
@@ -97,7 +102,9 @@ Existing formats move in one offline cutover:
   change. They carry an expiry, are never stored and never replay after a
   restart.
 - **Replies** answer a command immediately with `accepted` or with a rejection
-  in the shared error body.
+  in the shared error body. `accepted` means the owner has taken responsibility
+  for reporting the command's outcome, not that anything was sent, done or
+  observed; see [Errors, effects and outcomes](#errors-effects-and-outcomes).
 - **Outcomes** complete a command: `succeeded`, `failed` or `uncertain`, with
   evidence `transmitted`, `observed` or `none`. `none` means there is no
   evidence that anything reached the device, as after a failure before sending
@@ -153,7 +160,8 @@ Device commands, moments and mode changes are tracked:
 - If its deadline passes first, the core records it as uncertain. A command
   still queued at its deadline never reached the owner, so the SDK answers it
   `expired` instead; the core records only an unknown fate as uncertain. Failed
-  and uncertain results go to the shared inbox.
+  and uncertain results go to the shared inbox. A later outcome is handled as
+  [Errors, effects and outcomes](#errors-effects-and-outcomes) describes.
 - Every step is logged.
 - A timed-out command is never retried automatically.
 - The core claims a physical change only when the device reported an observation.
@@ -162,10 +170,11 @@ State events and telemetry are not tracked.
 
 ### Inbox and history
 
-- One shared inbox in the core holds failed and uncertain operations: the
-  results a person must decide on. Items survive restarts until handled, with
-  no expiry and no automatic clearing. Handling an item once clears it
-  everywhere; dismissing it on a display is a separate fact.
+- One shared inbox in the core holds failed and uncertain operations, and
+  operations with conflicting outcomes: the results a person must decide on.
+  Items survive restarts until handled, with no expiry and no automatic
+  clearing. Handling an item once clears it everywhere; dismissing it on a
+  display is a separate fact.
 - A finished turn is not an inbox item. Its unread state stays on the session
   record, which consumers sync and derive what they show from. Evidence clears
   it: read evidence for a consumer that uses it, the session's end, or a new
@@ -186,9 +195,12 @@ State events and telemetry are not tracked.
 - Every message is CloudEvents 1.0 structured JSON under B.U.N.N.Y. profile 2.0.
   Its attributes are `specversion`, `bunnyprofile`, `id`, `source`, `type`,
   `subject` (the event subject), `time`, `kind` (the message kind),
-  `datacontenttype`, `dataschema` and `traceparent`, with optional
-  `tracestate`. Commands and sync requests also carry `expiresat`, and no other
-  kind may. Profile 1.0's `deliveryclass` is gone: `kind` replaces it.
+  `datacontenttype`, `dataschema` and `traceparent`. Commands and sync requests
+  also carry `expiresat`, and no other kind may. Profile 1.0's `deliveryclass`
+  is gone: `kind` replaces it. There is no `tracestate` or baggage: the
+  [diagnostic contract](../observability-contract.md) disables their
+  propagation, so validators refuse `tracestate` like any other undefined
+  attribute.
 - Messages are capped at 256 KiB. The validators enforce the cap at remote
   edges and in tests; in-process messages pass as objects. Larger content stays
   in its owner's store, and the message carries its ID, size and hash.
@@ -230,16 +242,149 @@ State events and telemetry are not tracked.
   (`{"status": "unknown"}`), kebab-case enum values, entity references and the
   error body.
 
+### Errors, effects and outcomes
+
+An error code says why a request was refused or failed. The result and its
+evidence say what may have happened. Every boundary keeps the two apart.
+
+- **One registry, one mapping.** Codes come only from the registry. Expected
+  refusals are typed: a responder returns an error body from `errorBody`, and
+  an SDK call refuses with `SdkError`. An unexpected exception is mapped once,
+  at the boundary that knows whether an effect may have begun, and passed on
+  unchanged after that.
+- **A rejection proves no effect.** A request is `rejected` only when it had no
+  effect: it was refused before its handler started, or its handler refused it
+  with a typed refusal before acting. An exception after the handler started, a
+  deadline that passed while the handler had the command, or a lost answer
+  leaves the request `uncertain` with `uncertain-result`. Evidence `none` means
+  there is no evidence that anything reached the device, not proof that nothing
+  did.
+- **`accepted`.** The owner's `accepted` reply means it validated the command
+  and is responsible for reporting its outcome. When finishing the command needs
+  durable state, the owner stores that state before it replies, and with a full
+  disk it refuses instead. It stores its own record of the work, never the
+  command message. Stored intent is responsibility, never a queue: after
+  a restart the owner reports an outcome for each accepted command that has
+  none. That outcome is `uncertain`, or `failed` when the owner's records prove
+  no effect began, and the command never runs again.
+- **Retries.** A code's `retryable` flag says whether the condition may clear.
+  It never permits resending a command, and nothing resends one automatically:
+  not the SDK, a remote edge, a module or the core. Only reconnection,
+  observation, sync and outbox publication repeat on their own, and the core
+  acknowledges a duplicate outcome again. Each retry loop has one owner and
+  capped backoff, each observation or sync attempt has a deadline, and repeated
+  failures are summarized rather than logged per attempt. Within one command, a
+  module may repeat an idempotent device write that its device protocol expects
+  to be repeated, inside the command's deadline and a fixed budget that its
+  tests count.
+- **Deadlines and cancellation** end waiting, not work already done.
+  Cancellation is not undo. A command still queued at its deadline is
+  `expired`, and one its handler had is `uncertain`. An outcome keeps any
+  earlier or partial effect, such as part of an upload, with its evidence,
+  rather than reporting a plain failure.
+- **Committed is not published.** Once an owner's transaction commits, the work
+  stands. A publication failure after the commit is reported as committed and
+  awaiting publication, never as a rollback, so no caller repeats the work. The
+  outbox publishes it later. A stored message keeps its `id`, `time` and trace
+  context across publication and restarts.
+- **Acknowledging outcomes.** Only the core acknowledges a module's outcome,
+  after it commits the outcome and its `(source, id)`. A module accepts an
+  acknowledgment only from the authenticated core. The core acknowledges an
+  exact duplicate again without a second completion, and refuses the same
+  `(source, id)` with different content as `duplicate-conflict`, keeping it
+  for diagnosis. A lost or forged acknowledgment never discards a stored
+  outcome.
+- **Late and conflicting outcomes** (owner decision, 2026-10-07):
+  - A definitive outcome, `succeeded` or `failed`, that arrives after the
+    tracker recorded `uncertain` replaces the tracker's status. History keeps
+    both.
+  - The operation's inbox item is updated with the new evidence and stays until
+    a person handles it. It is not dismissed automatically.
+  - An identical retransmission is deduplicated.
+  - A `succeeded` and a `failed` outcome for one operation keep both pieces of
+    evidence, and the item shows the conflict for a person to decide. Arrival
+    order never picks the winner. The tracker records the conflict with both
+    outcomes, and an operation with no item gets one (settled in review).
+  - After a person has handled the item, a late outcome updates only the
+    tracker and history; a conflict reopens the operation's item, because it
+    needs a decision (settled in review).
+  - A reused `(source, id)` with different content is a faulty message, not a
+    conflicting outcome: the core refuses it with `duplicate-conflict` and
+    keeps it for diagnosis, with no inbox item (settled in review).
+  - An operation has at most one inbox item.
+- **Safe errors.** Error bodies, health, history and proof carry registry codes
+  and fixed text from the code that raised the error. For an error, a log record
+  carries only its code, its type and the registered static body. None carries
+  an exception's message, stack or cause; the original cause stays in memory.
+
 ### Observability
 
-- Every HTTP call and every message carries W3C trace context. Each component
-  starts a child span when it receives work.
-- Every log line carries `trace_id` and `span_id` under the
+- **Correlation.** Every HTTP call and every message between B.U.N.N.Y.
+  components carries W3C `traceparent`, and every log line carries `trace_id`
+  and `span_id` under the
   [diagnostic contract](../observability-contract.md), so one request can be
   followed through every component.
-- Telemetry is never acknowledged. Its existing bounded queues can drop records
-  under pressure. The diagnostic contract makes that loss visible.
-- Viewing traces in Grafana belongs to
+- **Recorded spans.** Spans with a start, end, status and parent or links are
+  recorded through the observability package's host adapter
+  (`createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`),
+  with tracing on, no exporter and a bounded local span sink. Today the adapter
+  records spans only with a collector, so #949 adds that sink to the adapter
+  and the diagnostic contract, within the contract's queue bounds. A
+  disposable run samples every request, so one request can be followed
+  unless a queue bound drops its records; #949 sets the installed runtime's
+  ratio within the contract. The
+  SDK defines a small span interface, and the runtime implements it with that
+  adapter; there is no second tracing implementation. Span names are the
+  contract's registered names.
+- **Context stays inside B.U.N.N.Y.** A boundary trusts incoming context only
+  after it authenticates and validates the input. No trace context reaches a
+  device or vendor; a module's device calls may have local spans. A message
+  republished after a restart links to its original context and is never
+  reparented, and no span stays open across downtime.
+- **Records at decision points.** The boundary that makes a decision records
+  it, once:
+  - the SDK bus and remote edges: admission or refusal, no responder, a full
+    queue, expiry, cancellation, the reply, and completion or uncertainty;
+  - the runtime host: module lifecycle, module failures and outcome
+    publication;
+  - the core: outcome intake and tracker steps.
+
+  The SDK reports through an optional callback, a no-op by default, that the
+  runtime connects to its sink. A catch that only passes an error on does not
+  log it.
+- **Levels.**
+  - DEBUG: bounded retries, polling and duplicate observations.
+  - INFO: accepted work, success, recovery, expected cancellation, and
+    validation and domain refusals.
+  - WARN: refusals a correct caller should never receive (`unauthenticated`,
+    `forbidden`, `too-large` and `duplicate-conflict`), lost capacity, queued
+    expiry, failed and uncertain outcomes, and a device becoming unreachable.
+  - ERROR: internal faults, a module failure, and configuration that prevents
+    operation.
+  - FATAL: the runtime cannot continue.
+
+  Severity never changes a domain outcome.
+- **Repetition.** A repeated condition logs its transition, then bounded
+  summaries: the first dropped delivery is logged at once, then a count each
+  minute. A polled device that stays offline logs one degradation and one
+  recovery, not a warning per poll, and polling publishes no state event that
+  changed nothing.
+- **Logs are not history.** History holds domain records and logs hold
+  diagnostics. They share request and trace IDs, codes and entity IDs, never
+  payloads. A republished or duplicate outcome writes no second execution
+  record.
+- **Bounds.** The diagnostic contract's queue bounds, field rules and
+  exclusions apply. Request and trace IDs never become metric or stream labels.
+  A failing sink never changes a domain result and never logs its own failure
+  into itself.
+- **Telemetry is never acknowledged.** Its bounded queues can drop records
+  under pressure, and the diagnostic contract makes that loss visible.
+- **Following one request.** A disposable run can show the records and spans
+  of one request or trace
+  ([#950](https://github.com/jimmie-potts/agent-device-hub/issues/950)). A
+  missing record is reported as missing, never as proof that nothing happened.
+- **Owners.** [#949](https://github.com/jimmie-potts/agent-device-hub/issues/949)
+  owns the new instrumentation. Export and viewing in Grafana belong to
   [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).
 
 ### Portability
@@ -325,6 +470,9 @@ The consequences:
   owner sees it as failed or uncertain and can resend it.
 - Tracking: each tracked kind needs a deadline. Uncertain items need a person to
   decide, because nothing retries them automatically.
+- Conservative results: an exception after a handler started is `uncertain`,
+  not a rejection, and conflicting outcomes wait for a person, so some items
+  that a rule could settle need a person to decide.
 - 256 KiB cap: content above it needs a second fetch by reference from its
   owner.
 - SDK only: we maintain the SDK's two transports and give up direct use of any
@@ -398,3 +546,44 @@ acknowledgment clears a finished turn on that consumer only. Acknowledgment
 scope stays as today instead: acknowledgments are recorded per consumer, and
 each consumer's policy decides which ones clear what it shows. LIFX and Tidbyt
 clear a finished turn on any consumer's acknowledgment.
+
+**2026-10-07, errors, effects and diagnostics.** The owner adopted a review of
+the logging and tracing plan on 2026-10-07, with three tightenings: reuse the
+observability package's host adapter for spans, keep tracker resolution apart
+from inbox handling, and gate the next runtime stories on these rules
+([#947](https://github.com/jimmie-potts/agent-device-hub/issues/947)). Each
+change and its trade-off:
+
+- **Errors, effects and outcomes** is a new section. It separates why something
+  failed from what may have happened, and settles `accepted`, retries,
+  deadlines, cancellation, publication after commit, acknowledgments, late
+  and conflicting outcomes, and safe errors. The trade-off is more `uncertain`
+  results: a responder that throws after its handler started is no longer an
+  `internal` rejection.
+  [#948](https://github.com/jimmie-potts/agent-device-hub/issues/948) brings
+  the SDK into line.
+- **Late and conflicting outcomes.** A late definitive outcome resolves the
+  tracker but not the inbox item; a person still handles it. Conflicting
+  outcomes keep both pieces of evidence instead of letting the last one win.
+  Three edge cases were settled in review rather than by the owner, and the
+  owner may revisit them: a conflict opens or reopens the operation's one
+  item, a late outcome after handling updates only the tracker and history,
+  and a reused `(source, id)` is a faulty message with no inbox item.
+  [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) and
+  [#923](https://github.com/jimmie-potts/agent-device-hub/issues/923)
+  implement it.
+- **Failure isolation follows policy A.** The record listed device timeouts
+  among module failures, contradicting the owner's policy A of 2026-10-06
+  ([#919](https://github.com/jimmie-potts/agent-device-hub/issues/919)).
+  Device errors and timeouts are outcomes and device state; only an error that
+  escapes a module stops it. The `bunny-runtime` specification is corrected to
+  match.
+- **No `tracestate`.** The envelope listed an optional `tracestate`, which the
+  diagnostic contract had already disabled. Profile 2.0 drops it, and #948
+  removes it from the schema and the SDK.
+- **Observability** now separates correlation from recorded spans, records each
+  decision once where it is made, and sets levels, repetition and bounds.
+  Recorded spans reuse the observability package's host adapter instead of a
+  second implementation, with no exporter until #813.
+  [#949](https://github.com/jimmie-potts/agent-device-hub/issues/949) owns the
+  new instrumentation, because #813 excludes it.

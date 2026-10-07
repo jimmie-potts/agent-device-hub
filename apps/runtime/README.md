@@ -113,8 +113,12 @@ through a link. Each module's SQLite file is `modules/<name>.sqlite` in it, mode
 
 ## Failure isolation
 
-A module's thrown error, rejected promise or device timeout stops only that
-module, and health shows it `failed`. That covers:
+A device's errors and timeouts are not module failures. Under policy A in
+[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md), a module reaches
+its device lazily and turns those errors into outcomes and an `unavailable`
+device state. An error that escapes a module stops only that module, and health
+shows it `failed` until the runtime restarts; nothing restarts it
+automatically. That covers:
 - a start that throws, rejects or outlasts the start deadline (10 s);
 - a subscription handler or responder that throws;
 - a `scheduler.after` callback that throws or rejects;
