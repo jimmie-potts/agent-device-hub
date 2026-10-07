@@ -134,10 +134,11 @@ try {
     await claude.locator('dd').filter({ hasText: /^Medium$/ }).waitFor({ timeout: 5000 });
     await claude.locator('dd').filter({ hasText: /^Effort slider open$/ }).waitFor({ timeout: 5000 });
     await page.locator('[data-encoder="knob-2"] > .light').filter({ hasText: /^applied$/ }).waitFor({ timeout: 5000 });
-    await page.locator('#desktop-log li').filter({ hasText: 'Claude effort set to Medium (2 of 4)' }).first().waitFor({ timeout: 5000 });
+    await page.locator('#desktop-log li').filter({ hasText: 'Claude effort set to Medium (2 of 6)' }).first().waitFor({ timeout: 5000 });
     await page.getByRole('button', { name: 'Knob 2 click' }).click();
     await claude.locator('dd').filter({ hasText: /^closed$/ }).waitFor({ timeout: 5000 });
     await page.locator('[data-encoder="knob-2"] > .light').filter({ hasText: /^off$/ }).waitFor({ timeout: 5000 });
+    await claude.locator('dd').filter({ hasText: /^focused$/ }).first().waitFor({ timeout: 5000 });
     assert.deepEqual((await state()).desktop.windows.claude.composer.submitted, [], 'nothing was sent');
   });
 

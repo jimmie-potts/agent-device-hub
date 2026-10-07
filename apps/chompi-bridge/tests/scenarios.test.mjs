@@ -19,7 +19,8 @@ test('the catalog names each scenario once, with synthetic seeds and at least on
   const ids = SCENARIOS.map(s => s.id);
   assert.equal(new Set(ids).size, ids.length);
   for (const id of ['send-front-window', 'record-dictation', 'claude-question-wheel', 'codex-card-structure', 'reconnect-no-replay', 'profile-reload', 'task-pages', 'attention-key', 'volume-knob',
-    'claude-model-knob', 'claude-effort-knob', 'claude-effort-unsupported', 'codex-model-knob', 'codex-effort-knob', 'knob-refusals']) assert.ok(scenario(id), id);
+    'claude-model-knob', 'claude-effort-knob', 'claude-effort-unsupported', 'codex-model-knob', 'codex-effort-chords', 'codex-effort-knob', 'knob-lagging-reads',
+    'knob-refusals']) assert.ok(scenario(id), id);
   for (const s of SCENARIOS) {
     assert.match(s.id, /^[a-z][a-z0-9-]{2,40}$/);
     assert.ok(s.steps.some(step => step.kind !== 'act'), `${s.id} observes something`);
