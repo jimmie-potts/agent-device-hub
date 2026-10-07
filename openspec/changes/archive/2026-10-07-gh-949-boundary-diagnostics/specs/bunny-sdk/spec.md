@@ -14,7 +14,7 @@ The bus, the remote edge and the remote client SHALL each take an optional `onDi
 - `remote.disconnected`, WARN, and `remote.reconnected`, INFO: the remote client's stream;
 - `remote.command.uncertain`, WARN: the remote client settled a request `uncertain-result` itself, because the edge answered `internal` or `uncertain-result`, could not be heard by its deadline and grace, or the requester closed first.
 
-Every record about one request SHALL be made at its admission or inside its one settlement, so a late reply, a second deadline or a close after it settled makes none. A call that the SDK refuses with `SdkError` SHALL make no bus record; the edge SHALL record its refusal of a remote call. A catch that only passes an error to `onError` SHALL record nothing. A record that the edge makes before it authenticates a call SHALL carry only its route, which is one of the edge's calls or `other`, and its code. A callback that throws SHALL NOT change a result and SHALL NOT be called again about its own failure.
+Every record about one request SHALL be made at its admission or inside its one settlement, so a late reply, a second deadline or a close after it settled makes none. A call that the SDK refuses with `SdkError` SHALL make no bus record; the edge SHALL record its refusal of a remote call. A catch that only passes an error to `onError` SHALL record nothing. A record that the edge makes before it authenticates a call SHALL carry only its route, which is one of the edge's calls or `other`, and its code. The edge SHALL record a repeated refusal by the repetition rule: the first refusal with a given route, code and source at once, then the repeats counted and recorded as one summary of the same refusal, with their count as `attempts`, at the end of each minute on the edge's scheduler that counted any; a minute with none SHALL end the run, so the next refusal is recorded at once, and closing the edge SHALL record what its open windows counted. A callback that throws SHALL NOT change a result and SHALL NOT be called again about its own failure.
 
 #### Scenario: One record for each command decision, on both transports
 - **WHEN** commands are accepted, refused by their owner, sent with no responder, refused by a full queue, expired in the queue, cancelled while queued, held by a handler past the deadline and failed by a handler that throws, in process and through the edge
@@ -35,6 +35,10 @@ Every record about one request SHALL be made at its admission or inside its one 
 #### Scenario: A failing callback
 - **WHEN** the bus's, the edge's and a remote client's `onDiagnostic` throw on every record, in process and through the edge, while requests are accepted, refused and unanswered, syncs are served and refused, the edge refuses calls and fails, and a stream drops and reconnects
 - **THEN** every request, sync and edge call ends exactly as it does without the callback, the callback still hears each decision, and nothing reports the callback's failure
+
+#### Scenario: A refusal that repeats
+- **WHEN** a part with a revoked token reconnects five times within a minute, three times in the next and not in the third, while other sources and codes are refused on another route
+- **THEN** the edge records the first refusal at once, one summary counting four repeats and one counting three, nothing for the quiet minute, the next refusal at once again, and each other route, code and source as its own run
 
 #### Scenario: Before authentication
 - **WHEN** a call reaches the edge without a granted token, from a path that is not one of its calls, with a traceparent in its body

@@ -194,7 +194,7 @@ earlier profile rejects each addition. The additions:
   (`device.unavailable`, `device.available`).
 - **Attributes:** `bunny.routing.key` (an SDK routing key, never a pattern, of
   at most 512 characters), `bunny.outbox.waiting_count` (the messages a refused
-  send left behind) and `bunny.attempt_count` (failed attempts, summarized).
+  send left behind) and `bunny.attempt_count` (failed attempts or repeated refusals, summarized).
 - **Span names:** `bunny.outcome.publish` and `bunny.device.call`. The catalog's
   `additions` list them too, since a span name is vocabulary.
 

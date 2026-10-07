@@ -186,3 +186,13 @@ it('an edge failure after dispatch is one valid record in the command\'s trace, 
     'bunny.code': 'uncertain-result', 'bunny.route': 'request', 'error.type': 'Error', 'bunny.provenance': 'source',
   });
 });
+
+it('an edge\'s summary of a repeated refusal is one valid record with the count of repeats', () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', {now: () => Date.parse('2026-10-07T12:00:00.000Z')});
+  diagnosticWriter(writer.logger(RUNTIME_SCOPE))({event: 'edge.refused', level: 'warn', route: 'stream', code: 'unauthenticated', attempts: 4});
+  assert.deepEqual(writer.counts(), {written: 1, dropped: 0, failed: 0});
+  assert.deepEqual(written.map(record => [record.event_name, record.severity_text, record.attributes]), [['runtime.edge.refused', 'WARN', {
+    'bunny.route': 'stream', 'bunny.code': 'unauthenticated', 'bunny.reason': 'unauthorized', 'bunny.attempt_count': 4, 'bunny.provenance': 'source',
+  }]]);
+});

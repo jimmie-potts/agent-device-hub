@@ -599,7 +599,7 @@ refusals a correct caller should never receive (`unauthenticated`,
 | `sync.served`, `sync.refused` | INFO; the code's level for a refusal | The bus, at a sync request's answer, refused by the bus or its owner. |
 | `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
 | `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
-| `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. |
+| `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. A repeat with the same route, code and source is counted, and each minute that counted any ends with one summary whose `attempts` is that count; a quiet minute ends the run (`REFUSAL_WINDOW_MS`). |
 | `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type, never its message. After dispatch it also carries the command's key, request ID, message ID and trace. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
 | `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |

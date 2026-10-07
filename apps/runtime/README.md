@@ -97,7 +97,10 @@ have none. A refusal takes its code's level from the SDK's one table, the
 same as the bus's and its owners': a refusal a correct caller should never
 receive (`unauthenticated`, `forbidden`, `too-large`, `duplicate-conflict`) or
 lost capacity (`capacity`, `unavailable`) is a warning, `internal` is an
-error, and a validation refusal is INFO. A refusal never holds the edge's detail, which may
+error, and a validation refusal is INFO. A refusal that repeats with the same
+route, code and source, such as a part whose token was revoked reconnecting
+every few seconds, is logged once, then once a minute with
+`bunny.attempt_count` counting the repeats, until a quiet minute. A refusal never holds the edge's detail, which may
 quote what the caller sent. The edge answers an exception it did not expect
 with fixed text, never its message: `internal`, or `uncertain-result` once it
 has handed a command to the bus. It logs one `runtime.edge.failed` record at

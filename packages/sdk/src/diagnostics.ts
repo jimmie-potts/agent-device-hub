@@ -19,7 +19,8 @@ export type DiagnosticLevel = 'debug' | 'info' | 'warn' | 'error';
  * - `command.replied`: its owner replied, accepted or with a typed refusal.
  * - `command.uncertain`: a handler had it, and the request ended `uncertain-result`.
  * - `sync.served`, `sync.refused`: the bus's answer to a sync request. `sync.restarted`: an overflow restarted a copy.
- * - `edge.connected`, `edge.disconnected`, `edge.refused`, `edge.failed`: a remote edge's own decisions.
+ * - `edge.connected`, `edge.disconnected`, `edge.refused`, `edge.failed`: a remote edge's own decisions. A repeated
+ *   refusal is recorded once, then summarized with its count at most once a minute.
  * - `remote.disconnected`, `remote.reconnected`: a remote client's stream.
  * - `remote.command.uncertain`: a remote client settled a request `uncertain-result` itself, because the edge failed,
  *   could not be heard by the deadline and its grace, or the requester closed first. A request the edge answers is
@@ -55,7 +56,10 @@ export type Diagnostic = {
   readonly route?: EdgeRoute;
   /** An exception's type as an identifier, never its message. */
   readonly errorType?: string;
-  /** How many attempts failed, as a remote client counts its reconnects. */
+  /**
+   * How many attempts failed, as a remote client counts its reconnects, or, on an edge's summary of a repeated refusal,
+   * how many times it refused again since its last record of that refusal.
+   */
   readonly attempts?: number;
   /** The trace context of the work the decision is about. Absent when the edge has not validated the input. */
   readonly trace?: TraceContext;

@@ -13,11 +13,13 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {MAX_DETAIL, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
 import {
-  InProcessBus, Outbox, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, connectRemote, type Command, type Overflow, type Reply, type RequestResult, type Scheduler,
+  InProcessBus, Outbox, REFUSAL_WINDOW_MS, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SdkError, connectRemote, type Command, type Overflow, type Reply, type RequestResult, type Scheduler,
   type Diagnostic, type SyncChange,
 } from '../src/index.js';
 import {frame} from '../src/remote-protocol.js';
-import {MODE_SCHEMA, SESSION_FAMILY, blob, checked, deferred, flush, it, session, setMode, turnEnded, until, validator, type Mode, type Session} from './support.js';
+import {
+  MODE_SCHEMA, SESSION_FAMILY, blob, checked, deferred, flush, it, manualClock, session, setMode, turnEnded, until, validator, type Mode, type Session,
+} from './support.js';
 import {startEdge, type Edge, type EdgeSetup} from './transports.js';
 
 const FAMILY = SESSION_FAMILY;
@@ -73,10 +75,10 @@ it('a remote part needs its own token, and no token ever appears in a message, l
   await until(() => seen.length === 1, 'the message');
   const evidence = JSON.stringify({diagnostics: edge.diagnostics, errors: edge.errors.map(({error}) => error instanceof SdkError ? error.body : String(error)), seen, missing, wrong, foreign});
   for (const token of edge.tokens.values()) assert.equal(evidence.includes(token), false, 'a token leaked');
-  // A caller that holds no grant or acts as another source is no correct caller: each refusal is a warning.
+  // A caller that holds no grant or acts as another source is no correct caller: each refusal is a warning. A repeat
+  // of the same route, code and source within the minute is counted for its summary, not recorded again.
   assert.deepEqual(edge.diagnostics.filter(record => record.event === 'edge.refused').map(record => [record.route, record.code, record.level]), [
-    ['publish', 'unauthenticated', 'warn'], ['publish', 'unauthenticated', 'warn'], ['stream', 'unauthenticated', 'warn'],
-    ['publish', 'forbidden', 'warn'], ['publish', 'forbidden', 'warn'],
+    ['publish', 'unauthenticated', 'warn'], ['stream', 'unauthenticated', 'warn'], ['publish', 'forbidden', 'warn'],
   ]);
 }));
 
@@ -96,9 +98,10 @@ it('the edge refuses an invalid, oversized or unknown message with the error bod
   assert.equal((garbled.body as ErrorBody).error.code, 'invalid-request');
   // A blob under the cap passes.
   await core.publish('bunny.state.test-blob.b2', blob('b2', 1, 100_000));
-  // Validation refusals are INFO; a body a correct caller never sends is a warning.
+  // Validation refusals are INFO; a body a correct caller never sends is a warning, and its repeat within the minute
+  // waits for the summary.
   assert.deepEqual(edge.diagnostics.filter(record => record.event === 'edge.refused').map(record => [record.code, record.level]), [
-    ['invalid-message', 'info'], ['too-large', 'warn'], ['unknown-schema', 'info'], ['too-large', 'warn'], ['invalid-request', 'info'],
+    ['invalid-message', 'info'], ['too-large', 'warn'], ['unknown-schema', 'info'], ['invalid-request', 'info'],
   ]);
 }));
 
@@ -806,3 +809,45 @@ it('a throwing onDiagnostic at the edge and the client changes no reconnect, ref
       'nothing reported the callback\'s failure');
     assert.deepEqual(edge.errors.filter(({scope}) => scope.pattern === 'stream'), [], 'and no stream error came of it');
   }));
+
+it('a refusal that repeats is recorded once, then summarized once a minute by route, code and source, until a quiet minute', async () => {
+  const clock = manualClock();
+  await withEdge({scheduler: clock.scheduler}, async edge => {
+    // A part whose token was revoked reconnects every few seconds.
+    const revoked = async (): Promise<void> => {
+      const stream = await fetch(`${edge.url}${REMOTE_PATH}/stream`, {headers: {authorization: 'Bearer revoked-token'}});
+      assert.equal(stream.status, 401);
+      await stream.body?.cancel();
+    };
+    const refusals = (): unknown[] => edge.diagnostics.filter(record => record.event === 'edge.refused')
+      .map(({route, code, level, source, attempts}) => ({route, code, level, ...(source === undefined ? {} : {source}), ...(attempts === undefined ? {} : {attempts})}));
+    const stream = {route: 'stream', code: 'unauthenticated', level: 'warn'};
+    for (let attempt = 0; attempt < 5; attempt += 1) await revoked();
+    // Another route, code or source is its own run, recorded at once.
+    const publish = async (source: 'bunny/core' | 'bunny/wall', schema: string): Promise<void> => {
+      assert.equal((await call(edge, 'publish', {schema, message: {}}, tokenOf(edge, source))).status, 400);
+    };
+    await publish('bunny/wall', REMOTE_SCHEMA);
+    await publish('bunny/core', REMOTE_SCHEMA);
+    await publish('bunny/wall', 'sdk-remote/0.9');
+    const keyless = {route: 'publish', code: 'invalid-request', level: 'info'};
+    assert.deepEqual(refusals(), [
+      stream, {...keyless, source: 'bunny/wall'}, {...keyless, source: 'bunny/core'},
+      {route: 'publish', code: 'unsupported-version', level: 'info', source: 'bunny/wall'},
+    ], 'the first of each run only');
+    clock.advance(REFUSAL_WINDOW_MS);
+    assert.deepEqual(refusals().slice(4), [{...stream, attempts: 4}], 'the minute\'s four repeats as one summary; the quiet run records none');
+    for (let attempt = 0; attempt < 3; attempt += 1) await revoked();
+    clock.advance(REFUSAL_WINDOW_MS);
+    assert.deepEqual(refusals().slice(5), [{...stream, attempts: 3}], 'the next minute\'s');
+    clock.advance(REFUSAL_WINDOW_MS);
+    assert.equal(refusals().length, 6, 'a quiet minute records nothing and ends the run');
+    assert.equal(clock.pending(), 0, 'no window is left');
+    await revoked();
+    await revoked();
+    assert.deepEqual(refusals().slice(6), [stream], 'after a quiet minute, the next refusal is recorded at once');
+    await edge.edge.close();
+    assert.deepEqual(refusals().slice(7), [{...stream, attempts: 1}], 'closing records what the open window counted');
+    assert.equal(clock.pending(), 0);
+  });
+});

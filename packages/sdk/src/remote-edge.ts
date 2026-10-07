@@ -28,14 +28,26 @@ export type EdgeOptions = {
    * Hears the edge's own decisions: a part connected or disconnected, a call refused, and an exception it did not
    * expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and
    * the exception's type (ADR 0012, "Observability"). A record never carries a credential, a payload, a refusal's
-   * detail or an exception's message; before authentication it carries only the route and the code. A no-op by
-   * default; a throw is ignored.
+   * detail or an exception's message; before authentication it carries only the route and the code. Repeated refusals
+   * follow the repetition rule (`REFUSAL_WINDOW_MS`). A no-op by default; a throw is ignored.
    */
   onDiagnostic?: OnDiagnostic;
   now?: () => number;
-  /** Runs the edge's own waits for forwarded commands and sync requests. Defaults to the global `setTimeout`. */
+  /**
+   * Runs the edge's own waits for forwarded commands and sync requests, and its windows for repeated refusals. Defaults
+   * to the global `setTimeout`.
+   */
   scheduler?: Scheduler;
 };
+
+/**
+ * How long the edge counts repeats of one refusal before it records them (ADR 0012, "Repetition"). The first refusal
+ * of a run is recorded at once; later ones with the same route, code and source are counted, and each window that
+ * counted any ends with one summary of the same refusal whose `attempts` is that count. A window with none ends the
+ * run, so the next such refusal is recorded at once again. A part whose revoked token reconnects every few seconds
+ * makes one record and then one a minute, not one per attempt.
+ */
+export const REFUSAL_WINDOW_MS = 60_000;
 const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
@@ -74,6 +86,8 @@ const isCall = (value: string): value is Call => (CALLS as readonly string[]).in
 /** The route a record names: one of the edge's calls or its stream, or `other` for any path the caller chose. */
 const routeOf = (route: string): EdgeRoute => isCall(route) || route === 'stream' ? route : 'other';
 type Fields = Record<string, unknown>;
+/** A run of one refusal: its first record, the repeats counted since the last record, and its window's timer. */
+type Repeats = {first: Diagnostic; count: number; cancel: Cancel};
 /** A command the edge has handed to its bus, with its routing key: from then on a failure may follow a handler's effect. */
 type Dispatched = {key: string; command: Command<object>};
 /** Where a call stands: `dispatched` once its command is with the bus. */
@@ -144,6 +158,9 @@ export class RemoteEdge {
   readonly #waiting = new Map<string, Waiting>();
   /** One participant per source, for calls that need no connection. */
   readonly #participants = new Map<string, Sdk>();
+  /** Runs of repeated refusals, by route, code and source. */
+  readonly #repeats = new Map<string, Repeats>();
+  #closed = false;
 
   constructor(options: EdgeOptions) {
     this.#bus = options.bus;
@@ -183,6 +200,13 @@ export class RemoteEdge {
    * more, so its request is `uncertain`, as the deadline would make it; a forwarded sync request is unavailable.
    */
   close(): Promise<void> {
+    this.#closed = true;
+    // The repeats counted so far are recorded now, and no window outlives the edge.
+    for (const repeats of this.#repeats.values()) {
+      repeats.cancel();
+      this.#summarize(repeats);
+    }
+    this.#repeats.clear();
     this.disconnect();
     for (const waiting of [...this.#waiting.values()]) {
       waiting.finish(waiting.kind === 'command' ? unanswered : errorBody('unavailable', {detail: 'the edge closed'}));
@@ -221,7 +245,7 @@ export class RemoteEdge {
       const {code} = refused.error;
       const who = source === undefined ? {} : {source};
       if (known) {
-        this.#diagnose({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
+        this.#refused({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
       } else {
         const about = dispatched === undefined ? {} : commandFacts(dispatched);
         this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
@@ -229,6 +253,42 @@ export class RemoteEdge {
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');
     }
+  }
+
+  /**
+   * Records a refusal by the repetition rule: the first of a run at once, then its repeats as one summary per window
+   * that had any (`REFUSAL_WINDOW_MS`). Once the edge has closed, each refusal is recorded at once.
+   */
+  #refused(diagnostic: Diagnostic): void {
+    const key = `${diagnostic.route ?? ''}\n${diagnostic.code ?? ''}\n${diagnostic.source ?? ''}`;
+    const open = this.#repeats.get(key);
+    if (open !== undefined) {
+      open.count += 1;
+      return;
+    }
+    this.#diagnose(diagnostic);
+    if (this.#closed) return;
+    const repeats: Repeats = {first: diagnostic, count: 0, cancel: () => {}};
+    this.#repeats.set(key, repeats);
+    this.#window(key, repeats);
+  }
+
+  #window(key: string, repeats: Repeats): void {
+    repeats.cancel = this.#scheduler.after(REFUSAL_WINDOW_MS, () => {
+      if (repeats.count === 0) {
+        this.#repeats.delete(key);
+        return;
+      }
+      this.#summarize(repeats);
+      this.#window(key, repeats);
+    });
+  }
+
+  /** Records the repeats counted since the last record as one summary, if there were any. */
+  #summarize(repeats: Repeats): void {
+    const {first, count} = repeats;
+    repeats.count = 0;
+    if (count > 0) this.#diagnose({...first, attempts: count});
   }
 
   /** The source a bearer token grants. Every grant is compared, in constant time, so timing reveals nothing. */

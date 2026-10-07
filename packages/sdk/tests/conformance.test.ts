@@ -151,11 +151,13 @@ function suite(transport: Transport): void {
       assert.ok(nested instanceof SdkError && nested.body.error.code === 'invalid-request', 'the nested call refused with SdkError');
       assert.deepEqual(effects, failing.slice(1));
       assert.equal(world.errors.length, failing.length, 'each failure is reported once, where the responder ran');
-      // Past every deadline and the requester's grace: nothing is left that could send a command again.
-      assert.equal(clock.pending(), 0, 'no deadline or wait is left');
+      // Past every deadline and the requester's grace: nothing is left that could send a command again. Remotely, the
+      // edge refused the nested publish and keeps that refusal's window open; a window with no repeats then closes.
+      assert.equal(clock.pending(), transport.name === 'remote' ? 1 : 0, 'no deadline or wait is left');
       clock.advance(5000 + REQUESTER_GRACE_MS + 60_000);
       await flush();
       assert.deepEqual(handled, [...failing, 'req-refused'], 'each command reached the handler exactly once');
+      assert.equal(clock.pending(), 0, 'and no window either');
     });
   });
 

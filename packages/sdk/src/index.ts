@@ -21,6 +21,6 @@ export {
   type Tracing, type Workers,
 } from './module.js';
 export {childOf, traceFields} from './trace.js';
-export {RemoteEdge, type EdgeOptions, type RemoteGrant} from './remote-edge.js';
+export {REFUSAL_WINDOW_MS, RemoteEdge, type EdgeOptions, type RemoteGrant} from './remote-edge.js';
 export {connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
 export {REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.js';
