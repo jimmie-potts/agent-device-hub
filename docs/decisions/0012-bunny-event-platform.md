@@ -170,10 +170,11 @@ State events and telemetry are not tracked.
 
 ### Inbox and history
 
-- One shared inbox in the core holds failed and uncertain operations: the
-  results a person must decide on. Items survive restarts until handled, with
-  no expiry and no automatic clearing. Handling an item once clears it
-  everywhere; dismissing it on a display is a separate fact.
+- One shared inbox in the core holds failed and uncertain operations, and
+  operations with conflicting outcomes: the results a person must decide on.
+  Items survive restarts until handled, with no expiry and no automatic
+  clearing. Handling an item once clears it everywhere; dismissing it on a
+  display is a separate fact.
 - A finished turn is not an inbox item. Its unread state stays on the session
   record, which consumers sync and derive what they show from. Evidence clears
   it: read evidence for a consumer that uses it, the session's end, or a new
@@ -300,21 +301,21 @@ evidence say what may have happened. Every boundary keeps the two apart.
   - The operation's inbox item is updated with the new evidence and stays until
     a person handles it. It is not dismissed automatically.
   - An identical retransmission is deduplicated.
-  - Two different definitive outcomes for one operation keep both pieces of
-    evidence. The tracker records a conflict with both outcomes, and the
-    operation's item, opened if it had none, shows the conflict for a person
-    to decide. Arrival order never picks the winner.
+  - A `succeeded` and a `failed` outcome for one operation keep both pieces of
+    evidence, and the item shows the conflict for a person to decide. Arrival
+    order never picks the winner. The tracker records the conflict with both
+    outcomes, and an operation with no item gets one (settled in review).
   - After a person has handled the item, a late outcome updates only the
     tracker and history; a conflict reopens the operation's item, because it
-    needs a decision.
+    needs a decision (settled in review).
   - A reused `(source, id)` with different content is a faulty message, not a
     conflicting outcome: the core refuses it with `duplicate-conflict` and
-    keeps it for diagnosis, with no inbox item.
+    keeps it for diagnosis, with no inbox item (settled in review).
   - An operation has at most one inbox item.
 - **Safe errors.** Error bodies, health, history and proof carry registry codes
-  and fixed text from the code that raised the error. Log records carry codes,
-  error types and their registered static bodies only. None carries an
-  exception's message, stack or cause; the original cause stays in memory.
+  and fixed text from the code that raised the error. For an error, a log record
+  carries only its code, its type and the registered static body. None carries
+  an exception's message, stack or cause; the original cause stays in memory.
 
 ### Observability
 
@@ -329,8 +330,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
   with tracing on, no exporter and a bounded local span sink. Today the adapter
   records spans only with a collector, so #949 adds that sink to the adapter
   and the diagnostic contract, within the contract's queue bounds. A
-  disposable run samples every request, so one request can always be
-  followed; #949 sets the installed runtime's ratio within the contract. The
+  disposable run samples every request, so one request can be followed
+  unless a queue bound drops its records; #949 sets the installed runtime's
+  ratio within the contract. The
   SDK defines a small span interface, and the runtime implements it with that
   adapter; there is no second tracing implementation. Span names are the
   contract's registered names.
