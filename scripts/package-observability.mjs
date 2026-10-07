@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {scratchRoot} from './scratch-root.mjs';
 import {build} from 'esbuild';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -38,9 +39,8 @@ async function verify(directory){
 }
 // Consumer lives outside every checkout; use disk-backed .local storage in the
 // parent workspace, including when this command runs from a Git worktree.
-const common=resolve(root,run('git',['rev-parse','--git-common-dir'],root).trim());
-const scratchRoot=join(dirname(dirname(common)),'.local/scratch/package-observability');await mkdir(scratchRoot,{recursive:true});
-const scratch=await mkdtemp(join(scratchRoot,'observability-'));
+const scratchBase=scratchRoot(root,'package-observability');await mkdir(scratchBase,{recursive:true});
+const scratch=await mkdtemp(join(scratchBase,'observability-'));
 try{
  const stage=join(scratch,'stage');await mkdir(stage);
  for(const item of ['package.json','src','dist','fixtures','python','tests','runtime','requirements-host.txt','README.md'])

@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {cp,mkdir,mkdtemp,readFile,readdir,rm,writeFile,copyFile,lstat} from 'node:fs/promises';
 import {join,resolve,dirname,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {scratchRoot} from './scratch-root.mjs';
 import {sourceRevision} from './hub-build-identity.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -36,11 +37,8 @@ function runtimeClosure(lock){
 }
 // Keep the installed consumer outside every checkout so workspace resolution
 // cannot hide a missing bundled dependency.
-const commonResult=spawnSync('git',['rev-parse','--git-common-dir'],{cwd:root,encoding:'utf8'});
-if(commonResult.error||commonResult.status!==0)throw new Error('git-common-directory-unavailable');
-const common=resolve(root,commonResult.stdout.trim());
-const scratchRoot=join(dirname(dirname(common)),'.local/scratch/package-hub');await mkdir(scratchRoot,{recursive:true});
-const scratch=await mkdtemp(join(scratchRoot,'hub-'));
+const scratchBase=scratchRoot(root,'package-hub');await mkdir(scratchBase,{recursive:true});
+const scratch=await mkdtemp(join(scratchBase,'hub-'));
 try {
   // Build the new state/lifecycle and observability artifacts; existing releases stay pinned below.
   run([join(root,'scripts/package-agent-state.mjs')],root);
