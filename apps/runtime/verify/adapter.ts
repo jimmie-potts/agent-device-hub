@@ -8,6 +8,7 @@
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {ROLES, type DeviceStates, type Generational, type Harness, type Role, type Seed, type Simulation} from '../tests/scenarios/catalog.js';
@@ -82,7 +83,10 @@ class Run implements RunHarness {
   /** The runtime's origin: the run's URL names its health page. */
   readonly #origin: string;
   #state: HarnessState = {
-    generation: 0, devices: {lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0}},
+    generation: 0, devices: {
+      lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
+      playback: new SimulatedSpeakers().state(),
+    },
     logs: [], published: [],
   };
   /** Actions run one after another in the order the scenario calls them. */

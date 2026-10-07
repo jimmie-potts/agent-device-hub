@@ -293,16 +293,24 @@ The source is the Hub's `/api/playback/v1/snapshot`. The 2.0 home is
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
 | `apiVersion` | envelope `dataschema` | |
-| `sourceId` | `playback /id` | The envelope subject. It is also the record's routing-key token, so 2.0 narrows it to lowercase letters and digits with single hyphens (the blocks' `routingId`, Hub #918); 1.x allowed any neutral ID. A configured ID outside that form is renamed when the installer converts the configuration (#929, [#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)). |
+| `sourceId` | `playback /id` | The envelope subject. It is also the record's routing-key token, so 2.0 narrows it to lowercase letters and digits with single hyphens (the blocks' `routingId`, Hub #918); 1.x allowed any neutral ID. A configured ID outside that form is renamed when the installer converts the configuration (#929, [#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)): the playback module's `routingIdOf` lowercases it and turns each run of other characters into one hyphen, so `HT-A9` becomes `ht-a9`. |
 | `availability` | `playback /availability` | The owner publishes a new revision when it changes. Decided by the coordinator, 2026-10-06. |
-| `observedAtMs` | `playback /observedAtMs` | Absent rather than null. |
-| `ageMs` | derived | Read context, like `observationAgeMs`. Decided by the coordinator, 2026-10-06: consumers derive it. |
+| `observedAtMs` | `playback /observedAtMs` | Absent rather than null. 1.x gave the latest read's time. 2.0 gives the presented speaker's last read when the revision was published, because the owner publishes no revision for a read that changes nothing else (#929). |
+| `ageMs` | **no 2.0 home** | 1.x computed it at each read. A 2.0 record's `observedAtMs` can be minutes old while the speaker answers every poll, so an age derived from it says nothing about freshness. Consumers judge freshness by `availability`, which the owner republishes at 5 s and 30 s. Corrected by #929: the coordinator's note of 2026-10-06 had consumers derive it. |
 | `playback` | `playback /playback` | Null becomes `{"status": "unknown"}`. |
 | `playback.status` | `playback /playback/player` | Renamed, because `status` now tags known and unknown. |
 | `playback.title`, `playback.artist`, `playback.album`, `playback.controls` | `playback /playback/title`, `/artist`, `/album`, `/controls` | Unchanged. |
 
 A request for one of the `controls` goes to the record's owner as
 `playback-control` (#918), whose subject is the record's `id`.
+
+The Hub's playback receipt becomes that command's outcome (#929): `sent` is
+`succeeded` with `transmitted`; `failed`, a speaker's refusal (a JSON-RPC error
+or a SOAP fault), answered the command, so it is `failed` with `transmitted` and
+`invalid-state`, as the [receipt rule](#controller-receipt) gives a failure after
+a confirmed transmission; and `uncertain` is `uncertain` with `none` and
+`uncertain-result`. An action the speaker has no command for is never sent:
+`failed` with `none` and `unsupported-capability`.
 
 ## Mode
 

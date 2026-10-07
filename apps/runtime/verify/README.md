@@ -14,27 +14,28 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory, and `--config` for a configured scenario: the shipped module list, or the fixture modules |
 | SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
 | Configuration | synthetic | For a scenario whose seed configures modules (#919), `<data>/config/runtime-config.json` and one token file per module under `<data>/config/secrets/`, all owner-only, holding the synthetic token `tok_SYNTHETIC919` |
-| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, and a harness module that reports what the bus publishes |
-| Devices | simulated | `SimulatedLamps`, `SimulatedChime` and `SimulatedSigns`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
+| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), and a harness module that reports what the bus publishes |
+| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns` and the playback module's `SimulatedSpeakers`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
 publish, on the same port and state directory, as the service manager would. It gives up and ends the run after five
 such restarts within a minute. Starts and restarts run one after another, so overlapping restart requests never race
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
-controls: hold, release, fail the next switch, fault the chime, arm a crash, lose an acknowledgment, end a part's
-stream at the edge, and restart. It also reports the run's state: the devices, the runtime's log records and everything
-its bus published, each with the runtime's generation, and it answers [one request's records and spans](#follow-one-request).
-It answers only local JSON requests that name its listener, as the runtime's health does. Ending a stream takes only a
-part's source, `bunny/parts/<role>`.
+controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop or
+silence either simulated speaker or switch it to another input and refuse or never answer its next command, arm a crash,
+lose an acknowledgment, end a part's stream at the edge, and restart. It also reports the run's state: the devices, the
+runtime's log records and everything its bus published, each with the runtime's generation, and it answers
+[one request's records and spans](#follow-one-request). It answers only local JSON requests that name its listener, as
+the runtime's health does. Ending a stream takes only a part's source, `bunny/parts/<role>`.
 
 ## Run scenarios
 
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list: the core alone, with no device module |
-| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first) and `misconfigured-module` (an invalid one, so health shows the sign `refused`) |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers) |
+| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`) and `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
 ## Capture steps
@@ -175,6 +176,22 @@ npm run -s verify:runtime -- start --scenario misconfigured-module   # an invali
 npm run -s verify:runtime -- capture <run-id> scenario-misconfigured-module
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+To follow and control the speakers as an operator would (#929), start the playback scenario. Its capture step plays a
+song to the HT-A9, pauses it, switches AirPlay to the Move, pauses that, silences the Move until the record turns
+`stale`, and sends a command the Move never answers. `scenario-result.json` lists each step with what it observed.
+
+```bash
+npm run -s verify:runtime -- start --scenario speaker-playback      # the core and the playback module; both speakers on another input
+npm run -s verify:runtime -- capture <run-id> scenario-speaker-playback
+npm run -s verify:runtime -- stop <run-id>
+```
+
+By hand, the run's `harness` endpoint drives the speakers: `POST /api/harness/v1/simulate` with
+`{"device": "playback", "speaker": "sony" | "sonos", "action": "play", "title": "..."}`, or with the action `pause`,
+`stop`, `other-input`, `silent`, `answer`, `refuse-next` or `hang-next`. `GET /api/harness/v1/state` shows each
+speaker's status and the actions it received. A remote part with the reader's grant syncs `playback` from the edge, and
+one with the operator's grant sends `playback-control` to `bunny.cmd.playback-control.living-room`.
 
 The configuration file and its token file are under `<runtime dir>/data/config/`. The token is synthetic, and no
 health page, record or proof holds it.

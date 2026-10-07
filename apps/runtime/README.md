@@ -5,9 +5,12 @@ that [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) describes. It
 hosts a fixed list of modules on the SDK's in-process bus and serves health,
 and with `--edge` the SDK edge for remote parts, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
-and no device module yet; module stories add theirs after it, and the runtime
-also runs with no module at all. Nothing installs it yet; the cutover (#840)
-does.
+and, after it, the device modules: the
+[playback module](../../modules/playback/README.md) (#929) so far. Module stories
+add theirs after the core, and the runtime also runs with no module at all.
+Without a [configuration file](#configuration), the runtime refuses each module
+that takes one, so the shipped runtime then runs the core alone, with the
+playback module `refused`. Nothing installs it yet; the cutover (#840) does.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
@@ -15,6 +18,16 @@ subscription: adding or removing a module is a code change in `src/modules.ts`.
 Each entry there is the module's factory, which creates it with its real device
 transport, or with its simulated one under `--simulate`. Each module's settings
 and secrets come from one private [configuration file](#configuration).
+
+A factory whose module takes a configuration also gives a `simulatedSection`:
+`{config, secrets?}`, the module's section for simulated runs without its
+`secrets` member, and the names of the secrets that section needs. A module that
+reads no secret, such as the playback module, omits `secrets`. One helper,
+`tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
+<file>}}`, with one private file holding the synthetic token for each declared
+name, and writes the configuration file. The `shipped` disposable run, the
+runtime's process tests and the maintenance journal test configure the shipped
+modules with it.
 
 ## Agent-session core
 
@@ -497,8 +510,8 @@ outside the runtime can read the spans, and a crash keeps those it had finished
 
 ## Memory
 
-`node apps/runtime/scripts/measure-memory.mjs` measures the shipped runtime, the
-core with no device module, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
+`node apps/runtime/scripts/measure-memory.mjs` measures the shipped runtime with
+no configuration file, so the core alone, with the playback module refused, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
 runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
@@ -620,7 +633,15 @@ The catalog holds:
   again;
 - a configured module, the sign, starting while its sign is offline, reporting
   it unavailable and showing its greeting once it is online;
-- a module whose configuration is invalid refused while the core runs on.
+- a module whose configuration is invalid refused while the core runs on;
+- the [playback module](../../modules/playback/README.md) (#929) following the
+  speaker the phone plays to: the HT-A9 alone, then the Move; a pause that
+  reaches the presented speaker only; a Move that goes silent mid-song, so the
+  record turns stale with its song kept and a command is refused `unavailable`,
+  with one degradation and one recovery logged; and a command the Move never
+  answers, `uncertain` in history and the inbox and never sent again. Time is
+  real in a disposable run, so the step to `unavailable` at 30 s is left to the
+  module's own tests.
 
 A seed's `config` gives configured modules their sections. Each harness writes
 them, as the installer would, into a private configuration file with a token

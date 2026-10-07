@@ -620,6 +620,14 @@ second background installation through the existing Tidbyt queue. The Windows co
 ([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36)) is deferred;
 if built, it becomes another source of the same module.
 
+In the new runtime ([ADR 0012](decisions/0012-bunny-event-platform.md)), the
+[playback module](../modules/playback/README.md)
+([#929](https://github.com/jimmie-potts/agent-device-hub/issues/929)) is that one
+owner. It keeps the Hub's rule, cadence and thresholds, publishes the presented
+source as the core `playback` record, and answers `playback-control` with a reply
+and an outcome. The Hub's copy serves the installed system until the cutover
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+
 ## Linux host handoff implementation
 
 The [host API and migration guide](../apps/hub/README.md) define the delivered

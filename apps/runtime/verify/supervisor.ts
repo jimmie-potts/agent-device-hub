@@ -16,11 +16,13 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
+import {simulatePlayback} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
@@ -54,8 +56,11 @@ const fixtures = run.runtime === 'fixtures';
 const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
+const speakers = new SimulatedSpeakers();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
+/** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
+const speakerCalls = new Map<string, AbortController>();
 const journal = new Journal();
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
@@ -144,6 +149,26 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       controller?.abort();
       return;
     }
+    case 'speaker.sony':
+    case 'speaker.sonos': {
+      const key = `${number} ${message.id}`;
+      const controller = new AbortController();
+      speakerCalls.set(key, controller);
+      const call = message.type === 'speaker.sony' ? speakers.sony('', message.method, message.version, controller.signal) :
+        speakers.sonos('', message.action, message.args, controller.signal);
+      call.then(
+        reply => { if (speakerCalls.delete(key)) tell(child, {type: 'speaker.replied', id: message.id, reply}); },
+        () => { if (speakerCalls.delete(key)) tell(child, {type: 'speaker.failed', id: message.id}); },
+      );
+      return;
+    }
+    case 'speaker.abandon': {
+      const key = `${number} ${message.id}`;
+      const controller = speakerCalls.get(key);
+      speakerCalls.delete(key);
+      controller?.abort();
+      return;
+    }
     case 'published':
       published.push({generation: number, message: message.message});
       return;
@@ -170,11 +195,13 @@ function spawnRuntime(): Promise<string> {
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
   child.once('exit', () => {
-    // A runtime that ended no longer waits on its shows.
-    for (const [key, controller] of shows) {
-      if (!key.startsWith(`${number} `)) continue;
-      shows.delete(key);
-      controller.abort();
+    // A runtime that ended no longer waits on its shows or its speakers' calls.
+    for (const waiting of [shows, speakerCalls]) {
+      for (const [key, controller] of waiting) {
+        if (!key.startsWith(`${number} `)) continue;
+        waiting.delete(key);
+        controller.abort();
+      }
     }
     died(number);
   });
@@ -357,6 +384,9 @@ async function simulate(request: SimulateRequest): Promise<boolean> {
       if (request.action === 'online') signs.online();
       else signs.offline();
       return true;
+    case 'playback':
+      simulatePlayback(speakers, request);
+      return true;
     case 'lamp':
       break;
   }
@@ -388,7 +418,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state()},
+        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state()},
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);
@@ -408,7 +438,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       return answer(response, 200, follow(evidence(), query.selector, query.limits));
     }
     case 'POST /simulate':
-      if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no simulated devices'));
+      if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run\'s devices are simulated inside the modules and cannot be driven from the harness'));
       await simulate(await body(request) as SimulateRequest);
       return answer(response, 200, {status: 'applied'});
     case 'POST /arm-crash':

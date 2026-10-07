@@ -4,7 +4,8 @@
 import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {EDGE_GRANTS_FILE} from '../src/index.js';
+import {EDGE_GRANTS_FILE, shippedModules, type ModuleFactory} from '../src/index.js';
+import {writeSimulatedConfiguration} from '../tests/fixtures/simulated.js';
 import {ROLES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {sourceOf, writeConfiguration} from '../tests/scenarios/parts.js';
 
@@ -13,13 +14,19 @@ export const RUN_SCHEMA = 'runtime-run/1.0';
 /** How a boundary negative control crosses its boundary. */
 export type Fault = 'real-transports' | 'installed-port' | 'default-state';
 /**
- * Which runtime a run starts: `shipped`, the runtime's own entry point with the shipped module list (empty today), or
+ * Which runtime a run starts: `shipped`, the runtime's own entry point with the shipped module list, or
  * `fixtures`, the same runtime with the fixture modules and families the scenario catalog uses.
  */
 export type RunRuntime = 'shipped' | 'fixtures';
 /** What the supervisor reads from the run's data directory. `config` is the run's configuration file, when it has one. */
 export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: ModuleName[]; fault?: Fault; config?: string};
-export type RunScenario = {description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']};
+/**
+ * `config` gives a catalog seed's sections; `simulated` configures each of those factories from its simulated section
+ * instead, as the shipped run does.
+ */
+export type RunScenario = {
+  description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
+};
 
 /** The run's state directory, which the runtime's `--state-dir` names: `<data>/state`. */
 export const stateDirOf = (dataDir: string): string => join(dataDir, 'state');
@@ -30,7 +37,11 @@ export const configDirOf = (dataDir: string): string => join(dataDir, 'config');
 
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
-  shipped: {description: 'The runtime\'s own entry point with the shipped module list: the core alone, with no device module', runtime: 'shipped', modules: []},
+  shipped: {
+    description: 'The runtime\'s own entry point with the shipped module list: the core and each device module, configured for its simulated devices',
+    // Each shipped module's simulated section (Hub #844, #929), so a run of the shipped list starts every module.
+    runtime: 'shipped', modules: [], simulated: shippedModules,
+  },
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}),
@@ -61,7 +72,8 @@ export const START_ONLY: readonly string[] = Object.keys(RUN_SCENARIOS).filter(n
 export async function seedRun(dataDir: string, name: string): Promise<void> {
   const scenario = RUN_SCENARIOS[name];
   if (scenario === undefined) throw new Error(`no run scenario ${name}`);
-  const config = scenario.config === undefined ? undefined : await writeConfiguration(configDirOf(dataDir), scenario.config);
+  const config = scenario.simulated !== undefined ? await writeSimulatedConfiguration(configDirOf(dataDir), scenario.simulated) :
+    scenario.config === undefined ? undefined : await writeConfiguration(configDirOf(dataDir), scenario.config);
   const run: RunFile = {
     schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}),
     ...(config === undefined ? {} : {config}),

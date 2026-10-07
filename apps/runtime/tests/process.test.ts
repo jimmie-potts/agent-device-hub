@@ -13,8 +13,9 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, parseArguments, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
+import {writeSimulatedConfiguration} from './fixtures/simulated.js';
 import {entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
@@ -50,15 +51,31 @@ async function launch(context: TestContext, script: string, args: readonly strin
 
 const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
 
-it('the shipped runtime starts with the core and zero device modules, serves health and stops cleanly on SIGTERM', async context => {
+/** Each shipped device module, which the shipped runtime refuses while no configuration gives it a section (Hub #919). */
+const UNCONFIGURED = shippedModules.slice(1).map(({name}) => ({
+  name, apiVersion: '1.1', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
+}));
+
+it('the shipped runtime starts the core, refuses each device module that has no configuration, serves health and stops cleanly on SIGTERM', async context => {
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)]);
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
-  assert.equal(body.status, 'ok');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0}]);
+  assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
+});
+
+it('the shipped runtime runs every shipped module with --simulate and each factory\'s simulated section', async context => {
+  const dir = await stateDir(context);
+  const config = await writeSimulatedConfiguration(join(dir, 'config'), shippedModules);
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', join(dir, 'state'), '--simulate', '--config', config]);
+  const {body} = await health(runtime.url);
+  assert.deepEqual(body.modules.map(module => [module.name, module.state]), shippedModules.map(({name}) => [name, 'running']));
+  assert.equal(body.status, 'ok');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
 });
 
 it('the entry point refuses missing or malformed arguments', async context => {
@@ -364,7 +381,9 @@ it('--config reads a private configuration file, and a file the runtime cannot t
     assert.equal(runtime.stdout(), '', `${file}: no ready line`);
   }
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
-  assert.equal((await health(runtime.url)).body.status, 'ok');
+  // The file names no module, so the core runs and each shipped device module is refused for want of its section.
+  assert.deepEqual((await health(runtime.url)).body.modules.slice(1), UNCONFIGURED);
+  assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running');
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
 });

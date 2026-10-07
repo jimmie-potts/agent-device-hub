@@ -5,10 +5,11 @@
 // that worker threads and the child's own child processes report too. A run adapter reads and drives the run through
 // the supervisor's loopback harness API, whose documents are below.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import type {SonosReply, SonyReply} from '@jimmie-potts/playback';
 import type {LogRecord} from '../src/index.js';
 import type {ChimeRing} from '../tests/fixtures/chime.js';
 import type {Indicator, Power} from '../tests/fixtures/lamp.js';
-import type {DeviceStates, Generational} from '../tests/scenarios/catalog.js';
+import type {DeviceStates, Generational, Simulation} from '../tests/scenarios/catalog.js';
 
 /** A control the supervisor sends a child, which the child acknowledges once applied. */
 export type Control = 'arm-crash' | 'lose-acknowledgment' | 'chime-fault';
@@ -21,6 +22,11 @@ export type ChildMessage =
   | {type: 'sign.show'; id: number; address: string; token: string; frame: string}
   /** The sign module's deadline for that show passed, so the simulated sign stops waiting. */
   | {type: 'sign.abandon'; id: number}
+  /** The playback module calls a simulated speaker (Hub #929): one Sony JSON-RPC call or one Sonos SOAP action. No address is sent. */
+  | {type: 'speaker.sony'; id: number; method: string; version: string}
+  | {type: 'speaker.sonos'; id: number; action: string; args: string}
+  /** The playback module's deadline for that call passed, or it stopped, so the simulated speaker stops waiting. */
+  | {type: 'speaker.abandon'; id: number}
   | {type: 'published'; message: Message}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
@@ -30,6 +36,8 @@ export type SupervisorMessage =
   | {type: 'lamp.failed'; id: number; detail: string}
   | {type: 'sign.shown'; id: number}
   | {type: 'sign.failed'; id: number}
+  | {type: 'speaker.replied'; id: number; reply: SonyReply | SonosReply}
+  | {type: 'speaker.failed'; id: number}
   | {type: 'control'; id: number; control: Control}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
@@ -77,4 +85,5 @@ export type DisconnectRequest = {source: string};
 export type SimulateRequest =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
   | {device: 'chime'; action: 'fault-next'}
-  | {device: 'sign'; action: 'online' | 'offline'};
+  | {device: 'sign'; action: 'online' | 'offline'}
+  | Extract<Simulation, {device: 'playback'}>;
