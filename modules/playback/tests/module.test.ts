@@ -256,7 +256,7 @@ test('over HTTP, each speaker is polled on its cadence without overlapping reads
   const records: unknown[] = [];
   await watcher.subscribe('bunny.state.playback.*', message => { records.push(message.data); });
   const stateDir = await mkdtemp(join(tmpdir(), 'playback-http-'));
-  const harness = new ModuleHarness(createPlaybackModule({transport: httpSpeakers(), pollMs: 20, timeoutMs: 200}), {
+  const harness = new ModuleHarness(createPlaybackModule({transport: httpSpeakers(), pollMs: 20, timeoutMs: 1000}), {
     bus, stateDir, section: {id: ID, sources: [{kind: 'sonos', endpoint: sonos.endpoint}, {kind: 'sony', endpoint: sony.endpoint}]},
   });
   context.after(async () => {
@@ -265,7 +265,9 @@ test('over HTTP, each speaker is polled on its cadence without overlapping reads
     await rm(stateDir, {recursive: true, force: true});
   });
   await harness.start();
-  await delay(300);
+  const polled = (): boolean => sony.calls.length >= 3 && sonos.calls.length >= 6 &&
+    records.some(record => (record as {availability?: unknown}).availability === 'available');
+  for (let waited = 0; !polled() && waited < 10_000; waited += 20) await delay(20);
   assert.ok(sony.calls.length >= 3, 'the Sony is polled again and again');
   assert.ok(sonos.calls.length >= 6, 'the Move is polled again and again');
   assert.equal(sony.peak(), 1, 'Sony reads never overlap');

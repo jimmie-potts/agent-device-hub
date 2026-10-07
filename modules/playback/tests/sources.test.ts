@@ -1,8 +1,11 @@
 // The Sony and Sonos sources over HTTP, against the old Hub's fake speakers on the loopback interface. Copied from
 // `apps/hub/tests/playback.test.mjs` at main 483d3a93 (Hub #175, #233; copied for Hub #929). The Hub's sources polled on
 // their own interval and reported into the shared module; here a source makes one read or one command, so each test reads
-// explicitly. The Hub's "reads poll on a timer without overlapping" tests moved to module.test.ts with the polling.
+// explicitly. The Hub's "reads poll on a timer without overlapping" tests moved to module.test.ts with the polling. Each
+// call has the module's own 1.5 s deadline rather than the Hub tests' 200 ms, which a loaded host can miss for a read
+// that does answer.
 import assert from 'node:assert/strict';
+import {CALL_TIMEOUT_MS} from '../src/module.js';
 import {Presentation} from '../src/playback.js';
 import {sonosSource} from '../src/sonos.js';
 import {sonySource} from '../src/sony.js';
@@ -22,7 +25,7 @@ const reporter = (source: SpeakerSource, presentation: Presentation) => async ()
 
 test('Sony AirPlay observations normalize metadata, status and controls', async () => {
   const sony = await fakeSony();
-  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(200));
+  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   try {
     assert.deepEqual(await source.read(), {status: 'playing', title: 'Song', artist: 'Artist', album: 'Album', controls: ['pause', 'next', 'previous']});
     assert.deepEqual(sony.calls[0], {path: '/sony/avContent', method: 'getPlayingContentInfo', id: sony.calls[0]?.id, params: [{output: ''}], version: '1.2'});
@@ -44,7 +47,7 @@ test('only successful Sony reads refresh freshness, which ages through stale to 
   const sony = await fakeSony();
   let clock = 1000;
   sony.set(() => ({error: [7, 'Illegal State']}));
-  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(200));
+  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const presentation = new Presentation(1, () => clock);
   const refresh = reporter(source, presentation);
   try {
@@ -85,7 +88,7 @@ test('only successful Sony reads refresh freshness, which ages through stale to 
 
 test('Sony commands call the qualified method once and report sent, failed or uncertain', async () => {
   const sony = await fakeSony();
-  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(200));
+  const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const commands = () => sony.calls.filter(call => call.method !== 'getPlayingContentInfo').map(call => [call.method, call.version, call.params]);
   try {
     assert.equal(await source.command('next'), 'sent');
@@ -104,7 +107,7 @@ const sonosCommands = (calls: readonly SonosCall[]): SonosCall[] => calls.filter
 
 test('Sonos AirPlay observations normalize metadata, status, session and controls', async () => {
   const sonos = await fakeSonos();
-  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(200));
+  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const view = () => source.read();
   try {
     assert.deepEqual(await view(), {status: 'playing', title: 'Move Song', artist: 'Move Artist', album: 'Move Album', controls: ['pause', 'next', 'previous']});
@@ -155,7 +158,7 @@ test('only complete Sonos reads refresh freshness', async () => {
   const sonos = await fakeSonos();
   let clock = 1000;
   sonos.set(() => ({status: 500, body: soapFault(701)}));
-  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(200));
+  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const presentation = new Presentation(1, () => clock);
   const refresh = reporter(source, presentation);
   try {
@@ -186,7 +189,7 @@ test('only complete Sonos reads refresh freshness', async () => {
 
 test('Sonos commands post one SOAP action and report sent, failed or uncertain', async () => {
   const sonos = await fakeSonos();
-  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(200));
+  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   try {
     assert.equal(await source.command('play'), 'sent');
     assert.equal(sonosCommands(sonos.calls).length, 1);
