@@ -2,7 +2,7 @@
 // disposable verification run reads from outside the runtime's process. It keeps the latest spans, like the in-memory
 // buffer, and says how many it let go.
 import assert from 'node:assert/strict';
-import {chmod, link, mkdir, readFile, readdir, stat, symlink, writeFile} from 'node:fs/promises';
+import {chmod, link, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {RuntimeError} from '../src/index.js';
 import {SPANS_FILE, SPANS_PREVIOUS_FILE, openSpanFile, readSpanFile} from '../src/span-file.js';
@@ -142,4 +142,118 @@ it('a file that grew past its bound is read only up to it, and says so', async c
   const read = readSpanFile(dir, {segmentBytes: 1024});
   assert.ok(read.lines.length < 200, 'not every line');
   assert.ok(read.truncated, 'and the read says it stopped');
+});
+
+it('a runtime that starts after a kill left no current segment, or an empty one, beside a previous one says the count of spans let go is unknown, never 0', async context => {
+  for (const damage of ['missing', 'empty'] as const) {
+    const dir = await stateDir(context);
+    const first = openSpanFile(dir, {segmentSpans: 3});
+    for (let index = 1; index <= 7; index += 1) first.sink(span(index));
+    first.close();
+    // The kill came after the current segment became the previous one and before the next one had its header.
+    await rename(join(dir, SPANS_FILE), join(dir, SPANS_PREVIOUS_FILE));
+    if (damage === 'empty') await writeFile(join(dir, SPANS_FILE), '', {mode: 0o600});
+    const second = openSpanFile(dir, {segmentSpans: 3});
+    second.sink(span(8));
+    second.close();
+    const read = readSpanFile(dir, {segmentSpans: 3});
+    assert.deepEqual(read.lines.map(idOf), [7, 8], damage);
+    assert.equal(read.evicted, undefined, `${damage}: unknown, which is not 0`);
+    // The unknown stays unknown through the rotations after it: the spans let go before it were never counted.
+    const third = openSpanFile(dir, {segmentSpans: 3});
+    for (let index = 9; index <= 14; index += 1) third.sink(span(index));
+    third.close();
+    assert.equal(readSpanFile(dir, {segmentSpans: 3}).evicted, undefined, `${damage}: still unknown after more rotations`);
+  }
+});
+
+it('a header that says the count is unknown is read as unknown', async context => {
+  const dir = await stateDir(context);
+  await writeFile(join(dir, SPANS_FILE), `${JSON.stringify({schema: 'runtime-spans/1.0', evicted: null})}\n${span(1)}\n`, {mode: 0o600});
+  const read = readSpanFile(dir);
+  assert.deepEqual([read.lines.map(idOf), read.evicted, read.unreadable], [[1], undefined, 0]);
+});
+
+it('the read starts again when the segments rotate between its two reads, so it never joins a stale previous segment to a new current one', async context => {
+  const dir = await stateDir(context);
+  const file = openSpanFile(dir, {segmentSpans: 3});
+  for (let index = 1; index <= 4; index += 1) file.sink(span(index));
+  // The previous segment holds 1 to 3 and the current one 4. A rotation after the read of the previous one makes the
+  // previous 4 to 6 and the current 7: a read that went on would hold 1 to 3 and 7.
+  let rotated = false;
+  const read = readSpanFile(dir, {segmentSpans: 3, betweenSegments: () => {
+    if (rotated) return;
+    rotated = true;
+    for (let index = 5; index <= 7; index += 1) file.sink(span(index));
+  }});
+  file.close();
+  assert.ok(rotated, 'the rotation happened between the reads');
+  assert.deepEqual(read.lines.map(idOf), [4, 5, 6, 7]);
+  assert.equal(read.evicted, 3, 'with the count that goes with them');
+});
+
+it('a previous segment that is a link, has a second hard link or can be read by others refuses the start, and nothing is created', async context => {
+  const cases = ['link', 'hard link', 'group-readable'] as const;
+  for (const kind of cases) {
+    const dir = await stateDir(context);
+    const previous = join(dir, SPANS_PREVIOUS_FILE);
+    if (kind === 'link') {
+      await writeFile(join(dir, 'elsewhere'), '', {mode: 0o600});
+      await symlink(join(dir, 'elsewhere'), previous);
+    } else {
+      await writeFile(previous, `${span(1)}\n`, {mode: 0o600});
+      if (kind === 'hard link') await link(previous, join(dir, 'other'));
+      else await chmod(previous, 0o644);
+    }
+    assert.throws(() => openSpanFile(dir), (error: unknown) => error instanceof RuntimeError && error.code === 'span-file-not-private', kind);
+    await assert.rejects(stat(join(dir, SPANS_FILE)), `${kind}: the current segment was not created`);
+  }
+});
+
+it('a failed rotation does not stop recording for good: a later span opens the segment again, and the spans that failed are lost, not hidden', async context => {
+  if (process.getuid?.() === 0) {
+    context.skip('a directory that cannot be written does not stop the root user');
+    return;
+  }
+  const dir = await stateDir(context);
+  const file = openSpanFile(dir, {segmentSpans: 3});
+  for (let index = 1; index <= 3; index += 1) file.sink(span(index));
+  await chmod(dir, 0o500);
+  try {
+    assert.throws(() => { file.sink(span(4)); }, 'the rotation cannot rename the segment');
+    assert.throws(() => { file.sink(span(5)); }, 'and the next span cannot either');
+  } finally {
+    await chmod(dir, 0o700);
+  }
+  file.sink(span(6));
+  file.sink(span(7));
+  file.close();
+  const read = readSpanFile(dir, {segmentSpans: 3});
+  assert.deepEqual(read.lines.map(idOf), [1, 2, 3, 6, 7], 'what came before and after is kept, and the lost spans are not');
+  assert.equal((await readdir(dir)).sort().join(), [SPANS_FILE, SPANS_PREVIOUS_FILE].join(), 'and no stray file is left');
+});
+
+it('a file closed on purpose stays closed, however many spans come after it', async context => {
+  const dir = await stateDir(context);
+  const file = openSpanFile(dir);
+  file.close();
+  assert.throws(() => { file.sink(span(1)); });
+  assert.throws(() => { file.sink(span(2)); });
+  assert.deepEqual(readSpanFile(dir).lines, []);
+});
+
+it('a segment that was renamed but could not be created is created by the next span, with the count that its rotation worked out', async context => {
+  const dir = await stateDir(context);
+  const file = openSpanFile(dir, {segmentSpans: 3});
+  for (let index = 1; index <= 3; index += 1) file.sink(span(index));
+  // A second hard link to the full segment: it becomes the previous segment, which the next one refuses to start beside.
+  await link(join(dir, SPANS_FILE), join(dir, 'other'));
+  assert.throws(() => { file.sink(span(4)); }, (error: unknown) => error instanceof RuntimeError && error.code === 'span-file-not-private');
+  assert.equal((await readdir(dir)).includes(SPANS_FILE), false, 'the rename was done, and there is no current segment');
+  await rm(join(dir, 'other'));
+  file.sink(span(5));
+  file.close();
+  const read = readSpanFile(dir, {segmentSpans: 3});
+  assert.deepEqual(read.lines.map(idOf), [1, 2, 3, 5], 'the span that failed is lost, and recording went on');
+  assert.equal(read.evicted, 0, 'with the count the rotation had worked out, not an unknown one');
 });
