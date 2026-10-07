@@ -397,8 +397,9 @@ it('a full queue refuses a command with capacity, and nothing it refused runs', 
 it('a bulb whose writer lease another holder has is unavailable and refuses commands, while the module runs', async () => {
   const world = await open({section: {bulbs: [{...PENDANT, address: '192.0.2.50'}]}});
   await world.harness.stop();
-  const lease = acquireLease(join(world.dir, 'lifx', 'leases'), '192.0.2.50');
-  assert.ok(lease, 'the test holds the bulb\'s lease');
+  const taken = acquireLease(join(world.dir, 'lifx', 'leases'), '192.0.2.50');
+  assert.equal(taken.status, 'held', 'the test holds the bulb\'s lease');
+  if (taken.status !== 'held') return;
   try {
     await world.start();
     await world.clock.advance(60_000);
@@ -410,7 +411,7 @@ it('a bulb whose writer lease another holder has is unavailable and refuses comm
     assert.equal(sync.status === 'synced' && (sync.copy.states()[0]?.data as DeviceRecord).availability, 'unavailable');
     if (sync.status === 'synced') await sync.copy.close();
   } finally {
-    lease.release();
+    taken.lease.release();
   }
   await world.restart();
   await world.clock.advance(1);

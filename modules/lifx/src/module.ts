@@ -23,7 +23,7 @@ import {
 } from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
 import {DEVICE_SCHEMA, LIFX_COLOR_SET_SCHEMA, LIFX_LIGHT_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, lifxValidator, OUTCOME_SCHEMA, type LifxLight} from './families.js';
-import {acquireLease, type Lease} from './lease.js';
+import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
 import {UdpTransport, type Hsbk} from './protocol.js';
 import {BulbQueue, type Attempt, type Observation, type Operation, type Reservation} from './queue.js';
 import type {LifxNetwork} from './simulated.js';
@@ -64,6 +64,13 @@ const QUALIFIED: Capabilities = {
   ...NO_CONTROLS, power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: [...NATIVE_MODES]},
 };
 
+/** How a refused lease shows: the diagnostic contract's reason in the start's record, and the refusal of each command. */
+const LEASE_REASONS: Readonly<Record<LeaseRefusal, {reason: 'busy' | 'unauthorized' | 'unavailable'; detail: string}>> = {
+  busy: {reason: 'busy', detail: 'another writer holds the bulb'},
+  'not-private': {reason: 'unauthorized', detail: 'the bulb\'s lease is not private'},
+  failed: {reason: 'unavailable', detail: 'the module could not open the bulb\'s lease'},
+};
+
 /** The real network: one UDP transport per configured address, on the LAN's unicast port 56700. */
 export const udpNetwork: LifxNetwork = {connect: address => new UdpTransport({address})};
 
@@ -87,6 +94,8 @@ type Bulb = {
   /** The bulb's queue: only for a qualified bulb whose lease the module holds. */
   readonly queue: BulbQueue | undefined;
   readonly lease: Lease | undefined;
+  /** Why the module could not take the bulb's lease, when it could not. */
+  readonly leaseRefusal: LeaseRefusal | undefined;
   availability: DeviceRecord['availability'];
   configurationRevision: number;
   mode: NativeMode | undefined;
@@ -266,14 +275,16 @@ class LifxRun {
     } catch (error) {
       this.#storageFailed(storageCode(error));
     }
-    const lease = acquireLease(leases, config.address);
-    if (lease === undefined) log.warn('operation.failed', {'bunny.device.id': config.id, 'bunny.operation': 'startup', 'bunny.reason': 'busy'});
+    const taken = acquireLease(leases, config.address);
+    const lease = taken.status === 'held' ? taken.lease : undefined;
+    const leaseRefusal = taken.status === 'refused' ? taken.reason : undefined;
+    if (leaseRefusal !== undefined) log.warn('operation.failed', {'bunny.device.id': config.id, 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[leaseRefusal].reason});
     const queue = isQualified && lease !== undefined ? new BulbQueue({
       transport: this.#options.transport.connect(config.address), timeoutMs: this.#config.timeoutMs, retries: this.#config.retries,
       maxPending: this.#config.maxPending, now: () => clock.now(), scheduler,
     }) : undefined;
     return {
-      config, qualified: isQualified, caps: config.status, queue, lease, availability: lease === undefined ? 'unavailable' : 'unknown',
+      config, qualified: isQualified, caps: config.status, queue, lease, leaseRefusal, availability: lease === undefined ? 'unavailable' : 'unknown',
       configurationRevision: row?.configurationRevision ?? 0, mode: isQualified ? row?.mode ?? config.initialMode ?? 'free' : undefined,
       shown: row?.shown, desired: {power: UNKNOWN, brightness: UNKNOWN}, observed: undefined, pending: new Map(), lastOutcome: undefined,
       lastTransmission: UNKNOWN, deviceRevision: this.#revision, lightRevision: this.#revision, readAtMs: undefined, probe: undefined,
@@ -407,7 +418,7 @@ class LifxRun {
       return errorBody('revision-conflict', {detail: 'the bulb\'s generation has moved on; read its record again'});
     }
     if (!this.#supports(bulb, family, data)) return errorBody('unsupported-capability', {detail: 'the bulb does not offer this operation'});
-    if (bulb.queue === undefined) return errorBody('unavailable', {detail: 'another writer holds the bulb'});
+    if (bulb.queue === undefined) return errorBody('unavailable', {detail: LEASE_REASONS[bulb.leaseRefusal ?? 'failed'].detail});
     if (this.#closing) return errorBody('unavailable', {detail: 'the LIFX module is stopping'});
     const reservation = bulb.queue.reserve();
     if (reservation === undefined) return errorBody('capacity', {detail: 'the bulb\'s queue is full'});
