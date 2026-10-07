@@ -61,7 +61,9 @@ authorized scope.
 ## Delivery and validation
 
 Follow docs/sdlc.md for authorized implementation/delivery. Use centrally
-installed code-review for review and writing-for-agents for instructions.
+installed code-review for review, with the axis questions in docs/sdlc.md
+"Review and merge" step 3 for a change that crosses a component boundary, and
+writing-for-agents for instructions.
 The catalog's deliver-work method is explicit-invocation only; use it when the
 user names it, while retaining this repository's delivery gates.
 Compose grill-with-docs for unsettled implementation-changing decisions and tdd
