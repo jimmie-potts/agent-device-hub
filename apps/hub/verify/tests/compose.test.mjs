@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -222,6 +222,22 @@ test('a composition counts as one run: it is refused beside a live run, and its 
   } finally {
     spawnSync('systemctl', ['--user', 'stop', `app-verify-start-claim-${w.tag}.service`]);
     await w.close();
+  }
+});
+
+// No skip: nothing here needs a user manager.
+test('a composition start that opted in says the core is not built, with exit 3, instead of an internal error', async () => {
+  const dir = await mkdtemp(join(shortTmp(), 'hn-'));
+  try {
+    // A copy of the orchestrator outside every checkout: @jimmie-potts/app-verify does not resolve from there.
+    for (const entry of await readdir(join(root, 'apps/hub/verify'), {withFileTypes: true})) {
+      if (entry.isFile() && entry.name.endsWith('.mjs')) await copyFile(join(root, 'apps/hub/verify', entry.name), join(dir, entry.name));
+    }
+    const child = spawnSync(process.execPath, [join(dir, 'compose.mjs'), 'start'], {cwd: dir, env: {...process.env, APP_VERIFY_SINGLE_RUN: '1'}, encoding: 'utf8'});
+    assert.equal(child.status, 3, child.stdout + child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim()), {operation: 'start', error: 'core-build-missing', detail: 'The verification core is not built; run npm run build from the repository root.'});
+  } finally {
+    await rm(dir, {recursive: true, force: true});
   }
 });
 

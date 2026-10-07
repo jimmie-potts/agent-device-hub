@@ -22,7 +22,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn, execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -961,6 +961,13 @@ export async function start(options, io) {
 
 /** @param {Progress} progress */
 async function holdSingleRun(progress) {
+  // As scripts/verify.mjs does: a core that is not built is `core-build-missing` with exit 3, not an internal error.
+  try {
+    await access(new URL(import.meta.resolve('@jimmie-potts/app-verify')));
+  } catch (error) {
+    if (!['ENOENT', 'ERR_MODULE_NOT_FOUND'].includes(/** @type {NodeJS.ErrnoException} */ (error).code ?? '')) throw error;
+    throw new ComposeFailure('core-build-missing', 'The verification core is not built; run npm run build from the repository root.', null, EXIT.unavailable);
+  }
   const {holdSingleRun: hold, SingleRunRefused} = await import('@jimmie-potts/app-verify');
   try {
     return await hold(progress);
