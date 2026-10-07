@@ -34,6 +34,7 @@ export const REFUSAL_CODES = {
   'runtime-root-unusable': 'invalid-state',
   'capture-in-progress': 'capacity',
   'receipt-locked': 'capacity',
+  'run-active': 'capacity',
   'lease-failed': 'unavailable',
   internal: 'internal',
 };
@@ -93,6 +94,8 @@ export async function sandbox({playwright, options: extra = {}} = {}) {
   await mkdir(join(base, 'tmp'));
   const env = {...process.env, TMPDIR: join(base, 'tmp'), APP_VERIFY_STATE_ROOT: stateRoot, APP_VERIFY_WINDOWS_CHECK: 'off'};
   delete env.APP_VERIFY_PROOF_ROOT;
+  // Tests start runs side by side on purpose; only a test of the one-run guard opts in (Hub #944).
+  delete env.APP_VERIFY_SINGLE_RUN;
   const proofRoot = join(repo, '.local/evidence/verify');
 
   /** Run one operation. `onSpawn` receives the child for interruption tests. */

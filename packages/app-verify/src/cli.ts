@@ -2,9 +2,10 @@ import {capture} from './capture.js';
 import {handoff} from './handoff.js';
 import {refusalBody} from './error-body.js';
 import {checkDeclarations, checkGiven, declaresInputs, parseInputs, resolveInputs} from './inputs.js';
-import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
+import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, noScenario, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
 import {LockedError} from './receipt.js';
 import {inspectPrerequisites} from './prerequisites.js';
+import {wantsSingleRun} from './single-run.js';
 import type {AppPlugin, RunOptions} from './types.js';
 import {APP_PATTERN, errorText} from './util.js';
 import {VERSION} from './version.js';
@@ -89,8 +90,8 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
       case 'start': {
         arity(positional, 0, operation);
         const name = flags['--scenario'] ?? plugin.defaultScenario;
-        if (!has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name}; see help`);
-        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given, {}, name)});
+        if (!has(plugin.scenarios, name)) throw new UsageError(noScenario(name));
+        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given, {}, name), single: wantsSingleRun(io.env)});
         break;
       }
       case 'prerequisites': {
@@ -105,7 +106,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
         break;
       case 'scenario':
         arity(positional, 2, operation);
-        if (!has(plugin.scenarios, positional[1])) throw new UsageError(`the fixtures define no scenario ${positional[1]}; see help`);
+        if (!has(plugin.scenarios, positional[1])) throw new UsageError(noScenario(positional[1]));
         outcome = await scenario(plugin, io, positional[0], positional[1], given);
         break;
       case 'capture':
@@ -114,7 +115,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
         break;
       case 'handoff':
         arity(positional, 1, operation);
-        if (flags['--reset'] !== undefined && !has(plugin.scenarios, flags['--reset'])) throw new UsageError(`the fixtures define no scenario ${flags['--reset']}; see help`);
+        if (flags['--reset'] !== undefined && !has(plugin.scenarios, flags['--reset'])) throw new UsageError(noScenario(flags['--reset']));
         outcome = await handoff(plugin, io, positional[0], flags['--reset']);
         break;
       case 'extend':

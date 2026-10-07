@@ -9,6 +9,7 @@ import {latestFrozen, recoverOnStop, uncommitted} from './handoff.js';
 import {declaresInputs, NAME, resolveInputs} from './inputs.js';
 import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
+import {runActiveDetail} from './single-run.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunInputs, type RunState} from './types.js';
 import {errorText, hex256, iso, loopback, newRunId, pause, redact, runIdPattern, UsageError, which} from './util.js';
@@ -34,6 +35,9 @@ export const INSTALLED_PORTS: readonly number[] = [8788, 8765, 8787, 8791, 41230
 export function has(record: Readonly<Record<string, unknown>>, key: string): boolean {
   return Object.hasOwn(record, key);
 }
+
+/** What a refusal says of a scenario name the adapter does not define. */
+export const noScenario = (name: string): string => `no scenario named ${name}; help lists the scenarios`;
 
 /** A lifecycle failure with a receipt cause. */
 export class Failure extends Error {
@@ -369,12 +373,23 @@ export interface StartOptions {
   restarts?: string;
   /** Resolved with `resolveInputs`. */
   inputs?: RunInputs;
+  /**
+   * Refuse with `run-active` while another run's unit is live on this host (Hub #944). Only the `start` operation
+   * sets it, when its wrapper opts in; `restart` replaces a run and never adds one.
+   */
+  single?: boolean;
 }
 
 export async function start(plugin: AppPlugin, io: Io, options: StartOptions): Promise<{code: number; receipt?: Receipt; value: Record<string, unknown>}> {
   const operation = {operation: 'start'};
   const supervisor = await systemd.supervisor();
   if (!supervisor.available) return {code: EXIT.unavailable, value: {...operation, state: 'failed', cause: 'supervisor-unavailable', detail: supervisor.reason}};
+  // A refusal, not a failed start: it comes before anything is created, so the line carries the error body and no run id.
+  if (options.single) {
+    const live = await systemd.liveRuns();
+    if (live === undefined) io.progress('could not list the host\'s run units; the one-run check was skipped');
+    else if (live.length) throw new Failure('run-active', runActiveDetail(live));
+  }
   let rootsFound: Roots;
   try {
     rootsFound = await resolveRoots(plugin, io.env);
@@ -577,7 +592,7 @@ export function reseedInputs(plugin: AppPlugin, receipt: Receipt, scenario: stri
 /** `given` replaces the recorded value of each input it names; the others are kept. */
 export async function scenario(plugin: AppPlugin, io: Io, runId: string | undefined, name: string | undefined, given: RunInputs = {}) {
   const run = await load(plugin, io, runId);
-  if (!name || !has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name ?? '(none)'}; see help`);
+  if (!name || !has(plugin.scenarios, name)) throw new UsageError(noScenario(name ?? '(none)'));
   const receipt = await requireRunning(run);
   const inputs = resolveInputs(plugin, given, receipt.inputs ?? {}, name);
   const result = await reseed(run, io, receipt, name, inputs);

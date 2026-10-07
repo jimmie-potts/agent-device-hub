@@ -490,7 +490,11 @@ Verification has three tiers.
    A `not satisfied` verdict blocks merge like the other axes. After a fix, the
    reviewer re-runs the affected scenarios on the new head. Run at most one
    Acceptance run at a time on this host, because memory is the constraint. A
-   composition counts as one run.
+   composition counts as one run. The wrappers above and the host route refuse
+   a `start` with `run-active` while any run is live on the host
+   ([one run at a time](app-verification.md#one-run-at-a-time)). Stop your own
+   run first. If the refusal names a run you did not start, wait for it or ask
+   its owner; do not stop it.
 
    A PR with no observable behavior skips this axis. It states "no observable
    behavior" and why, and the Standards reviewer checks the claim against the

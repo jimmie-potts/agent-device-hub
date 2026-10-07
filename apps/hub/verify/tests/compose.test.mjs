@@ -180,6 +180,48 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
   }
 });
 
+test('a composition counts as one run: it is refused beside a live run, and its own three runs start under the one-run guard', {skip, timeout: 480000}, async () => {
+  const w = await world();
+  try {
+    // Another session may have a run live, so the guard's unit listing is narrowed to this world's stand-in apps by a
+    // systemctl on PATH; every other call reaches the real one. A wrapper's package script sets the variable.
+    const real = spawnSync('sh', ['-c', 'command -v systemctl'], {encoding: 'utf8'}).stdout.trim();
+    const shims = join(w.base, 'shims');
+    await mkdir(shims);
+    await writeFile(join(shims, 'systemctl'), `#!/bin/sh\nn=$#\ni=0\nwhile [ "$i" -lt "$n" ]; do\n  a=$1; shift; i=$((i+1))\n  [ "$a" = 'app-verify-*.service' ] && a='app-verify-${w.tag}-*.service'\n  set -- "$@" "$a"\ndone\nexec ${real} "$@"\n`, {mode: 0o755});
+    Object.assign(w.env, {APP_VERIFY_SINGLE_RUN: '1', PATH: `${shims}:${process.env.PATH}`});
+    const alone = (...args) => spawnSync(process.execPath, ['scripts/verify.mjs', ...args], {cwd: w.nanoleaf.checkout, env: w.env, encoding: 'utf8'});
+    const lone = alone('start', '--lease', '5');
+    assert.equal(lone.status, 0, lone.stderr);
+    const liveRun = JSON.parse(lone.stdout.trim()).runId;
+    const refused = await w.start();
+    assert.equal(refused.code, 1, JSON.stringify(refused.result));
+    assert.deepEqual(Object.keys(refused.result).sort(), ['detail', 'error', 'operation'], 'the composition keeps its own 1.x refusal line');
+    assert.equal(refused.result.operation, 'start');
+    assert.equal(refused.result.error, 'run-active');
+    assert.match(refused.result.detail, new RegExp(`${liveRun}\\b`), 'the refusal names the live run');
+    assert.deepEqual((await readdir(join(w.base, 'p'))).filter(name => name.startsWith('compose-')), [], 'no composition was recorded');
+    assert.ok(w.units().split('\n').every(line => line.startsWith(`app-verify-${liveRun}`)), 'no unit but the live run\'s exists');
+    assert.equal(alone('stop', liveRun).status, 0);
+
+    // With nothing live, the composition starts its three runs. They do not inherit the variable: the second would be
+    // refused for the first, and the Hub's real wrapper reads it too.
+    const started = await w.start();
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const members = (await w.composition(id)).services.map(s => s.runId);
+    assert.equal(members.length, 3);
+    const beside = await w.start();
+    assert.equal(beside.code, 1, JSON.stringify(beside.result));
+    assert.equal(beside.result.error, 'run-active');
+    for (const runId of members.slice(0, 2)) assert.match(beside.result.detail, new RegExp(`${runId}\\b`), 'a second composition is refused, naming the first one\'s runs');
+    assert.equal((await w.run('doctor', id)).code, 0, 'the first composition is untouched');
+    assert.equal((await w.run('stop', id)).code, 0);
+  } finally {
+    await w.close();
+  }
+});
+
 test('a composition pairs three runs, is ready across the boundaries, survives a consumer loss without replay, and stops the Hub first', {skip, timeout: 480000}, async () => {
   const w = await world();
   try {

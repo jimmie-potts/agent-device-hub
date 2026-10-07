@@ -33,6 +33,7 @@ export const REFUSAL_CODES: Readonly<Record<string, RefusalCode>> = Object.freez
   'runtime-root-unusable': 'invalid-state',
   'capture-in-progress': 'capacity',
   'receipt-locked': 'capacity',
+  'run-active': 'capacity',
   'lease-failed': 'unavailable',
   internal: 'internal',
 });

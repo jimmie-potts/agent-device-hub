@@ -1,7 +1,7 @@
 // The only place the core talks to systemd. Everything is addressed by unit name;
 // nothing is found or killed by port, process name or remembered PID.
 import {readFile} from 'node:fs/promises';
-import {exec, pause, which} from './util.js';
+import {ANY_RUN_ID, exec, pause, which} from './util.js';
 
 /** Manager states that accept transient units; the same list the docs give. */
 export const USABLE_MANAGER_STATES = ['running', 'degraded', 'starting', 'initializing'];
@@ -79,6 +79,28 @@ export async function listUnits(prefix: string): Promise<string[] | undefined> {
   const result = await exec('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', '--no-pager', `${prefix}*`], {timeoutMs: 10000});
   if (result.code !== 0) return undefined;
   return result.stdout.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(prefix));
+}
+
+/** A run's own service, `app-verify-<run id>.service`. A lease timer or its service, a thaw timer and the host route's command unit never match. */
+const RUN_SERVICE = /^app-verify-(.+)\.service$/;
+
+/**
+ * The run ids whose service unit is live on this host, whichever app started them: a process is running, or is
+ * starting (Hub #944). A unit that failed, exited or was collected is not live, and neither is one that is stopping.
+ * `undefined` when systemctl cannot list units.
+ */
+export async function liveRuns(): Promise<string[] | undefined> {
+  const result = await exec('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', '--no-pager', 'app-verify-*.service'], {timeoutMs: 10000});
+  if (result.code !== 0) return undefined;
+  const runs: string[] = [];
+  for (const line of result.stdout.split('\n')) {
+    // UNIT LOAD ACTIVE SUB DESCRIPTION
+    const [unit = '', load, active, sub] = line.trim().split(/\s+/);
+    const runId = RUN_SERVICE.exec(unit)?.[1];
+    if (runId === undefined || !ANY_RUN_ID.test(runId) || load !== 'loaded') continue;
+    if ((active === 'active' && sub === 'running') || active === 'activating') runs.push(runId);
+  }
+  return runs.sort();
 }
 
 export interface ServiceSpec {

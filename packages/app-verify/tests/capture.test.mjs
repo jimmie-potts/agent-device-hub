@@ -87,6 +87,27 @@ test('a stateful step passes with screenshot, video and assertion log; known-wro
   }
 });
 
+test('a capture refuses a run whose unit is not the process its receipt recorded, and says which part differs', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const path = join(box.proofRoot, runId, 'receipt.json');
+    const original = await readFile(path, 'utf8');
+    const tampered = JSON.parse(original);
+    tampered.owned.mainPid += 1;
+    await writeFile(path, JSON.stringify(tampered));
+    const refused = await box.cli(['capture', runId, 'count-twice']);
+    assert.equal(refused.code, 1, refused.stderr);
+    assertRefusal(refused.result, 'run-not-running');
+    assert.equal(refused.result.detail, `app-verify-${runId}.service does not match the receipt's process identity`);
+    assert.equal(await readFile(path, 'utf8'), JSON.stringify(tampered), 'a refused capture leaves the receipt as found');
+    await writeFile(path, original);
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
 test('an interrupted capture is failed, never passed', {skip}, async () => {
   const box = await sandbox();
   try {

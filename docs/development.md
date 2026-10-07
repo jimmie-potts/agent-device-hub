@@ -1918,6 +1918,10 @@ Hub #494 implements the lifecycle once in the private workspace package
 consume through one plug-in each. Use Node 24 from the worktree root and run
 `npm run build`, `npm run typecheck` (which also type-checks the package's
 caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
+The `verify`, `verify:compose`, `verify:chompi` and `verify:runtime` scripts set
+`APP_VERIFY_SINGLE_RUN=1`, so a second `start` beside a live run is refused
+([one run at a time](app-verification.md#one-run-at-a-time)); the test suites
+do not set it.
 `npm run -s verify -- prerequisites` is the Hub's read-only local inspection;
 it never qualifies launch, capture or Windows browser handoff. Pinned Nanoleaf
 and Pixoo adapters remain on core 1.1.0 and report the operation unsupported.
@@ -1944,6 +1948,9 @@ The suite has two parts:
   `tests/error-body.test.mjs` checks the shared error body on each refusal
   that needs no run, and checks every body against
   `@jimmie-potts/event-contracts`' `errorBody` (Hub #921).
+  `tests/single-run.test.mjs` checks the one-run guard's refusal wording
+  against the README's example, and that a guarded `start` without a user
+  manager still exits 3 (Hub #944).
 - **Only on a host with a user manager** (`systemctl --user
   is-system-running` answering `running`, `degraded`, `starting` or
   `initializing`): every lifecycle test. These start real transient units
@@ -1954,7 +1961,10 @@ The suite has two parts:
   proof, attachments, interrupted captures, receipt-less stop and a stop
   retried after `receipt-locked`, and, for 1.1, inputs kept across every
   relaunch, scenario-specific inputs, redacted failure details and extra
-  endpoints (`tests/endpoints.test.mjs`). Without a
+  endpoints (`tests/endpoints.test.mjs`), and the one-run guard: a second
+  `start` with `APP_VERIFY_SINGLE_RUN=1` is refused beside a live run of any
+  app and leaves that run untouched, while failed units, stray timers and the
+  host route's command unit never block it. Without a
   manager they skip, each with the printed reason, unless
   `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
   records them from the owner's WSL host.
@@ -2018,7 +2028,9 @@ Hub #495 composes one preview from the three adapters with
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
 adapters in disposable pinned Git checkouts and skip without a user manager,
-as in the App verification CI job. The safety-thaw cases also change a run's own lease
+as in the App verification CI job. They also check that a composition is
+refused beside a live run and starts its own three runs under the one-run
+guard (Hub #944). The safety-thaw cases also change a run's own lease
 without updating the composition, expire it during a freeze, and verify stop
 removes the timer and service after an interrupted injection.
 `apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command

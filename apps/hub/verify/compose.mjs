@@ -69,7 +69,7 @@ export class ComposeFailure extends Error {
 /**
  * @typedef {Readonly<Record<string, string | undefined>>} Env
  * @typedef {(line: string) => void} Progress
- * @typedef {{env: Env, progress: Progress, hubRoot?: string}} Io
+ * @typedef {{env: Env, progress: Progress, hubRoot?: string, singleRun?: boolean}} Io
  * @typedef {{id: string, outcome: 'passed' | 'failed', detail?: string}} Check
  * @typedef {{code: number, value: Record<string, unknown>}} Outcome
  */
@@ -552,6 +552,14 @@ async function startUnlocked(options, io) {
   }
   const manager = await supervisor();
   if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason ?? 'no usable user manager', null, EXIT.unavailable);
+  // Hub #944: a composition is one run, so it is refused beside any live run before anything is created. Its own runs
+  // start without the variable (see runCompose), or the second of them would be refused for the first.
+  if (io.singleRun) {
+    const {liveRuns, runActiveDetail} = await import('@jimmie-potts/app-verify');
+    const live = await liveRuns();
+    if (live === undefined) progress('could not list the host\'s run units; the one-run check was skipped');
+    else if (live.length) throw new ComposeFailure('run-active', runActiveDetail(live));
+  }
   // Identity before anything is created: each checkout clean at its pin, unless explicitly unpinned.
   /** @type {string[]} */
   const mismatches = [];
@@ -1347,9 +1355,14 @@ export async function runCompose(argv, options = {}) {
     const root = await proofRoot(env, options.hubRoot).catch(() => undefined);
     if (root) env = {...env, APP_VERIFY_PROOF_ROOT: root};
   }
+  // Hub #944: APP_VERIFY_SINGLE_RUN=1 opts this composition in. It is consumed here and never passed on: each run the
+  // composition starts goes through its own wrapper, and the composition counts as one run.
+  const {APP_VERIFY_SINGLE_RUN: single, ...passed} = env;
+  env = passed;
+  const singleRun = single === '1';
   const stdout = options.stdout ?? (/** @param {string} line */ line => void process.stdout.write(line + '\n'));
   const progress = options.stderr ?? (/** @param {string} line */ line => void process.stderr.write(line + '\n'));
-  const io = {env, progress, hubRoot: options.hubRoot};
+  const io = {env, progress, hubRoot: options.hubRoot, singleRun};
   let operation = argv[0] ?? 'help';
   try {
     const parsed = parse(argv);

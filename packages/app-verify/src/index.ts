@@ -2,6 +2,8 @@ export * from './types.js';
 export {runCli} from './cli.js';
 export {inspectPrerequisites, prerequisitesSupport} from './prerequisites.js';
 export {validateReceipt} from './receipt.js';
+export {runActiveDetail} from './single-run.js';
+export {liveRuns} from './systemd.js';
 export {runCaptureStep} from './capture.js';
 export {createProofHandler, proofLinks, PROOF_PREFIX, type ProofHandler, type ProofLink} from './proof.js';
 

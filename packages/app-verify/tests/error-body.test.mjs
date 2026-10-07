@@ -1,6 +1,7 @@
 // The shared 2.0 error body on refusal lines (Hub #921, ADR 0012). A refusal keeps its 1.x `error` and `detail`
 // and adds `errorBody`. Nothing here needs a user manager, so every test runs in CI too.
 import assert from 'node:assert/strict';
+import {existsSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -113,7 +114,18 @@ test('an invalid receipt, a run that is not running and an unusable root are ref
       const refused = await box.cli(args);
       assert.equal(refused.code, 1, args.join(' '));
       assertRefusal(refused.result, 'run-not-running');
+      // `handoff` has its own wording: the run is not serving a preview.
+      if (args[0] !== 'handoff') assert.equal(refused.result.detail, `${runId} is stopped`, `${args.join(' ')} says what state the run is in`);
     }
+    // A receipt that says running while its unit is gone: the refusal names the unit, not "the receipt".
+    await writeReceipt(box, receiptFor(box, 'running'));
+    for (const args of [['extend', runId], ['capture', runId, 'count-twice']]) {
+      const gone = await box.cli(args);
+      assert.equal(gone.code, 1, args.join(' '));
+      assertRefusal(gone.result, 'run-not-running');
+      assert.equal(gone.result.detail, `app-verify-${runId}.service is not active`, `${args.join(' ')} names the unit that is not active`);
+    }
+    await writeReceipt(box, stopped);
 
     const runtime = await box.cli(['extend', runId], {extraEnv: {APP_VERIFY_STATE_ROOT: join(box.repo, 'state')}});
     assert.equal(runtime.code, 1);
@@ -121,6 +133,24 @@ test('an invalid receipt, a run that is not running and an unusable root are ref
     const proof = await box.cli(['extend', runId], {extraEnv: {APP_VERIFY_PROOF_ROOT: join(box.repo, 'proof')}});
     assert.equal(proof.code, 1);
     assertRefusal(proof.result, 'proof-root-unusable');
+  } finally {
+    await box.close();
+  }
+});
+
+test('an unknown scenario is refused by name, and the message points at help', async () => {
+  const box = await sandbox();
+  try {
+    const runId = `${box.app}-${RUN}`;
+    for (const args of [['start', '--scenario', 'nope'], ['scenario', runId, 'nope'], ['handoff', runId, '--reset', 'nope']]) {
+      const refused = await box.cli(args);
+      assert.equal(refused.code, 2, args.join(' '));
+      assertRefusal(refused.result, 'usage');
+      assert.equal(refused.result.detail, 'no scenario named nope; help lists the scenarios', args.join(' '));
+    }
+    const help = await box.cli(['help']);
+    assert.ok(Object.hasOwn(help.result.scenarios, 'reference'), 'help lists the scenarios the message points at');
+    assert.equal(existsSync(box.proofRoot), false, 'a usage refusal creates nothing');
   } finally {
     await box.close();
   }

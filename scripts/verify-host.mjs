@@ -70,8 +70,9 @@ export async function prepare(argv) {
   const token = randomUUID();
   const temporary = join(ownerRoot, '.local/scratch', `vh-${token.slice(0, 8)}`);
   if (Buffer.byteLength(temporary) > 70) throw new Error('launcher checkout path is too long for browser temporary sockets; use a shorter canonical checkout');
+  // APP_VERIFY_SINGLE_RUN=1 makes a `start` refuse while another run is live on this host (Hub #944), as the npm scripts do.
   const hostEnv = {HOME: home, PATH: path, LANG: 'C.UTF-8', XDG_RUNTIME_DIR: runtime, DBUS_SESSION_BUS_ADDRESS: bus,
-    TMPDIR: temporary, npm_config_cache: join(home, '.npm'), PLAYWRIGHT_BROWSERS_PATH: join(home, '.cache/ms-playwright')};
+    TMPDIR: temporary, npm_config_cache: join(home, '.npm'), PLAYWRIGHT_BROWSERS_PATH: join(home, '.cache/ms-playwright'), APP_VERIFY_SINGLE_RUN: '1'};
   if (options['--python']) hostEnv.PYTHON = options['--python'];
   const clientEnv = {HOME: home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', DBUS_SESSION_BUS_ADDRESS: bus};
   return {app, checkout, operation: args[0], unit: `app-verify-command-${token}.service`, temporary, token, helper,
