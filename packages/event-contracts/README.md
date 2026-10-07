@@ -300,11 +300,10 @@ the hold:
   device. That operation's outcome is `uncertain` with `uncertain-result`, and
   the tracker and the operation's one inbox item carry the same request ID.
   `heldAtMs` is when the hold began.
-- **How it clears.** The module releases the hold after a person's later
+- **How it clears.** The module releases the hold after a person's next
   command to the device, or once a later definitive outcome settles the held
-  operation, and its next record has no `held`. Each module's README names its
-  release. No command releases a hold by itself; a person releases one through
-  a command to the device.
+  operation. Its next record has no `held`. Each module's README names the
+  commands that release a hold; no command family exists only for that.
 - **Availability.** A held device is never `available`: it is `degraded` while
   it answers, `unavailable` while it does not, and `unknown` before it has
   answered. The checks refuse a held `available` record and a hold that begins
