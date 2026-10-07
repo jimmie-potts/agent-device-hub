@@ -5,11 +5,14 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {afterEach} from 'node:test';
+import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {InProcessBus} from '@jimmie-potts/sdk';
+import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {LifxLight} from '../src/index.js';
-import {PACKET, PROBE_FIRST_MS, READ_INTERVAL_MS, SimulatedLifx} from '../src/index.js';
+import {createLifxModule, PACKET, PROBE_FIRST_MS, READ_INTERVAL_MS, SimulatedLifx} from '../src/index.js';
 import {acquireLease} from '../src/lease.js';
-import {BEAM, command, flush, it, PENDANT, shownColor, World} from './support.js';
+import {BEAM, command, flush, it, PENDANT, SECTION, shownColor, World} from './support.js';
 
 const worlds: World[] = [];
 async function open(options: Parameters<typeof World.open>[0] = {}): Promise<World> {
@@ -247,6 +250,30 @@ it('after a crash, a command still waiting for its bulb is reported failed with 
     requestId: 'req-waiting', result: 'failed', evidence: 'none',
     error: {code: 'cancelled', retryable: false, detail: 'the runtime stopped before the command reached the bulb'},
   });
+});
+
+it('a second instance on the same state directory leaves the live instance\'s commands to it', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-live'}));
+  // A second instance starts on the same state directory, on a bus of its own, while the write is in flight.
+  const bus = new InProcessBus({now: world.clock.now, scheduler: world.clock.scheduler});
+  const seen: Message[] = [];
+  const watcher = bus.connect('bunny/test/second');
+  await watcher.subscribe('bunny.*.*.*', message => { seen.push(message); });
+  const second = new ModuleHarness(createLifxModule({transport: world.network}), {
+    bus, stateDir: world.dir, clock: {now: world.clock.now}, scheduler: world.clock.scheduler, section: SECTION,
+  });
+  await second.start();
+  await world.clock.advance(1);
+  assert.deepEqual(seen.filter(message => message.kind === 'outcome').map(message => message.data), [], 'the second instance reported none of the live one\'s commands');
+  await second.stop();
+  await watcher.close();
+  await world.clock.advance(5000);
+  assert.equal(world.outcomes('req-live').length, 1, 'the live instance reports its own command, once');
+  assert.equal(outcome(world, 'req-live')?.result, 'uncertain');
+  assert.deepEqual(second.failures, []);
 });
 
 it('a store that cannot record the work before its write fails the command with no effect', async () => {

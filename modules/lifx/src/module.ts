@@ -545,13 +545,15 @@ class LifxRun {
 
   /**
    * Reports, at start, each command a stop or a crash left without a stored outcome: `uncertain` when its write may have
-   * begun, and `failed` with `cancelled` when the records prove it never did. None runs again.
+   * begun, and `failed` with `cancelled` when the records prove it never did. None runs again. Only the commands of bulbs
+   * whose lease this instance holds are its to report: another instance on the same state directory that holds a bulb's
+   * lease still has that bulb's commands in hand, and reports them itself.
    */
   async #settle(): Promise<void> {
     const {store} = this;
     let rows;
     try {
-      rows = store.unfinished();
+      rows = store.unfinished().filter(row => this.#bulbs.get(row.bulb)?.lease !== undefined);
     } catch (error) {
       this.#storageFailed(storageCode(error));
       return;
