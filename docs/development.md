@@ -794,8 +794,9 @@ describes the catalog and how a story adds to it.
 Hub #920 adds the runtime adapter for the
 [app verification contract](app-verification.md),
 `npm run -s verify:runtime -- <operation>`. A run serves the runtime from the
-checkout with `--simulate` and `--edge`, either with the shipped module list or
-with the fixture modules, over simulated devices, on loopback. The
+checkout with `--simulate`, `--edge` and `--environment test`, either with the
+shipped module list or with the fixture modules, over simulated devices, on
+loopback. The
 [adapter README](../apps/runtime/verify/README.md) lists its run scenarios,
 capture steps and boundary checks. After `npm run build`, with Node 24 from the
 worktree root:

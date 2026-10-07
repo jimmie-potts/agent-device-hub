@@ -21,11 +21,12 @@
 
 ## 5. Launch files, after #920
 
-- [ ] 5.1 Rebase onto #920. Add `--environment`, pass the environment and the process's resource to every writer and the watchdog, write `runtime.ready` beside the stdout ready line, and report dropped and failed counts in `runtime.stopped`.
-- [ ] 5.2 Register #920's edge records and attributes, without the edge's free-text detail; replace `bunny.url` with a registered port attribute.
+- [x] 5.1 Rebase onto #920. Add `--environment`, pass the environment and the process's resource to every writer and the watchdog, write `runtime.ready` beside the stdout ready line, and report dropped and failed counts in `runtime.stopped`; verification runs pass `--environment test`.
+- [x] 5.2 Register #920's edge events and attributes; replace `bunny.url` with `server.port` and the meaning sentence in `bunny.reason` with the code's registered reason, and keep the edge's detail out. Add fixtures for the grant codes, the edge records and their negative controls.
+- [x] 5.3 Make `build-current` watch the contract's sources and outputs; `test:runtime:verify:built` passes with the user bus hidden (17 pass, 2 skipped) and with the user manager (19 pass), and leaves no unit.
 
 ## 6. Docs, validation and archive
 
 - [x] 6.1 Update the contract, the observability, runtime, SDK, maintenance and Pixoo READMEs, and `docs/development.md`.
-- [ ] 6.2 Negative controls: an unregistered event, a raw message in a record, a missing resource field, a module logging under the wrong scope, and the kit check removed.
-- [ ] 6.3 Run the gate from a fresh build, validate this change with `--strict`, then sync and archive it.
+- [x] 6.2 Negative controls, each reverted: writing what the contract refused fails 2 runtime tests; registering `error.message` fails 2 Node, 1 Python and 1 runtime test; a resource without its fields fails 8 runtime tests; module records under `bunny.runtime` fail 4 runtime tests, and dropping the schema's `bunny.runtime` rule fails 2 Node tests and 1 Python test; removing the kit check fails 2 kit tests; a sink failure that reaches the caller fails 3 tests; the meaning sentence in `bunny.reason` fails 1 edge test; ignoring `--environment` fails 2 process tests.
+- [x] 6.3 Run the gate from a fresh build, validate this change with `--strict`, then sync and archive it.

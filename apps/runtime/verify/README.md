@@ -11,7 +11,7 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 
 | Part | Kind | What it is |
 | --- | --- | --- |
-| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge` and the run's state directory: the shipped module list, or the fixture modules |
+| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test` and the run's state directory: the shipped module list, or the fixture modules |
 | SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
 | Fixture modules | simulated | The stand-in core (session owner, history and inbox until #831, #782 and #923), the fixture lamp and chime, and a harness module that reports what the bus publishes |
 | Devices | simulated | `SimulatedLamps` and `SimulatedChime`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |

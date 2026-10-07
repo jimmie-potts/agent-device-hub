@@ -9,7 +9,8 @@ import {
   MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type EdgeLogRecord, type Scheduler,
 } from '@jimmie-potts/sdk';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type RuntimeLogger} from './log.js';
+import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type RuntimeLogger} from './log.js';
+import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {RuntimeError, prepareStateDirectory, readEdgeGrants, type EdgeGrant} from './state.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
@@ -48,6 +49,8 @@ export type RuntimeOptions = {
   log?: LogSink;
   /** The lowest level written. Defaults to `info`. */
   logLevel?: LogLevel;
+  /** Every record's `deployment.environment.name`. Defaults to `development`. */
+  environment?: Environment;
   /** How long a module's start may take before the module fails. Defaults to 10 s. */
   startTimeoutMs?: number;
   /** How long a module's participant close and stop may take. Defaults to 5 s. */
@@ -140,17 +143,31 @@ function close(server: Server): Promise<void> {
 const EDGE_ROUTES: ReadonlySet<string> = new Set(['stream', 'publish', 'subscribe', 'request', 'respond', 'reply', 'sync', 'serve', 'answer', 'close']);
 
 /**
+ * Each 2.0 registry code's fixed meaning as the diagnostic contract's registered `bunny.reason`. `internal` has none;
+ * its record carries only the code. A test keeps this in step with the registry and the catalog.
+ */
+export const REGISTRY_REASONS: Readonly<Record<string, string | undefined>> = {
+  'invalid-request': 'invalid-input', 'invalid-message': 'invalid-input', 'too-large': 'oversize', 'unsupported-version': 'unsupported-version',
+  'unknown-schema': 'invalid-input', 'unsupported-capability': 'invalid-input', 'unauthenticated': 'unauthorized', 'forbidden': 'unauthorized',
+  'not-found': 'invalid-input', 'invalid-state': 'invalid-input', 'revision-conflict': 'stale', 'duplicate-conflict': 'duplicate',
+  'expired': 'timeout', 'cancelled': 'cancelled', 'capacity': 'busy', 'unavailable': 'unavailable', 'uncertain-result': 'transport-error',
+  'internal': undefined,
+};
+
+/**
  * The edge's records in the runtime's log. As the diagnostic contract requires, a record holds no raw message: a refusal
- * carries its registry code and that code's fixed meaning, never the edge's detail, which may quote what the caller sent
- * or an exception's message. A route that is not one of the edge's is `other`. The source is a granted one, and no record
- * carries a credential.
+ * carries its registry code and that code's fixed meaning as a registered reason, never the edge's detail, which may
+ * quote what the caller sent or an exception's message. A route that is not one of the edge's is `other`. The source is
+ * a granted one, and no record carries a credential.
  */
 function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
   return ({event, route, code, source}) => {
-    const known = code !== undefined && Object.hasOwn(errorCodes, code) ? code : code === undefined ? undefined : 'internal';
+    const known = code === undefined ? undefined : Object.hasOwn(errorCodes, code) ? code : 'internal';
+    const reason = known === undefined ? undefined : REGISTRY_REASONS[known];
     const fields = {
       'bunny.route': EDGE_ROUTES.has(route) ? route : 'other',
-      ...(known === undefined ? {} : {'bunny.code': known, 'bunny.reason': errorCodes[known]?.meaning ?? ''}),
+      ...(known === undefined ? {} : {'bunny.code': known}),
+      ...(reason === undefined ? {} : {'bunny.reason': reason}),
       ...(source === undefined ? {} : {'bunny.source': source}),
     };
     switch (event) {
@@ -184,8 +201,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
-  const logs = new LogWriter(options.log ?? stderrSink, options.logLevel ?? 'info', clock);
-  const log = logs.logger('bunny.runtime');
+  const logs = new LogWriter(options.log ?? stderrSink, options.logLevel ?? 'info', clock, runtimeResource(options.environment ?? 'development', INSTANCE_ID));
+  const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
   const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
@@ -206,7 +223,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   let edge: EdgeRoute = {state: grants === undefined ? 'off' : 'starting'};
   const server = await serve(port, health, () => edge);
-  const url = `http://${HOST}:${(server.address() as AddressInfo).port}`;
+  const bound = (server.address() as AddressInfo).port;
+  const url = `http://${HOST}:${bound}`;
   let watchdog: Watchdog | undefined;
   if (options.lagCheck !== undefined) {
     const {limitMs, worker} = options.lagCheck;
@@ -218,10 +236,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
         lagCheck = {status: 'stopped', limitMs};
         log.error('runtime.watchdog.stopped', {'bunny.exit_code': exitCode});
       },
-    }, worker);
+    }, worker, logs.resource);
   }
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
-  log.info('runtime.started', {'bunny.url': url, 'bunny.modules': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
+  // A record carries the listener's port, never its URL.
+  log.info('runtime.started', {'server.port': bound, 'bunny.modules': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
   await host.start();
   if (grants !== undefined && validator !== undefined) {
     let mounted: RemoteEdge;
@@ -234,7 +253,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
     }
     edge = {state: 'serving', edge: mounted};
-    log.info('runtime.edge.serving', {'bunny.url': url, 'bunny.grants': grants.length});
+    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grants': grants.length});
     options.edge?.onServing?.(mounted);
   }
   let stopping: Promise<void> | undefined;
@@ -249,7 +268,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       if (serving.state === 'serving') await serving.edge.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
-      log.info('runtime.stopped');
+      // The records this runtime's writer dropped or its sink lost, so the journal shows the loss.
+      const {dropped, failed} = logs.counts();
+      log.info('runtime.stopped', {'bunny.telemetry.dropped_count': dropped, 'bunny.telemetry.failure_count': failed});
     })(),
   };
 }

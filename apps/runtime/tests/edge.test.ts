@@ -7,9 +7,11 @@ import {chmod, link, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
+import {catalog} from '@jimmie-potts/bunny-observability';
 import {errorCodes} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, connectRemote, type BunnyModule} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, RuntimeError, buildModules, moduleSchemas, startRuntime, type LogRecord, type ModuleFactory} from '../src/index.js';
+import {REGISTRY_REASONS} from '../src/runtime.js';
 import {createCoreModule} from './fixtures/core.js';
 import {deferred, fixture, it, run, stateDir, waitFor} from './support.js';
 
@@ -187,7 +189,10 @@ it('runtime.started says whether modules are simulated and the edge is configure
   assert.equal(order.filter(event => event === 'runtime.edge.serving').length, 1);
   assert.ok(order.indexOf('runtime.edge.serving') > order.lastIndexOf('runtime.module.started'), `the edge serves after every module started: ${order.join(', ')}`);
   const serving = simulated.logs.find(record => record.event_name === 'runtime.edge.serving');
-  assert.deepEqual(serving?.attributes, {'bunny.url': simulated.runtime.url, 'bunny.grants': 1});
+  const port = Number(new URL(simulated.runtime.url).port);
+  assert.deepEqual(serving?.attributes, {'server.port': port, 'bunny.grants': 1, 'bunny.provenance': 'source'}, 'the port, never the URL');
+  assert.equal(started(simulated.logs)?.['server.port'], port);
+  assert.equal(JSON.stringify(simulated.logs).includes(simulated.runtime.url), false);
 });
 
 it('while the runtime stops, the edge answers 503 with unavailable until the listener closes', async context => {
@@ -208,7 +213,7 @@ it('while the runtime stops, the edge answers 503 with unavailable until the lis
   await stopped;
 });
 
-it('an edge refusal is logged with a known route, its registry code and that code\'s fixed meaning, never the refusal\'s detail', async context => {
+it('an edge refusal is logged with a known route, its registry code and that code\'s registered reason, never the refusal\'s detail', async context => {
   const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
   await grant(dir, [part]);
@@ -227,11 +232,20 @@ it('an edge refusal is logged with a known route, its registry code and that cod
   for (const record of refusals) {
     const code = record.attributes['bunny.code'];
     assert.ok(typeof code === 'string' && code in errorCodes, `a registry code: ${String(code)}`);
-    assert.equal(record.attributes['bunny.reason'], errorCodes[code]?.meaning, 'the reason is the code\'s fixed meaning');
+    assert.equal(record.attributes['bunny.reason'], REGISTRY_REASONS[code], 'the reason is the code\'s registered reason');
     assert.equal('bunny.detail' in record.attributes, false, 'no detail');
   }
   assert.deepEqual(refusals.map(record => record.attributes['bunny.source']), [part.source, part.source, undefined]);
   assert.equal(JSON.stringify(logs).includes(marker), false, 'nothing the caller sent reaches a log record');
+});
+
+it('every registry code has a fixed registered reason, except internal, which carries only its code', () => {
+  assert.deepEqual(Object.keys(REGISTRY_REASONS).sort(), Object.keys(errorCodes).sort());
+  const reasons: readonly unknown[] = catalog.attributes['bunny.reason'].enum;
+  for (const [code, reason] of Object.entries(REGISTRY_REASONS)) {
+    if (code === 'internal') assert.equal(reason, undefined);
+    else assert.ok(reasons.includes(reason), `${code}: ${String(reason)}`);
+  }
 });
 
 it('a module factory builds the module with its real transport, or with its simulated one', () => {

@@ -82,6 +82,10 @@
         "runtime.module.stopped",
         "runtime.handler.failed",
         "runtime.delivery.dropped",
+        "runtime.edge.serving",
+        "runtime.edge.connected",
+        "runtime.edge.disconnected",
+        "runtime.edge.refused",
         "message.received",
         "outbox.republished",
         "outbox.acknowledged"
@@ -120,6 +124,10 @@
         "Module stopped",
         "Handler failed",
         "Deliveries dropped",
+        "Edge serving",
+        "Edge part connected",
+        "Edge part disconnected",
+        "Edge call refused",
         "Message received",
         "Outbox republished",
         "Outbox outcome acknowledged"
@@ -499,6 +507,37 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "bunny.simulate": {
+          "type": "boolean"
+        },
+        "bunny.edge": {
+          "type": "boolean"
+        },
+        "bunny.grants": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.route": {
+          "enum": [
+            "stream",
+            "publish",
+            "subscribe",
+            "request",
+            "respond",
+            "reply",
+            "sync",
+            "serve",
+            "answer",
+            "close",
+            "other"
+          ]
+        },
+        "server.port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
         "error.type": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
@@ -607,6 +646,10 @@
                 "runtime.module.stopped",
                 "runtime.handler.failed",
                 "runtime.delivery.dropped",
+                "runtime.edge.serving",
+                "runtime.edge.connected",
+                "runtime.edge.disconnected",
+                "runtime.edge.refused",
                 "message.received",
                 "outbox.republished",
                 "outbox.acknowledged"
@@ -657,6 +700,11 @@
                   "bunny.message.id",
                   "bunny.message.kind",
                   "bunny.message.count",
+                  "bunny.simulate",
+                  "bunny.edge",
+                  "bunny.grants",
+                  "bunny.route",
+                  "server.port",
                   "error.type",
                   "error.code"
                 ]
@@ -710,7 +758,11 @@
               "runtime.module.stop-failed",
               "runtime.module.stopped",
               "runtime.handler.failed",
-              "runtime.delivery.dropped"
+              "runtime.delivery.dropped",
+              "runtime.edge.serving",
+              "runtime.edge.connected",
+              "runtime.edge.disconnected",
+              "runtime.edge.refused"
             ]
           }
         }
@@ -793,7 +845,11 @@
               "runtime.module.stop-failed",
               "runtime.module.stopped",
               "runtime.handler.failed",
-              "runtime.delivery.dropped"
+              "runtime.delivery.dropped",
+              "runtime.edge.serving",
+              "runtime.edge.connected",
+              "runtime.edge.disconnected",
+              "runtime.edge.refused"
             ]
           }
         }

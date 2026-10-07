@@ -9,7 +9,8 @@
 - **Module records.** A module's records have the one scope `bunny.module` and the attribute `bunny.module`. A module may log only the events the catalog registers for modules. The module test kit (#882) fails a module that logs an unregistered event or attribute, or a value outside its registered type. The fixture modules log registered events.
 - **A failing sink.** A sink that throws loses its record, and a closed stderr is ignored, so neither changes what the runtime does.
 - **Maintenance.** A new intake test runs the built runtime and reads its stderr lines as a synthetic journal.
-- **Launch files, after #920.** The `--environment` argument sets `deployment.environment.name`; the process's instance ID reaches every writer and the watchdog; the edge records from #920 are registered.
+- **Launch files.** The `--environment` argument (`development` by default, `test` in disposable verification runs) sets `deployment.environment.name`; the process's instance ID reaches every writer and the watchdog; the process writes a `runtime.ready` record beside the unchanged stdout ready line; `runtime.stopped` counts dropped and lost records. #920's edge records are registered: a record carries the listener's port instead of its URL, and an edge refusal's `bunny.reason` is the registry code's registered reason instead of its free-text meaning.
+- **Verification runs.** `build-current` watches the contract's sources and outputs, which the run now loads.
 
 ## Capabilities
 
@@ -23,7 +24,7 @@ None.
 
 ## Impact
 
-- **Source:** `packages/observability` (catalog, schema, fixtures, `projectRecord`, version 1.2.0); `apps/runtime/src` (`record.ts`, `log.ts`, `host.ts`, `lag.ts`, `watchdog.ts`, `watchdog-worker.ts`, and after #920 the launch files); `packages/sdk/src/testing`.
+- **Source:** `packages/observability` (catalog, schema, fixtures, `projectRecord`, version 1.2.0); `apps/runtime/src` (`record.ts`, `log.ts`, `host.ts`, `lag.ts`, `watchdog.ts`, `watchdog-worker.ts`, `process.ts`, `runtime.ts`, `index.ts`); `apps/runtime/verify` (`supervisor.ts`, `plugin.ts`); `packages/sdk/src/testing`.
 - **Consumers:** the workspace pins of `apps/hub`, `apps/maintenance` and `modules/pixoo/packages/media` move to 1.2.0 with the archive names in `scripts/package-hub.mjs` and `scripts/package-maintenance.mjs`; `apps/runtime` and `packages/sdk` gain the dependency. Their own records keep profile 1.1.
 - **Tests:** profile 1.2 tests and fixtures in `packages/observability`; the runtime's record, sink and process tests; the kit tests; the maintenance intake test.
 - **Docs:** the contract, the observability, runtime, SDK, maintenance and Pixoo READMEs, and `docs/development.md`.

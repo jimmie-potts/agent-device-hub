@@ -39,6 +39,10 @@
         "runtime.module.stopped",
         "runtime.handler.failed",
         "runtime.delivery.dropped",
+        "runtime.edge.serving",
+        "runtime.edge.connected",
+        "runtime.edge.disconnected",
+        "runtime.edge.refused",
         "message.received",
         "outbox.republished",
         "outbox.acknowledged"
@@ -58,6 +62,11 @@
         "bunny.message.id",
         "bunny.message.kind",
         "bunny.message.count",
+        "bunny.simulate",
+        "bunny.edge",
+        "bunny.grants",
+        "bunny.route",
+        "server.port",
         "error.type",
         "error.code"
       ]
@@ -95,6 +104,10 @@
     "runtime.module.stopped": "Module stopped",
     "runtime.handler.failed": "Handler failed",
     "runtime.delivery.dropped": "Deliveries dropped",
+    "runtime.edge.serving": "Edge serving",
+    "runtime.edge.connected": "Edge part connected",
+    "runtime.edge.disconnected": "Edge part disconnected",
+    "runtime.edge.refused": "Edge call refused",
     "message.received": "Message received",
     "outbox.republished": "Outbox republished",
     "outbox.acknowledged": "Outbox outcome acknowledged"
@@ -448,6 +461,37 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "bunny.simulate": {
+      "type": "boolean"
+    },
+    "bunny.edge": {
+      "type": "boolean"
+    },
+    "bunny.grants": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.route": {
+      "enum": [
+        "stream",
+        "publish",
+        "subscribe",
+        "request",
+        "respond",
+        "reply",
+        "sync",
+        "serve",
+        "answer",
+        "close",
+        "other"
+      ]
+    },
+    "server.port": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
     "error.type": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
@@ -479,7 +523,11 @@
         "runtime.module.stop-failed",
         "runtime.module.stopped",
         "runtime.handler.failed",
-        "runtime.delivery.dropped"
+        "runtime.delivery.dropped",
+        "runtime.edge.serving",
+        "runtime.edge.connected",
+        "runtime.edge.disconnected",
+        "runtime.edge.refused"
       ]
     },
     "bunny.module": {

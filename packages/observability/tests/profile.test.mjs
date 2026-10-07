@@ -32,6 +32,11 @@ const examples = {
   'bunny.message.id': '6f1c2d4e-8a9b-4c3d-9e2f-0a1b2c3d4e5f',
   'bunny.message.kind': 'outcome',
   'bunny.message.count': 3,
+  'bunny.simulate': true,
+  'bunny.edge': true,
+  'bunny.grants': 1,
+  'bunny.route': 'stream',
+  'server.port': 41000,
   'error.type': 'RuntimeError',
   'error.code': 'state-dir-relative',
 };

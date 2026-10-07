@@ -28,6 +28,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
 | `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
+| `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
 
@@ -90,7 +91,8 @@ schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
 `runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
 `bunny.route` (one of the edge's routes, or `other`), `bunny.source` when the
 caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
-that code's fixed meaning. It never holds the edge's detail, which may quote
+the diagnostic contract's registered reason for that code (none for
+`internal`). It never holds the edge's detail, which may quote
 what the caller sent or an exception's message. Token rotation and grant
 permissions belong to #835.
 
@@ -184,8 +186,13 @@ record of profile 1.2, built by the contract's `createRecord`: `schema_version`,
 `trace_flags` when the record has a trace. The resource is service `runtime`
 in namespace `bunny`, `service.version` (the package's version), a
 `service.instance.id` that each process draws once and shares with its
-watchdog thread, and `deployment.environment.name`, `development` by default.
-Maintenance intake reads these lines with the contract's validator.
+watchdog thread, and `deployment.environment.name` from `--environment`.
+Maintenance intake reads these lines with the contract's validator. Beside the
+stdout ready line, which keeps its own contract, the process writes a
+`runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
+listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
+records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
+(`bunny.telemetry.failure_count`).
 
 The runtime's own records have scope `bunny.runtime`. A module's records have
 the one scope `bunny.module` and the attribute `bunny.module`, which names the

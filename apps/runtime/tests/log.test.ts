@@ -46,35 +46,47 @@ const url = (runtime: Child): string => (JSON.parse(runtime.stdout().split('\n')
 
 it('every stderr line of a runtime process is a contract record carrying the runtime\'s resource, and each process has its own instance ID', async context => {
   const instances: string[] = [];
-  for (let run = 0; run < 2; run += 1) {
-    const runtime = start(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)]);
+  for (const environment of ['development', 'production'] as const) {
+    const args = ['--port', '0', '--state-dir', await stateDir(context), ...(environment === 'development' ? [] : ['--environment', environment])];
+    const runtime = start(context, MAIN, args);
     await ready(runtime);
+    assert.deepEqual(Object.keys(JSON.parse(runtime.stdout().split('\n')[0] ?? '') as object), ['event', 'url'], 'the ready line is unchanged');
     runtime.child.kill('SIGTERM');
     assert.deepEqual(await runtime.exited, {code: 0, signal: null});
     const records = parsed(runtime.lines());
-    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.stopped']);
+    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.ready', 'runtime.stopped']);
     for (const record of records) {
       assert.equal(record.schema_version, '1.2');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
       assert.equal(record.resource['service.name'], 'runtime');
       assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);
-      assert.equal(record.resource['deployment.environment.name'], 'development');
+      assert.equal(record.resource['deployment.environment.name'], environment, 'development unless --environment says otherwise');
       assert.match(record.resource['service.instance.id'] ?? '', UUID);
     }
+    assert.equal(records[0]?.attributes['server.port'], Number(new URL(url(runtime)).port));
+    assert.deepEqual(records[2]?.attributes, {'bunny.telemetry.dropped_count': 0, 'bunny.telemetry.failure_count': 0, 'bunny.provenance': 'source'},
+      'runtime.stopped counts the records the writer dropped or lost');
     assert.equal(new Set(records.map(record => record.resource['service.instance.id'])).size, 1, 'one instance ID per process');
     instances.push(records[0]?.resource['service.instance.id'] ?? '');
   }
   assert.notEqual(instances[0], instances[1], 'another process has another instance ID');
 });
 
+it('the entry point refuses an environment the contract does not know', async context => {
+  const runtime = start(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--environment', 'staging']);
+  assert.deepEqual(await runtime.exited, {code: 2, signal: null});
+  assert.match(runtime.lines().join('\n'), /--environment must be development, test or production/);
+});
+
 it('the watchdog thread\'s runtime.stuck record is a contract record with the process\'s own resource', async context => {
-  const runtime = start(context, FIXTURE, ['stuck', '--port', '0', '--state-dir', await stateDir(context), '--lag-limit-ms', '300']);
+  const runtime = start(context, FIXTURE, ['stuck', '--port', '0', '--state-dir', await stateDir(context), '--lag-limit-ms', '300', '--environment', 'test']);
   assert.deepEqual(await runtime.exited, {code: null, signal: 'SIGKILL'});
   const records = parsed(runtime.lines());
   const started = records.find(record => record.event_name === 'runtime.started');
   const stuck = records.find(record => record.event_name === 'runtime.stuck');
   assert.ok(started && stuck);
   assert.deepEqual(stuck.resource, started.resource);
+  assert.equal(stuck.resource['deployment.environment.name'], 'test', 'the thread has the process\'s environment');
   assert.equal(stuck.body, 'Runtime event loop stuck');
   assert.equal(stuck.attributes['bunny.lag.limit_ms'], 300);
 });

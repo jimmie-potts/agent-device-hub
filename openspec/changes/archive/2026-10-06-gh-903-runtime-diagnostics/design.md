@@ -30,6 +30,10 @@ See proposal.md for why. The diagnostic contract requires a new profile and fixt
 
 **The resource is set once per process.** `log.ts` draws the process's `service.instance.id` at load, and every writer defaults to it, so `runtime.failed` from the process runner and the runtime's own records match. The watchdog thread receives the resource in its `workerData`, and the shared memory slots move to `lag.ts`, so the thread still never loads the SDK. `--environment` (after #920) sets `deployment.environment.name`, `development` by default, which the cutover sets to `production`.
 
+**Edge records keep registered values.** #920 wrote the listener's URL and the registry code's meaning, a sentence, in `bunny.reason`, an existing enum attribute whose type no later profile may change. The records now carry `server.port` and, in `bunny.reason`, a fixed table from each registry code to the contract's reason (none for `internal`); the meaning stays derivable from `bunny.code`. A test keeps the table in step with the registry and the catalog.
+
+**Runs are a test environment.** `--environment` defaults to `development`; the installed unit sets `production` at the cutover, and the disposable runs of #920 pass `test`. The contract has no `verification` environment, and adding one would be another catalog change. `build-current` watches the contract's sources and outputs, because the run now loads them.
+
 **A failing sink never matters.** The writer catches a throwing sink and counts it. The stderr sink adds an `error` listener before its first write, because a closed stderr pipe reports EPIPE as a stream error, which would otherwise escape to the process and fail a module or the runtime. The watchdog thread catches a failed `writeSync` and still kills the process.
 
 ## Risks / Trade-offs

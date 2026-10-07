@@ -133,8 +133,9 @@ so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
   module lifecycle (`runtime.module.refused`, `.starting`, `.started`,
   `.failed`, `.error-after-stop`, `.stop-timed-out`, `.stop-failed`,
   `.stopped`), a failed handler outside every module
-  (`runtime.handler.failed`) and dropped deliveries
-  (`runtime.delivery.dropped`).
+  (`runtime.handler.failed`), dropped deliveries
+  (`runtime.delivery.dropped`) and the SDK edge (`runtime.edge.serving`,
+  `.connected`, `.disconnected`, `.refused`).
 - **Module events:** a module may log the existing command, lifecycle, feed and
   operation events, and three new ones: `message.received` (a consumer took a
   message once by `(source, id)`, as a duplicate, or refused a conflict),
@@ -146,9 +147,14 @@ so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
   arose), counts (`bunny.modules`, `bunny.dropped.count`,
   `bunny.message.count`), durations (`bunny.timeout_ms`, `bunny.lag.ms`,
   `bunny.lag.limit_ms`), `bunny.exit_code`, `bunny.message.id`,
-  `bunny.message.kind`, and the OpenTelemetry `error.type` with its plain
-  `error.code`. `error.type` and `error.code` are identifiers of at most 64
-  characters, never a message.
+  `bunny.message.kind`, `bunny.simulate` and `bunny.edge` (whether modules are
+  simulated and the edge configured), `bunny.grants` (a count), `bunny.route`
+  (one of the edge's routes, or `other`), the OpenTelemetry `server.port`, and
+  the OpenTelemetry `error.type` with its plain `error.code`. `error.type` and
+  `error.code` are identifiers of at most 64 characters, never a message. A
+  record carries a listener's port, never its URL. An edge refusal carries its
+  registry code and, as the existing `bunny.reason`, that code's fixed
+  registered reason, never the refusal's detail.
 
 A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
