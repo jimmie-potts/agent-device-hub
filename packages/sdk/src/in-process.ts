@@ -89,8 +89,14 @@ function decisionOf(result: RequestResult): Decision {
   return {event: 'command.refused', level, outcome: 'rejected', code, status: 'error'};
 }
 
-const foreign = (source: string, message: Message<unknown>): SdkError =>
-  new SdkError(body('forbidden', `${source} cannot send a message from ${String(message.source)}`));
+// Refusals never quote what the caller sent, such as a key or a source, since a remote edge serves them to the caller.
+const foreign = (): SdkError => new SdkError(body('forbidden', 'a participant sends only messages from its own source'));
+/**
+ * The routing-ID rule (ADR 0012): a command's `subject` is the entity it is for, whose routing ID is the last token of
+ * its routing key, so a responder that acts on the subject acts on the key's entity, and a grant of the key covers it
+ * (Hub #835). The bus refuses any other command, on every transport, before it reaches a responder.
+ */
+const misrouted = (): SdkError => new SdkError(body('invalid-message', 'a command\'s subject is the last token of its routing key'));
 
 /** Runs a call so that a thrown refusal becomes a rejected promise, as a remote transport would report it. */
 function attempt<T>(call: () => T | Promise<T>): Promise<T> {
@@ -102,7 +108,7 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
 }
 
 /** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
-type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
+type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<{message: Message<unknown>; key: string}>; dropped: number; accept?: (key: string) => boolean};
 /** A command on its way to a handler: its routing key, its request span, and its queue span while it waits. */
 type Delivery = {
   command: Command<object>; key: string; expiresAtMs: number; settle: (result: RequestResult) => void; request: Span; queue: Span | undefined;
@@ -150,7 +156,7 @@ export class InProcessBus {
    * malformed one throws `SdkError` at once. Its `close` closes everything the participant opened.
    */
   connect(source: string): Participant {
-    if (!SOURCE.test(source) || source.length > 256) throw invalid(`source ${source}`);
+    if (!SOURCE.test(source) || source.length > 256) throw invalid('a source is malformed');
     const member: Member = {source, closed: false, closing: undefined, opened: new Set(), requests: new Set()};
     const open = <T>(call: () => T | Promise<T>): Promise<T> => attempt(() => {
       if (member.closed) throw new SdkError(body('invalid-state', `${source} is closed`));
@@ -230,7 +236,8 @@ export class InProcessBus {
     return attempt(() => {
       const route = parseKey(key);
       if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
-      if (command.source !== source) throw foreign(source, command);
+      if (command.source !== source) throw foreign();
+      if (command.subject !== route.id) throw misrouted();
       if (command.kind !== 'command' || !command.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
       const {requestId} = command.data as {requestId?: unknown};
       if (typeof requestId !== 'string' || !ID.test(requestId)) throw invalid('requestId is not an identifier');
@@ -250,7 +257,7 @@ export class InProcessBus {
    */
   syncMessage(source: string, request: Message<SyncRequest>, waitMs: number, signal: AbortSignal, owner?: string): Promise<SyncAnswer> {
     return attempt(() => {
-      if (request.source !== source) throw foreign(source, request);
+      if (request.source !== source) throw foreign();
       if (request.kind !== 'sync-request') throw invalid('a sync request has kind sync-request');
       const expiresAtMs = Date.parse(request.expiresat ?? '');
       if (Number.isNaN(expiresAtMs)) throw invalid('a sync request carries expiresat');
@@ -262,7 +269,7 @@ export class InProcessBus {
 
   #route(key: string, kind: PublishedKind): RoutingKey {
     const route = parseKey(key);
-    if (route === undefined) throw invalid(`routing key ${key}`);
+    if (route === undefined) throw invalid('a routing key is malformed');
     if (route.category === 'cmd') throw invalid('commands are sent with request');
     if (keyClassOf(kind) !== route.category) throw invalid(`a ${String(kind)} message cannot use a bunny.${route.category} key`);
     return route;
@@ -277,7 +284,7 @@ export class InProcessBus {
 
   /** A prepared message goes out as it is; only its own source may send it. */
   #publishMessage<T extends object>(source: string, key: string, message: Message<T>): Message<T> {
-    if (message.source !== source) throw foreign(source, message);
+    if (message.source !== source) throw foreign();
     if (!isPublished(message.kind)) throw invalid(`a ${message.kind} message is not published`);
     this.#deliver(key, this.#route(key, message.kind), message);
     return message;
@@ -285,16 +292,18 @@ export class InProcessBus {
 
   #deliver(key: string, route: RoutingKey, message: Message<unknown>): void {
     for (const subscriber of this.#subscribers) {
-      if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
+      // A subscription that declines the key never queues the message, so it is neither delivered nor a drop.
+      if (!overlaps(subscriber.pattern, route) || subscriber.accept?.(key) === false) continue;
+      if (!subscriber.queue.push({message, key})) {
         subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
   }
 
-  #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
+  #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow, accept}: SubscribeOptions = {}): Subscription {
     const parsed = parsePattern(pattern);
-    if (parsed === undefined) throw invalid(`pattern ${pattern}`);
+    if (parsed === undefined) throw invalid('a pattern is malformed');
     if (parsed.category === 'cmd') throw invalid('commands go to their one responder; use respond');
     const scope = {source: member.source, pattern};
     const run = async (call: () => void | Promise<void>): Promise<void> => {
@@ -304,12 +313,12 @@ export class InProcessBus {
         this.#report(error, scope);
       }
     };
-    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, queue: new DeliveryQueue(this.#maxQueued, async message => {
+    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, ...(accept === undefined ? {} : {accept}), queue: new DeliveryQueue(this.#maxQueued, async ({message, key}) => {
       // A drop leaves a message waiting, so the subscriber hears of the gap before that message, in its own order.
       const {dropped} = subscriber;
       subscriber.dropped = 0;
       if (dropped > 0 && onOverflow !== undefined) await run(() => onOverflow({dropped}));
-      await run(() => handler(message as Message<T>));
+      await run(() => handler(message as Message<T>, key));
     })};
     this.#subscribers.add(subscriber);
     const subscription: Subscription = {close: () => {
@@ -324,6 +333,7 @@ export class InProcessBus {
   #request<T extends object>(member: Member, key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
     const route = parseKey(key);
     if (route?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
+    if (draft.subject !== route.id) throw misrouted();
     if (!draft.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
     const {timeoutMs} = options;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
@@ -360,7 +370,7 @@ export class InProcessBus {
     const timeoutMs = Math.round(expiresAtMs - Date.parse(command.time));
     const owner = [...this.#owners].find(candidate => overlaps(candidate.pattern, route));
     if (owner === undefined) {
-      return Promise.resolve(decided({status: 'rejected', requestId, error: body('unavailable', `no responder for ${key}`, ids)}));
+      return Promise.resolve(decided({status: 'rejected', requestId, error: body('unavailable', 'no responder for this routing key', ids)}));
     }
     return new Promise(resolve => {
       let settled = false;
@@ -406,7 +416,7 @@ export class InProcessBus {
     if (parsed?.category !== 'cmd') throw invalid('respond needs a bunny.cmd pattern');
     for (const other of this.#owners) {
       if (overlaps(other.pattern, parsed)) {
-        throw new SdkError(body('invalid-state', `${other.scope.source} already responds to ${other.scope.pattern}`));
+        throw new SdkError(body('invalid-state', 'another participant already responds to keys this pattern matches'));
       }
     }
     const {source} = member;

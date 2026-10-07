@@ -73,9 +73,9 @@ export function checked(sdk: Participant): Participant {
       check(message, `republished on ${key}`);
       return message;
     },
-    subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, message => {
+    subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, (message, key) => {
       check(message, `delivered on ${pattern}`);
-      return handler(message);
+      return handler(message, key);
     }, options),
     request: async <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => {
       const result = await sdk.request(key, draft, options);
@@ -113,8 +113,9 @@ export const removed = (id: string, revision: number): Draft<Removal> => ({
 });
 export const turnEnded = (sessionId: string): Draft<{sessionId: string}> =>
   ({kind: 'occurrence', type: 'org.bunny.turn.ended', subject: sessionId, dataschema: TURN_SCHEMA, data: {sessionId}});
-export const setMode = (mode: Mode['mode']): CommandDraft<Mode> =>
-  ({type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: MODE_SCHEMA, data: {mode}});
+/** A mode command for `target`, whose key is `bunny.cmd.mode.<target>`: the subject is its key's last token (ADR 0012). */
+export const setMode = (mode: Mode['mode'], target = 'wall'): CommandDraft<Mode> =>
+  ({type: 'org.bunny.mode.set.requested', subject: target, dataschema: MODE_SCHEMA, data: {mode}});
 export type Outcome = {requestId: string; result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'};
 export const modeSet = (requestId: string): Draft<Outcome> => ({
   kind: 'outcome', type: 'org.bunny.mode.set.completed', subject: 'wall', dataschema: `${BASE}outcome/2.0`,

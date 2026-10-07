@@ -3,8 +3,8 @@
 // acts as one source, and is checked by its token's SHA-256 digest: the file never holds a token, and no record, health
 // document or error body names one. The runtime reads the file at its start and again when asked to reload it, so a
 // credential is granted, revoked or rotated by changing the file.
-import {createHash, timingSafeEqual} from 'node:crypto';
-import {chmod, open, rename, rm} from 'node:fs/promises';
+import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
+import {chmod, open, readdir, readFile, rename, rm, stat} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
 import {PrivateFileError, RuntimeError, readPrivateFile} from './state.js';
 
@@ -49,14 +49,22 @@ export function tokenMatches(token: string, digest: string): boolean {
   return expected.length === presented.length && timingSafeEqual(presented, expected);
 }
 
-/** Whether a source belongs to the runtime itself: the core's or a module's, which no remote part may act as. */
-export const reservedSource = (source: string): boolean => source === 'bunny/core' || source.startsWith('bunny/modules/') || source.startsWith('bunny/runtime/');
+/** The source every browser session acts as, which no credential may (Hub #835). */
+export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
+
+/**
+ * Whether a source belongs to the runtime itself: the core's, a module's, the runtime's own or the browser sessions',
+ * which no credential may act as.
+ */
+export const reservedSource = (source: string): boolean =>
+  source === 'bunny/core' || source === DASHBOARD_SOURCE || source.startsWith('bunny/modules/') || source.startsWith('bunny/runtime/');
 
 /**
  * Checks a credentials document, `{"schema": "edge-credentials/1.0", "credentials": [...]}`, and returns its
- * credentials. At most 32; each with a distinct ID and digest, a well-formed source that is not the core's, a module's
- * or the runtime's own, distinct scopes from the four and distinct routing IDs for devices. Throws a `RuntimeError`:
- * `edge-credential-source` for a reserved source, `edge-credentials-invalid` otherwise. No refusal quotes a digest.
+ * credentials. At most 32; each with a distinct ID, digest and source, a well-formed source that is not the core's, a
+ * module's, the runtime's own or the browser sessions', distinct scopes from the four and distinct routing IDs for
+ * devices. Throws a `RuntimeError`: `edge-credential-source` for a reserved source, `edge-credentials-invalid`
+ * otherwise. No refusal quotes a digest.
  */
 export function parseCredentials(document: unknown): EdgeCredential[] {
   if (!isRecord(document) || document.schema !== CREDENTIALS_SCHEMA) throw invalid(`is not ${CREDENTIALS_SCHEMA}`);
@@ -82,6 +90,8 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
   });
   if (new Set(credentials.map(credential => credential.id)).size !== credentials.length) throw invalid('gives two credentials one ID');
   if (new Set(credentials.map(credential => credential.digest)).size !== credentials.length) throw invalid('gives two credentials one token');
+  // One source, one credential: a record or a grant check that names a source names one caller.
+  if (new Set(credentials.map(credential => credential.source)).size !== credentials.length) throw invalid('gives two credentials one source');
   return credentials;
 }
 
@@ -119,43 +129,147 @@ export async function readEdgeCredentials(file: string): Promise<EdgeCredential[
 export const credentialsDocument = (credentials: readonly EdgeCredential[]): string =>
   `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes, devices}) => ({id, source, digest, scopes, devices}))}, null, 2)}\n`;
 
-/**
- * Writes the credentials file whole, owner-only, through a private temporary file beside it that is renamed over it,
- * so a reader sees the old file or the new one, never part of one. The credentials are checked first.
- */
-export async function writeEdgeCredentials(file: string, credentials: readonly EdgeCredential[]): Promise<void> {
-  const text = credentialsDocument(parseCredentials(JSON.parse(credentialsDocument(credentials))));
-  const temporary = join(dirname(file), `.${basename(file)}.${process.pid}.tmp`);
-  const handle = await open(temporary, 'wx', 0o600);
+/** How old an empty lock file must be before a writer takes it for one a crashed writer left. */
+const EMPTY_LOCK_MS = 60_000;
+/** The writers of this process, one after another per file, so that a grant and a revocation never race in one process. */
+const queues = new Map<string, Promise<unknown>>();
+
+/** Whether a process with this ID still runs. */
+function running(pid: number): boolean {
   try {
-    await handle.writeFile(text, 'utf8');
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await chmod(temporary, 0o600);
-    await rename(temporary, file);
+    process.kill(pid, 0);
+    return true;
   } catch (error) {
-    await rm(temporary, {force: true});
-    throw error;
+    return error instanceof Error && 'code' in error && error.code === 'EPERM';
   }
 }
 
 /**
- * Grants a credential: adds it to the file, or replaces the one with its ID, as a producer's setup does (Hub #926). The
- * running runtime takes it once it reloads its credentials.
+ * Runs `change` while this process holds the credentials file's lock, `<file>.lock`, which names its process: writers
+ * in one process wait for each other, and one in another process is refused with `edge-credentials-busy`. A lock whose
+ * process has gone, or an empty one older than a minute, is a crashed writer's and is taken over. Temporary files a
+ * crashed writer left beside the file are removed first.
  */
-export async function grantCredential(file: string, credential: EdgeCredential): Promise<void> {
-  const current = await readEdgeCredentials(file);
-  await writeEdgeCredentials(file, [...current.filter(entry => entry.id !== credential.id), credential]);
+async function locked<T>(file: string, change: () => Promise<T>): Promise<T> {
+  const previous = queues.get(file) ?? Promise.resolve();
+  const turn = previous.catch(() => {}).then(async () => {
+    const lock = `${file}.lock`;
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    for (let attempt = 0; handle === undefined; attempt += 1) {
+      try {
+        handle = await open(lock, 'wx', 0o600);
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST') || attempt > 0) {
+          throw new RuntimeError('edge-credentials-busy', 'another writer holds the edge\'s credentials file; try again');
+        }
+        const owner = Number((await readFile(lock, 'utf8').catch(() => '')).trim());
+        const age = Date.now() - ((await stat(lock).catch(() => undefined))?.mtimeMs ?? Date.now());
+        const crashed = Number.isSafeInteger(owner) && owner > 0 ? !running(owner) : age > EMPTY_LOCK_MS;
+        if (!crashed) throw new RuntimeError('edge-credentials-busy', 'another writer holds the edge\'s credentials file; try again');
+        await rm(lock, {force: true});
+      }
+    }
+    try {
+      await handle.writeFile(`${process.pid}\n`, 'utf8');
+      await handle.close();
+      const prefix = `.${basename(file)}.`;
+      for (const name of await readdir(dirname(file))) {
+        if (name.startsWith(prefix) && name.endsWith('.tmp')) await rm(join(dirname(file), name), {force: true});
+      }
+      return await change();
+    } finally {
+      await rm(lock, {force: true});
+    }
+  });
+  queues.set(file, turn);
+  try {
+    return await turn;
+  } finally {
+    if (queues.get(file) === turn) queues.delete(file);
+  }
+}
+
+/** The credentials file's bytes as they are now, or undefined when it is missing. */
+const bytesOf = (file: string): Promise<Buffer | undefined> => readFile(file).catch((error: unknown) => {
+  if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+  throw error;
+});
+
+/**
+ * Writes the credentials, checked first, through a private temporary file of its own name beside the file that is
+ * renamed over it, so a reader sees the old file or the new one, never part of one. With `before`, the file must still
+ * hold those bytes just before the rename: one that another writer changed meanwhile is refused with
+ * `configuration-changed`, and nothing is written.
+ */
+async function replace(file: string, credentials: readonly EdgeCredential[], before?: Buffer, beforeReplace?: () => Promise<void>): Promise<void> {
+  const text = credentialsDocument(parseCredentials(JSON.parse(credentialsDocument(credentials))));
+  const temporary = join(dirname(file), `.${basename(file)}.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temporary, 'wx', 0o600);
+    try {
+      await handle.writeFile(text, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await chmod(temporary, 0o600);
+    await beforeReplace?.();
+    if (before !== undefined && !before.equals(await bytesOf(file) ?? Buffer.alloc(0))) {
+      throw new RuntimeError('configuration-changed', 'the edge\'s credentials file changed while it was being rewritten; read it again');
+    }
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, {force: true});
+  }
+}
+
+/** Writes the credentials file whole, owner-only, as the installer does, under the file's lock. */
+export async function writeEdgeCredentials(file: string, credentials: readonly EdgeCredential[]): Promise<void> {
+  await locked(file, () => replace(file, credentials));
+}
+
+/** What a test may run just before a writer checks the file and renames its new one over it. */
+export type CredentialWriteOptions = {beforeReplace?: () => Promise<void>};
+
+/** Reads the file under its lock, applies `change`, and writes the result unless the file changed since it was read. */
+async function update<T>(
+  file: string, change: (current: EdgeCredential[]) => {credentials?: EdgeCredential[]; result: T}, {beforeReplace}: CredentialWriteOptions,
+): Promise<T> {
+  return locked(file, async () => {
+    const before = await bytesOf(file);
+    const {credentials, result} = change(await readEdgeCredentials(file));
+    if (credentials !== undefined) await replace(file, credentials, before ?? Buffer.alloc(0), beforeReplace);
+    return result;
+  });
+}
+
+/**
+ * Grants a credential, as a producer's setup does (Hub #926): adds it to the file, and changes nothing when the file
+ * already holds it as it is. A credential with its ID but another digest, source, scopes or devices belongs to another
+ * owner, and one with another ID but its source would share it: either is refused with `edge-credential-conflict`, as
+ * the old setup authority refused a credential it did not own. To rotate a token, revoke the credential and grant it
+ * again. The running runtime takes it once it reloads its credentials.
+ */
+export async function grantCredential(file: string, credential: EdgeCredential, options: CredentialWriteOptions = {}): Promise<void> {
+  const granted = parseCredentials({schema: CREDENTIALS_SCHEMA, credentials: [credential]})[0];
+  if (granted === undefined) return;
+  await update(file, current => {
+    const same = current.find(entry => entry.id === granted.id);
+    if (same !== undefined) {
+      if (JSON.stringify(credentialsDocument([same])) === JSON.stringify(credentialsDocument([granted]))) return {result: undefined};
+      throw new RuntimeError('edge-credential-conflict', `the credential ${granted.id} belongs to another owner; revoke it before granting it again`);
+    }
+    if (current.some(entry => entry.source === granted.source)) {
+      throw new RuntimeError('edge-credential-conflict', `another credential already acts as ${granted.source}`);
+    }
+    return {credentials: [...current, granted], result: undefined};
+  }, options);
 }
 
 /** Revokes the credential with this ID; true when the file held it. The running runtime drops it once it reloads. */
-export async function revokeCredential(file: string, id: string): Promise<boolean> {
-  const current = await readEdgeCredentials(file);
-  const kept = current.filter(entry => entry.id !== id);
-  if (kept.length === current.length) return false;
-  await writeEdgeCredentials(file, kept);
-  return true;
+export async function revokeCredential(file: string, id: string, options: CredentialWriteOptions = {}): Promise<boolean> {
+  return update(file, current => {
+    const kept = current.filter(entry => entry.id !== id);
+    return kept.length === current.length ? {result: false} : {credentials: kept, result: true};
+  }, options);
 }

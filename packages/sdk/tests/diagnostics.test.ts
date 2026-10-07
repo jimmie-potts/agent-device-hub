@@ -175,7 +175,7 @@ function suite(transport: Transport): void {
           const results = [
             codeOf(await caller.request(KEY, setMode('work'), {timeoutMs: 5000})),
             codeOf(await caller.request(KEY, setMode('quiet'), {timeoutMs: 5000})),
-            codeOf(await caller.request('bunny.cmd.mode.none', setMode('work'), {timeoutMs: 5000})),
+            codeOf(await caller.request('bunny.cmd.mode.none', setMode('work', 'none'), {timeoutMs: 5000})),
           ];
           for (const families of [[FAMILY], [BLOB], [FAMILY, BLOB]]) {
             const synced = await caller.sync(families, () => {}, {timeoutMs: 5000});
@@ -283,7 +283,7 @@ it('a callback that throws on every record changes no result and is never told o
     const core = bus.connect('bunny/core');
     const results = [
       core.request(KEY, setMode('work'), {timeoutMs: 1000}),
-      core.request('bunny.cmd.mode.none', setMode('work'), {timeoutMs: 1000}),
+      core.request('bunny.cmd.mode.none', setMode('work', 'none'), {timeoutMs: 1000}),
       core.request(KEY, setMode('quiet'), {timeoutMs: 1000}),
     ];
     await flush();

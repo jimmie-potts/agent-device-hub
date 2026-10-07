@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import type {Worker} from 'node:worker_threads';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import {startRuntime} from '../src/index.js';
-import {RUNTIME_PACKAGE_VERSION, START, UUID, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, setMode, stateDir} from './support.js';
+import {RUNTIME_PACKAGE_VERSION, START, UUID, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, modeFor, setMode, stateDir} from './support.js';
 
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
@@ -97,7 +97,7 @@ it('a module\'s clock, timers and request deadlines all follow the runtime\'s cl
   const {sdk, clock: moduleClock, scheduler} = contextOf(caller);
   assert.equal(moduleClock.now(), START);
 
-  const pending = sdk.request('bunny.cmd.mode.owner', setMode, {timeoutMs: 1000});
+  const pending = sdk.request('bunny.cmd.mode.owner', modeFor('owner'), {timeoutMs: 1000});
   await flush();
   assert.equal(commands[0]?.time, new Date(START).toISOString());
   assert.equal(commands[0]?.expiresat, new Date(START + 1000).toISOString());

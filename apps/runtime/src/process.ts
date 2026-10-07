@@ -125,8 +125,16 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
   // SIGHUP reads the edge's credentials file again (#835): a grant, revocation or rotation takes effect without a
-  // restart. A file the runtime refuses keeps the credentials it had; the reload's record says so.
-  process.on('SIGHUP', () => { void runtime?.reload().catch(() => {}); });
+  // restart. A file the runtime refuses keeps the credentials it had; the reload's record says so. One during startup
+  // is remembered and runs once the gateway serves, so a grant made then is never lost.
+  let reloadPending = false;
+  process.on('SIGHUP', () => {
+    if (runtime === undefined) {
+      reloadPending = true;
+      return;
+    }
+    void runtime.reload().catch(() => {});
+  });
   try {
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
@@ -146,6 +154,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
     stop();
     return;
   }
+  if (reloadPending) void runtime.reload().catch(() => {});
   // The ready line is machine-readable stdout with its own contract, which readiness checks parse; the record is the
   // journal's.
   log.info('runtime.ready', {'bunny.module_count': options.modules.length});

@@ -113,12 +113,15 @@ export type EdgeSetup = {
   heartbeatMs?: number;
   stallMs?: number;
   liveness?: Scheduler;
+  /** The edge's clock and its command memory's bounds. */
+  now?: () => number;
+  commandMemory?: {perSource?: number; total?: number; rememberMs?: number};
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
   maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
-  heartbeatMs, stallMs, liveness,
+  heartbeatMs, stallMs, liveness, now, commandMemory,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const diagnostics: Diagnostic[] = [];
@@ -132,7 +135,7 @@ export async function startEdge({
   const edge = new RemoteEdge({
     bus, validator, grants: [...tokens].map(([source, token]) => ({source, token, ...permissions[source]})), onDiagnostic: diagnose,
     ...(scheduler === undefined ? {} : {scheduler}), ...(heartbeatMs === undefined ? {} : {heartbeatMs}), ...(stallMs === undefined ? {} : {stallMs}),
-    ...(liveness === undefined ? {} : {liveness}),
+    ...(liveness === undefined ? {} : {liveness}), ...(now === undefined ? {} : {now}), ...(commandMemory === undefined ? {} : {commandMemory}),
   });
   const received = new Map<string, number>();
   const dropped = new Map<string, number>();

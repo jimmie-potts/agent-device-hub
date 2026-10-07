@@ -1,8 +1,9 @@
 // MCP on the runtime (Hub #835), through `packages/mcp` unchanged: each module's read tools from its manifest, named
 // `<module>_<tool>`, and the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
 // command. A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
-// keep the MCP specification. Only a client credential reaches MCP: `read` lists and calls the read tools, and `control`
-// the action.
+// keep the MCP specification. The refusals `packages/mcp` makes itself, before a tool runs, keep its released 1.x
+// `gateway-error` result with no detail, since the package is reused unchanged. Only a client credential reaches MCP:
+// `read` lists and calls the read tools of the modules whose every device its grant names, and `control` the action.
 import {
   bindServiceTools, createDeviceRegistry, createMcpHandler, type DeviceRegistration, type JsonSchema, type MachinePrincipal,
   type McpHandler, type ServiceExtension,
@@ -11,7 +12,7 @@ import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contract
 import type {ModuleTool} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
-import type {Access} from './access.js';
+import {principalOf, type Access} from './access.js';
 
 /** How long a module's read tool may take before the call is answered `unavailable`. */
 export const TOOL_TIMEOUT_MS = 5000;
@@ -75,20 +76,25 @@ function readTool(host: McpHost, module: string, tool: ModuleTool, check: Valida
       const answered = await bounded(host, module, () => tool.read(args));
       if ('refused' in answered) return failure(answered.refused);
       const value: unknown = answered.value;
+      // Nothing the module answers is served before the secret check, a refusal's detail included.
+      if (host.holdsSecret(JSON.stringify(value) ?? '')) return failure(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
       const refusal = refusedBody(value);
       if (refusal !== undefined) return failure(refusal);
       if (!check(value)) return failure(errorBody('internal', {detail: 'the module answered outside its tool\'s schema'}));
-      if (host.holdsSecret(JSON.stringify(value))) return failure(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
       return {data: {result: value}};
     },
   };
 }
 
-/** A tool's answer as a refusal, when it is the shared error body with a registry code and its flag. */
+/**
+ * A tool's answer as a refusal, when it has an `error` member: the shared error body with a registry code and its flag,
+ * or `internal` for anything else there, `null` included.
+ */
 function refusedBody(value: unknown): ErrorBody | undefined {
-  const error = (value as {error?: {code?: unknown; retryable?: unknown; detail?: unknown}} | null)?.error;
-  if (typeof error !== 'object') return undefined;
-  const {code, retryable, detail} = error;
+  if (typeof value !== 'object' || value === null || !Object.hasOwn(value, 'error')) return undefined;
+  const error: unknown = (value as {error: unknown}).error;
+  if (typeof error !== 'object' || error === null) return errorBody('internal', {detail: 'the module answered with a malformed refusal'});
+  const {code, retryable, detail} = error as {code?: unknown; retryable?: unknown; detail?: unknown};
   if (typeof code !== 'string' || !Object.hasOwn(RETRYABLE, code) || RETRYABLE[code as keyof typeof RETRYABLE] !== retryable) {
     return errorBody('internal', {detail: 'the module answered with a malformed refusal'});
   }
@@ -144,12 +150,16 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
   }
   const registry = createDeviceRegistry(registrations);
   const tools = bindings.flatMap(binding => [...bindServiceTools(registry, binding)]);
-  const devices = registrations.map(registration => registration.deviceId);
+  // MCP's registrations are the modules, so a credential's MCP devices are the modules whose every device its grant
+  // names: the package then lists and calls only their tools, as the old Hub did per device.
+  const devicesOf = new Map(host.modules().map(module => [module.name, module.devices]));
   return createMcpHandler({
     enabled: true, registry, tools, allowedHosts: [...hosts], allowedOrigins: [],
     authenticate: token => {
       const credential = host.access.credential(token);
       if (credential === undefined) return Promise.resolve(null);
+      const granted = principalOf(credential).devices;
+      const devices = registrations.map(registration => registration.deviceId).filter(name => (devicesOf.get(name) ?? []).every(device => granted.has(device)));
       const scopes = credential.scopes.filter((scope): scope is 'read' | 'control' => scope === 'read' || scope === 'control');
       const principal: MachinePrincipal = {id: credential.id, credential: {kind: 'machine', status: 'active', declared: true, devices, scopes}};
       return Promise.resolve(principal);

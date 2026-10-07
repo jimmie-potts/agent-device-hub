@@ -35,7 +35,8 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   {method: 'POST', path: '/api/monitor/v1/events', status: 'replaced', replacement: `${SDK}: publish on bunny.event.lifecycle.<session>`, owner: '#926'},
   {
     method: 'POST', path: '/api/monitor/v1/commands', status: 'replaced',
-    replacement: `${SDK}: request bunny.cmd.notice-acknowledge.<session> or bunny.cmd.approval-recover.<session>, or POST /api/v2/commands/approval-recover; label has no 2.0 command yet and quiesce is dropped with the supervised migration`,
+    replacement: `${SDK}: request bunny.cmd.notice-acknowledge.<session> or bunny.cmd.approval-recover.<session>, or POST /api/v2/commands/approval-recover; label becomes the core's session-label-set command with its dashboard control; quiesce is dropped with the supervised migration`,
+    owner: '#922',
   },
   {method: 'GET', path: '/api/monitor/v1/changes', status: 'replaced', replacement: `${SDK}: the stream and sync`},
   {method: 'GET', path: '/api/automation/v1/rules', status: 'replaced', replacement: 'automation on the runtime bus', owner: '#925'},

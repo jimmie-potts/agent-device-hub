@@ -8,8 +8,8 @@ export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './r
 export {SEGMENT_BYTES, SEGMENT_SPANS, SPANS_FILE, SPANS_PREVIOUS_FILE, readSpanFile, type SpanFileRead} from './span-file.js';
 export {CONFIG_SCHEMA, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from './state.js';
 export {
-  CREDENTIALS_SCHEMA, MAX_CREDENTIALS, SCOPES, credentialsDocument, grantCredential, parseCredentials, readEdgeCredentials, revokeCredential, tokenDigest,
-  writeEdgeCredentials, type EdgeCredential, type Scope,
+  CREDENTIALS_SCHEMA, DASHBOARD_SOURCE, MAX_CREDENTIALS, SCOPES, credentialsDocument, grantCredential, parseCredentials, readEdgeCredentials, revokeCredential,
+  tokenDigest, writeEdgeCredentials, type CredentialWriteOptions, type EdgeCredential, type Scope,
 } from './credentials.js';
 export {BROWSER_SOURCE, REQUEST_HEADER, SESSION_COOKIE, edgePermissions, type Principal} from './gateway/access.js';
 export {convertHubEdge, sourceForHubId, type ConvertedEdge} from './convert.js';

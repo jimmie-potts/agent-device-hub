@@ -229,6 +229,8 @@ export type EdgeConfig = {
    * did. On unless `false`; a disposable run, whose state directory's path is too long for a socket, turns it off.
    */
   readonly launcher: boolean;
+  /** Whether `/mcp` serves MCP, as the old Hub's `mcp`: off unless `true`. Off, it answers `not-found`. */
+  readonly mcp: boolean;
   /** An editor link per device, by routing ID: a loopback `http` URL without credentials, query or fragment. */
   readonly editorLinks: Readonly<Record<string, string>>;
   /** A link per local place, by ID: a loopback `http` URL with a port and without credentials, query or fragment. */
@@ -279,7 +281,7 @@ export async function readRuntimeConfig(file: string): Promise<RuntimeConfig> {
   if (Object.keys(parsed).some(key => key !== 'schema' && key !== 'modules' && key !== 'edge')) {
     throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema, modules and edge');
   }
-  return {modules, ...(Object.hasOwn(parsed, 'edge') ? {edge: edgeSection(parsed.edge)} : {})};
+  return {modules, ...(Object.hasOwn(parsed, 'edge') ? {edge: checkEdgeSection(parsed.edge)} : {})};
 }
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -315,22 +317,24 @@ function links(value: unknown, max: number, key: (name: string) => boolean, port
 
 /**
  * The edge's section: `{"credentials": <absolute path>, "browserAccess"?: "trusted-loopback", "launcher"?: false,
- * "editorLinks"?: {...}, "placeLinks"?: {...}}`, the old Hub's settings of the same names and the launcher's switch (Hub #835). Refuses, with `config-invalid`, anything
- * else; no refusal quotes a value.
+ * "mcp"?: true, "editorLinks"?: {...}, "placeLinks"?: {...}}`, the old Hub's settings of the same names and the
+ * launcher's switch (Hub #835). Refuses, with `config-invalid`, anything else; no refusal quotes a value. The cutover's
+ * conversion checks what it writes with this too.
  */
-function edgeSection(value: unknown): EdgeConfig {
+export function checkEdgeSection(value: unknown): EdgeConfig {
   if (!isRecord(value)) throw invalidEdge('must be an object');
-  if (Object.keys(value).some(key => !['credentials', 'browserAccess', 'launcher', 'editorLinks', 'placeLinks'].includes(key))) {
-    throw invalidEdge('has a member other than credentials, browserAccess, launcher, editorLinks and placeLinks');
+  if (Object.keys(value).some(key => !['credentials', 'browserAccess', 'launcher', 'mcp', 'editorLinks', 'placeLinks'].includes(key))) {
+    throw invalidEdge('has a member other than credentials, browserAccess, launcher, mcp, editorLinks and placeLinks');
   }
-  const {credentials, browserAccess, launcher = true} = value;
+  const {credentials, browserAccess, launcher = true, mcp = false} = value;
   if (typeof launcher !== 'boolean') throw invalidEdge('\'s launcher must be true or false');
+  if (typeof mcp !== 'boolean') throw invalidEdge('\'s mcp must be true or false');
   if (typeof credentials !== 'string' || !isAbsolute(credentials) || credentials.length > 4096 || credentials.includes('\0')) {
     throw invalidEdge('must name its credentials file by an absolute path');
   }
   if (browserAccess !== undefined && browserAccess !== 'trusted-loopback') throw invalidEdge('\'s browserAccess may only be trusted-loopback');
   return {
-    credentials, ...(browserAccess === undefined ? {} : {browserAccess}), launcher,
+    credentials, ...(browserAccess === undefined ? {} : {browserAccess}), launcher, mcp,
     editorLinks: links(value.editorLinks, 16, name => ROUTING_ID.test(name) && name.length <= 128, false, 'editorLinks'),
     placeLinks: links(value.placeLinks, 8, name => PLACE.test(name) && name !== 'bunny', true, 'placeLinks'),
   };

@@ -10,7 +10,7 @@ import {SdkError, type Reply} from '@jimmie-potts/sdk';
 import {ModuleHost} from '../src/host.js';
 import {contain, type LogRecord, type Runtime} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
-import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, setMode, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
+import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, modeFor, setMode, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
 
 const WORKERS = new URL('./fixtures/', import.meta.url);
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
@@ -23,7 +23,7 @@ const failure = (logs: LogRecord[], name: string): LogRecord | undefined =>
 const steady = (name = 'steady'): Fixture => fixture(name, async ({sdk}) => { await sdk.respond(`bunny.cmd.mode.${name}`, () => ({status: 'accepted'})); });
 
 async function stillWorks(caller: Fixture, name = 'steady'): Promise<void> {
-  const result = await contextOf(caller).sdk.request(`bunny.cmd.mode.${name}`, setMode, {timeoutMs: 1000});
+  const result = await contextOf(caller).sdk.request(`bunny.cmd.mode.${name}`, modeFor(name), {timeoutMs: 1000});
   assert.equal(result.status, 'accepted', `${name} still answers`);
 }
 
@@ -54,7 +54,7 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   await sdk.publish('bunny.state.session.s1', session(2));
   await flush();
   assert.deepEqual(received, [1], 'its subscription is closed');
-  const orphaned = await sdk.request('bunny.cmd.mode.failing', setMode, {timeoutMs: 1000});
+  const orphaned = await sdk.request('bunny.cmd.mode.failing', modeFor('failing'), {timeoutMs: 1000});
   assert.equal(orphaned.status, 'rejected');
   assert.equal(orphaned.error.error.code, 'unavailable', 'its responder is closed');
   assert.equal(stateOf(runtime, 'steady'), 'running');
@@ -66,7 +66,7 @@ it('a module whose responder throws leaves that request uncertain and is stopped
   const failing = fixture('failing', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.failing', () => { throw leak; }); });
   const probe = fixture('probe');
   const {runtime, logs} = await run(context, {modules: [failing, steady(), probe]});
-  const result = await contextOf(probe).sdk.request('bunny.cmd.mode.failing', setMode, {timeoutMs: 1000});
+  const result = await contextOf(probe).sdk.request('bunny.cmd.mode.failing', modeFor('failing'), {timeoutMs: 1000});
   // The handler had started, so the command may have taken effect: uncertain, never a refusal (ADR 0012).
   assert.equal(result.status, 'uncertain');
   assert.equal(result.error.error.code, 'uncertain-result');
@@ -198,7 +198,7 @@ it('a module\'s stop never waits on another module\'s handler', async context =>
   const results: string[] = [];
   const caller = fixture('caller', async ({sdk}) => {
     await sdk.subscribe('bunny.state.session.*', async message => {
-      const result = await sdk.request('bunny.cmd.mode.slow', setMode, {timeoutMs: 60_000, parent: message});
+      const result = await sdk.request('bunny.cmd.mode.slow', modeFor('slow'), {timeoutMs: 60_000, parent: message});
       results.push(result.status);
     });
     await sdk.subscribe('bunny.event.session.*', () => { throw new Error('the caller fails'); });

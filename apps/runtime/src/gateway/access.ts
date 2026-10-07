@@ -6,11 +6,11 @@
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {Call, Clock, EdgePrincipal} from '@jimmie-potts/sdk';
-import {tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
+import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/sdk';
+import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
-/** The source every browser session acts as: the dashboard's grant (Hub #835, #922). */
-export const BROWSER_SOURCE = 'bunny/parts/dashboard';
+/** The source every browser session acts as: the dashboard's grant (Hub #835, #922), which no credential may take. */
+export const BROWSER_SOURCE = DASHBOARD_SOURCE;
 /** The cookie that carries a browser session. */
 export const SESSION_COOKIE = 'bunny-session';
 /** The header a browser's unsafe request carries, which a page on another site cannot send without the gateway's leave. */
@@ -46,14 +46,25 @@ export type Admission = {readonly principal: Principal} | {readonly refusal: Ref
 const CONTROL_KEYS = ['bunny.cmd.approval-recover.*', 'bunny.cmd.notice-acknowledge.*'];
 
 /**
- * The SDK edge's permissions for a caller's scopes and devices (Hub #835): `read` subscribes to and syncs every state and
- * event key; `ingest` publishes lifecycle observations only, so a hook can do nothing else; `control` requests the
- * core's operator commands and the commands of its granted devices; `admin` adds nothing at the edge. A part may serve
- * or respond to nothing yet: a remote owner's grant comes with its own story.
+ * The devices a caller may not see: every device an admitted module names that its grant does not (Hub #835). A device's
+ * records and messages carry its routing ID as their key's last token, so they are what these leave out.
  */
-export function edgePermissions(principal: Principal): EdgePrincipal {
+export function hiddenDevices(principal: Principal, known: readonly string[]): string[] {
+  return [...new Set(known)].filter(device => !principal.devices.has(device));
+}
+
+/**
+ * The SDK edge's permissions for a caller's scopes and devices (Hub #835): `read` subscribes to and syncs every state and
+ * event key but those of the devices its grant does not name, as the old Hub narrowed reads by device; `ingest`
+ * publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control` requests the
+ * core's operator commands and the commands of its granted devices; `admin` adds nothing at the edge. A part may serve
+ * or respond to nothing yet: a remote owner's grant comes with its own story. `known` are the devices the admitted
+ * modules name.
+ */
+export function edgePermissions(principal: Principal, known: readonly string[]): EdgePrincipal {
   const calls = new Set<Call>();
   const keys = new Set<string>();
+  const publishes: string[] = [];
   if (principal.scopes.has('read')) {
     calls.add('subscribe').add('sync');
     keys.add('bunny.state.*.*').add('bunny.event.*.*');
@@ -61,14 +72,19 @@ export function edgePermissions(principal: Principal): EdgePrincipal {
   if (principal.scopes.has('ingest')) {
     calls.add('publish');
     keys.add('bunny.event.lifecycle.*');
+    publishes.push('lifecycle');
   }
   if (principal.scopes.has('control')) {
     calls.add('request');
     for (const key of CONTROL_KEYS) keys.add(key);
     for (const device of principal.devices) keys.add(`bunny.cmd.*.${device}`);
   }
-  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys]};
+  const excluded = hiddenDevices(principal, known).map(device => `bunny.*.*.${device}`);
+  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys], publishes, excluded};
 }
+
+/** Whether a caller may use a module's pages, content, settings and tools: its grant names every device the module names. */
+export const mayUseModule = (principal: Principal, devices: readonly string[]): boolean => devices.every(device => principal.devices.has(device));
 
 /**
  * Where a request comes from, as its `Origin` and `Sec-Fetch-Site` say: `none` for a client outside any page (no
@@ -85,33 +101,47 @@ export function contextOf(request: IncomingMessage, origin: string): 'none' | 's
 
 const unsafe = (request: IncomingMessage): boolean => request.method !== 'GET' && request.method !== 'HEAD';
 
-/** The session token a request's cookie carries, if any. */
-function sessionToken(request: IncomingMessage): string | undefined {
+/**
+ * Every session token a request's cookie header carries. A browser may send several cookies of the name, such as one a
+ * page on another loopback port set, since a cookie does not separate ports; the caller takes the one that validates.
+ */
+function sessionTokens(request: IncomingMessage): string[] {
   const header = request.headers.cookie;
-  if (typeof header !== 'string') return undefined;
+  if (typeof header !== 'string') return [];
+  const tokens: string[] = [];
   for (const part of header.split(';')) {
     const [name, ...value] = part.trim().split('=');
-    if (name === SESSION_COOKIE) return value.join('=');
+    if (name === SESSION_COOKIE && tokens.length < MAX_SESSIONS) tokens.push(value.join('='));
   }
-  return undefined;
+  return tokens;
 }
 
-type Session = {principal: Principal; digest: string; expiresAtMs: number};
+/** Whether a request carries a session cookie, valid or not. */
+export const carriesSession = (request: IncomingMessage): boolean => sessionTokens(request).length > 0;
+
+type Session = {principal: Principal; digest: string; expiresAtMs: number; cancel: Cancel};
 const digestOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** What the gateway's callers need of the runtime: the devices the modules name, its clock and scheduler. */
+export type AccessOptions = {
+  /** The devices a browser session may command: every device an admitted module names. */
+  devices: () => readonly string[];
+  clock: Clock;
+  scheduler: Scheduler;
+  /** Told the ID of each browser session that ended without a logout, evicted or expired, so its streams end too. */
+  ended: (id: string) => void;
+};
 
 /** The gateway's callers: the configured credentials, the open browser sessions and the waiting launch codes. */
 export class Access {
   #credentials: readonly EdgeCredential[];
-  readonly #devices: () => readonly string[];
-  readonly #clock: Clock;
+  readonly #options: AccessOptions;
   readonly #sessions = new Map<string, Session>();
   readonly #launchCodes = new Map<string, number>();
 
-  /** `devices` are the devices a browser session may command: every device an admitted module names. */
-  constructor(credentials: readonly EdgeCredential[], devices: () => readonly string[], clock: Clock) {
+  constructor(credentials: readonly EdgeCredential[], options: AccessOptions) {
     this.#credentials = credentials;
-    this.#devices = devices;
-    this.#clock = clock;
+    this.#options = options;
   }
 
   /**
@@ -147,6 +177,7 @@ export class Access {
    * must carry no `Origin` and no fetch metadata other than `none`. Without one, a session cookie is a browser session,
    * which only this listener's own pages and the browser itself may present; an unsafe request with it must name this
    * origin and carry `bunny-request: 1`. Anything else is `unauthenticated`, and a page on another site `forbidden`.
+   * `origin` is the request's own: `http://` and the listener's host name the request named, either loopback name.
    */
   admit(request: IncomingMessage, origin: string): Admission {
     const context = contextOf(request, origin);
@@ -158,48 +189,65 @@ export class Access {
       if (credential === undefined) return {refusal: {code: 'unauthenticated', detail: 'the token is not granted'}};
       return {principal: principalOf(credential)};
     }
-    const token = sessionToken(request);
-    if (token === undefined) return {refusal: {code: 'unauthenticated', detail: 'a granted bearer token or a browser session is required'}};
+    const tokens = sessionTokens(request);
+    if (tokens.length === 0) return {refusal: {code: 'unauthenticated', detail: 'a granted bearer token or a browser session is required'}};
     if (context === 'cross') return {refusal: {code: 'forbidden', detail: 'a browser session is used only by this listener\'s own pages'}};
     if (unsafe(request) && (request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1')) {
       return {refusal: {code: 'forbidden', detail: `a browser session's change names this origin and carries ${REQUEST_HEADER}: 1`}};
     }
-    const session = this.#session(token);
+    const session = tokens.map(token => this.#session(token)).find(found => found !== undefined);
     if (session === undefined) return {refusal: {code: 'unauthenticated', detail: 'the browser session has ended'}};
     return {principal: session.principal};
   }
 
   /** Whether the principal still stands: a configured credential that is still configured as it was, or a live session. */
   live(principal: Principal): boolean {
-    if (principal.kind === 'browser') return [...this.#sessions.values()].some(session => session.principal === principal && session.expiresAtMs > this.#clock.now());
+    if (principal.kind === 'browser') return [...this.#sessions.values()].some(session => session.principal === principal && session.expiresAtMs > this.#options.clock.now());
     const credential = this.current(principal.id);
     return credential !== undefined && sameGrant(principalOf(credential), principal);
   }
 
-  /** Opens a browser session with the dashboard's grant and returns its token, which only the cookie carries. */
+  /**
+   * Opens a browser session with the dashboard's grant and returns its token, which only the cookie carries. The oldest
+   * session goes when 16 are open, and each goes at its expiry; either way its streams end at once (`ended`), as a
+   * logout's do.
+   */
   openSession(): string {
     this.#prune();
     while (this.#sessions.size >= MAX_SESSIONS) {
-      const oldest = this.#sessions.keys().next().value;
+      const oldest = this.#sessions.values().next().value;
       if (oldest === undefined) break;
-      this.#sessions.delete(oldest);
+      this.#end(oldest, true);
     }
     const token = randomBytes(32).toString('base64url');
     const principal: Principal = {
-      id: `browser-${randomUUID()}`, kind: 'browser', source: BROWSER_SOURCE, scopes: new Set<Scope>(['read', 'control']), devices: new Set(this.#devices()),
+      id: `browser-${randomUUID()}`, kind: 'browser', source: BROWSER_SOURCE, scopes: new Set<Scope>(['read', 'control']), devices: new Set(this.#options.devices()),
     };
     const digest = digestOf(token);
-    this.#sessions.set(digest, {principal, digest, expiresAtMs: this.#clock.now() + SESSION_MS});
+    const session: Session = {principal, digest, expiresAtMs: this.#options.clock.now() + SESSION_MS, cancel: () => {}};
+    session.cancel = this.#options.scheduler.after(SESSION_MS, () => { if (this.#sessions.get(digest) === session) this.#end(session, true); });
+    this.#sessions.set(digest, session);
     return token;
   }
 
   /** Ends the session a request's cookie carries, and returns its principal's ID so its streams can end too. */
   endSession(request: IncomingMessage): string | undefined {
-    const token = sessionToken(request);
-    const session = token === undefined ? undefined : this.#session(token);
+    const session = sessionTokens(request).map(token => this.#session(token)).find(found => found !== undefined);
     if (session === undefined) return undefined;
-    this.#sessions.delete(session.digest);
+    this.#end(session, false);
     return session.principal.id;
+  }
+
+  /** Forgets a session and its expiry timer; one that ended without its logout has its streams ended too. */
+  #end(session: Session, unasked: boolean): void {
+    session.cancel();
+    if (this.#sessions.get(session.digest) === session) this.#sessions.delete(session.digest);
+    if (!unasked) return;
+    try {
+      this.#options.ended(session.principal.id);
+    } catch {
+      // Ending a session's streams must not stop the session from ending.
+    }
   }
 
   /** Issues a launch code, good once for 30 seconds, as the launcher hands it to the browser it opens. */
@@ -207,7 +255,7 @@ export class Access {
     this.#prune();
     if (this.#launchCodes.size >= MAX_LAUNCH_CODES) throw new Error('launch-capacity');
     const code = randomBytes(32).toString('base64url');
-    this.#launchCodes.set(digestOf(code), this.#clock.now() + LAUNCH_MS);
+    this.#launchCodes.set(digestOf(code), this.#options.clock.now() + LAUNCH_MS);
     return code;
   }
 
@@ -220,6 +268,7 @@ export class Access {
 
   /** Ends every browser session and forgets every launch code, as the runtime's stop does. */
   close(): void {
+    for (const session of this.#sessions.values()) session.cancel();
     this.#sessions.clear();
     this.#launchCodes.clear();
   }
@@ -237,8 +286,8 @@ export class Access {
   }
 
   #prune(): void {
-    const now = this.#clock.now();
-    for (const [digest, session] of this.#sessions) if (session.expiresAtMs <= now) this.#sessions.delete(digest);
+    const now = this.#options.clock.now();
+    for (const session of [...this.#sessions.values()]) if (session.expiresAtMs <= now) this.#end(session, true);
     for (const [digest, expiresAtMs] of this.#launchCodes) if (expiresAtMs <= now) this.#launchCodes.delete(digest);
   }
 }

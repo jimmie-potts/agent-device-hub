@@ -89,15 +89,17 @@ export type GatewayAnswer = {status: number; headers: Readonly<Record<string, st
 
 /**
  * Each part's grant at the edge, as a run seeds it and the in-memory harness configures it (Hub #835): the old Hub's
- * scopes and device grants. The hook may only publish lifecycle observations; the reader may only read; the operator
- * and the panel read and command their devices and the core's operator commands. The operator's grant also names
- * `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the lamp refuses it.
+ * scopes and device grants. The hook may only publish lifecycle observations; the reader may only read, and reads the
+ * sign its grant names; the operator and the panel read and command their devices and the core's operator commands. A
+ * device a grant does not name, such as the sign for the panel, is left out of what that part reads. The operator's
+ * grant also names `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the lamp refuses
+ * it.
  */
 export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]; devices: readonly string[]}>> = {
   hook: {scopes: ['ingest'], devices: []},
   operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1']},
   panel: {scopes: ['read', 'control'], devices: ['lamp-1']},
-  reader: {scopes: ['read'], devices: []},
+  reader: {scopes: ['read'], devices: ['sign-1']},
 };
 /**
  * The synthetic prefix of every part's token in a harness: no record, message, health entry, answer or proof may carry
@@ -1188,6 +1190,12 @@ function rawCommand(h: Harness, source: string, {draft}: {key: string; draft: Co
 /** A raw HTTP client's `request` call to the SDK edge, as `as`, carrying `command`. */
 const rawRequest = (as: Role, key: string, command: object): GatewayCall =>
   ({as, method: 'POST', path: '/api/sdk/v1/request', body: {schema: 'sdk-remote/1.0', key, command}});
+/** A raw HTTP client's `publish` call, as `as` from its own source, of a moment's end: an occurrence no hook may send. */
+const rawMomentEnded = (h: Harness, as: Role, key: string): GatewayCall => ({as, method: 'POST', path: '/api/sdk/v1/publish', body: {schema: 'sdk-remote/1.0', key, message: {
+  specversion: '1.0', bunnyprofile: '2.0', id: 'msg-forged-moment', source: `bunny/parts/${as}`, type: 'org.bunny.moment.ended', subject: 'wall',
+  time: new Date(h.now()).toISOString(), kind: 'occurrence', datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/moment-ended/2.0',
+  traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', data: {requestId: 'req-moment-1', momentId: 'moment-1', ending: 'preempted', endedAtMs: h.now()},
+}}});
 
 /** One MCP tool call as a client credential makes it: initialize, say initialized, call, and end the session. */
 async function mcpCall(h: Harness, as: Role, tool: string, args: object): Promise<{status: number; result?: {structuredContent?: unknown; isError?: boolean}}> {
@@ -1252,9 +1260,10 @@ const gatewayReads: Scenario = {
 };
 
 /**
- * Each part may use only what its grant allows (Hub #835): a hook's credential may not request a command or read, the
- * reader's may not command, and the operator's commands its own device. A command that a raw HTTP client sends again
- * is refused as a duplicate, and the lamp runs it once.
+ * Each part may use only what its grant allows (Hub #835): a hook's credential may not request a command or read, and
+ * publishes lifecycle observations only; the reader's may not command, and the operator's commands its own device,
+ * with a command whose subject is its key's last token. A command that a raw HTTP client sends again is refused as a
+ * duplicate, and the lamp runs it once.
  */
 const grantsAndDuplicates: Scenario = {
   id: 'grants-and-duplicates',
@@ -1267,7 +1276,13 @@ const grantsAndDuplicates: Scenario = {
       rawCommand(h, 'bunny/parts/reader', switchLamp('lamp-1', 'on'), 'req-reader', 'msg-reader')))), 403, 'forbidden')),
     expect('nor may the operator command a device outside its grant', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-7',
       rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-7', 'on'), 'req-other', 'msg-other')))), 403, 'forbidden')),
+    expect('nor through a key it may use for a command whose subject names another lamp: it is invalid-message', async h =>
+      refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
+        rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-9', 'on'), 'req-misrouted', 'msg-misrouted')))), 400, 'invalid-message')),
     holds('no lamp switched', h => switches(h) === 0 || `${switches(h)} switches`, 200),
+    expect('the hook may publish lifecycle observations only: another family on a lifecycle key is forbidden', async h =>
+      refusedWith(keep(h, await h.gateway(rawMomentEnded(h, 'hook', 'bunny.event.lifecycle.wall'))), 403, 'forbidden')),
+    holds('and nobody heard it', h => !h.reader.heard().some(message => message.type === 'org.bunny.moment.ended') || 'the reader heard the forged moment', 200),
     act('the operator sends a raw command to switch lamp-1 on', async h => {
       const answer = keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1', rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-raw', 'msg-raw-1'))));
       const result = bodyOf<{result?: {status?: string}}>(answer)?.result;
@@ -1335,9 +1350,19 @@ const moduleContributions: Scenario = {
   seed: {modules: ['core', 'sign'], follows: [CORE_FAMILIES, ['sign']], config: {sign: SIGN_SECTION}},
   steps: [
     expect('the core and the sign are running', h => running(h, ['core', 'sign'])),
-    expect('the module list shows the sign\'s page, tool and settings', answers({as: 'reader', method: 'GET', path: '/api/v2/modules'}, answer => {
+    expect('the module list shows the operator, whose grant names the sign, its page, tool and settings', answers({as: 'operator', method: 'GET', path: '/api/v2/modules'}, answer => {
       const sign = bodyOf<{modules?: {name: string; pages: {path: string}[]; tools: string[]; settings: boolean}[]}>(answer)?.modules?.find(module => module.name === 'sign');
       return (sign?.pages[0]?.path === '/modules/sign/preview' && sign.tools.includes('sign_status') && sign.settings) || `${answer.status} ${answer.text.slice(0, 300)}`;
+    })),
+    expect('and the panel, whose grant does not name the sign, none of them', answers({as: 'panel', method: 'GET', path: '/api/v2/modules'}, answer => {
+      const sign = bodyOf<{modules?: {name: string; pages: unknown[]; tools: unknown[]; settings: boolean}[]}>(answer)?.modules?.find(module => module.name === 'sign');
+      return (sign !== undefined && sign.pages.length === 0 && sign.tools.length === 0 && !sign.settings) || `${answer.status} ${answer.text.slice(0, 300)}`;
+    })),
+    expect('the panel is refused the sign\'s settings, which name its address', answers({as: 'panel', method: 'GET', path: '/api/v2/modules/sign/settings'},
+      answer => (refusedWith(answer, 403, 'forbidden') === true && !answer.text.includes('192.0.2.10')) || `${answer.status} ${answer.text.slice(0, 200)}`)),
+    expect('and reads none of the sign\'s records', answers({as: 'panel', method: 'GET', path: '/api/v2/families/sign'}, answer => {
+      const records = bodyOf<{records?: unknown[]}>(answer)?.records;
+      return (answer.status === 200 && records?.length === 0) || `${answer.status} ${answer.text.slice(0, 200)}`;
     })),
     expect('a browser session opens the sign\'s page, which refers to its preview by reference', answers({as: 'browser', method: 'GET', path: '/modules/sign/preview'}, answer =>
       (answer.status === 200 && (answer.headers['content-type'] ?? '').startsWith('text/html') && answer.text.includes('src="content/preview.png"') &&

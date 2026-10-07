@@ -334,6 +334,23 @@ it('the shipped entry point runs with --simulate and --edge, and a remote part w
   assert.equal(runtime.records().some(record => JSON.stringify(record).includes('tok_SYNTHETIC835')), false, 'no token reaches a log record');
 });
 
+it('a SIGHUP while the runtime still starts is kept, and the credentials reload once the gateway serves', async context => {
+  const reader = {source: 'bunny/parts/reader', token: `tok_SYNTHETIC835_${randomBytes(16).toString('hex')}`, scopes: ['read'] as const};
+  const {config} = await edgeConfig(context, [reader]);
+  const runtime = spawnRuntime(context, FIXTURE, ['slow-start', '--port', '0', '--state-dir', await stateDir(context), '--config', config, '--edge']);
+  await waitFor(() => recorded(runtime, 'runtime.started'), 5000, 'the health server');
+  runtime.child.kill('SIGHUP');
+  await waitFor(() => runtime.stdout().includes('\n'), 15_000, 'the ready line');
+  await waitFor(() => recorded(runtime, 'runtime.edge.reloaded'), 5000, 'the reload');
+  const records = runtime.records();
+  const reloads = records.filter(record => record.event_name === 'runtime.edge.reloaded');
+  assert.deepEqual(reloads.map(record => record.attributes['bunny.outcome']), ['succeeded']);
+  const served = records.findIndex(record => record.event_name === 'runtime.edge.serving');
+  assert.ok(served >= 0 && served < records.findIndex(record => record.event_name === 'runtime.edge.reloaded'), 'the reload came once the gateway served');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+});
+
 it('--edge refuses a configuration without its edge section and a credential that acts as the core or a module, naming the reason in runtime.failed', async context => {
   const token = (): string => randomBytes(32).toString('base64url');
   const cases: readonly (readonly [readonly string[] | undefined, string])[] = [

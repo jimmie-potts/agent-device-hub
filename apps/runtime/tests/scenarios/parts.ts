@@ -68,8 +68,9 @@ export async function writeConfiguration(dir: string, {modules: config = {}, sec
   const listed = ROLES.map(role => ({id: role, source: sourceOf(role), digest: tokenDigest(tokens[role]), scopes: [...GRANTS[role].scopes], devices: [...GRANTS[role].devices]}));
   await writePrivate(credentials, `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}, null, 2)}\n`);
   const file = join(dir, 'runtime-config.json');
-  // A run's state directory lies too deep for the launcher's socket; the scenarios sign a browser in from a trusted page.
-  await writePrivate(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules, edge: {credentials, browserAccess: 'trusted-loopback', launcher: false}}, null, 2)}\n`);
+  // A run's state directory lies too deep for the launcher's socket; the scenarios sign a browser in from a trusted page,
+  // and call MCP, which is on.
+  await writePrivate(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules, edge: {credentials, browserAccess: 'trusted-loopback', launcher: false, mcp: true}}, null, 2)}\n`);
   return file;
 }
 

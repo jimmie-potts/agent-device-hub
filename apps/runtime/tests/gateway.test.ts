@@ -48,16 +48,19 @@ type Gateway = {
 };
 
 /**
- * The runtime with its gateway, the core and the configured sign, and the parts' credentials. Every answer a test makes
- * through `ask` is kept for the token scan.
+ * The runtime with its gateway, MCP on, the core and the configured sign, and the parts' credentials. Every answer a
+ * test makes through `ask` is kept for the token scan. `signs` replaces the sign's devices.
  */
-async function gateway(context: TestContext, parts: readonly EdgePart[], options: {modules?: BunnyModule[]; browserAccess?: 'trusted-loopback'} = {}): Promise<Gateway & {ask: typeof call}> {
+async function gateway(context: TestContext, parts: readonly EdgePart[], options: {
+  modules?: BunnyModule[]; browserAccess?: 'trusted-loopback'; mcp?: boolean; signs?: readonly {id: string; address: string}[];
+} = {}): Promise<Gateway & {ask: typeof call}> {
   const dir = await stateDir(context);
   const signToken = `${dir}/sign-token`;
   await writeFile(signToken, `${SYNTHETIC_TOKEN}\n`, {mode: 0o600});
   const files = await edgeConfig(context, parts, {
-    modules: {sign: {...SIGN_SECTION, secrets: {token: signToken}}}, editorLinks: {'sign-1': 'http://127.0.0.1:9100/editor'},
-    placeLinks: {kitchen: 'http://127.0.0.1:9200/'}, ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}),
+    modules: {sign: {...SIGN_SECTION, ...(options.signs === undefined ? {} : {signs: options.signs}), secrets: {token: signToken}}},
+    editorLinks: {'sign-1': 'http://127.0.0.1:9100/editor'}, placeLinks: {kitchen: 'http://127.0.0.1:9200/'}, mcp: options.mcp ?? true,
+    ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}),
   });
   const spans: string[] = [];
   const modules = options.modules ?? [createCoreModule(), createSignModule({transport: new SimulatedSigns({online: true})})];
@@ -81,7 +84,8 @@ function assertNoToken(g: Gateway): void {
   }
 }
 
-const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read']});
+/** A reader, granted `devices`: none by default, so the sign, whose device is `sign-1`, is not its to see. */
+const READER = (devices: readonly string[] = []): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read'], devices});
 const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control'], devices: ['sign-1']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
 
@@ -117,6 +121,18 @@ it('every refusal is the shared error body with a registry code: a malformed req
     dataschema: 'https://bunny.invalid/events/approval-recover/2.0', data: {turnId: 'turn-1', expectedRevision: 1},
   }, {timeoutMs: 2000});
   assert.equal(commanded.status === 'rejected' && commanded.error.error.code, 'forbidden');
+  // And it publishes lifecycle observations only: another family on a lifecycle key is forbidden, and nobody hears it.
+  const listener = await connectRemote({url, source: reader.source, token: reader.token});
+  context.after(() => listener.close());
+  const heard: string[] = [];
+  await listener.subscribe('bunny.event.*.*', message => { heard.push(message.type); });
+  await assert.rejects(remote.publish('bunny.event.lifecycle.wall', {
+    kind: 'occurrence', type: 'org.bunny.moment.ended', subject: 'wall', dataschema: 'https://bunny.invalid/events/moment-ended/2.0',
+    data: {requestId: 'req-moment-1', momentId: 'moment-1', ending: 'preempted', endedAtMs: Date.now()},
+  }), (error: unknown) => error instanceof SdkError && error.body.error.code === 'forbidden');
+  await new Promise(resolve => { setTimeout(resolve, 50); });
+  assert.deepEqual(heard, [], 'the reader heard nothing');
+  await listener.close();
   await remote.close();
   const refusals = g.logs.filter(record => record.event_name === 'runtime.edge.refused');
   assert.ok(refusals.some(record => record.attributes['http.route'] === '/api/v2/families/{family}' && record.attributes['bunny.code'] === 'invalid-request'));
@@ -257,7 +273,8 @@ it('reloading the credentials file takes a granted credential, refuses a revoked
 
 it('MCP lists and calls only what a credential may use, maps results and refusals to the shared error body, and recovers no approval for a reader', async context => {
   const reader = READER(), operator = OPERATOR(), hook = HOOK();
-  const g = await gateway(context, [reader, operator, hook]);
+  const signReader: EdgePart = {id: 'sign-reader', source: 'bunny/parts/sign-reader', token: token(), scopes: ['read'], devices: ['sign-1']};
+  const g = await gateway(context, [reader, operator, hook, signReader]);
   const {ask, url} = g;
   const accept = {accept: 'application/json, text/event-stream'};
   const session = async (part: EdgePart): Promise<Record<string, string>> => {
@@ -274,8 +291,12 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
   assert.deepEqual(await tools(operator), ['core_recover_approval', 'core_sessions', 'sign_status']);
-  assert.deepEqual(await tools(reader), ['core_sessions', 'sign_status'], 'a reader sees no action');
+  assert.deepEqual(await tools(signReader), ['core_sessions', 'sign_status'], 'a reader sees no action');
+  assert.deepEqual(await tools(reader), ['core_sessions'], 'nor the tools of a module whose device its grant does not name');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
+  // A call of a tool outside the grant is refused, as an unknown one is, by the MCP package.
+  const outside = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 9, method: 'tools/call', params: {name: 'sign_status', arguments: {}}}});
+  assert.equal(outside.text.includes('sign-1'), false, 'no sign reaches a reader without its grant');
   const headers = await session(operator);
   const tool = async (name: string, args: object): Promise<{isError: boolean; structuredContent: Record<string, unknown>}> => {
     const answer = await ask(url, '/mcp', {method: 'POST', token: operator.token, headers, body: {jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name, arguments: args}}});
@@ -306,17 +327,31 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
     manifest: {
       name: 'leaky', apiVersion: '1.2', configure: () => ({config: {token: SYNTHETIC_TOKEN}}),
       settings: {schema: {type: 'object'}, show: config => ({token: config.token})},
-      content: ref => ref === 'odd' ? {type: 'text/html', bytes: new Uint8Array([60])} : undefined,
-      tools: [{name: 'peek', description: 'Answers with what it should not.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'},
-        read: () => ({token: SYNTHETIC_TOKEN})}],
+      content: ref => ref === 'odd' ? {type: 'text/html', bytes: new Uint8Array([60])}
+        : ref === 'note' ? {type: 'text/plain; charset=utf-8', bytes: new TextEncoder().encode(`the token is ${SYNTHETIC_TOKEN}`)}
+          : ref === 'data' ? {type: 'application/json', bytes: new TextEncoder().encode(JSON.stringify({token: SYNTHETIC_TOKEN}))} : undefined,
+      tools: [
+        {name: 'peek', description: 'Answers with what it should not.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'},
+          read: () => ({token: SYNTHETIC_TOKEN})},
+        {name: 'refuse', description: 'Refuses, quoting what it should not.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'},
+          read: () => errorBody('invalid-state', {detail: `the device holds ${SYNTHETIC_TOKEN}`})},
+        {name: 'empty', description: 'Answers with an error member that is no error.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'},
+          read: () => ({error: null})},
+      ],
     },
-    async start({secrets}) { await secrets.read('token'); }, stop: () => {},
+    async start({secrets, sdk}) {
+      await secrets.read('token');
+      // An owner whose refusal quotes the secret: the gateway serves the code, never the detail.
+      await sdk.serveSync(['leak'], () => errorBody('invalid-state', {detail: `the owner holds ${SYNTHETIC_TOKEN}`}));
+    },
+    stop: () => {},
   };
   const dir = await stateDir(context);
   const secret = `${dir}/leaky-token`;
   await writeFile(secret, `${SYNTHETIC_TOKEN}\n`, {mode: 0o600});
-  const files = await edgeConfig(context, [reader], {modules: {leaky: {secrets: {token: secret}}}});
-  const {runtime, logs} = await run(context, {modules: [createCoreModule(), thrower, leaky], configFile: files.config, edge: {schemas: {}}});
+  const files = await edgeConfig(context, [reader], {modules: {leaky: {secrets: {token: secret}}}, mcp: true});
+  const leakSchema = {type: 'object', additionalProperties: false, required: ['id', 'revision'], properties: {id: {type: 'string'}, revision: {type: 'integer'}}};
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), thrower, leaky], configFile: files.config, edge: {schemas: {'https://bunny.invalid/events/leak/2.0': leakSchema}}});
   const url = runtime.url;
   const page = await call(url, '/modules/broken/status', {token: reader.token});
   assert.deepEqual([page.status, codeOf(page)], [500, 'internal']);
@@ -330,6 +365,16 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
   const odd = await call(url, '/modules/leaky/content/odd', {token: reader.token});
   assert.deepEqual([odd.status, codeOf(odd)], [500, 'internal'], 'content of a type the gateway does not serve');
   assert.deepEqual([(await call(url, '/modules/leaky/content/none', {token: reader.token})).status, (await call(url, '/modules/nobody/page', {token: reader.token})).status], [404, 404]);
+  // Text and JSON content are checked for a secret too.
+  for (const ref of ['note', 'data']) {
+    const leaked = await call(url, `/modules/leaky/content/${ref}`, {token: reader.token});
+    assert.deepEqual([leaked.status, codeOf(leaked), leaked.text.includes(SYNTHETIC_TOKEN)], [500, 'internal', false], ref);
+  }
+  // An owner's refusal keeps its code, never its detail.
+  for (const path of ['/api/v2/families/leak', '/api/v2/snapshot?families=leak']) {
+    const refused = await call(url, path, {token: reader.token});
+    assert.deepEqual([refused.status, codeOf(refused), refused.text.includes(SYNTHETIC_TOKEN)], [409, 'invalid-state', false], path);
+  }
   // A tool's answer that holds a secret a module read is refused too.
   const accept = {accept: 'application/json, text/event-stream'};
   const init = await call(url, '/mcp', {method: 'POST', token: reader.token, headers: accept, body: {
@@ -337,16 +382,18 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
   }});
   const session = {...accept, 'mcp-session-id': init.headers.get('mcp-session-id') ?? '', 'mcp-protocol-version': '2025-11-25'};
   await call(url, '/mcp', {method: 'POST', token: reader.token, headers: session, body: {jsonrpc: '2.0', method: 'notifications/initialized'}});
-  const peeked = await call(url, '/mcp', {method: 'POST', token: reader.token, headers: session, body: {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'leaky_peek', arguments: {}}}});
-  assert.equal(peeked.text.includes(SYNTHETIC_TOKEN), false);
-  assert.equal(((peeked.body as {result: {structuredContent: {data: {error: {code: string}}}}}).result.structuredContent.data.error.code), 'internal');
+  for (const name of ['leaky_peek', 'leaky_refuse', 'leaky_empty']) {
+    const answered = await call(url, '/mcp', {method: 'POST', token: reader.token, headers: session, body: {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name, arguments: {}}}});
+    assert.equal(answered.text.includes(SYNTHETIC_TOKEN), false, name);
+    assert.equal(((answered.body as {result: {structuredContent: {data: {error: {code: string}}}}}).result.structuredContent.data.error.code), 'internal', name);
+  }
   await runtime.stop();
   assert.equal(JSON.stringify(logs).includes(SYNTHETIC_TOKEN), false);
   assert.equal(JSON.stringify(logs).includes(MARKER), false);
 });
 
 it('the sign\'s page refers to its preview by reference and is served with a policy that allows no script, frame or form', async context => {
-  const reader = READER();
+  const reader = READER(['sign-1']);
   const g = await gateway(context, [reader]);
   const page = await g.ask(g.url, '/modules/sign/preview', {token: reader.token});
   assert.equal(page.status, 200);
@@ -361,7 +408,8 @@ it('the sign\'s page refers to its preview by reference and is served with a pol
   const settings = await g.ask(g.url, '/api/v2/modules/sign/settings', {token: reader.token});
   assert.deepEqual((settings.body as {settings: unknown}).settings, {greeting: 'hello', signs: [{id: 'sign-1', address: '192.0.2.10'}]});
   const links = await g.ask(g.url, '/api/v2/links', {token: reader.token});
-  assert.deepEqual(links.body, {schema: 'links/2.0', editors: {}, places: {kitchen: 'http://127.0.0.1:9200/'}}, 'an editor link only for a device the caller may command');
+  assert.deepEqual(links.body, {schema: 'links/2.0', editors: {'sign-1': 'http://127.0.0.1:9100/editor'}, places: {kitchen: 'http://127.0.0.1:9200/'}},
+    'an editor link for a device the caller\'s grant names');
   await g.runtime.stop();
   assertNoToken(g);
 });
@@ -407,13 +455,15 @@ it('the route map covers every route of the old Hub\'s server and its route modu
 });
 
 it('the conversion carries a Hub\'s credentials with every scope and device grant, its sign-in and links, and a converted token authenticates', async context => {
-  const tokens = {dashboard: token(), producer: token(), admin: token()};
+  const tokens = {dashboard: token(), producer: token(), admin: token(), named: token()};
   const hub = {
-    directory: '/home/owner/.local/state/agent-device-hub/hub', ownerId: 'owner', port: 8788, browserAccess: 'trusted-loopback',
+    directory: '/home/owner/.local/state/agent-device-hub/hub', ownerId: 'owner', port: 8788, browserAccess: 'trusted-loopback', mcp: true,
     credentials: [
       {id: 'Pixoo_Monitor', digest: tokenDigest(tokens.dashboard), scopes: ['read', 'control'], devices: ['sign-1', 'pixoo-desk']},
       {id: 'hub-0123456789abcdef0123456789abcdef', digest: tokenDigest(tokens.producer), scopes: ['ingest'], devices: []},
       {id: 'owner-admin', digest: tokenDigest(tokens.admin), scopes: ['read', 'control', 'ingest', 'admin'], devices: ['sign-1']},
+      // The browser sessions' source is theirs alone, so a credential of this name acts as another.
+      {id: 'dashboard', digest: tokenDigest(tokens.named), scopes: ['read'], devices: []},
     ],
     editorLinks: {'sign-1': 'http://127.0.0.1:9100/editor'}, placeLinks: {kitchen: 'http://127.0.0.1:9200/'},
   };
@@ -422,14 +472,20 @@ it('the conversion carries a Hub\'s credentials with every scope and device gran
     {id: 'Pixoo_Monitor', source: 'bunny/parts/pixoo-monitor', scopes: ['read', 'control'], devices: ['sign-1', 'pixoo-desk']},
     {id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hub-0123456789abcdef0123456789abcdef', scopes: ['ingest'], devices: []},
     {id: 'owner-admin', source: 'bunny/parts/owner-admin', scopes: ['read', 'control', 'ingest', 'admin'], devices: ['sign-1']},
+    {id: 'dashboard', source: 'bunny/parts/dashboard-credential', scopes: ['read'], devices: []},
   ]);
   assert.deepEqual(converted.credentials.map(credential => credential.digest), hub.credentials.map(credential => credential.digest), 'the digests, never a token');
-  assert.deepEqual(converted.edge, {browserAccess: 'trusted-loopback', launcher: true, editorLinks: hub.editorLinks, placeLinks: hub.placeLinks});
+  assert.deepEqual(converted.edge, {browserAccess: 'trusted-loopback', launcher: true, mcp: true, editorLinks: hub.editorLinks, placeLinks: hub.placeLinks});
+  assert.equal(convertHubEdge({...hub, mcp: undefined}).edge.mcp, false, 'a Hub without mcp served none, and nor does the runtime');
   for (const [what, broken] of [
     ['two IDs, one source', {...hub, credentials: [...hub.credentials, {...hub.credentials[0], id: 'pixoo-monitor', digest: tokenDigest(token())}]}],
     ['a device that is not a routing ID', {...hub, credentials: [{...hub.credentials[0], devices: ['Pixoo Desk']}]}],
     ['an unknown scope', {...hub, credentials: [{...hub.credentials[0], scopes: ['owner']}]}],
     ['another browser access', {...hub, browserAccess: 'open'}],
+    ['an mcp that is not a switch', {...hub, mcp: 'yes'}],
+    ['an editor link to another host', {...hub, editorLinks: {'sign-1': 'http://192.0.2.1:9100/'}}],
+    ['a place link without a port', {...hub, placeLinks: {kitchen: 'http://127.0.0.1/'}}],
+    ['more than 8 place links', {...hub, placeLinks: Object.fromEntries(Array.from({length: 9}, (_, index) => [`place-${index}`, `http://127.0.0.1:${9200 + index}/`]))}],
   ] as const) {
     assert.throws(() => convertHubEdge(broken), (error: unknown) => error instanceof RuntimeError && error.code === 'convert-invalid' && !String(error).includes(MARKER), what);
   }
@@ -444,6 +500,7 @@ it('the conversion carries a Hub\'s credentials with every scope and device gran
   assert.equal(await authority(tokens.admin, 'admin'), 200);
   const signed = await call(runtime.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: runtime.url, 'bunny-request': '1'}});
   assert.equal(signed.status, 200, 'trusted loopback sign-in came across');
+  assert.equal((await call(runtime.url, '/mcp', {method: 'POST', token: tokens.admin, body: {}, headers: {accept: 'application/json, text/event-stream'}})).status === 404, false, 'and MCP');
   assert.equal(JSON.stringify(await readFile(files.credentials, 'utf8')).includes(MARKER), false, 'the credentials file holds no token');
 });
 
@@ -476,10 +533,176 @@ it('a stalled reader\'s stream is ended at the runtime\'s stall limit, and the e
   await runtime.stop();
 });
 
-/** Opens a raw stream to the runtime's edge, reads its ready event, and then stops reading. */
-async function rawStream(url: string, bearer: string): Promise<{connection: string; response: IncomingMessage}> {
+/** A state family keyed by device, at version 2.1, and a module that controls two of its devices. */
+const GADGET_SCHEMA = 'https://bunny.invalid/events/gadget/2.1';
+const gadgetSchemas = {[GADGET_SCHEMA]: {type: 'object', additionalProperties: false, required: ['id', 'revision'], properties: {id: {type: 'string'}, revision: {type: 'integer'}}}};
+function gadgetModule(): BunnyModule & {publish: (id: string, revision: number) => Promise<void>} {
+  let sdk: Parameters<BunnyModule['start']>[0]['sdk'] | undefined;
+  const revisions = new Map([['gadget-1', 1], ['gadget-2', 1]]);
+  const state = (id: string): {type: string; subject: string; dataschema: string; data: {id: string; revision: number}} =>
+    ({type: 'org.bunny.gadget.updated', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision: revisions.get(id) ?? 0}});
+  return {
+    manifest: {
+      name: 'gadget', apiVersion: '1.2', configure: () => ({config: undefined, devices: ['gadget-1', 'gadget-2']}),
+      pages: [{id: 'status', title: 'Gadgets', render: () => '<p>gadget-1 and gadget-2</p>'}],
+      content: ref => ref === 'note' ? {type: 'text/plain; charset=utf-8', bytes: new TextEncoder().encode('both gadgets')} : undefined,
+      settings: {schema: {type: 'object'}, show: () => ({gadgets: ['gadget-1', 'gadget-2']})},
+      tools: [{name: 'list', description: 'Lists the gadgets.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'}, read: () => ({gadgets: 2})}],
+    },
+    async start(context) {
+      sdk = context.sdk;
+      await sdk.serveSync(['gadget'], () => ({revision: Math.max(...revisions.values()), states: [...revisions.keys()].map(state)}));
+    },
+    stop: () => {},
+    publish: async (id, revision) => {
+      revisions.set(id, revision);
+      await sdk?.publish(`bunny.state.gadget.${id}`, {kind: 'state', ...state(id)});
+      await sdk?.publish(`bunny.event.gadget.${id}`, {kind: 'occurrence', type: 'org.bunny.gadget.switched', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision}});
+    },
+  };
+}
+
+it('a reader sees only the devices its grant names: records in families and snapshots, a module\'s contributions and what the edge syncs and sends', async context => {
+  const narrow = READER(['gadget-1']);
+  const wide: EdgePart = {id: 'wide', source: 'bunny/parts/wide', token: token(), scopes: ['read'], devices: ['gadget-1', 'gadget-2']};
+  const files = await edgeConfig(context, [narrow, wide], {modules: {gadget: {}}, editorLinks: {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'}});
+  const gadget = gadgetModule();
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), gadget], configFile: files.config, edge: {schemas: gadgetSchemas}});
+  const url = runtime.url;
+  const ids = (answer: Answer, path: (body: never) => {id: string}[]): string[] => path(answer.body as never).map(record => record.id);
+  const family = (part: EdgePart): Promise<Answer> => call(url, '/api/v2/families/gadget', {token: part.token});
+  assert.deepEqual(ids(await family(narrow), (body: {records: {id: string}[]}) => body.records), ['gadget-1']);
+  assert.deepEqual(ids(await family(wide), (body: {records: {id: string}[]}) => body.records), ['gadget-1', 'gadget-2']);
+  // The snapshot reads the family's records at any version of its schema, and leaves out the same device.
+  const snapshot = await call(url, '/api/v2/snapshot?families=gadget', {token: narrow.token});
+  assert.deepEqual(ids(snapshot, (body: {records: {gadget: {id: string}[]}}) => body.records.gadget), ['gadget-1']);
+  assert.equal((await call(url, '/api/v2/families/session', {token: narrow.token})).status, 200, 'a family no device keys stays readable');
+  const links = await call(url, '/api/v2/links', {token: narrow.token});
+  assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/'});
+  // The module controls a device the narrow grant does not name, so its contributions are not the narrow reader's.
+  const listed = async (part: EdgePart): Promise<unknown> =>
+    ((await call(url, '/api/v2/modules', {token: part.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
+  assert.deepEqual(await listed(narrow), {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [], tools: [], settings: false});
+  assert.deepEqual(await listed(wide), {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
+    const refused = await call(url, path, {token: narrow.token});
+    assert.deepEqual([refused.status, codeOf(refused), refused.text.includes('gadget-2')], [403, 'forbidden', false], path);
+    assert.equal((await call(url, path, {token: wide.token})).status, 200, path);
+  }
+  // Over the SDK edge, the narrow reader's sync and subscriptions leave gadget-2 out, so its copy never holds it.
+  const remote = await connectRemote({url, source: narrow.source, token: narrow.token});
+  context.after(() => remote.close());
+  const copy = await remote.sync<{id: string; revision: number}>(['gadget'], () => {}, {timeoutMs: 5000});
+  assert.equal(copy.status, 'synced');
+  if (copy.status !== 'synced') return;
+  assert.deepEqual(copy.copy.states().map(state => state.data.id), ['gadget-1']);
+  const heard: string[] = [];
+  await remote.subscribe('bunny.event.gadget.*', (message, key) => { heard.push(`${String(key)} ${message.subject}`); });
+  await gadget.publish('gadget-2', 2);
+  await gadget.publish('gadget-1', 2);
+  await waitFor(() => heard.length === 1 && copy.copy.states()[0]?.data.revision === 2, 5000, 'gadget-1\'s change');
+  await new Promise(resolve => { setTimeout(resolve, 50); });
+  assert.deepEqual(heard, ['bunny.event.gadget.gadget-1 gadget-1']);
+  assert.deepEqual(copy.copy.states().map(state => `${state.data.id}@${state.data.revision}`), ['gadget-1@2']);
+  await remote.close();
+  await runtime.stop();
+  assert.equal(JSON.stringify(logs).includes(MARKER), false);
+});
+
+it('a browser session that is evicted or expires ends its streams at once, as a logout does', async context => {
+  const clock = manualClock(Date.now());
+  const files = await edgeConfig(context, [READER()], {browserAccess: 'trusted-loopback'});
+  const {runtime, logs} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}, clock, scheduler: clock.scheduler});
+  const url = runtime.url;
+  const signIn = async (): Promise<string> => {
+    const signed = await call(url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: url, 'bunny-request': '1'}});
+    assert.equal(signed.status, 200);
+    return (signed.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  };
+  const ended = (): number => logs.filter(record => record.event_name === 'runtime.edge.disconnected' && record.attributes['bunny.participant'] === 'bunny/parts/dashboard').length;
+  const oldest = await signIn();
+  const first = await rawStream(url, undefined, {cookie: oldest});
+  context.after(() => { first.response.destroy(); });
+  // The seventeenth session evicts the first, and its stream ends with it.
+  for (let index = 0; index < 16; index += 1) await signIn();
+  await waitFor(() => ended() === 1, 5000, 'the evicted session\'s stream ended');
+  assert.equal((await call(url, '/api/v2/modules', {headers: {cookie: oldest}})).status, 401);
+  const newest = await signIn();
+  const second = await rawStream(url, undefined, {cookie: newest});
+  context.after(() => { second.response.destroy(); });
+  clock.advance(8 * 60 * 60 * 1000);
+  await waitFor(() => ended() >= 2, 5000, 'the expired session\'s stream ended');
+  assert.equal((await call(url, '/api/v2/modules', {headers: {cookie: newest}})).status, 401);
+});
+
+/** One HTTP call that names its own Host, as a browser on `localhost` would, to the listener on 127.0.0.1. */
+function hosted(url: string, path: string, host: string, init: {method?: string; headers?: Record<string, string>; body?: string} = {}): Promise<{status: number; headers: IncomingMessage['headers']; text: string}> {
+  const {port} = new URL(url);
   return new Promise((resolve, reject) => {
-    const request = httpRequest(new URL('/api/sdk/v1/stream', url), {headers: {authorization: `Bearer ${bearer}`}}, response => {
+    const sent = httpRequest({host: '127.0.0.1', port, path, method: init.method ?? 'GET', headers: {host, ...init.headers}}, response => {
+      let text = '';
+      response.setEncoding('utf8').on('data', (chunk: string) => { text += chunk; }).on('end', () => { resolve({status: response.statusCode ?? 0, headers: response.headers, text}); });
+    });
+    sent.once('error', reject);
+    sent.end(init.body);
+  });
+}
+
+it('a bookmark on localhost signs in as one on 127.0.0.1 does, and a page on the other loopback name is another origin', async context => {
+  const files = await edgeConfig(context, [READER()], {browserAccess: 'trusted-loopback'});
+  const {runtime} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}});
+  const {port} = new URL(runtime.url);
+  const local = `localhost:${port}`, origin = `http://${local}`;
+  const json = {'content-type': 'application/json'};
+  const signed = await hosted(runtime.url, '/api/v2/browser/session', local, {method: 'POST', body: '{}', headers: {...json, origin, 'bunny-request': '1'}});
+  assert.equal(signed.status, 200, signed.text);
+  const cookie = (signed.headers['set-cookie']?.[0] ?? '').split(';')[0] ?? '';
+  assert.equal((await hosted(runtime.url, '/api/v2/modules', local, {headers: {cookie, 'sec-fetch-site': 'same-origin'}})).status, 200);
+  const body = JSON.stringify({session: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', turnId: 'turn-1', expectedRevision: 0});
+  const change = await hosted(runtime.url, '/api/v2/commands/approval-recover', local, {method: 'POST', body, headers: {...json, cookie, origin, 'bunny-request': '1'}});
+  assert.equal(change.status, 404, 'the change reached the core, which holds no such session');
+  // A page on 127.0.0.1 is another origin for a request to localhost.
+  const other = await hosted(runtime.url, '/api/v2/browser/session', local, {method: 'POST', body: '{}', headers: {...json, origin: runtime.url, 'bunny-request': '1'}});
+  assert.equal(other.status, 403);
+  // A stale cookie of the same name, as another loopback port's page may leave, does not hide the valid one.
+  const stale = `bunny-session=${'A'.repeat(43)}`;
+  assert.equal((await hosted(runtime.url, '/api/v2/modules', local, {headers: {cookie: `${stale}; ${cookie}`}})).status, 200);
+});
+
+it('MCP is off unless the edge section turns it on, and a browser session on /mcp is told it takes a client credential', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader], {mcp: false, browserAccess: 'trusted-loopback'});
+  const off = await g.ask(g.url, '/mcp', {method: 'POST', token: reader.token, body: {jsonrpc: '2.0', id: 1, method: 'initialize'}, headers: {accept: 'application/json, text/event-stream'}});
+  assert.deepEqual([off.status, codeOf(off)], [404, 'not-found']);
+  const on = await gateway(context, [reader], {browserAccess: 'trusted-loopback'});
+  const signed = await on.ask(on.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: on.url, 'bunny-request': '1'}});
+  const cookie = (signed.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  const session = await on.ask(on.url, '/mcp', {method: 'POST', body: {jsonrpc: '2.0', id: 1, method: 'initialize'}, headers: {cookie, origin: on.url}});
+  assert.deepEqual([session.status, codeOf(session)], [403, 'forbidden']);
+  assert.match((session.body as {error: {detail: string}}).error.detail, /client credential/);
+});
+
+it('the gateway\'s refusals never quote what the caller sent, and its JSON answers forbid sniffing', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader]);
+  const marker = 'quoted-marker';
+  const answers = [
+    await g.ask(g.url, `/api/v2/snapshot?families=session,${marker}`, {token: reader.token}),
+    await g.ask(g.url, `/api/v2/modules/${marker}/settings`, {token: reader.token}),
+    await g.ask(g.url, '/api/v2/modules', {method: 'POST', token: reader.token, body: {}}),
+    await g.ask(g.url, `/api/v2/families/${marker}`, {token: reader.token}),
+  ];
+  for (const answer of answers) {
+    assert.equal(answer.text.includes(marker), false, answer.text);
+    assert.equal(answer.headers.get('x-content-type-options'), 'nosniff');
+  }
+  assert.equal((await fetch(new URL('/api/runtime/v1/health', g.url))).headers.get('x-content-type-options'), 'nosniff');
+});
+
+/** Opens a raw stream to the runtime's edge with a bearer token or other headers, reads its ready event, and then stops reading. */
+async function rawStream(url: string, bearer: string | undefined, headers: Record<string, string> = {}): Promise<{connection: string; response: IncomingMessage}> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(new URL('/api/sdk/v1/stream', url), {headers: {...headers, ...(bearer === undefined ? {} : {authorization: `Bearer ${bearer}`})}}, response => {
       let text = '';
       const onData = (chunk: Buffer): void => {
         text += chunk.toString('utf8');

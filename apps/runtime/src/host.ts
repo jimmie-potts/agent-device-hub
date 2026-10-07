@@ -429,7 +429,7 @@ export class ModuleHost {
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
       publishMessage: <T extends object>(key: string, message: Message<T>) => participant.publishMessage(key, message),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
-        participant.subscribe<T>(pattern, message => inFlow(() => handler(message)), options === undefined ? undefined : {
+        participant.subscribe<T>(pattern, (message, key) => inFlow(() => handler(message, key)), options === undefined ? undefined : {
           ...(options.onOverflow === undefined ? {} : {onOverflow: overflow => inFlow(() => options.onOverflow?.(overflow))}),
         }),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => participant.request(key, draft, options),

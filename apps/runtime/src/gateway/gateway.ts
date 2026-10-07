@@ -18,7 +18,7 @@ import {ContributionFailed, ModuleUnavailable, type HostedModule, type ModuleHos
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
 import {
-  Access, BROWSER_SOURCE, REQUEST_HEADER, contextOf, edgePermissions, endedCookie, sessionCookie, type Principal,
+  Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, hiddenDevices, mayUseModule, sessionCookie, type Principal,
 } from './access.js';
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
@@ -110,12 +110,17 @@ export class Gateway {
   #mcp: McpHandler | undefined;
   #closeLauncher: (() => Promise<void>) | undefined;
   #origin = '';
+  #hosts: readonly string[] = [];
   #closed = false;
 
   constructor(options: GatewayOptions) {
     this.#options = options;
     this.#log = options.log;
-    this.access = new Access(options.credentials, () => options.host.modules().flatMap(module => module.devices), options.clock);
+    this.access = new Access(options.credentials, {
+      devices: () => this.#devices(), clock: options.clock, scheduler: options.scheduler,
+      // A browser session that ends without its logout, evicted or expired, takes its streams with it.
+      ended: id => { this.edge.disconnectPrincipal(id); },
+    });
     this.edge = new RemoteEdge({
       bus: options.bus, validator: options.validator, now: () => options.clock.now(), scheduler: options.scheduler,
       onDiagnostic: options.onDiagnostic === undefined ? diagnosticWriter(options.log) : (writer => (diagnostic: Diagnostic) => {
@@ -124,7 +129,7 @@ export class Gateway {
       })(diagnosticWriter(options.log)),
       authenticate: request => {
         const principal = this.#admitted.get(request);
-        return principal === undefined ? undefined : edgePermissions(principal);
+        return principal === undefined ? undefined : edgePermissions(principal, this.#devices());
       },
       ...(options.liveness?.heartbeatMs === undefined ? {} : {heartbeatMs: options.liveness.heartbeatMs}),
       ...(options.liveness?.stallMs === undefined ? {} : {stallMs: options.liveness.stallMs}),
@@ -138,12 +143,30 @@ export class Gateway {
    */
   async start(origin: string, hosts: readonly string[]): Promise<void> {
     this.#origin = origin;
+    this.#hosts = hosts.map(host => host.toLowerCase());
     this.#own = this.#options.bus.connect(GATEWAY_SOURCE);
-    this.#mcp = createGatewayMcp({
-      modules: () => this.#options.host.modules(), invoke: (name, call) => this.#options.host.invoke(name, call), access: this.access,
-      recover: (id, input) => this.#recoverFor(id, input), scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
-    }, hosts);
+    // MCP serves only when the edge section turns it on, as the old Hub's `mcp` did.
+    if (this.#options.edge.mcp) {
+      this.#mcp = createGatewayMcp({
+        modules: () => this.#options.host.modules(), invoke: (name, call) => this.#options.host.invoke(name, call), access: this.access,
+        recover: (id, input) => this.#recoverFor(id, input), scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
+      }, hosts);
+    }
     if (this.#options.edge.launcher) this.#closeLauncher = await startLauncher(this.#options.stateDir, () => ({url: `${this.#origin}/`, code: this.access.issueLaunch()}));
+  }
+
+  /** Every device an admitted module names. */
+  #devices(): string[] {
+    return this.#options.host.modules().filter(module => module.admitted).flatMap(module => module.devices);
+  }
+
+  /**
+   * The request's own origin: `http://` and the host it named, either of the listener's loopback names, so a bookmark on
+   * `localhost` signs in as one on `127.0.0.1` does (Hub #276). The runtime refuses any other host before this.
+   */
+  #originOf(request: IncomingMessage): string {
+    const host = (request.headers.host ?? '').toLowerCase();
+    return this.#hosts.includes(host) ? `http://${host}` : this.#origin;
   }
 
   /** Replaces the credentials, and ends the streams and MCP use of every credential that went or changed. */
@@ -185,6 +208,7 @@ export class Gateway {
     let principal: Principal | undefined;
     try {
       if (path === '/mcp') {
+        if (!this.#options.edge.mcp) throw refuse('not-found', 'MCP is off');
         principal = this.#admit(request, {credential: true});
         if (this.#mcp === undefined) throw refuse('unavailable', 'MCP serves once the gateway has started');
         await this.#mcp.handle(request, response);
@@ -221,7 +245,10 @@ export class Gateway {
    * client credential only, never a browser session.
    */
   #admit(request: IncomingMessage, {credential = false}: {credential?: boolean} = {}): Principal {
-    const admission = this.access.admit(request, this.#origin);
+    // A browser session on a credential's route is told so first, whatever else it lacks.
+    const session = typeof request.headers.authorization !== 'string' && carriesSession(request);
+    if (credential && session) throw refuse('forbidden', 'this route takes a client credential, not a browser session');
+    const admission = this.access.admit(request, this.#originOf(request));
     if ('refusal' in admission) throw refuse(admission.refusal.code, admission.refusal.detail);
     const {principal} = admission;
     if (credential && principal.kind !== 'credential') throw refuse('forbidden', 'this route takes a client credential, not a browser session');
@@ -231,7 +258,7 @@ export class Gateway {
   /** The SDK edge's routes: the gateway admits the caller, and the edge checks each call against its permissions. */
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
-    const admission = this.access.admit(request, this.#origin);
+    const admission = this.access.admit(request, this.#originOf(request));
     if ('refusal' in admission) {
       const {code, detail} = admission.refusal;
       this.#refused({'bunny.route': route, 'bunny.code': code}, levelOf(code));
@@ -261,11 +288,11 @@ export class Gateway {
       const answer = await this.#recover(principal, recoveryInput(input));
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     }
-    if (method !== 'GET') throw refuse('not-found', `no ${method} ${path}`);
+    if (method !== 'GET') throw refuse('not-found', 'no such route');
     needs('read');
     if (path === '/api/v2/modules') {
       noQuery();
-      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module))});
+      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module, principal))});
     }
     if (path === '/api/v2/links') {
       noQuery();
@@ -273,47 +300,60 @@ export class Gateway {
       const editors = Object.fromEntries(Object.entries(editorLinks).filter(([device]) => principal.devices.has(device)));
       return json(200, {schema: 'links/2.0', editors, places: placeLinks});
     }
-    if (path === '/api/v2/snapshot') return this.#snapshot(url);
+    if (path === '/api/v2/snapshot') return this.#snapshot(url, principal);
     const family = /^\/api\/v2\/families\/([^/]+)$/.exec(path)?.[1];
     if (family !== undefined) {
       noQuery();
-      return this.#family(family);
+      return this.#family(family, principal);
     }
     const settings = /^\/api\/v2\/modules\/([^/]+)\/settings$/.exec(path)?.[1];
     if (settings !== undefined) {
       noQuery();
-      return this.#settings(settings);
+      return this.#settings(settings, principal);
     }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
       noQuery();
-      return this.#content(content[1] ?? '', content[2] ?? '');
+      return this.#content(content[1] ?? '', content[2] ?? '', principal);
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
       noQuery();
-      return this.#page(page[1] ?? '', page[2] ?? '');
+      return this.#page(page[1] ?? '', page[2] ?? '', principal);
     }
     throw refuse('not-found', 'no such route');
   }
 
-  /** A module as `/api/v2/modules` lists it: its state and what it contributes. */
-  #describe(module: HostedModule): object {
+  /**
+   * A module as `/api/v2/modules` lists it: its state and what it contributes, which is nothing for a caller whose grant
+   * does not name every device the module names.
+   */
+  #describe(module: HostedModule, principal: Principal): object {
     const {name, manifest, state} = module;
+    const usable = module.admitted && mayUseModule(principal, module.devices);
     return {
       name, apiVersion: manifest.apiVersion, state,
-      pages: module.admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
-      tools: module.admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval'] : [])] : [],
-      settings: module.admitted && manifest.settings !== undefined,
+      pages: usable ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
+      tools: usable ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval'] : [])] : [],
+      settings: usable && manifest.settings !== undefined,
     };
   }
 
-  /** The records of one family, from the gateway's kept copy of it, synced on the first read. */
-  async #family(family: string): Promise<Answer> {
+  /**
+   * Whether a caller may see a record of a family: not when its `id`, the last token of its key, is a device its grant
+   * does not name, as the edge leaves those out of what the caller syncs (Hub #835).
+   */
+  #visible(principal: Principal): (record: Record<string, unknown>) => boolean {
+    const hidden = new Set(hiddenDevices(principal, this.#devices()));
+    return record => typeof record.id !== 'string' || !hidden.has(record.id);
+  }
+
+  /** The records of one family that the caller may see, from the gateway's kept copy of it, synced on the first read. */
+  async #family(family: string, principal: Principal): Promise<Answer> {
     if (!FAMILY.test(family) || family.length > 64) throw refuse('invalid-request', 'a family name is lowercase letters and digits with single hyphens');
     if (!this.#options.families.has(family)) throw refuse('not-found', 'no such family');
     const copy = await this.#copy(family);
-    return json(200, {schema: 'family-read/2.0', family, records: copy.states().map(state => state.data)});
+    return json(200, {schema: 'family-read/2.0', family, records: copy.states().map(state => state.data).filter(this.#visible(principal))});
   }
 
   /**
@@ -332,7 +372,8 @@ export class Gateway {
     }, {timeoutMs: SYNC_TIMEOUT_MS}).then(result => {
       if (result.status === 'synced') return result.copy;
       this.#copies.delete(family);
-      throw new Refused(result.error.error.code, result.error.error.detail ?? 'the owner refused the sync');
+      // The owner's own detail is not served: it may say anything, a secret included. Its code stands.
+      throw new Refused(result.error.error.code, 'the owner refused the sync');
     }, (error: unknown) => {
       this.#copies.delete(family);
       throw error;
@@ -343,9 +384,11 @@ export class Gateway {
 
   /**
    * The snapshot read API (ADR 0012, "Portability"): one owner's current state of the named families, at its revision,
-   * as one sync answers it, with no copy kept.
+   * as one sync answers it, with no copy kept. It is the gateway's one-off sync: the second implementation of the
+   * snapshot read API that the ADR asks for, here for a caller of this one process, which leaves out the records of
+   * devices its grant does not name.
    */
-  async #snapshot(url: URL): Promise<Answer> {
+  async #snapshot(url: URL, principal: Principal): Promise<Answer> {
     const keys = [...url.searchParams.keys()];
     const listed = url.searchParams.get('families');
     if (keys.length !== 1 || listed === null) throw refuse('invalid-request', 'name the families as families=<a>,<b>');
@@ -353,20 +396,21 @@ export class Gateway {
     if (families.length > 32 || families.some(family => !FAMILY.test(family) || family.length > 64) || new Set(families).size !== families.length) {
       throw refuse('invalid-request', 'the families are distinct family names, at most 32');
     }
-    const unknown = families.find(family => !this.#options.families.has(family));
-    if (unknown !== undefined) throw refuse('not-found', `no such family: ${unknown}`);
+    if (families.some(family => !this.#options.families.has(family))) throw refuse('not-found', 'a named family does not exist');
     const own = this.#own;
     if (own === undefined) throw refuse('unavailable', 'the gateway has not started');
     const result = await own.sync<Record<string, unknown>>(families, () => {}, {timeoutMs: SYNC_TIMEOUT_MS});
-    if (result.status === 'rejected') throw refuse(result.error.error.code, result.error.error.detail ?? 'the owner refused the sync');
-    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => state.dataschema === `${SCHEMA_BASE}${family}/2.0`).map(state => state.data)]));
+    if (result.status === 'rejected') throw refuse(result.error.error.code, 'the owner refused the sync');
+    const visible = this.#visible(principal);
+    // A record belongs to the family its schema names, at whatever version.
+    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).map(state => state.data).filter(visible)]));
     await result.copy.close();
     return json(200, {schema: 'snapshot-read/2.0', families, revision: result.message.data.revision, records});
   }
 
   /** What a module shows of its settings: `show` over the configuration `configure` accepted, never a secret. */
-  async #settings(name: string): Promise<Answer> {
-    const module = this.#module(name);
+  async #settings(name: string, principal: Principal): Promise<Answer> {
+    const module = this.#module(name, principal);
     const {settings} = module.manifest;
     if (settings === undefined) throw refuse('not-found', 'the module declares no settings');
     const shown = await this.#call(name, () => settings.show(module.config));
@@ -379,8 +423,8 @@ export class Gateway {
   }
 
   /** A module's page, its HTML in a document with the gateway's policy. */
-  async #page(name: string, id: string): Promise<Answer> {
-    const module = this.#module(name);
+  async #page(name: string, id: string, principal: Principal): Promise<Answer> {
+    const module = this.#module(name, principal);
     const page = (module.manifest.pages ?? []).find(candidate => candidate.id === id);
     if (page === undefined || id === CONTENT_PATH) throw refuse('not-found', 'no such page');
     const html = await this.#call(name, () => page.render());
@@ -392,8 +436,8 @@ export class Gateway {
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
-  async #content(name: string, ref: string): Promise<Answer> {
-    const module = this.#module(name);
+  async #content(name: string, ref: string, principal: Principal): Promise<Answer> {
+    const module = this.#module(name, principal);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (content === undefined) throw refuse('not-found', 'the module serves no content');
@@ -402,13 +446,21 @@ export class Gateway {
     if (!CONTENT_TYPES.has(found.type) || !(found.bytes instanceof Uint8Array) || found.bytes.byteLength > MAX_CONTENT_BYTES) {
       throw refuse('internal', 'the module\'s content is not an image, text or JSON of at most 16 MiB');
     }
+    // Text and JSON are checked for a secret the module read, as a page is; an image is bytes no secret check can read.
+    if (!found.type.startsWith('image/') && this.#options.redactions.holds(Buffer.from(found.bytes).toString('utf8'))) {
+      throw refuse('internal', 'the module\'s content holds a secret, which the gateway never serves');
+    }
     return {status: 200, body: found.bytes, headers: {'content-type': found.type, ...PAGE_HEADERS}};
   }
 
-  /** The module named in a path, when it is hosted and admitted. */
-  #module(name: string): HostedModule {
+  /**
+   * The module named in a path, when it is hosted and admitted, and the caller's grant names every device it names, as
+   * the old Hub narrowed a device's dashboard parts by device grant (Hub #835).
+   */
+  #module(name: string, principal: Principal): HostedModule {
     const module = this.#options.host.modules().find(candidate => candidate.name === name && candidate.admitted);
     if (module === undefined) throw refuse('not-found', 'no such module');
+    if (!mayUseModule(principal, module.devices)) throw refuse('forbidden', 'the caller\'s grant does not name every device this module controls');
     return module;
   }
 
@@ -465,8 +517,9 @@ export class Gateway {
     const known = ['launch', 'session', 'logout'].includes(action);
     if (request.method !== 'POST' || !known) throw refuse('not-found', 'no such route');
     if (action === 'session' && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
-    // Only this listener's own page may sign a browser in or out.
-    if (contextOf(request, this.#origin) === 'cross' || request.headers.origin !== this.#origin || request.headers[REQUEST_HEADER] !== '1') {
+    // Only this listener's own page may sign a browser in or out, on either loopback name.
+    const origin = this.#originOf(request);
+    if (contextOf(request, origin) === 'cross' || request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1') {
       throw refuse('forbidden', `sign-in takes a request from this origin's own page with ${REQUEST_HEADER}: 1`);
     }
     const input = await readBody(request);
@@ -582,13 +635,19 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   return parsed as Record<string, unknown>;
 }
 
+/** The family a `dataschema` names, `https://bunny.invalid/events/<family>/<major>.<minor>`, or undefined. */
+function familyOf(dataschema: string): string | undefined {
+  const rest = dataschema.startsWith(SCHEMA_BASE) ? dataschema.slice(SCHEMA_BASE.length) : '';
+  const family = rest.slice(0, rest.lastIndexOf('/'));
+  return FAMILY.test(family) ? family : undefined;
+}
+
 /** The state families `/api/v2` may read: the core's and those of the modules' own schemas. */
 export function readableFamilies(schemas: Readonly<Record<string, object>>): ReadonlySet<string> {
   const families = new Set(coreFamilies.filter(family => family.kind === 'state').map(family => family.family));
   for (const dataschema of Object.keys(schemas)) {
-    const rest = dataschema.startsWith(SCHEMA_BASE) ? dataschema.slice(SCHEMA_BASE.length) : '';
-    const family = rest.slice(0, rest.lastIndexOf('/'));
-    if (FAMILY.test(family)) families.add(family);
+    const family = familyOf(dataschema);
+    if (family !== undefined) families.add(family);
   }
   return families;
 }

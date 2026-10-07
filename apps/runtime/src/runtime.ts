@@ -150,7 +150,7 @@ const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
 function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute): Promise<Server> {
   let hosts: readonly string[] = [];
   const answer = (response: ServerResponse, status: number, body: object): void => {
-    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}).end(JSON.stringify(body));
   };
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const site = request.headers['sec-fetch-site'];

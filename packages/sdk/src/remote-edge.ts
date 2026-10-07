@@ -10,12 +10,12 @@ import {errorType, levelOf, reporter, type Diagnostic, type EdgeRoute, type OnDi
 import {buildMessage, type Content} from './envelope.js';
 import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
-import {parseKey, parsePattern, type Pattern} from './routing.js';
+import {overlaps, parseKey, parsePattern, type Pattern} from './routing.js';
 import {
   CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, frame, statusOf, type Call, type StreamEventName,
 } from './remote-protocol.js';
-import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
-import {isSource, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
+import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type RequestResult, type Scheduler, type Sdk, type Subscription} from './sdk.js';
+import {isSource, schemaFamily, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
 import {childOf} from './trace.js';
 
 /**
@@ -24,8 +24,18 @@ import {childOf} from './trace.js';
  * subscribes or responds to, and the state keys `bunny.state.<family>.*` of each family it syncs or serves, must lie
  * within one. `reply` comes with `respond` and `answer` with `serve`. Every part may open its stream and close what it
  * opened on it.
+ *
+ * `publishes` names the payload families, by the family of a message's `dataschema`, that it may publish; left out, any.
+ * `excluded` names key patterns it may never use or receive, though `keys` covers them, such as the keys of a device
+ * its grant does not name: a key it publishes or requests, or a pattern it responds to, may meet none; and what it
+ * receives, through a subscription or a sync, leaves out every message and record whose key one matches.
  */
-export type EdgePermissions = {readonly calls?: readonly Call[]; readonly keys?: readonly string[]};
+export type EdgePermissions = {
+  readonly calls?: readonly Call[];
+  readonly keys?: readonly string[];
+  readonly publishes?: readonly string[];
+  readonly excluded?: readonly string[];
+};
 /** One remote participant's credential: a bearer token that lets it act as `source`, with its permissions. */
 export type RemoteGrant = {source: string; token: string} & EdgePermissions;
 /**
@@ -50,6 +60,8 @@ export type EdgeOptions = {
   authenticate?: (request: IncomingMessage) => EdgePrincipal | undefined;
   /** How often an open stream gets a comment line, so that its reader can tell a live stream from a lost one. Defaults to 15 s. */
   heartbeatMs?: number;
+  /** The command memory's bounds, for tests: `MAX_REMEMBERED_PER_SOURCE`, `MAX_REMEMBERED_COMMANDS` and `REMEMBER_MS` by default. */
+  commandMemory?: {perSource?: number; total?: number; rememberMs?: number};
   /**
    * Runs the heartbeats and stall limits. They concern real sockets, so they default to the global `setTimeout`, whatever
    * `scheduler` is, and never keep the process alive.
@@ -88,10 +100,17 @@ export const REFUSAL_WINDOW_MS = 60_000;
 export const HEARTBEAT_MS = 15_000;
 export const STALL_MS = 30_000;
 /**
- * How many commands the edge remembers at once, each until its expiry, so that a raw HTTP client that sends one again
- * is refused (Hub #835). Past it, a new command is refused with the retryable `capacity` until older ones expire.
+ * How many commands the edge remembers, so that a raw HTTP client that sends one again is refused (Hub #835): at most
+ * `MAX_REMEMBERED_PER_SOURCE` for one source and `MAX_REMEMBERED_COMMANDS` in all. Past either, that source's next
+ * command is refused with the retryable `capacity` until older ones are forgotten; another source still gets through.
  */
-export const MAX_REMEMBERED_COMMANDS = 16_384;
+export const MAX_REMEMBERED_COMMANDS = 65_536;
+export const MAX_REMEMBERED_PER_SOURCE = 1024;
+/**
+ * How long the edge remembers a command once its bus settled it: until its expiry, and at most this long. One the bus
+ * refused before any responder had it is forgotten at once, since sending it again is safe.
+ */
+export const REMEMBER_MS = 10 * 60 * 1000;
 /** The comment line the edge writes on an idle stream; a client's parser skips it. */
 const HEARTBEAT = ': heartbeat\n\n';
 const timers: Scheduler = {after: (delayMs, callback) => {
@@ -143,6 +162,8 @@ type Repeats = {first: Diagnostic; count: number; cancel: Cancel};
 type Dispatched = {key: string; command: Command<object>};
 /** Where a call stands: `dispatched` once its command is with the bus. */
 type Progress = {dispatched?: Dispatched};
+/** A remembered command: until when, and whether its bus has not settled it yet, which keeps it whatever its time. */
+type Remembered = {untilMs: number; pending: boolean};
 
 /**
  * What a failure's record names of the command it may have left uncertain: its routing key, request ID, message ID and
@@ -160,11 +181,21 @@ function commandFacts({key, command}: Dispatched): Pick<Diagnostic, 'key' | 'req
 const fields = (value: unknown): Fields | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Fields : undefined;
 
 
-/** Why a grant's permissions are malformed, or undefined: its calls must be the edge's, and its keys routing-key patterns. */
-function checkPermissions({calls, keys}: {calls: readonly Call[] | undefined; keys: readonly string[] | undefined}): string | undefined {
-  const given = {calls: calls as unknown, keys: keys as unknown};
+const FAMILY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const patterns = (value: unknown): boolean => Array.isArray(value) && value.every(key => typeof key === 'string' && parsePattern(key) !== undefined);
+
+/**
+ * Why a grant's permissions are malformed, or undefined: its calls must be the edge's, its keys and exclusions routing-key
+ * patterns, and what it publishes family names.
+ */
+function checkPermissions(permissions: EdgePermissions): string | undefined {
+  const given = permissions as {calls?: unknown; keys?: unknown; publishes?: unknown; excluded?: unknown};
   if (given.calls !== undefined && (!Array.isArray(given.calls) || !given.calls.every(call => typeof call === 'string' && isCall(call)))) return 'names a call the edge does not have';
-  if (given.keys !== undefined && (!Array.isArray(given.keys) || !given.keys.every(key => typeof key === 'string' && parsePattern(key) !== undefined))) return 'names a malformed key pattern';
+  if (given.keys !== undefined && !patterns(given.keys)) return 'names a malformed key pattern';
+  if (given.excluded !== undefined && !patterns(given.excluded)) return 'excludes a malformed key pattern';
+  if (given.publishes !== undefined && (!Array.isArray(given.publishes) || !given.publishes.every(family => typeof family === 'string' && FAMILY.test(family)))) {
+    return 'names a malformed family to publish';
+  }
   return undefined;
 }
 
@@ -189,19 +220,33 @@ function allowCall({calls}: EdgePrincipal, call: Call | 'stream'): void {
 const within = (inner: Pattern, outer: Pattern): boolean =>
   [[inner.category, outer.category], [inner.family, outer.family], [inner.id, outer.id]].every(([a, b]) => b === '*' || a === b);
 
+/** Whether some key matches both a pattern of the principal's exclusions and `wanted`, a key or a pattern. */
+function excludes({excluded}: EdgePrincipal, wanted: string): boolean {
+  const parsed = parsePattern(wanted);
+  return excluded !== undefined && parsed !== undefined && excluded.some(pattern => {
+    const out = parsePattern(pattern);
+    return out !== undefined && overlaps(out, parsed);
+  });
+}
+
 /**
- * Refuses a key or pattern that lies outside every pattern of the principal's grant. A malformed one is left for the
- * bus, which refuses it as `invalid-request`.
+ * Refuses a key or pattern that lies outside every pattern of the principal's grant, or, with `exact`, a key or pattern
+ * that meets one of its exclusions. A malformed one is left for the bus, which refuses it as `invalid-request`.
  */
-function allowKey({keys}: EdgePrincipal, wanted: string): void {
-  if (keys === undefined) return;
+function allowKey(principal: EdgePrincipal, wanted: string, {exact = false}: {exact?: boolean} = {}): void {
+  const {keys} = principal;
   const parsed = parsePattern(wanted);
   if (parsed === undefined) return;
-  if (keys.some(key => {
+  const covered = keys === undefined || keys.some(key => {
     const granted = parsePattern(key);
     return granted !== undefined && within(parsed, granted);
-  })) return;
-  throw refuse('forbidden', `this grant may not use ${wanted}`);
+  });
+  if (!covered || (exact && excludes(principal, wanted))) throw refuse('forbidden', 'this grant does not cover that routing key');
+}
+
+/** The key a synced record has, `bunny.state.<family>.<id>`, or undefined when it names no entity. */
+function stateKey(family: unknown, id: unknown): string | undefined {
+  return typeof family === 'string' && typeof id === 'string' ? `bunny.state.${family}.${id}` : undefined;
 }
 
 /**
@@ -274,11 +319,13 @@ export class RemoteEdge {
   readonly #liveness: Scheduler;
   readonly #connections = new Map<string, Connection>();
   /**
-   * The commands the edge has handed to its bus, by source and message ID, each until its expiry (Hub #835). A command
-   * that arrives again before then is refused as `duplicate-conflict`, so a raw HTTP client cannot make a responder run
-   * it twice. Insertion order follows arrival, so the oldest are forgotten first.
+   * The commands the edge has handed to its bus, by source and then message ID (Hub #835). A command that arrives again
+   * while it is remembered is refused as `duplicate-conflict`, so a raw HTTP client cannot make a responder run it twice.
+   * Each source has its own quota, so one cannot lock the others out.
    */
-  readonly #sent = new Map<string, number>();
+  readonly #sent = new Map<string, Map<string, Remembered>>();
+  #remembered = 0;
+  readonly #memory: {perSource: number; total: number; rememberMs: number};
   /**
    * Forwarded commands and sync requests waiting for an answer, by source, responder or owner id and the forwarded
    * message's own id, so a retry that reuses a requestId has its own entry. They outlive a connection, so a reply that
@@ -296,12 +343,19 @@ export class RemoteEdge {
     this.#validator = options.validator;
     this.#authenticateHost = options.authenticate;
     // A token that two grants share would make the source ambiguous. Neither refusal names the token.
-    const grants = (options.authenticate === undefined ? options.grants ?? [] : []).map(({source, token, calls, keys}) => {
+    const grants = (options.authenticate === undefined ? options.grants ?? [] : []).map(({source, token, ...permissions}) => {
       if (typeof source !== 'string' || !SOURCE.test(source) || source.length > 256) throw new SdkError(errorBody('invalid-request', {detail: 'a grant names a malformed source'}));
       if (typeof token !== 'string' || token.length === 0) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} has no token`}));
-      const permissions = checkPermissions({calls, keys});
-      if (permissions !== undefined) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} ${permissions}`}));
-      return {principal: {source, ...(calls === undefined ? {} : {calls}), ...(keys === undefined ? {} : {keys})}, digest: digest(token)};
+      const problem = checkPermissions(permissions);
+      if (problem !== undefined) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} ${problem}`}));
+      const {calls, keys, publishes, excluded} = permissions;
+      return {
+        principal: {
+          source, ...(calls === undefined ? {} : {calls}), ...(keys === undefined ? {} : {keys}), ...(publishes === undefined ? {} : {publishes}),
+          ...(excluded === undefined ? {} : {excluded}),
+        },
+        digest: digest(token),
+      };
     });
     if (new Set(grants.map(grant => grant.digest.toString('hex'))).size !== grants.length) {
       throw new SdkError(errorBody('invalid-request', {detail: 'two grants share a token'}));
@@ -316,6 +370,11 @@ export class RemoteEdge {
       return value;
     };
     this.#heartbeatMs = limit(options.heartbeatMs, HEARTBEAT_MS, 'heartbeatMs');
+    const memory = options.commandMemory ?? {};
+    this.#memory = {
+      perSource: limit(memory.perSource, MAX_REMEMBERED_PER_SOURCE, 'commandMemory.perSource'), total: limit(memory.total, MAX_REMEMBERED_COMMANDS, 'commandMemory.total'),
+      rememberMs: limit(memory.rememberMs, REMEMBER_MS, 'commandMemory.rememberMs'),
+    };
     this.#stallMs = limit(options.stallMs, STALL_MS, 'stallMs');
     this.#liveness = options.liveness ?? realTimers;
   }
@@ -383,7 +442,7 @@ export class RemoteEdge {
         this.#open(principal, response);
         return;
       }
-      if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', `no ${String(request.method)} ${path}`);
+      if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', 'no such route');
       allowCall(principal, route);
       const body = await this.#read(request, route === 'answer' ? MAX_ANSWER_BYTES : MAX_CALL_BYTES);
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
@@ -509,8 +568,17 @@ export class RemoteEdge {
     switch (call) {
       case 'publish': {
         const key = text(body, 'key');
-        allowKey(principal, key);
-        await this.#participant(source).publishMessage(key, this.#inbound(source, body.message));
+        allowKey(principal, key, {exact: true});
+        const message = this.#inbound(source, body.message);
+        // The routing-ID rule holds for what a remote part publishes too: the subject is the key's entity (Hub #835). A
+        // malformed key is left for the bus, which refuses it as `invalid-request`.
+        const route = parseKey(key);
+        if (route !== undefined && message.subject !== route.id) throw refuse('invalid-message', 'a message\'s subject is the last token of its routing key');
+        const family = schemaFamily(message.dataschema);
+        if (route !== undefined && principal.publishes !== undefined && (family === undefined || !principal.publishes.includes(family))) {
+          throw refuse('forbidden', 'this grant may not publish messages of that family');
+        }
+        await this.#participant(source).publishMessage(key, message);
         return {status: 'published'};
       }
       case 'request': {
@@ -518,11 +586,19 @@ export class RemoteEdge {
         // or `uncertain-result` if a handler had it. The remote requester waits a little longer, so it hears this.
         const command = this.#inbound(source, body.command) as Command<object>;
         const key = text(body, 'key');
-        allowKey(principal, key);
-        this.#remember(source, command);
-        // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal.
+        allowKey(principal, key, {exact: true});
+        const remembered = this.#remember(source, command);
+        // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal, and the
+        // command is forgotten, since nothing had it.
         progress.dispatched = {key, command};
-        const result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), signal);
+        let result: RequestResult;
+        try {
+          result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), signal);
+        } catch (error) {
+          remembered(undefined);
+          throw error;
+        }
+        remembered(result);
         return {result};
       }
       case 'sync': {
@@ -532,16 +608,21 @@ export class RemoteEdge {
         // The owner the request is for, when the remote part names one (Hub #967): part of the call, beside the message.
         const owner = ownerOf(body);
         const answer = await this.#bus.syncMessage(source, request, this.#remaining(request), signal, owner);
-        if (answer.status === 'served') this.#capped(answer);
-        return {answer};
+        if (answer.status !== 'served') return {answer};
+        const narrowed = this.#narrowed(principal, answer);
+        this.#capped(narrowed);
+        return {answer: narrowed};
       }
       case 'subscribe': {
         const connection = this.#connection(source, body);
         const id = this.#fresh(connection, body);
         const pattern = text(body, 'pattern');
         allowKey(principal, pattern);
-        connection.opened.set(id, await connection.participant.subscribe(pattern, message => this.#pushed(connection, 'message', {subscription: id, message}), {
+        // Each message names the key it came on, so the part, and its own filter, can tell where it belongs.
+        connection.opened.set(id, await connection.participant.subscribe(pattern, (message, key) => this.#pushed(connection, 'message', {subscription: id, key, message}), {
           onOverflow: ({dropped}) => this.#pushed(connection, 'overflow', {subscription: id, ...(dropped === undefined ? {} : {dropped})}),
+          // The part never receives what its grant leaves out: such a message is not even queued for it.
+          ...(principal.excluded === undefined ? {} : {accept: key => !excludes(principal, key)}),
         }));
         return {status: 'subscribed'};
       }
@@ -549,7 +630,7 @@ export class RemoteEdge {
         const connection = this.#connection(source, body);
         const id = this.#fresh(connection, body);
         const pattern = text(body, 'pattern');
-        allowKey(principal, pattern);
+        allowKey(principal, pattern, {exact: true});
         // The forward settles a command with a reply or one of the bus's markers, which the bus reads in place of a
         // reply; the participant's types know only replies.
         connection.opened.set(id, await connection.participant.respond(pattern, command =>
@@ -593,32 +674,74 @@ export class RemoteEdge {
   }
 
   /**
-   * Remembers a command until its expiry as it goes to the bus, and refuses one this source already sent with the same
-   * ID (Hub #835): commands are never sent twice (ADR 0012, "Retries"), so a raw HTTP client that repeats one, even
-   * after the first settled, cannot make a responder run it again. The first command's own refusal or reply is not
-   * repeated; the repeat is refused before anything happens. Expired entries are forgotten oldest first.
+   * Remembers a command as it goes to the bus, and refuses one this source already sent with the same ID (Hub #835):
+   * commands are never sent twice (ADR 0012, "Retries"), so a raw HTTP client that repeats one, even after the first
+   * settled, cannot make a responder run it again. The first command's own refusal or reply is not repeated; the repeat
+   * is refused before anything happens. A command is remembered while its bus has it, and once settled until its
+   * expiry, at most `rememberMs`; one the bus refused before any responder had it is forgotten at once, since sending it
+   * again is safe. Returns what the caller calls with the bus's result, or undefined when the bus threw.
    */
-  #remember(source: string, command: Message): void {
+  #remember(source: string, command: Message): (result: RequestResult | undefined) => void {
     const now = this.#now();
-    for (const [key, expiresAtMs] of this.#sent) {
-      if (expiresAtMs > now) break;
-      this.#sent.delete(key);
+    let sent = this.#sent.get(source);
+    if (sent === undefined) {
+      sent = new Map();
+      this.#sent.set(source, sent);
     }
-    const key = `${source}\n${command.id}`;
-    const remembered = this.#sent.get(key);
-    if (remembered !== undefined && remembered > now) throw refuse('duplicate-conflict', `${command.id} was sent already; a command is never sent twice`);
-    if (this.#sent.size >= MAX_REMEMBERED_COMMANDS) {
-      for (const [sent, expiresAtMs] of this.#sent) if (expiresAtMs <= now) this.#sent.delete(sent);
+    const remembered = sent.get(command.id);
+    if (remembered !== undefined && (remembered.pending || remembered.untilMs > now)) throw refuse('duplicate-conflict', 'this command was sent already; a command is never sent twice');
+    if (sent.size >= this.#memory.perSource) this.#forget(source, sent, now);
+    if (this.#remembered >= this.#memory.total) for (const [other, entries] of [...this.#sent]) this.#forget(other, entries, now);
+    // A source at its quota waits for its own commands to be forgotten; it never takes another source's room.
+    if (sent.size >= this.#memory.perSource || this.#remembered >= this.#memory.total) {
+      throw refuse('capacity', 'the edge remembers as many of this part\'s commands as it can; try again later');
     }
-    if (this.#sent.size >= MAX_REMEMBERED_COMMANDS) throw refuse('capacity', 'the edge remembers as many commands as it can; try again later');
-    this.#sent.set(key, Date.parse(command.expiresat ?? ''));
+    const entry: Remembered = {untilMs: Date.parse(command.expiresat ?? ''), pending: true};
+    sent.set(command.id, entry);
+    this.#remembered += 1;
+    const entries = sent;
+    return result => {
+      entry.pending = false;
+      // Only a refusal the bus made itself, with no reply, proves that no responder had the command.
+      if (result === undefined || (result.status === 'rejected' && result.reply === undefined)) {
+        if (entries.get(command.id) === entry) {
+          entries.delete(command.id);
+          this.#remembered -= 1;
+        }
+        return;
+      }
+      entry.untilMs = Math.min(entry.untilMs, this.#now() + this.#memory.rememberMs);
+    };
+  }
+
+  /** Forgets one source's settled commands whose time has passed. */
+  #forget(source: string, entries: Map<string, Remembered>, now: number): void {
+    for (const [id, entry] of entries) {
+      if (entry.pending || entry.untilMs > now) continue;
+      entries.delete(id);
+      this.#remembered -= 1;
+    }
+    if (entries.size === 0) this.#sent.delete(source);
+  }
+
+  /**
+   * A sync answer as this part may see it: without the records, and their members, whose state keys its grant excludes,
+   * as for a device its grant does not name (Hub #835). The owner's revision stands, so the part's copy stays consistent.
+   */
+  #narrowed(principal: EdgePrincipal, answer: Extract<SyncAnswer, {status: 'served'}>): Extract<SyncAnswer, {status: 'served'}> {
+    if (principal.excluded === undefined || principal.excluded.length === 0) return answer;
+    const visible = (key: string | undefined): boolean => key !== undefined && !excludes(principal, key);
+    const states = answer.states.filter(state => visible(stateKey(schemaFamily(state.dataschema), (state.data as {id?: unknown} | null)?.id)));
+    const {data} = answer.completed;
+    const members = data.members.filter(member => visible(stateKey(member.family, member.id)));
+    return {...answer, states, completed: {...answer.completed, data: {...data, members}}};
   }
 
   /** A message from the remote part, checked: profile 2.0, its payload schema, the cap, its expiry and its source. */
   #inbound(source: string, value: unknown): Message {
     const result = this.#validator.validate(value, {nowMs: this.#now()});
     if (!result.ok) throw new Refusal({error: result.error});
-    if (result.value.source !== source) throw refuse('forbidden', `this token cannot send a message from ${result.value.source}`);
+    if (result.value.source !== source) throw refuse('forbidden', 'this token cannot send a message from another source');
     if (result.value.expiresat !== undefined && this.#remaining(result.value) > MAX_TIMEOUT_MS) {
       throw refuse('invalid-request', `a deadline is at most ${MAX_TIMEOUT_MS} ms away`);
     }
@@ -664,7 +787,7 @@ export class RemoteEdge {
     for (const message of [...answer.states, answer.completed]) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');
       if (bytes > MAX_MESSAGE_BYTES) {
-        throw refuse('too-large', `a ${message.kind} message for ${answer.completed.subject} is ${bytes} bytes, over ${MAX_MESSAGE_BYTES}`);
+        throw refuse('too-large', `a message of the sync answer is over ${MAX_MESSAGE_BYTES} bytes`);
       }
     }
   }
@@ -687,7 +810,7 @@ export class RemoteEdge {
 
   #fresh(connection: Connection, body: Fields): string {
     const id = identifier(body, 'id');
-    if (connection.opened.has(id)) throw refuse('invalid-state', `${id} is already open`);
+    if (connection.opened.has(id)) throw refuse('invalid-state', 'that id is already open on this connection');
     return id;
   }
 
@@ -703,7 +826,7 @@ export class RemoteEdge {
       opened: new Map(), stall: () => {}, heartbeat: () => {},
     };
     this.#connections.set(connection.id, connection);
-    response.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive'});
+    response.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', connection: 'keep-alive'});
     response.on('close', () => { this.#drop(connection); });
     this.#send(connection, frame('ready', {connection: connection.id}));
     this.#beat(connection);
@@ -816,7 +939,7 @@ export class RemoteEdge {
   #write(response: ServerResponse, status: number, body: object, close = false): void {
     if (response.headersSent || response.destroyed) return;
     const text = JSON.stringify(body);
-    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', ...(close ? {connection: 'close'} : {})});
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...(close ? {connection: 'close'} : {})});
     response.end(text);
   }
 }

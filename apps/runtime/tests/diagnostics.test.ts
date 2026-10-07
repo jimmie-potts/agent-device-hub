@@ -9,7 +9,7 @@ import {diagnosticWriter} from '../src/diagnostics.js';
 import type {LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from '../src/record.js';
-import {contextOf, deferred, edgeConfig, fixture, it, manualClock, run, setMode} from './support.js';
+import {contextOf, deferred, edgeConfig, fixture, it, manualClock, run, modeFor, setMode} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
@@ -65,7 +65,7 @@ it('a remote part\'s refused request, and one with no responder, make their reco
   context.after(() => remote.close());
   const refused = await remote.request(KEY, setMode, {timeoutMs: 2000, requestId: 'req-refused'});
   assert.equal(refused.status === 'rejected' && refused.error.error.code, 'invalid-state');
-  const none = await remote.request('bunny.cmd.mode.none', setMode, {timeoutMs: 2000, requestId: 'req-none'});
+  const none = await remote.request('bunny.cmd.mode.none', modeFor('none'), {timeoutMs: 2000, requestId: 'req-none'});
   assert.equal(none.status === 'rejected' && none.error.error.code, 'unavailable');
   await remote.close();
   await runtime.stop();
@@ -133,7 +133,7 @@ it('a secret in a handler\'s or a device call\'s exception reaches no record or 
   const {runtime, logs} = await run(context, {modules: [wall(() => { throw new Error(`the device said ${SECRET}`); }), panel, caller]});
   const result = await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000, requestId: 'req-throws'});
   assert.equal(result.status === 'uncertain' && result.error.error.code, 'uncertain-result');
-  assert.equal((await contextOf(caller).sdk.request('bunny.cmd.mode.panel', setMode, {timeoutMs: 1000})).status, 'accepted');
+  assert.equal((await contextOf(caller).sdk.request('bunny.cmd.mode.panel', modeFor('panel'), {timeoutMs: 1000})).status, 'accepted');
   await runtime.stop();
   assert.deepEqual(about(logs, 'req-throws'), ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN']);
   const failed = logs.find(record => record.event_name === 'runtime.module.failed');

@@ -9,7 +9,7 @@ import {
   InProcessBus, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SOURCE_HEADER, SdkError, connectRemote, type Command,
 } from '../src/index.js';
 import {
-  MODE_SCHEMA, SESSION_FAMILY, blob, checked, flush, it, manualClock, session, setMode, turnEnded, until, validator, type Mode, type Session,
+  MODE_SCHEMA, SESSION_FAMILY, blob, checked, flush, it, manualClock, modeSet, session, setMode, turnEnded, until, validator, type Mode, type Session,
 } from './support.js';
 import {startEdge, type Edge, type EdgeSetup, type Source} from './transports.js';
 
@@ -34,11 +34,10 @@ async function call(edge: Edge, path: string, body: unknown, token: string, head
   return {status: response.status, body: await response.json() as unknown};
 }
 
-/** A command message from `source`, built as a raw HTTP client would build it. */
-function command(source: string, requestId: string, timeoutMs = 10_000): Command<Mode> {
-  const sentAtMs = Date.now();
+/** A command message from `source` for `subject`, built as a raw HTTP client would build it. */
+function command(source: string, requestId: string, timeoutMs = 10_000, subject = 'wall', sentAtMs = Date.now()): Command<Mode> {
   return buildMessage<Mode & {requestId: string}>(source, 'command', {
-    type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: MODE_SCHEMA, data: {mode: 'work', requestId},
+    type: 'org.bunny.mode.set.requested', subject, dataschema: MODE_SCHEMA, data: {mode: 'work', requestId},
   }, TRACE, sentAtMs, sentAtMs + timeoutMs);
 }
 
@@ -103,6 +102,8 @@ it('an edge refuses grants whose calls or key patterns it cannot read, without n
   assert.throws(grant({calls: ['publish', 'stream']}), (error: unknown) => codeOf(error) === 'invalid-request' && !String((error as Error).message).includes('tok_'));
   assert.throws(grant({keys: ['bunny.event.lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request');
   assert.throws(grant({keys: 'bunny.event.*.*'}), (error: unknown) => codeOf(error) === 'invalid-request');
+  assert.throws(grant({excluded: ['bunny.*.lamp-1']}), (error: unknown) => codeOf(error) === 'invalid-request', 'a malformed exclusion');
+  assert.throws(grant({publishes: ['Lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request', 'a malformed family');
   assert.doesNotThrow(grant({calls: [], keys: []}), 'a grant may allow nothing');
 });
 
@@ -132,7 +133,7 @@ it('a command a raw client sends again after its first forward settled is refuse
     assert.equal((first.body as {result: {status: string}}).result.status, 'accepted', 'the first forward settled');
     const again = await send();
     assert.equal(again.status, 409);
-    assert.deepEqual(again.body, errorBody('duplicate-conflict', {detail: `${sent.id} was sent already; a command is never sent twice`}));
+    assert.deepEqual(again.body, errorBody('duplicate-conflict', {detail: 'this command was sent already; a command is never sent twice'}));
     await flush();
     assert.deepEqual(runs, ['req-once'], 'the responder ran the command once');
     // A new command, even with the same request ID, is a new message, and goes through.
@@ -151,6 +152,122 @@ it('a command refused before it reached the bus is not remembered, so the same m
     assert.equal(outside.status, 403);
     const inside = await call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: sent}, tokenOf(edge, 'bunny/core'));
     assert.equal(inside.status, 200, 'the refusal had no effect, so the command is still new');
+  }));
+
+it('a command whose subject is not the last token of its key is refused as invalid-message on every transport, and no responder runs it', () =>
+  withEdge({permissions: {'bunny/core': {calls: ['request'], keys: ['bunny.cmd.mode.wall']}}}, async edge => {
+    const runs: string[] = [];
+    await checked(edge.bus.connect('bunny/wall')).respond<Mode>('bunny.cmd.mode.*', received => { runs.push(received.subject); return {status: 'accepted'}; });
+    // In process: a module that names another entity than its key's.
+    const local = edge.bus.connect('bunny/second');
+    await assert.rejects(local.request('bunny.cmd.mode.wall', setMode('work', 'desk'), {timeoutMs: 1000}), (error: unknown) => codeOf(error) === 'invalid-message');
+    // Remotely: a raw client whose grant covers the wall's key, sending a command for the desk on it.
+    const raw = await call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: command('bunny/core', 'req-desk', 10_000, 'desk')}, tokenOf(edge, 'bunny/core'));
+    assert.deepEqual([raw.status, (raw.body as ErrorBody).error.code], [400, 'invalid-message']);
+    // The SDK's own client is refused the same way.
+    const remote = await edge.connect('bunny/core');
+    const result = await remote.request('bunny.cmd.mode.wall', setMode('work', 'desk'), {timeoutMs: 1000});
+    assert.equal(result.status === 'rejected' && result.error.error.code, 'invalid-message');
+    await flush();
+    assert.deepEqual(runs, [], 'no responder ran a misrouted command');
+    assert.equal(edge.diagnostics.some(record => record.event === 'command.admitted'), false, 'nothing reached a queue');
+    // The same command for the wall goes through.
+    assert.equal((await remote.request('bunny.cmd.mode.wall', setMode('work'), {timeoutMs: 1000})).status, 'accepted');
+    assert.deepEqual(runs, ['wall']);
+  }));
+
+it('a part publishes only messages whose subject is its key\'s last token, of the families its grant names', () => withEdge(
+  {permissions: {'bunny/rogue': {calls: ['publish'], keys: ['bunny.event.*.*'], publishes: ['test-turn']}}}, async edge => {
+    const heard: string[] = [];
+    await checked(edge.bus.connect('bunny/second')).subscribe('bunny.event.*.*', message => { heard.push(message.type); });
+    const hook = await edge.connect('bunny/rogue');
+    await assert.rejects(hook.publish('bunny.event.test-turn.s1', turnEnded('s2')), (error: unknown) => codeOf(error) === 'invalid-message', 'another entity than its key\'s');
+    // An outcome on an event key its patterns cover, which its grant does not let it publish.
+    await assert.rejects(hook.publish('bunny.event.test-turn.wall', modeSet('req-forged')), (error: unknown) => codeOf(error) === 'forbidden', 'a family it may not publish');
+    await flush();
+    assert.deepEqual(heard, [], 'no subscriber heard either');
+    await hook.publish('bunny.event.test-turn.s1', turnEnded('s1'));
+    await until(() => heard.length === 1, 'its own observation');
+    assert.deepEqual(heard, ['org.bunny.turn.ended']);
+  }));
+
+it('a grant\'s exclusions leave a device\'s messages and records out of what the part receives, and refuse its keys', () => withEdge(
+  {permissions: {'bunny/second': {calls: ['subscribe', 'sync', 'request'], keys: ['bunny.state.*.*', 'bunny.event.*.*', 'bunny.cmd.mode.*'], excluded: ['bunny.*.*.s2']}}},
+  async edge => {
+    const owner = checked(edge.bus.connect('bunny/core'));
+    let revision = 1;
+    await owner.serveSync([SESSION_FAMILY], () => ({revision, states: [session('s1', revision), session('s2', revision)]}));
+    await checked(edge.bus.connect('bunny/wall')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+    const reader = await edge.connect('bunny/second');
+    const copy = await reader.sync<Session>([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(copy.status, 'synced');
+    if (copy.status !== 'synced') return;
+    assert.deepEqual(copy.copy.states().map(state => state.data.id), ['s1'], 'the sync answer leaves s2 out');
+    assert.deepEqual(copy.message.data.members.map(member => member.id), ['s1'], 'and its membership');
+    const heard: string[] = [];
+    await reader.subscribe(`bunny.state.${SESSION_FAMILY}.*`, (message, key) => { heard.push(`${String(key)} ${message.subject}`); });
+    revision = 2;
+    await owner.publish(`bunny.state.${SESSION_FAMILY}.s2`, session('s2', 2));
+    await owner.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 2));
+    await until(() => heard.length === 1 && copy.copy.states()[0]?.data.revision === 2, 's1\'s change');
+    await flush();
+    assert.deepEqual(heard, [`bunny.state.${SESSION_FAMILY}.s1 s1`], 'the subscription hears s1 alone, with its key');
+    assert.deepEqual(copy.copy.states().map(state => `${state.data.id}@${state.data.revision}`), ['s1@2'], 'and so does the copy');
+    assert.equal(edge.errors.some(({scope}) => scope.source === 'bunny/second'), false, 'what it may not see was never queued, so nothing dropped');
+    const refused = await reader.request('bunny.cmd.mode.s2', setMode('work', 's2'), {timeoutMs: 1000});
+    assert.equal(refused.status === 'rejected' && refused.error.error.code, 'forbidden', 'an excluded key may not be requested');
+    assert.equal((await reader.request('bunny.cmd.mode.s1', setMode('work', 's1'), {timeoutMs: 1000})).status, 'accepted');
+    await copy.copy.close();
+  }));
+
+it('one source at its quota of remembered commands is refused with capacity, and another source still gets through', () => withEdge(
+  {commandMemory: {perSource: 2}}, async edge => {
+    await checked(edge.bus.connect('bunny/second')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+    const send = (source: 'bunny/core' | 'bunny/wall', requestId: string): Promise<{status: number; body: unknown}> =>
+      call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: command(source, requestId)}, tokenOf(edge, source));
+    assert.equal((await send('bunny/core', 'req-1')).status, 200);
+    assert.equal((await send('bunny/core', 'req-2')).status, 200);
+    const full = await send('bunny/core', 'req-3');
+    assert.deepEqual([full.status, (full.body as ErrorBody).error.code, (full.body as ErrorBody).error.retryable], [429, 'capacity', true]);
+    assert.equal((await send('bunny/wall', 'req-other')).status, 200, 'another part is not locked out');
+  }));
+
+it('a command the bus refused before any responder had it is forgotten, and a settled one is remembered at most rememberMs', async () => {
+  let now = Date.now();
+  await withEdge({now: () => now, commandMemory: {rememberMs: 1000}}, async edge => {
+    const sent = command('bunny/core', 'req-later', 60_000, 'wall', now);
+    const send = (): Promise<{status: number; body: unknown}> => call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: sent}, tokenOf(edge, 'bunny/core'));
+    const nobody = await send();
+    assert.equal((nobody.body as {result: {error: ErrorBody}}).result.error.error.code, 'unavailable', 'no responder yet');
+    const runs: string[] = [];
+    await checked(edge.bus.connect('bunny/wall')).respond<Mode>('bunny.cmd.mode.*', received => { runs.push(received.data.requestId); return {status: 'accepted'}; });
+    assert.equal(((await send()).body as {result: {status: string}}).result.status, 'accepted', 'the refused command was forgotten, so it may go again');
+    assert.equal((await send()).status, 409, 'the one a responder ran is remembered');
+    now += 999;
+    assert.equal((await send()).status, 409);
+    now += 1;
+    assert.equal(((await send()).body as {result: {status: string}}).result.status, 'accepted', 'past rememberMs it is forgotten, though it has not expired');
+    assert.deepEqual(runs, ['req-later', 'req-later']);
+  });
+});
+
+it('the edge\'s refusals never quote what the caller sent, and every answer forbids sniffing', () => withEdge(
+  {permissions: {'bunny/core': {calls: ['request', 'subscribe'], keys: ['bunny.cmd.mode.wall', 'bunny.state.*.*']}}}, async edge => {
+    const marker = 'quoted-marker';
+    const token = tokenOf(edge, 'bunny/core');
+    const answers = [
+      await fetch(`${edge.url}${REMOTE_PATH}/${marker}`, {method: 'POST', headers: {authorization: `Bearer ${token}`}}),
+      await fetch(`${edge.url}${REMOTE_PATH}/request`, {method: 'POST', headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json'},
+        body: JSON.stringify({schema: REMOTE_SCHEMA, key: `bunny.cmd.mode.${marker}`, command: command('bunny/core', 'req-marker', 10_000, marker)})}),
+      await fetch(`${edge.url}${REMOTE_PATH}/request`, {method: 'POST', headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json'},
+        body: JSON.stringify({schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: command('bunny/wall', marker)})}),
+    ];
+    for (const answer of answers) {
+      assert.equal(answer.headers.get('x-content-type-options'), 'nosniff');
+      const text = await answer.text();
+      assert.equal(text.includes(marker) || text.includes('bunny/wall'), false, text);
+    }
+    assert.deepEqual(answers.map(answer => answer.status), [404, 403, 403]);
   }));
 
 /** Opens a raw stream and returns its connection id and the response, whose reading the caller controls. */

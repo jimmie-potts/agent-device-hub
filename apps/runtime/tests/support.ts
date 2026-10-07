@@ -60,10 +60,11 @@ async function writePrivate(file: string, text: string, mode = 0o600): Promise<v
  * A private configuration file with an `edge` section and the credentials file it names, as the installer writes them,
  * in a new private directory outside every checkout, removed after the test. Each part's credential keeps its token's
  * digest only. `credentials` replaces the credentials file's text, and `mode` its permissions, for tests that refuse it.
+ * `mcp` turns MCP on, which is off unless the section says so.
  */
 export async function edgeConfig(context: TestContext, parts: readonly EdgePart[], options: {
   modules?: Record<string, unknown>; browserAccess?: 'trusted-loopback'; editorLinks?: Record<string, string>; placeLinks?: Record<string, string>;
-  credentials?: string; mode?: number;
+  credentials?: string; mode?: number; mcp?: boolean;
 } = {}): Promise<{config: string; credentials: string; dir: string}> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-config-')));
   await chmod(dir, 0o700);
@@ -75,7 +76,7 @@ export async function edgeConfig(context: TestContext, parts: readonly EdgePart[
   await writePrivate(credentials, options.credentials ?? JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}), options.mode);
   const config = join(dir, 'runtime-config.json');
   const edge = {
-    credentials, ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}),
+    credentials, ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}), ...(options.mcp === undefined ? {} : {mcp: options.mcp}),
     ...(options.editorLinks === undefined ? {} : {editorLinks: options.editorLinks}), ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
   };
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: options.modules ?? {}, edge}));
@@ -208,5 +209,7 @@ export const session = (revision: number): Draft<{id: string; revision: number}>
   ({kind: 'state', type: 'org.bunny.session.updated', subject: 's1', dataschema: `${BASE}test-session/2.0`, data: {id: 's1', revision}});
 export const turnEnded: Draft<{sessionId: string}> =
   {kind: 'occurrence', type: 'org.bunny.turn.ended', subject: 's1', dataschema: `${BASE}test-turn/2.0`, data: {sessionId: 's1'}};
-export const setMode: CommandDraft<{mode: string}> =
-  {type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: `${BASE}test-mode/2.0`, data: {mode: 'quiet'}};
+/** A mode command for `target`: its subject is its key's last token, `bunny.cmd.mode.<target>` (ADR 0012). */
+export const modeFor = (target: string): CommandDraft<{mode: string}> =>
+  ({type: 'org.bunny.mode.set.requested', subject: target, dataschema: `${BASE}test-mode/2.0`, data: {mode: 'quiet'}});
+export const setMode: CommandDraft<{mode: string}> = modeFor('wall');

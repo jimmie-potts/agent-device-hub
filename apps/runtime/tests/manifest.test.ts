@@ -2,7 +2,7 @@
 // refused and never started; health says why, and the other modules run.
 import assert from 'node:assert/strict';
 import {checkApiVersion} from '@jimmie-potts/sdk';
-import {contextOf, entry, fixture, health, it, run, setMode, type Fixture} from './support.js';
+import {contextOf, entry, fixture, health, it, run, modeFor, setMode, type Fixture} from './support.js';
 
 it('refuses a module whose API version does not match, and starts the others', async context => {
   const started: string[] = [];
@@ -64,7 +64,7 @@ it('a refused module gets no participant, so nothing it would answer reaches it'
   const caller = fixture('caller');
   await run(context, {modules: [refused, caller]});
   assert.equal(refused.context, undefined);
-  const result = await contextOf(caller).sdk.request('bunny.cmd.mode.lamp', setMode, {timeoutMs: 1000});
+  const result = await contextOf(caller).sdk.request('bunny.cmd.mode.lamp', modeFor('lamp'), {timeoutMs: 1000});
   assert.equal(result.status, 'rejected');
   assert.equal(result.error.error.code, 'unavailable');
 });
