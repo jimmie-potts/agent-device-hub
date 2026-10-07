@@ -108,8 +108,10 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
 
 /** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
 type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
-/** A command on its way to a handler: its request span, and its queue span while it waits. */
-type Delivery = {command: Command<object>; key: string; expiresAtMs: number; settle: (result: RequestResult) => void; request: Span; queue: Span | undefined};
+/** A command on its way to a handler: its routing key, its request span, and its queue span while it waits. */
+type Delivery = {
+  command: Command<object>; key: string; expiresAtMs: number; settle: (result: RequestResult) => void; request: Span; queue: Span | undefined;
+};
 type Owner = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Delivery>};
 /** What one participant opened, so that its close can undo all of it. */
 type Member = {
@@ -417,7 +419,9 @@ export class InProcessBus {
       const {requestId} = command.data;
       const ids = {requestId, traceId: traceIdOf(command.traceparent)};
       delivery.queue?.end();
-      const execute = startSpan(this.#spans, 'bunny.command.execute', {parent: delivery.request.context, attributes: spanFields(command.source, delivery.key, requestId)});
+      const execute = startSpan(this.#spans, 'bunny.command.execute', {
+        parent: delivery.request.context, attributes: spanFields(command.source, delivery.key, requestId),
+      });
       // The handler has started, so an exception may come after an effect: the request is uncertain, never a refusal.
       // Only a typed refusal, an error body the responder returns, proves that nothing happened (ADR 0012).
       const uncertain = (detail: string): RequestResult => ({status: 'uncertain', requestId, error: body('uncertain-result', detail, ids)});
