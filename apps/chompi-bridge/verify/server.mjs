@@ -28,7 +28,9 @@ import { defaultLockPath } from '../dist/lock.js';
 import { createNodeHidTransport } from '../dist/node-hid-transport.js';
 import { isPressControl, isTurnControl } from '../dist/protocol.js';
 import { loadOsAdapter } from '../dist/routing/index.js';
-import { DEFAULT_CARD_STEP_COUNTS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MODEL_SETTINGS, DEFAULT_PAGE_SETTINGS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS } from '../dist/routing/profile.js';
+import {
+  DEFAULT_CARD_STEP_COUNTS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MODEL_SETTINGS, DEFAULT_NEXT_STEP_SETTINGS, DEFAULT_PAGE_SETTINGS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS,
+} from '../dist/routing/profile.js';
 import { SyntheticHub } from '../dist/sim/hub.js';
 import { CONTROL, PANEL_ENCODERS, PANEL_KEYS, describeLights } from '../dist/sim/panel.js';
 import { READY_STEP, SCENARIOS, ready, readiness, runScenario, seedDesktop, seedHub, taskIds } from '../dist/sim/scenarios.js';
@@ -57,6 +59,8 @@ const CARD_STOPS = {
   approval: { codex: ['Deny', 'Approve'], claude: ['Allow once', 'Allow always', 'Deny'] },
   question: { codex: ['Synthetic answer A', 'Synthetic answer B', 'Other'], claude: ['Synthetic answer A', 'Synthetic answer B', 'Synthetic answer C', 'Other'] },
 };
+/** Claude's synthetic next-step suggestions (#907); the first is also its ghost text, as with the next-steps mod. */
+const NEXT_STEPS = ['Synthetic next step A', 'Synthetic next step B', 'Synthetic next step C'];
 
 class Refusal extends Error {
   /** @param {number} status @param {string} code */
@@ -298,6 +302,8 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
         return void desktop.openCard(c, { kind, stops: CARD_STOPS[kind][c] });
       }
       if (op === 'close-card') return desktop.closeCard(client(input.client));
+      if (op === 'show-suggestions') return desktop.showSuggestions(NEXT_STEPS);
+      if (op === 'hide-suggestions') return desktop.hideSuggestions();
       if (op === 'select') {
         const c = client(input.client);
         if (typeof input.task !== 'string' || !TEXT.test(input.task)) throw new Refusal(400, 'invalid-task');
@@ -435,11 +441,13 @@ export async function startServer({ dataDir, port = 0, proof = null, echo = () =
       if (request.method === 'GET' && url.pathname === '/api/harness/boundaries') return send(response, 200, boundaries());
       if (request.method === 'GET' && url.pathname === '/api/harness/panel') {
         // Default counts per turn, from the profile: one card step for the big wheel, one page step for knob 4 (#822),
-        // one volume key for the volume knob (#865), and one model or effort step for knobs 1 and 2 (#906).
+        // one volume key for the volume knob (#865), one model or effort step for knobs 1 and 2 (#906) and one
+        // suggestion step for knob 3 (#907).
         const counts = {
           wheel: profile.cards?.stepCounts ?? DEFAULT_CARD_STEP_COUNTS, 'knob-4': profile.pages?.stepCounts ?? DEFAULT_PAGE_SETTINGS.stepCounts,
           volume: profile.volume?.stepCounts ?? DEFAULT_VOLUME_SETTINGS.stepCounts,
           'knob-1': profile.model?.stepCounts ?? DEFAULT_MODEL_SETTINGS.stepCounts, 'knob-2': profile.effort?.stepCounts ?? DEFAULT_EFFORT_SETTINGS.stepCounts,
+          'knob-3': profile.nextSteps?.stepCounts ?? DEFAULT_NEXT_STEP_SETTINGS.stepCounts,
         };
         return send(response, 200, { keys: PANEL_KEYS, encoders: PANEL_ENCODERS, controls: CONTROL, counts, cards: Object.keys(CARD_STOPS) });
       }

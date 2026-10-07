@@ -100,8 +100,8 @@ function encoderCard(encoder, defaultCounts) {
     return [led, light];
   });
   const isWheel = encoder.id === 'wheel';
-  // The big wheel starts at one card step, knob 4 at one page step and knobs 1 and 2 at one model or effort step;
-  // the other knobs at one count.
+  // The big wheel starts at one card step, knob 4 at one page step, knobs 1 and 2 at one model or effort step and
+  // knob 3 at one suggestion step; the volume knob at one count.
   const counts = el('input', { id: `${encoder.id}-counts`, type: 'number', min: '1', max: '96', value: String(defaultCounts[encoder.id] ?? 1), inputmode: 'numeric' });
   const turn = sign => () => {
     const n = Math.max(1, Math.min(96, Number.parseInt(counts.value, 10) || 1));
@@ -174,6 +174,8 @@ function windowCard(id) {
   card.model = el('dd', {}, 'unknown');
   card.effort = el('dd', {}, 'unknown');
   card.picker = el('dd', {}, 'closed');
+  // Claude's next-step band (#907); Codex has none.
+  card.suggestions = id === 'claude' ? el('dd', {}, 'none') : null;
   card.stops = el('ol', { class: 'stops', 'aria-label': `${CLIENT_NAMES[id]} card stops` });
   card.tasks = el('ul', { class: 'tasks', 'aria-label': `${CLIENT_NAMES[id]} tasks` });
   const input = el('input', { id: `${id}-type`, type: 'text', maxlength: '200', autocomplete: 'off', placeholder: 'synthetic text' });
@@ -195,7 +197,8 @@ function windowCard(id) {
       el('dt', {}, 'Card'), card.cardState,
       el('dt', {}, 'Model'), card.model,
       el('dt', {}, 'Effort'), card.effort,
-      el('dt', {}, id === 'claude' ? 'Model menu or slider' : 'Picker'), card.picker),
+      el('dt', {}, id === 'claude' ? 'Model menu or slider' : 'Picker'), card.picker,
+      ...(card.suggestions ? [el('dt', {}, 'Next steps'), card.suggestions] : [])),
     card.stops,
     form,
     el('div', { class: 'row' }, card.focusButton,
@@ -204,6 +207,9 @@ function windowCard(id) {
       el('button', { type: 'button', onclick: () => post('desktop', { op: 'open-card', client: id, kind: 'approval' }, `Opened an approval card in ${CLIENT_NAMES[id]}`) }, 'Open approval card'),
       el('button', { type: 'button', onclick: () => post('desktop', { op: 'open-card', client: id, kind: 'question' }, `Opened a question card in ${CLIENT_NAMES[id]}`) }, 'Open question card'),
       el('button', { type: 'button', onclick: () => post('desktop', { op: 'close-card', client: id }, `Closed the ${CLIENT_NAMES[id]} card`) }, 'Close card')),
+    ...(card.suggestions ? [el('div', { class: 'row' },
+      el('button', { type: 'button', onclick: () => post('desktop', { op: 'show-suggestions' }, 'Claude shows three synthetic next steps') }, 'Show next steps'),
+      el('button', { type: 'button', onclick: () => post('desktop', { op: 'hide-suggestions' }, 'Claude hides its next steps') }, 'Hide next steps'))] : []),
     el('h4', { class: 'sr-only' }, `${CLIENT_NAMES[id]} tasks`), card.tasks);
   return card;
 }
@@ -255,6 +261,12 @@ function renderDesktop(desktop) {
       setText(card.effort, w.picker.effort ?? 'none for this model');
       setText(card.picker, w.picker.open ? `${PICKER_NAMES[w.picker.open] ?? w.picker.open} open${w.picker.focus ? `, ${w.picker.focus} focused` : ''}` : 'closed');
     }
+    // Claude's next-step band (#907): how many suggestions, which has focus, and whether ghost text shows.
+    if (card.suggestions && w.suggestions) {
+      const n = w.suggestions.labels.length;
+      const focus = w.suggestions.focused === null ? 'none focused' : `suggestion ${w.suggestions.focused + 1} focused`;
+      setText(card.suggestions, `${n ? `${n} suggestions, ${focus}` : 'no band'}; ghost text ${w.suggestions.ghost ? 'shown' : 'none'}`);
+    }
     setText(card.cardState, w.card ? `${w.card.kind} card, ${w.card.focused === null ? 'no stop focused' : `stop ${w.card.focused + 1} of ${w.card.stops.length} focused`}${w.card.established ? '' : ', not established'}` : 'none');
     renderList(card.stops, w.card ? w.card.stops.map((label, i) => ({ label, i, focused: w.card.focused === i, card: w.card.id })) : [], s => `${s.card}:${s.i}`,
       () => el('li'), (node, s) => { setText(node, s.focused ? `${s.label} (focused)` : s.label); node.classList.toggle('focused', s.focused); });
@@ -282,6 +294,19 @@ function describePicker(e) {
   }
 }
 
+/** A next-step band change in the desktop log (#907): shown, focused, filled into the draft, ghost text accepted or hidden. */
+function describeSuggestion(e) {
+  const at = e.position ? ` ${e.position} of ${e.count}` : '';
+  switch (e.action) {
+    case 'show-suggestions': return `Claude shows ${e.count} next steps`;
+    case 'focus-suggestion': return `Claude next step${at} focused`;
+    case 'fill-suggestion': return `Claude next step${at} filled the draft`;
+    case 'accept-ghost': return 'Claude ghost text accepted into the draft';
+    case 'hide-suggestions': return 'Claude next steps hidden';
+    default: return `Claude next steps: ${e.action.replaceAll('-', ' ')}`;
+  }
+}
+
 function describe(e) {
   const time = new Date(e.at).toISOString().slice(11, 23);
   const where = w => w ? CLIENT_NAMES[w] : 'nothing';
@@ -295,6 +320,7 @@ function describe(e) {
     case 'dictation': return `${time} dictation ended${e.client ? `, text into ${CLIENT_NAMES[e.client]}` : ', no composer had focus'}`;
     case 'volume': return `${time} system volume key ${e.key}${e.presses > 1 ? ` x${e.presses}` : ''}, no window: volume ${e.volume}%${e.muted ? ', muted' : ''}`;
     case 'picker': return `${time} ${describePicker(e)}`;
+    case 'suggestion': return `${time} ${describeSuggestion(e)}`;
     default: return `${time} operator ${e.action}`;
   }
 }
