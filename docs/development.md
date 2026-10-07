@@ -514,11 +514,11 @@ proof by its own text, a refusal's registry code or the exception's type.
 Each rule in ADR 0012's
 [Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
 and [Observability](decisions/0012-bunny-event-platform.md#observability)
-maps to the check that fails when code breaks it, or to why no mechanical
-check can (#954). Reviewers check the last column under
+maps to the check that fails when code breaks it, or to the reason no
+mechanical check can (#954). Reviewers check the last column under
 [docs/sdlc.md](sdlc.md#review-and-merge) step 3. A module story adopts the
-module test kit and these lint rules; it does not copy this table. Paths are
-test files under each package's `tests/`.
+module test kit and these lint rules; it does not copy this table. A file name
+is a test file in the named package's `tests/` directory.
 
 | Rule | Checks that fail | Not checked mechanically |
 | --- | --- | --- |

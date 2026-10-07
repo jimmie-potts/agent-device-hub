@@ -39,16 +39,17 @@ that their own `--simulate` transports create inside the runtime, so two limits 
   shipped module running. Take a device offline in its module's catalog scenario, such as `nanoleaf-wall` or
   `pixoo-offline`, instead.
 - `GET /api/harness/v1/state` still lists the supervisor's devices, which a `shipped` run never uses: their empty counts,
-  such as no cloud calls and no LIFX packets, say nothing about the shipped modules. Read health, the journal records and
-  what the bus published instead.
+  such as no cloud calls and no LIFX packets, say nothing about the shipped modules. Its `published` list is empty too,
+  because only the fixture runs host the harness module. Read health and the state's journal records instead, or sync a
+  module's families from the edge with a remote part.
 
 ## Health
 
 `start` waits for the runtime's own health, and `doctor` reports it as the run's `health`. Health passes when every
 module runs, apart from a module the run's seed expects the runtime to refuse, and the lag check has not stopped: the
-rule the in-memory harness applies when a scenario starts. The expected refusals are `misconfigured-module`'s sign, and
-in `control-real-transports` and `control-default-state`, which give no module sections, every shipped module that
-takes one. Otherwise `start` keeps waiting until its readiness deadline, and `doctor` reports `health: failed` with each
+rule the in-memory harness applies when a scenario starts. The expected refusals are `misconfigured-module`'s sign and,
+in `control-real-transports` and `control-default-state`, every shipped module that takes a section, because those
+controls give none. Otherwise `start` keeps waiting until its readiness deadline, and `doctor` reports `health: failed` with each
 module that is not as expected, its state and its registry code, such as
 `the runtime is degraded: chime failed (internal)` after `scenario-module-fails-others-continue` (#954).
 
