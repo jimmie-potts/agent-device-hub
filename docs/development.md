@@ -2397,8 +2397,8 @@ No test contacts a device or the installed Pixoo service: the module runs with
 `modules/pixoo/tests/helpers/loopback.ts`. A test that launches a listening
 process uses `modules/pixoo/tests/helpers/launch.ts`. Both retry instead of
 keeping an installed service's port, such as 41230 or 41231. On 2026-10-07 the
-Vitest suite took about 7 s locally for 31 files and 302 tests, and the module's
-node:test suites about 25 s for 28 tests.
+Vitest suite took about 8 s locally for 31 files and 308 tests, and the module's
+node:test suites about 37 s for 34 tests.
 
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
 

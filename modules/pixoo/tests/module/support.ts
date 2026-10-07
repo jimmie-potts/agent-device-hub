@@ -157,6 +157,8 @@ export class World {
   async populate(fill: (library: Library) => Promise<void>): Promise<void> {
     const database = new DatabaseSync(this.databaseFile);
     try {
+      // A test's library is disposable, so filling it need not wait for the disk.
+      database.exec('PRAGMA synchronous = OFF');
       const library = await Library.attach({database, directory: this.folder});
       try {
         await fill(library);
