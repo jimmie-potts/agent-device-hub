@@ -23,6 +23,6 @@
 - [x] 4.2 Show the intent stored before the speaker hears a command, the reply after the outcome's commit and publication, and a stop that ends a hung call with an `uncertain` outcome and nothing left behind (`module.test.ts`).
 - [x] 4.3 Keep database refusals in the module: `capacity` for a refused intent, `accepted` and a capped-backoff retry for a refused outcome, and one `operation.failed` and one `operation.completed` per run of refusals across every commit, red first (`module.test.ts`).
 - [x] 4.4 Admit a queued command after the read that follows the command ahead, red first (`module.test.ts`).
-- [x] 4.5 Configure the shipped modules from each factory's `simulatedSection`, as #844 does: the maintenance journal test, the shipped process tests, the `shipped` run and the catalog.
+- [x] 4.5 Configure the shipped modules from each factory's `simulatedSection` (`{config, secrets?}`, the contract PR #968's review settled), through one helper, `tests/fixtures/simulated.ts`: the maintenance journal test, a process test of every shipped module under `--simulate`, and the `shipped` run; the catalog reads the playback module's section.
 - [x] 4.6 State the reply's exception to ADR 0012 in the README and the spec, and correct the `shipped` run's wording.
 - [x] 4.7 Show each fix's mutant fails its named tests, and rerun the gate.
