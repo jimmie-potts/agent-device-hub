@@ -71,9 +71,10 @@ follows the strict profile for new code.
   `session,inbox-item`, and its `sync.completed` carries the same subject; the
   validator does not check this.
 - `schemas/v2/blocks.schema.json`: building blocks for payloads. These are
-  identifiers, `<name>AtMs` instants, revisions, the `{epoch, sequence}`
-  ticket, ordering, tagged unknown values, kebab-case enum values, entity
-  references and the error body.
+  identifiers, routing IDs (identifiers that are also routing-key tokens:
+  lowercase letters and digits with single hyphens, Hub #918), `<name>AtMs`
+  instants, revisions, the `{epoch, sequence}` ticket, ordering, tagged unknown
+  values, kebab-case enum values, entity references and the error body.
 - `schemas/v2/kinds.schema.json`: payloads the profile owns for replies,
   completed outcomes, removals, sync requests and `sync.completed`. An outcome
   is `succeeded`, `failed` or `uncertain`, with evidence `transmitted`,
@@ -161,13 +162,17 @@ The rules:
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the
-  notice's `acknowledgedBy`, which clears it for that consumer only. It replaces
-  the 1.x `notice.acknowledged` observation, so the `lifecycle` family refuses
-  that event. An acknowledgment proves neither readership nor a cleared
-  attention item.
+  notice's `acknowledgedBy`. Acknowledgments are recorded per consumer, and each
+  consumer's policy decides which acknowledgments clear what it shows, as today:
+  LIFX and Tidbyt clear a finished turn on any consumer's acknowledgment (ADR
+  0012, "Inbox and history"). It replaces the 1.x `notice.acknowledged`
+  observation, so the `lifecycle` family refuses that event. An acknowledgment
+  proves neither readership nor a cleared attention item.
 - `playback-control` asks the owner of the `playback` record (#929) for play,
   pause, next or previous. The owner sends it once, to the source presented at
-  admission, and never redirects or retries it.
+  admission, and never redirects or retries it. The record's `id`, and so the
+  command's `subject`, is a routing ID.
+- A `moment-play` request's `subject` is the target device's ID.
 - A removal event, with reason `expired`, `retired` or `deleted`, drops an
   entity. A sync replaces the consumer's membership of the synced families.
 
@@ -186,7 +191,8 @@ for rules a schema cannot state. The core families use it to refuse:
 - a raised attention item from a turn other than the observation's;
 - repeated notice IDs or unavailable dimensions;
 - a moment that starts more than 60 s after the request;
-- an acknowledgment whose `subject` is not a session ID.
+- an acknowledgment whose `subject` is not a session ID, and a moment or
+  playback request whose `subject` is not a routing ID.
 
 The schemas keep the 1.x per-record rules:
 - read evidence only from Codex Desktop;
@@ -223,9 +229,12 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
 A `device` record is the full record of one device, published by the module
-that controls it, with the device `id` as its `subject`. The `id` is lowercase
-letters and digits with single hyphens, because it is also the last token of
-the device's routing keys. It holds:
+that controls it, with the device `id` as its `subject`. The `id` is a routing
+ID, because it is also the last token of the device's routing keys, and it must
+be unique across modules, because SDK responders may not overlap. Module
+configuration ([#919](https://github.com/jimmie-potts/agent-device-hub/issues/919))
+and the installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
+enforce that. The record holds:
 - the device's `kind`, such as `nanoleaf` or `pixoo`, and an optional owner
   `label`;
 - `availability`: `unknown`, `available`, `degraded` or `unavailable`. A device
@@ -239,21 +248,30 @@ the device's routing keys. It holds:
   `{status: "unknown"}` or known. Missing evidence is unknown, never off, and
   only a reading from the device is an observation: never a transport
   acknowledgment or a desired value;
-- `pending`, the count of accepted commands not yet completed;
+- `pending`, the count of accepted commands not yet completed, and
+  `pendingKinds`, their command families, each once, so a dashboard can tell
+  that a mode change is pending;
 - `lastOutcome`, the profile's outcome payload of the last completed command;
+- `lastTransmission`: unknown, or the last send that reached the device's
+  transport, with its time, the operation IDs it sent and the `requestId` it
+  served, if any. A module sets it for every transmitted send, including its
+  own paints, which never reach the tracker. It is never an observation;
 - `externalControl`: unknown, or owned by the `module` or an `external` party,
   with its evidence time.
 
 No device record carries an address, credential or private path. The checks
-refuse a desired mode the device does not advertise, an observation or
-external-control reading after the envelope `time`, and a general command whose
+refuse a desired mode the device does not advertise, an observation,
+external-control reading or transmission after the envelope `time`, pending
+kinds that disagree with the pending count, and a general command whose
 `subject` is not a device ID.
 
 Each general command maps one kind of controller v1's closed command union,
 and its verb is the family's last word. Each carries a `requestId` and the
-optional `expectedConfigurationRevision` and `expectedGeneration` guards, which
-a module answers with `revision-conflict` when they are stale. The `subject`
-names the device; no payload does. A module answers each device's own key,
+optional `expectedConfigurationRevision` and `expectedGeneration` guards. The
+dashboard and MCP send both on a person's command, copied from the device record
+they showed, and a module refuses a stale guard with `revision-conflict` before
+changing anything. The Hub-mode fan-out sends none, so it never races a
+device's revision. The `subject` names the device; no payload does. A module answers each device's own key,
 `bunny.cmd.<family>.<device id>`, because SDK responders may not overlap.
 `commandSupported(capabilities, command)` applies v1 admission's capability
 rule to a general command or a `moment-play` request, and a module refuses
@@ -285,8 +303,10 @@ native mode is never stored as the Hub's mode: Pixoo's `monitor` serves both
 `fixtures/v2/devices.json` has a valid message for every device family, with a
 reply and an outcome for each command family. Its invalid cases name their
 registry code and where each fails. `tests/devices.test.mjs` runs them, checks
-each command against its target device's capabilities and checks the Hub-mode
-table for each participating device kind.
+each command against its target device's capabilities, checks that every
+command family, `moment-play` and `playback-control` included, refuses a
+subject that is not a routing ID, and checks the Hub-mode table for each
+participating device kind.
 
 ### Agent status helper
 
@@ -299,7 +319,9 @@ until #839.
   has attention, `working` when it is active or has an active child, `done`
   when a turn-ended notice lacks an acknowledgment, otherwise undefined. Read
   evidence never retires `done`. By default any consumer's acknowledgment
-  retires it; `consumers` restricts that to the named ones.
+  retires it, as LIFX and Tidbyt use it today; `consumers` restricts that to
+  the named ones. Acknowledgments are recorded per consumer, and each caller's
+  policy decides which ones clear what it shows.
 - `highestStatus(copy, {acknowledgingConsumers?})` takes a consumer's copy of the
   session family, `{synced, sessions}`, and returns the highest root state,
   `idle` or `unknown`. A copy that has not synced, or whose later sync failed,

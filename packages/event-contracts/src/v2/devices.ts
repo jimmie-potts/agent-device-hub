@@ -3,7 +3,7 @@
 // such as LIFX color or Pixoo media, belong to each module. `MAPPING.md` shows where each v1 field lands.
 import type {ErrorDetail, Known, Message, MessageValidator, PayloadCheck, Ticket, Unknown} from './index.js';
 import type {Mode, MomentPlayRequest} from './families.js';
-import {defineFamily, registerFamilies, type PayloadFamily} from './registry.js';
+import {defineFamily, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 
 /** A value that is either unknown or known. Missing evidence is unknown, never `false` or off. */
 export type Tagged<T> = Unknown | Known<T>;
@@ -37,8 +37,11 @@ export type DeviceRecord = {
   capabilities: Capabilities;
   desired: {power: Tagged<boolean>; brightness: Tagged<number>; mode: Tagged<string>};
   observed: Unknown | {status: 'known'; observedAtMs: number; power: Tagged<boolean>; brightness: Tagged<number>};
-  pending: number;
+  /** Accepted commands not yet completed, and their command families, each once. */
+  pending: number; pendingKinds: string[];
   lastOutcome: Unknown | {status: 'known'; outcome: CompletedOutcome};
+  /** The last send that reached the transport, for a command (`requestId`) or a paint of the module's own. Never an observation. */
+  lastTransmission: Unknown | {status: 'known'; requestId?: string; transmittedAtMs: number; operationIds: string[]};
   externalControl: Unknown | {status: 'known'; owner: 'module' | 'external'; observedAtMs: number};
 };
 
@@ -103,12 +106,9 @@ export function nativeMode(kind: string, mode: Mode): string | undefined {
   return participating(kind) ? HUB_MODE_TABLE[kind][mode] : undefined;
 }
 
-/** A device ID is also the last token of the device's routing keys: lowercase letters and digits with single hyphens. */
-const DEVICE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const after = (message: Message, atMs: number): boolean => atMs > Date.parse(message.time);
 // A general command goes to one device, named by its subject.
-const checkCommand: PayloadCheck = message =>
-  message.subject.length <= 128 && DEVICE_ID.test(message.subject) ? undefined : 'envelope /subject not a device id';
+const checkCommand = routedSubject('device');
 const checkDevice: PayloadCheck = message => {
   const record = message.data as DeviceRecord;
   if (message.subject !== record.id) return 'envelope /subject not the entity';
@@ -119,7 +119,12 @@ const checkDevice: PayloadCheck = message => {
   if (record.externalControl.status === 'known' && after(message, record.externalControl.observedAtMs)) {
     return 'payload /externalControl/observedAtMs after time';
   }
-  return undefined;
+  if (record.lastTransmission.status === 'known' && after(message, record.lastTransmission.transmittedAtMs)) {
+    return 'payload /lastTransmission/transmittedAtMs after time';
+  }
+  // Each pending command has a family, and the kinds list each family once.
+  if (record.pending > 0 && record.pendingKinds.length === 0) return 'payload /pendingKinds missing for pending commands';
+  return record.pendingKinds.length > record.pending ? 'payload /pendingKinds more kinds than pending commands' : undefined;
 };
 
 export type {PayloadFamily} from './registry.js';

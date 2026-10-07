@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/device/2.0",
-  "description": "State: the full record of one device, which the module that controls it publishes (Hub #918). The envelope subject is the device `id`, which is also its routing-key token. `kind` names the device kind, such as `nanoleaf` or `pixoo`. Capabilities say what the device offers, with constraints. Desired and observed values stay separate: missing evidence is `{status: unknown}`, never off, and only a reading from the device is an observation, with its own evidence time; a transport acknowledgment never is. `availability` is `unavailable` when the module cannot reach the device, which never fails the module. Native modes are the device's own, kebab-case; the Hub's mode lives only in mode/2.0. The validator refuses a desired mode the device does not advertise and an observation or external-control reading after the envelope time (devices.ts). No device record carries an address, credential or private path. `registerDeviceFamilies` registers it after the core families, because `label` uses the session family's display text.",
+  "description": "State: the full record of one device, which the module that controls it publishes (Hub #918). The envelope subject is the device `id`, which is also its routing-key token and unique across modules. `kind` names the device kind, such as `nanoleaf` or `pixoo`. Capabilities say what the device offers, with constraints. Desired and observed values stay separate: missing evidence is `{status: unknown}`, never off, and only a reading from the device is an observation, with its own evidence time; a transport acknowledgment never is, and `lastTransmission` records it apart. `availability` is `unavailable` when the module cannot reach the device, which never fails the module. Native modes are the device's own, kebab-case; the Hub's mode lives only in mode/2.0. The validator refuses a desired mode the device does not advertise, evidence or a transmission after the envelope time, and pending kinds that disagree with the pending count (devices.ts). No device record carries an address, credential or private path. `registerDeviceFamilies` registers it after the core families, because `label` uses the session family's display text.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "revision", "kind", "availability", "configurationRevision", "generation", "capabilities", "desired", "observed", "pending",
-    "lastOutcome", "externalControl"],
+    "pendingKinds", "lastOutcome", "lastTransmission", "externalControl"],
   "properties": {
-    "id": {"$ref": "#/$defs/deviceId"},
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
     "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
     "kind": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
     "label": {"type": "string", "$ref": "https://bunny.invalid/events/session/2.0#/$defs/displayText", "maxLength": 80},
@@ -29,10 +29,23 @@
     ]},
     "pending": {"description": "Commands the module has accepted and not yet completed. The core's tracker holds each one.",
       "type": "integer", "minimum": 0, "maximum": 1024},
+    "pendingKinds": {"description": "The command families among the pending commands, each once, such as `device-mode-set`. Empty exactly when nothing is pending (validator).",
+      "type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"}},
     "lastOutcome": {"oneOf": [
       {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
       {"type": "object", "additionalProperties": false, "required": ["status", "outcome"],
         "properties": {"status": {"const": "known"}, "outcome": {"$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome"}}}
+    ]},
+    "lastTransmission": {"description": "The last send that reached the device's transport, for a command or for a paint the module made itself, which the tracker never sees. `requestId` names the command it served, if any; `operationIds` name what it sent. A transmission is never an observation.",
+      "oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "transmittedAtMs", "operationIds"],
+        "properties": {
+          "status": {"const": "known"},
+          "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+          "transmittedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+          "operationIds": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}
+        }}
     ]},
     "externalControl": {"oneOf": [
       {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
@@ -45,8 +58,6 @@
     ]}
   },
   "$defs": {
-    "deviceId": {"description": "A device ID is also the last token of the device's routing keys, such as `bunny.cmd.power-set.<id>`: lowercase letters and digits with single hyphens.",
-      "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 128},
     "unsupported": {"type": "object", "additionalProperties": false, "required": ["supported"], "properties": {"supported": {"const": false}}},
     "ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
     "nativeMode": {"description": "A mode the device itself offers, such as Nanoleaf's `work` or Pixoo's `monitor`. Never the Hub's mode.",

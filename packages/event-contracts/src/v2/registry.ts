@@ -1,5 +1,5 @@
 import {readFileSync} from 'node:fs';
-import {SCHEMA_BASE, type MessageKind, type MessageValidator, type PayloadCheck} from './index.js';
+import {SCHEMA_BASE, type Message, type MessageKind, type MessageValidator, type PayloadCheck} from './index.js';
 
 /** The version of every family this package defines. */
 export const FAMILY_VERSION = '2.0';
@@ -24,3 +24,9 @@ export function registerFamilies(validator: MessageValidator, families: readonly
     });
   }
 }
+
+/** The blocks' `routingId`: an ID that is also the last token of the entity's SDK routing keys (ADR 0012). */
+const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Refuses a command whose subject cannot be a routing-key token, naming what the subject should be. */
+export const routedSubject = (what: 'device' | 'routing'): PayloadCheck => (message: Message) =>
+  message.subject.length <= 128 && ROUTING_ID.test(message.subject) ? undefined : `envelope /subject not a ${what} id`;

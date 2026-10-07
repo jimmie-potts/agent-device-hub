@@ -698,9 +698,9 @@ sources follow the [strict profile](#strict-profile-for-new-code).
   `tests/consumer.mjs`.
 - `tests/devices.test.mjs` runs `fixtures/v2/devices.json`: a valid message for
   every device family, a reply and an outcome for each command family, each
-  invalid case with its registry code and detail, the capability rule, and the
-  Hub-mode table for each participating device kind, which must equal the
-  package README's.
+  invalid case with its registry code and detail, the capability rule, the
+  routing-key subject of every command family, and the Hub-mode table for each
+  participating device kind, which must equal the package README's.
 - `tests/status.test.mjs` runs the 2.0 status helper's copied cases against
   valid `session/2.0` records, and checks its ranking and colors against the 1.x
   `@jimmie-potts/agent-status`.

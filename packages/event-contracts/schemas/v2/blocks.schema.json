@@ -10,6 +10,12 @@
     "requestId": {
       "$ref": "#/$defs/id"
     },
+    "routingId": {
+      "description": "An identifier that is also the last token of the entity's SDK routing keys (ADR 0012): lowercase letters and digits with single hyphens, at most 128 characters.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 128
+    },
     "instantMs": {
       "type": "integer",
       "minimum": 0,

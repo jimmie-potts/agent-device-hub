@@ -176,7 +176,7 @@ test('every one of the eight capabilities is required, so none can go missing', 
   const v = validator();
   const {schema} = deviceFamilies.find(({family}) => family === 'device');
   const required = schema.$defs.capabilities.required;
-  assert.deepEqual([...required].sort(), ['brightness', 'media', 'moments', 'modes', 'power', 'preview', 'scenes', 'zones']);
+  assert.deepEqual([...required].sort(), ['brightness', 'media', 'modes', 'moments', 'power', 'preview', 'scenes', 'zones']);
   for (const capability of required) {
     const message = patched('device-nanoleaf', {[`/data/capabilities/${capability}`]: null});
     assert.deepEqual(v.validate(message).error, {code: 'invalid-message', retryable: false, detail: `payload /capabilities required ${capability}`}, capability);

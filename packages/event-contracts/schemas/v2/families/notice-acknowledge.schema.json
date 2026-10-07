@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/notice-acknowledge/2.0",
-  "description": "Command: acknowledge one turn-ended notice of a session for one consumer (Hub #918). A consumer, such as the Pixoo module after a dismissal, sends it to the core with its own consumer ID. The envelope subject is the session's `id` (validator). The core (#831) adds the consumer to the notice's `acknowledgedBy` and publishes the session record at a new revision, which clears the notice for that consumer only. An acknowledgment proves neither readership, success nor a cleared attention item. It replaces lifecycle 1.x's `notice.acknowledged` observation. The reply and the outcome use the profile's reply and outcome payloads.",
+  "description": "Command: acknowledge one turn-ended notice of a session for one consumer (Hub #918). A consumer, such as the Pixoo module after a dismissal, sends it to the core with its own consumer ID. The envelope subject is the session's `id` (validator). The core (#831) adds the consumer to the notice's `acknowledgedBy` and publishes the session record at a new revision. Acknowledgments are recorded per consumer, and each consumer's policy decides which acknowledgments clear what it shows, as today (ADR 0012). An acknowledgment proves neither readership, success nor a cleared attention item. It replaces lifecycle 1.x's `notice.acknowledged` observation. The reply and the outcome use the profile's reply and outcome payloads.",
   "type": "object",
   "additionalProperties": false,
   "required": ["requestId", "consumerId", "noticeId"],

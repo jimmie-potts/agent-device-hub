@@ -3,7 +3,7 @@
 // shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
-import {defineFamily as define, registerFamilies, type PayloadFamily} from './registry.js';
+import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 
 export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
 /** A core payload family. */
@@ -80,7 +80,8 @@ export type InboxItem = {
 };
 /**
  * `org.bunny.notice.acknowledge.requested`: a consumer acknowledges one turn-ended notice for its own consumer ID. The
- * envelope subject is the session's `id`. It clears the notice for that consumer only, and proves no readership.
+ * envelope subject is the session's `id`. The acknowledgment is recorded for that consumer, and each consumer's policy
+ * decides which acknowledgments clear what it shows. It proves no readership.
  */
 export type NoticeAcknowledgeRequest = {requestId: string; consumerId: string; noticeId: string};
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
@@ -164,8 +165,10 @@ const checkInbox: PayloadCheck = message => {
   return entity(message, message.data.id) ??
     (item.kind === 'turn-ended' && item.session !== sessionEntityId(item.identity) ? 'payload /item/session not the identity key' : undefined);
 };
-const checkMoment: PayloadCheck = message => (message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
-  `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined;
+// A moment goes to one device, named by its subject.
+const checkMoment: PayloadCheck = message => routedSubject('device')(message) ??
+  ((message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
+    `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined);
 // The command goes to the session it acknowledges, whose entity ID is a SHA-256 hash.
 const checkAcknowledge: PayloadCheck = message => /^[0-9a-f]{64}$/.test(message.subject) ? undefined : 'envelope /subject not a session id';
 
@@ -184,7 +187,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('mode-set', 'command', 'org.bunny.mode.set.requested'),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkAcknowledge),
-  define('playback-control', 'command', 'org.bunny.playback.control.requested'),
+  define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
 ];
 
 /**
