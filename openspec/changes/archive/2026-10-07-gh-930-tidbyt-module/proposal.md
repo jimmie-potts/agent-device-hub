@@ -56,6 +56,6 @@ configuration with secrets, files and worker calls (#919), and the playback modu
   (`test:tidbyt-module:built`, with `tests/workflow_checks.cjs`) and `docs/development.md`.
 - **Unchanged:** `controllers/tidbyt`'s code and tests, the local controller host, `packages/sdk/src/module.ts`, the
   observability catalog and released 1.x contracts.
-- **Depends on #967 (PR #970):** `device` is served by the LIFX module too, so until owner-addressed sync lands, a runtime
-  with both refuses the Tidbyt module's `serveSync`, and the shipped list's simulated run shows it failed.
+- **Depends on #967 (PR #970, merged as `ff4677f3`):** `device` is served by the LIFX module too, so the Tidbyt module serves
+  it beside LIFX through owner-addressed sync, and a reader names `bunny/modules/tidbyt` as the owner.
 - **Delivery:** source-only, verified with a simulated cloud; installation and the physical check happen at #840.

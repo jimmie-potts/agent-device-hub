@@ -989,17 +989,14 @@ const deviceOwners: Scenario = {
 
 /** The Tidbyt section: its factory's simulated section, following the playback module's simulated record. */
 export const TIDBYT_SECTION = TIDBYT_SIMULATED_SECTION;
-/**
- * The Tidbyt module's source, which a reader of the shared `device` family names as the record's owner. Until owner-
- * addressed sync (#967) lets the reader's copy name it, the scenario keeps only that owner's records.
- */
+/** The Tidbyt module's source, which a reader of the shared `device` family names as its copy's owner (#967). */
 const TIDBYT_OWNER = 'bunny/modules/tidbyt';
 const STATUS_TILE = TIDBYT_SECTION.statusInstallation;
 const CARD_TILE = TIDBYT_SECTION.nowPlaying.installation;
 /** The least time between two writes of one tile. */
 const TILE_GATE_MS = 15_000;
 const tidbytDevice = (h: Harness): DeviceRecord | undefined =>
-  h.reader.states<DeviceRecord>('device').find(state => state.source === TIDBYT_OWNER && state.data.id === TIDBYT_SECTION.id)?.data;
+  h.reader.states<DeviceRecord>('device', TIDBYT_OWNER).find(state => state.data.id === TIDBYT_SECTION.id)?.data;
 /** What one installation of the simulated Tidbyt shows, and how often it was pushed, with each push's time. */
 const tile = (h: Harness, installation: string): {picture: string[]; pushes: number; pushedAtMs: number[]} | undefined =>
   h.devices().tidbyt.installations[installation];
@@ -1040,7 +1037,8 @@ const tidbytTiles: Scenario = {
   id: 'tidbyt-tiles',
   title: 'the Tidbyt shows agent status and now playing, each tile pushed at most once every 15 seconds',
   seed: {
-    modules: ['core', 'playback', 'tidbyt'], follows: [CORE_FAMILIES, ['playback'], ['device']], config: {playback: PLAYBACK_SECTION, tidbyt: TIDBYT_SECTION},
+    modules: ['core', 'playback', 'tidbyt'], follows: [CORE_FAMILIES, ['playback'], {families: ['device'], owner: TIDBYT_OWNER}],
+    config: {playback: PLAYBACK_SECTION, tidbyt: TIDBYT_SECTION},
   },
   steps: [
     expect('the core, the playback module and the Tidbyt module are running', h => running(h, ['core', 'playback', 'tidbyt'])),

@@ -274,8 +274,7 @@ test('a sync answers the last committed record, never one the database refused',
   await until(() => records(h, 'operation.failed').length === 1, 'the refused commit');
   const reader = h.bus.connect('bunny/parts/reader');
   context.after(() => reader.close());
-  const options = {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'};
-  const synced = await reader.sync(['device'], () => {}, options);
+  const synced = await reader.sync(['device'], () => {}, {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'});
   assert.equal(synced.status, 'synced');
   if (synced.status === 'synced') assert.deepEqual(synced.copy.states().map(state => state.data), [committed], 'the sync serves what committed');
   lock.exec('ROLLBACK');
@@ -505,10 +504,8 @@ test('polling that changes nothing publishes nothing, and the device record offe
   assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unsupported-capability');
   const wrong = await requester.request('bunny.cmd.power-set.tidbyt', {...draft, subject: 'other'}, {timeoutMs: 5000});
   assert.equal(wrong.status === 'rejected' && wrong.error.error.code, 'invalid-request');
-  // `device` is a family several modules serve, so a reader names this module as its owner (#967). An SDK without
-  // owner-addressed sync ignores the name and routes to the family's one owner.
-  const owned = {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'};
-  const sync = await requester.sync(['device'], () => {}, owned);
+  // `device` is a family several modules serve, so a reader names this module as its owner (#967).
+  const sync = await requester.sync(['device'], () => {}, {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'});
   assert.equal(sync.status, 'synced');
   if (sync.status === 'synced') assert.deepEqual(sync.copy.states().map(state => state.data), [h.device()]);
   assert.ok(deviceFamilies.length > 0);

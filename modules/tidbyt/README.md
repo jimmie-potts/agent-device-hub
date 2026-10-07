@@ -121,11 +121,9 @@ changes; a poll that changes nothing publishes nothing. The revision rises
 across restarts. Each start publishes `unknown`, or `unavailable` without the
 lease.
 
-`device` is a family several modules serve. Owner-addressed sync
-([#967](https://github.com/jimmie-potts/agent-device-hub/issues/967)) lets a
-reader name this module, `bunny/modules/tidbyt`, as the owner. Until it lands, a
-runtime that also runs the LIFX module refuses the Tidbyt module's `serveSync`,
-and the module fails at start.
+`device` is a family several modules serve, so a reader names this module,
+`bunny/modules/tidbyt`, as its copy's owner
+([#967](https://github.com/jimmie-potts/agent-device-hub/issues/967)).
 
 Every general command (#918) on `bunny.cmd.<family>.<id>` is refused with
 `unsupported-capability`, and one whose subject is another device with

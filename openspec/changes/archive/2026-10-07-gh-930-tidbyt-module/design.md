@@ -57,14 +57,12 @@ stays aligned; the adjustments below are routine and within its scope.
 - **`sharp` decodes the goldens.** It bundles its own libwebp build, independent of the module's encoder, and is already
   locked for Pixoo. The simulated cloud's text pictures use the module's own subset decoder, which is a convenience for
   people and scenarios, not a check of the encoder.
-- **Sync of `device` from a shared family.** The module serves `device` as the issue asks. Until #967 lands, the SDK lets
-  one owner serve a family, so a runtime that also runs the LIFX module refuses the Tidbyt module at start; the module
-  tests name `bunny/modules/tidbyt` as the reader's owner, which an SDK without #967 ignores.
+- **Sync of `device` from a shared family.** The module serves `device` as the issue asks, beside the LIFX module, through
+  owner-addressed sync (#967, PR #970, merged as `ff4677f3` during the review and rebased onto); the module tests and the
+  catalog's reader name `bunny/modules/tidbyt` as the owner.
 
 ## Risks / Trade-offs
 
-- [The shipped list fails the Tidbyt module until #967 merges] → The coordinator orders the merges; the process test that
-  starts every shipped module shows it, and nothing else depends on it.
 - [An authentication hold lasts until the runtime restarts] → As the runner's lasted until it was reconfigured; one record
   names it, and the device shows `unavailable`.
 - [A worker thread per render] → At most two renders run, one per tile, and each takes milliseconds; a stop ends them.
