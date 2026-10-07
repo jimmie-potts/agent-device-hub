@@ -167,7 +167,12 @@ export async function readPrivateFile(file: string, maxBytes: number, {beforeOpe
     throw error;
   }
   if (parent !== dirname(path)) throw new PrivateFileError('link', path);
-  if (await checkoutOf(dirname(path)) !== undefined) throw new PrivateFileError('checkout', path);
+  // A directory along the path the runtime's user may not search hides whether a `.git` is there, and the file too.
+  const checkout = await checkoutOf(dirname(path)).catch((error: unknown) => {
+    if (denied(error)) throw new PrivateFileError('not-private', path);
+    throw error;
+  });
+  if (checkout !== undefined) throw new PrivateFileError('checkout', path);
   await beforeOpen?.();
   let handle;
   try {

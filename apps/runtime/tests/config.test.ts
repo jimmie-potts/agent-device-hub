@@ -390,3 +390,65 @@ it('a span a module records leaves out an attribute that holds a secret the modu
   assert.ok(call.includes('sign-1'), 'with its other attributes');
   assert.equal(spans.some(line => line.includes(SECRET)), false, 'no span holds the secret');
 });
+
+it('a secret or configuration file under a folder the runtime\'s user may not search is refused as not private', async context => {
+  // Root searches any folder, so only another user sees this refusal.
+  if (process.getuid?.() === 0) return;
+  const root = await stateDir(context);
+  const secrets = join(root, 'secrets');
+  const config = join(root, 'config');
+  await mkdir(secrets, {mode: 0o700});
+  await mkdir(config, {mode: 0o700});
+  const token = await privateFile(join(secrets, 'token'), SECRET);
+  const file = await privateFile(join(config, 'runtime-config.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {locked: {secrets: {token}}}}));
+  const sectionFile = await configFile(context, {locked: {secrets: {token}}});
+  try {
+    await chmod(secrets, 0o000);
+    await chmod(config, 0o000);
+    const locked = configured('locked');
+    const {runtime} = await run(context, {modules: [locked], configFile: sectionFile});
+    assert.deepEqual(entry(runtime.health(), 'locked').reason, {
+      code: 'forbidden', detail: 'the secret file for token must be private to its owner: readable by it, with no permissions for group or others and one link',
+    }, 'a secret under an unsearchable folder');
+    const starting = startRuntime({port: 0, stateDir: await stateDir(context), modules: [], configFile: file, log: () => {}});
+    context.after(async () => { await (await starting.catch(() => undefined))?.stop(); });
+    await assert.rejects(starting, runtimeCode('config-not-private'), 'a configuration file under an unsearchable folder');
+  } finally {
+    await chmod(secrets, 0o700);
+    await chmod(config, 0o700);
+  }
+});
+
+it('a module failure whose error code holds the module\'s secret is still recorded, without that code', async context => {
+  const token = await tokenFile(context);
+  const failing = configured('failing', async ({secrets, sdk}) => {
+    const value = await secrets.read('token');
+    await sdk.subscribe('bunny.event.session.*', () => { throw Object.assign(new Error(`the device refused ${value}`), {code: value}); });
+  });
+  const probe = fixture('probe');
+  const file = await configFile(context, {failing: {secrets: {token}}});
+  const {runtime, logs} = await run(context, {modules: [failing, probe], configFile: file});
+  await contextOf(probe).sdk.publish('bunny.event.session.s1', {
+    kind: 'occurrence', type: 'org.bunny.turn.ended', subject: 's1', dataschema: 'https://bunny.invalid/events/test-turn/2.0', data: {sessionId: 's1'},
+  });
+  await waitFor(() => entry(runtime.health(), 'failing').state === 'failed', 5000, 'the module to fail');
+  const failed = logs.find(record => record.event_name === 'runtime.module.failed' && record.attributes['bunny.module'] === 'failing');
+  assert.deepEqual(failed?.attributes, {
+    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source',
+  }, 'the decision record survives, without the error code that holds the secret');
+  assert.equal(JSON.stringify(logs).includes(SECRET), false);
+});
+
+it('a core the configuration refuses ends the runtime as a failed core does, and the core needs no section', async context => {
+  let failures = 0;
+  const core = fixture('core');
+  const file = await configFile(context, {core: {secrets: 'not-a-map'}});
+  const {runtime} = await run(context, {modules: [core], configFile: file, onCoreFailure: () => { failures += 1; }});
+  assert.equal(entry(runtime.health(), 'core').reason?.code, 'invalid-request');
+  assert.equal(failures, 1, 'the runtime hears that its core is gone');
+  const plain = fixture('core');
+  let none = 0;
+  const {runtime: fine} = await run(context, {modules: [plain], configFile: await configFile(context, {}), onCoreFailure: () => { none += 1; }});
+  assert.equal(entry(fine.health(), 'core').state, 'running', 'a core with no section starts');
+  assert.equal(none, 0);
+});

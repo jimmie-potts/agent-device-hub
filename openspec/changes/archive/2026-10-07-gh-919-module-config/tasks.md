@@ -38,3 +38,9 @@
 - [x] 6.5 Name the refusals a seed expects, so the in-memory harness stays strict elsewhere (`runner.test.ts`).
 - [x] 6.6 Type `config` as `Config | undefined`, report the sign's failed renders against the sign, word privacy as no permissions for group or others, match numbers in redaction, and test a hard-linked configuration file, unquoted refusals and malformed secrets.
 - [x] 6.7 Show each fix's mutant fails its named tests, and rerun the gate.
+
+## 7. Rebase over #962 and final fixes
+
+- [x] 7.1 Rebase over PR #962 (#831), rebuilding the delta's four shared `bunny-runtime` requirements from the synced text so both stories' requirements stand; the shipped core declares API `1.0` and no `configure`, so it runs under `1.1` without a section.
+- [x] 7.2 Count a secret or configuration file under a directory the runtime's user may not search as not private (`config.test.ts`).
+- [x] 7.3 Keep the records of a module's refusal, failure or stop problem when an error attribute holds a secret, leaving that attribute out, and end the runtime when the configuration refuses the core (`config.test.ts`).

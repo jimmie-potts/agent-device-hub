@@ -292,7 +292,18 @@ export class ModuleHost {
   #refuse(slot: Slot, reason: Reason, error?: unknown): void {
     slot.state = 'refused';
     slot.reason = reason;
-    this.#log.error('runtime.module.refused', {...named(slot.name), ...reasonFields({...reason, phase: 'manifest'}), ...(error === undefined ? {} : errorFields(error))});
+    this.#log.error('runtime.module.refused', {...named(slot.name), ...reasonFields({...reason, phase: 'manifest'}), ...(error === undefined ? {} : this.#errorFields(error))});
+    // The runtime cannot continue without the one owner of agent sessions (Hub #831), whether it failed or was refused,
+    // as by a malformed `core` section of the configuration file.
+    if (slot.name === CORE_MODULE) this.#options.onCoreFailure?.(error);
+  }
+
+  /**
+   * An error's type and code for a record, leaving out one that holds a secret a module read, such as a code a device
+   * library copied from its credential. The record itself survives, as `runtime.failed` does (Hub #919).
+   */
+  #errorFields(error: unknown): Record<string, string> {
+    return this.#options.logs.redactions.without(errorFields(error));
   }
 
   /** The text of a secret file the module's own section names. Each read is checked anew and redacted from the log. */
@@ -411,7 +422,7 @@ export class ModuleHost {
       return;
     }
     if (slot === undefined) {
-      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...errorFields(error)});
+      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...this.#errorFields(error)});
       return;
     }
     this.#fail(slot, {code: 'internal', detail: 'a handler threw', phase: 'handler'}, error);
@@ -454,7 +465,7 @@ export class ModuleHost {
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */
   #fail(slot: Slot, failure: Failure, error: unknown): void {
-    const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : errorFields(error))};
+    const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : this.#errorFields(error))};
     if (slot.state === 'failed' || slot.state === 'stopped' || slot.state === 'refused') {
       this.#log.warn('runtime.module.error-after-stop', {...fields, 'bunny.phase': failure.phase});
       return;
@@ -491,7 +502,7 @@ export class ModuleHost {
     if (closed.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'handlers'});
     const ended = await this.#within(running.run(slot.flow, () => attempt(() => slot.module.stop())), stopTimeoutMs);
     if (ended.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'stop'});
-    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...errorFields(ended.error)});
+    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...this.#errorFields(ended.error)});
     await Promise.allSettled([...slot.workers].map(worker => worker.terminate()));
     if (slot.database?.isOpen === true) slot.database.close();
     if (slot.state === 'stopping') slot.state = 'stopped';

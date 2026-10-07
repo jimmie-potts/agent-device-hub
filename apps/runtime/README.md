@@ -233,8 +233,8 @@ secret files; the runtime does not check the modes of their directories. It has 
 refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,
 `config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
-user may not read included), `config-too-large` or `config-invalid`. No refusal
-quotes the file. The cutover's installer (#935)
+user may not read, or one under a directory it may not search, included),
+`config-too-large` or `config-invalid`. No refusal quotes the file. The cutover's installer (#935)
 writes the file from today's files. There is no reload: a change takes effect
 when the runtime restarts.
 
@@ -252,8 +252,13 @@ detail, while the others start, when:
 - it names a device that is not a routing ID, or one that a module before it
   already named (`invalid-request`);
 - a secret file its section names is missing (`not-found`), is not private by
-  the rules above or not readable by the runtime's user (`forbidden`), or is
-  larger than 64 KiB or not UTF-8 text (`invalid-request`).
+  the rules above, not readable by the runtime's user or under a directory it
+  may not search (`forbidden`), or is larger than 64 KiB or not UTF-8 text
+  (`invalid-request`).
+
+The core (#831) declares no `configure`, so it needs no section. A malformed
+`core` section refuses the core, and the runtime then ends as it does when the
+core fails.
 
 Its `runtime.module.refused` record carries `bunny.code` and the `manifest`
 phase, and, for a `configure` that threw, the error's type. A module then gets
@@ -268,10 +273,10 @@ No secret reaches a log record, health or an error body. The runtime logs no
 part of the file and no secret, and refusals carry fixed text. One registry of
 the secrets modules read serves every writer in the process: the runtime's
 writer drops, and counts in `runtime.stopped`, any record whose attribute holds
-one, as text or as a number's digits; the process's `runtime.failed` record
-leaves such an attribute out, so an error that escapes every module carrying a
-module's token is still recorded, without it; and a module's span leaves it out
-too, keeping the span for its children. Its tests and every disposable run
+one, as text or as a number's digits. The process's `runtime.failed` record and
+the runtime's records of a module's refusal, failure or stop problem leave such
+an error attribute out instead, so the record is still written without it, and a
+module's span leaves it out too, keeping the span for its children. Its tests and every disposable run
 scan records, health, error bodies and proof for the synthetic token
 `tok_SYNTHETIC919`.
 
