@@ -2,14 +2,18 @@
 // records, stand-in owners on a test bus, and a host for one module instance. Every identity here is synthetic, and no
 // test reaches a device: the module runs with `SimulatedPixoo`.
 import {mkdtemp, rm} from 'node:fs/promises';
+import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {deflateSync, crc32} from 'node:zlib';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type CommandDraft, type Participant, type RequestResult, type StateDraft, type Subscription} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans, followStandInAcks, standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import {Library} from '../../src/library/index.js';
+import {encodeHostedGif} from '../../src/media/index.js';
 import {DEVICE_SCHEMA, FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
 import {createPixooModule, type PixooOptions} from '../../src/module/module.js';
 import {SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
@@ -144,6 +148,26 @@ export class World {
     return join(this.#dir, 'pixoo');
   }
 
+  /** The module's SQLite file, as the harness opens it. */
+  get databaseFile(): string {
+    return join(this.#dir, 'pixoo.sqlite');
+  }
+
+  /** Fills the module's library before it starts, as the library migration (#931) would leave it. */
+  async populate(fill: (library: Library) => Promise<void>): Promise<void> {
+    const database = new DatabaseSync(this.databaseFile);
+    try {
+      const library = await Library.attach({database, directory: this.folder});
+      try {
+        await fill(library);
+      } finally {
+        await library.close();
+      }
+    } finally {
+      database.close();
+    }
+  }
+
   /** The stand-in playback owner starts serving the playback record. */
   async servePlayback(): Promise<void> {
     this.#subscriptions.push(await this.player.serveSync(['playback'], () => ({revision: this.revision, states: this.playback.map(playbackState)})));
@@ -203,6 +227,15 @@ export class World {
     return this.seen.filter(message => message.kind === 'state' && message.dataschema === schema && message.subject === id).at(-1)?.data as T | undefined;
   }
 
+  /** The module's records of `family` as a new copy syncs them, as a reader does. */
+  async synced<T>(family: string): Promise<T[]> {
+    const result = await this.probe.sync<Record<string, unknown>>([family], () => {}, {timeoutMs: 20_000});
+    if (result.status !== 'synced') throw new Error(`the sync of ${family} was refused: ${result.error.error.code}`);
+    const records = result.copy.states().map(state => state.data as T);
+    await result.copy.close();
+    return records;
+  }
+
   deviceRecord(): DeviceRecord | undefined {
     return this.latest<DeviceRecord>('device');
   }
@@ -227,4 +260,34 @@ export class World {
     for (const participant of [this.probe, this.core, this.player]) await participant.close();
     await rm(this.#dir, {recursive: true, force: true});
   }
+}
+
+/** A GIF of `frames` 64x64 frames at 100 ms, which the hosted profile plays: two colors that differ for each `index`. */
+export function hostedGif(index: number, frames: number): Buffer {
+  return encodeHostedGif(Array.from({length: frames}, (_, frame) => {
+    const rgb = new Uint8Array(12288);
+    for (let pixel = 0; pixel < 4096; pixel += 1) rgb.set((pixel + frame) % 2 === 0 ? [index % 256, 0, 0] : [0, index % 256, 255], pixel * 3);
+    return {rgb, delayMs: 100};
+  }));
+}
+
+/** The bytes as one-chunk input, as the library's import reads them. */
+export async function* bytesOf(bytes: Uint8Array): AsyncGenerator<Uint8Array> {
+  yield await Promise.resolve(bytes);
+}
+
+const {GIFEncoder} = createRequire(import.meta.url)('gifenc') as typeof import('gifenc');
+/**
+ * A two-frame GIF whose frames hold 200 colors each, all different, so its frames together hold 400: within the GIF
+ * profile, but beyond the hosted GIF's 256 global colors.
+ */
+export function manyColorGif(): Buffer {
+  const gif = GIFEncoder();
+  for (const frame of [0, 1]) {
+    const palette = Array.from({length: 200}, (_, color) => [frame * 100 + color % 100, Math.floor(color / 100) * 128, frame * 255]);
+    const pixels = new Uint8Array(4096).map((_, pixel) => pixel % 200);
+    gif.writeFrame(pixels, 64, 64, {palette, delay: 100, dispose: 1, transparent: false, repeat: 0});
+  }
+  gif.finish();
+  return Buffer.from(gif.bytes());
 }

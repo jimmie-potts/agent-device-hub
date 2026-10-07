@@ -96,9 +96,9 @@ it('maps device results and errors by what they prove about effects',()=>{
  expect(deviceCompletion(result({code:'stale-generation'}),'media')).toMatchObject({result:'failed',error:{code:'cancelled'}});
  // A failure the Pixoo answered reached it: its evidence is transmitted, never none, and the send is the device's last
  // transmission, as for a confirmed send.
- expect(deviceCompletion(result({code:'device-error',priorEffects:'possible'}),'display')).toEqual({result:'failed',evidence:'transmitted',error:expect.objectContaining({code:'invalid-state'}),transmission:{transmittedAtMs:5,operationIds:['display']}});
- expect(deviceCompletion(result({code:'http-error',priorEffects:'possible'}),'display')).toEqual({result:'failed',evidence:'transmitted',error:expect.objectContaining({code:'unavailable'}),transmission:{transmittedAtMs:5,operationIds:['display']}});
- expect(deviceCompletion(result({code:'protocol-error',priorEffects:'possible'}),'media')).toEqual({result:'uncertain',evidence:'transmitted',error:expect.objectContaining({code:'uncertain-result'}),transmission:{transmittedAtMs:5,operationIds:['media']}});
+ expect(deviceCompletion(result({code:'device-error',priorEffects:'possible'}),'display')).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'invalid-state'},transmission:{transmittedAtMs:5,operationIds:['display']}});
+ expect(deviceCompletion(result({code:'http-error',priorEffects:'possible'}),'display')).toMatchObject({result:'failed',evidence:'transmitted',error:{code:'unavailable'},transmission:{transmittedAtMs:5,operationIds:['display']}});
+ expect(deviceCompletion(result({code:'protocol-error',priorEffects:'possible'}),'media')).toMatchObject({result:'uncertain',evidence:'transmitted',error:{code:'uncertain-result'},transmission:{transmittedAtMs:5,operationIds:['media']}});
  // A failure it did not answer was never a transmission.
  expect(deviceCompletion(result({code:'timeout',priorEffects:'possible'}),'media')).not.toHaveProperty('transmission');
  expect(deviceCompletion(result({code:'offline'}),'display')).toMatchObject({result:'failed',evidence:'none',error:{code:'unavailable'}});

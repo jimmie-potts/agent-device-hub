@@ -1552,7 +1552,7 @@ const pixooNowPlaying: Scenario = {
       const display = pixooDisplay(h);
       return (display?.mode === 'media' && display.nowPlaying.takeover === 'whole' && showsCard(h) === true) || `display ${show(display)}, ${show(showsCard(h))}`;
     }, 8000),
-    holds('the whole takeover keeps the current card for more than thirty seconds while the song plays on unchanged', async h => {
+    holds('the whole takeover keeps the current card for more than thirty seconds while the song plays on unchanged', h => {
       const card = currentCard(h), shown = showsCard(h);
       return (card === true && shown === true && pixooDisplay(h)?.nowPlaying.takeover === 'whole') || `${show(card)}, ${show(shown)}, takeover ${show(pixooDisplay(h)?.nowPlaying.takeover)}`;
     }, 31_000),

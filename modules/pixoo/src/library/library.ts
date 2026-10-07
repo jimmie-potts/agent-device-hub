@@ -23,6 +23,14 @@ const optionsSchema = z.object({repeat:z.boolean().optional(), shuffle:z.boolean
 const json = <T>(value:unknown):T => JSON.parse(String(value)) as T;
 /** The tables of a database the caller owns that are not the catalog's: the SDK's outbox and a module's own. */
 const CALLER_TABLES=/^(?:bunny|pixoo)_/;
+const HOSTED='pixoo64-hosted-2026-10-01';
+/**
+ * Where an attached library keeps each multi-frame rendition's hosted check, by rendition and profile: whether its frames
+ * fit the hosted GIF's palette and timing. The check reads every frame, so it runs once per rendition and profile.
+ */
+export interface HostedChecks {get(renditionId:string,profile:string):boolean|undefined;set(renditionId:string,profile:string,fits:boolean):void}
+/** One rendition as a catalog lists it: `compatible` is undefined while a hosted rendition's frames are unchecked. */
+export interface CatalogMedia {assetId:string;renditionId:string;name:string;format:Rendition['source']['format'];frameCount:number;durationMs:number|null;compatible:boolean|undefined}
 
 /** One backend owner for a private catalog and its dedicated media directory. */
 export class Library {
@@ -30,7 +38,7 @@ export class Library {
   private closing = false;
   private closed?:Promise<void>;
   /** `owner` is the exclusive owner lock of a library that opened its own files; an attached library has none and never closes its database. */
-  private constructor(private db:DatabaseSync, private owner:DatabaseSync|undefined, private media:MediaStore, private mediaDirectory:string) {}
+  private constructor(private db:DatabaseSync, private owner:DatabaseSync|undefined, private media:MediaStore, private mediaDirectory:string, private checks?:HostedChecks) {}
 
   static async open(options:{directory:string;requireExisting?:boolean}):Promise<Library> {
     let db:DatabaseSync|undefined, owner:DatabaseSync|undefined;
@@ -68,7 +76,7 @@ export class Library {
    * The caller keeps the database open until the library has closed, and the library never closes it. The caller is the
    * one owner of the database, so no owner lock is taken.
    */
-  static async attach(options:{database:DatabaseSync;directory:string}):Promise<Library> {
+  static async attach(options:{database:DatabaseSync;directory:string;hostedChecks?:HostedChecks}):Promise<Library> {
     try {
       const media = new MediaStore({directory:join(options.directory,'media')});
       await media.initialize();
@@ -77,7 +85,7 @@ export class Library {
       migrate(options.database,MIGRATIONS,CALLER_TABLES);
       await cleanup(options.database,mediaDirectory);
       await recoverStaging(mediaDirectory);
-      return new Library(options.database,undefined,media,mediaDirectory);
+      return new Library(options.database,undefined,media,mediaDirectory,options.hostedChecks);
     } catch(error) {
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
       throw new LibraryError('storage-error');
@@ -127,11 +135,37 @@ export class Library {
   }
   private async validateHosted(id:string,profile?:Readonly<MediaProfile>,signal?:AbortSignal):Promise<void> {
     const rendition=this.manifest(id);
-    if(profile?.name!=='pixoo64-hosted-2026-10-01'||rendition.frames.length<2)return;
+    if(profile?.name!==HOSTED||rendition.frames.length<2)return;
+    const kept=this.checks?.get(id,profile.name);
+    if(kept===true)return;
+    if(kept===false)throw new MediaError('profile-limit');
     if(signal?.aborted===true)throw new LibraryError('cancelled');
     const loaded=await this.media.readFrames(id,signal);
     if(JSON.stringify(rendition)!==JSON.stringify(loaded.rendition))throw new LibraryError('catalog-corrupt');
-    hostedPalette(loaded.frames.map((rgb,index)=>({rgb,delayMs:rendition.frames[index]?.delayMs??100})));
+    try{hostedPalette(loaded.frames.map((rgb,index)=>({rgb,delayMs:rendition.frames[index]?.delayMs??100})));}
+    catch(error){if(error instanceof MediaError&&error.code==='profile-limit')this.checks?.set(id,profile.name,false);throw error;}
+    this.checks?.set(id,profile.name,true);
+  }
+  /**
+   * Every rendition, oldest first, with its compatibility with `profile` from its manifest and its kept hosted check. It
+   * reads no frames: a multi-frame rendition the hosted profile has not checked yet is listed with `compatible` undefined.
+   */
+  async catalogMedia(profile:Readonly<MediaProfile>,stillDelayMs=100):Promise<CatalogMedia[]> {
+    return this.run(()=>this.db.prepare('SELECT a.id AS asset_id,a.name,r.id,r.manifest_json FROM renditions r JOIN assets a ON a.id=r.asset_id ORDER BY a.created_at,a.id,r.id').all().map(row=>{
+      const rendition=json<Rendition>(row.manifest_json);
+      let compatible:boolean|undefined=true;
+      try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
+      if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,profile.name);
+      return {assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible};
+    }));
+  }
+  /** Whether the catalog holds this rendition, read at once rather than after queued work, as a command's admission needs. */
+  renditionExists(id:string):boolean {
+    return hashSchema.safeParse(id).success && this.db.prepare('SELECT 1 FROM renditions WHERE id=?').get(id)!==undefined;
+  }
+  /** Whether the catalog holds this playlist, read at once rather than after queued work. */
+  playlistExists(id:string):boolean {
+    return idSchema.safeParse(id).success && this.db.prepare('SELECT 1 FROM playlists WHERE id=?').get(id)!==undefined;
   }
   async playbackCompatible(id:string,profile:Readonly<MediaProfile>,stillDelayMs=100):Promise<boolean>{
     validate(hashSchema,id);

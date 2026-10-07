@@ -1,15 +1,20 @@
 // The Pixoo module's own rows in its SQLite file (Hub #843), beside the library's catalog and the SDK's outbox. It keeps
 // only state the module owns: its revision counter, its presentation settings, its last outcome, the commands it has
-// accepted and not yet completed, and the commands it has completed, so a repeated request changes nothing. Copies of
-// other owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored.
-import type {DatabaseSync} from 'node:sqlite';
+// accepted and not yet completed, the commands it has completed, so a repeated request changes nothing and a reused
+// request ID is refused, and each multi-frame rendition's hosted check, so its frames are read once. Copies of other
+// owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored. Each statement is
+// prepared once.
+import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {nowPlayingSetting, presentationConfiguration, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
 
 /** How long a completed command's `(source, requestId)` is kept, so a repeated request is accepted again and changes nothing. */
 export const HANDLED_MS = 86_400_000;
 
-/** A command the module accepted and has not yet completed: what its outcome needs after a restart. */
-export type AcceptedCommand = {source: string; requestId: string; family: string; type: string; traceparent: string; acceptedAtMs: number};
+/**
+ * A command the module accepted and has not yet completed: what its outcome needs after a restart. `digest` is the
+ * SHA-256 of its family, subject and data, so a request ID used again for other content is told apart.
+ */
+export type AcceptedCommand = {source: string; requestId: string; digest: string; family: string; type: string; traceparent: string; acceptedAtMs: number};
 
 type Row = Record<string, unknown>;
 const text = (row: Row | undefined, column: string): string | undefined => {
@@ -23,22 +28,47 @@ const integer = (row: Row | undefined, column: string): number | undefined => {
 
 export class PixooStore {
   readonly #db: DatabaseSync;
+  readonly #read: StatementSync;
+  readonly #write: StatementSync;
+  readonly #request: StatementSync;
+  readonly #accept: StatementSync;
+  readonly #handled: StatementSync;
+  readonly #forget: StatementSync;
+  readonly #pending: StatementSync;
+  readonly #prune: StatementSync;
+  readonly #hostedCheck: StatementSync;
+  readonly #saveHostedCheck: StatementSync;
+  readonly #dropHostedChecks: StatementSync;
 
   constructor(db: DatabaseSync) {
     this.#db = db;
     db.exec(`CREATE TABLE IF NOT EXISTS pixoo_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
-      CREATE TABLE IF NOT EXISTS pixoo_commands (source TEXT NOT NULL, request_id TEXT NOT NULL, family TEXT NOT NULL, type TEXT NOT NULL,
-        traceparent TEXT NOT NULL, accepted_at_ms INTEGER NOT NULL, PRIMARY KEY (source, request_id)) STRICT;
-      CREATE TABLE IF NOT EXISTS pixoo_handled (source TEXT NOT NULL, request_id TEXT NOT NULL, completed_at_ms INTEGER NOT NULL,
-        PRIMARY KEY (source, request_id)) STRICT`);
+      CREATE TABLE IF NOT EXISTS pixoo_commands (source TEXT NOT NULL, request_id TEXT NOT NULL, digest TEXT NOT NULL, family TEXT NOT NULL,
+        type TEXT NOT NULL, traceparent TEXT NOT NULL, accepted_at_ms INTEGER NOT NULL, PRIMARY KEY (source, request_id)) STRICT;
+      CREATE TABLE IF NOT EXISTS pixoo_handled (source TEXT NOT NULL, request_id TEXT NOT NULL, digest TEXT NOT NULL, completed_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (source, request_id)) STRICT;
+      CREATE TABLE IF NOT EXISTS pixoo_hosted_checks (rendition_id TEXT NOT NULL, profile TEXT NOT NULL, fits INTEGER NOT NULL,
+        PRIMARY KEY (rendition_id, profile)) STRICT`);
+    this.#read = db.prepare('SELECT value FROM pixoo_state WHERE key = ?');
+    this.#write = db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
+    this.#request = db.prepare('SELECT digest FROM pixoo_commands WHERE source = ? AND request_id = ? UNION ALL SELECT digest FROM pixoo_handled WHERE source = ? AND request_id = ?');
+    this.#accept = db.prepare('INSERT INTO pixoo_commands (source, request_id, digest, family, type, traceparent, accepted_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    this.#handled = db.prepare(`INSERT OR REPLACE INTO pixoo_handled (source, request_id, digest, completed_at_ms)
+      SELECT source, request_id, digest, ? FROM pixoo_commands WHERE source = ? AND request_id = ?`);
+    this.#forget = db.prepare('DELETE FROM pixoo_commands WHERE source = ? AND request_id = ?');
+    this.#pending = db.prepare('SELECT * FROM pixoo_commands ORDER BY accepted_at_ms, source, request_id');
+    this.#prune = db.prepare('DELETE FROM pixoo_handled WHERE completed_at_ms < ?');
+    this.#hostedCheck = db.prepare('SELECT fits FROM pixoo_hosted_checks WHERE rendition_id = ? AND profile = ?');
+    this.#saveHostedCheck = db.prepare('INSERT OR REPLACE INTO pixoo_hosted_checks (rendition_id, profile, fits) VALUES (?, ?, ?)');
+    this.#dropHostedChecks = db.prepare('DELETE FROM pixoo_hosted_checks WHERE rendition_id = ?');
   }
 
   #get(key: string): string | undefined {
-    return text(this.#db.prepare('SELECT value FROM pixoo_state WHERE key = ?').get(key), 'value');
+    return text(this.#read.get(key), 'value');
   }
 
   #set(key: string, value: string): void {
-    this.#db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value);
+    this.#write.run(key, value);
   }
 
   #number(key: string): number {
@@ -105,37 +135,51 @@ export class PixooStore {
     this.#set('lastOutcome', JSON.stringify(outcome));
   }
 
-  /** Whether the module accepted this request before, whether it is still running or completed. */
-  known(source: string, requestId: string): boolean {
-    return this.#db.prepare('SELECT 1 FROM pixoo_commands WHERE source = ? AND request_id = ? UNION ALL SELECT 1 FROM pixoo_handled WHERE source = ? AND request_id = ?')
-      .get(source, requestId, source, requestId) !== undefined;
+  /** The digest of the request the module accepted before under this ID, running or completed, or undefined. */
+  request(source: string, requestId: string): string | undefined {
+    return text(this.#request.get(source, requestId, source, requestId), 'digest');
   }
 
-  /** Records an accepted command, before the module replies, so a restart reports its outcome. */
+  /** Records an accepted command. Call it inside the transaction that publishes the device's new pending count. */
   accept(command: AcceptedCommand): void {
-    this.#db.prepare('INSERT INTO pixoo_commands (source, request_id, family, type, traceparent, accepted_at_ms) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(command.source, command.requestId, command.family, command.type, command.traceparent, command.acceptedAtMs);
+    this.#accept.run(command.source, command.requestId, command.digest, command.family, command.type, command.traceparent, command.acceptedAtMs);
   }
 
-  /** Marks a command completed. Call it inside the transaction that stores its outcome. */
+  /** Marks a command completed, keeping its digest. Call it inside the transaction that stores its outcome. */
   complete(source: string, requestId: string, atMs: number): void {
-    this.#db.prepare('DELETE FROM pixoo_commands WHERE source = ? AND request_id = ?').run(source, requestId);
-    this.#db.prepare('INSERT OR REPLACE INTO pixoo_handled (source, request_id, completed_at_ms) VALUES (?, ?, ?)').run(source, requestId, atMs);
+    this.#handled.run(atMs, source, requestId);
+    this.#forget.run(source, requestId);
   }
 
   /** Commands accepted and not completed, oldest first. */
   pending(): AcceptedCommand[] {
-    return this.#db.prepare('SELECT * FROM pixoo_commands ORDER BY accepted_at_ms, source, request_id').all().flatMap(row => {
-      const source = text(row, 'source'), requestId = text(row, 'request_id'), family = text(row, 'family'), type = text(row, 'type');
-      const traceparent = text(row, 'traceparent'), acceptedAtMs = integer(row, 'accepted_at_ms');
-      if (source === undefined || requestId === undefined || family === undefined || type === undefined || traceparent === undefined || acceptedAtMs === undefined) return [];
-      return [{source, requestId, family, type, traceparent, acceptedAtMs}];
+    return this.#pending.all().flatMap(row => {
+      const source = text(row, 'source'), requestId = text(row, 'request_id'), digest = text(row, 'digest'), family = text(row, 'family');
+      const type = text(row, 'type'), traceparent = text(row, 'traceparent'), acceptedAtMs = integer(row, 'accepted_at_ms');
+      if (source === undefined || requestId === undefined || digest === undefined || family === undefined || type === undefined ||
+        traceparent === undefined || acceptedAtMs === undefined) return [];
+      return [{source, requestId, digest, family, type, traceparent, acceptedAtMs}];
     });
   }
 
   /** Forgets completed commands older than `HANDLED_MS`. */
   prune(nowMs: number): void {
-    this.#db.prepare('DELETE FROM pixoo_handled WHERE completed_at_ms < ?').run(nowMs - HANDLED_MS);
+    this.#prune.run(nowMs - HANDLED_MS);
+  }
+
+  /** Whether a multi-frame rendition's frames fit a profile's hosted GIF, as the library found, or undefined before it checked. */
+  hostedCheck(renditionId: string, profile: string): boolean | undefined {
+    const value = integer(this.#hostedCheck.get(renditionId, profile), 'fits');
+    return value === undefined ? undefined : value === 1;
+  }
+
+  saveHostedCheck(renditionId: string, profile: string, fits: boolean): void {
+    this.#saveHostedCheck.run(renditionId, profile, fits ? 1 : 0);
+  }
+
+  /** Forgets a rendition's hosted checks once the rendition is gone from the library. */
+  dropHostedChecks(renditionId: string): void {
+    this.#dropHostedChecks.run(renditionId);
   }
 }
 

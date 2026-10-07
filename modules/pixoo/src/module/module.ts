@@ -50,6 +50,8 @@ export const SYNC_RETRY_MAX_MS = 60_000;
 export const RENDER_MS = 10_000;
 /** How long the module waits for the core to answer a notice acknowledgment. */
 export const ACKNOWLEDGE_MS = 5000;
+/** How long a change waits for a running command's completion to publish it, before it is published on its own. */
+export const COALESCE_MS = 1000;
 /** The device kind's capability lists hold at most this many playlists and renditions. */
 const MAX_LISTED = 256;
 const MAX_DELAY_MS = 2_147_483_647;
@@ -81,6 +83,15 @@ export type PixooOptions = {
 const WARNED: readonly ErrorCode[] = ['unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict', 'capacity', 'unavailable', 'expired', 'uncertain-result'];
 const known = <T>(value: T): {status: 'known'; value: T} => ({status: 'known', value});
 const UNKNOWN = {status: 'unknown'} as const;
+/** A promise and the function that resolves it. */
+function deferred(): {promise: Promise<void>; resolve: () => void} {
+  let resolve = (): void => {};
+  const promise = new Promise<void>(settle => { resolve = settle; });
+  return {promise, resolve};
+}
+/** JSON with each object's keys in order, so equal content always hashes alike. */
+const canonical = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
+  item !== null && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item);
 const requestField = (requestId: string): LogFields => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(requestId) ? {'bunny.request.id': requestId} : {};
 
 /** The Pixoo module. Its manifest's `configure` checks its section of the runtime's configuration file. */
@@ -118,6 +129,10 @@ export const pixooFactory = {
 type Copy<T> = {state: 'current' | 'stale' | 'unavailable'; revision: number | null; records: Map<string, T>; warned: boolean};
 type Catalog = {renditions: Omit<RenditionRecord, 'revision'>[]; playlists: Omit<PlaylistRecord, 'revision'>[]};
 type Shown = {json: string; revision: number};
+/** What one publish also does in its transaction: see `#publishNow`. */
+type Work = {before?: () => void; add?: (add: AddMessage) => void; parent?: Message<unknown>; transmission?: DeviceRecord['lastTransmission']};
+/** A command's check before it is accepted: undefined to go on, or the refusal. */
+type Check = () => ErrorBody | undefined;
 
 /** One start of the module: everything it holds until it stops. */
 class PixooRuntime {
@@ -143,14 +158,28 @@ class PixooRuntime {
   #player: Player | undefined;
   #monitor: MonitorPresentation | undefined;
   #control: PixooControl | undefined;
-  #catalog: Catalog = {renditions: [], playlists: []};
+  /** The catalog as the module serves it, read after the start and again after each catalog command; undefined until then. */
+  #catalog: Catalog | undefined;
   /** The catalog's records as JSON, by `<family>/<id>`, built once per read of the catalog rather than at every change. */
   #catalogRecords = new Map<string, string>();
+  /** The revision of the records last committed and applied to `#shown`, which a sync is answered at. */
+  #servedRevision = 0;
+  /** Admissions and publishes run one at a time, so each compares against what the one before it committed. */
+  #serial: Promise<unknown> = Promise.resolve();
   /** The Now Playing view last given to the presentation, so an unchanged one is not given again. */
   #nowPlaying = '';
   #catalogTail: Promise<unknown> = Promise.resolve();
+  /** Hosted renditions the first read of the catalog listed before their frames were checked. */
+  readonly #unchecked = new Set<string>();
+  /** Settles once the catalog has been read the first time; a sync of the catalog's families waits for it. */
+  readonly #catalogRead = deferred();
+  /** The device's last transmission as last committed: a command's completion, or one of the module's own paints. */
   #lastTransmission: DeviceRecord['lastTransmission'] = UNKNOWN;
   #publishing = false;
+  /** When the first change not yet published happened, or undefined once a publish has taken every change. */
+  #changedAt: number | undefined;
+  /** How many accepted commands are still running. */
+  #running = 0;
   #renderFailing = false;
   #stopping = false;
 
@@ -180,8 +209,11 @@ class PixooRuntime {
   async start(): Promise<void> {
     const {sdk, database, files, clock, log, trace} = this.#context;
     const db = database();
-    const library = this.#library = await Library.attach({database: db, directory: files()});
     const store = this.#store = new PixooStore(db);
+    const library = this.#library = await Library.attach({
+      database: db, directory: files(),
+      hostedChecks: {get: (renditionId, profile) => store.hostedCheck(renditionId, profile), set: (renditionId, profile, fits) => { store.saveHostedCheck(renditionId, profile, fits); }},
+    });
     store.prune(clock.now());
     const outbox = this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
     // Follow the core's acknowledgments first, so one of a resent outcome is not missed, then send what is still stored.
@@ -217,9 +249,10 @@ class PixooRuntime {
       renderCard: view => this.#render({kind: 'card', view}).then(([frame]) => frame ?? new Uint8Array(12288)),
     });
     this.#control = new PixooControl({player, monitor, library, profile: device.profile});
-    this.#setCatalog(await this.#readCatalog());
-    // Everything the module serves at its start carries the revision it starts at; each later change raises it.
+    // Everything the module serves at its start carries the revision it starts at; each later change raises it. The
+    // catalog is not read here: it follows once the module has started, so a large library never delays the start.
     for (const [key, json] of this.#records()) this.#shown.set(key, {json, revision: store.revision});
+    this.#servedRevision = store.revision;
 
     // Commands left from before this start are reported, never run again (ADR 0012, "accepted").
     await this.#reportUnfinished();
@@ -235,10 +268,32 @@ class PixooRuntime {
     if (!simulated) await monitor.restore();
     this.#after(0, () => this.#tick());
     this.#after(0, () => this.#probe(0));
+    // Read at once after the start, not on the runtime's scheduler, so a sync that waits for the catalog never waits
+    // for time to pass.
+    void Promise.resolve().then(() => this.#firstCatalog(0));
+  }
+
+  /**
+   * Reads the catalog the first time, after the start, and tries again after a doubling wait if the library cannot be
+   * read. A sync of the catalog's families waits for it, so no copy can hold the catalog before it: the first read is
+   * served from then on at the current revision, with no publish, and only the device record's capabilities change.
+   */
+  async #firstCatalog(failures: number): Promise<void> {
+    try {
+      await this.#refreshCatalog();
+      this.#catalogRead.resolve();
+      this.#changed();
+      await this.#checkHosted();
+    } catch (error) {
+      if (failures === 0) this.#failedWrite(error);
+      this.#after(Math.min(this.#timing.probeMs, this.#timing.firstRetryMs * 2 ** Math.min(failures, 16)), () => this.#firstCatalog(failures + 1));
+    }
   }
 
   async stop(): Promise<void> {
     this.#stopping = true;
+    // A sync still waiting for the first read of the catalog is answered with what the module has.
+    this.#catalogRead.resolve();
     for (const cancel of this.#timers) cancel();
     this.#timers.clear();
     this.#control?.close();
@@ -264,7 +319,12 @@ class PixooRuntime {
   async #serve(): Promise<void> {
     const {sdk, log} = this.#context;
     const own = [FAMILIES.display, FAMILIES.rendition, FAMILIES.playlist];
-    const provider = (request: Message<{families: string[]}>): Snapshot => this.#snapshot(request.data.families);
+    const catalog: readonly string[] = [FAMILIES.rendition, FAMILIES.playlist];
+    // A sync that names the catalog's families waits until the catalog has been read the first time.
+    const provider = async (request: Message<{families: string[]}>): Promise<Snapshot> => {
+      if (request.data.families.some(family => catalog.includes(family))) await this.#catalogRead.promise;
+      return this.#snapshot(request.data.families);
+    };
     try {
       await sdk.serveSync(['device', ...own], provider);
     } catch (error) {
@@ -278,7 +338,7 @@ class PixooRuntime {
 
   /** A timer on the runtime's scheduler that the module's stop cancels. */
   #after(delayMs: number, callback: () => void | Promise<void>): void {
-    if (this.#stopping) return;
+    if (this.#stopping || this.#context.signal.aborted) return;
     const cancel = this.#context.scheduler.after(delayMs, async () => {
       this.#timers.delete(cancel);
       if (!this.#stopping) await callback();
@@ -441,13 +501,18 @@ class PixooRuntime {
 
   // Records
 
-  #capabilities(): Capabilities {
+  /**
+   * The device's capabilities. The device record lists at most `MAX_LISTED` playlists and renditions; a command's
+   * admission passes the IDs it names, which the library holds, so a playlist beyond the listed ones still starts.
+   */
+  #capabilities(admitted?: {playlistIds: string[]}): Capabilities {
+    const catalog = this.#catalog;
     return {
       power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
       moments: {supported: false},
       media: {
-        supported: true, actions: [...MEDIA_ACTIONS], playlistIds: this.#catalog.playlists.slice(0, MAX_LISTED).map(item => item.id),
-        renditionIds: this.#catalog.renditions.slice(0, MAX_LISTED).map(item => item.id),
+        supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
+        renditionIds: (catalog?.renditions ?? []).slice(0, MAX_LISTED).map(item => item.id),
       },
       scenes: {supported: false}, zones: {supported: false}, preview: {supported: false},
     };
@@ -457,8 +522,19 @@ class PixooRuntime {
     return {epoch: this.#epoch, sequence: this.#player?.getState().generation ?? 0};
   }
 
+  /**
+   * The last transmission a record would show: `base`, the committed one or a completion's about to commit, unless one
+   * of the module's own paints went out later. A probe only reads, so it never counts.
+   */
+  #transmission(base: DeviceRecord['lastTransmission']): DeviceRecord['lastTransmission'] {
+    const transport = this.#player?.getDisplayEvidence().transport;
+    if (transport?.ok !== true || transport.source === 'probe') return base;
+    if (base.status === 'known' && transport.atMs <= base.transmittedAtMs) return base;
+    return {status: 'known', transmittedAtMs: transport.atMs, operationIds: [transport.source === 'upload' ? 'media' : transport.source]};
+  }
+
   /** The device record without its revision: the general `device/2.0` family (#918). */
-  #deviceRecord(): Omit<DeviceRecord, 'revision'> {
+  #deviceRecord(transmission: DeviceRecord['lastTransmission']): Omit<DeviceRecord, 'revision'> {
     const player = this.#player, store = this.#store;
     const state = player?.getState(), evidence = player?.getDisplayEvidence();
     const mode = this.#monitor?.status().configuration.mode;
@@ -466,14 +542,6 @@ class PixooRuntime {
     const times = [brightness?.atMs, screen?.atMs].filter((value): value is number => value !== undefined);
     const pending = store?.pending() ?? [];
     const outcome = store?.lastOutcome() as CompletedOutcome | undefined;
-    // Keep the own paints' and commands' sends as the last transmission, never a probe, which only reads.
-    const transport = evidence?.transport;
-    if (transport?.ok === true && transport.source !== 'probe') {
-      const last = this.#lastTransmission;
-      if (last.status !== 'known' || transport.atMs > last.transmittedAtMs) {
-        this.#lastTransmission = {status: 'known', transmittedAtMs: transport.atMs, operationIds: [transport.source === 'upload' ? 'media' : transport.source]};
-      }
-    }
     return {
       id: this.#device, kind: PIXOO_KIND, ...(this.#config.device.label === undefined ? {} : {label: this.#config.device.label}),
       availability: state?.availability === 'available' ? 'available' : state?.availability === 'offline' ? 'unavailable' : 'unknown',
@@ -488,7 +556,7 @@ class PixooRuntime {
       },
       pending: pending.length, pendingKinds: [...new Set(pending.map(command => command.family))],
       lastOutcome: outcome === undefined ? UNKNOWN : {status: 'known', outcome},
-      lastTransmission: structuredClone(this.#lastTransmission), externalControl: UNKNOWN,
+      lastTransmission: structuredClone(transmission), externalControl: UNKNOWN,
     };
   }
 
@@ -513,10 +581,10 @@ class PixooRuntime {
     };
   }
 
-  /** Every record the module serves, as JSON without its revision, by `<family>/<id>`. */
-  #records(): Map<string, string> {
+  /** Every record the module serves, as JSON without its revision, by `<family>/<id>`, with the device's last transmission. */
+  #records(transmission = this.#transmission(this.#lastTransmission)): Map<string, string> {
     const records = new Map<string, string>();
-    records.set(`device/${this.#device}`, JSON.stringify(this.#deviceRecord()));
+    records.set(`device/${this.#device}`, JSON.stringify(this.#deviceRecord(transmission)));
     const display = this.#displayRecord();
     if (display !== undefined) records.set(`${FAMILIES.display}/${this.#device}`, JSON.stringify(display));
     for (const [key, json] of this.#catalogRecords) records.set(key, json);
@@ -539,35 +607,56 @@ class PixooRuntime {
     for (const [key, shown] of this.#shown) {
       if (families.includes(key.slice(0, key.indexOf('/')))) states.push(this.#state(key, shown.json, shown.revision).draft);
     }
-    return {revision: store.revision, states};
+    return {revision: this.#servedRevision, states};
+  }
+
+  /** Runs `work` after every admission and publish before it has settled. */
+  #serialize<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#serial.then(work);
+    this.#serial = next.catch(() => undefined);
+    return next;
+  }
+
+  /** Publishes what changed, after the admissions and publishes before it; see `#publishNow`. */
+  #publish(work?: Work): Promise<void> {
+    return this.#serialize(() => this.#publishNow(work));
   }
 
   /**
    * Publishes, in one transaction, every record that changed since it was last served, at a new revision, and a removal
-   * for each catalog entry that is gone. `work` runs first in the same transaction, such as a command's completion, and
-   * may add its own messages after the records. Ticks and polls that change nothing publish nothing.
+   * for each catalog entry that is gone. `work.before` runs first in the same transaction, such as a command's
+   * acceptance or completion, and `work.add` may add its own messages after the records; `work.transmission` is the
+   * device's last transmission once it commits. Only a committed transaction changes what the module serves and its
+   * last transmission, so a rollback leaves both at what followers heard. Ticks and polls that change nothing publish
+   * nothing.
    */
-  async #publish(work?: {before: () => void; add: (add: AddMessage) => void; parent?: Message<unknown>}): Promise<void> {
+  async #publishNow(work?: Work): Promise<void> {
     const outbox = this.#outbox, store = this.#store;
     if (outbox === undefined || store === undefined) return;
-    const changes = (): {changed: [string, string][]; removed: string[]} => {
-      const records = this.#records();
-      return {changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json), removed: [...this.#shown.keys()].filter(key => !records.has(key))};
-    };
+    const changes = (records: Map<string, string>): {changed: [string, string][]; removed: string[]} =>
+      ({changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json), removed: [...this.#shown.keys()].filter(key => !records.has(key))});
     if (work === undefined) {
-      const {changed, removed} = changes();
-      if (changed.length === 0 && removed.length === 0) return;
+      const {changed, removed} = changes(this.#records());
+      if (changed.length === 0 && removed.length === 0) {
+        this.#changedAt = undefined;
+        return;
+      }
     }
+    const applied: [string, Shown | undefined][] = [];
+    let transmission = this.#lastTransmission, revision = this.#servedRevision;
     await outbox.transaction(add => {
-      work?.before();
-      const {changed, removed} = changes();
+      // This publish takes every change so far; one after this point waits for the next.
+      this.#changedAt = undefined;
+      work?.before?.();
+      transmission = this.#transmission(work?.transmission ?? this.#lastTransmission);
+      const {changed, removed} = changes(this.#records(transmission));
       const parent = work?.parent === undefined ? {} : {parent: work.parent};
       if (changed.length > 0 || removed.length > 0) {
-        const revision = store.nextRevision();
+        revision = store.nextRevision();
         for (const [key, json] of changed) {
           const {key: routing, draft} = this.#state(key, json, revision);
           add(routing, {kind: 'state', ...draft}, parent);
-          this.#shown.set(key, {json, revision});
+          applied.push([key, {json, revision}]);
         }
         for (const key of removed) {
           const slash = key.indexOf('/'), family = key.slice(0, slash), id = key.slice(slash + 1);
@@ -575,20 +664,45 @@ class PixooRuntime {
             kind: 'removal', type: `org.bunny.${family}.removed`, subject: id, dataschema: REMOVAL_SCHEMA,
             data: {entity: {family, id}, revision, reason: 'deleted'},
           }, parent);
-          this.#shown.delete(key);
+          applied.push([key, undefined]);
         }
       }
-      work?.add(add);
+      work?.add?.(add);
     });
+    // Committed: the records went out, or wait in the outbox for the next send.
+    for (const [key, shown] of applied) {
+      if (shown === undefined) this.#shown.delete(key);
+      else this.#shown.set(key, shown);
+    }
+    this.#servedRevision = revision;
+    this.#lastTransmission = transmission;
   }
 
-  /** A change somewhere in the player or the presentation: publishes what changed, once, after the current turn. */
+  /**
+   * A change somewhere in the player or the presentation: publishes what changed, once, after the current turn. While
+   * a command runs, it waits up to `COALESCE_MS`, so the command's completion usually carries the change in its own
+   * transaction and the wait then finds nothing left to publish.
+   */
   #changed(): void {
-    if (this.#publishing || this.#stopping) return;
+    if (this.#stopping) return;
+    this.#changedAt ??= this.#context.clock.now();
+    if (this.#publishing) return;
     this.#publishing = true;
+    this.#publishChanges();
+  }
+
+  /** Publishes the waiting change after the current turn, or once no command runs or it has waited `COALESCE_MS`. */
+  #publishChanges(): void {
+    const since = this.#changedAt;
+    const waited = since === undefined ? COALESCE_MS : this.#context.clock.now() - since;
+    if (this.#running > 0 && waited < COALESCE_MS) {
+      this.#after(COALESCE_MS - waited, () => { this.#publishChanges(); });
+      return;
+    }
     queueMicrotask(() => {
       this.#publishing = false;
-      if (this.#stopping) return;
+      // Another publish, such as a command's completion, may have carried the change already.
+      if (this.#stopping || this.#changedAt === undefined) return;
       void this.#publish().catch((error: unknown) => { this.#failedWrite(error); });
     });
   }
@@ -609,25 +723,69 @@ class PixooRuntime {
     ]);
   }
 
-  /** The library's catalog, as the module serves it: every rendition and playlist, with compatibility for the device's profile. */
-  async #readCatalog(): Promise<Catalog> {
+  /**
+   * The library's catalog, as the module serves it: every rendition and playlist, with each rendition's compatibility
+   * with the device's profile. Reading it reads no frames. A multi-frame rendition the hosted profile has not checked is
+   * checked now when it is new, as right after its import; one the first read meets is listed as compatible, as its
+   * timing allows, until `#checkHosted` checks its frames after the start. Each check is kept by rendition and profile,
+   * so a rendition's frames are read once, not at every start, catalog change or playlist start.
+   */
+  async #loadCatalog(): Promise<Catalog> {
     const library = this.#library;
     if (library === undefined) return {renditions: [], playlists: []};
-    const {profile} = this.#config.device;
-    const stillDelayMs = this.#options.transport.simulated ? 100 : 500;
+    const {profile} = this.#config.device, stillDelayMs = this.#options.transport.simulated ? 100 : 500;
+    const first = this.#catalog === undefined;
     const renditions: Catalog['renditions'] = [];
-    for (let offset = 0; ; offset += 100) {
-      const page = await library.queryMedia({q: '', offset, limit: 100}, profile, stillDelayMs);
-      for (const item of page.items) {
-        renditions.push({id: item.renditionId, assetId: item.assetId, name: item.name, format: item.format, frameCount: item.frameCount, durationMs: item.durationMs, compatible: item.compatible});
+    for (const item of await library.catalogMedia(profile, stillDelayMs)) {
+      let {compatible} = item;
+      if (compatible === undefined && (first || this.#unchecked.has(item.renditionId))) {
+        this.#unchecked.add(item.renditionId);
+        compatible = true;
       }
-      if (page.items.length < 100) break;
+      compatible ??= await this.#checkFrames(library, item.renditionId);
+      renditions.push({id: item.renditionId, assetId: item.assetId, name: item.name, format: item.format, frameCount: item.frameCount, durationMs: item.durationMs, compatible});
+    }
+    // A rendition gone from the library takes its kept checks with it.
+    const present = new Set(renditions.map(item => item.id));
+    for (const gone of (this.#catalog?.renditions ?? []).filter(item => !present.has(item.id))) {
+      this.#store?.dropHostedChecks(gone.id);
+      this.#unchecked.delete(gone.id);
     }
     const playlists = (await library.listPlaylists()).map(playlist => ({
       id: playlist.id, name: playlist.name, playlistRevision: playlist.revision, repeat: playlist.repeat, shuffle: playlist.shuffle,
       items: playlist.items.map(item => ({id: item.id, renditionId: item.renditionId, playback: item.playback})),
     }));
     return {renditions, playlists};
+  }
+
+  /** Checks a rendition's frames against the hosted profile; the library keeps the result. Unreadable frames play nowhere for now. */
+  async #checkFrames(library: Library, renditionId: string): Promise<boolean> {
+    try {
+      return await library.playbackCompatible(renditionId, this.#config.device.profile, this.#options.transport.simulated ? 100 : 500);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * After the first read of the catalog, checks the frames of each hosted rendition it listed unchecked, one at a time
+   * between other reads of the catalog, and publishes a rendition whose frames do not fit as incompatible.
+   */
+  async #checkHosted(): Promise<void> {
+    const library = this.#library;
+    for (const renditionId of [...this.#unchecked]) {
+      if (this.#stopping || library === undefined) return;
+      const step = this.#catalogTail.then(async () => {
+        if (!this.#unchecked.delete(renditionId)) return;
+        const fits = await this.#checkFrames(library, renditionId);
+        const catalog = this.#catalog;
+        if (fits || catalog === undefined) return;
+        this.#setCatalog({...catalog, renditions: catalog.renditions.map(item => item.id === renditionId ? {...item, compatible: false} : item)});
+        this.#changed();
+      });
+      this.#catalogTail = step.catch(() => undefined);
+      await step;
+    }
   }
 
   // Commands
@@ -656,7 +814,7 @@ class PixooRuntime {
       this.#admit(command, 'power-set', {family: 'power-set', data: command.data}, () => control().power(command.data.on)));
     await sdk.respond<ShowRequest>(key(FAMILIES.show), command =>
       this.#admit(command, FAMILIES.show, undefined, () => control().show(command.data.renditionId, command.data.playback), () =>
-        this.#catalog.renditions.some(item => item.id === command.data.renditionId) ? undefined : errorBody('not-found', {detail: 'no such rendition'})));
+        this.#library?.renditionExists(command.data.renditionId) === true ? undefined : errorBody('not-found', {detail: 'no such rendition'})));
     await sdk.respond<MonitorSetRequest>(key(FAMILIES.monitor), command =>
       this.#admit(command, FAMILIES.monitor, undefined, () => control().present({operation: 'view', filter: command.data.filter, cadenceMs: command.data.cadenceMs})));
     await sdk.respond<NowPlayingSetRequest>(key(FAMILIES.nowPlaying), command =>
@@ -673,15 +831,13 @@ class PixooRuntime {
   }
 
   /**
-   * Admits one command. It refuses, before acting, a command that breaks its schema, names a stale configuration or
-   * generation, asks for what the device does not offer, or fails its own check. A repeated request is accepted again
-   * and changes nothing. Otherwise it stores its own record of the work and the device's new pending count in one
-   * transaction, replies accepted, and runs the work; its outcome follows through the outbox.
+   * Admits one command. It refuses, before acting, a command that breaks its schema, uses a request ID again for other
+   * content, names a stale configuration or generation, asks for what the device does not offer, or fails its own check.
+   * A repeated request is accepted again and changes nothing. Otherwise it stores its record of the work in the
+   * transaction that publishes the device's new pending count, replies accepted, and runs the work; its outcome follows
+   * through the outbox. Admissions run one at a time, after the publishes before them.
    */
-  #admit(
-    command: Command<object>, family: string, general: DeviceCommand | undefined, work: () => Promise<Completion>,
-    check?: () => ErrorBody | undefined, catalog = false,
-  ): Reply {
+  async #admit(command: Command<object>, family: string, general: DeviceCommand | undefined, work: () => Promise<Completion>, check?: Check, catalog = false): Promise<Reply> {
     const {log, clock} = this.#context;
     const {requestId} = command.data;
     const fields: LogFields = {'bunny.device.id': this.#device, ...requestField(requestId)};
@@ -690,35 +846,53 @@ class PixooRuntime {
       log[level]('command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
       return body;
     };
-    const store = this.#store;
-    if (store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
+    if (this.#store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
     const checked = this.#validator.validate(command, {nowMs: clock.now()});
     if (!checked.ok) return refuse(errorBody(checked.error.code, {detail: 'the command does not follow its schema'}));
-    if (store.known(command.source, requestId)) {
-      log.info('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, command);
+    const digest = createHash('sha256').update(canonical({family, subject: command.subject ?? null, data: command.data})).digest('hex');
+    return this.#serialize(async () => {
+      const store = this.#store;
+      if (store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
+      const earlier = store.request(command.source, requestId);
+      if (earlier !== undefined) {
+        if (earlier !== digest) return refuse(errorBody('duplicate-conflict', {detail: 'the requestId was used for another command'}));
+        log.info('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, command);
+        return {status: 'accepted'};
+      }
+      const guards = command.data as {expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number}};
+      if (guards.expectedConfigurationRevision !== undefined && guards.expectedConfigurationRevision !== store.configurationRevision) {
+        return refuse(errorBody('revision-conflict', {detail: 'the configuration revision has moved on'}));
+      }
+      const generation = this.#generation();
+      if (guards.expectedGeneration !== undefined && (guards.expectedGeneration.epoch !== generation.epoch || guards.expectedGeneration.sequence !== generation.sequence)) {
+        return refuse(errorBody('revision-conflict', {detail: 'the device generation has moved on'}));
+      }
+      if (general !== undefined && !commandSupported(this.#admissionCapabilities(general), general)) {
+        return refuse(errorBody('unsupported-capability', {detail: 'the Pixoo does not offer that'}));
+      }
+      const refusal = check?.();
+      if (refusal !== undefined) return refuse(refusal);
+      try {
+        // The record of the work commits before the reply, in the transaction that publishes the device's new pending count.
+        await this.#publishNow({
+          parent: command,
+          before: () => { store.accept({source: command.source, requestId, digest, family, type: command.type, traceparent: command.traceparent, acceptedAtMs: clock.now()}); },
+        });
+      } catch {
+        return refuse(errorBody('capacity', {detail: 'the Pixoo could not store the command'}));
+      }
+      log.info('command.executing', fields, command);
+      this.#running += 1;
+      void this.#run(command, family, work, catalog).finally(() => { this.#running -= 1; });
       return {status: 'accepted'};
-    }
-    const guards = command.data as {expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number}};
-    if (guards.expectedConfigurationRevision !== undefined && guards.expectedConfigurationRevision !== store.configurationRevision) {
-      return refuse(errorBody('revision-conflict', {detail: 'the configuration revision has moved on'}));
-    }
-    const generation = this.#generation();
-    if (guards.expectedGeneration !== undefined && (guards.expectedGeneration.epoch !== generation.epoch || guards.expectedGeneration.sequence !== generation.sequence)) {
-      return refuse(errorBody('revision-conflict', {detail: 'the device generation has moved on'}));
-    }
-    if (general !== undefined && !commandSupported(this.#capabilities(), general)) return refuse(errorBody('unsupported-capability', {detail: 'the Pixoo does not offer that'}));
-    const refusal = check?.();
-    if (refusal !== undefined) return refuse(refusal);
-    log.info('command.executing', fields, command);
-    try {
-      // The record of the work commits before the reply, with the device's new pending count.
-      store.accept({source: command.source, requestId, family, type: command.type, traceparent: command.traceparent, acceptedAtMs: clock.now()});
-    } catch {
-      return refuse(errorBody('capacity', {detail: 'the Pixoo could not store the command'}));
-    }
-    this.#changed();
-    void this.#run(command, family, work, catalog);
-    return {status: 'accepted'};
+    });
+  }
+
+  /** The capabilities a device command is checked against: a playlist to start is offered when the library holds it. */
+  #admissionCapabilities(command: DeviceCommand): Capabilities {
+    if (command.family !== 'media-start') return this.#capabilities();
+    const {playlistId} = command.data;
+    return this.#capabilities({playlistIds: this.#library?.playlistExists(playlistId) === true ? [playlistId] : []});
   }
 
   /** Runs an accepted command's work and reports its outcome. A failure to store the outcome leaves it for the next start. */
@@ -742,9 +916,24 @@ class PixooRuntime {
     }
   }
 
-  /** Reads the catalog again after a library change, one refresh at a time. */
+  /**
+   * Reads the catalog, after the start and again after a library change, one read at a time. The first read is served
+   * at once at the current revision, since no copy holds the catalog yet; a later read's changes go out with the next
+   * publish, such as the command's completion.
+   */
   async #refreshCatalog(): Promise<void> {
-    const next = this.#catalogTail.then(async () => { this.#setCatalog(await this.#readCatalog()); });
+    const next = this.#catalogTail.then(async () => {
+      const catalog = await this.#loadCatalog();
+      if (this.#catalog !== undefined) {
+        this.#setCatalog(catalog);
+        return;
+      }
+      await this.#serialize(() => {
+        this.#setCatalog(catalog);
+        for (const [key, json] of this.#catalogRecords) this.#shown.set(key, {json, revision: this.#servedRevision});
+        return Promise.resolve();
+      });
+    });
     this.#catalogTail = next.catch(() => undefined);
     await next;
   }
@@ -754,14 +943,13 @@ class PixooRuntime {
     const store = this.#store;
     if (store === undefined) return;
     const {requestId} = command.data;
-    const {clock, log} = this.#context;
+    const {clock} = this.#context;
     const outcome = {requestId, result: completion.result, evidence: completion.evidence, ...(completion.error === undefined ? {} : {error: completion.error})};
-    if (completion.transmission !== undefined) {
-      this.#lastTransmission = {status: 'known', requestId, ...completion.transmission};
-    }
     // The outcome commits with the device's new pending count, last outcome and last transmission, and any catalog change.
+    // The outbox records its publication, at INFO or, for a failed or uncertain one, WARN, so the module adds no record.
     await this.#publish({
       parent: command as Message<unknown>,
+      ...(completion.transmission === undefined ? {} : {transmission: {status: 'known', requestId, ...completion.transmission}}),
       before: () => {
         store.complete(command.source, requestId, clock.now());
         store.saveLastOutcome(outcome);
@@ -772,10 +960,6 @@ class PixooRuntime {
         }, {parent: command});
       },
     });
-    log.info('command.completed', {
-      'bunny.device.id': this.#device, ...requestField(requestId), 'bunny.outcome': completion.result,
-      ...(completion.error === undefined ? {} : {'bunny.code': completion.error.code}),
-    }, command);
   }
 
   /** Reports each command accepted before this start and never completed: uncertain, since its work may have begun. */

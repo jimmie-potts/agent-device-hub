@@ -18,7 +18,7 @@ The Pixoo SHALL run in the runtime as the module `pixoo`, created by `createPixo
 
 ### Requirement: Pixoo state and copies
 
-The module SHALL keep only state it owns, in its own SQLite file and private folder: the library's catalog and the player's checkpoint (through `Library.attach`), its revision counter, presentation and Now Playing settings, configuration revision and last outcome, the commands it accepted and has not completed, and the commands it completed in the last 24 hours. It SHALL rebuild its copies of the core's `session/2.0` records and of the `playback/2.0` record by sync and SHALL NOT store them. A copy that has not synced, or whose owner stopped serving, SHALL be tried again after a doubling wait. A copy that followed its owner and lost it SHALL log one warning. An owner that has not answered since the start SHALL log at DEBUG until the wait reaches its longest, then one warning, and its later arrival SHALL log one recovery.
+The module SHALL keep only state it owns, in its own SQLite file and private folder: the library's catalog and the player's checkpoint (through `Library.attach`), its revision counter, presentation and Now Playing settings, configuration revision and last outcome, the commands it accepted and has not completed, the commands it completed in the last 24 hours with a digest of each one's content, and each multi-frame rendition's hosted check by rendition and profile. It SHALL rebuild its copies of the core's `session/2.0` records and of the `playback/2.0` record by sync and SHALL NOT store them. A copy that has not synced, or whose owner stopped serving, SHALL be tried again after a doubling wait. A copy that followed its owner and lost it SHALL log one warning. An owner that has not answered since the start SHALL log at DEBUG until the wait reaches its longest, then one warning, and its later arrival SHALL log one recovery.
 
 #### Scenario: The library in the module's database
 - **WHEN** the module starts on an empty state directory and imports media
@@ -53,11 +53,12 @@ Monitor SHALL draw the module's copy of the core's sessions, as divoom-app-upgra
 The module SHALL answer, on `bunny.cmd.<family>.<device id>` only, `device-mode-set`, `media-start`, `media-control`, `brightness-set` and `power-set` (#918), and `pixoo-media-show`, `pixoo-monitor-set`, `pixoo-now-playing-set`, `pixoo-playlist-change`, `pixoo-asset-change` and `pixoo-notice-dismiss`. Before acting, it SHALL refuse with the shared error body:
 - a command that breaks its schema;
 - a stale `expectedConfigurationRevision` or `expectedGeneration`, with `revision-conflict`;
-- what the device's capabilities do not offer, with `unsupported-capability`;
+- a `requestId` it accepted before for other content, with `duplicate-conflict`;
+- what the device's capabilities do not offer, with `unsupported-capability`, a playlist to start being offered when the library holds it, beyond the 256 the device record lists;
 - a resume with nothing selected, with `invalid-state`;
 - an unknown rendition or notice, with `not-found`.
 
-Otherwise it SHALL store its record of the work, reply `accepted`, run the work outside the responder, and report the outcome through its outbox, committed with the device's new pending count and last outcome:
+Otherwise it SHALL store its record of the work in the transaction that publishes the device's new pending count, reply `accepted`, run the work outside the responder, and report the outcome through its outbox, committed with the device's new pending count, last outcome and last transmission; a change while a command runs SHALL wait up to 1 s for that commit. The outbox's `outcome.published` record SHALL be the outcome's only log record. What the module serves and its last transmission SHALL change only once a transaction commits, so a rollback leaves sync and live followers at the same records:
 - A device write SHALL complete `succeeded` with `transmitted` once the Pixoo answers.
 - A start, show, resume, next, previous or restart SHALL complete with its own first upload, found by the async context of the command's action.
 - A failure the Pixoo answered SHALL have `transmitted` evidence, never `none`: an error status or code SHALL be `failed`, and an unreadable answer `uncertain` with `uncertain-result`. Like a confirmed send, it SHALL set the device record's `lastTransmission` with its request ID.
@@ -66,7 +67,7 @@ Otherwise it SHALL store its record of the work, reply `accepted`, run the work 
 - A change to state the module owns (pause, stop, clear, the presentation and Now Playing settings, playlists, media and a dismissal) SHALL complete `succeeded` with `observed`, its committed state being the evidence.
 - A domain refusal after acceptance SHALL be `failed` with its registry code; any other failure after the work began SHALL be `uncertain`.
 
-A repeated `(source, requestId)` SHALL be accepted again and change nothing. A command accepted before a restart and never completed SHALL be reported `uncertain` with `uncertain-result` at the next start and SHALL NOT run again. As ControlService did, a playback command that starts SHALL take the display from Monitor, and any other SHALL interrupt Monitor, so a stop, pause or clear SHALL cancel a pending Media selection at once.
+A repeated `(source, requestId)` with the same family, subject and data SHALL be accepted again and change nothing; with other content, it SHALL be refused with `duplicate-conflict`, for 24 hours after its completion and across restarts. A command accepted before a restart and never completed SHALL be reported `uncertain` with `uncertain-result` at the next start and SHALL NOT run again. As ControlService did, a playback command that starts SHALL take the display from Monitor, and any other SHALL interrupt Monitor, so a stop, pause or clear SHALL cancel a pending Media selection at once.
 
 #### Scenario: A media start accepted, then completed
 - **WHEN** media is imported, put in a playlist and the playlist started
@@ -100,9 +101,17 @@ A repeated `(source, requestId)` SHALL be accepted again and change nothing. A c
 - **WHEN** a brightness write is sent twice with one request ID
 - **THEN** both are accepted, the device gets one write, and one outcome is published
 
+#### Scenario: A request ID used again for other content
+- **WHEN** a request ID the module accepted is sent again with other data, before and after a restart
+- **THEN** it is refused with `duplicate-conflict`, nothing reaches the device, and the first request sent again is still accepted and changes nothing
+
+#### Scenario: A playlist beyond the listed ones
+- **WHEN** the library holds 257 playlists and the 257th is started, at once after the start and again once the device record lists 256
+- **THEN** both starts are accepted and complete `succeeded` with `transmitted`, and a playlist the library does not hold is refused with `unsupported-capability`
+
 ### Requirement: Pixoo device state and availability
 
-The module SHALL publish `device/2.0` for its device, kind `pixoo`, with the Pixoo's capabilities (power, brightness, the native modes `monitor` and `media`, the seven media actions and at most 256 playlist and rendition IDs). It SHALL also publish its availability; the desired power, brightness and mode; the observed power and brightness, only from the device's own probe; its pending commands and their families; its last outcome; its last transmission, for a command and for its own paints but never a probe; and its generation, a per-start epoch with the player's generation. It SHALL serve `device`, `pixoo-display`, `pixoo-rendition` and `pixoo-playlist` through sync, each record within the 256 KiB cap, at one stored revision that only rises, and SHALL publish only records that changed. When another module already serves `device`, it SHALL serve only its own families, keep publishing its device record, log one ERROR record, and keep running. Its start SHALL open only local resources and SHALL NOT wait on the device. It SHALL probe the device on the runtime's scheduler with a 2 s deadline: every 30 s while it answers, and after a doubling wait from 1 s while it does not. An unanswered probe SHALL make the device `unavailable`, never a module failure. A device that stays offline SHALL log one `device.unavailable` warning and DEBUG summaries, and its recovery one `device.available` record.
+The module SHALL publish `device/2.0` for its device, kind `pixoo`, with the Pixoo's capabilities (power, brightness, the native modes `monitor` and `media`, the seven media actions and at most 256 playlist and rendition IDs). It SHALL also publish its availability; the desired power, brightness and mode; the observed power and brightness, only from the device's own probe; its pending commands and their families; its last outcome; its last transmission, for a command and for its own paints but never a probe; and its generation, a per-start epoch with the player's generation. It SHALL serve `device`, `pixoo-display`, `pixoo-rendition` and `pixoo-playlist` through sync, each record within the 256 KiB cap, at one stored revision that only rises, and SHALL publish only records that changed. Its start SHALL NOT read the catalog: the module SHALL read it after the start, without reading any rendition's frames, and a sync naming `pixoo-rendition` or `pixoo-playlist` SHALL wait for that first read, which is served at the current revision without a publish. A multi-frame rendition's hosted check SHALL read its frames once per rendition and profile and be kept: at its import, before the import's outcome, or, for one the first read lists unchecked, after the start, one at a time, listed as its timing allows until then and published incompatible if its frames do not fit. A catalog change, a later start and a playlist start SHALL use the kept checks. When another module already serves `device`, it SHALL serve only its own families, keep publishing its device record, log one ERROR record, and keep running. Its start SHALL open only local resources and SHALL NOT wait on the device. It SHALL probe the device on the runtime's scheduler with a 2 s deadline: every 30 s while it answers, and after a doubling wait from 1 s while it does not. An unanswered probe SHALL make the device `unavailable`, never a module failure. A device that stays offline SHALL log one `device.unavailable` warning and DEBUG summaries, and its recovery one `device.available` record.
 
 #### Scenario: Policy A in the module test kit
 - **WHEN** the kit starts the module with a Pixoo that never answers
@@ -111,6 +120,14 @@ The module SHALL publish `device/2.0` for its device, kind `pixoo`, with the Pix
 #### Scenario: Offline at start
 - **WHEN** the module starts while its Pixoo refuses connections, stays so through several probes, then comes back
 - **THEN** the module runs throughout, the device is `unavailable`, then `available`; one warning and one recovery that counts the failed probes are logged; and no device record repeats the one before it
+
+#### Scenario: A large hosted library
+- **WHEN** the module starts with 16 hosted multi-frame renditions and one whose colors do not fit, then edits a playlist, restarts and imports another clip
+- **THEN** the start reads no frames and ends within 1.5 s, a reader's sync gets the catalog, each rendition's frames are read once after the start and the one that does not fit goes out incompatible, the edit and the restart read no frames, and the new clip's frames are read once, before its import's outcome
+
+#### Scenario: A rollback leaves what is served
+- **WHEN** an outcome's transaction rolls back
+- **THEN** no outcome goes out, a new copy syncs the record live followers last heard, still pending, and the command is not the last transmission; the next start reports it `uncertain` once
 
 #### Scenario: The catalog within the cap
 - **WHEN** a playlist holds 1,000 items, with the longest name and largest numbers

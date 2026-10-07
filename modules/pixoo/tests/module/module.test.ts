@@ -6,19 +6,21 @@ import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync, type SQLInputValue, type StatementResultingChanges, type StatementSync} from 'node:sqlite';
 import {describe, it} from 'node:test';
 import {MAX_MESSAGE_BYTES, type Message} from '@jimmie-potts/event-contracts/v2';
 import {checkModuleRecord} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
-import {DEFAULT_LIMITS, DEFAULT_TRANSFORM, SIMULATOR_PROFILE} from '../../src/media/index.js';
+import {DEFAULT_LIMITS, DEFAULT_TRANSFORM, MediaStore, SIMULATOR_PROFILE} from '../../src/media/index.js';
 import {runWorker} from '../../src/media/worker-client.js';
 import {DashboardPager} from '../../src/presentation/agent-dashboard.js';
 import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
 import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playing.js';
 import {monitorView} from '../../src/presentation/sources.js';
+import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
-import {DEVICE, SESSION_ID, World, declaredPng, sleep, waitFor} from './support.js';
+import {DEVICE, FAST, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
 
 const FAILING_WORKER = new URL('./fixtures/failing-render-worker.js', import.meta.url);
 const HEAP_WORKER = new URL('./fixtures/heap-worker.js', import.meta.url);
@@ -225,6 +227,25 @@ void describe('Media', () => {
     });
   });
 
+  void it('refuses a request ID used again for other content with duplicate-conflict, before and after a restart', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const first = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-2'}));
+      assert.equal((await world.outcome(first)).data.result, 'succeeded');
+      const other = await world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 56}, {requestId: 'bright-2'});
+      assert.equal(other.status === 'rejected' && other.error.error.code, 'duplicate-conflict');
+      await world.restart();
+      const later = await world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 57}, {requestId: 'bright-2'});
+      assert.equal(later.status === 'rejected' && later.error.error.code, 'duplicate-conflict');
+      const same = await world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-2'});
+      assert.equal(same.status, 'accepted', 'the same request is still accepted, and changes nothing');
+      await sleep(100);
+      assert.equal(world.device.state().writes, 1, 'one write');
+      assert.equal(world.device.state().brightness, 55);
+    });
+  });
+
   void it('refuses a stale configuration revision, an unsupported mode and a stale generation before acting', async () => {
     const world = await World.open();
     await within(world, async () => {
@@ -346,5 +367,173 @@ void describe('a finished turn', () => {
       assert.equal(unknown.status === 'rejected' && unknown.error.error.code, 'not-found');
       assert.equal(world.acknowledged.length, 1);
     });
+  });
+});
+
+/** Counts commits on every SQLite connection: each COMMIT, and each write that runs outside a transaction. */
+function countCommits(): {count: () => number; restore: () => void} {
+  let commits = 0;
+  const writes = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i;
+  const exec = Reflect.get<DatabaseSync, 'exec'>(DatabaseSync.prototype, 'exec');
+  const prepare = Reflect.get<DatabaseSync, 'prepare'>(DatabaseSync.prototype, 'prepare');
+  DatabaseSync.prototype.exec = function (this: DatabaseSync, sql: string): void {
+    if (/^\s*COMMIT\b/i.test(sql) || (!this.isTransaction && writes.test(sql))) commits += 1;
+    exec.call(this, sql);
+  };
+  DatabaseSync.prototype.prepare = function (this: DatabaseSync, sql: string): StatementSync {
+    const statement = prepare.call(this, sql);
+    if (!writes.test(sql)) return statement;
+    const run = statement.run.bind(statement) as (...values: SQLInputValue[]) => StatementResultingChanges;
+    statement.run = ((...values: SQLInputValue[]) => {
+      if (!this.isTransaction) commits += 1;
+      return run(...values);
+    }) as typeof statement.run;
+    return statement;
+  };
+  return {count: () => commits, restore: () => { Object.assign(DatabaseSync.prototype, {exec, prepare}); }};
+}
+
+/** Counts reads of a rendition's frames from the media store, as a hosted rendition's validation does. */
+function countFrameReads(): {count: () => number; restore: () => void} {
+  let reads = 0;
+  const readFrames = Reflect.get<MediaStore, 'readFrames'>(MediaStore.prototype, 'readFrames');
+  MediaStore.prototype.readFrames = function (this: MediaStore, ...args: Parameters<MediaStore['readFrames']>) {
+    reads += 1;
+    return readFrames.apply(this, args);
+  };
+  return {count: () => reads, restore: () => { MediaStore.prototype.readFrames = readFrames; }};
+}
+
+void describe('commands and the catalog', () => {
+  void it('commits a command\'s acceptance with its pending count, so a device command commits at most five times', async () => {
+    const commits = countCommits();
+    // No probe in the window: only the commands commit.
+    const world = await World.open({options: {timing: {...FAST, probeMs: 60_000}}});
+    try {
+      await within(world, async () => {
+        await world.start();
+        await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
+        await sleep(200);
+        const before = commits.count();
+        for (let index = 0; index < 5; index += 1) {
+          const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 20 + index}));
+          await world.outcome(requestId);
+        }
+        await sleep(200);
+        // Acceptance with its pending count is one commit, the completion another, and the SDK outbox marks each
+        // published row with one more: three rows a command.
+        assert.ok(commits.count() - before <= 25, `${commits.count() - before} commits for 5 commands`);
+      });
+    } finally {
+      commits.restore();
+    }
+  });
+
+  void it('keeps what it serves at what it committed when an outcome\'s transaction rolls back', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
+      // A synthetic storage failure: the module's next outcome cannot be stored, so its transaction rolls back.
+      const database = new DatabaseSync(world.databaseFile);
+      try {
+        database.exec('CREATE TRIGGER fail_outcome BEFORE INSERT ON bunny_outbox WHEN NEW.kind = \'outcome\' BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END');
+        const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 42}, {requestId: 'rolled-back'}));
+        await waitFor(() => world.logs().some(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'storage') ? true : undefined, 'the failed write');
+        await sleep(200);
+        assert.equal(world.seen.some(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId), false, 'no outcome went out');
+        // A new copy syncs exactly what followers heard live: the last committed record, still pending, with no transmission for the command.
+        const live = world.deviceRecord();
+        let synced: unknown;
+        const result = await world.probe.sync(['device'], change => { if (change.type === 'updated' && change.entity.id === DEVICE) synced = change.message.data; }, {timeoutMs: 2000});
+        assert.equal(result.status, 'synced');
+        if (result.status === 'synced') await result.copy.close();
+        assert.deepEqual(synced, live, 'the synced record is the last published one');
+        assert.equal(live?.pending, 1);
+        const last = live?.lastTransmission;
+        assert.equal(last?.status === 'known' ? last.requestId : undefined, undefined, 'the rolled-back command is not the last transmission');
+      } finally {
+        database.exec('DROP TRIGGER IF EXISTS fail_outcome');
+        database.close();
+      }
+      // The command was accepted and never reported, so the next start reports it uncertain, once.
+      await world.restart();
+      assert.equal((await world.outcome('rolled-back')).data.result, 'uncertain');
+    });
+  });
+
+  void it('starts a playlist beyond the 256 its capabilities list', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      let last = '';
+      await world.populate(async library => {
+        const {rendition} = await library.importMedia(bytesOf(await solid([0, 0, 255])), 'Blue');
+        for (let index = 0; index < 257; index += 1) {
+          const created = await library.createPlaylist(`List ${String(index)}`);
+          await library.replaceItems(created.id, created.revision, [{renditionId: rendition.id}]);
+          last = created.id;
+        }
+      });
+      await world.start();
+      // At once after the start, before the catalog has been read, and again once the device record lists 256 playlists.
+      const requestId = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: last}));
+      const started = (await world.outcome(requestId, 10_000)).data;
+      assert.deepEqual([started.result, started.evidence], ['succeeded', 'transmitted'], JSON.stringify(started));
+      const listed = await waitFor(() => {
+        const media = world.deviceRecord()?.capabilities.media;
+        return media?.supported === true && media.playlistIds.length === 256 ? media.playlistIds : undefined;
+      }, 'the device record listing 256 playlists', 10_000);
+      assert.equal(listed.includes(last), false, 'the 257th playlist is beyond the listed ones');
+      const again = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: last}));
+      assert.equal((await world.outcome(again, 10_000)).data.result, 'succeeded');
+      const unknown = await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: '00000000-0000-4000-8000-0000000000ff'});
+      assert.equal(unknown.status === 'rejected' && unknown.error.error.code, 'unsupported-capability');
+    });
+  });
+
+  void it('starts without reading its library\'s frames, within a bound, and checks each hosted rendition\'s frames once', async () => {
+    const reads = countFrameReads();
+    const world = await World.open({section: {device: {...SECTION.device, profile: HOSTED_PROFILE}}});
+    try {
+      await within(world, async () => {
+        const count = 16;
+        await world.populate(async library => {
+          for (let index = 0; index < count; index += 1) await library.importMedia(bytesOf(hostedGif(index + 1, 50)), `Clip ${String(index)}`);
+          await library.importMedia(bytesOf(manyColorGif()), 'Too many colors');
+        });
+        const before = reads.count(), started = performance.now();
+        await world.start();
+        const startMs = performance.now() - started;
+        assert.equal(reads.count() - before, 0, 'the start read no rendition\'s frames');
+        assert.ok(startMs < 1500, `the start took ${String(Math.round(startMs))} ms`);
+        // A reader's sync waits for the first read of the catalog, which reads no frames either: until its frames are
+        // checked, a hosted rendition is listed as its timing allows.
+        const listed = await world.synced<RenditionRecord>(FAMILIES.rendition);
+        assert.equal(listed.length, count + 1);
+        // After the start, each one's frames are checked once, and the one whose colors do not fit goes out incompatible.
+        await waitFor(() => reads.count() - before === count + 1 ? true : undefined, 'one check of each hosted rendition\'s frames', 20_000);
+        const checked = await waitFor(() => records<RenditionRecord>(world, FAMILIES.rendition).find(item => item.name === 'Too many colors' && !item.compatible), 'the incompatible clip');
+        assert.equal(checked.compatible, false);
+        const synced = await world.synced<RenditionRecord>(FAMILIES.rendition);
+        assert.deepEqual(synced.filter(item => !item.compatible).map(item => item.name), ['Too many colors']);
+        // A playlist edit reads no frames, and neither does the next start: compatibility is kept per rendition and profile.
+        const edit = await accepted(playlist(world, {operation: 'create', name: 'Clips'}));
+        assert.equal((await world.outcome(edit)).data.result, 'succeeded');
+        await world.restart();
+        await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the restarted device');
+        await sleep(300);
+        assert.equal(reads.count() - before, count + 1, 'no frames read for the edit or the restart');
+        assert.deepEqual((await world.synced<RenditionRecord>(FAMILIES.rendition)).filter(item => !item.compatible).map(item => item.name), ['Too many colors'],
+          'the kept check survives the restart');
+        // A new hosted clip's frames are checked once, at its import, before its outcome.
+        const imported = await accepted(asset(world, {operation: 'import', name: 'New clip', content: {inline: hostedGif(99, 20).toString('base64')}}));
+        assert.equal((await world.outcome(imported, 20_000)).data.result, 'succeeded');
+        assert.equal(reads.count() - before, count + 2);
+        assert.ok(records<RenditionRecord>(world, FAMILIES.rendition).some(item => item.name === 'New clip' && item.compatible), 'the new clip went out live');
+        assert.equal((await world.synced<RenditionRecord>(FAMILIES.rendition)).length, count + 2);
+      });
+    } finally {
+      reads.restore();
+    }
   });
 });

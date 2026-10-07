@@ -83,9 +83,14 @@ The module keeps only state it owns, in its SQLite file and its private folder:
   with media under `media/`;
 - its `pixoo_state` (revision counter, presentation and Now Playing settings,
   configuration revision, last outcome);
-- `pixoo_commands`, the commands it accepted and has not completed;
-- `pixoo_handled`, the commands it completed in the last 24 hours;
+- `pixoo_commands`, the commands it accepted and has not completed, and
+  `pixoo_handled`, the commands it completed in the last 24 hours, each with a
+  SHA-256 digest of its family, subject and data;
+- `pixoo_hosted_checks`, whether each multi-frame rendition's frames fit the
+  hosted profile's GIF, by rendition and profile;
 - the SDK's outbox.
+
+Each statement the module's store runs is prepared once.
 
 Its copies of the core's `session/2.0` records and of the `playback/2.0` record
 come from sync and are never stored. A copy that has not synced is tried again
@@ -104,6 +109,17 @@ It serves, through sync and as live states:
   with a removal when one goes.
 
 A playlist holds at most 1,000 items, so every record fits the 256 KiB cap.
+The start does not read the catalog. The module reads it once the start is
+done, without reading any rendition's frames, and a sync that names
+`pixoo-rendition` or `pixoo-playlist` waits for that first read, which is
+served at the current revision without a publish. A multi-frame rendition's
+hosted check reads its frames once per rendition and profile and is kept: at
+its import, before the import's outcome, or, for a rendition the first read
+meets unchecked (as after the library migration, #931), after the start, one
+at a time, listed as its timing allows until then and published incompatible
+if its colors or timing do not fit. Later reads of the catalog, later starts
+and playlist starts use the kept checks. With 32 hosted 500-frame renditions,
+the start went from 10.9 s to 0.4 s and a playlist edit from 11.4 s to 0.3 s.
 Every record carries the revision of its last change, from one stored counter;
 a change that alters nothing publishes nothing. Today the SDK lets one owner
 serve a family, so if another module already serves `device`, the Pixoo serves
@@ -119,7 +135,7 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | Family | What it does | Its outcome |
 | --- | --- | --- |
 | `device-mode-set` | Monitor or Media | `observed` |
-| `media-start` | Starts a playlist among the device's capabilities | Its first upload's |
+| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed | Its first upload's |
 | `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes` | `observed`; its upload's |
 | `brightness-set`, `power-set` | Brightness, screen on or off | The device write's |
 | `pixoo-media-show` | Shows one rendition, with an optional playback policy | Its upload's |
@@ -131,15 +147,25 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 
 Before acting, the module refuses with the shared error body:
 - a command that breaks its schema;
+- a `requestId` it accepted before for other content (`duplicate-conflict`);
 - a stale `expectedConfigurationRevision` or `expectedGeneration`
   (`revision-conflict`);
 - what the device does not offer (`unsupported-capability`);
 - a resume with nothing selected (`invalid-state`);
 - an unknown rendition or notice (`not-found`).
 
-Otherwise it stores its record of the work, replies `accepted`, runs the work
-and reports the outcome through its outbox. The outcome commits with the
-device's new pending count and last outcome. The rules for an outcome:
+Otherwise it stores its record of the work in the transaction that publishes
+the device's new pending count, replies `accepted`, runs the work and reports
+the outcome through its outbox. The outcome commits with the device's new
+pending count, last outcome and last transmission. A change while a command
+runs waits up to 1 s for that commit, so a device command commits twice: 20
+`brightness-set` commands made 100 commits, 5 each, where they made 120
+before. Three of the five are the SDK outbox marking each published row, one
+row at a time. What the module serves and its last transmission change only
+once a transaction commits, so after a rollback a new copy syncs what live
+followers last heard. The outbox's `outcome.published` record (INFO, or WARN
+for `failed` or `uncertain`) is an outcome's only log record. The rules for an
+outcome:
 - **Transmitted.** A device write is `succeeded` with `transmitted` once the
   Pixoo answers: the answer is a transport acknowledgment, never an
   observation. A start, show, resume, next, previous or restart completes with
@@ -161,7 +187,9 @@ device's new pending count and last outcome. The rules for an outcome:
   with its registry code; any other failure once the work began is
   `uncertain`.
 
-A repeated `(source, requestId)` is accepted again and changes nothing. A
+A repeated `(source, requestId)` with the same family, subject and data is
+accepted again and changes nothing; with other content it is refused with
+`duplicate-conflict`, for 24 hours after its completion and across restarts. A
 command accepted before a restart and never completed is reported `uncertain`
 at the next start and never runs again.
 
