@@ -38,7 +38,7 @@ jobs:
         timeout-minutes: 20
         run: |
           npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0
-          bash scripts/install-browser.sh node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          bash scripts/apt-retry.sh 300 node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Check epic browser adapters and generated fixtures
         run: |
           npm ci

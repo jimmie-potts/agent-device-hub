@@ -116,7 +116,7 @@ jobs:
       # or failed attempt twice. An install that runs past 300 s costs a retry, which resumes from apt's cache, not a failure.
       - name: Install Chromium with its system dependencies
         timeout-minutes: 20
-        run: bash scripts/install-browser.sh npx playwright install --with-deps chromium
+        run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests always run.
       - run: npm run test:app-verify:built
