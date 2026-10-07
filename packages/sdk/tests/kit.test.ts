@@ -1,5 +1,6 @@
-// The module test kit (Hub #882, #919): one conformance suite that every module runs in a few lines. A small bulb module
-// and a configured beacon pass it; each broken variant fails exactly the checks that see its fault.
+// The module test kit (Hub #882, #919, #954): one conformance suite that every module runs in a few lines. A small bulb
+// module, a configured beacon and a pair that serves two families pass it; each broken variant fails exactly the checks
+// that see its fault.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdtemp, rm, stat, writeFile} from 'node:fs/promises';
@@ -245,6 +246,39 @@ it('a module that copies a family that several modules serve syncs it from its o
     await harness.stop();
     await rm(stateDir, {recursive: true, force: true});
   }
+});
+
+/**
+ * A pair module that serves two families, its bulb's and its beacon's, in one `serveSync`. An unfiltered pair answers every
+ * sync with both, whatever the request names: the fault a reader that syncs one family by owner meets (Hub #954).
+ */
+function pair(unfiltered: boolean): BunnyModule {
+  return {
+    manifest: {name: 'pair', apiVersion: '1.0'},
+    async start({sdk}) {
+      const bulbState: StateDraft<{id: string; revision: number; power: string}> = {
+        type: 'org.bunny.kit-bulb.updated', subject: 'b1', dataschema: BULB_SCHEMA, data: {id: 'b1', revision: 1, power: 'off'},
+      };
+      const beaconState: StateDraft<Beacon> = {type: 'org.bunny.kit-beacon.updated', subject: 'beacon-1', dataschema: BEACON_SCHEMA, data: {id: 'beacon-1', revision: 1, availability: 'available'}};
+      const states: StateDraft[] = [bulbState, beaconState];
+      const families = new Map([[BULB_SCHEMA, 'kit-bulb'], [BEACON_SCHEMA, 'kit-beacon']]);
+      await sdk.serveSync(['kit-bulb', 'kit-beacon'], request => ({
+        revision: 1, states: unfiltered ? states : states.filter(state => request.data.families.includes(families.get(state.dataschema) ?? '')),
+      }));
+    },
+    stop: () => {},
+  };
+}
+
+it('the kit syncs each served family alone, by owner, and fails a module that answers outside the request', async () => {
+  const pairSpec = (unfiltered: boolean): ConformanceSpec => ({create: () => pair(unfiltered), schemas, serves: ['kit-bulb', 'kit-beacon'], timeoutMs: 500});
+  assert.deepEqual(conformanceChecks(pairSpec(false)).map(check => check.name), [CHECKS.manifest, CHECKS.lifecycle, CHECKS.serves, CHECKS.servesEach]);
+  assert.deepEqual(await failing(pairSpec(false)), []);
+  // A sync of both families together cannot see the fault: only the check that names one family at a time fails.
+  assert.deepEqual(await failing(pairSpec(true)), [CHECKS.servesEach]);
+  const check = conformanceChecks(pairSpec(true)).find(item => item.name === CHECKS.servesEach);
+  await assert.rejects(check?.run() ?? Promise.resolve(), /a sync of kit-bulb alone/);
+  assert.equal(conformanceChecks(spec()).some(item => item.name === CHECKS.servesEach), false, 'a module that serves one family has the serves check only');
 });
 
 it('the harness stops a module as the runtime does: a participant without close, deadlines, and cleanup after errors', async context => {
