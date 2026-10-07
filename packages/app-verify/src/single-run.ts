@@ -44,14 +44,15 @@ export interface SingleRun {
 export async function holdSingleRun(progress: (line: string) => void = () => undefined): Promise<SingleRun> {
   const claim = await systemd.claimStart(process.pid);
   const live = await systemd.liveRuns();
-  let held = claim === 'claimed';
+  let held = typeof claim === 'object' && 'claimed' in claim;
+  const invocation = typeof claim === 'object' && 'claimed' in claim ? claim.claimed : '';
   const release = async (): Promise<void> => {
     if (!held) return;
     held = false;
-    await systemd.stopUnit(systemd.START_CLAIM);
+    await systemd.releaseClaim(invocation);
   };
   if (claim === 'held') throw new SingleRunRefused(live?.length ? runActiveDetail(live) : STARTING_DETAIL);
-  if (typeof claim === 'object') progress(`could not take the host's start claim (${claim.failed}); starting without it`);
+  if (typeof claim === 'object' && 'failed' in claim) progress(`could not take the host's start claim (${claim.failed}); starting without it`);
   if (live === undefined) progress('could not list the host\'s run units; the one-run check was skipped');
   else if (live.length) {
     await release();

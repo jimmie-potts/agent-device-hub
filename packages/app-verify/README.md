@@ -324,8 +324,11 @@ in the same way once it vendors a core that has this.
   the other is refused. It says `another start is still creating a run`, or
   names the run once that run's unit exists. The claim is held until `start`
   returns and given back whether it started a run or not. A start killed without
-  giving it back leaves it for about a second. If `systemctl` cannot create the
-  claim or list units, the start goes ahead and says so on stderr.
+  giving it back leaves it for about a second. A release stops the claim only
+  while it is still the one that start took, by its `InvocationID`, so a start
+  that outlived the 30 minutes never stops another start's claim. If
+  `systemd-run` cannot create the claim or `systemctl` cannot list units, the
+  start goes ahead and says so on stderr.
 - **Other operations.** `restart` replaces a run and is never refused.
   `scenario`, `capture`, `handoff`, `extend`, `doctor` and `stop` never read the
   variable.
@@ -403,7 +406,8 @@ inside a checkout.
   `APP_VERIFY_SINGLE_RUN`; each guarded command passes it, with a `systemctl`
   and `systemd-run` on its PATH (`tests/scope-shim.mjs`) that scope the guard's
   listing and claim to the test's own apps, so a run or a start that another
-  session has in flight cannot decide the result.
+  session has in flight cannot decide the result. The shim logs each call, so
+  a test asserts that the claim is taken before the units are read.
   These tests skip, each with the reason, when no user manager exists, and
   fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. CI hides the runner's user
   manager until the lease works under systemd 255 (#873), so they run on a

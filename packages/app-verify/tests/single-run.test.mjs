@@ -12,9 +12,9 @@ import {existsSync} from 'node:fs';
 import {readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
-import {liveRuns, runActiveDetail} from '@jimmie-potts/app-verify';
+import {holdSingleRun, liveRuns, runActiveDetail} from '@jimmie-potts/app-verify';
 import {assertRefusal, expectedBody, sandbox, show, supervisorSkipReason, units, until} from './helpers.mjs';
-import {scopeShim} from './scope-shim.mjs';
+import {callsOf, scopeShim} from './scope-shim.mjs';
 
 const skip = supervisorSkipReason();
 const systemctl = (...args) => spawnSync('systemctl', ['--user', ...args], {encoding: 'utf8'});
@@ -23,9 +23,15 @@ const unloaded = unit => show(unit, 'LoadState').LoadState !== 'loaded';
 /** The claim unit a scoped guarded start takes. */
 const claimOf = box => `app-verify-start-claim-${box.app}.service`;
 
-/** The environment of a guarded command: the guard on, and a PATH whose systemctl and systemd-run are scoped to this sandbox. */
+/** The directory of the shim a guarded command runs with, which holds its call log. */
+const shimDir = (box, mode) => join(box.base, `shim-${mode}`);
+
+/**
+ * The environment of a guarded command: the guard on, and a PATH whose systemctl and systemd-run are scoped to this
+ * sandbox. `mode` injects a fault: `blind` (no unit listing) or `noclaim` (no claim unit).
+ */
 async function guarded(box, mode = 'scoped') {
-  return {APP_VERIFY_SINGLE_RUN: '1', PATH: await scopeShim(join(box.base, `shim-${mode}`), box.app, {blind: mode === 'blind'})};
+  return {APP_VERIFY_SINGLE_RUN: '1', PATH: await scopeShim(shimDir(box, mode), box.app, {blind: mode === 'blind', noclaim: mode === 'noclaim'})};
 }
 
 // No skip: the wording, and the README's example of it, need no user manager.
@@ -134,11 +140,86 @@ test('a start whose claim is held by another start is refused and creates nothin
     const holder = spawn('sleep', ['3'], {stdio: 'ignore'});
     const script = `import {claimStart} from ${JSON.stringify(new URL('../dist/systemd.js', import.meta.url).href)}; const first = await claimStart(${holder.pid}); const second = await claimStart(process.pid); console.log(JSON.stringify([first, second]));`;
     const claimed = spawnSync(process.execPath, ['--input-type=module', '-e', script], {env: {...process.env, PATH: env.PATH}, encoding: 'utf8'});
-    assert.deepEqual(JSON.parse(claimed.stdout), ['claimed', 'held'], claimed.stderr);
+    const [first, second] = JSON.parse(claimed.stdout);
+    assert.match(first.claimed, /^[0-9a-f]{32}$/, `the first claim names its unit's invocation: ${claimed.stdout} ${claimed.stderr}`);
+    assert.equal(second, 'held');
     assert.equal(unloaded(claimOf(box)), false, 'the claim exists while its process lives');
     await until(() => unloaded(claimOf(box)), 'the claim goes when its process does', 15000);
+    const later = await box.cli(['start', '--lease', '5'], {extraEnv: env});
+    assert.equal(later.code, 0, 'a later guarded start goes ahead once the holder is gone: ' + later.stderr);
+    assert.equal((await box.cli(['stop', later.result.runId])).code, 0);
   } finally {
     systemctl('stop', claimOf(box));
+    await box.close();
+  }
+});
+
+test('a start takes its claim before it reads the units', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  try {
+    const env = await guarded(box);
+    const started = await box.cli(['start', '--lease', '5'], {extraEnv: env});
+    assert.equal(started.code, 0, started.stderr);
+    // The claim comes first, so no other guarded start is between its check and its unit. Swapped, two starts begun
+    // together can both read an empty host.
+    const calls = await callsOf(shimDir(box, 'scoped'));
+    const claimed = calls.findIndex(call => call.startsWith('systemd-run ') && call.includes(`--unit=app-verify-start-claim-${box.app} `));
+    const listed = calls.findIndex(call => call.startsWith('systemctl ') && call.includes('list-units') && call.includes(`app-verify-${box.app}-*.service`));
+    assert.ok(claimed >= 0 && listed >= 0, `the shim logged the claim and the unit listing:\n${calls.join('\n')}`);
+    assert.ok(claimed < listed, `the claim is taken before the units are read:\n${calls.join('\n')}`);
+    assert.equal((await box.cli(['stop', started.result.runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a release gives the claim back only while it is still the one that start took', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  const saved = process.env.PATH;
+  try {
+    const env = await guarded(box);
+    // In process, so only the guard's own calls may see the shim: the test's helpers need the real systemctl.
+    const withShim = async work => {
+      process.env.PATH = env.PATH;
+      try {
+        return await work();
+      } finally {
+        process.env.PATH = saved;
+      }
+    };
+    // A start that outlived the claim's RuntimeMaxSec finds another start's claim in its place: it must not stop it.
+    const slot = await withShim(() => holdSingleRun());
+    assert.equal(unloaded(claimOf(box)), false, 'this start holds the claim');
+    assert.equal(systemctl('stop', claimOf(box)).status, 0, 'the claim expires');
+    assert.equal(transient(`--unit=${claimOf(box).replace(/\.service$/, '')}`, '--collect', 'sleep', '120').status, 0, 'and another start takes it');
+    const other = show(claimOf(box), 'InvocationID').InvocationID;
+    await withShim(() => slot.release());
+    assert.equal(show(claimOf(box), 'ActiveState').ActiveState, 'active', 'releasing the first start\'s claim leaves the other start\'s alone');
+    assert.equal(show(claimOf(box), 'InvocationID').InvocationID, other);
+
+    // Its own claim, still held, is given back.
+    systemctl('stop', claimOf(box));
+    const mine = await withShim(() => holdSingleRun());
+    assert.equal(unloaded(claimOf(box)), false);
+    await withShim(() => mine.release());
+    assert.equal(unloaded(claimOf(box)), true, 'a release stops the claim that is still its own');
+  } finally {
+    process.env.PATH = saved;
+    systemctl('stop', claimOf(box));
+    await box.close();
+  }
+});
+
+test('a start whose claim cannot be created goes ahead and says so', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  try {
+    const started = await box.cli(['start', '--lease', '5'], {extraEnv: await guarded(box, 'noclaim')});
+    assert.equal(started.code, 0, started.stderr);
+    assert.match(started.stderr, /could not take the host's start claim/);
+    assert.equal(started.result.state, 'running');
+    assert.equal(unloaded(claimOf(box)), true, 'no claim was made');
+    assert.equal((await box.cli(['stop', started.result.runId])).code, 0);
+  } finally {
     await box.close();
   }
 });
