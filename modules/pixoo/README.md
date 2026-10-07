@@ -222,7 +222,14 @@ start stays passive, as the Pixoo service's simulator did.
 - **Media.** Decoding and rendering run in a forked child process with a
   256 MiB heap, killed with SIGKILL when the job is aborted. A corrupt,
   oversized or hostile image fails only its own job. An image that declares
-  more pixels than the limit fails as `too-large` from its header.
+  more pixels than the limit fails as `too-large` from its header. The heap
+  flag caps only V8's old space: decoded pixels live in buffers outside it,
+  so the declared sizes bound the child's real memory. A still may declare up
+  to 50 megapixels, which libvips shrinks as it loads (a 49-megapixel PNG
+  peaked near 80 MiB). A GIF's logical screen may declare at most 4096 x 4096
+  pixels, since composition keeps RGBA copies of that canvas: at the bound the
+  child peaked near 200 MiB, and a 43-byte GIF declaring 7000 x 7000, which
+  peaked at 441 MiB before, is now refused from its header.
 - **Rendering.** Monitor dashboards and Now Playing cards render in worker
   calls. A failed render keeps the last picture, is tried again at the next
   cadence, and logs one warning per run of failures. The dashboard renders only

@@ -144,11 +144,15 @@ The module SHALL publish `device/2.0` for its device, kind `pixoo`, with the Pix
 
 ### Requirement: Isolated media jobs
 
-Media decoding and rendering SHALL run in a forked child process with a 256 MiB heap, killed with SIGKILL when its job is aborted, so a corrupt, oversized or hostile image fails only its own job. An import SHALL take inline content of at most 160 KiB, or a file the uploader staged in the module's `incoming` folder, named by its SHA-256, whose size and hash must match. An image that declares more pixels than the limit SHALL fail as `too-large` from its header, before decoding. A busy library lock SHALL be told by SQLite's code, never by an exception's message.
+Media decoding and rendering SHALL run in a forked child process with a 256 MiB heap, killed with SIGKILL when its job is aborted, so a corrupt, oversized or hostile image fails only its own job. Since the heap flag caps only V8's old space, the declared sizes SHALL bound the child's other memory: a GIF whose logical screen declares more than 4096 x 4096 pixels SHALL be refused from its header with `too-large`, before any decoding. An import SHALL take inline content of at most 160 KiB, or a file the uploader staged in the module's `incoming` folder, named by its SHA-256, whose size and hash must match. An image that declares more pixels than the limit SHALL fail as `too-large` from its header, before decoding. A busy library lock SHALL be told by SQLite's code, never by an exception's message.
 
 #### Scenario: A corrupt and an oversized image
 - **WHEN** one import is not a valid PNG and another declares 20,000 by 20,000 pixels in a few bytes
 - **THEN** the first completes `failed` with `invalid-request`, the second `failed` with `too-large`, the module keeps running and a valid import that follows succeeds
+
+#### Scenario: A GIF that declares a huge canvas
+- **WHEN** a 43-byte GIF declares a 7000 by 7000 logical screen, within the 50-megapixel source limit
+- **THEN** it is refused as `pixel-limit` from its header, before any decoding, where its canvases took the child to 441 MiB before
 
 #### Scenario: The child's heap
 - **WHEN** the media child process is forked

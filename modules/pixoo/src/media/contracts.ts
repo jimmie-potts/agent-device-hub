@@ -15,8 +15,14 @@ export const PIXOO64_SMOKE_PROFILE: Readonly<MediaProfile> = Object.freeze({ nam
 export const PIXOO64_GIF_PROFILE: Readonly<MediaProfile> = Object.freeze({ name: 'pixoo64-gif-2026-10-01', evidence: 'observed-device', reference: 'https://github.com/jimmie-potts/divoom-app-upgrade/issues/55; October 1 video: 20 frames, final requested delay acts uniformly at 100/500/800 ms; uniform 100-800 ms admission envelope; firmware unknown; transitions unresolved', maxFrames: 20, minDelayMs: 100, maxDelayMs: 800, uniformTiming: true });
 export const PIXOO64_HOSTED_PROFILE: Readonly<MediaProfile> = Object.freeze({name:'pixoo64-hosted-2026-10-01',evidence:'observed-device',reference:'https://github.com/jimmie-potts/divoom-app-upgrade/issues/55; hosted observations: 20x100 ms, 100x50 ms, 500x60 ms; uniform 50-800 ms centisecond admission envelope, at most 256 global colors; firmware unknown; readiness estimated',maxFrames:500,minDelayMs:50,maxDelayMs:800,uniformTiming:true});
 export const DEVICE_PROFILES: readonly Readonly<MediaProfile>[] = Object.freeze([PIXOO64_SMOKE_PROFILE,PIXOO64_GIF_PROFILE,PIXOO64_HOSTED_PROFILE]);
-export interface MediaLimits { maxUploadBytes: number; maxSourcePixels: number; concurrency: number; maxQueued: number; timeoutMs: number }
-export const DEFAULT_LIMITS: Readonly<MediaLimits> = Object.freeze({ maxUploadBytes: 10 * 1024 * 1024, maxSourcePixels: 50_000_000, concurrency: 1, maxQueued: 4, timeoutMs: 30_000 });
+/**
+ * `maxGifCanvasPixels` bounds a GIF's declared logical screen, read before any decoding. Composition keeps up to two
+ * RGBA copies of that canvas outside the media child's V8 heap, so a 7000 x 7000 GIF of 43 bytes made the child peak at
+ * 441 MiB; at 4096 x 4096 it peaks near 200 MiB. Stills keep `maxSourcePixels`: libvips shrinks them as it loads, and a
+ * 49-megapixel PNG peaks near 80 MiB.
+ */
+export interface MediaLimits { maxUploadBytes: number; maxSourcePixels: number; maxGifCanvasPixels: number; concurrency: number; maxQueued: number; timeoutMs: number }
+export const DEFAULT_LIMITS: Readonly<MediaLimits> = Object.freeze({ maxUploadBytes: 10 * 1024 * 1024, maxSourcePixels: 50_000_000, maxGifCanvasPixels: 4096 * 4096, concurrency: 1, maxQueued: 4, timeoutMs: 30_000 });
 export interface MediaSource { format: 'png' | 'jpeg' | 'gif'; width: number; height: number; frameCount: number; delaysMs: (number | null)[]; durationMs: number | null }
 export interface TimingWarning { frame: number; code: 'missing-delay' | 'zero-delay'; effectiveDelayMs: 100 }
 export interface RenderedMedia { source: MediaSource; frames: { rgb: Buffer; preview: Buffer; delayMs: number | null }[]; warnings: TimingWarning[] }
@@ -42,7 +48,7 @@ export function canonicalProfile(p: MediaProfile): MediaProfile {
 }
 export function canonicalLimits(l: Partial<MediaLimits> = {}): MediaLimits {
   const v = { ...DEFAULT_LIMITS, ...l };
-  if (!positive(v.maxUploadBytes, 100 * 1024 * 1024) || !positive(v.maxSourcePixels, 100_000_000) || !positive(v.concurrency, 4) ||
+  if (!positive(v.maxUploadBytes, 100 * 1024 * 1024) || !positive(v.maxSourcePixels, 100_000_000) || !positive(v.maxGifCanvasPixels, 100_000_000) || !positive(v.concurrency, 4) ||
     !Number.isInteger(v.maxQueued) || v.maxQueued < 0 || v.maxQueued > 16 || !positive(v.timeoutMs, 120_000)) throw new MediaError('invalid-input');
   return v;
 }

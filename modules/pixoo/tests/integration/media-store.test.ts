@@ -83,6 +83,6 @@ it('times out a stalled producer and can then process another request', async ()
 it('reaps a stalled child before returning its timeout', async () => {
   const {root}=await setup(); const entry=join(root,'stalled.cjs');
   await writeFile(entry,'process.on("message",()=>{setInterval(()=>{},1000)});');
-  const req={input:'unused',output:'unused',sourceHash:'unused',id:'unused',transform:DEFAULT_TRANSFORM,profile:SIMULATOR_PROFILE,limits:{maxUploadBytes:100,maxSourcePixels:100,concurrency:1,maxQueued:1,timeoutMs:100}};
+  const req={input:'unused',output:'unused',sourceHash:'unused',id:'unused',transform:DEFAULT_TRANSFORM,profile:SIMULATOR_PROFILE,limits:{maxUploadBytes:100,maxSourcePixels:100,maxGifCanvasPixels:100,concurrency:1,maxQueued:1,timeoutMs:100}};
   await expect(runWorker(req,AbortSignal.timeout(100),pathToFileURL(entry))).rejects.toMatchObject({code:'timeout'});
 });

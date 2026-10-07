@@ -8,9 +8,12 @@ export function signalError(signal: AbortSignal): MediaError {
 }
 const WORKER_CODES: readonly string[] = ['invalid-input', 'unsupported', 'upload-limit', 'pixel-limit', 'profile-limit', 'decode-failed'];
 /**
- * Decodes and renders one source in a forked child process with a 256 MiB heap, so a bad or hostile image cannot exhaust
- * the runtime's memory or stop it. An abort kills the child with SIGKILL. The promise settles only once the child has
- * exited, so the caller's slot and staging folder are released after it is gone.
+ * Decodes and renders one source in a forked child process, so a bad or hostile image cannot exhaust the runtime's
+ * memory or stop it. `--max-old-space-size=256` caps only V8's old space; decoded pixels live in buffers outside it,
+ * which the media limits bound instead: a GIF's declared canvas (at most 4096 x 4096, about 200 MiB of child memory at
+ * that size) and a still's pixel count (libvips shrinks stills as it loads them, about 80 MiB for 49 megapixels). An
+ * abort kills the child with SIGKILL. The promise settles only once the child has exited, so the caller's slot and
+ * staging folder are released after it is gone.
  */
 export function runWorker(request: WorkerRequest, signal: AbortSignal, entry = new URL('./worker.js', import.meta.url)): Promise<void> {
   if (signal.aborted) return Promise.reject(signalError(signal));

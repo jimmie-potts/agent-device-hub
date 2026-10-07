@@ -126,3 +126,26 @@ it('admits all 500 frames and rejects 501 without truncation or duration caps',a
  expect(admitted.frames).toHaveLength(500);expect(admitted.frames.map(f=>f.delayMs)).toEqual(frames.map(f=>f.delay*10));
  await expect(render(gifFixture(1,1,[...frames,...frames.slice(0,1)]))).rejects.toMatchObject({code:'profile-limit'});
 });
+describe('a GIF that declares a huge canvas', () => {
+  /** A 43-byte GIF: a `side` x `side` logical screen with one 1x1 image, which a decoder would composite on a full canvas. */
+  const declared = (side: number): Buffer => {
+    const screen = Buffer.alloc(7);
+    screen.writeUInt16LE(side, 0);
+    screen.writeUInt16LE(side, 2);
+    screen[4] = 0x80;
+    const image = Buffer.alloc(10);
+    image[0] = 0x2c;
+    image.writeUInt16LE(1, 5);
+    image.writeUInt16LE(1, 7);
+    return Buffer.concat([Buffer.from('GIF89a', 'ascii'), screen, Buffer.from([0, 0, 0, 255, 255, 255]), Buffer.from([0x21, 0xf9, 4, 0, 10, 0, 0, 0]), image,
+      Buffer.from([2, 2, 0x4c, 0x01, 0]), Buffer.from([0x3b])]);
+  };
+  it('is refused by its declared canvas, before any decoding, above 4096 x 4096 pixels', async () => {
+    expect(DEFAULT_LIMITS.maxGifCanvasPixels).toBe(4096 * 4096);
+    // 7000 x 7000 is within the 50-megapixel source limit, but its canvases would take about 440 MiB outside the heap.
+    await expect(render(declared(7000))).rejects.toMatchObject({code: 'pixel-limit'});
+    await expect(render(declared(4097))).rejects.toMatchObject({code: 'pixel-limit'});
+    await expect(renderMedia(declared(64), DEFAULT_TRANSFORM, SIMULATOR_PROFILE, {...DEFAULT_LIMITS, maxGifCanvasPixels: 4095})).rejects.toMatchObject({code: 'pixel-limit'});
+    expect((await render(declared(64))).frames).toHaveLength(1);
+  });
+});

@@ -36,7 +36,8 @@ export function inspectGif(bytes: Buffer, limits: MediaLimits, profile: MediaPro
   const word = () => take(2).readUInt16LE();
   const width = word(), height = word(), packed = byte(); byte(); byte();
   if (width === 0 || height === 0) invalid();
-  if (width * height > limits.maxSourcePixels) throw new MediaError('pixel-limit');
+  // The declared canvas bounds composition's memory, so a GIF is refused by it before any decoding.
+  if (width * height > Math.min(limits.maxSourcePixels, limits.maxGifCanvasPixels)) throw new MediaError('pixel-limit');
   if ((packed & 128) !== 0) take(3 * (1 << ((packed & 7) + 1)));
   const blocks = () => { const parts: Buffer[] = []; let size; while ((size = byte()) !== 0) parts.push(take(size)); return Buffer.concat(parts); };
   const patches: Patch[] = [];
