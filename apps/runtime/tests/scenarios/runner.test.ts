@@ -6,6 +6,7 @@ import {mkdir, stat} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
+import {traceFields} from '@jimmie-potts/sdk';
 import {RuntimeError} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
 import {act, expect, holds, runScenario, scenario, type Scenario} from './catalog.js';
@@ -136,6 +137,54 @@ it('every record the end-to-end scenario writes is a diagnostic-contract record,
       for (const expected of ['lamp bunny.module command.completed', 'lamp bunny.module outbox.republished', 'core bunny.module message.received']) {
         assert.ok(written.has(expected), `${transport}: ${expected}`);
       }
+    } finally {
+      await h.close();
+    }
+  }
+});
+
+type Attribute = {key: string; value: {stringValue?: string}};
+type Span = {
+  traceId: string; spanId: string; parentSpanId?: string; name: string; kind: number; startTimeUnixNano: string;
+  endTimeUnixNano: string; attributes: Attribute[]; links?: {traceId: string; spanId: string}[];
+};
+/** One projected OTLP span document as its span. */
+function spanOf(line: string): Span {
+  const document = JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: Span[]}[]}[]};
+  const found = document.resourceSpans[0]?.scopeSpans[0]?.spans[0];
+  assert.ok(found, 'one span per document');
+  return found;
+}
+const requestOf = (span: Span): string | undefined => span.attributes.find(item => item.key === 'bunny.request.id')?.value.stringValue;
+
+it('the end-to-end path\'s spans have durations and no lost parent, and work published after a restart links to its stored context, on both transports', async () => {
+  for (const transport of ['in-process', 'remote'] as const) {
+    const h = await startMemoryHarness(named('end-to-end').seed, transport);
+    try {
+      assert.equal((await runScenario(named('end-to-end'), h)).outcome, 'passed', transport);
+      const spans = (await h.spans()).map(spanOf);
+      assert.ok(spans.length > 20, `${transport}: the bus and the modules recorded spans`);
+      for (const span of spans) assert.ok(BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano), `${transport}: ${span.name} has a duration`);
+      // A parent is a recorded span, a published message's own span, or, for a remote command, the remote caller's
+      // context, which the edge authenticated and validated and the server request span continues.
+      const known = new Set([
+        ...spans.map(span => span.spanId),
+        ...h.published().flatMap(({message}) => traceFields(message)?.spanId ?? []),
+        ...spans.filter(span => span.name === 'bunny.command.request' && span.kind === 2).flatMap(span => span.parentSpanId ?? []),
+      ]);
+      assert.deepEqual(spans.filter(span => span.parentSpanId !== undefined && !known.has(span.parentSpanId)).map(span => span.name), [],
+        `${transport}: no span lost its parent`);
+      const publishes = (requestId: string): Span[] => spans.filter(span => span.name === 'bunny.outcome.publish' && requestOf(span) === requestId);
+      // req-crash's outcome first went out after the crash, and req-lost's again after the restart that its lost
+      // acknowledgment forced: each of those is a new root linked to the stored context, never its child.
+      const crashed = publishes('req-crash');
+      assert.ok(crashed.length > 0 && crashed.every(span => span.parentSpanId === undefined && span.links?.length === 1), `${transport}: req-crash is linked`);
+      const [first, replay, ...more] = publishes('req-lost');
+      assert.ok(first && replay && more.length === 0, `${transport}: req-lost went out twice`);
+      assert.ok(first.parentSpanId !== undefined, `${transport}: its first publication continues the stored context`);
+      assert.equal(replay.parentSpanId, undefined, `${transport}: the replay is never reparented`);
+      assert.deepEqual(replay.links?.map(link => link.spanId), [first.parentSpanId], `${transport}: the replay links to the stored context`);
+      assert.ok(BigInt(replay.startTimeUnixNano) >= BigInt(first.endTimeUnixNano), `${transport}: later, after the restart`);
     } finally {
       await h.close();
     }

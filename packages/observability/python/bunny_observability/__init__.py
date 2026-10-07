@@ -16,7 +16,7 @@ class TraceContext(TypedDict):
 
 
 class DiagnosticRecord(TypedDict):
-    schema_version: Literal['1.0', '1.1', '1.2']
+    schema_version: Literal['1.0', '1.1', '1.2', '1.3']
     timestamp: NotRequired[str]
     observed_timestamp: NotRequired[str]
     severity_number: int
@@ -30,7 +30,7 @@ class DiagnosticRecord(TypedDict):
     span_id: NotRequired[str]
     trace_flags: NotRequired[str]
 
-ARTIFACT_VERSION = '1.2.0'
+ARTIFACT_VERSION = '1.3.0'
 SCHEMA_VERSION = '1.1'
 SEMANTIC_CONVENTIONS_VERSION = '1.44.0'
 MAX_RECORD_BYTES = 8192
@@ -133,6 +133,17 @@ def _profile_attributes(catalog, version):
         for following in versions[versions.index(version) + 1:]:
             later.update(catalog['additions'].get(following, {}).get('attributes', []))
     return [name for name in catalog['attributes'] if name not in later]
+
+
+def _profile_span_names(catalog, version):
+    """The span names a profile registers: every name but those a later profile adds. An unknown profile registers none."""
+    versions = catalog['schema_versions']
+    if type(version) is not str or version not in versions:
+        return []
+    later = set()
+    for following in versions[versions.index(version) + 1:]:
+        later.update(catalog['additions'].get(following, {}).get('span_names', []))
+    return [name for name in catalog['span_names'] if name not in later]
 
 
 def create_record(value):

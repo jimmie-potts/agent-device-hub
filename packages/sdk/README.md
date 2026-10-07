@@ -7,8 +7,10 @@ and its owner side, `serveSync`, over two transports: the in-process bus, and an
 SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime.
 Both carry the same calls, so a module or remote part never sees which transport
 carries its messages. It also holds the [module API](#modules) that the runtime
-(`apps/runtime`) hosts, a module's [outbox](#outbox) and the
-[module test kit](#module-test-kit).
+(`apps/runtime`) hosts, a module's [outbox](#outbox), the
+[module test kit](#module-test-kit), and the [diagnostics and span
+interface](#diagnostics-and-spans) that the runtime connects to its log and
+tracing.
 
 Messages are [profile 2.0](../event-contracts/README.md#profile-20) envelopes.
 They pass in process as plain objects, never copied or serialized. The bus does
@@ -52,8 +54,14 @@ if (synced.status === 'synced') render(synced.copy.states());
   `RangeError`.
 - `onError(error, {source, pattern})`: receives handler errors and dropped
   deliveries. By default, each one becomes a `BunnySdkWarning` process warning
-  whose message names the source and pattern, with the original error as its
-  `cause`.
+  whose message names the source, the pattern and the error's type, with an
+  `SdkError`'s code, never the error's message; the original error is its
+  `cause`, in memory.
+- `onDiagnostic(diagnostic)`: hears each decision the bus makes about a command
+  or a sync, once, at its level. A no-op by default. See
+  [Diagnostics and spans](#diagnostics-and-spans).
+- `spans`: a `SpanRecorder` for each command's request, queue and execute spans.
+  By default nothing is recorded.
 - `scheduler`: runs request and sync deadlines through
   `after(delayMs, callback)`, which returns a function that cancels the
   callback. Defaults to the global `setTimeout`. The runtime passes the
@@ -350,7 +358,8 @@ The context:
 | --- | --- |
 | `sdk` | The module's own participant on the runtime's bus. |
 | `log` | `debug`, `info`, `warn` and `error(event, fields?, trace?)`. The runtime writes each as a diagnostic-contract record with scope `bunny.module` and the module's name in `bunny.module`, and `trace` adds its trace and span IDs. `event` must be one the catalog registers for modules, and `fields` registered attributes; the runtime drops a record with another event or an invalid value and leaves out unregistered fields. Never put a secret, message or personal content in a field. |
-| `trace.span(parent?)` | A new span: in the parent's trace when one is given, otherwise a new trace. Use it as the `parent` of messages the work sends and the `trace` of its log records. |
+| `trace.span(parent?)` | A new span context: in the parent's trace when one is given, otherwise a new trace. Use it as the `parent` of messages the work sends and the `trace` of its log records. It is not recorded. |
+| `trace.start(name, {parent?, links?, kind?, attributes?})` | A recorded span with a start, an end and a status, under `bunny.module` with the module's name, such as `bunny.device.call` around a call to the module's device. Pass its `context` on as a parent, and `end()` it, or `end('error')` when the work failed. Its context never goes to the device. See [Diagnostics and spans](#diagnostics-and-spans). |
 | `clock.now()` | The runtime's clock, which the bus also uses for `time` and `expiresat`. |
 | `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
 | `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. |
@@ -370,8 +379,8 @@ messages in its own SQLite file, in the table `bunny_outbox`:
 ```ts
 import {Outbox} from '@jimmie-potts/sdk';
 
-async start({sdk, database, clock}) {
-  const outbox = new Outbox({sdk, database: database(), clock});
+async start({sdk, database, clock, log, trace}) {
+  const outbox = new Outbox({sdk, database: database(), clock, log, trace});
   // Follow the core's acknowledgments first (Hub #782), then send what is still stored.
   await outbox.republish();
   await sdk.respond('bunny.cmd.lamp.*', async command => {
@@ -398,13 +407,16 @@ async start({sdk, database, clock}) {
   again. If publishing is refused, for example because the module is stopping,
   the messages stay stored, unpublished, and the next transaction or start
   sends them unchanged. Nothing sends them again on its own.
-- A refused publish is reported to the `onError` option, with the bus's
-  signature: an `SdkError` with the refusal's registry code (`internal` for an
-  error without one) and the fixed detail `committed, awaiting publication`,
-  with the refusal as its `cause`, and the scope
-  `{source, pattern: 'outbox'}`. It is reported once per run of refusals, and
-  again only after a send goes through or the code changes. Without an
-  `onError`, it becomes a `BunnySdkWarning` process warning.
+- A refused publish is reported once per run of refusals, and again only after
+  a send goes through or the code changes, in one place. With the module's
+  `log`, it is one `outbox.deferred` record (see below). Otherwise it goes to
+  the `onError` option, with the bus's signature: an `SdkError` with the
+  refusal's registry code (`internal` for an error without one) and the fixed
+  detail `committed, awaiting publication`, with the refusal as its `cause`,
+  and the scope `{source, pattern: 'outbox'}`. Without an `onError`, it becomes
+  a `BunnySdkWarning` process warning that names the code and that fixed
+  detail, never the refusal's message. A refusal that `republish()` passes on
+  to its caller is not reported.
 - The `validator` option checks each message as `add` stores it, so a message
   it refuses throws `SdkError` with the validator's code and rolls the
   transaction back. A remote part passes the validator its edge uses, with the
@@ -419,9 +431,21 @@ async start({sdk, database, clock}) {
   `(source, id)`. `acknowledge` returns false when the outbox no longer holds
   that outcome.
 - `republish()` sends again, in order, everything still stored, and resolves
-  with how many messages went out. Call it once in the module's start, after the
-  module follows the core's acknowledgments, so that it hears an acknowledgment
-  of a resent outcome.
+  with how many messages went out, or rejects with a refusal. Call it once in
+  the module's start, after the module follows the core's acknowledgments, so
+  that it hears an acknowledgment of a resent outcome.
+- With the module's `log` and `trace` (#949), the outbox records an outcome's
+  first publication once, as `outcome.published`: INFO for a succeeded outcome
+  and WARN for a failed or uncertain one, in the outcome's own trace. A replay
+  records nothing more, so a replayed outcome never makes a second record. A
+  run of refused publishes after their commits makes one `outbox.deferred`
+  warning, in place of the `onError` report, with the refusal's code and
+  `bunny.outbox.waiting_count`, the messages still waiting to go out, so one
+  deferral is one record in the runtime. Each outcome sent gets a
+  `bunny.outcome.publish` span: the stored context's child when the same
+  transaction stored it, and otherwise, after a restart or a deferral, a new
+  root linked to that context, never its child. The kit fails a module whose
+  outbox records nothing.
 
 The core's acknowledgment belongs to Hub #782. Until it exists, the kit's
 [stand-in acknowledgment](#module-test-kit) lets tests exercise `acknowledge`,
@@ -490,9 +514,14 @@ only consumes runs the checks that apply to it. The checks:
 | `starts, and stops leaving nothing behind` | always | Start and stop each finish within `timeoutMs` (5 s by default). Afterwards the accepted command, if any, is refused as `unavailable`, a sync of the served families, if any, is refused as `unavailable`, and no timer, worker or open database is left. |
 | `serves its families through sync` | with `serves` | A sync of `serves` completes, and every state belongs to a served family and comes from the module. |
 | `copies the families it follows` | with `copies` | The module's start syncs them, asking for nothing else. |
-| `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. |
-| `refuses a command with the shared error body` | with `refused` | The refused command comes back `rejected` in the module's own reply, with `refused.code`. |
-| `keeps the outcome in its outbox and sends it again after a restart` | with `accepted` | The accepted command's outcome is published, and after a restart on the same database, with no acknowledgment, it is published again, unchanged. |
+| `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. The bus records one `command.admitted` and one `command.replied` in the command's trace, and its request span has one queue and one execute span as children, all ended without an error; the reply carries the execute span's context. |
+| `refuses a command with the shared error body` | with `refused` | The refused command comes back `rejected` in the module's own reply, with `refused.code`, with the same records and spans. |
+| `keeps the outcome in its outbox and sends it again after a restart` | with `accepted` | The accepted command's outcome is published, and after a restart on the same database, with no acknowledgment, it is published again, unchanged. Its publication is recorded once, in the command's trace, and the replay's publish span links to the stored context without being its child. |
+
+Every check also fails when a span the bus or the module recorded has a lost
+parent: one that is neither a recorded span nor the span of a message the check
+saw or the module received. A span that starts a new trace is a root, never
+lost.
 
 The lifecycle check sees only what the harness tracks: the module's responders
 and sync owners on the bus, the timers and workers it started through its
@@ -503,7 +532,12 @@ way is beyond it.
 - its own participant on a given bus, which the module gets without `close`;
 - a context whose SQLite file lives in a given directory;
 - a `stop` that aborts the signal, cancels timers, closes the participant,
-  runs `stop()`, ends workers and closes the database, in the runtime's order.
+  runs `stop()`, ends workers and closes the database, in the runtime's order;
+- with `spans`, the module's `trace.start` spans, its name in `bunny.module`,
+  and in `received` the trace context of each message the module received.
+
+`RecordedSpans` is a span recorder for tests that keeps each span as plain data,
+and `lostParents(spans, contexts)` returns the spans whose parent is lost.
 
 The participant close and `stop()` each have a deadline, `stopTimeoutMs`, 5 s
 by default as in the runtime. A step that throws or outlasts it is recorded in
@@ -529,7 +563,75 @@ The new message keeps the parent's trace ID and flags, and gets a new span ID.
 A reply continues its command's trace the same way. Without a parent, or with a
 malformed or all-zero one, the message starts a new trace with the sampled flag
 set. Only `traceparent` travels: profile 2.0 has no `tracestate` or baggage, so
-a `tracestate` that a parent carries is never passed on.
+a `tracestate` that a parent carries is never passed on. With a span recorder,
+a command's new span is its recorded request span and a reply's its execute
+span; every other message's span is its own and is not recorded.
+
+## Diagnostics and spans
+
+ADR 0012's "Observability" section has the boundary that makes a decision
+record it, once, at a fixed level (#949). The bus, the edge and the remote
+client take an optional `onDiagnostic(diagnostic)`, a no-op by default, that
+the runtime connects to its log. A `Diagnostic` is a closed record: `event`,
+`level` and the values the SDK has already checked, namely the participant's
+`source`, the routing `key` or `pattern` (`sync <families>`), `requestId`,
+`messageId`, `outcome`, a registry `code`, the edge's `route`, an exception's
+`errorType` and an `attempts` count, with the work's `trace`. It never holds a
+payload, an error object, an exception's message or a credential. A callback
+that throws loses its record and changes nothing.
+
+A decision that ends with a registry code takes that code's level from one
+table, the same for the bus, its owners, sync and the edge: INFO for
+validation and domain refusals (`invalid-request`, `invalid-message`,
+`unsupported-version`, `unknown-schema`, `unsupported-capability`,
+`not-found`, `invalid-state`, `revision-conflict`) and `cancelled`; WARN for
+refusals a correct caller should never receive (`unauthenticated`,
+`forbidden`, `too-large`, `duplicate-conflict`), lost capacity (`capacity`,
+`unavailable`), `expired` and `uncertain-result`; ERROR for `internal`.
+
+| Event | Level | Made by |
+| --- | --- | --- |
+| `command.admitted` | INFO | The bus, when it puts a command in its owner's queue. |
+| `command.refused` | The code's level, WARN for each code the bus refuses with | The bus, when a command never reached a handler: no responder, a full queue, its expiry, a closed responder, or a frame the edge could not deliver. |
+| `command.cancelled` | INFO | The bus, when the requester closed or stopped waiting before a handler started the command. |
+| `command.replied` | INFO; the code's level for a typed refusal | The bus, at the owner's reply: `accepted`, or its typed refusal with its code. |
+| `command.uncertain` | WARN | The bus, when a handler had the command and the request ended `uncertain-result`. |
+| `sync.served`, `sync.refused` | INFO; the code's level for a refusal | The bus, at a sync request's answer, refused by the bus or its owner. |
+| `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
+| `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
+| `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. A repeat with the same route, code and source is counted, and each minute that counted any ends with one summary whose `attempts` is that count; a quiet minute ends the run (`REFUSAL_WINDOW_MS`). The window runs on the edge's scheduler, so with the default `setTimeout` a host that never calls `edge.close()` stays alive up to a minute after a refusal; the runtime closes its edge. |
+| `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type, never its message. After dispatch it also carries the command's key, request ID, message ID and trace. |
+| `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
+| `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
+
+Each request makes one admission record when it reaches the queue and one
+ending record, made inside its single settlement, so a late reply or a second
+deadline adds nothing. A call the SDK refuses with `SdkError` is the caller's
+error, and the bus records nothing for it. A catch that only passes an error to
+`onError` records nothing.
+
+`SpanRecorder.start(name, {parent?, links?, kind?, attributes?})` returns a
+span with its own `context` and `end(status?)`. Names are the diagnostic
+contract's registered ones, and attributes are registered attributes fixed at
+the start. `noSpans`, the default, records nothing and gives `childOf(parent)`.
+`startSpan(recorder, name, options)` never throws into the work: a recorder
+that fails gives way to `noSpans`. With a recorder, the bus records each
+command's `bunny.command.request` span, a client span when a participant sends
+it and a server span when the edge hands the bus a remote command, whose context
+it authenticated and validated. Its `bunny.command.queue` span (admission to
+dequeue or removal) and `bunny.command.execute` span (the handler's run) are the
+request span's children, so concurrent requests never share a parent. A span
+ends with `error` for an uncertain result, a bus refusal other than a
+cancellation, and a handler that throws; a typed refusal is no failure.
+
+`DeviceAvailability({log, clock})` keeps a polled device from logging a warning
+per poll. `unreachable(device, code, trace?)` logs the first failure as one
+`device.unavailable` warning, and counts later failures, logged as one
+`device.unavailable` summary at DEBUG at most once a minute. `reached(device,
+trace?)` after failures logs one `device.available` record with
+`bunny.attempt_count` and `bunny.duration_ms`; while the device is available it
+logs nothing. A device ID that the contract's `bunny.device.id` pattern refuses,
+such as an address with a path, is left out of its records, which are kept.
 
 ## Remote transport
 
@@ -543,7 +645,7 @@ import {createServer} from 'node:http';
 import {InProcessBus, RemoteEdge, connectRemote} from '@jimmie-potts/sdk';
 
 const bus = new InProcessBus();
-const edge = new RemoteEdge({bus, validator, grants: [{source: 'bunny/bridge', token}], log: record => logger.info(record)});
+const edge = new RemoteEdge({bus, validator, grants: [{source: 'bunny/bridge', token}], onDiagnostic: diagnostic => record(diagnostic)});
 createServer(edge.handle).listen(port, '127.0.0.1');
 
 const bridge = await connectRemote({url: `http://127.0.0.1:${port}`, source: 'bunny/bridge', token});
@@ -560,7 +662,7 @@ HTTP status that fits its code.
   that two grants share. A call without a granted token is refused with
   `unauthenticated`, and a message or connection of another source with
   `forbidden`. Tokens appear only in the `authorization` header, never in a
-  message, log record or error body.
+  message, diagnostic, log record or error body.
 - **Validation.** The client builds every message, so it keeps its own `id` and
   `time`. The edge checks each one against profile 2.0, its registered payload
   schema and the 256 KiB cap before it reaches the bus. A refused message gets
@@ -578,19 +680,23 @@ HTTP status that fits its code.
   settles the request `uncertain` with `uncertain-result`, as the bus does in
   process, and sends no reply message.
 - **Safe errors.** An exception that the edge did not expect is answered with
-  `internal` and the fixed detail `the edge failed`, in the response and in the
-  edge's log record. Once the edge has handed a command to its bus, it answers
-  one with `uncertain-result` and the fixed detail
-  `the edge failed after it sent the command` instead, because a handler may
-  have run it. The exception's message, stack and cause stay in memory. The
-  edge's and the SDK's own refusals keep their text, which may quote what the
-  caller sent, such as a path, a claimed source, an id or an attribute the
-  validator refused.
+  `internal` and the fixed detail `the edge failed`. Once the edge has handed a
+  command to its bus, it answers one with `uncertain-result` and the fixed
+  detail `the edge failed after it sent the command` instead, because a handler
+  may have run it. Either is reported once as an `edge.failed` diagnostic with
+  the code it answered and the exception's type, and after dispatch with the
+  command's key, request ID, message ID and trace. The exception's message, stack
+  and cause stay in memory. The edge's and the SDK's own refusals keep their
+  text, which may quote what the caller sent, such as a path, a claimed source,
+  an id or an attribute the validator refused; their `edge.refused` diagnostic
+  carries only the code.
 - **Edge answers at the client.** The client takes an edge refusal only with a
   registered code and that code's flag, and reports any other body as
   `internal`. A command whose request call the edge answers with `internal` or
   `uncertain-result` is `uncertain`, because the edge may have failed after the
-  command reached a handler. Any other refusal of the call stays `rejected`.
+  command reached a handler, and the client reports that decision as
+  `remote.command.uncertain`. Any other refusal of the call stays `rejected`,
+  and the edge records it.
 - **Subscriptions.** `subscribe` resolves once the edge has registered the
   subscription, so nothing published after it is missed. Messages come down the
   stream in order.
@@ -604,7 +710,9 @@ HTTP status that fits its code.
   again, and only then delivers those notices, so a sync copy that syncs again
   never asks before its subscriptions exist. Nothing missed in the gap is
   replayed. A call that needs the stream and meets a lost one is refused with
-  the retryable `unavailable`.
+  the retryable `unavailable`. The client reports the lost stream once, as
+  `remote.disconnected`, and its recovery as `remote.reconnected` with the count
+  of failed attempts; it does not report each failed attempt to `onError`.
 - **A dropped stream and forwarded calls.** A command already written to a
   remote responder's stream is never answered as a refusal: its handler may be
   running it. Its reply still counts when it comes on the reconnected stream,
@@ -614,7 +722,7 @@ HTTP status that fits its code.
   frame never reached the socket is refused as `unavailable`, and so is a
   forwarded sync request, since a sync only reads.
 - **Sync answers.** A sync answer whose `sync.completed` or a state is over
-  256 KiB is refused at the edge with `too-large` and logged. A first sync
+  256 KiB is refused at the edge with `too-large` and reported. A first sync
   resolves `rejected` with that code, and a later one ends the copy with
   `failed`. Paging is #782.
 

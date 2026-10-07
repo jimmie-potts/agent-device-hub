@@ -3,6 +3,7 @@
 import type {DatabaseSync} from 'node:sqlite';
 import type {Worker, WorkerOptions} from 'node:worker_threads';
 import type {Cancel, Clock, Sdk, TraceContext} from './sdk.js';
+import type {SpanRecorder} from './spans.js';
 
 /**
  * The module API version this SDK describes, `<major>.<minor>`. The runtime refuses a module that declares another
@@ -82,10 +83,16 @@ export interface Logger {
   error(event: string, fields?: LogFields, trace?: TraceContext): void;
 }
 
-export interface Tracing {
+/**
+ * A module's tracing. `start` records a span with a start, an end and a status, such as `bunny.device.call` around a
+ * call to the module's device, under the `bunny.module` scope with the module's name (Hub #949). A span's context never
+ * goes to a device or vendor.
+ */
+export interface Tracing extends SpanRecorder {
   /**
    * A new span for work the module received: in the parent's trace when one is given and valid, otherwise in a new
-   * trace. Pass it as the `parent` of messages the work sends and as the `trace` of its log records.
+   * trace. Pass it as the `parent` of messages the work sends and as the `trace` of its log records. It is not recorded;
+   * use `start` for work with a duration.
    */
   span(parent?: TraceContext): TraceContext;
 }

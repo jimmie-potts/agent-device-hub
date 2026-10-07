@@ -13,12 +13,17 @@ build time and works without `unsafe-eval`. Python 3.14 consumers add the
 artifact's `python` directory to their module path and install the pinned
 `requirements-contracts.txt` in their own environment.
 
-Artifact 1.2.0 holds profiles 1.0, 1.1 and 1.2. Profile 1.2 registers the
+Artifact 1.3.0 holds profiles 1.0, 1.1, 1.2 and 1.3. Profile 1.2 registers the
 B.U.N.N.Y. runtime: the `runtime` service, its `bunny.runtime` and
 `bunny.module` scopes, their events and attributes (see "The runtime's records"
-in `CONTRACT.md`). The catalog's `additions` lists what each profile adds, and
-`scope_rules` lists the service and events each runtime scope allows. Producers
-still default to profile 1.1; a 1.2 producer sets `schema_version` itself.
+in `CONTRACT.md`). Profile 1.3 adds the runtime's decision records, the outbox's
+and a device's module records, three attributes and two span names (see
+"Decision records and spans"). The catalog's `additions` lists what each profile
+adds, span names included, and `scope_rules` lists the service and events each
+runtime scope allows. A span's name must belong to its metadata's profile: the
+host adapter and the Python helper record no `bunny.device.call` or
+`bunny.outcome.publish` span at profile 1.2 or earlier. Producers still default to profile 1.1; a 1.2 or 1.3
+producer sets `schema_version` itself.
 
 `createRecord` / `create_record` selects registered fields before serialization,
 keeping only the attributes the record's own profile registers.
@@ -74,18 +79,29 @@ pure entrypoint to verify it has no Node-only dependencies.
 Node hosts import `createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`.
 Pass `enabled: true`, a contract-valid `resource`, a bounded `localSink` (stderr
 by default), and optionally `collectorOrigin`, `tracing: true` and `samplingRatio`
-(default 0.1). Call `event` for registered lifecycle records, `run` around an
+(default 0.1). Tracing needs a Collector, a `localSpanSink` or both (since
+artifact 1.3.0): the local span sink receives each recorded span as the projected
+OTLP document, through the span pipeline's bounded queue, before any export, and
+its failures are counted. `globalContext: false` installs no process context
+manager, so spans take explicit parents and several hosts can record spans in one
+process; `run` then parents an operation only through its explicit `traceparent`.
+`schemaVersion` names the profile of the host's records and of its spans'
+metadata, such as `1.3` for the runtime's resource; it defaults to the producer
+default. Call `event` for registered lifecycle records, `run` around an
 owned operation, or inject `emit`/`tracerFor` into an existing adapter. The
 operation specifies registered `scope`, `operation` and optionally `spanName`,
 allowlisted attributes and a trusted result-to-outcome mapping. It invokes the
 action once and preserves its return/error. `root: true` isolates an entrypoint;
 an incoming traceparent is adopted only with both authenticated and owned flags.
-One enabled tracing runtime owns the process context manager. Await `shutdown`
-after domain work quiesces. Exporters never initialize from ambient OTel settings.
+One enabled tracing runtime with the default `globalContext` owns the process
+context manager. Await `shutdown` after domain work quiesces. Exporters never
+initialize from ambient OTel settings.
 
 Python hosts install this artifact's pinned `requirements-host.txt` in addition
 to its contract requirements, then explicitly construct
 `bunny_observability.host.HostDiagnostics` with equivalent snake_case options.
+The local span sink, `globalContext` and `schemaVersion` are Node-only: no Python
+producer records runtime spans.
 `with host.operation(scope, operation): ...` records a bounded operation. Capture
 with `capture_context()` and restore inside `with host.run_context(captured)` at
 an owned thread/queue handoff. A persisted process without context begins a new

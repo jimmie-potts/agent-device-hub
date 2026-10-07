@@ -3,18 +3,20 @@
 // HTTP on the same listener, each with a grant from the state directory.
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
-import {MessageValidator, errorBody, errorCodes} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type EdgeLogRecord, type Scheduler,
-} from '@jimmie-potts/sdk';
+import {MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
+import {diagnosticWriter} from './diagnostics.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type RuntimeLogger} from './log.js';
+import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {RuntimeError, prepareStateDirectory, readEdgeGrants, type EdgeGrant} from './state.js';
+import {startTracing, type SpanSink} from './tracing.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
+export {REGISTRY_REASONS} from './diagnostics.js';
 export type {ModuleHealth, ModuleState} from './host.js';
+export type {SpanSink} from './tracing.js';
 
 export const HEALTH_PATH = '/api/runtime/v1/health';
 const HOST = '127.0.0.1';
@@ -47,6 +49,12 @@ export type RuntimeOptions = {
   scheduler?: Scheduler;
   /** Receives each log record. Defaults to one JSON line on stderr. */
   log?: LogSink;
+  /**
+   * Receives each finished span of the bus and the modules as one projected OTLP JSON document, through the observability
+   * package's bounded queue (Hub #949). Without it, the runtime keeps the latest `RECENT_SPANS` for `spans()`, and
+   * counts the older ones it lets go.
+   */
+  spans?: SpanSink;
   /** The lowest level written. Defaults to `info`. */
   logLevel?: LogLevel;
   /** Every record's `deployment.environment.name`. Defaults to `development`. */
@@ -72,6 +80,8 @@ export interface Runtime {
   /** The health server's origin, such as `http://127.0.0.1:41000`. */
   readonly url: string;
   health(): RuntimeHealth;
+  /** The spans kept in memory when no `spans` sink was given; with a sink, none, and none evicted. */
+  spans(): RecentSpans;
   /** Stops every module within its stop deadline, then the health server. Calling it again returns the same promise. */
   stop(): Promise<void>;
 }
@@ -80,6 +90,15 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
 }};
+
+/** How many finished spans the runtime keeps in memory when it has no span sink: the contract's queue bound. */
+export const RECENT_SPANS = 1024;
+
+/**
+ * The latest `RECENT_SPANS` finished spans, oldest first, and how many older ones the runtime let go to keep that
+ * bound. A span that is not in `recent` was evicted only while `evicted` is above 0; otherwise it never reached memory.
+ */
+export type RecentSpans = {recent: readonly string[]; evicted: number};
 
 /**
  * Where the listener sends the SDK edge's routes: nowhere without an edge, the edge while it serves, and a refusal while
@@ -139,52 +158,6 @@ function close(server: Server): Promise<void> {
   });
 }
 
-/** The edge's routes: its stream and the calls a remote part makes (`sdk-remote/1.0`). */
-const EDGE_ROUTES: ReadonlySet<string> = new Set(['stream', 'publish', 'subscribe', 'request', 'respond', 'reply', 'sync', 'serve', 'answer', 'close']);
-
-/**
- * Each 2.0 registry code's fixed meaning as the diagnostic contract's registered `bunny.reason`. `internal` has none, and
- * neither has `uncertain-result`, whose effect may have happened, which no transport failure explains; such a record
- * carries only the code. A test keeps this in step with the registry and the catalog.
- */
-export const REGISTRY_REASONS: Readonly<Record<string, string | undefined>> = {
-  'invalid-request': 'invalid-input', 'invalid-message': 'invalid-input', 'too-large': 'oversize', 'unsupported-version': 'unsupported-version',
-  'unknown-schema': 'invalid-input', 'unsupported-capability': 'invalid-input', 'unauthenticated': 'unauthorized', 'forbidden': 'unauthorized',
-  'not-found': 'invalid-input', 'invalid-state': 'invalid-input', 'revision-conflict': 'stale', 'duplicate-conflict': 'duplicate',
-  'expired': 'timeout', 'cancelled': 'cancelled', 'capacity': 'busy', 'unavailable': 'unavailable', 'uncertain-result': undefined,
-  'internal': undefined,
-};
-
-/**
- * The edge's records in the runtime's log. As the diagnostic contract requires, a record holds no raw message: a refusal
- * carries its registry code and that code's fixed meaning as a registered reason, never the edge's detail, which may
- * quote what the caller sent; the edge answers an exception with fixed text, never its message. A route that is not one
- * of the edge's is `other`. The source is a granted one, and no record carries a credential.
- */
-function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
-  return ({event, route, code, source}) => {
-    const known = code === undefined ? undefined : Object.hasOwn(errorCodes, code) ? code : 'internal';
-    const reason = known === undefined ? undefined : REGISTRY_REASONS[known];
-    const fields = {
-      'bunny.route': EDGE_ROUTES.has(route) ? route : 'other',
-      ...(known === undefined ? {} : {'bunny.code': known}),
-      ...(reason === undefined ? {} : {'bunny.reason': reason}),
-      ...(source === undefined ? {} : {'bunny.participant': source}),
-    };
-    switch (event) {
-      case 'edge.refused':
-        log.warn('runtime.edge.refused', fields);
-        return;
-      case 'edge.connected':
-        log.info('runtime.edge.connected', fields);
-        return;
-      case 'edge.disconnected':
-        log.info('runtime.edge.disconnected', fields);
-        return;
-    }
-  };
-}
-
 /** The edge's validator: profile 2.0, the core families and the modules' own payload schemas. */
 function edgeValidator(schemas: Readonly<Record<string, object>>): MessageValidator {
   const validator = new MessageValidator();
@@ -207,7 +180,17 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const stateDir = await prepareStateDirectory(options.stateDir);
   const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
-  const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs});
+  // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
+  const recent: string[] = [];
+  let evicted = 0;
+  const keep: SpanSink = line => {
+    recent.push(line);
+    if (recent.length <= RECENT_SPANS) return;
+    recent.shift();
+    evicted = Math.min(Number.MAX_SAFE_INTEGER, evicted + 1);
+  };
+  const tracing = await startTracing(logs.resource, options.spans ?? keep, log);
+  const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing})});
   const startedAtMs = clock.now();
   let lagCheck: RuntimeHealth['lagCheck'] = {status: 'off'};
   const health = (): RuntimeHealth => {
@@ -223,7 +206,13 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     };
   };
   let edge: EdgeRoute = {state: grants === undefined ? 'off' : 'starting'};
-  const server = await serve(port, health, () => edge);
+  let server: Server;
+  try {
+    server = await serve(port, health, () => edge);
+  } catch (error) {
+    await tracing?.shutdown();
+    throw error;
+  }
   const bound = (server.address() as AddressInfo).port;
   const url = `http://${HOST}:${bound}`;
   let watchdog: Watchdog | undefined;
@@ -246,11 +235,12 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   if (grants !== undefined && validator !== undefined) {
     let mounted: RemoteEdge;
     try {
-      mounted = new RemoteEdge({bus: host.bus, validator, grants, log: edgeLog(log), now: () => clock.now(), scheduler});
+      mounted = new RemoteEdge({bus: host.bus, validator, grants, onDiagnostic: diagnosticWriter(log), now: () => clock.now(), scheduler});
     } catch (error) {
       // The grants were checked when read; the edge refuses only what they could not show, such as a malformed one.
       await host.stop();
       await close(server);
+      await tracing?.shutdown();
       throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
     }
     edge = {state: 'serving', edge: mounted};
@@ -261,6 +251,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   return {
     url,
     health,
+    spans: () => ({recent: [...recent], evicted}),
     stop: () => stopping ??= (async () => {
       // Remote parts go first, so none acts on a module that is stopping. Until the listener closes, the edge's routes
       // answer that the runtime is stopping.
@@ -269,9 +260,15 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       if (serving.state === 'serving') await serving.edge.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
-      // The records this runtime's writer dropped or its sink lost, so the journal shows the loss.
+      // The modules' work has ended, so its spans have too: flush them within the contract's bound.
+      await tracing?.shutdown();
+      // The records this runtime's writer dropped or its sink lost, and the spans lost, so the journal shows the loss.
       const {dropped, failed} = logs.counts();
-      log.info('runtime.stopped', {'bunny.telemetry.dropped_count': dropped, 'bunny.telemetry.failure_count': failed});
+      const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
+      log.info('runtime.stopped', {
+        'bunny.telemetry.dropped_count': Math.min(Number.MAX_SAFE_INTEGER, dropped + spans.dropped),
+        'bunny.telemetry.failure_count': Math.min(Number.MAX_SAFE_INTEGER, failed + spans.failed),
+      });
     })(),
   };
 }

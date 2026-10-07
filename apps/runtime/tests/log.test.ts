@@ -56,7 +56,7 @@ it('every stderr line of a runtime process is a contract record carrying the run
     const records = parsed(runtime.lines());
     assert.deepEqual(records.map(record => record.event_name), ['runtime.started', 'runtime.ready', 'runtime.stopped']);
     for (const record of records) {
-      assert.equal(record.schema_version, '1.2');
+      assert.equal(record.schema_version, '1.3');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
       assert.equal(record.resource['service.name'], 'runtime');
       assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);

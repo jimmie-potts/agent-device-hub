@@ -1,8 +1,9 @@
 // The fixture module (Hub #882, #846): a lamp, the stand-in device module that later stories use. It shows the module
 // factory convention: `createLampModule({transport})` takes how the module reaches its device, so a test or a run passes
 // a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, follows
-// the core's mode and sessions, switches a lamp on command and reports the change, an occurrence and the outcome
-// through its outbox. Quiet mode keeps the lamps off, and its indicator shows when an agent session waits for a person.
+// the core's mode and sessions, switches a lamp on command, in a device span whose context never reaches the device, and
+// reports the change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet
+// mode keeps the lamps off, and its indicator shows when an agent session waits for a person.
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';
@@ -124,7 +125,7 @@ type Outcome = {requestId: string; result: 'succeeded' | 'failed'; evidence: 'ob
 export function createLampModule({transport, lamps: served = ['lamp-1'], beforePublish, onAcknowledgment}: LampOptions): BunnyModule {
   return {
     manifest: {name: 'lamp', apiVersion: '1.0'},
-    async start({sdk, database, clock, log}) {
+    async start({sdk, database, clock, log, trace}) {
       const db = database();
       db.exec(`CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS handled (source TEXT NOT NULL, request_id TEXT NOT NULL, PRIMARY KEY (source, request_id)) STRICT`);
@@ -140,7 +141,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
           beforePublish?.();
           return sdk.publishMessage(key, message);
         }},
-        database: db, clock,
+        database: db, clock, log, trace,
       });
       // Until Hub #782 defines the core's acknowledgment, the stand-in core's lets the outbox forget a recorded outcome.
       const acknowledgments = {acknowledge: (id: string): boolean => onAcknowledgment?.() !== 'lose' && outbox.acknowledge(id)};
@@ -184,12 +185,18 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
         if (mode === 'quiet' && wanted === 'on') return errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'});
         let next: Lamp | undefined;
         let outcome: Outcome;
+        // The device call has its own span, the command's child; the transport gets no trace context.
+        const call = trace.start('bunny.device.call', {
+          parent: command, kind: 'client', attributes: {'bunny.device.id': found.id, 'bunny.operation': 'power', 'bunny.request.id': requestId},
+        });
         try {
           next = {id: found.id, revision: revision() + 1, power: await transport.switch(found.id, wanted)};
           outcome = {requestId, result: 'succeeded', evidence: 'observed'};
+          call.end();
         } catch {
           // The device never answered: the outcome is failed, with no evidence that anything reached it.
           outcome = {requestId, result: 'failed', evidence: 'none', error: errorBody('unavailable', {requestId, detail: 'the lamp did not answer'}).error};
+          call.end('error');
         }
         await outbox.transaction(add => {
           handle.run(command.source, requestId);

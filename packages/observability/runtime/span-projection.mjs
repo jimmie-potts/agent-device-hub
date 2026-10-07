@@ -9,10 +9,22 @@ function nanos(time) {
   return value <= 18446744073709551615n ? value : undefined;
 }
 
+/**
+ * The span names profile `version` registers: every registered name but those a later profile adds, so a profile
+ * rejects each later addition. An unknown profile registers none.
+ */
+export function profileSpanNames(version) {
+  const index = catalog.schema_versions.indexOf(version);
+  if (index < 0) return [];
+  const later = new Set(catalog.schema_versions.slice(index + 1).flatMap(next => catalog.additions[next]?.span_names ?? []));
+  return catalog.span_names.filter(name => !later.has(name));
+}
+
 /** Export only host-approved canonical metadata, never SDK content or detected resources. */
 export function projectSpan(span, metadata, registeredName, approvedLinks = []) {
   try {
-    if (!catalog.span_names.includes(registeredName)) return undefined;
+    // A span's name belongs to the profile of its metadata, as a record's event does.
+    if (!profileSpanNames(metadata?.schema_version).includes(registeredName)) return undefined;
     if (!Array.isArray(approvedLinks) || approvedLinks.length > 8) return undefined;
     const links = [];
     for (const link of approvedLinks) {

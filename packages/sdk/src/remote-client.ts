@@ -4,6 +4,7 @@
 // subscription of the gap, so a sync copy resyncs. Nothing is replayed.
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {reporter, warnSafely, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
@@ -26,7 +27,15 @@ export type RemoteOptions = {
   now?: () => number;
   /** How many messages may wait in one subscription's or responder's queue on this side. Defaults to 1024. */
   maxQueued?: number;
+  /** Receives handler errors and dropped deliveries. Defaults to a `BunnySdkWarning` that never quotes the error's message. */
   onError?: (error: unknown, scope: ErrorScope) => void;
+  /**
+   * Hears the client's own decisions: `remote.disconnected` once when the stream is lost, and `remote.reconnected` with
+   * the count of failed attempts when it is back, instead of each failed attempt; `remote.command.uncertain` when the
+   * client settles a request `uncertain-result` itself, because the edge failed, went silent or the requester closed;
+   * and `sync.restarted` when an overflow restarts a copy. A no-op by default; a throw is ignored.
+   */
+  onDiagnostic?: OnDiagnostic;
   /** How long to wait before reconnecting a lost stream. Defaults to 100 ms, doubling up to 5 s. */
   reconnectDelayMs?: number;
   /** Runs request and sync deadlines and reconnect delays. Defaults to the global `setTimeout`. */
@@ -78,6 +87,7 @@ class RemoteClient {
   readonly #now: () => number;
   readonly #maxQueued: number;
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
+  readonly #diagnose: OnDiagnostic;
   readonly #firstDelayMs: number;
   #delayMs: number;
   #closed = false;
@@ -102,12 +112,8 @@ class RemoteClient {
     this.#now = options.now ?? (() => Date.now());
     this.#maxQueued = options.maxQueued ?? 1024;
     if (!Number.isSafeInteger(this.#maxQueued) || this.#maxQueued < 1) throw new RangeError('maxQueued must be a positive integer');
-    this.#onError = options.onError ?? ((error, scope) => {
-      const reason = error instanceof Error ? error.message : 'a non-Error value was thrown';
-      const warning = new Error(`${scope.source} on ${scope.pattern}: ${reason}`, {cause: error});
-      warning.name = 'BunnySdkWarning';
-      process.emitWarning(warning);
-    });
+    this.#onError = options.onError ?? warnSafely;
+    this.#diagnose = reporter(options.onDiagnostic);
     this.#scheduler = options.scheduler ?? timers;
     this.#firstDelayMs = options.reconnectDelayMs ?? 100;
     this.#delayMs = this.#firstDelayMs;
@@ -133,6 +139,7 @@ class RemoteClient {
           subscribe: (pattern, deliver, subscribeOptions) => this.#subscribe(pattern, deliver, subscribeOptions),
           request: outgoing => this.#syncRequest(outgoing),
           report: error => { this.#report(error, `sync ${families.join(',')}`); },
+          restarted: () => { this.#diagnose({event: 'sync.restarted', level: 'debug', source, pattern: `sync ${families.join(',')}`}); },
           track: copy => {
             this.#copies.add(copy);
             return () => { this.#copies.delete(copy); };
@@ -222,11 +229,17 @@ class RemoteClient {
   /** A lost stream: reconnect, register again, then tell every subscription of the gap. Nothing is replayed. */
   #lost(controller: AbortController): void {
     if (this.#closed || controller !== this.#stream) return;
+    this.#diagnose({event: 'remote.disconnected', level: 'warn', source: this.#source});
     this.#connected = this.#reconnect();
     this.#connected.catch(() => {});
   }
 
+  /**
+   * Reconnects with capped backoff until the stream is back or the participant closes. Failed attempts are expected
+   * while the edge is away, so they are counted and reported once, with the recovery, not each as an error.
+   */
   async #reconnect(): Promise<string> {
+    let attempts = 0;
     for (;;) {
       await new Promise<void>(resolve => {
         this.#backoff = {cancel: this.#scheduler.after(this.#delayMs, resolve), wake: resolve};
@@ -253,9 +266,10 @@ class RemoteClient {
           registered();
         }
         this.#delayMs = this.#firstDelayMs;
+        this.#diagnose({event: 'remote.reconnected', level: 'info', source: this.#source, attempts});
         return connection;
-      } catch (error) {
-        this.#report(error, 'stream');
+      } catch {
+        attempts += 1;
         this.#delayMs = Math.min(this.#delayMs * 2, MAX_RECONNECT_DELAY_MS);
       }
     }
@@ -393,8 +407,11 @@ class RemoteClient {
     const abandoned: RequestResult = {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)};
     const abandon = new AbortController();
     this.#requests.add(abandon);
+    // The results the client decides itself, rather than passing on the edge's answer or refusal, which the edge and its
+    // bus record.
+    const own = new Set<RequestResult>([silent, abandoned]);
     try {
-      return await this.#within(waitMs, silent, async signal => {
+      const result = await this.#within<RequestResult>(waitMs, silent, async signal => {
         try {
           return fields(await this.#post('request', {key, command}, signal)).result as RequestResult;
         } catch (error) {
@@ -402,11 +419,24 @@ class RemoteClient {
           const {code} = error.body.error;
           // The edge failed. The requester cannot tell whether that was before or after the command reached a handler,
           // so it may have run: uncertain, never a refusal that claims no effect.
-          if (code === 'internal') return {status: 'uncertain', requestId, error: body('uncertain-result', 'the edge failed; the command may have run', ids)};
-          if (code === 'uncertain-result') return {status: 'uncertain', requestId, error: named(error.body, ids)};
+          if (code === 'internal' || code === 'uncertain-result') {
+            const uncertain: RequestResult = {
+              status: 'uncertain', requestId,
+              error: code === 'internal' ? body('uncertain-result', 'the edge failed; the command may have run', ids) : named(error.body, ids),
+            };
+            own.add(uncertain);
+            return uncertain;
+          }
           return {status: 'rejected', requestId, error: named(error.body, ids)};
         }
       }, {signal: abandon.signal, answer: abandoned});
+      if (own.has(result)) {
+        this.#diagnose({
+          event: 'remote.command.uncertain', level: 'warn', source: this.#source, key, requestId, messageId: command.id, outcome: 'uncertain',
+          code: 'uncertain-result', trace: {traceparent: command.traceparent},
+        });
+      }
+      return result;
     } finally {
       this.#requests.delete(abandon);
     }

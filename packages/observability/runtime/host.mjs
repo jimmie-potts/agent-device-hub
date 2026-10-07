@@ -1,5 +1,5 @@
 import {context, trace, ROOT_CONTEXT, SpanStatusCode} from '@opentelemetry/api';
-import {createRecord, parseTraceparent, validateRecord} from '../dist/index.js';
+import {catalog, createRecord, parseTraceparent, validateRecord} from '../dist/index.js';
 import {createLogPipeline} from './log-pipeline.mjs';
 import {createSpanPipeline} from './span-pipeline.mjs';
 import {createOtlpTransport} from './otlp-http.mjs';
@@ -21,51 +21,72 @@ export function streamSink(stream) {
   });
 }
 
-/** Import is inert. Only the executable host explicitly constructs this runtime. */
+/**
+ * Import is inert. Only the executable host explicitly constructs this runtime. `localSpanSink` receives each recorded
+ * span's projected OTLP document through the span pipeline's bounded queue, so tracing works without a Collector.
+ * `globalContext: false` installs no process context manager: spans then take explicit parents, and `run` parents an
+ * operation only through its explicit `traceparent`. `schemaVersion` names the profile of the host's records and of its
+ * spans' metadata; it defaults to the contract's producer default.
+ */
 export async function createHostDiagnostics({enabled=false,resource,tracing=false,samplingRatio=0.1,
-  collectorOrigin,localSink,queueOptions} = {}) {
+  collectorOrigin,localSink,localSpanSink,globalContext=true,schemaVersion,queueOptions} = {}) {
   if(enabled===false)return noHost;
-  if(enabled!==true || typeof tracing!=='boolean' || !Number.isFinite(samplingRatio) || samplingRatio<0 || samplingRatio>1)
+  if(enabled!==true || typeof tracing!=='boolean' || typeof globalContext!=='boolean' || !Number.isFinite(samplingRatio) || samplingRatio<0 ||
+    samplingRatio>1 || (localSpanSink!==undefined && typeof localSpanSink!=='function') ||
+    (schemaVersion!==undefined && !catalog.schema_versions.includes(schemaVersion)))
     throw new TypeError('Invalid host diagnostics configuration');
-  const base=createRecord({timestamp:new Date().toISOString(),event_name:'process.started',severity_text:'INFO',
+  const profile=schemaVersion===undefined?{}:{schema_version:schemaVersion};
+  const base=createRecord({...profile,timestamp:new Date().toISOString(),event_name:'process.started',severity_text:'INFO',
     resource,scope:{name:'bunny.host',version:'1.0.0'},attributes:{'bunny.operation':'startup','bunny.provenance':'source'}});
   if(!base.ok || !validateRecord({...base.value,resource}).ok)throw new TypeError('Invalid host resource');
   if(collectorOrigin!==undefined)createOwnedOrigins([collectorOrigin]);
-  if(tracing && collectorOrigin===undefined)throw new TypeError('Tracing requires an explicit Collector');
+  if(tracing && collectorOrigin===undefined && localSpanSink===undefined)throw new TypeError('Tracing requires an explicit Collector or local span sink');
   const local=localSink??streamSink(process.stderr);
   if(typeof local!=='function')throw new TypeError('Invalid host local sink');
   const transports=[];
   const transport=signal=>{const value=createOtlpTransport({origin:collectorOrigin,signal});transports.push(value);return value;};
   const logTransport=collectorOrigin===undefined?undefined:transport('logs');
   const logs=createLogPipeline({sink:logTransport?(line,signal)=>logTransport.send(line,signal):async()=>{},localSink:local,options:queueOptions});
-  let provider,manager,spans,closing,closed=false,failures=0;
+  let provider,manager,spans,closing,closed=false,failures=0,spanLocalFailed=0;
   try {
     if(tracing){
       const [{BasicTracerProvider,ParentBasedSampler,TraceIdRatioBasedSampler},{resourceFromAttributes},{AsyncLocalStorageContextManager}]=await Promise.all([
         import('@opentelemetry/sdk-trace-base'),import('@opentelemetry/resources'),import('@opentelemetry/context-async-hooks')]);
-      const sender=transport('traces');
-      spans=createSpanPipeline({sink:(line,signal)=>sender.send(line,signal),queueOptions});
+      const sender=collectorOrigin===undefined?undefined:transport('traces');
+      // One bounded queue per signal: the local sink first, then the Collector. A failing local sink is counted apart and
+      // never stops the export; without a Collector its failure is the queue's.
+      const sink=async(line,signal)=>{
+        if(localSpanSink!==undefined){
+          try{await localSpanSink(line,signal);}
+          catch(error){spanLocalFailed=increment(spanLocalFailed);if(sender===undefined)throw error;}
+        }
+        if(sender!==undefined)await sender.send(line,signal);
+      };
+      spans=createSpanPipeline({sink,queueOptions,schemaVersion});
       provider=new BasicTracerProvider({resource:resourceFromAttributes(base.value.resource),
         sampler:new ParentBasedSampler({root:new TraceIdRatioBasedSampler(samplingRatio)}),
         spanLimits:{attributeCountLimit:40,attributeValueLengthLimit:8192,eventCountLimit:0,linkCountLimit:0},
         spanProcessors:[spans.processor]});
-      const candidate=new AsyncLocalStorageContextManager();
-      if(!context.setGlobalContextManager(candidate))throw new Error('A tracing context owner already exists');
-      manager=candidate;manager.enable();
+      if(globalContext){
+        const candidate=new AsyncLocalStorageContextManager();
+        if(!context.setGlobalContextManager(candidate))throw new Error('A tracing context owner already exists');
+        manager=candidate;manager.enable();
+      }
     }
   } catch(error){await Promise.allSettled([logs.close(),provider?.shutdown()]);for(const sender of transports)sender.close();if(manager){context.disable();manager.disable();}throw error;}
   const safe=action=>{try{return action();}catch{failures=increment(failures);return false;}};
   const host={
     emit(record){if(closed)return false;return safe(()=>{spans?.observe(record);return logs.emit(record);});},
     event(eventName,scope='bunny.host',attributes={},severity='INFO'){
-      return safe(()=>{const item=createRecord({timestamp:new Date().toISOString(),event_name:eventName,severity_text:severity,
+      return safe(()=>{const item=createRecord({...profile,timestamp:new Date().toISOString(),event_name:eventName,severity_text:severity,
         resource:base.value.resource,scope:{name:scope,version:'1.0.0'},attributes:{'bunny.provenance':'source',...attributes}});
         return item.ok&&host.emit(item.value);});
     },
     tracerFor(binding){return provider?spans.wrapTracer(provider.getTracer('bunny.host','1.1.0'),binding):undefined;},
     async run({scope,operation,spanName='bunny.helper.run',attributes={},root=false,traceparent,authenticated=false,owned=false,outcome},action){
       if(closed)return action();
-      const started=performance.now();let active=root?ROOT_CONTEXT:context.active(),span;
+      // Without the process context, only an explicit traceparent parents the operation: another host's span never does.
+      const started=performance.now();let active=root||!globalContext?ROOT_CONTEXT:context.active(),span;
       const fields={...attributes,'bunny.operation':operation,'bunny.provenance':'source'};
       safe(()=>{
         const incoming=parseTraceparent(traceparent,{authenticated,owned});
@@ -85,11 +106,11 @@ export async function createHostDiagnostics({enabled=false,resource,tracing=fals
       });
       let result;
       const once=()=>{if(!result){try{result=Promise.resolve(action());}catch(error){result=Promise.reject(error);}}return result;};
-      safe(()=>context.with(active,once));
+      safe(()=>globalContext?context.with(active,once):once());
       try{const value=await once();finish(false,value);return value;}catch(error){finish(true);throw error;}
     },
     counts(){return {enabled:true,failures,logs:{...logs.counts(),exported:logTransport?logs.counts().exported:0},
-      traces:spans?.counts(),transport:transports.map(sender=>sender.counts())};},
+      traces:spans===undefined?undefined:{...spans.counts(),localFailed:spanLocalFailed},transport:transports.map(sender=>sender.counts())};},
     shutdown(){
       if(!closing){closed=true;closing=Promise.allSettled([logs.close(),provider?.shutdown()]).then(()=>{
         for(const sender of transports)sender.close();if(manager){context.disable();manager.disable();}

@@ -18,7 +18,8 @@
       "enum": [
         "1.0",
         "1.1",
-        "1.2"
+        "1.2",
+        "1.3"
       ]
     },
     "timestamp": {
@@ -88,7 +89,21 @@
         "runtime.edge.refused",
         "message.received",
         "outbox.republished",
-        "outbox.acknowledged"
+        "outbox.acknowledged",
+        "runtime.command.admitted",
+        "runtime.command.refused",
+        "runtime.command.cancelled",
+        "runtime.command.replied",
+        "runtime.command.uncertain",
+        "runtime.sync.served",
+        "runtime.sync.refused",
+        "runtime.sync.restarted",
+        "runtime.edge.failed",
+        "runtime.tracing.failed",
+        "outcome.published",
+        "outbox.deferred",
+        "device.unavailable",
+        "device.available"
       ]
     },
     "body": {
@@ -130,7 +145,21 @@
         "Edge call refused",
         "Message received",
         "Outbox republished",
-        "Outbox outcome acknowledged"
+        "Outbox outcome acknowledged",
+        "Command admitted for owner",
+        "Command refused by bus",
+        "Command cancelled before start",
+        "Command owner replied",
+        "Command result uncertain",
+        "Sync served",
+        "Sync refused",
+        "Sync restarted",
+        "Edge call failed",
+        "Span recording failed to start",
+        "Outcome published",
+        "Outbox publication deferred",
+        "Device unavailable",
+        "Device available"
       ]
     },
     "resource": {
@@ -545,6 +574,21 @@
         "error.code": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
+        },
+        "bunny.routing.key": {
+          "type": "string",
+          "pattern": "^bunny\\.(?:state|event|cmd)(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*){2}(?![\\s\\S])",
+          "maxLength": 512
+        },
+        "bunny.outbox.waiting_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.attempt_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -715,6 +759,56 @@
       }
     },
     {
+      "$comment": "Profile 1.3 additions are closed to profiles 1.0, 1.1 and 1.2.",
+      "if": {
+        "properties": {
+          "schema_version": {
+            "enum": [
+              "1.0",
+              "1.1",
+              "1.2"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "not": {
+              "enum": [
+                "runtime.command.admitted",
+                "runtime.command.refused",
+                "runtime.command.cancelled",
+                "runtime.command.replied",
+                "runtime.command.uncertain",
+                "runtime.sync.served",
+                "runtime.sync.refused",
+                "runtime.sync.restarted",
+                "runtime.edge.failed",
+                "runtime.tracing.failed",
+                "outcome.published",
+                "outbox.deferred",
+                "device.unavailable",
+                "device.available"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.routing.key",
+                  "bunny.outbox.waiting_count",
+                  "bunny.attempt_count"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "$comment": "The bunny.runtime scope belongs to its services and allows only its events.",
       "if": {
         "properties": {
@@ -762,7 +856,17 @@
               "runtime.edge.serving",
               "runtime.edge.connected",
               "runtime.edge.disconnected",
-              "runtime.edge.refused"
+              "runtime.edge.refused",
+              "runtime.command.admitted",
+              "runtime.command.refused",
+              "runtime.command.cancelled",
+              "runtime.command.replied",
+              "runtime.command.uncertain",
+              "runtime.sync.served",
+              "runtime.sync.refused",
+              "runtime.sync.restarted",
+              "runtime.edge.failed",
+              "runtime.tracing.failed"
             ]
           }
         }
@@ -808,7 +912,11 @@
               "operation.failed",
               "message.received",
               "outbox.republished",
-              "outbox.acknowledged"
+              "outbox.acknowledged",
+              "outcome.published",
+              "outbox.deferred",
+              "device.unavailable",
+              "device.available"
             ]
           },
           "attributes": {
@@ -849,7 +957,17 @@
               "runtime.edge.serving",
               "runtime.edge.connected",
               "runtime.edge.disconnected",
-              "runtime.edge.refused"
+              "runtime.edge.refused",
+              "runtime.command.admitted",
+              "runtime.command.refused",
+              "runtime.command.cancelled",
+              "runtime.command.replied",
+              "runtime.command.uncertain",
+              "runtime.sync.served",
+              "runtime.sync.refused",
+              "runtime.sync.restarted",
+              "runtime.edge.failed",
+              "runtime.tracing.failed"
             ]
           }
         }

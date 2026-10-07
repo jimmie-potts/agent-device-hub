@@ -7,7 +7,11 @@ import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {InProcessBus} from '../in-process.js';
 import type {BunnyModule, LogFields, Logger, ModuleContext} from '../module.js';
-import {SdkError, type Cancel, type Clock, type Participant, type Scheduler, type Sdk, type TraceContext} from '../sdk.js';
+import {
+  SdkError, type Cancel, type Clock, type Handler, type Participant, type Responder, type Scheduler, type Sdk, type SubscribeOptions, type TraceContext,
+} from '../sdk.js';
+import type {SyncHandler, SyncOptions} from '../sync.js';
+import {noSpans, startSpan, type SpanRecorder} from '../spans.js';
 import {childOf} from '../trace.js';
 
 export type HarnessOptions = {
@@ -21,6 +25,11 @@ export type HarnessOptions = {
   scheduler?: Scheduler;
   /** How long the participant's close and the module's stop may each take. Defaults to 5000, as in the runtime. */
   stopTimeoutMs?: number;
+  /**
+   * Records the module's spans from `trace.start`, with its name in `bunny.module`, as the runtime does. By default
+   * nothing is recorded.
+   */
+  spans?: SpanRecorder;
 };
 export type HarnessRecord = {level: 'debug' | 'info' | 'warn' | 'error'; event: string; fields: LogFields; trace?: TraceContext};
 
@@ -34,21 +43,38 @@ const stopped = (): SdkError => new SdkError(errorBody('invalid-state', {detail:
 /** The runtime's stop deadline for a module's participant close and for its `stop`. */
 export const DEFAULT_STOP_TIMEOUT_MS = 5000;
 
-/** The module's SDK calls, without `close`: as in the runtime, only the host closes a module's participant. */
-const calls = (participant: Participant): Sdk => ({
+/**
+ * The module's SDK calls, without `close`: as in the runtime, only the host closes a module's participant. `saw` hears
+ * the trace context of each message the module receives.
+ */
+const calls = (participant: Participant, saw: (context: TraceContext) => void): Sdk => ({
   source: participant.source,
   publish: (key, draft, options) => participant.publish(key, draft, options),
   publishMessage: (key, message) => participant.publishMessage(key, message),
-  subscribe: (pattern, handler, options) => participant.subscribe(pattern, handler, options),
+  subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => participant.subscribe<T>(pattern, message => {
+    saw(message);
+    return handler(message);
+  }, options),
   request: (key, draft, options) => participant.request(key, draft, options),
-  respond: (pattern, responder) => participant.respond(pattern, responder),
-  sync: (families, handler, options) => participant.sync(families, handler, options),
-  serveSync: (families, provider) => participant.serveSync(families, provider),
+  respond: <T extends object>(pattern: string, responder: Responder<T>) => participant.respond<T>(pattern, command => {
+    saw(command);
+    return responder(command);
+  }),
+  sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => participant.sync<T>(families, change => {
+    if (change.type !== 'failed' && change.message !== undefined) saw(change.message);
+    return handler(change);
+  }, options),
+  serveSync: (families, provider) => participant.serveSync(families, request => {
+    saw(request);
+    return provider(request);
+  }),
 });
 
 export class ModuleHarness {
   /** The module's log records. */
   readonly logs: HarnessRecord[] = [];
+  /** The trace contexts of the messages the module received: commands, deliveries, synced states and sync requests. */
+  readonly received: TraceContext[] = [];
   /**
    * Errors from the module's timer callbacks and workers, which the runtime would fail the module for, and a `stop`
    * that threw or a close or `stop` that outlasted its deadline, which the runtime logs as a warning.
@@ -137,10 +163,15 @@ export class ModuleHarness {
       this.logs.push({level, event, fields, ...(trace === undefined ? {} : {trace})});
     };
     const log: Logger = {debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error')};
+    const spans = this.#options.spans ?? noSpans;
+    const named = {'bunny.module': this.name};
     return {
-      sdk: calls(participant),
+      sdk: calls(participant, context => { this.received.push({traceparent: context.traceparent}); }),
       log,
-      trace: {span: parent => childOf(parent)},
+      trace: {
+        span: parent => childOf(parent),
+        start: (name, options = {}) => startSpan(spans, name, {...options, attributes: {...options.attributes, ...named}}),
+      },
       clock: {now: () => clock.now()},
       scheduler: {after: (delayMs, callback) => {
         live();

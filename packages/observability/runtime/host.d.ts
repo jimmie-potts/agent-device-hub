@@ -1,5 +1,5 @@
 import type {Tracer} from '@opentelemetry/api';
-import type {DiagnosticRecord,Primitive} from '../dist/index.js';
+import type {DiagnosticRecord,Primitive,SchemaVersion} from '../dist/index.js';
 export type HostOperation={scope:string;operation:string;spanName?:string;attributes?:Record<string,Primitive>;root?:boolean;traceparent?:unknown;authenticated?:boolean;owned?:boolean;outcome?:(value:unknown)=>string};
 export type HostDiagnostics={
  emit(record:DiagnosticRecord):boolean;
@@ -10,4 +10,4 @@ export type HostDiagnostics={
  shutdown():Promise<void>;
 };
 export function streamSink(stream:{write(line:string,callback:(error?:Error|null)=>void):unknown}):(line:string,signal?:AbortSignal)=>Promise<void>;
-export function createHostDiagnostics(options?:{enabled?:boolean;resource?:Record<string,string>;tracing?:boolean;samplingRatio?:number;collectorOrigin?:string;localSink?:(line:string,signal:AbortSignal)=>unknown;queueOptions?:{maxRecords?:number;maxBytes?:number;flushMs?:number;minimumSeverity?:number}}):Promise<HostDiagnostics>;
+export function createHostDiagnostics(options?:{enabled?:boolean;resource?:Record<string,string>;tracing?:boolean;samplingRatio?:number;collectorOrigin?:string;localSink?:(line:string,signal:AbortSignal)=>unknown;localSpanSink?:(line:string,signal:AbortSignal)=>unknown;globalContext?:boolean;schemaVersion?:SchemaVersion;queueOptions?:{maxRecords?:number;maxBytes?:number;flushMs?:number;minimumSeverity?:number}}):Promise<HostDiagnostics>;

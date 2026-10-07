@@ -23,20 +23,29 @@ const schemas = {
 /** What a broken bulb gets wrong. */
 type Fault = {
   apiVersion?: string; plainOutcome?: boolean; refuseWith?: ErrorCode; hangingStop?: boolean; dimState?: boolean;
+  /** Its outbox gets neither the module's log nor its tracing, so it records nothing. */
+  silentOutbox?: boolean;
+  /** Its device span continues a context that no recorded span or message has. */
+  strayParent?: boolean;
   /** A record the bulb writes when it switches, in place of its registered `command.completed`. */
   switchRecord?: {event: string; fields: Readonly<Record<string, string | number | boolean>>};
 };
 type Switch = {power: 'on' | 'off'};
 
-/** A bulb module: it serves its bulbs through sync, switches one on command and reports the outcome through its outbox. */
+const STRAY = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-00000000000000aa-01'};
+
+/**
+ * A bulb module: it serves its bulbs through sync, switches one on command in a device span and reports the outcome
+ * through its outbox, which records through the module's log and tracing.
+ */
 function bulb(fault: Fault = {}): BunnyModule {
   return {
     manifest: {name: 'bulb', apiVersion: fault.apiVersion ?? '1.0'},
-    async start({sdk, database, clock, log}) {
+    async start({sdk, database, clock, log, trace}) {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS bulbs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL)');
       db.exec('INSERT OR IGNORE INTO bulbs VALUES (\'b1\', 0, \'off\')');
-      const outbox = new Outbox({sdk, database: db, clock});
+      const outbox = new Outbox({sdk, database: db, clock, ...(fault.silentOutbox === true ? {} : {log, trace})});
       await outbox.republish();
       const state = (row: {id: string; revision: number; power: string}) => ({
         type: 'org.bunny.kit-bulb.updated', subject: row.id, dataschema: BULB_SCHEMA,
@@ -51,6 +60,8 @@ function bulb(fault: Fault = {}): BunnyModule {
           kind: 'outcome' as const, type: 'org.bunny.kit-bulb.switch.completed', subject: found.id, dataschema: `${BASE}outcome/2.0`,
           data: {requestId: command.data.requestId, result: 'succeeded', evidence: 'observed'},
         };
+        // The device call has its own span; its context never goes to the device.
+        trace.start('bunny.device.call', {parent: fault.strayParent === true ? STRAY : command, kind: 'client', attributes: {'bunny.device.id': found.id}}).end();
         await outbox.transaction(add => {
           const revision = found.revision + 1;
           db.prepare('UPDATE bulbs SET revision = ?, power = ? WHERE id = ?').run(revision, command.data.power, found.id);
@@ -113,6 +124,16 @@ it('the kit catches a refusal with another code than the module declares', async
 
 it('the kit catches a stop that never finishes', async () => {
   assert.deepEqual(await failing(spec({hangingStop: true})), [CHECKS.lifecycle, CHECKS.outbox]);
+});
+
+it('the kit catches an outbox that records nothing, naming the missing publication record', async () => {
+  assert.deepEqual(await failing(spec({silentOutbox: true})), [CHECKS.outbox]);
+  const check = conformanceChecks(spec({silentOutbox: true})).find(item => item.name === CHECKS.outbox);
+  await assert.rejects(check?.run() ?? Promise.resolve(), /recorded once: pass the module's log and trace to its Outbox/);
+});
+
+it('the kit catches a span whose parent is lost', async () => {
+  assert.deepEqual(await failing(spec({strayParent: true})), [CHECKS.accepts, CHECKS.outbox]);
 });
 
 it('the kit catches a message that breaks its payload schema', async () => {

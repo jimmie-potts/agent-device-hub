@@ -2,6 +2,7 @@
 export {ModuleHarness, type HarnessOptions, type HarnessRecord} from './harness.js';
 export {CHECKS, conformanceChecks, moduleConformance, type ConformanceCheck, type ConformanceSpec} from './kit.js';
 export {checkModuleRecord} from './records.js';
+export {RecordedSpans, lostParents, type RecordedSpan} from './spans.js';
 export {
   STAND_IN_ACK_SCHEMA, followStandInAcks, standInAck, standInAckKey, standInAckSchemas, type StandInAck,
 } from './acknowledge.js';

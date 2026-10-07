@@ -9,8 +9,11 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {InProcessBus, Outbox, SdkError, type AddMessage, type Draft, type ErrorScope, type OutboxOptions, type Participant, type SendOptions} from '../src/index.js';
-import {checked, flush, it, modeSet, session, trace, turnEnded, validator} from './support.js';
+import {
+  InProcessBus, Outbox, SdkError, type AddMessage, type Draft, type ErrorScope, type Logger, type OutboxOptions, type Participant, type SendOptions,
+} from '../src/index.js';
+import {RecordedSpans} from '../src/testing/index.js';
+import {checked, flush, it, logRecorder, modeSet, session, trace, turnEnded, validator, type LogEntry as Entry} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
@@ -46,6 +49,9 @@ type StartOptions = {
   core?: boolean;
   /** The outbox's own options. */
   outbox?: Pick<OutboxOptions, 'onError' | 'validator'>;
+  /** The module's log and span recorder, which the outbox records through. */
+  log?: Logger;
+  spans?: RecordedSpans;
 };
 
 async function world(context: TestContext): Promise<{core: Core; start: (options?: StartOptions) => Promise<Run>}> {
@@ -54,14 +60,16 @@ async function world(context: TestContext): Promise<{core: Core; start: (options
   const file = join(dir, 'lamp.sqlite');
   const core = new Core();
   // Each start is a new process: a new bus, clock and connection, on the same database file.
-  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}}: StartOptions = {}): Promise<Run> => {
+  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}, log, spans}: StartOptions = {}): Promise<Run> => {
     const bus = new InProcessBus();
     if (coreUp) await core.attach(bus);
     const module = checked(bus.connect('bunny/modules/lamp'));
     const database = new DatabaseSync(file);
     context.after(() => { if (database.isOpen) database.close(); });
     database.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
-    const outbox = new Outbox({sdk: wrap(module), database, clock: {now: () => Date.now()}, ...extra});
+    const outbox = new Outbox({
+      sdk: wrap(module), database, clock: {now: () => Date.now()}, ...extra, ...(log === undefined ? {} : {log}), ...(spans === undefined ? {} : {trace: spans}),
+    });
     return {bus, module, database, outbox};
   };
   return {core, start};
@@ -330,4 +338,110 @@ it('the work runs synchronously in the outbox\'s own transaction', async context
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM bunny_outbox').get()?.count, 0);
   await flush();
   assert.deepEqual(core.raw, []);
+});
+
+// Hub #949: the outbox records an outcome's first publication once and a deferral once per run of refusals, through the
+// module's log in place of onError, and a publish span for each outcome it sends: the stored context's child in the same
+// transaction, a link otherwise.
+
+const recorder = logRecorder;
+const published = (entries: Entry[]): Entry[] => entries.filter(entry => entry.event === 'outcome.published');
+
+it('an outcome\'s first publication is recorded once, in its own trace, and a replay records nothing and links its publish span', async context => {
+  const {start} = await world(context);
+  const {log, entries} = recorder();
+  const spans = new RecordedSpans();
+  const first = await start({log, spans});
+  const added = await first.outbox.transaction(add => switchOn(add, first.database, {parent: PARENT}));
+  await flush();
+  const outcome = added[2];
+  assert.ok(outcome);
+  assert.deepEqual(published(entries), [{level: 'info', event: 'outcome.published', trace: {traceparent: outcome.traceparent},
+    fields: {'bunny.request.id': 'req-1', 'bunny.message.id': outcome.id, 'bunny.outcome': 'succeeded'}}]);
+  const [publish] = spans.named('bunny.outcome.publish');
+  assert.ok(publish);
+  assert.equal(publish.kind, 'producer');
+  assert.equal(publish.traceId, PARENT_TRACE);
+  assert.equal(publish.parentSpanId, trace(outcome.traceparent).spanId, 'the same transaction stored it: the stored context\'s child');
+  assert.equal(spans.named('bunny.outcome.publish').length, 1, 'only outcomes get a publish span');
+
+  const restarted = await start({log, spans});
+  assert.equal(await restarted.outbox.republish(), 1);
+  await flush();
+  assert.equal(published(entries).length, 1, 'a replayed outcome makes no second record');
+  const replay = spans.named('bunny.outcome.publish')[1];
+  assert.ok(replay);
+  assert.equal(replay.parentSpanId, undefined, 'never reparented');
+  assert.notEqual(replay.traceId, PARENT_TRACE, 'a new root');
+  assert.deepEqual(replay.links, [{traceId: PARENT_TRACE, spanId: trace(outcome.traceparent).spanId}], 'linked to the stored context');
+  assert.ok(spans.spans.every(span => span.endedAtMs !== undefined && span.status === 'unset'));
+  assert.deepEqual(entries.filter(entry => entry.event !== 'outcome.published'), [], 'nothing else');
+});
+
+it('a crash before the first publish: the first publication after the restart is recorded once, and its span links', async context => {
+  const {start} = await world(context);
+  const {log, entries} = recorder();
+  const spans = new RecordedSpans();
+  const crashed = await start({log, spans, wrap: module => ({...module, publishMessage: () => Promise.reject(new Error('the process died: tok_SYNTHETIC123'))})});
+  await crashed.outbox.transaction(add => switchOn(add, crashed.database, {parent: PARENT}));
+  assert.deepEqual(entries, [{level: 'warn', event: 'outbox.deferred', fields: {'bunny.code': 'internal', 'bunny.outbox.waiting_count': 3}}],
+    'one deferral, with the count still waiting, and no exception\'s message');
+  const restarted = await start({log, spans});
+  assert.equal(await restarted.outbox.republish(), 3);
+  await flush();
+  assert.equal(published(entries).length, 1, 'its first publication, once');
+  const third = await start({log, spans});
+  assert.equal(await third.outbox.republish(), 1);
+  await flush();
+  assert.equal(published(entries).length, 1, 'the replay makes none');
+  const publishes = spans.named('bunny.outcome.publish');
+  assert.equal(publishes.length, 2);
+  assert.ok(publishes.every(span => span.parentSpanId === undefined && span.links.length === 1 && span.links[0]?.traceId === PARENT_TRACE),
+    'work published after a restart links to its stored context');
+  assert.equal(JSON.stringify(entries).includes('tok_SYNTHETIC123'), false);
+});
+
+it('a refused publish makes one deferred warning per run of refusals in place of onError, and the waiting outcome\'s later publication links to it', async context => {
+  const {start} = await world(context);
+  const {log, entries} = recorder();
+  const spans = new RecordedSpans();
+  const publishing = {refusing: true, attempts: 0};
+  const reports: unknown[] = [];
+  const run = await start({log, spans, wrap: module => refusing(module, publishing), outbox: {onError: error => { reports.push(error); }}});
+  const added = await run.outbox.transaction(add => switchOn(add, run.database, {parent: PARENT}));
+  assert.deepEqual(entries, [{level: 'warn', event: 'outbox.deferred', fields: {'bunny.code': 'invalid-state', 'bunny.outbox.waiting_count': 3}}]);
+  await run.outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))]);
+  assert.equal(entries.length, 1, 'one record for the run of refusals');
+  assert.deepEqual(reports, [], 'with a log, onError hears nothing: one deferral is one record');
+  publishing.refusing = false;
+  await run.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 2))]);
+  await flush();
+  assert.equal(published(entries).length, 1);
+  const [publish] = spans.named('bunny.outcome.publish');
+  assert.ok(publish);
+  assert.equal(publish.parentSpanId, undefined, 'deferred from an earlier transaction: linked, not parented');
+  assert.deepEqual(publish.links, [{traceId: PARENT_TRACE, spanId: trace(added[2]?.traceparent ?? '').spanId}]);
+  publishing.refusing = true;
+  await run.outbox.transaction(add => [add('bunny.state.session.s3', session('s3', 1))]);
+  assert.deepEqual(entries.filter(entry => entry.event === 'outbox.deferred').map(entry => entry.fields['bunny.outbox.waiting_count']), [3, 1],
+    'after a send went through, the next refusal is recorded again');
+});
+
+it('a failed outcome\'s publication is a warning with its code, and a publish that fails mid-send ends its span with error', async context => {
+  const {start} = await world(context);
+  const {log, entries} = recorder();
+  const spans = new RecordedSpans();
+  const run = await start({log, spans});
+  const failed: Draft<object> = {...modeSet('req-2'), data: {requestId: 'req-2', result: 'failed', evidence: 'none', error: errorBody('unavailable', {detail: 'the lamp did not answer'}).error}};
+  const [outcome] = await run.outbox.transaction(add => [add('bunny.event.mode.wall', failed)]);
+  await flush();
+  assert.deepEqual(published(entries).map(entry => [entry.level, entry.fields]), [['warn',
+    {'bunny.request.id': 'req-2', 'bunny.message.id': outcome.id, 'bunny.outcome': 'failed', 'bunny.code': 'unavailable'}]]);
+  const publishing = {refusing: true, attempts: 0};
+  const refused = await start({log, spans, wrap: module => refusing(module, publishing)});
+  const before = entries.length;
+  await assert.rejects(refused.outbox.republish(), (error: unknown) => error instanceof SdkError);
+  const last = spans.named('bunny.outcome.publish').at(-1);
+  assert.equal(last?.status, 'error', 'the refused publish');
+  assert.equal(entries.length, before, 'republish passes its refusal on to the caller, so it records nothing');
 });

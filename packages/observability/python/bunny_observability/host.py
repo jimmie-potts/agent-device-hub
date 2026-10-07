@@ -6,7 +6,7 @@ import threading
 import time
 from . import (BoundedEmitter, create_record, validate_record, encode_record, to_otlp,
                parse_traceparent, MAX_RECORD_BYTES, MAX_QUEUE_BYTES, MAX_QUEUE_RECORDS,
-               MAX_SAFE_INTEGER, _definitions)
+               MAX_SAFE_INTEGER, SCHEMA_VERSION, _definitions, _profile_span_names)
 
 
 class _Lines(BoundedEmitter):
@@ -225,7 +225,8 @@ class HostDiagnostics:
         active = nullcontext()
         fields = {'bunny.provenance':'source', **(attributes or {}), 'bunny.operation':operation}
         try:
-            if self._provider and span_name in _definitions()[0]['span_names']:
+            # The host's records are the default profile, so its spans take only that profile's names.
+            if self._provider and span_name in _profile_span_names(_definitions()[0], SCHEMA_VERSION):
                 from opentelemetry import trace
                 from opentelemetry.context import Context
                 parent = Context() if root else None

@@ -1,7 +1,7 @@
 import { trace } from '@opentelemetry/api';
 import { catalog, createRecord, validateRecord, MAX_QUEUE_RECORDS, MAX_QUEUE_BYTES, MAX_RECORD_BYTES } from '@jimmie-potts/bunny-observability';
 import { createBoundedSink } from './bounded-sink.mjs';
-import { projectSpan } from './span-projection.mjs';
+import { profileSpanNames, projectSpan } from './span-projection.mjs';
 import { createDeliveryEvidence } from './delivery-evidence.mjs';
 const automaticScopes = new Set(['@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-undici']);
 const key = identity => identity && trace.isSpanContextValid(identity) ? `${identity.traceId}:${identity.spanId}` : undefined;
@@ -10,8 +10,11 @@ const cap = (value, maximum) => {
   return value;
 };
 
-/** Host-owned association: no SDK attributes, resources, events or links are exported directly. */
-export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES, observe }) {
+/**
+ * Host-owned association: no SDK attributes, resources, events or links are exported directly. `schemaVersion` names the
+ * profile a span's metadata is checked against; it defaults to the contract's producer default.
+ */
+export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES, observe, schemaVersion }) {
   cap(maxActiveRecords, MAX_QUEUE_RECORDS); cap(maxActiveBytes, MAX_QUEUE_BYTES);
   const evidence=createDeliveryEvidence('traces',observe);
   const queue = createBoundedSink(sink, queueOptions,(id,phase)=>evidence.settle(id,phase)), active = new Map();
@@ -21,7 +24,10 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
   function register(span, metadata, name, links, automatic = false) {
     const id = key(span.spanContext());
     const size = Buffer.byteLength(JSON.stringify({ metadata, name, links }));
-    if (!id || !catalog.span_names.includes(name) || !validateRecord(metadata).ok || size > MAX_RECORD_BYTES) { count('invalid'); return; }
+    // A name a later profile adds is no name of the metadata's profile, so an earlier host records no such span.
+    if (!id || !validateRecord(metadata).ok || !profileSpanNames(metadata.schema_version).includes(name) || size > MAX_RECORD_BYTES) {
+      count('invalid'); return;
+    }
     const evidenceId=evidence.begin({traceId:span.spanContext().traceId,spanId:span.spanContext().spanId,name,
       resource:metadata.resource,scope:metadata.scope});
     if (stopped || active.has(id) || active.size >= maxActiveRecords || bytes + size > maxActiveBytes) {
@@ -73,8 +79,11 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
           delete attributes['bunny.schema.version'];
           const selectedResource = typeof resource === 'function' ? resource(name, options) : resource;
           const selectedScope = typeof scope === 'function' ? scope(name, options) : scope;
-          const candidate = createRecord({ timestamp: new Date().toISOString(), event_name: 'operation.completed', severity_text: 'INFO',
-            resource: selectedResource, scope: { name: selectedScope, version: '1.0.0' }, attributes });
+          // The metadata is checked as a record of an event its scope allows; only its resource, scope and attributes are exported.
+          const rule = catalog.scope_rules[selectedScope];
+          const event = rule === undefined || rule.events.includes('operation.completed') ? 'operation.completed' : rule.events[0];
+          const candidate = createRecord({ ...(schemaVersion === undefined ? {} : { schema_version: schemaVersion }), timestamp: new Date().toISOString(),
+            event_name: event, severity_text: 'INFO', resource: selectedResource, scope: { name: selectedScope, version: '1.0.0' }, attributes });
           const canonical = candidate.ok ? validateRecord({ ...candidate.value, attributes }) : candidate;
           if (!canonical.ok) { count('invalid'); return span; }
           const incomingLinks = options.links ?? [];

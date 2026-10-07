@@ -232,6 +232,31 @@ const commands = (h: Harness, from = 1): Generational<{record: LogRecord}>[] => 
 const received = (h: Harness, requestId: string): number =>
   commands(h).filter(entry => entry.record.attributes['bunny.request.id'] === requestId).length;
 const acknowledgments = (h: Harness, from = 1): number => logged(h, 'lamp', 'outbox.acknowledged', from).length;
+/**
+ * The bus's records of one request in every generation, as `<event> <severity> <code>` (Hub #949). A request's records
+ * must all carry one trace: its command's.
+ */
+function decided(h: Harness, requestId: string): string[] | string {
+  const records = h.logs().map(({record}) => record)
+    .filter(record => record.event_name.startsWith('runtime.command.') && record.attributes['bunny.request.id'] === requestId);
+  const traces = new Set(records.map(record => `${String(record.trace_id)}:${String(record.span_id)}`));
+  if (traces.size > 1) return `${requestId}'s records carry ${traces.size} traces`;
+  return records.map(record => [record.event_name, record.severity_text, record.attributes['bunny.code']].filter(part => part !== undefined).join(' '));
+}
+const recordedAs = (h: Harness, requestId: string, expected: readonly string[]): Outcome => {
+  const records = decided(h, requestId);
+  return show(records) === show(expected) || `${requestId}: ${show(records)}`;
+};
+/** An outcome's first publication is recorded once, in its command's trace, however often a restart replays it. */
+const publishedOnce = (h: Harness, requestIds: readonly string[]): Outcome => {
+  for (const requestId of requestIds) {
+    const records = logged(h, 'lamp', 'outcome.published').filter(({record}) => record.attributes['bunny.request.id'] === requestId);
+    const commandTrace = h.logs().find(({record}) => record.event_name === 'runtime.command.admitted' && record.attributes['bunny.request.id'] === requestId)?.record.trace_id;
+    if (records.length !== 1) return `${requestId}'s publication was recorded ${records.length} times`;
+    if (records[0]?.record.trace_id !== commandTrace) return `${requestId}'s publication is outside its command's trace`;
+  }
+  return true;
+};
 const republished = (h: Harness, from: number): unknown[] =>
   logged(h, 'lamp', 'outbox.republished', from).map(entry => entry.record.attributes['bunny.outbox.republished_count']);
 async function running(h: Harness, names: readonly string[]): Promise<Outcome> {
@@ -378,6 +403,7 @@ const zeroModules: Scenario = {
     act('the hook publishes an observation that no module takes', h => publish(h, sessionStarted)),
     act('the operator asks for a lamp that no module serves', h => h.send('operator', 'none', switchLamp('lamp-1', 'on'), {timeoutMs: 5000, requestId: 'req-none'})),
     expect('the request is unavailable', h => answered(h, 'none', 'unavailable')),
+    expect('the bus recorded the refusal once, at WARN', h => recordedAs(h, 'req-none', ['runtime.command.refused WARN unavailable'])),
     act('the reader asks for the sessions, and nobody serves them', async h => {
       const result = await h.sdk('reader').sync(['session'], () => {}, {timeoutMs: 1000});
       if (result.status === 'synced') {
@@ -404,6 +430,8 @@ const endToEnd: Scenario = {
     act('the operator switches lamp-1 on as req-1', h => sendOnce(h, 'operator', 'first', switchLamp('lamp-1', 'on'), 'req-1')),
     expect('the device switched lamp-1 on', h => lampPower(h, 'on')),
     expect('history holds its outcome, and the reader reads it', h => recorded(h, 'req-1', 'succeeded', 'observed')),
+    expect('the bus recorded req-1\'s admission and the lamp\'s reply once each, at INFO, in its command\'s trace',
+      h => recordedAs(h, 'req-1', ['runtime.command.admitted INFO', 'runtime.command.replied INFO'])),
     expect('the reader\'s copy of the lamp shows it on', h => copied(h, 'on')),
 
     act('the operator sends req-1 again, a duplicate; the lamp accepts it', h => sendOnce(h, 'operator', 'again', switchLamp('lamp-1', 'on'), 'req-1')),
@@ -436,6 +464,20 @@ const endToEnd: Scenario = {
     expect('lamp-1 turns off, and history records req-held\'s late outcome', h => lampPower(h, 'off') === true ? recorded(h, 'req-held', 'succeeded', 'observed') : lampPower(h, 'off')),
     holds('the lamp never received req-queued or req-closed, and the device switched only twice', h =>
       (received(h, 'req-queued') + received(h, 'req-closed') === 0 && switches(h) === 2) || `${switches(h)} switches`, 500),
+    // ADR 0012's levels: a queued expiry and an uncertain result are WARN, an expected cancellation INFO. In process the
+    // bus cancels req-closed; remotely the panel may drop its call before the edge reads it, before the bus queues it or
+    // while it waits, and the bus records only what it decided.
+    expect('the bus recorded each deadline answer once, at its level: req-queued expired, req-held uncertain, req-closed cancelled', h => {
+      const cancelled = ['runtime.command.admitted INFO', 'runtime.command.cancelled INFO cancelled'];
+      const closed = decided(h, 'req-closed');
+      const answers = [
+        recordedAs(h, 'req-queued', ['runtime.command.admitted INFO', 'runtime.command.refused WARN expired']),
+        recordedAs(h, 'req-held', ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN uncertain-result']),
+        byTransport(h, {'in-process': [cancelled], remote: [[], cancelled.slice(1), cancelled]}).some(expected => show(expected) === show(closed)) ||
+          `req-closed: ${show(closed)}`,
+      ];
+      return answers.find(answer => answer !== true) ?? true;
+    }),
 
     act('the reader\'s connection drops', async h => {
       markGap(h);
@@ -492,6 +534,12 @@ const endToEnd: Scenario = {
     expect('the lamp republished nothing, since the core acknowledged every outcome', h => {
       const counts = republished(h, 4);
       return show(counts) === show([0]) || `republished ${show(counts)}`;
+    }),
+    holds('each outcome\'s publication was recorded once, in its command\'s trace, though the crash, the lost acknowledgment and the restarts sent some again',
+      h => publishedOnce(h, ['req-1', 'req-fail', 'req-held', 'req-gap', 'req-crash', 'req-lost']), 100),
+    expect('the failed outcome\'s publication is a warning', h => {
+      const levels = logged(h, 'lamp', 'outcome.published').filter(({record}) => record.attributes['bunny.request.id'] === 'req-fail').map(({record}) => record.severity_text);
+      return show(levels) === show(['WARN']) || `req-fail's publication at ${show(levels)}`;
     }),
   ],
 };

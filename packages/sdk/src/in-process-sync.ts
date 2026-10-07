@@ -1,6 +1,7 @@
 // The owner side of sync on the in-process bus. One owner serves each family. A sync request goes straight to that
 // owner, and its answer goes straight back to the requester, never to subscribers.
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
+import {levelOf, type Diagnostic, type OnDiagnostic} from './diagnostics.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Cancel, type Scheduler, type Subscription, type TraceContext} from './sdk.js';
@@ -10,12 +11,14 @@ import {
 import {childOf, traceIdOf} from './trace.js';
 
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
-/** What the bus lends its sync owners: its clock and scheduler, queue limit, error report and envelope builder. */
+/** What the bus lends its sync owners: its clock and scheduler, queue limit, error report, diagnostics and envelope builder. */
 export type SyncDependencies = {
   now: () => number;
   scheduler: Scheduler;
   maxQueued: number;
   report: (error: unknown, scope: ErrorScope) => void;
+  /** Hears each sync request's one answer, as the bus decided it. */
+  diagnose: OnDiagnostic;
   envelope: <T>(source: string, kind: MessageKind, draft: Envelope<T>, trace: TraceContext, deadline?: {sentAtMs: number; expiresAtMs: number}) => Message<T>;
 };
 
@@ -100,14 +103,18 @@ export class SyncOwners {
    */
   dispatch(request: Message<SyncRequest>, expiresAtMs: number, waitMs: number, signal: AbortSignal): Promise<SyncAnswer> {
     const {families} = request.data;
+    const decided = (answer: SyncAnswer): SyncAnswer => {
+      this.#dependencies.diagnose(decisionOf(request, answer));
+      return answer;
+    };
     const owners = families.map(family => [...this.#owners].find(owner => owner.families.has(family)));
     const missing = families.find((_, index) => owners[index] === undefined);
-    if (missing !== undefined) return Promise.resolve(refusal(request, 'unavailable', `no owner serves ${missing}`));
+    if (missing !== undefined) return Promise.resolve(decided(refusal(request, 'unavailable', `no owner serves ${missing}`)));
     const [owner] = owners;
     if (owner === undefined || owners.some(other => other !== owner)) {
-      return Promise.resolve(refusal(request, 'invalid-request', 'one sync covers one owner\'s families'));
+      return Promise.resolve(decided(refusal(request, 'invalid-request', 'one sync covers one owner\'s families')));
     }
-    if (signal.aborted) return Promise.resolve(refusal(request, 'cancelled', 'the requester closed'));
+    if (signal.aborted) return Promise.resolve(decided(refusal(request, 'cancelled', 'the requester closed')));
     return new Promise(resolve => {
       let settled = false;
       let cancel: Cancel = () => {};
@@ -116,7 +123,7 @@ export class SyncOwners {
         settled = true;
         cancel();
         signal.removeEventListener('abort', withdraw);
-        resolve(answer);
+        resolve(decided(answer));
       };
       const delivery: Delivery = {request, expiresAtMs, settle};
       // A request still waiting leaves the owner's queue, so the owner never serves it and its room is free again.
@@ -163,4 +170,15 @@ export class SyncOwners {
     }, childOf(request));
     return {status: 'served', requestId: request.data.requestId, states, completed};
   }
+}
+
+/** The record of a sync request's one answer: served at INFO, a refusal or cancellation at its code's level. */
+function decisionOf(request: Message<SyncRequest>, answer: SyncAnswer): Diagnostic {
+  const facts = {
+    source: request.source, pattern: `sync ${request.data.families.join(',')}`, requestId: request.data.requestId, messageId: request.id,
+    trace: {traceparent: request.traceparent},
+  };
+  if (answer.status === 'served') return {event: 'sync.served', level: 'info', outcome: 'succeeded', ...facts};
+  const {code} = answer.error.error;
+  return {event: 'sync.refused', level: levelOf(code), outcome: code === 'cancelled' ? 'cancelled' : 'rejected', code, ...facts};
 }

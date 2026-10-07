@@ -5,8 +5,9 @@ import {test, type TestContext} from 'node:test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type Participant, type RequestOptions,
-  type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  InProcessBus, type BusOptions, type CommandDraft, type Draft, type ErrorScope, type Handler, type LogFields, type Logger, type Participant,
+  type RequestOptions, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+  type TraceContext,
 } from '../src/index.js';
 
 const invalid: string[] = [];
@@ -192,3 +193,14 @@ export async function until(ready: () => boolean, what = 'the condition', timeou
 export type Blob = {id: string; revision: number; pad: string};
 export const blob = (id: string, revision: number, bytes: number): Draft<Blob> =>
   ({kind: 'state', type: 'org.bunny.blob.updated', subject: id, dataschema: BLOB_SCHEMA, data: {id, revision, pad: 'x'.repeat(bytes)}});
+
+/** One record a module's logger was given. */
+export type LogEntry = {level: 'debug' | 'info' | 'warn' | 'error'; event: string; fields: LogFields; trace?: TraceContext};
+/** A module logger that keeps what it is given, as the runtime's writer would receive it. */
+export function logRecorder(): {log: Logger; entries: LogEntry[]} {
+  const entries: LogEntry[] = [];
+  const at = (level: LogEntry['level']) => (event: string, fields: LogFields = {}, context?: TraceContext): void => {
+    entries.push({level, event, fields, ...(context === undefined ? {} : {trace: context})});
+  };
+  return {log: {debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error')}, entries};
+}

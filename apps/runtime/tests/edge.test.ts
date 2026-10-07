@@ -213,7 +213,7 @@ it('while the runtime stops, the edge answers 503 with unavailable until the lis
   await stopped;
 });
 
-it('an edge refusal is logged with a known route, its registry code and that code\'s registered reason, never the refusal\'s detail', async context => {
+it('an edge refusal is logged at its level with a known route, its registry code and that code\'s registered reason, never the refusal\'s detail', async context => {
   const dir = await stateDir(context);
   const part = {source: 'bunny/parts/hook', token: token()};
   await grant(dir, [part]);
@@ -229,10 +229,11 @@ it('an edge refusal is logged with a known route, its registry code and that cod
 
   const refusals = logs.filter(record => record.event_name === 'runtime.edge.refused');
   assert.deepEqual(refusals.map(record => record.attributes['bunny.route']), ['other', 'publish', 'publish']);
+  assert.deepEqual(refusals.map(record => record.severity_text), ['INFO', 'INFO', 'WARN'], 'validation refusals at INFO, an unauthenticated call at WARN');
   for (const record of refusals) {
     const code = record.attributes['bunny.code'];
     assert.ok(typeof code === 'string' && code in errorCodes, `a registry code: ${String(code)}`);
-    assert.equal(record.attributes['bunny.reason'], REGISTRY_REASONS[code], 'the reason is the code\'s registered reason');
+    assert.equal(record.attributes['bunny.reason'], REGISTRY_REASONS[code as keyof typeof REGISTRY_REASONS], 'the reason is the code\'s registered reason');
     assert.equal('bunny.detail' in record.attributes, false, 'no detail');
   }
   assert.deepEqual(refusals.map(record => record.attributes['bunny.participant']), [part.source, part.source, undefined]);

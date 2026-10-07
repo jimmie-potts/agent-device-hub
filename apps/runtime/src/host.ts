@@ -7,13 +7,15 @@ import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, SdkError, checkApiVersion, checkModuleName, childOf, type BunnyModule, type Cancel, type Clock, type CommandDraft, type Draft,
-  type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
+  InProcessBus, SdkError, checkApiVersion, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel, type Clock, type CommandDraft,
+  type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder, type Scheduler, type Sdk,
   type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
+import {diagnosticWriter} from './diagnostics.js';
 import {errorFields, type LogWriter, type RuntimeLogger} from './log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
 import {openModuleDatabase} from './state.js';
+import type {RuntimeTracing} from './tracing.js';
 
 export type ModuleState = 'refused' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
 /** Why a module is refused or failed: a code from the 2.0 error registry and a fixed sentence. */
@@ -27,6 +29,11 @@ export type HostOptions = {
   logs: LogWriter;
   startTimeoutMs: number;
   stopTimeoutMs: number;
+  /**
+   * Records the bus's spans under the runtime's scope and each module's under `bunny.module` (Hub #949). Without it,
+   * spans give only trace context.
+   */
+  tracing?: Pick<RuntimeTracing, 'recorder'>;
 };
 
 /**
@@ -116,6 +123,8 @@ export class ModuleHost {
     this.#bus = new InProcessBus({
       now: () => options.clock.now(), scheduler: options.scheduler,
       onError: (error, scope) => { this.#reported(error, scope); },
+      // The bus records each command and sync decision once, in the runtime's own scope, and its command spans.
+      onDiagnostic: diagnosticWriter(this.#log), spans: options.tracing?.recorder(RUNTIME_SCOPE) ?? noSpans,
       onSyncRestart: ({source}) => {
         const slot = this.#bySource.get(source);
         if (slot !== undefined) slot.syncRestarts += 1;
@@ -198,6 +207,7 @@ export class ModuleHost {
     const {clock, scheduler, stateDir} = this.#options;
     const live = (): void => { if (slot.stopping !== undefined) throw stopped(); };
     const inFlow = <T>(call: () => T): T => running.run(slot.flow, call);
+    const spans = this.#options.tracing?.recorder(MODULE_SCOPE, {'bunny.module': slot.name}) ?? noSpans;
     const sdk: Sdk = {
       source: participant.source,
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
@@ -216,7 +226,7 @@ export class ModuleHost {
     return {
       sdk,
       log: slot.log,
-      trace: {span: parent => childOf(parent)},
+      trace: {span: parent => childOf(parent), start: (name, options) => startSpan(spans, name, options)},
       clock: {now: () => clock.now()},
       scheduler: {after: (delayMs, callback) => {
         live();

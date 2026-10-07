@@ -1,12 +1,13 @@
 // The two transports the conformance suite runs against (Hub #883): the in-process bus, and remote participants that
 // reach the same bus through a RemoteEdge over SSE and HTTP on 127.0.0.1. Every participant comes wrapped by `checked`.
 import {randomBytes} from 'node:crypto';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
-  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type EdgeLogRecord, type ErrorScope, type Participant, type RemoteParticipant,
-  type Scheduler,
+  InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type ErrorScope, type Participant, type RemoteParticipant,
+  type Scheduler, type SpanRecorder,
 } from '../src/index.js';
 import {checked, flush, until, validator} from './support.js';
 
@@ -18,6 +19,8 @@ export type World = {
   bus: InProcessBus;
   /** Errors the bus and every remote participant reported. */
   errors: {error: unknown; scope: ErrorScope}[];
+  /** Diagnostics the bus and, remotely, the edge and every remote participant reported, in order. */
+  diagnostics: Diagnostic[];
   /** A participant over the transport under test. */
   connect(source: Source): Promise<Participant>;
   /** A participant on the bus itself, whatever the transport. */
@@ -29,8 +32,19 @@ export type World = {
   close(): Promise<void>;
 };
 
-/** `scheduler`, when given, runs every deadline and wait of the world: the bus's, the edge's and each remote client's. */
-export type WorldOptions = {maxQueued?: number; scheduler?: Scheduler};
+/**
+ * `scheduler`, when given, runs every deadline and wait of the world: the bus's, the edge's and each remote client's.
+ * `spans` records the bus's spans. With `failingDiagnostics`, every `onDiagnostic` keeps its record, then throws.
+ */
+export type WorldOptions = {maxQueued?: number; scheduler?: Scheduler; spans?: SpanRecorder; failingDiagnostics?: boolean};
+
+/** An `onDiagnostic` that keeps each record in `diagnostics` and, when `failing`, then throws, as a lost journal would. */
+function keeper(diagnostics: Diagnostic[], failing = false): (diagnostic: Diagnostic) => void {
+  return diagnostic => {
+    diagnostics.push(diagnostic);
+    if (failing) throw new Error('the journal is gone');
+  };
+}
 
 export type Transport = {
   name: 'in-process' | 'remote';
@@ -45,15 +59,16 @@ export type Transport = {
 export const inProcess: Transport = {
   name: 'in-process',
   closedWhileQueued: 'cancelled',
-  start: ({maxQueued, scheduler} = {}) => {
+  start: ({maxQueued, scheduler, spans, failingDiagnostics} = {}) => {
     const errors: World['errors'] = [];
+    const diagnostics: Diagnostic[] = [];
     const bus = new InProcessBus({
-      onError: (error, scope) => { errors.push({error, scope}); }, ...(maxQueued === undefined ? {} : {maxQueued}),
-      ...(scheduler === undefined ? {} : {scheduler}),
+      onError: (error, scope) => { errors.push({error, scope}); }, onDiagnostic: keeper(diagnostics, failingDiagnostics),
+      ...(maxQueued === undefined ? {} : {maxQueued}), ...(scheduler === undefined ? {} : {scheduler}), ...(spans === undefined ? {} : {spans}),
     });
     const local = (source: Source): Participant => checked(bus.connect(source));
     return Promise.resolve({
-      bus, errors, local, connect: source => Promise.resolve(local(source)), arrived: () => Promise.resolve(), dropped: () => Promise.resolve(),
+      bus, errors, diagnostics, local, connect: source => Promise.resolve(local(source)), arrived: () => Promise.resolve(), dropped: () => Promise.resolve(),
       close: () => Promise.resolve(),
     });
   },
@@ -64,7 +79,8 @@ export type Edge = {
   edge: RemoteEdge;
   url: string;
   tokens: ReadonlyMap<Source, string>;
-  logs: EdgeLogRecord[];
+  /** What the bus, the edge and the remote participants reported to `onDiagnostic`, in order. */
+  diagnostics: Diagnostic[];
   errors: World['errors'];
   /** A remote participant, not wrapped by `checked`, for tests that send what the profile refuses. */
   connect(source: Source, options?: {maxQueued?: number; scheduler?: Scheduler; now?: () => number}): Promise<RemoteParticipant>;
@@ -77,6 +93,8 @@ export type Edge = {
 
 export type EdgeSetup = {
   maxQueued?: number;
+  /** The bus's span recorder. */
+  spans?: SpanRecorder;
   /** The edge's own scheduler, apart from the bus's. */
   scheduler?: Scheduler;
   /** The bus's scheduler. */
@@ -85,17 +103,27 @@ export type EdgeSetup = {
   bus?: (options: BusOptions) => InProcessBus;
   /** Holds the `nth` call of a route, counted from 1, until the returned promise settles, before the edge sees it. */
   before?: (route: string, nth: number) => Promise<void> | undefined;
+  /** Answers the `nth` call of a route, counted from 1, with 503 before the edge sees it, as a runtime that is starting would. */
+  refuse?: (route: string, nth: number) => boolean;
+  /** Every `onDiagnostic`, the bus's, the edge's and each remote client's, keeps its record and then throws. */
+  failingDiagnostics?: boolean;
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
-export async function startEdge({maxQueued, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before}: EdgeSetup = {}): Promise<Edge> {
+export async function startEdge({
+  maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics,
+}: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
-  const logs: EdgeLogRecord[] = [];
+  const diagnostics: Diagnostic[] = [];
   const report = (error: unknown, scope: ErrorScope): void => { errors.push({error, scope}); };
-  const bus = build({onError: report, ...(maxQueued === undefined ? {} : {maxQueued}), ...(busScheduler === undefined ? {} : {scheduler: busScheduler})});
+  const diagnose = keeper(diagnostics, failingDiagnostics);
+  const bus = build({
+    onError: report, onDiagnostic: diagnose, ...(maxQueued === undefined ? {} : {maxQueued}),
+    ...(busScheduler === undefined ? {} : {scheduler: busScheduler}), ...(spans === undefined ? {} : {spans}),
+  });
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
   const edge = new RemoteEdge({
-    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), log: record => { logs.push(record); },
+    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token})), onDiagnostic: diagnose,
     ...(scheduler === undefined ? {} : {scheduler}),
   });
   const received = new Map<string, number>();
@@ -105,6 +133,10 @@ export async function startEdge({maxQueued, scheduler, busScheduler, bus: build 
     const route = (request.url ?? '').split('/').pop() ?? '';
     const nth = (arrivals.get(route) ?? 0) + 1;
     arrivals.set(route, nth);
+    if (refuse?.(route, nth) === true) {
+      response.writeHead(503, {'content-type': 'application/json'}).end(JSON.stringify(errorBody('unavailable', {detail: 'the runtime is starting'})));
+      return;
+    }
     request.once('end', () => { received.set(route, (received.get(route) ?? 0) + 1); });
     response.once('close', () => { if (!response.writableEnded) dropped.set(route, (dropped.get(route) ?? 0) + 1); });
     const held = before?.(route, nth);
@@ -116,10 +148,10 @@ export async function startEdge({maxQueued, scheduler, busScheduler, bus: build 
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const opened: RemoteParticipant[] = [];
   return {
-    bus, edge, url, tokens, logs, errors, received: route => received.get(route) ?? 0, dropped: route => dropped.get(route) ?? 0,
+    bus, edge, url, tokens, diagnostics, errors, received: route => received.get(route) ?? 0, dropped: route => dropped.get(route) ?? 0,
     connect: async (source, options = {}) => {
       const remote = await connectRemote({
-        url, source, token: tokens.get(source) ?? '', onError: report, reconnectDelayMs: 20,
+        url, source, token: tokens.get(source) ?? '', onError: report, onDiagnostic: diagnose, reconnectDelayMs: 20,
         ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued}),
         ...(options.scheduler === undefined ? {} : {scheduler: options.scheduler}),
         ...(options.now === undefined ? {} : {now: options.now}),
@@ -140,12 +172,15 @@ export async function startEdge({maxQueued, scheduler, busScheduler, bus: build 
 export const remote: Transport = {
   name: 'remote',
   closedWhileQueued: 'uncertain-result',
-  start: async ({maxQueued, scheduler} = {}) => {
+  start: async ({maxQueued, scheduler, spans, failingDiagnostics} = {}) => {
     const queued = maxQueued === undefined ? {} : {maxQueued};
     const scheduled = scheduler === undefined ? {} : {scheduler};
-    const edge = await startEdge({...queued, ...scheduled, ...(scheduler === undefined ? {} : {busScheduler: scheduler})});
+    const edge = await startEdge({
+      ...queued, ...scheduled, ...(scheduler === undefined ? {} : {busScheduler: scheduler}), ...(spans === undefined ? {} : {spans}),
+      ...(failingDiagnostics === undefined ? {} : {failingDiagnostics}),
+    });
     return {
-      bus: edge.bus, errors: edge.errors, close: () => edge.close(),
+      bus: edge.bus, errors: edge.errors, diagnostics: edge.diagnostics, close: () => edge.close(),
       local: source => checked(edge.bus.connect(source)),
       connect: async source => checked(await edge.connect(source, {...queued, ...scheduled})),
       arrived: async (call, count) => {
