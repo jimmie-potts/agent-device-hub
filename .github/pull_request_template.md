@@ -13,8 +13,10 @@ or physical scope.
 Record commands/results, actual specification inventory, and any unavailable
 evidence. Do not equate CI with client or physical acceptance. For a change that
 crosses a component boundary, also record its contract and version changes, its
-negative controls, and a privacy check that no raw error text or secret reaches
-any outward surface, such as an error body, log, history, proof or this PR.
+negative controls, and a privacy check against ADR 0012's
+[Safe errors](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
+and the [diagnostic contract](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/observability-contract.md),
+including this PR's own text.
 
 ## Fixed comparison and reviews
 
