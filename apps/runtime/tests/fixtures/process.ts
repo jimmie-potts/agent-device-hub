@@ -85,6 +85,8 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
   'core-restart': [createRealCore(), listener],
   // The process dies between the lamp's commit and its publish (Hub #882): its outbox holds the outcome.
   'lamp-crash': [createCoreModule(), createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), driver],
+  // The same modules without the kill: the command is answered and its spans end (Hub #950).
+  'lamp-driven': [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), driver],
   // The next start, with no driver: nothing sends the command again.
   'lamp-restart': [createCoreModule(), createLampModule({transport: new SimulatedLamps()})],
   // Errors raised in each module's own flow, outside every SDK handler and runtime timer, reach the process.

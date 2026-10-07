@@ -4,12 +4,13 @@
 // failing span sink changes nothing.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, writeFile} from 'node:fs/promises';
+import {chmod, readdir, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {connectRemote, traceFields, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, RECENT_SPANS, startRuntime, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, RECENT_SPANS, RuntimeError, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
 import {RUNTIME_SCOPE} from '../src/record.js';
+import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {startTracing} from '../src/tracing.js';
 import {contextOf, deferred, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
@@ -226,4 +227,39 @@ it('a tracing start that fails records only the error\'s type, never its code or
   assert.deepEqual(written.map(record => [record.event_name, record.severity_text, record.attributes]),
     [['runtime.tracing.failed', 'ERROR', {'error.type': 'Error', 'bunny.provenance': 'source'}]], 'no error.code');
   assert.equal(JSON.stringify(written).includes('/srv/private'), false, 'never the message');
+});
+
+it('with the state directory as its span destination, the runtime writes its spans to a private file and keeps none in memory', async context => {
+  const dir = await stateDir(context);
+  const caller = fixture('caller');
+  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'})), caller], stateDir: dir, spans: 'state-file'});
+  assert.equal((await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000, requestId: 'req-file'})).status, 'accepted');
+  await runtime.stop();
+  assert.equal((await stat(join(dir, SPANS_FILE))).mode & 0o777, 0o600);
+  const read = readSpanFile(dir);
+  assert.deepEqual([read.evicted, read.unreadable], [0, 0]);
+  const spans = parse(read.lines);
+  assert.deepEqual(spans.map(span => span.name).sort(), ['bunny.command.execute', 'bunny.command.queue', 'bunny.command.request', 'bunny.device.call']);
+  assert.ok(spans.every(span => attribute(span, 'bunny.request.id') === 'req-file' || span.name === 'bunny.device.call'));
+  assert.deepEqual(runtime.spans(), {recent: [], evicted: 0}, 'the file is the destination, so memory keeps nothing');
+});
+
+it('a runtime without that destination writes no span file: the installed default is unchanged', async context => {
+  const dir = await stateDir(context);
+  const caller = fixture('caller');
+  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'})), caller], stateDir: dir});
+  await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000});
+  await runtime.stop();
+  assert.deepEqual(await readdir(dir), [], 'no span file, and these modules own none');
+  assert.ok(runtime.spans().recent.length >= 4, 'the spans stay in memory');
+});
+
+it('a span file that is not private refuses the start, before any module starts, naming its reason', async context => {
+  const dir = await stateDir(context);
+  await writeFile(join(dir, 'elsewhere'), '', {mode: 0o600});
+  await symlink(join(dir, 'elsewhere'), join(dir, SPANS_FILE));
+  const device = fixture('lamp');
+  await assert.rejects(startRuntime({modules: [device], port: 0, stateDir: dir, log: () => {}, spans: 'state-file'}),
+    (error: unknown) => error instanceof RuntimeError && error.code === 'span-file-not-private');
+  assert.equal(device.context, undefined, 'no module started');
 });

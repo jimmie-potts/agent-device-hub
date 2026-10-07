@@ -10,6 +10,7 @@ import {diagnosticWriter} from './diagnostics.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
+import {openSpanFile} from './span-file.js';
 import {RuntimeError, prepareStateDirectory, readEdgeGrants, readRuntimeConfig, type EdgeGrant, type RuntimeConfig} from './state.js';
 import {startTracing, type SpanSink} from './tracing.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
@@ -61,10 +62,11 @@ export type RuntimeOptions = {
   log?: LogSink;
   /**
    * Receives each finished span of the bus and the modules as one projected OTLP JSON document, through the observability
-   * package's bounded queue (Hub #949). Without it, the runtime keeps the latest `RECENT_SPANS` for `spans()`, and
-   * counts the older ones it lets go.
+   * package's bounded queue (Hub #949). `'state-file'` writes them to the state directory's bounded, private span file,
+   * which a disposable run reads from outside the process (Hub #950). Without it, the runtime keeps the latest
+   * `RECENT_SPANS` for `spans()`, and counts the older ones it lets go.
    */
-  spans?: SpanSink;
+  spans?: SpanSink | 'state-file';
   /** The lowest level written. Defaults to `info`. */
   logLevel?: LogLevel;
   /**
@@ -95,7 +97,7 @@ export interface Runtime {
   /** The health server's origin, such as `http://127.0.0.1:41000`. */
   readonly url: string;
   health(): RuntimeHealth;
-  /** The spans kept in memory when no `spans` sink was given; with a sink, none, and none evicted. */
+  /** The spans kept in memory when no `spans` destination was given; with one, none, and none evicted. */
   spans(): RecentSpans;
   /** Stops every module within its stop deadline, then the health server. Calling it again returns the same promise. */
   stop(): Promise<void>;
@@ -208,7 +210,17 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     recent.shift();
     evicted = Math.min(Number.MAX_SAFE_INTEGER, evicted + 1);
   };
-  const tracing = await startTracing(logs.resource, options.spans ?? keep, log);
+  const spanFile = options.spans === 'state-file' ? openSpanFile(stateDir) : undefined;
+  const sink = spanFile?.sink ?? (typeof options.spans === 'function' ? options.spans : keep);
+  const tracing = await startTracing(logs.resource, sink, log);
+  // Ends the host adapter, which flushes spans to the sink within the contract's bound, and then the file.
+  const endTracing = async (): Promise<void> => {
+    try {
+      await tracing?.shutdown();
+    } finally {
+      spanFile?.close();
+    }
+  };
   const host = new ModuleHost(modules, {
     clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
@@ -232,7 +244,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   try {
     server = await serve(port, health, () => edge);
   } catch (error) {
-    await tracing?.shutdown();
+    await endTracing();
     throw error;
   }
   const bound = (server.address() as AddressInfo).port;
@@ -262,7 +274,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       // The grants were checked when read; the edge refuses only what they could not show, such as a malformed one.
       await host.stop();
       await close(server);
-      await tracing?.shutdown();
+      await endTracing();
       throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
     }
     edge = {state: 'serving', edge: mounted};
@@ -283,7 +295,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
       // The modules' work has ended, so its spans have too: flush them within the contract's bound.
-      await tracing?.shutdown();
+      await endTracing();
       // The records this runtime's writer dropped or its sink lost, and the spans lost, so the journal shows the loss.
       const {dropped, failed} = logs.counts();
       const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
