@@ -50,6 +50,10 @@ export type RuntimeOptions = {
   stopTimeoutMs?: number;
   /** Runs the event-loop lag check with this limit. `worker` replaces the watchdog thread's file, for tests. */
   lagCheck?: {limitMs: number; worker?: URL};
+  /** Not built yet (#920). */
+  simulate?: boolean;
+  /** Not built yet (#920). */
+  edge?: {schemas: Readonly<Record<string, object>>};
 };
 
 export interface Runtime {

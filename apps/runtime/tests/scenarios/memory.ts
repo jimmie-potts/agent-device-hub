@@ -10,22 +10,18 @@ import {createServer, type IncomingMessage, type Server, type ServerResponse} fr
 import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type EdgeLogRecord, type Participant, type RequestResult, type SyncChange,
-  type SyncedCopy,
-} from '@jimmie-potts/sdk';
-import {standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type EdgeLogRecord, type Participant} from '@jimmie-potts/sdk';
 import {ModuleHost} from '../../src/host.js';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {LogWriter} from '../../src/log.js';
 import {prepareStateDirectory} from '../../src/state.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
-import {createCoreModule, historySchemas} from '../fixtures/core.js';
-import {SimulatedLamps, createLampModule, lampSchemas} from '../fixtures/lamp.js';
+import {createCoreModule} from '../fixtures/core.js';
+import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {manualClock} from '../support.js';
-import {ROLES, type DeviceStates, type Generational, type Harness, type ModuleName, type ReaderView, type Role, type Seed, type Simulation, type TransportName} from './catalog.js';
+import {ROLES, type DeviceStates, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation, type TransportName} from './catalog.js';
+import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
@@ -33,7 +29,6 @@ export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231
 const RECONNECT_MS = 20;
 /** How far virtual time moves before real I/O, such as the edge's HTTP, gets to run. */
 const STEP_MS = 10;
-const SYNC_TIMEOUT_MS = 5000;
 
 export interface MemoryHarness extends Harness {
   /** The private state directory the runtime uses across restarts. */
@@ -49,8 +44,6 @@ export interface MemoryHarness extends Harness {
   close(): Promise<void>;
 }
 
-const describe = (error: unknown): string => error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-const answerOf = (result: RequestResult): string => result.status === 'accepted' ? 'accepted' : result.error.error.code;
 const settle = async (): Promise<void> => {
   for (let turn = 0; turn < 4; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
   await new Promise(resolve => { setTimeout(resolve, 1); });
@@ -75,32 +68,6 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
 
 type Generation = {host: ModuleHost; edge: RemoteEdge | undefined; watcher: Participant};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
-type Copy = SyncedCopy<Record<string, unknown>>;
-
-class Reader implements ReaderView {
-  readonly groups: readonly (readonly string[])[];
-  copies: (Copy | undefined)[] = [];
-  readonly counts: number[];
-  readonly messages: Message[] = [];
-
-  constructor(groups: readonly (readonly string[])[]) {
-    this.groups = groups;
-    this.counts = groups.map(() => 0);
-  }
-
-  states<T>(family: string): Message<T>[] {
-    const copy = this.copies[this.groups.findIndex(group => group.includes(family))];
-    return (copy?.states() ?? []).filter(state => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) as Message<T>[];
-  }
-
-  syncs(family: string): number {
-    return this.counts[this.groups.findIndex(group => group.includes(family))] ?? 0;
-  }
-
-  heard(): readonly Message[] {
-    return this.messages;
-  }
-}
 
 class Memory implements MemoryHarness {
   readonly tier = 'memory';
@@ -110,7 +77,7 @@ class Memory implements MemoryHarness {
   url: string | undefined;
   readonly #seed: Seed;
   readonly #clock = manualClock();
-  readonly #validator = new MessageValidator();
+  readonly #validator = scenarioValidator();
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
   readonly #parts: ReadonlyMap<Role, Part>;
@@ -138,10 +105,8 @@ class Memory implements MemoryHarness {
     this.transport = transport;
     this.stateDir = stateDir;
     this.reader = new Reader(seed.follows);
-    this.#parts = new Map(ROLES.map(role => [role, {role, source: `bunny/parts/${role}`, token: randomBytes(32).toString('base64url'), participant: undefined, closed: false}]));
+    this.#parts = new Map(ROLES.map(role => [role, {role, source: sourceOf(role), token: randomBytes(32).toString('base64url'), participant: undefined, closed: false}]));
     this.#edge = this.#nextEdge();
-    registerCoreFamilies(this.#validator);
-    for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...lampSchemas, ...historySchemas})) this.#validator.register(dataschema, schema);
   }
 
   async open(): Promise<void> {
@@ -391,30 +356,8 @@ class Memory implements MemoryHarness {
   }
 
   /** The reader hears every occurrence and outcome, and keeps a copy of each owner's families. */
-  async #follow(participant: Participant): Promise<void> {
-    await participant.subscribe('bunny.event.*.*', message => { this.reader.messages.push(message); });
-    for (const [index, families] of this.#seed.follows.entries()) {
-      const result = await participant.sync(families, change => { this.#change(index, change); }, {timeoutMs: SYNC_TIMEOUT_MS});
-      if (result.status === 'rejected') this.#problem(`the reader could not sync ${families.join(',')}: ${result.error.error.code}`);
-      else this.reader.copies[index] = result.copy;
-    }
-  }
-
-  #change(index: number, change: SyncChange<Record<string, unknown>>): void {
-    switch (change.type) {
-      case 'updated':
-        this.#check(change.message, 'a synced state');
-        return;
-      case 'removed':
-        return;
-      case 'synced':
-        this.#check(change.message, 'sync.completed');
-        this.reader.counts[index] = (this.reader.counts[index] ?? 0) + 1;
-        return;
-      case 'failed':
-        this.#problem(`the reader's copy of ${this.#seed.follows[index]?.join(',') ?? ''} stopped: ${change.error.error.code}`);
-        return;
-    }
+  #follow(participant: Participant): Promise<void> {
+    return follow(participant, this.reader, this.#seed.follows, {check: (message, where) => { this.#check(message, where); }, problem: text => { this.#problem(text); }});
   }
 
   /** Closes the part's participant. One that `crashed` died with the runtime, so its requests are `lost`. */

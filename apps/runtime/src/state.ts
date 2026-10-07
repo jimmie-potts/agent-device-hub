@@ -92,3 +92,13 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
   database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
   return database;
 }
+
+/** The file in the state directory that holds the SDK edge's grants (Hub #920). */
+export const EDGE_GRANTS_FILE = 'edge-grants.json';
+
+/** One remote source and the bearer token that lets a remote part act as it. */
+export type EdgeGrant = {source: string; token: string};
+
+export function readEdgeGrants(stateDir: string): Promise<EdgeGrant[]> {
+  return Promise.reject(new RuntimeError('not-built', `the edge's grants in ${stateDir} are not read yet`));
+}

@@ -1,9 +1,9 @@
 // The entry point's first step. It imports nothing at run time, so that its signal handlers are in place before the
 // rest of the runtime loads; a signal before them takes Node's default action.
-import type {BunnyModule} from '@jimmie-potts/sdk';
+import type {ModuleFactory} from './modules.js';
 
-/** What the entry point loads: the process runner and the module list. */
-export type Loaded = {runMain: (argv: readonly string[], modules: readonly BunnyModule[]) => Promise<void>; modules: readonly BunnyModule[]};
+/** What the entry point loads: the process runner and the module factories. */
+export type Loaded = {runMain: (argv: readonly string[], modules: readonly ModuleFactory[]) => Promise<void>; modules: readonly ModuleFactory[]};
 
 /**
  * Catches SIGTERM and SIGINT, loads the runtime with `load` and runs it with `argv`. A signal that arrives while it
