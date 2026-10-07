@@ -94,8 +94,8 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
   "Counts per turn" and click. The wheel starts at one card step and knob 4 at one page step (6 counts each in the
   shipped profile), so one knob 4 turn shows the next or previous task page; its click is the Attention click. The volume
   knob starts at one volume key per turn, and its click toggles mute. Knobs 1 and 2 start at one model or effort step
-  (6 counts each in the shipped profile, #906): knob 1 opens the model menu and steps it, and its click picks the
-  focused model; knob 2 steps the effort, and its click closes the effort control. Their lights read "active" while
+  (6 counts each in the shipped profile, #906): knob 1 opens the model menu on the current model and moves its focus,
+  and its click selects the focused model; knob 2 steps the effort, and its click closes the effort control. Their lights read "active" while
   the control is open, then "applied", "unknown" or "error" for the change. The slot keys are named by key, so on page 2 the key "Slot 1" shows slot 16, which the Hub table lists as "Slot 16".
   **Unplug controller** unplugs and replugs the simulator. All of these inject protocol input through
   `ChompiSimulator`, so the bridge sees real reports.
@@ -134,7 +134,8 @@ The catalog is in [`src/sim/scenarios.ts`](../src/sim/scenarios.ts). Each scenar
 an action, an expectation within a time bound, or an observation that must hold for a while:
 `send-front-window`, `record-dictation`, `claude-question-wheel`, `codex-card-structure`, `reconnect-no-replay`,
 `profile-reload`, `task-pages`, `attention-key`, `volume-knob`, `claude-model-knob`, `claude-effort-knob`,
-`claude-effort-unsupported`, `codex-model-knob`, `codex-effort-knob` and `knob-refusals`. `task-pages` seeds 18 tasks across two pages
+`claude-effort-unsupported`, `codex-model-knob`, `codex-effort-chords`, `codex-effort-knob`, `knob-lagging-reads` and
+`knob-refusals`. `task-pages` seeds 18 tasks across two pages
 (#822): knob 4 pages only on a deliberate turn, a page-2 task opens with its key, a hidden page's attention shows on
 knob 4's LED without switching pages, a held key's release gesture acts on the slot it showed when pressed though the
 page changed, and paging sends no input and keeps the window in front. `attention-key` (#865) uses the same 18 tasks:
@@ -145,15 +146,24 @@ request stays a read, both tasks keep their attention and no black key lights.
 `volume-knob` (#865) turns and clicks the volume knob with Codex in front and a draft in its composer: the synthetic
 system volume steps and mutes, no client receives input, and while Record holds the chord the knob is ignored with
 a red volume LED and the chord stays exactly the dictation chord.
-The six knob scenarios (#906) turn knobs 1 and 2 with Claude or Codex in front:
-`claude-model-knob` opens Claude's model menu, steps to the second model and picks it with a still click, confirmed
-by the Model button and the session record; `claude-effort-knob` steps the effort up and down through the Effort
-slider and lets the slider time out with one Escape; `claude-effort-unsupported` turns knob 2 on Haiku 4.5 and gets
-`unsupported`, a red knob 2 and no input; `codex-model-knob` opens Codex's picker and model list, picks another model
-and closes the picker, confirmed by the announcement; `codex-effort-knob` steps the level through Power to the top,
-where the bridge sends nothing (`at-limit`), and closes the picker with knob 2's click; `knob-refusals` refuses both
-knobs on a Claude card and in another app, then shows that Play with the model menu open closes the menu with Escape
-before Send submits the draft. None of them sends a prompt. Tier 1 runs the same steps in memory on a manual clock:
+The eight knob scenarios (#906) turn knobs 1 and 2 with Claude or Codex in front:
+- `claude-model-knob` expands Claude's model menu on the current model, moves focus to another model and selects it
+  with a still click, confirmed by the Model button and the session record, with no key reaching Claude.
+- `claude-effort-knob` sets the Effort slider to its top, gets one `at-limit` for further detents, steps back, and
+  lets the slider collapse after the timeout with the composer focused again.
+- `claude-effort-unsupported` turns knob 2 on Haiku 4.5 and gets `unsupported`, a red knob 2 and no input.
+- `codex-model-knob` expands Codex's picker, invokes "Select model", selects another model and closes the picker with
+  its one Escape, confirmed by the picker button's name.
+- `codex-effort-chords` saves the owner's chords in the profile and steps the effort with them, confirmed by the
+  picker button's name, without opening the picker.
+- `codex-effort-knob` (no chords) steps the level through Power up to the top, where nothing is sent (`at-limit`),
+  and closes the picker with knob 2's click and one Escape.
+- `knob-lagging-reads` makes every UI Automation read lag one change behind and shows that a Codex pick still sends
+  exactly one Escape and a Claude menu collapses once.
+- `knob-refusals` refuses both knobs on a Claude card and in another app, then shows that Play with the model menu
+  open closes the menu first and Send submits the draft.
+
+None of them sends a prompt. Tier 1 runs the same steps in memory on a manual clock:
 
 ```bash
 npm run -s test:chompi-bridge:scenarios                    # all

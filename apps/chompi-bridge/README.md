@@ -119,15 +119,24 @@ taps the Windows volume keys (`VK_VOLUME_UP` 0xAF, `VK_VOLUME_DOWN` 0xAE, `VK_VO
 on the system volume: the adapter targets and checks no window, though Windows delivers them through the foreground
 thread's input stream and handles them as a system app command. Like any tap, they are refused while the adapter holds a key or the user holds
 a modifier, so a volume key never joins the dictation chord. They are not shortcut keys, so no profile can name them.
-Version 5 (#906) adds the model and effort operations:
+Version 5 (#906) adds the model and effort operations, keystroke-free wherever the clients allow it:
 
+- `pickerState(client)` reads, without changing anything, only the qualified model and effort controls: the open
+  qualified menu (Claude's `Model: <name>` menu, Codex's `Select effort` picker or its model list) with its entries'
+  kinds, labels and selection, the focused entry and whether focus is in it; Claude's open `Effort` slider range;
+  Claude's `Model:` and `Effort:` buttons (text after the prefix and expanded state) or Codex's picker button (its
+  `<model> <effort>` name and state); and Codex's picker announcement (`<model> <level>, <n> of <count>.`, parsed).
+  Any other menu is never read.
+- Seven UI Automation actions on those controls only: `expandSetting` and `collapseSetting` (Claude; Codex's picker
+  does not close on `Collapse`), `invokeSelectModel` (Codex's "Select model"), `focusMenuEntry` (`SetFocus`, read back),
+  `selectMenuOption` (`SelectionItem.Select`, only on the option holding focus), `setSliderValue` (`RangeValue.SetValue`,
+  one step from the value read, within its range) and `focusComposer`. Each re-reads its target just before acting and
+  refuses on any difference: a missing or duplicated control, a changed entry count, another state.
 - `tapInClient(client, keys, presses)` taps one chord 1-10 times only while that client's window is in front, read
-  again right before `SendInput`; otherwise it answers known `false` and types nothing. It is the only way to type the
-  navigation keys `Up`, `Down`, `Left`, `Right` (`VK_UP` and so on, extended keys) and `Escape` (`VK_ESCAPE`), which
-  no profile can name. Like any tap it is refused while the adapter holds a key or the user holds a modifier.
-- `pickerState(client)` reads, without changing anything, the menu holding keyboard focus (its label, its entries'
-  kinds, labels and selection, and the focused entry), the focused slider's name, Claude's `Model: <name>` and
-  `Effort: <level>` composer buttons and Codex's picker announcement (`<model> <level>, <n> of <count>.`, parsed).
+  again right before `SendInput`; otherwise it answers known `false` and types nothing. It is the only way to type
+  `Left`, `Right` (extended keys) and `Escape`, which no profile can name. Like any tap it is refused while the adapter
+  holds a key or the user holds a modifier. The knobs use it only for Codex's one closing Escape, the owner's effort
+  chords and, without chords, Right and Left on a focused Power entry.
 - `claudeSettings(localId)` reads one Claude Desktop session record's `model` and `effort` keys.
 
 The shortcut key names gain `Equal` (`VK_OEM_PLUS`, 0xBB) and `Minus` (`VK_OEM_MINUS`, 0xBD) for the owner's Codex
@@ -186,13 +195,14 @@ session records by name and key only, and Codex's own thread names from `session
   - A focus or press names the card by its identity and is `unknown` (`card-changed`) when that card is gone or
     replaced or its button count changed. A press answers `false` when the button no longer has keyboard focus.
   - These two are the only helper operations that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#card-answers).
-- `pickerState` returns the model and effort controls of the client's foreground window (#906). The menu is the
-  `Menu` holding keyboard focus, with its own `RadioButton` (option), `MenuItem` (action) and `CheckBox` (toggle)
-  entries in tree order, at most 64, whose names are their labels. Claude's composer buttons are found by their
-  `Model: ` and `Effort: ` name prefixes, and only the text after the prefix is returned; two buttons with one prefix
-  is `unknown`. Codex's announcement is the one `StatusBar` inside a menu. Every label is trimmed to at most 128
-  characters and may not hold control characters. Names are the only text read, and only from those elements; see
-  [UIA-NOTES.md](src/windows/UIA-NOTES.md#model-and-effort-controls).
+- `pickerState` returns only the qualified model and effort controls of the client's foreground window (#906), so
+  the helper returns only model and effort labels. Claude's menu is the one `Menu` named `Model: ...`; Codex's are the
+  `Select effort` picker and, while the picker button is expanded, the one other `Menu` whose own entries are all
+  model `RadioButton`s. Entries are `RadioButton` (option), `MenuItem` (action) and `CheckBox` (toggle), at most 64.
+  Claude's buttons are found by their `Model: ` and `Effort: ` prefixes (two with one prefix is `unknown`); Codex's
+  picker button is the one `ExpandCollapse` button near its composer. Every label is trimmed to at most 128 characters
+  and may not hold control characters. The seven setting actions are the only other helper operations, besides the
+  two card operations, that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#model-and-effort-controls).
 
 The built code reads the helper script from `src/windows/` (`dist/windows` resolves `../../src/windows/`), so an
 installation (#743) must ship `src/windows/uia-helper.ps1` beside `dist/`.
@@ -220,9 +230,10 @@ router. It prints JSON lines with slot numbers and reason codes only: link event
 `feed`, `slot-assigned`, `overflow`, `page`, `slots-beyond-pages`, `focused`, `focus-failed`, `sent`, `send-refused`, `send-uncertain`,
 `attention-open` (slot and waiting count), `attention-refused` (`none-waiting`, `feed-stale` or `feed-unavailable`),
 `volume` (key and presses), `volume-ignored` (`dictating`), `volume-failed`,
-the model and effort knob events `knob-menu` (`opened` or `closed` with a reason and the Escapes sent), `knob-refused`,
-`model-step` (index and count), `model` and `effort` (an `outcome` of `applied`, `mismatch`, `unverified`,
-`unsupported` or, for Codex effort, `at-limit`, with indexes, positions and counts but no labels), `input-dropped`,
+the model and effort knob events `knob-menu` (`opened`, or `closed` with a reason, the `method` used, `collapse`,
+`escape` or `none`, and whether the close was `verified`), `knob-refused`, `knob-composer-unfocused`, `model-step`
+(index and count), `model` and `effort` (an `outcome` of `applied`, `mismatch`, `unverified`, `unsupported` or
+`at-limit`, with indexes, positions and counts but no labels), `input-dropped`,
 `invalidated`, `profile-rejected`, `dictation-started`, `record-refused`, the card events `card-step`,
 `card-pressed`, `card-refused` (reasons `card-wheel-moving`, `card-busy`, `card-nothing-focused`, `card-nothing-chosen`,
 `card-focus-moved`), `card-press-uncertain`, `card-step-failed` and `card-unknown`, and similar. `sent`,
@@ -249,7 +260,7 @@ controller and desktop is #743 work and needs the owner's device authorization.
 | `model` (optional, not in the shipped profile) | Knob 1 (#906): `stepCounts` 6 (1-96 knob 1 counts per menu step), `invert` `false` (clockwise moves down the menu) and `clickStillMs` 250 (0-2000 ms of stillness before knob 1's click picks the focused model). Knob 1's turn (44) and click (32) are reserved like the volume knob's: with a `model` section, `controls.scroll` 44 or `controls.record` or `controls.back` 32 is rejected; an earlier profile without one that maps them keeps its mapping, and knob 1 sets no model |
 | `effort` (optional, not in the shipped profile) | Knob 2 (#906): `stepCounts` 6 (1-96 knob 2 counts per effort level) and `invert` `false` (clockwise raises the effort). Knob 2's turn (41) and click (29) are reserved the same way. Knobs 1-3 have not been measured on the device, so both defaults use the conservative card step constant, which knob 4 also pages with: a light touch never changes a setting. #745 measures them |
 | `cards` (optional, not in the shipped profile) | `stepCounts` 6 (1-96 encoder counts per card step) and `clickStillMs` 250 (0-2000 ms of stillness before a click presses a card button). The wheel turns smoothly; one slow full turn each way measured about 25 counts per revolution on the trial device (2026-10-05), so 6 is about a quarter turn. The step default lives in one constant, `DEFAULT_CARD_STEP_COUNTS` in `src/routing/profile.ts`; a profile value overrides it |
-| `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows`. `codexEffortIncrease` and `codexEffortDecrease` (optional, both or neither, not in the shipped profile) name the owner's own Codex "Increase reasoning effort" and "Decrease reasoning effort" chords, such as `["LeftControl", "LeftAlt", "Equal"]` and `["LeftControl", "LeftAlt", "Minus"]`: `LeftControl`, `LeftAlt` or `LeftWindows` with exactly one other key, never `Enter`. Absent, Codex effort uses only its picker |
+| `shortcuts` | Codex composer `LeftAlt`+`L`, Send `Enter`, Wispr dictation `LeftControl`+`LeftWindows`. `codexEffortIncrease` and `codexEffortDecrease` (optional, both or neither, not in the shipped profile) name the owner's own Codex "Increase reasoning effort" and "Decrease reasoning effort" chords, such as `["LeftControl", "LeftAlt", "Equal"]` and `["LeftControl", "LeftAlt", "Minus"]`: `LeftControl`, `LeftAlt` or `LeftWindows` with exactly one other key, never `Enter`. Knob 2 sends them first, with Codex in front (owner decision on #906); absent, Codex effort uses its picker's Power entry |
 | `colors`, `brightnessPercent` | RGB per state and the host brightness percent (firmware caps still apply). `colors.pages` (optional) lists knob 4's LED color per page, page 1 first, at least one per page; the defaults are cyan, magenta, green, grey-white, blue, pink, lime and teal, none of them the attention orange. `colors.applied` (optional, default `[0, 255, 120]`) is the knob 1 and knob 2 flash for a change the client confirmed (#906). `selected`, `sendReady` and `sendBlocked` from earlier profiles are accepted and ignored |
 | `timing` | Verification 3000 ms polled every 100 ms, adapter calls 2000 ms, Send repeat window 1000 ms, release hold 800 ms, attention pulse 1000 ms, error flash 1500 ms, archive check 30 s, profile poll 2 s. `attentionRepeatMs` (optional, 500-30000, default 4000) is the Attention click's repeat window. `menuTimeoutMs` (optional, 1000-30000, default 5000) is how long a knob's model menu, effort slider or picker stays open after its last turn (#906). The knobs read back within `verifyTimeoutMs`, polled every `verifyPollMs` |
 | `qualifiedVersions` | Both required: `codex` `26.930.3930.0` and `claude` `2.19675.0.0`. The UI selectors (and Claude's undocumented link) depend on the version, so an unlisted or unknown version disables that client's routing and leaves the other alone; see [Qualify a client update](#qualify-a-client-update) |
@@ -284,8 +295,9 @@ the same reason and version. An unqualified client's wheel scrolls but never ans
    the wheel steps through the card's buttons in the client's order, skips text fields and disabled buttons, and a
    still click presses the focused one (deny or a harmless option, in a throwaway task). Re-check the
    [model and effort controls](src/windows/UIA-NOTES.md#model-and-effort-controls) as well, in a throwaway task:
-   Claude's `Model: ` menu and `Effort` slider and their composer buttons, and Codex's `Select effort` picker, its
-   "Select model" and "Power" entries and its announcement.
+   Claude's `Model:` and `Effort:` buttons (ExpandCollapse), the model options (SelectionItem) and the Effort slider
+   (RangeValue), and Codex's picker button and its `<model> <effort>` name, the `Select effort` picker, its "Select
+   model" (Invoke) and "Power" entries, the model options and its announcement.
 2. Add the logged `observedVersion` to `qualifiedVersions.codex` (or `.claude`) in the profile. Keep earlier versions
    only while they can still be installed.
 3. Save the file. The bridge reloads it within `timing.profilePollMs` and logs `profile-applied`; no restart is needed.
@@ -383,53 +395,61 @@ file stops start-up.
 Small knob 1 (`ENC_4`: turn 44, click 32, LED 26) sets the model and small knob 2 (`ENC_1`: turn 41, click 29, LED 27)
 the reasoning effort of the Codex or Claude task in front (owner decision on #744, 2026-10-06; #906). Each acts on the
 qualified client in front at the turn, through that client's own controls as the #906 qualification recorded them
-(Claude Desktop 2.19675.0.0, Codex Desktop 26.930.3930.0). Model lists and level names come from each client and are
-never compared across clients.
+(Claude Desktop 2.19675.0.0, Codex Desktop 26.930.3930.0). The work is done with UI Automation actions wherever the
+client allows it; model lists and level names come from each client and are never compared across clients.
 
-- **Claude model (knob 1).** The first detent sends `LeftControl`+`LeftShift`+`I`, which opens the `Model: <current>`
-  menu with no entry focused; it needs the composer focused. Each further detent sends Down or Up, one entry per
-  detent, stopping at the first and last entry. The first Down focuses the first entry, not the one after the current
-  model, so the first step from no focus is always Down. A click after `model.clickStillMs` of stillness sends Enter
-  only while that menu holds focus on a model option (not "More models"). The readback waits for the composer's
-  `Model: <name>` button to name the pick and, when the router can tell the session in front from the sessions it knows
-  (strictly the newest `lastFocusedAt`), for that session record's `model` to change.
-- **Claude effort (knob 2).** A detent opens the `Effort` slider (`LeftControl`+`LeftShift`+`E`) when it is not open,
-  then sends Right or Left. Each step applies at once; no Enter. The readback waits for the composer's
-  `Effort: <level>` button to change and, when the session in front is known, its record's `effort` too. A model
-  without an Effort button, such as Haiku 4.5, is `unsupported`. A step at the end of the range changes nothing and
-  reads as `mismatch` (`unchanged`); Claude's slider range is not read.
-- **Codex model (knob 1).** The first detent sends `LeftControl`+`LeftShift`+`M`, waits for the `Select effort` picker
-  with "Select model" focused, and only then sends Enter, which opens the model list on the current model. Further
-  detents send Down or Up. A still click sends Enter on a focused model option. Codex returns to its picker, which
-  stays open, and announces `<model> <level>, <n> of <count>.`; the pick is `applied` when the announcement names the
-  picked model, `mismatch` when it names another option, and `unverified` when it names none (such as "Default",
-  which Codex announces as the model it resolves to) or none is heard. The bridge then closes the picker with Escape.
-- **Codex effort (knob 2).** A detent opens the picker when it is not open and sends Down until "Power" has focus (each
-  move read back, never Enter), then sends Right or Left. The level count comes from the announcement each time,
-  because it differs by model; at the first or last level the bridge sends nothing and logs `at-limit`. A step is
-  `applied` when the announced level moved by one. When the picker has no Power entry or does not open, the bridge
-  closes what opened and falls back to the profile's `shortcuts.codexEffortIncrease` or `codexEffortDecrease`, sent
-  through `tapInClient` only while Codex is in front, qualified and without a card, as `unverified` (no readback).
-  In Claude, `Ctrl`+`Alt`+`-` splits a pane, so a chord is never sent to it. Without chords this is `unsupported`.
-- **Closing.** An open menu, slider or picker closes with Escape after `timing.menuTimeoutMs` without a turn, on knob
-  2's click (for effort), and before any other control acts: a slot key, Send, Record, Loop, the big wheel, knob 4,
-  the volume knob, the other setting knob, a profile reload or a controller loss. Input that arrives meanwhile waits
-  in order, so two flows never type at once. Escape goes only into the flow's own menu or slider confirmed open with
-  focus in it, at most twice (Codex's model list closes to its picker first). A menu the owner closed with the mouse
-  gets nothing.
-- **Refusals.** A knob refuses, with its LED flashing the error color and nothing typed, when another app is in front
+- **Claude model (knob 1).** The first detent expands the `Model: <name>` button and moves keyboard focus to the
+  current model (`SetFocus`, read back; the menu's own initial focus varies). Each further detent moves focus one
+  model option, stopping at the first and last; "More models" is never a stop. A click after `model.clickStillMs` of
+  stillness calls `Select` on the option holding focus, which applies it and closes the menu. The readback waits for
+  the `Model: <name>` button to name the pick and, when the router can tell the session in front from the sessions it
+  knows (strictly the newest `lastFocusedAt`), for that session record's `model` to change. Then the composer gets
+  focus back, so Play still works.
+- **Claude effort (knob 2).** A detent expands the `Effort: <level>` button when the slider is not open and sets the
+  slider one `SmallChange` from the value it reads (`RangeValue.SetValue`), which applies at once. The range comes from
+  the slider, so at an end nothing is set: one `at-limit` with a red flash, and the detents still waiting are dropped.
+  The readback waits for the `Effort:` button to change and, when the session in front is known, its record's
+  `effort` too. A model without an Effort button, such as Haiku 4.5, is `unsupported`.
+- **Codex model (knob 1).** The first detent expands the picker button (named `<model> <effort>` while collapsed and
+  `Select effort` while expanded), invokes the picker's "Select model" entry and focuses the current model in the
+  list. Further detents move focus one option. A still click calls `Select` on the option holding focus; Codex returns
+  to its picker, which stays open, and the bridge closes it (below). The pick is `applied` when the closed button's
+  name starts with the picked model, `mismatch` when it names another option, and `unverified` when it names none
+  (such as after "Default") or the picker did not close.
+- **Codex effort (knob 2).** With the owner's chords in the profile (`shortcuts.codexEffortIncrease` and
+  `codexEffortDecrease`, owner decision on #906), each detent sends one chord through `tapInClient`, only with Codex
+  qualified and in front, no card and the picker closed, and reads the picker button's name: `applied` when it changed,
+  else `mismatch` (`unchanged`, usually the end of the range) with the waiting detents dropped. The picker is never
+  opened. Without chords, a detent expands the picker, focuses its "Power" entry by UI Automation and sends Right or
+  Left only while a fresh read shows the picker holding focus on Power; the level count comes from the announcement
+  each time, and at an end nothing is sent (`at-limit`). A picker without Power is `unsupported`.
+- **Closing.** An open control closes after `timing.menuTimeoutMs` without a turn, on knob 2's click (for effort), and
+  before any other control acts: a slot key, Send, Record, Loop, the big wheel, knob 4, the volume knob, the other
+  setting knob, a profile reload or a controller loss. Input that arrives meanwhile waits in order, so two flows never
+  act at once.
+  - Claude: `Collapse` on the button, only when a read shows it expanded, then the composer gets focus.
+  - Codex does not close on `Collapse`. A model list left without a pick first gets `Select` on its current model,
+    which returns to the picker unchanged; Escape is never sent from the list. Then exactly one Escape, only when a
+    fresh read shows the `Select effort` picker holding focus, and a bounded wait for the picker button to read
+    collapsed. A picker still open after that wait is logged as closed and unverified; it never gets a second Escape.
+  - A control the owner already closed gets nothing.
+- **Lagging reads.** A read that gates an action (is the menu open, does the option have focus, is the button
+  expanded) waits up to 400 ms for its condition, because UI Automation can lag a change. Each action re-checks its
+  target in the helper anyway, so a stale read never makes the bridge act twice.
+- **Refusals.** A knob refuses, with its LED flashing the error color and nothing done, when another app is in front
   (`not-agent-client`), the foreground is unknown, the client is unqualified (`client-unqualified` with the
   `observedVersion`), a card is open or unknown (`card-open`, `card-unknown`), the controls cannot be read
-  (`picker-unknown`), another menu or slider is open (`menu-open`), Claude's composer is unfocused, Record holds the
-  dictation chord (`dictating`), or a Send or task focus is in progress. A knob 1 click refuses while the knob still
-  moves (`knob-moving`), with no menu open (`menu-not-open`), with nothing or "More models" focused (`nothing-chosen`),
-  or while a step runs (`knob-busy`).
-- **Lights.** While its menu, slider or picker is open, the knob's LED shows the `active` color. For the error flash
-  time after a change it shows `applied` (`colors.applied`) for `applied`, the `unknown` color for `unverified`, and
-  the error color for a refusal, `mismatch`, `unsupported` or `at-limit`.
-- **Never a prompt.** The knobs never type into a composer, send or answer a card. Enter goes only into an open model
-  menu or list the flow opened, Escape only into its own open control, and the arrow keys only into the client the
-  flow checked, through `tapInClient`. No personal setting or key binding is changed.
+  (`picker-unknown`), one of them is already open (`menu-open`), its button is missing (`model-control-missing`,
+  `picker-button-missing`), Record holds the dictation chord (`dictating`), or a Send or task focus is in progress. A
+  knob 1 click refuses while the knob still moves (`knob-moving`), with no menu open (`menu-not-open`), with no option
+  confirmed focused (`nothing-chosen`, `focus-moved`), or while a step runs (`knob-busy`).
+- **Lights.** While its control is open, the knob's LED shows the `active` color. For the error flash time after a
+  change it shows `applied` (`colors.applied`) for `applied`, the `unknown` color for `unverified`, and the error color
+  for a refusal, `mismatch`, `unsupported` or `at-limit`.
+- **Keys.** The knobs never press Enter, never type into a composer, send a prompt or answer a card. Their only keys
+  are Codex's one closing Escape, the owner's chords, and Right and Left on a focused Power entry without chords, all
+  through `tapInClient` into Codex. The remaining windows between the confirming read and those keys are in
+  [UIA-NOTES.md](src/windows/UIA-NOTES.md#residual-windows). No personal setting or key binding is changed.
 
 ### Lights
 
@@ -629,9 +649,10 @@ the named-pipe lock refuses a second holder and is released on exit and on kill,
 observations (koffi load, foreground identity, a UI Automation helper ping, composer, Codex selected-thread, approval
 and card-button observations and client versions, with `SendInput` and `ShellExecute` replaced by throwing guards; it
 never focuses or presses a card button; it checks the volume key table and that malformed volume requests are refused
-before any attempt, sending no volume key; it reads the model and effort controls of each running client read-only,
-checks the navigation and chord key tables, and checks that malformed client taps are refused before any attempt,
-sending no key), and reruns the
+before any attempt, sending no volume key; it records which model and effort controls each running client exposes,
+with their UI Automation patterns, through the read-only picker read and calls no setting action, checks the
+`tapInClient` and chord key tables, and checks that malformed client taps are refused before any attempt, sending no
+key), and reruns the
 portable suites except the codec fixtures (whose workspace symlink Windows does not follow on a `\\wsl.localhost`
 checkout). It opens no device, link or keystroke. On a `\\wsl.localhost` checkout installed from Linux, run `npm ci`
 on Windows first so the `@koromix/koffi-win32-x64` prebuild sits beside koffi. Linux CI does not qualify Windows HID,
