@@ -13,7 +13,7 @@ import {CONFIG_SCHEMA} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
-import type {ReaderView, Role, Seed, Simulation} from './catalog.js';
+import type {Follow, ReaderView, Role, Seed, Simulation} from './catalog.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
@@ -88,31 +88,43 @@ export const answerOf = (result: RequestResult): string => result.status === 'ac
 export const describe = (error: unknown): string => error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
 type Copy = SyncedCopy<Record<string, unknown>>;
+/** One copy the reader keeps: its families, and the owner it names, if any. */
+type Group = {families: readonly string[]; owner?: string};
+const groupOf = (follow: Follow): Group => 'families' in follow ? follow : {families: follow};
+/** A group as a problem names it: its families, and its owner when it names one. */
+const named = ({families, owner}: Group): string => `${families.join(',')}${owner === undefined ? '' : ` from ${owner}`}`;
 
 /** The reader's copies, one per owner, how often each synced, every occurrence and outcome it heard and its gap notices. */
 export class Reader implements ReaderView {
-  readonly groups: readonly (readonly string[])[];
+  readonly groups: readonly Group[];
   copies: (Copy | undefined)[] = [];
   readonly counts: number[];
   readonly messages: Message[] = [];
   gapNotices = 0;
 
-  constructor(groups: readonly (readonly string[])[]) {
-    this.groups = groups;
-    this.counts = groups.map(() => 0);
+  constructor(follows: Seed['follows']) {
+    this.groups = follows.map(groupOf);
+    this.counts = follows.map(() => 0);
   }
 
   families(): readonly string[] {
-    return this.groups.flat();
+    return [...new Set(this.groups.flatMap(group => group.families))];
   }
 
-  states<T>(family: string): Message<T>[] {
-    const copy = this.copies[this.groups.findIndex(group => group.includes(family))];
-    return (copy?.states() ?? []).filter(state => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) as Message<T>[];
+  /** The current states of `family` in the copies that hold it, or only in the copy from `owner` when one is named. */
+  states<T>(family: string, owner?: string): Message<T>[] {
+    return this.#holding(family, owner).flatMap(index => this.copies[index]?.states() ?? [])
+      .filter(state => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) as Message<T>[];
   }
 
-  syncs(family: string): number {
-    return this.counts[this.groups.findIndex(group => group.includes(family))] ?? 0;
+  syncs(family: string, owner?: string): number {
+    const [index] = this.#holding(family, owner);
+    return index === undefined ? 0 : this.counts[index] ?? 0;
+  }
+
+  /** The indexes of the copies that hold `family`, from `owner` when one is named. */
+  #holding(family: string, owner: string | undefined): number[] {
+    return this.groups.flatMap((group, index) => group.families.includes(family) && (owner === undefined || group.owner === owner) ? [index] : []);
   }
 
   heard(): readonly Message[] {
@@ -127,20 +139,24 @@ export class Reader implements ReaderView {
 /** Where a harness sends what it saw: each message to check against profile 2.0, and each problem. */
 export type Observer = {check: (message: unknown, where: string) => void; problem: (text: string) => void};
 
-/** The reader hears every occurrence and outcome on `participant`, and keeps a copy of each owner's families. */
+/**
+ * The reader hears every occurrence and outcome on `participant`, and keeps a copy of each owner's families, synced
+ * from the owner by name when the seed names one.
+ */
 export async function follow(participant: Participant, reader: Reader, follows: Seed['follows'], observer: Observer): Promise<void> {
   await participant.subscribe('bunny.event.*.*', message => {
     observer.check(message, 'a message the reader heard');
     reader.messages.push(message);
   }, {onOverflow: () => { reader.gapNotices += 1; }});
-  for (const [index, families] of follows.entries()) {
-    const result = await participant.sync(families, change => { changed(reader, index, change, follows, observer); }, {timeoutMs: 5000});
-    if (result.status === 'rejected') observer.problem(`the reader could not sync ${families.join(',')}: ${result.error.error.code}`);
+  for (const [index, group] of follows.map(groupOf).entries()) {
+    const {families, owner} = group;
+    const result = await participant.sync(families, change => { changed(reader, index, change, group, observer); }, {timeoutMs: 5000, ...owner === undefined ? {} : {owner}});
+    if (result.status === 'rejected') observer.problem(`the reader could not sync ${named(group)}: ${result.error.error.code}`);
     else reader.copies[index] = result.copy;
   }
 }
 
-function changed(reader: Reader, index: number, change: SyncChange<Record<string, unknown>>, follows: Seed['follows'], observer: Observer): void {
+function changed(reader: Reader, index: number, change: SyncChange<Record<string, unknown>>, group: Group, observer: Observer): void {
   switch (change.type) {
     case 'updated':
       observer.check(change.message, 'a synced state');
@@ -152,7 +168,7 @@ function changed(reader: Reader, index: number, change: SyncChange<Record<string
       reader.counts[index] = (reader.counts[index] ?? 0) + 1;
       return;
     case 'failed':
-      observer.problem(`the reader's copy of ${follows[index]?.join(',') ?? ''} stopped: ${change.error.error.code}`);
+      observer.problem(`the reader's copy of ${named(group)} stopped: ${change.error.error.code}`);
       return;
   }
 }

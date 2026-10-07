@@ -1,7 +1,7 @@
 // The configured fixture module (Hub #919): a sign, the stand-in for a device module that needs settings, a secret and
 // private files, as Tidbyt, Nanoleaf and Pixoo do. `configureSign` checks its section of the runtime's configuration
-// file. Its start reads its token, keeps its layout in its private folder and serves its signs' availability, and
-// returns without reaching a sign (policy A). It reaches each sign afterwards, on the runtime's scheduler with a
+// file. Its start reads its token, keeps its layout in its private folder and serves its signs' availability, as its
+// own family and as the signs' `device/2.0` records (Hub #918, #967), and returns without reaching a sign (policy A). It reaches each sign afterwards, on the runtime's scheduler with a
 // deadline, to show the greeting it rendered in a worker thread: a sign that never answers is `unavailable` and is
 // tried again with capped backoff, and one that shows the greeting is `available`. A render that fails is reported
 // against the sign and tried again, never a module failure. It passes the module test kit, policy A's check included.
@@ -10,6 +10,7 @@ import {join} from 'node:path';
 import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type BunnyModule, type Configured, type StateDraft} from '@jimmie-potts/sdk';
 import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
+import {DEVICE_FAMILY, deviceRecord, deviceSchemas, deviceState} from './device.js';
 
 const BASE = 'https://bunny.invalid/events/';
 export const SIGN_SCHEMA = `${BASE}sign/2.0`;
@@ -131,7 +132,11 @@ export function createSignModule({transport, renderWorker = RENDER_WORKER}: {tra
       await writeFile(join(files(), 'layout.json'), JSON.stringify({greeting: config.greeting, signs: config.signs.map(sign => sign.id)}), {mode: 0o600});
       const signs: {address: string; sign: Sign}[] = config.signs.map(({id, address}) => ({address, sign: {id, revision: 0, availability: 'unknown'}}));
       const state = (sign: Sign): StateDraft<Sign> => ({type: 'org.bunny.sign.updated', subject: sign.id, dataschema: SIGN_SCHEMA, data: {...sign}});
-      await sdk.serveSync(['sign'], () => ({revision: Math.max(0, ...signs.map(({sign}) => sign.revision)), states: signs.map(({sign}) => state(sign))}));
+      const device = (sign: Sign): StateDraft => deviceState(deviceRecord(sign.id, sign.revision, 'sign', sign.availability));
+      await sdk.serveSync(['sign', DEVICE_FAMILY], ({data: {families}}) => ({
+        revision: Math.max(0, ...signs.map(({sign}) => sign.revision)),
+        states: [...families.includes('sign') ? signs.map(({sign}) => state(sign)) : [], ...families.includes(DEVICE_FAMILY) ? signs.map(({sign}) => device(sign)) : []],
+      }));
 
       let frame: Promise<string> | undefined;
       const render = (): Promise<string> => frame ??= workers.call<string>(renderWorker, {greeting: config.greeting}, {timeoutMs: RENDER_MS});
@@ -180,6 +185,7 @@ export function createSignModule({transport, renderWorker = RENDER_WORKER}: {tra
           sign.availability = availability;
           sign.revision += 1;
           await sdk.publish(`bunny.state.sign.${sign.id}`, {kind: 'state', ...state(sign)});
+          await sdk.publish(`bunny.state.${DEVICE_FAMILY}.${sign.id}`, {kind: 'state', ...device(sign)});
           // One record per change, not per attempt.
           if (reached) log.info('operation.completed', {'bunny.device.id': sign.id, 'bunny.operation': 'status', 'bunny.outcome': 'succeeded'});
           else log.warn('operation.failed', {'bunny.device.id': sign.id, 'bunny.operation': 'status', 'bunny.reason': 'unavailable'});
@@ -202,8 +208,8 @@ export const reportsUnavailable = (message: Message): boolean =>
 /** The kit's description of the sign: online signs for the checks, and offline ones for policy A's. */
 export const signSpec = (): ConformanceSpec => ({
   create: () => createSignModule({transport: new SimulatedSigns({online: true})}),
-  schemas: signSchemas,
-  serves: ['sign'],
+  schemas: {...deviceSchemas, ...signSchemas},
+  serves: ['sign', DEVICE_FAMILY],
   config: {...SIGN_SECTION, secrets: {token: '/nowhere/sign-token'}},
   secrets: {token: SYNTHETIC_TOKEN},
   offline: {create: () => createSignModule({transport: new SimulatedSigns()}), unavailable: reportsUnavailable},
