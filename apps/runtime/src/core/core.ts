@@ -444,6 +444,15 @@ class Core {
         this.#log.info('message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
         return;
       }
+      // A store that could not open, as on a first start on a full disk, holds nothing to check against: the owner
+      // opens it, or the observation is refused with the owner's code.
+      if (!this.#store.open) {
+        const owner = await this.#ensureOwner();
+        if (!('ingest' in owner)) {
+          this.#log.info('message.received', {...fields, ...refused(owner.code)}, message);
+          return;
+        }
+      }
       const verdict = this.#store.received(message);
       if (verdict === 'duplicate') {
         this.#log.debug('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
@@ -553,7 +562,8 @@ class Core {
     await this.#ready;
     if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
     return this.#run(async () => {
-      if (!await this.#refresh()) {
+      // A store that could not open, as at a first start on a full disk, has nothing to serve until the owner opens it.
+      if ((!this.#store.open && !('ingest' in await this.#ensureOwner())) || !await this.#refresh()) {
         this.#schedule();
         return errorBody('unavailable', {detail: 'the core cannot bring its sessions up to date now'});
       }

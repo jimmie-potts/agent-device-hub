@@ -488,7 +488,7 @@ it('a restart whose start-up maintenance falls on a full disk starts the core an
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the observation once there is room');
 });
 
-it('a second core waiting for the lease never gets it while the first opens its owner again after a failed commit', async context => {
+it('a second core never gets the store while the first opens its owner again after a failed commit', async context => {
   const dir = await stateDir(context);
   let database: DatabaseSync | undefined;
   const bus = new InProcessBus();
@@ -504,13 +504,14 @@ it('a second core waiting for the lease never gets it while the first opens its 
   const revisionOnDisk = (): number => (database?.prepare('SELECT value FROM core_revision').get() as {value: number} | undefined)?.value ?? 0;
   const before = revisionOnDisk();
 
-  // A second core, as a second runtime on the same state directory would, waits for the lease.
+  // A second core, as a second runtime on the same state directory would, cannot open the core's database, which the
+  // first keeps to itself (Hub #972). The store's own tests cover the lease behind it.
   const second = new ModuleHarness(createCoreModule(), {bus: new InProcessBus(), stateDir: dir});
   const contending = second.start().then(() => 'started', () => 'refused');
   fillDisk(database);
   const refused = await publish(hook, sessionStarted, Date.now(), {identity: OTHER});
   await waitFor(() => taken('rejected') === 1, 5000, 'the refused observation');
-  assert.equal(await contending, 'refused', 'the first core kept its lease through opening its owner again');
+  assert.equal(await contending, 'refused', 'the first core kept its store through opening its owner again');
   await second.stop();
   assert.equal(revisionOnDisk(), before, 'the refused change left the revision as it was');
   assert.equal(database.prepare('SELECT 1 FROM core_taken WHERE id = ?').get(refused.id), undefined, 'and took nothing');

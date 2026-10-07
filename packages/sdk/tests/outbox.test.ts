@@ -1,18 +1,24 @@
 // The per-module outbox (Hub #882, ADR 0012 "Ownership and publication"): messages commit with the module's own
 // changes and go out after the commit with their stored id and time. A message a crash kept from going out goes out at
 // the next start; an outcome goes out again at every start until the core acknowledges it, and the core drops the
-// duplicates by (source, id). Nothing else is ever sent again, so a restart replays no state or occurrence.
+// duplicates by (source, id). What went out is forgotten in one commit per batch (Hub #972), so only a crash between a
+// batch's sends and that commit, or a failure of that commit, sends a state or occurrence again; otherwise a restart
+// replays none.
 import assert from 'node:assert/strict';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, Outbox, SdkError, type AddMessage, type Draft, type ErrorScope, type Logger, type OutboxOptions, type Participant, type SendOptions,
+  InProcessBus, Outbox, SdkError, openModuleDatabaseFile, type AddMessage, type Draft, type ErrorScope, type Logger, type OutboxOptions, type Participant,
+  type SendOptions,
 } from '../src/index.js';
-import {RecordedSpans} from '../src/testing/index.js';
+import {RecordedSpans, countCommits} from '../src/testing/index.js';
 import {checked, flush, it, logRecorder, modeSet, session, trace, turnEnded, validator, type LogEntry as Entry} from './support.js';
 
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
@@ -40,9 +46,18 @@ class Core {
   }
 }
 
-/** One run of a module's process: a bus, the module's participant and database, and its outbox. */
-type Run = {bus: InProcessBus; module: Participant; database: DatabaseSync; outbox: Outbox};
+/**
+ * One run of a module's process: a bus, the module's participant and database, and its outbox. `commits` holds the
+ * connection's `synchronous` level at each commit the run made, in order.
+ */
+type Run = {bus: InProcessBus; module: Participant; database: DatabaseSync; outbox: Outbox; commits: number[]};
 type StartOptions = {
+  /**
+   * Opens the database as the runtime does, with `openModuleDatabaseFile` (Hub #972): exclusive locking, WAL and
+   * `synchronous = FULL`. Otherwise it is in SQLite's rollback journal mode at FULL, and a later start may open it while
+   * an earlier run's connection stays open.
+   */
+  wal?: boolean;
   /** Wraps the module's participant, as a crash test does. */
   wrap?: (module: Participant) => Participant;
   /** False when the core has failed and listens to nothing in this run. */
@@ -60,20 +75,30 @@ async function world(context: TestContext): Promise<{core: Core; start: (options
   const file = join(dir, 'lamp.sqlite');
   const core = new Core();
   // Each start is a new process: a new bus, clock and connection, on the same database file.
-  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}, log, spans}: StartOptions = {}): Promise<Run> => {
+  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}, log, spans, wal = false}: StartOptions = {}): Promise<Run> => {
     const bus = new InProcessBus();
     if (coreUp) await core.attach(bus);
     const module = checked(bus.connect('bunny/modules/lamp'));
-    const database = new DatabaseSync(file);
-    context.after(() => { if (database.isOpen) database.close(); });
-    database.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
+    let opened: DatabaseSync;
+    if (wal) opened = openModuleDatabaseFile(file);
+    else {
+      opened = new DatabaseSync(file);
+      opened.exec('PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL');
+    }
+    context.after(() => { if (opened.isOpen) opened.close(); });
+    opened.exec('CREATE TABLE IF NOT EXISTS lamps (id TEXT PRIMARY KEY, power TEXT NOT NULL)');
+    const {wrap: count, commits} = countCommits();
+    const database = count(opened);
     const outbox = new Outbox({
       sdk: wrap(module), database, clock: {now: () => Date.now()}, ...extra, ...(log === undefined ? {} : {log}), ...(spans === undefined ? {} : {trace: spans}),
     });
-    return {bus, module, database, outbox};
+    return {bus, module, database, outbox, commits};
   };
   return {core, start};
 }
+
+/** SQLite's `synchronous = FULL`: each commit syncs to disk before it returns. */
+const FULL = 2;
 
 const lamps = (database: DatabaseSync): unknown[] => database.prepare('SELECT id, power FROM lamps ORDER BY id').all().map(row => ({...row}));
 /** The outbox's rows: each message's id and whether it has gone out. */
@@ -444,4 +469,245 @@ it('a failed outcome\'s publication is a warning with its code, and a publish th
   const last = spans.named('bunny.outcome.publish').at(-1);
   assert.equal(last?.status, 'error', 'the refused publish');
   assert.equal(entries.length, before, 'republish passes its refusal on to the caller, so it records nothing');
+});
+
+// Hub #972: a commit is a sync to disk on the event loop. Each publication batch's bookkeeping commits once, after its
+// sends settle, at the connection's level, as every commit does. A crash before the bookkeeping commits sends the batch
+// again with the same ids, and a crash before the send sends it at the next start.
+
+it('a publication batch\'s bookkeeping commits once, after its sends settle', async context => {
+  const {core, start} = await world(context);
+  const {database, outbox, commits} = await start();
+  const added = await outbox.transaction(add => switchOn(add, database));
+  await flush();
+  assert.deepEqual(core.raw, added);
+  assert.equal(commits.length, 2, 'the work\'s commit, then one for the three messages that went out');
+  assert.deepEqual(rows(database), [{id: added[2]?.id, published: 1}], 'the state and the occurrence forgotten, the outcome marked');
+});
+
+it('transactions that commit before a queued send starts share its bookkeeping commit', async context => {
+  const {core, start} = await world(context);
+  const {outbox, commits} = await start();
+  const first = outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 1))]);
+  const second = outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 2))]);
+  const third = await outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 3))]);
+  const sent = [...await first, ...await second, ...third];
+  await flush();
+  assert.deepEqual(core.raw, sent, 'each once, in commit order');
+  assert.equal(commits.length, 4, 'three commits of work, and one for the batch the first send took');
+});
+
+it('a transaction that commits while a send is under way waits for the next batch: a send takes its rows when it starts', async context => {
+  const {core, start} = await world(context);
+  let release: () => void = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let held = false;
+  const {outbox, commits} = await start({wrap: module => ({...module, publishMessage: async (key, message) => {
+    // The first publish waits until the test lets it go, so the first send is under way while the second commits.
+    if (!held) {
+      held = true;
+      await gate;
+    }
+    return module.publishMessage(key, message);
+  }})});
+  const first = outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 1))]);
+  await flush();
+  assert.equal(held, true, 'the first send is under way');
+  const second = outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))]);
+  assert.equal(commits.length, 2, 'both transactions committed');
+  release();
+  const sent = [...await first, ...await second];
+  await flush();
+  assert.deepEqual(core.raw, sent, 'each once, in commit order');
+  assert.equal(commits.length, 4, 'one bookkeeping commit for each batch: the first send took only the first transaction\'s row');
+});
+
+it('a send refused partway commits what went out before it, once, and records that outcome\'s publication', async context => {
+  const {core, start} = await world(context);
+  const {log, entries} = recorder();
+  const publishing = {refusing: false, attempts: 0};
+  const run = await start({log, wrap: module => {
+    const counted = refusing(module, publishing);
+    // The first message goes out, and the refusals start with the next.
+    return {...counted, publishMessage: (key, message) => {
+      const result = counted.publishMessage(key, message);
+      if (publishing.attempts === 1) publishing.refusing = true;
+      return result;
+    }};
+  }});
+  const added = await run.outbox.transaction(add => [
+    add('bunny.event.mode.wall', modeSet('req-1')), add('bunny.state.session.s1', session('s1', 1)), add('bunny.event.session.s1', turnEnded('s1')),
+  ]);
+  await flush();
+  assert.deepEqual(core.raw, added.slice(0, 1), 'the outcome went out; the refusal stopped the send');
+  assert.equal(run.commits.length, 2, 'the work, then one bookkeeping commit for what went out');
+  assert.deepEqual(rows(run.database), [{id: added[0]?.id, published: 1}, {id: added[1]?.id, published: 0}, {id: added[2]?.id, published: 0}]);
+  assert.deepEqual(published(entries).map(entry => entry.fields['bunny.message.id']), [added[0]?.id], 'its first publication, once its batch committed');
+  assert.deepEqual(entries.filter(entry => entry.event === 'outbox.deferred').map(entry => entry.fields['bunny.outbox.waiting_count']), [2]);
+  publishing.refusing = false;
+  const [next] = await run.outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))]);
+  await flush();
+  assert.deepEqual(core.raw, [...added, next], 'the waiting messages first, then the new one');
+  assert.equal(published(entries).length, 1);
+});
+
+it('republishing outcomes that already went out commits nothing', async context => {
+  const {core, start} = await world(context);
+  const first = await start();
+  const [outcome] = await first.outbox.transaction(add => [add('bunny.event.mode.wall', modeSet('req-1'))]);
+  await flush();
+  const restarted = await start();
+  assert.equal(await restarted.outbox.republish(), 1);
+  await flush();
+  assert.deepEqual(core.raw, [outcome, outcome], 'sent again, unchanged, for the core to acknowledge');
+  assert.deepEqual(restarted.commits, [], 'an outcome already marked published needs no write');
+});
+
+it('a bookkeeping commit that fails keeps every row, is reported once, and the next send sends them again with their ids', async context => {
+  const {core, start} = await world(context);
+  const {log, entries} = recorder();
+  const run = await start({log});
+  // Nothing can be forgotten while the trigger stands, so the batch's bookkeeping rolls back.
+  run.database.exec('CREATE TEMP TRIGGER keep BEFORE DELETE ON bunny_outbox BEGIN SELECT RAISE(ABORT, \'no room\'); END');
+  const added = await run.outbox.transaction(add => switchOn(add, run.database));
+  await flush();
+  assert.deepEqual(core.raw, added, 'all three went out');
+  assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})), 'nothing was forgotten or marked');
+  assert.deepEqual(entries.filter(entry => entry.event === 'outbox.deferred').map(entry => [entry.fields['bunny.code'], entry.fields['bunny.outbox.waiting_count']]),
+    [['internal', 3]], 'reported once, with every row still waiting');
+  assert.equal(published(entries).length, 0, 'no publication is recorded for a batch whose bookkeeping did not commit');
+  run.database.exec('DROP TRIGGER keep');
+  const [next] = await run.outbox.transaction(add => [add('bunny.state.session.s2', session('s2', 1))]);
+  await flush();
+  assert.deepEqual(core.raw.slice(3), [...added, next], 'the same three again, with their ids, then the new one');
+  assert.deepEqual(core.ids(), [...added, next].map(message => message.id), 'a consumer that drops duplicates takes each once');
+  assert.deepEqual(published(entries).map(entry => entry.fields['bunny.message.id']), [added[2]?.id], 'the outcome\'s publication, recorded once');
+  assert.deepEqual(rows(run.database), [{id: added[2]?.id, published: 1}]);
+});
+
+it('an acknowledgment that lands after its outcome went out and before the batch committed records the publication, once', async context => {
+  const {core, start} = await world(context);
+  const {log, entries} = recorder();
+  const acknowledged: string[] = [];
+  const outbox: {current?: Outbox} = {};
+  let outcome: string | undefined;
+  const run = await start({log, wrap: module => ({...module, publishMessage: (key, message) => {
+    // The core acknowledges the outcome while the batch's next message goes out, before its bookkeeping commits.
+    if (outcome !== undefined && outbox.current?.acknowledge(outcome) === true) acknowledged.push(outcome);
+    if (message.kind === 'outcome') outcome = message.id;
+    return module.publishMessage(key, message);
+  }})});
+  outbox.current = run.outbox;
+  const added = await run.outbox.transaction(add => [
+    add('bunny.state.session.s1', session('s1', 1)), add('bunny.event.mode.wall', modeSet('req-1')), add('bunny.event.session.s1', turnEnded('s1')),
+  ]);
+  await flush();
+  assert.deepEqual(core.raw, added);
+  assert.deepEqual(acknowledged, [added[1]?.id], 'acknowledged mid-batch');
+  assert.deepEqual(published(entries).map(entry => entry.fields['bunny.message.id']), [added[1]?.id], 'its publication recorded once');
+  assert.deepEqual(rows(run.database), [], 'the outcome acknowledged, the rest forgotten');
+});
+
+it('every commit, the bookkeeping and acknowledgments included, runs at the connection\'s level, so a power loss never undoes one', async context => {
+  const {start} = await world(context);
+  const run = await start({wal: true});
+  const pragma = (name: string): unknown => Object.values(run.database.prepare(`PRAGMA ${name}`).get() ?? {})[0];
+  assert.deepEqual([pragma('journal_mode'), pragma('locking_mode'), pragma('synchronous')], ['wal', 'exclusive', FULL], 'opened as the runtime opens it');
+  const added = await run.outbox.transaction(add => switchOn(add, run.database));
+  await flush();
+  assert.equal(run.outbox.acknowledge(added[2]?.id ?? ''), true);
+  await run.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 2))]);
+  await flush();
+  assert.deepEqual(run.commits, [FULL, FULL, FULL, FULL, FULL], 'work, bookkeeping, acknowledgment, work, bookkeeping');
+});
+
+const CRASH = fileURLToPath(new URL('./fixtures/outbox-crash.js', import.meta.url));
+type WireLine = {sent?: string; message?: Message; record?: string; republished?: number; committed?: boolean; acknowledged?: boolean};
+
+/** The crash tests' module process: a database file and a wire file that outlive each run (fixtures/outbox-crash.ts). */
+async function crashWorld(context: TestContext): Promise<{file: string; run: (...args: string[]) => Promise<NodeJS.Signals | null>; wire: () => Promise<WireLine[]>}> {
+  const dir = await mkdtemp(join(tmpdir(), 'bunny-outbox-crash-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const file = join(dir, 'lamp.sqlite');
+  const wirePath = join(dir, 'wire.jsonl');
+  return {
+    file,
+    run: async (...args) => {
+      const child = spawn(process.execPath, [CRASH, file, wirePath, ...args], {stdio: ['ignore', 'ignore', 'inherit']});
+      const [code, signal] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
+      if (signal === null) assert.equal(code, 0, 'the run ended cleanly');
+      return signal;
+    },
+    wire: async () => (await readFile(wirePath, 'utf8').catch(() => '')).split('\n').filter(line => line !== '').map(line => JSON.parse(line) as WireLine),
+  };
+}
+
+/** What a consumer that drops duplicates by (source, id) holds, failing on a resend that differs from the first copy. */
+function takenOnce(lines: readonly WireLine[]): Map<string, Message> {
+  const taken = new Map<string, Message>();
+  for (const {message} of lines) {
+    if (message === undefined) continue;
+    const key = `${message.source}\n${message.id}`;
+    assert.notEqual(compareDelivery(taken.get(key), message), 'conflict', 'a resent message is the stored one, unchanged');
+    if (!taken.has(key)) taken.set(key, message);
+  }
+  return taken;
+}
+const sentKinds = (lines: readonly WireLine[]): (string | undefined)[] => lines.filter(line => line.message !== undefined).map(line => line.message?.kind);
+
+it('killed after its sends and before their bookkeeping commits, a module sends the batch again at its next start, and the consumer takes each once', async context => {
+  const crash = await crashWorld(context);
+  assert.equal(await crash.run('commit', 'after-send'), 'SIGKILL');
+  const killed = await crash.wire();
+  assert.deepEqual(sentKinds(killed), ['state', 'outcome', 'occurrence'], 'all three went out before the kill');
+  assert.equal(killed.some(line => line.committed === true || line.record === 'outcome.published'), false, 'nothing after the sends');
+
+  assert.equal(await crash.run('republish'), null);
+  const restarted = (await crash.wire()).slice(killed.length);
+  assert.deepEqual(sentKinds(restarted), ['state', 'outcome', 'occurrence'], 'the batch whose bookkeeping never committed goes out again');
+  assert.deepEqual(restarted.at(-1), {republished: 3});
+  const taken = takenOnce([...killed, ...restarted]);
+  assert.deepEqual([...taken.values()], killed.flatMap(line => line.message ?? []), 'the consumer takes each message once, as first sent');
+
+  assert.equal(await crash.run('republish'), null);
+  const all = await crash.wire();
+  const third = all.slice(killed.length + restarted.length);
+  assert.deepEqual(sentKinds(third), ['outcome'], 'once the batch committed, only the unacknowledged outcome goes out again');
+  assert.equal(takenOnce(all).size, 3, 'nothing lost and nothing taken twice');
+  assert.equal(all.filter(line => line.record === 'outcome.published').length, 1, 'its publication is recorded once, by the run that committed it');
+});
+
+it('killed between its commit and its first send, a module sends everything at its next start, once', async context => {
+  const crash = await crashWorld(context);
+  assert.equal(await crash.run('commit', 'before-send'), 'SIGKILL');
+  assert.deepEqual(sentKinds(await crash.wire()), [], 'nothing went out before the kill');
+  const stored = new DatabaseSync(crash.file, {readOnly: true});
+  try {
+    assert.deepEqual(stored.prepare('SELECT id, power FROM lamps').all().map(row => ({...row})), [{id: 'lamp-1', power: 'on'}], 'the work committed');
+    assert.deepEqual(stored.prepare('SELECT kind, published FROM bunny_outbox ORDER BY seq').all().map(row => ({...row})),
+      [{kind: 'state', published: 0}, {kind: 'outcome', published: 0}, {kind: 'occurrence', published: 0}], 'every message stored, none published');
+  } finally {
+    stored.close();
+  }
+  assert.equal(await crash.run('republish'), null);
+  assert.equal(await crash.run('republish'), null);
+  const all = await crash.wire();
+  assert.deepEqual(sentKinds(all), ['state', 'outcome', 'occurrence', 'outcome'], 'each at the first start, then only the outcome');
+  assert.equal(takenOnce(all).size, 3);
+  assert.equal(all.filter(line => line.record === 'outcome.published').length, 1);
+});
+
+it('killed after the core acknowledged an outcome mid-batch and before the bookkeeping committed, a module records that outcome\'s publication once', async context => {
+  const crash = await crashWorld(context);
+  assert.equal(await crash.run('commit', 'ack-mid-batch'), 'SIGKILL');
+  const killed = await crash.wire();
+  assert.deepEqual(sentKinds(killed), ['state', 'outcome', 'occurrence']);
+  assert.equal(killed.some(line => line.acknowledged === true), true, 'the acknowledgment landed before the bookkeeping');
+  assert.equal(killed.filter(line => line.record === 'outcome.published').length, 1, 'the acknowledgment recorded the publication, as no later send will');
+  assert.equal(await crash.run('republish'), null);
+  assert.equal(await crash.run('republish'), null);
+  const all = await crash.wire();
+  assert.deepEqual(sentKinds(all.slice(killed.length)), ['state', 'occurrence'], 'the acknowledged outcome never goes out again; the rest of the batch does, once');
+  assert.equal(takenOnce(all).size, 3);
+  assert.equal(all.filter(line => line.record === 'outcome.published').length, 1, 'at most once, and here once');
 });

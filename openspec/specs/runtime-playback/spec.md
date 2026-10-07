@@ -158,8 +158,8 @@ The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`,
 - **THEN** the stop ends the call at once, leaves no call or timer behind, stores the outcome as `uncertain`, and the next start publishes it
 
 #### Scenario: The database refuses the intent
-- **WHEN** another writer holds the module's database and two commands arrive, and then it lets go and a third arrives
-- **THEN** both are refused `capacity` with no speaker hearing them and one `operation.failed` warning, and the third is sent, with one `operation.completed` record
+- **WHEN** the module's database refuses every write and two commands arrive, and then it takes writes again and a third arrives
+- **THEN** both are refused `capacity` with no speaker hearing them and one `operation.failed` record, and the third is sent, with one `operation.completed` record
 
 #### Scenario: The database still refuses when the module stops
 - **WHEN** the database refuses commits from the moment the speaker hears a command, and the module stops before the speaker answers
@@ -167,7 +167,7 @@ The module SHALL answer `playback-control` on `bunny.cmd.playback-control.<id>`,
 
 #### Scenario: The database refuses the outcome
 - **WHEN** the database refuses commits from the moment the speaker hears a command until a few seconds later
-- **THEN** the requester hears `accepted`, the module keeps running with its intent stored, logs one `operation.failed` warning, commits and publishes the outcome once the database lets go, logs one `operation.completed`, and sends later commands
+- **THEN** the requester hears `accepted`, the module keeps running with its intent stored, logs one `operation.failed` record, commits and publishes the outcome once the database lets go, logs one `operation.completed`, and sends later commands
 
 #### Scenario: A crash between intent and outcome
 - **WHEN** the module starts with a stored intent that has no outcome

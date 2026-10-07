@@ -7,6 +7,7 @@ export {
   noSpans, startSpan, type Span, type SpanAttributes, type SpanKind, type SpanName, type SpanOptions, type SpanRecorder, type SpanStatus,
 } from './spans.js';
 export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
+export {openModuleDatabaseFile} from './database.js';
 export {
   MAX_TIMEOUT_MS, SdkError, type AcceptedReply, type Cancel, type Clock, type Command, type CommandDraft, type Draft, type Handler, type Overflow,
   type Participant, type PublishedKind, type RejectedReply, type Reply, type RequestOptions, type RequestResult, type Responder,

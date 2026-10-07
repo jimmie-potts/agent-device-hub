@@ -179,7 +179,10 @@ most 30 s after the module starts (`START_WINDOW_MS`):
 
 - **One writer.** Every call to the cloud goes through one queue, one at a time,
   in order, behind a lease on the cloud device in the module's private folder. A
-  second runtime on the same state directory is refused the lease, writes
+  second runtime on the same state directory never reaches it: its core fails
+  first, and the module's own database, which the first runtime keeps to
+  itself, refuses it with `SQLITE_BUSY` (Hub #972). A module that cannot take
+  the lease, because another holder has it or its folder is not private, writes
   nothing and shows the Tidbyt `unavailable`. The old runner's lease root is
   separate, so the cutover stops the old host first.
 - **The gate.** Each tile pushes only when its frame changes, at most once every

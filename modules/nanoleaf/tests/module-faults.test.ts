@@ -210,7 +210,7 @@ suite('a device that answers with an HTTP error', () => {
 suite('store failures', () => {
   test('a worker that a store failure stopped starts again with backoff, and the device shows degraded meanwhile', async context => {
     const world = await showing(context);
-    const release = world.lockStore('IMMEDIATE');
+    const release = world.refuseStore('writes');
     await world.until(() => logged(world, 'operation.failed', {'bunny.reason': 'busy'}) > 0, 10_000, 'the worker ended unrecorded');
     await world.until(() => availability(world) === 'degraded', 5000, 'the device degraded while no worker presents it');
     assert.equal(world.wall()?.failing, true);
@@ -224,7 +224,7 @@ suite('store failures', () => {
 
   test('a store outage logs each run once: the failed pass and the stopped worker, then each recovery, never one in between', async context => {
     const world = await showing(context);
-    const release = world.lockStore('IMMEDIATE');
+    const release = world.refuseStore('writes');
     await world.until(() => logged(world, 'operation.failed', {'bunny.reason': 'busy'}) > 0, 10_000, 'the worker ended');
     // The wall still answers its polls while the store is busy; no recovery counts until a worker presents it again.
     await world.advance(3000);
@@ -264,7 +264,7 @@ suite('store failures', () => {
 
   test('a publication the store refused is published within a second of the store reading again, while the wall\'s poll is idle', async context => {
     const world = await showing(context);
-    const release = world.lockStore('EXCLUSIVE');
+    const release = world.refuseStore('everything');
     world.device.setPower(LINES_ADDRESS, false);
     await world.until(() => logged(world, 'operation.failed', {'bunny.operation': 'snapshot'}) === 1, 10_000, 'the publication refused');
     await world.advance(17_000);
@@ -282,7 +282,7 @@ suite('store failures', () => {
 
   test('a read failure while publishing is logged once and tried again, and never fails the module', async context => {
     const world = await showing(context);
-    const release = world.lockStore('EXCLUSIVE');
+    const release = world.refuseStore('everything');
     world.device.setPower(LINES_ADDRESS, false);
     await world.advance(15_000);
     assert.deepEqual(world.harness.failures, [], 'no timer failed the module');

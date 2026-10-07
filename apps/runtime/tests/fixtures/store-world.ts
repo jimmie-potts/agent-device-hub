@@ -7,7 +7,7 @@ import type {TestContext} from 'node:test';
 import {createAgentState} from '@jimmie-potts/agent-state';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type LifecycleEvent, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
-import type {SdkError} from '@jimmie-potts/sdk';
+import {openModuleDatabaseFile, type SdkError} from '@jimmie-potts/sdk';
 import {reducedKind, toEnvelope} from '../../src/core/mapping.js';
 import {CoreStore, type Deriver} from '../../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../../src/index.js';
@@ -44,15 +44,27 @@ export class World {
   refuse: SdkError | undefined;
   /** When set, a publish never finishes, as in a process that died after its commit. */
   dead = false;
+  /**
+   * When set, the publish that brings `published` to this length goes out and then never finishes, as in a process that
+   * died after its sends and before their bookkeeping committed.
+   */
+  hangAfter: number | undefined;
 
   readonly #wrap: (db: DatabaseSync) => DatabaseSync;
+  readonly #wal: boolean;
 
-  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db) {
+  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db, wal = false) {
     this.#wrap = wrap;
+    this.#wal = wal;
     this.file = file;
     this.clock = clock;
-    this.db = new DatabaseSync(file);
+    this.db = this.#connect();
     this.store = this.#store(derivers);
+  }
+
+  /** A connection to the store's file: as the runtime opens it when asked (Hub #972), otherwise SQLite's defaults. */
+  #connect(): DatabaseSync {
+    return this.#wal ? openModuleDatabaseFile(this.file) : new DatabaseSync(this.file);
   }
 
 
@@ -60,9 +72,11 @@ export class World {
     file?: string; clock?: ReturnType<typeof manualClock>; derivers?: readonly Deriver[];
     /** Stands in front of the store's connection, as a test that makes one of its calls fail does. */
     wrap?: (db: DatabaseSync) => DatabaseSync;
+    /** Opens the store's file as the runtime does: exclusive locking, WAL and `synchronous = FULL`. */
+    wal?: boolean;
   } = {}): Promise<World> {
     const file = options.file ?? join(await stateDir(context), 'core.sqlite');
-    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap);
+    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap, options.wal);
     context.after(() => world.close());
     await world.start();
     return world;
@@ -75,6 +89,7 @@ export class World {
         if (this.dead) return new Promise(() => {});
         if (this.refuse !== undefined) return Promise.reject(this.refuse);
         this.published.push({key, message: message as Message});
+        if (this.published.length === this.hangAfter) return new Promise(() => {});
         return Promise.resolve(message);
       }},
       onError: error => { this.refused.push(error); },
@@ -99,7 +114,8 @@ export class World {
     this.store.close();
     this.db.close();
     this.dead = false;
-    this.db = new DatabaseSync(this.file);
+    this.hangAfter = undefined;
+    this.db = this.#connect();
     this.store = this.#store(derivers);
     await this.start();
   }

@@ -276,11 +276,15 @@ export class World {
 
   /**
    * A new state directory holding the module's SQLite file as it is on disk now, as the runtime would find it after a
-   * crash at this point. The module's private folder, with its leases, is not copied: a crash releases them.
+   * crash at this point: the file and its write-ahead log, which holds the commits not yet checkpointed into it (Hub
+   * #972). The module's private folder, with its leases, is not copied: a crash releases them.
    */
   async crashCopy(): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), 'lifx-crash-'));
     await copyFile(join(this.dir, 'lifx.sqlite'), join(dir, 'lifx.sqlite'));
+    await copyFile(join(this.dir, 'lifx.sqlite-wal'), join(dir, 'lifx.sqlite-wal')).catch((error: unknown) => {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    });
     return dir;
   }
 
@@ -340,10 +344,12 @@ export class World {
 
 /**
  * Leaves the module's database no room to grow, as a full disk would, through SQLite's own full-disk path: small pages and
- * a page limit at the file's size, so the next change that needs a page fails with SQLITE_FULL.
+ * a page limit at the file's size, so the next change that needs a page fails with SQLITE_FULL. A database in WAL mode,
+ * as the runtime and the kit open a module's (Hub #972), keeps its page size through a VACUUM, so it leaves WAL for the
+ * VACUUM and comes back to it.
  */
 export function fillDisk(db: DatabaseSync): void {
-  db.exec('PRAGMA page_size = 512; VACUUM');
+  db.exec('PRAGMA journal_mode = DELETE; PRAGMA page_size = 512; VACUUM; PRAGMA journal_mode = WAL');
   const pages = (db.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
   db.exec(`PRAGMA max_page_count = ${pages}`);
 }

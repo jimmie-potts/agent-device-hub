@@ -218,13 +218,11 @@ it('an outcome the store could not keep is reported at the next start: uncertain
   // The write is out and unanswered when the disk fills, so the outcome cannot be stored.
   const db = world.db;
   assert.ok(db);
-  db.exec('PRAGMA page_size = 512; VACUUM');
-  const pages = (db.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
-  db.exec(`PRAGMA max_page_count = ${pages}`);
+  fillDisk(db);
   await world.clock.advance(5000);
   assert.equal(world.outcomes('req-lost-row').length, 0, 'not stored, so not published');
   assert.equal(world.device(PENDANT.id)?.pending ?? 1, 1, 'the module\'s records still hold it pending');
-  db.exec('PRAGMA max_page_count = 1073741823');
+  roomOnDisk(db);
   await world.restart();
   await world.clock.advance(1);
   assert.deepEqual(outcome(world, 'req-lost-row'), {
@@ -261,7 +259,8 @@ it('a second instance on the same state directory leaves the live instance\'s co
   await world.clock.advance(1);
   world.network.offline(PENDANT.address);
   accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-live'}));
-  // A second instance starts on the same state directory, on a bus of its own, while the write is in flight.
+  // A second instance starts on the same state directory, on a bus of its own, while the write is in flight. The live
+  // instance keeps its database file to itself (Hub #972), so the second cannot open it and its start fails.
   const bus = new InProcessBus({now: world.clock.now, scheduler: world.clock.scheduler});
   const seen: Message[] = [];
   const watcher = bus.connect('bunny/test/second');
@@ -269,7 +268,7 @@ it('a second instance on the same state directory leaves the live instance\'s co
   const second = new ModuleHarness(createLifxModule({transport: world.network}), {
     bus, stateDir: world.dir, clock: {now: world.clock.now}, scheduler: world.clock.scheduler, section: SECTION,
   });
-  await second.start();
+  await assert.rejects(second.start(), (error: unknown) => error instanceof Error && 'errcode' in error && error.errcode === 5, 'SQLITE_BUSY');
   await world.clock.advance(1);
   assert.deepEqual(seen.filter(message => message.kind === 'outcome').map(message => message.data), [], 'the second instance reported none of the live one\'s commands');
   await second.stop();
@@ -355,9 +354,7 @@ it('a store that cannot write refuses the command before it is accepted, with no
   const db = world.db;
   assert.ok(db);
   // A full disk, through SQLite's own full-disk path: no page may be added.
-  db.exec('PRAGMA page_size = 512; VACUUM');
-  const pages = (db.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
-  db.exec(`PRAGMA max_page_count = ${pages}`);
+  fillDisk(db);
   const before = world.network.state().packets.length;
   const refused = await world.send(command.power(PENDANT.id, false), {requestId: 'req-full'});
   assert.equal(refused.status === 'rejected' && refused.error.error.code, 'capacity');
@@ -365,7 +362,7 @@ it('a store that cannot write refuses the command before it is accepted, with no
   assert.equal(world.network.state().packets.length, before, 'nothing reached the bulb');
   assert.equal(world.outcomes('req-full').length, 0, 'a refusal has no outcome');
   assert.equal(world.logs('operation.failed').filter(entry => entry.fields['bunny.operation'] === 'storage').length, 1, 'one record for the full store');
-  db.exec('PRAGMA max_page_count = 1073741823');
+  roomOnDisk(db);
   // The refused command left nothing behind: the record a reader syncs is the one before it.
   const record = await synced(world, PENDANT.id);
   assert.deepEqual([record?.configurationRevision, record?.desired.power, record?.pending, record?.pendingKinds], [0, {status: 'unknown'}, 0, []]);

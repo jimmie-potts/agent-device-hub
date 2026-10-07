@@ -1,11 +1,14 @@
 // The module context: a logger, tracing, the runtime's clock and scheduler (which also drive the module's SDK deadlines),
 // worker threads, its own SQLite file and its own participant on the shared bus.
 import assert from 'node:assert/strict';
-import {access, stat} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {access, chmod, link, mkdir, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import {startRuntime} from '../src/index.js';
+import {RuntimeError, openModuleDatabase} from '../src/state.js';
 import {RUNTIME_PACKAGE_VERSION, START, UUID, contextOf, deferred, entry, fixture, flush, it, manualClock, peek, run, session, modeFor, stateDir} from './support.js';
 
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
@@ -132,16 +135,32 @@ it('a module timer needs a whole delay that a timer can wait', async context => 
 
 it('a module gets its own SQLite file in the runtime\'s private state directory, kept across restarts', async context => {
   const dir = await stateDir(context);
+  let settings: unknown;
   const writer = fixture('notes', ({database}) => {
     const db = database();
     assert.equal(database(), db, 'one connection per module');
+    // Exclusive locking and WAL with a sync at every commit (Hub #972): a commit is durable when it returns, and no
+    // shared-memory index is ever created.
+    const pragma = (name: string): unknown => Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0];
+    settings = {locking: pragma('locking_mode'), journal: pragma('journal_mode'), synchronous: pragma('synchronous'), foreignKeys: pragma('foreign_keys')};
     db.exec('CREATE TABLE notes (text TEXT)');
     db.prepare('INSERT INTO notes VALUES (?)').run('kept');
   });
   const quiet = fixture('quiet');
   const first = await startRuntime({modules: [writer, quiet], port: 0, stateDir: dir, log: () => {}});
+  // A failed check still stops it; stopping again returns the same promise.
+  context.after(() => first.stop());
   const file = join(dir, 'modules', 'notes.sqlite');
+  assert.deepEqual(settings, {locking: 'exclusive', journal: 'wal', synchronous: 2, foreignKeys: 1}, 'exclusive locking, WAL, synchronous FULL and foreign keys');
   assert.equal((await stat(file)).mode & 0o777, 0o600);
+  assert.equal((await stat(`${file}-wal`)).mode & 0o777, 0o600, 'the log is as private as the file');
+  await assert.rejects(access(`${file}-shm`), 'no shared-memory index');
+  const other = new DatabaseSync(file);
+  try {
+    assert.throws(() => other.prepare('SELECT 1 FROM notes').get(), /locked/, 'no second connection reads the file while the module has it');
+  } finally {
+    other.close();
+  }
   assert.equal((await stat(join(dir, 'modules'))).mode & 0o777, 0o700);
   await assert.rejects(access(join(dir, 'modules', 'quiet.sqlite')), 'a module that never asks gets no file');
   await first.stop();
@@ -151,6 +170,56 @@ it('a module gets its own SQLite file in the runtime\'s private state directory,
   const second = await startRuntime({modules: [reader], port: 0, stateDir: dir, log: () => {}});
   await second.stop();
   assert.deepEqual(rows, [{text: 'kept'}]);
+});
+
+// Another process's attempt on a module's database: `locked` while a connection holds its lock, `opened` otherwise.
+const OTHER_PROCESS = `const {DatabaseSync} = require('node:sqlite');
+try {
+  const db = new DatabaseSync(process.argv[1]);
+  db.prepare('SELECT COUNT(*) AS n FROM notes').get();
+  db.close();
+  console.log('opened');
+} catch (error) {
+  console.log(error.errcode === 5 ? 'locked' : 'failed');
+}`;
+const busy = (error: unknown): boolean => error instanceof Error && 'errcode' in error && error.errcode === 5;
+
+it('a second open of a module\'s database in this process is refused and leaves the first connection\'s lock, so another process is still refused', async context => {
+  // Closing any descriptor of a file drops every POSIX lock this process holds on it (Hub #972): the opener must never
+  // open the existing file outside SQLite.
+  const dir = await stateDir(context);
+  const first = openModuleDatabase(dir, 'notes');
+  context.after(() => { if (first.isOpen) first.close(); });
+  first.exec('CREATE TABLE notes (text TEXT); INSERT INTO notes VALUES (\'kept\')');
+  const file = join(dir, 'modules', 'notes.sqlite');
+  const other = (): string => spawnSync(process.execPath, ['-e', OTHER_PROCESS, file], {encoding: 'utf8'}).stdout.trim();
+  assert.equal(other(), 'locked', 'another process is refused while the module has the file');
+  assert.throws(() => openModuleDatabase(dir, 'notes'), busy, 'a second open in this process is refused');
+  assert.equal(other(), 'locked', 'and another process is still refused after it');
+  first.close();
+  assert.equal(other(), 'opened', 'once the module closes it, another process opens it');
+});
+
+it('a module\'s database that is a link, has a second name or that others can read is refused before SQLite opens it', async context => {
+  const dir = await stateDir(context);
+  const modules = join(dir, 'modules');
+  await mkdir(modules, {mode: 0o700});
+  const refused = (error: unknown): boolean => error instanceof RuntimeError && error.code === 'module-db-not-private';
+  await writeFile(join(dir, 'elsewhere.sqlite'), '', {mode: 0o600});
+  await symlink(join(dir, 'elsewhere.sqlite'), join(modules, 'linked.sqlite'));
+  assert.throws(() => openModuleDatabase(dir, 'linked'), refused, 'a link in its place');
+  await symlink(join(dir, 'missing.sqlite'), join(modules, 'dangling.sqlite'));
+  assert.throws(() => openModuleDatabase(dir, 'dangling'), refused, 'a dangling link in its place');
+  await access(join(dir, 'missing.sqlite')).then(() => { assert.fail('a dangling link created its target'); }, () => {});
+  await writeFile(join(modules, 'shared.sqlite'), '', {mode: 0o600});
+  await link(join(modules, 'shared.sqlite'), join(dir, 'second-name.sqlite'));
+  assert.throws(() => openModuleDatabase(dir, 'shared'), refused, 'a file with a second name');
+  await writeFile(join(modules, 'readable.sqlite'), '', {mode: 0o600});
+  await chmod(join(modules, 'readable.sqlite'), 0o640);
+  assert.throws(() => openModuleDatabase(dir, 'readable'), refused, 'a file others can read');
+  const created = openModuleDatabase(dir, 'fresh');
+  created.close();
+  assert.equal((await stat(join(modules, 'fresh.sqlite'))).mode & 0o777, 0o600, 'a missing file is created owner-only');
 });
 
 it('a module can run a worker thread', async context => {

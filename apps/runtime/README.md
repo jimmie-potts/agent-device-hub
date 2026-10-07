@@ -58,9 +58,11 @@ and exits 1, and the service manager restarts it whole.
   beside it, which has no rollback journal, so taking it writes nothing. The
   core holds it from its start until it stops, including while it opens
   agent-state's owner again after a failed commit. A second runtime on the same
-  state directory waits for it until agent-state's three-second deadline, and
-  its core then fails. A file that holds another owner's state is refused
-  before anything is written to it.
+  state directory cannot open the core's database, which the first keeps to
+  itself (see [State](#state)), so its core fails at once; an owner that
+  reaches a held lease waits for it until agent-state's three-second deadline.
+  A file that holds another owner's state is refused before anything is written
+  to it.
 - **Intake.** It subscribes to `bunny.event.lifecycle.*`, checks each message
   against profile 2.0, drops a duplicate by `(source, id)` and refuses the same
   `(source, id)` with other content as `duplicate-conflict`, then reduces the
@@ -75,9 +77,11 @@ and exits 1, and the service manager restarts it whole.
   messages (through the SDK's outbox), the published records, a history row for
   each occurrence and removal, and the intake's `(source, id)`. The messages go
   out after the commit, in order: a session's end, then its removals, then
-  states, then the other occurrences. A record carries the core's revision of
-  its last change; the core keeps one revision counter for every family it
-  serves.
+  states, then the other occurrences. Once they have gone out, the outbox
+  forgets them in one more commit, also synced (Hub #972). A crash between the
+  sends and that commit sends them again at the next start, with the same
+  `id`s. A record carries the core's revision of its last change; the core
+  keeps one revision counter for every family it serves.
 - **Failures.** A full disk refuses the change before anything reports it
   accepted: nothing commits, nothing is published, and the intake is logged
   `rejected` with `capacity` (an acknowledgment is refused with `capacity`).
@@ -88,7 +92,10 @@ and exits 1, and the service manager restarts it whole.
     after a backoff that doubles from 1 s to 60 s;
   - at the start, a full disk leaves the core running in that state, and a
     failed refresh of the restart's uncertainty makes syncs answer `unavailable`
-    until a later attempt, on the same backoff, succeeds.
+    until a later attempt, on the same backoff, succeeds. This holds on a real
+    full disk at a first start, where the store cannot create its tables, and
+    at a restart after a clean stop, since opening a module's database needs no
+    new space (see [State](#state)).
 
   While the store refuses durable work, the core logs one `operation.failed`
   record (`bunny.operation` `storage`, WARN, or ERROR for `internal`), then a
@@ -580,7 +587,31 @@ checkout, a path with a link anywhere along it (including a dangling one), a
 file, and a directory that others can open. It checks the whole path before it
 creates anything, so a refused path creates nothing, and it never creates
 through a link. Each module's SQLite file is `modules/<name>.sqlite` in it, mode
-600, created when the module first calls `database()`. Beside it, the module's
+600, created when the module first calls `database()`. The runtime opens it
+with the SDK's `openModuleDatabaseFile` (Hub #972), as the module test kit
+does:
+- In WAL mode at `synchronous = FULL`, so each commit syncs its log once and is
+  durable when it returns. SQLite keeps the log in `<name>.sqlite-wal`, beside
+  the file and with the same mode. `synchronous = NORMAL` would skip the sync,
+  and a power loss or a stopped WSL VM could then undo a committed outcome or
+  an accepted command's record, which ADR 0012 rules out.
+- With exclusive locking, so the module keeps the file to itself while it runs
+  and SQLite keeps the log's index in memory, with no `<name>.sqlite-shm`.
+  Opening the database therefore needs no new space, and a start on a full disk
+  opens it. Another connection to the file, such as a second runtime's or the
+  `sqlite3` shell's, is refused with `SQLITE_BUSY` until the module stops. The
+  runtime never opens an existing module file outside SQLite: closing such a
+  descriptor would drop every POSIX lock the process holds on the file, this
+  one included. It checks the file with `lstat` and creates a missing one with
+  `O_EXCL`.
+- A database first created on a full disk cannot take WAL mode, whose header it
+  cannot write, and keeps SQLite's rollback journal at the same level until the
+  module opens it again with room.
+
+A clean stop checkpoints the log into the file and removes it. After a crash
+the file alone may lack commits that are still in the log, so copy a stopped
+store with its `-wal` file, or use SQLite's backup API; a copy of the file
+alone can lose them. Beside the file, the module's
 private folder `modules/<name>/` is created with mode 700 when the module first
 calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
@@ -631,7 +662,7 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `state-dir-not-directory` | It, or a part of it, is a file. |
 | `state-dir-not-private` | Others can open it. |
 | `posix-host-required` | The host has no POSIX user IDs. |
-| `module-db-not-private` | A module's SQLite file is not a private file with one link. |
+| `module-db-not-private` | A module's SQLite file is a link, or not a private file with one link that the runtime's user owns. |
 | `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`, `config-invalid` | The configuration file; see [Configuration](#configuration). |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
 | `edge-config-missing`, `edge-credentials-missing`, `edge-credentials-not-private`, `edge-credentials-invalid`, `edge-credential-source` | The edge's section and credentials file; see [Credentials](#credentials). |
@@ -804,6 +835,31 @@ publishes 2,000 messages of 64 KiB with distinct content. It collects garbage
 before each sample and reads the runtime's memory before the messages, while
 the reader is stalled, and once the 30 s stall limit has ended the stream.
 `--messages`, `--kib`, `--stall-s` and `--runs` change it.
+
+## Commits
+
+`node apps/runtime/scripts/measure-commits.mjs` measures the SQLite commits the
+runtime makes on its event loop, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123)
+and [#972](https://github.com/jimmie-potts/agent-device-hub/issues/972): the
+commits per observation or command, the time the loop spends in SQLite and the
+event-loop delay. Its `intake` scenario runs the core alone and publishes hooks'
+lifecycle observations at 20 a second for 30 s; `lifx` sends 20 power-set
+commands to the LIFX module on simulated bulbs, each waiting for its outcome;
+and `outbox` runs the SDK's outbox alone, as a module that stores a pending
+state and then a state, an outcome and a pending count, with a stand-in core
+acknowledging each outcome. `--scenario`, `--seconds`, `--rate`, `--commands`
+and `--runs` change them; by default each scenario runs three times. The probe
+wraps `node:sqlite` in its own process. It counts as a commit a `COMMIT`, or a
+write outside a transaction that changed a row, on a module database, and as a
+synced commit one that waits for the disk, a commit that ran a WAL checkpoint
+included. It reports commit times for synced and unsynced commits apart, and
+checkpoints with their own count and times. The blocked time is the time spent
+in SQLite calls only: serializing or cloning a payload outside SQLite is not in
+it. The event-loop delay window opens once the delay monitor's timer has run.
+The delay's percentiles are meaningful for `intake`, whose load is paced by
+timers; the other two run each command as one chain of promises, so a stall
+shows only in their maximum. It needs a build and a TMPDIR outside every Git
+checkout.
 
 ## Fixture modules
 

@@ -513,7 +513,7 @@ The context:
 | `scheduler.after(delayMs, callback)` | A timer on the runtime's scheduler, which also runs the module's request deadlines. `delayMs` is an integer from 0 to 2147483647. It returns a cancel function. A callback that throws or rejects fails the module. |
 | `workers.start(file, options?)` | A worker thread. The runtime terminates it when the module stops, and an error it does not catch fails the module. A worker given its own `env` keeps the process's `NODE_OPTIONS`, before the module's own, so a verification run's network guard still loads in it. |
 | `workers.call(file, request, {timeoutMs, signal?, transferList?})` | One bounded request in a new worker thread, such as rendering a frame. See [Worker calls](#worker-calls). |
-| `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. |
+| `database()` | The module's own SQLite database (`node:sqlite`), opened on first use and closed when the module stops. The runtime and the kit open it with `openModuleDatabaseFile` (Hub #972): exclusive locking, WAL at `synchronous = FULL` and foreign keys on. Each commit is durable when it returns, and the module keeps the file to itself while it runs, so another connection to it is refused with `SQLITE_BUSY`. |
 | `config` | What the manifest's `configure` returned from the module's own section, or undefined for a module without `configure`. |
 | `secrets.read(name)` | The text of the secret file the module's section names `name`. See [Secrets](#secrets). |
 | `files()` | The absolute path of the module's own private folder, `modules/<name>/` in the runtime's state directory beside its SQLite file, for media, layouts and scenes. It is created with mode 700 on first use and kept across restarts. |
@@ -642,6 +642,26 @@ async start({sdk, database, clock, log, trace}) {
 - A state, removal or occurrence message is deleted once it has gone out. One
   that a crash kept from going out goes out at the next start. That is not
   replay: nothing received it before.
+- Each commit is a sync to disk on the event loop. Once a send's messages
+  settle, the outbox forgets the states, removals and occurrences that went out
+  and marks the outcomes in one commit, not one per message (Hub #972). That
+  commit follows the sends, even when a refusal stopped them partway. It runs
+  at the connection's own `synchronous` level, as every commit does, so a power
+  loss never undoes it. A send takes the rows waiting when it starts:
+  transactions that commit before a queued send starts share its commit, and
+  one that commits while a send is under way waits for the next. Republishing
+  outcomes that already went out writes nothing.
+- That commit is the one point at which a state, removal or occurrence that
+  went out can go out again. A crash after the sends and before it sends the
+  batch again at the next start, and a failure of it sends the batch again with
+  the next send, each with the same `id`s. The core drops such a copy by
+  `(source, id)`, but the in-process bus does not, so another subscriber may
+  hear it twice. In process, the sends and the commit run in one turn of the
+  event loop; through a remote edge, the window spans the sends' HTTP calls.
+- A failed bookkeeping commit is reported as a refused publish is, with
+  `internal`: as `outbox.deferred` with every row still waiting, or to
+  `onError` with the fixed detail `committed, awaiting publication`. Here the
+  messages went out and wait to be marked, and the next send sends them again.
 - An outcome is kept until `acknowledge(id)` deletes it, and goes out again at
   every start until then. The consumer, the core, drops the duplicates by
   `(source, id)`. `acknowledge` returns false when the outbox no longer holds
@@ -651,8 +671,13 @@ async start({sdk, database, clock, log, trace}) {
   the module's start, after the module follows the core's acknowledgments, so
   that it hears an acknowledgment of a resent outcome.
 - With the module's `log` and `trace` (#949), the outbox records an outcome's
-  first publication once, as `outcome.published`: INFO for a succeeded outcome
-  and WARN for a failed or uncertain one, in the outcome's own trace. A replay
+  first publication at most once, as `outcome.published`: INFO for a succeeded
+  outcome and WARN for a failed or uncertain one, in the outcome's own trace.
+  The record follows the commit that marks the outcome published, so after a
+  crash between the send and that commit, the run that sends the outcome again
+  makes it. A kill right after that commit, before the record, leaves it out.
+  An acknowledgment that lands after the outcome went out and before its
+  batch's commit makes the record itself, since no later send will. A replay
   records nothing more, so a replayed outcome never makes a second record. A
   run of refused publishes after their commits makes one `outbox.deferred`
   warning, in place of the `onError` report, with the refusal's code and
@@ -662,6 +687,9 @@ async start({sdk, database, clock, log, trace}) {
   transaction stored it, and otherwise, after a restart or a deferral, a new
   root linked to that context, never its child. The kit fails a module whose
   outbox records nothing.
+
+One outbox serves one database connection, and a module keeps one: two
+outboxes on one database would send each other's rows.
 
 The core's acknowledgment belongs to Hub #782. Until it exists, the kit's
 [stand-in acknowledgment](#module-test-kit) lets tests exercise `acknowledge`,
@@ -780,7 +808,10 @@ way is beyond it.
 - a context whose SQLite file and private folder, `<name>/`, live in a given
   directory, whose `secrets.read` serves the `secrets` option's text from
   memory for the names the section gives, and whose worker calls are the
-  runtime's;
+  runtime's. The file is opened as the runtime opens it, with
+  `openModuleDatabaseFile`, so the module keeps it to itself while it runs:
+  a test reads or changes its rows through `moduleDatabase()`, the module's own
+  connection, and opens the file itself only once the module stops;
 - a `stop` that aborts the signal, cancels timers, closes the participant,
   runs `stop()`, ends workers and closes the database, in the runtime's order;
 - with `spans`, the module's `trace.start` spans, its name in `bunny.module`,
@@ -788,6 +819,9 @@ way is beyond it.
 
 `RecordedSpans` is a span recorder for tests that keeps each span as plain data,
 and `lostParents(spans, contexts)` returns the spans whose parent is lost.
+`countCommits()` stands in front of a connection and records each commit it
+makes, as the connection's `synchronous` level, for tests that count the syncs
+to disk a change costs (Hub #972).
 
 The participant close and `stop()` each have a deadline, `stopTimeoutMs`, 5 s
 by default as in the runtime. A step that throws or outlasts it is recorded in

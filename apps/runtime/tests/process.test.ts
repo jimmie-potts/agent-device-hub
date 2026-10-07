@@ -316,7 +316,7 @@ it('a second runtime on the same state directory cannot take the core\'s lease: 
   const dir = await stateDir(context);
   const first = await launch(context, MAIN, ['--port', '0', '--state-dir', dir]);
   const second = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
-  assert.deepEqual(await second.exited, {code: 1, signal: null}, 'refused once agent-state\'s three-second deadline passes');
+  assert.deepEqual(await second.exited, {code: 1, signal: null}, 'refused: the first keeps the core\'s database to itself (Hub #972)');
   assert.equal(second.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'core-failed');
   const report = await health(first.url);
   assert.equal(entry(report.body, 'core').state, 'running');

@@ -153,6 +153,21 @@ export class World {
     return join(this.#dir, 'pixoo.sqlite');
   }
 
+  /**
+   * Runs `work` on the module's database: through the running module's own connection, since the module keeps its file
+   * to itself (Hub #972) and no second connection can open it, and otherwise on a connection of the test's own.
+   */
+  withDatabase<T>(work: (database: DatabaseSync) => T): T {
+    const running = this.harness.moduleDatabase();
+    if (running !== undefined) return work(running);
+    const database = new DatabaseSync(this.databaseFile);
+    try {
+      return work(database);
+    } finally {
+      database.close();
+    }
+  }
+
   /** Fills the module's library before it starts, as the library migration (#931) would leave it. */
   async populate(fill: (library: Library) => Promise<void>): Promise<void> {
     const database = new DatabaseSync(this.databaseFile);

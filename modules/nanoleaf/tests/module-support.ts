@@ -8,7 +8,7 @@ import {createHash} from 'node:crypto';
 import {closeSync, mkdirSync, mkdtempSync, openSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
+import {DatabaseSync, constants} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -317,15 +317,19 @@ export class ModuleWorld {
     return this.device.state().devices[LINES_ADDRESS]?.recent ?? [];
   }
 
-  /** Reads the module's store directly, as the test's own connection, outside the module. */
+  /**
+   * Reads the module's store directly: through the running module's own connection, since the module keeps its file to
+   * itself (Hub #972), and otherwise as the test's own connection.
+   */
   query(sql: string, ...params: (string | number)[]): unknown[][] {
-    const db = new DatabaseSync(join(this.stateDir, 'nanoleaf.sqlite'), {readOnly: true});
+    const running = this.harness.moduleDatabase();
+    const db = running ?? new DatabaseSync(join(this.stateDir, 'nanoleaf.sqlite'), {readOnly: true});
     try {
       const statement = db.prepare(sql);
       statement.setReturnArrays(true);
       return statement.all(...params) as unknown as unknown[][];
     } finally {
-      db.close();
+      if (running === undefined) db.close();
     }
   }
 
@@ -357,11 +361,21 @@ export class ModuleWorld {
   }
 
   /**
-   * Holds a write lock on the module's store from the test's own connection, as another writer would: `IMMEDIATE` stops
-   * the module's writes, `EXCLUSIVE` its reads too. The returned function releases it.
+   * Makes the running module's store refuse its work, as a failing disk would, on the module's own connection, since the
+   * module keeps its file to itself (Hub #972) and no other connection can lock it. `writes`: the connection turns
+   * `query_only`, so SQLite refuses each write and `BEGIN IMMEDIATE` as a read-only database. `everything`: an authorizer
+   * denies every statement, reads included. The returned function gives the store back.
    */
-  lockStore(kind: 'IMMEDIATE' | 'EXCLUSIVE'): () => void {
-    return this.#lock(join(this.stateDir, 'nanoleaf.sqlite'), kind);
+  refuseStore(what: 'writes' | 'everything'): () => void {
+    const db = this.harness.moduleDatabase();
+    if (db === undefined) throw new Error('the module has no open store');
+    if (what === 'writes') db.exec('PRAGMA query_only = ON');
+    else db.setAuthorizer(() => constants.SQLITE_DENY);
+    return () => {
+      if (!db.isOpen) return;
+      if (what === 'writes') db.exec('PRAGMA query_only = OFF');
+      else db.setAuthorizer(null);
+    };
   }
 
   #lock(path: string, kind: 'IMMEDIATE' | 'EXCLUSIVE'): () => void {

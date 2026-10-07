@@ -9,7 +9,8 @@
 // - The store lives in the core module's own database, `modules/core.sqlite`, not a directory of its own, and its lock
 //   database sits beside it as `core.sqlite-owner`, with no rollback journal, so taking the lock writes nothing. A second
 //   holder, in another process or this one, is waited for until agent-state's deadline instead of refused at once, so a
-//   runtime that restarts in the same process takes over.
+//   runtime that restarts in the same process takes over. The runtime opens the store's file with exclusive locking
+//   (Hub #972), so a second runtime's core is refused when it opens the file, before it reaches the lease.
 // - The lock lasts from the first lease until the core stops, not one lease: an owner opened again after a failed
 //   commit takes a new lease on the store it never let go of.
 // - The Hub's fence and automation tables are the old Hub's own and are not copied.
@@ -247,9 +248,13 @@ export class CoreStore implements Storage {
     return result as R;
   }
 
-  /** Publishes, in order, what a crash kept from going out. */
+  /** Publishes, in order, what a crash kept from going out. Rejects while the store is not open, as on a full disk. */
   republish(): Promise<number> {
-    return this.#outbox().republish();
+    try {
+      return this.#outbox().republish();
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   /** Waits for every publication under way. */
@@ -273,6 +278,7 @@ export class CoreStore implements Storage {
     }
     signal.throwIfAborted();
     this.#leased = true;
+    this.#failure = undefined;
     try {
       this.#lock ??= await takeLock(this.#db.location(), signal);
       this.#checkOwner(ownerId);
@@ -280,6 +286,8 @@ export class CoreStore implements Storage {
       this.#loadCaches();
     } catch (error) {
       this.#leased = false;
+      // A store that cannot create its tables on a full disk, as at a first start, is full, not broken (Hub #972).
+      if (errcode(error) === SQLITE_FULL) this.#failure = 'full';
       throw new Error('storage-unavailable', {cause: error});
     }
     const lease = {released: false};
@@ -632,7 +640,7 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(
 /**
  * Takes the store's lease, as the Hub's adapter does: an exclusive transaction held open on a lock database beside the
  * store, `<store>-owner`, private to its owner. Another holder, in another process or in this one, is waited for until
- * `signal` aborts at agent-state's deadline. The store's own file stays in SQLite's normal locking. An in-memory store,
+ * `signal` aborts at agent-state's deadline. The store's own file keeps the locking its opener gave it. An in-memory store,
  * which no other connection can open, has no lock file.
  */
 async function takeLock(location: string | null, signal: AbortSignal): Promise<Lock> {
