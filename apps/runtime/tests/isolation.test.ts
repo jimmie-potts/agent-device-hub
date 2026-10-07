@@ -10,7 +10,7 @@ import {SdkError, type Reply} from '@jimmie-potts/sdk';
 import {ModuleHost} from '../src/host.js';
 import {contain, type LogRecord, type Runtime} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
-import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, modeFor, setMode, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
+import {assertContractRecords, contextOf, deferred, entry, fixture, flush, it, manualClock, run, session, modeFor, stateDir, turnEnded, waitFor, type Fixture} from './support.js';
 
 const WORKERS = new URL('./fixtures/', import.meta.url);
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;

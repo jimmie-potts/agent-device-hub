@@ -223,13 +223,25 @@ Hub's scopes and device grants:
   page can never use a credential. A made-up or revoked token answers 401 with
   `unauthenticated`; a page that presents one answers 403 with `forbidden`.
 - **A browser session** acts as `bunny/parts/dashboard`, the dashboard's grant
-  (#922), with `read` and `control` and every device an admitted module names.
-  The `bunny-session` cookie carries it (`HttpOnly`, `SameSite=Strict`, eight
-  hours, at most 16 sessions, the oldest ending first). Only this origin's own
-  pages, and the browser itself for a navigation or bookmark, may present it:
-  another site's `Origin` or `Sec-Fetch-Site` answers 403 with `forbidden`, and
-  a change (any method but GET or HEAD) must name this origin and carry
-  `bunny-request: 1`.
+  (#922), with `read` and `control` and every device an admitted module names;
+  no credential may act as that source. The `bunny-session` cookie carries it
+  (`HttpOnly`, `SameSite=Strict`, eight hours, at most 16 sessions, the oldest
+  ending first). A session that ends without a logout, evicted by the
+  seventeenth or at its expiry, ends its streams at once, as a logout does.
+  Only this origin's own pages, and the browser itself for a navigation or
+  bookmark, may present it: another site's `Origin` or `Sec-Fetch-Site`
+  answers 403 with `forbidden`, and a change (any method but GET or HEAD) must
+  name this origin and carry `bunny-request: 1`.
+
+"This origin" is the one the request names: `http://` and its `Host`, either
+`127.0.0.1:<port>` or `localhost:<port>`, so a bookmark on
+`http://localhost:8788/` signs in and changes things as one on `127.0.0.1` does
+(Hub #276), and a page on the other loopback name is another origin. A cookie
+does not separate ports: the browser sends `bunny-session` to every port of
+that loopback name, so another local app on another port receives it. It is
+good only here, and a program on the machine could reach the runtime anyway.
+When a request carries several cookies of the name, the gateway takes the one
+that is a live session.
 
 A browser signs in two ways, with the same checks: the request comes from this
 origin's own page, names it in `Origin` and carries `bunny-request: 1`.
@@ -250,26 +262,44 @@ and hands the edge the permissions its scopes give (`edgePermissions`):
 
 | Scope | Calls | Routing keys |
 | --- | --- | --- |
-| `read` | `subscribe`, `sync` | every state and event key, `bunny.state.*.*` and `bunny.event.*.*` |
-| `ingest` | `publish` | lifecycle observations only, `bunny.event.lifecycle.*` |
+| `read` | `subscribe`, `sync` | every state and event key, `bunny.state.*.*` and `bunny.event.*.*`, but a device's its grant does not name |
+| `ingest` | `publish` | lifecycle observations only: the `lifecycle` family on `bunny.event.lifecycle.*` |
 | `control` | `request` | the core's operator commands, `bunny.cmd.approval-recover.*` and `bunny.cmd.notice-acknowledge.*`, and each granted device's commands, `bunny.cmd.*.<device>` |
 | `admin` | none | none: the old Hub's `quiesce` is dropped with the supervised migration |
 
 So a hook's credential, with `ingest` only, can publish lifecycle observations
-and nothing else: a command, a read or a subscription is refused with
-`forbidden` before anything reaches the bus. Device grants narrow commands, not
-reads: a `read` caller reads every family, as one operator's state is not
-secret from its own parts. No scope lets a remote part respond to commands or
-serve a family yet; a remote owner's grant comes with its own story, and #782
-decides which device commands a remote part may still request once its
-dispatcher lands. The edge also:
+and nothing else: a command, a read, a subscription, or another family's message
+on a lifecycle key is refused with `forbidden` before anything reaches the bus.
+
+Device grants narrow reads as well as commands, as the old Hub did. Every
+device an admitted module names that a caller's grant does not is excluded
+(`EdgePermissions.excluded`, `bunny.*.*.<device>`): the edge leaves its records
+out of the caller's sync answers and their membership, never queues a message
+on its keys for the caller's subscriptions, and refuses its commands. A family
+no device keys, such as `session` or `inbox-item`, stays readable under
+`read`. A device module keys its records and messages by the device's routing
+ID, which ADR 0012's routing-ID rule makes the last token of each key.
+
+That rule binds a message to its key: a command's `subject` must be its key's
+last token, which the SDK's bus checks on every transport and refuses with
+`invalid-message` before any responder has it, and so must a message a remote
+part publishes, which the edge checks. A grant for `bunny.cmd.*.lamp-1` can
+then never act on `lamp-2` through a command whose subject names it.
+
+No scope lets a remote part respond to commands or serve a family yet; a remote
+owner's grant comes with its own story, and #782 decides which device commands a
+remote part may still request once its dispatcher lands. The edge also:
 
 - refuses a token used under another declared source (the SDK client sends
   `bunny-source`) with `forbidden` at connect;
-- remembers each command it hands its bus, by source and message ID, until its
-  `expiresat`, and refuses the same message again with `duplicate-conflict`, so
-  a raw HTTP client cannot make a responder run it twice (at most 16,384
-  remembered; past that, `capacity`). A runtime restart forgets them;
+- remembers each command it hands its bus, by source and message ID, and
+  refuses the same message again with `duplicate-conflict`, so a raw HTTP client
+  cannot make a responder run it twice. It remembers a command while its bus
+  has it, and once settled until its `expiresat`, at most 10 minutes; one the
+  bus refused before any responder had it is forgotten at once, since sending
+  it again is safe. Each source may have 1,024 remembered at once, and all
+  sources 65,536; past either, that source's next command is `capacity` while
+  another's still goes through. A runtime restart forgets them;
 - writes a heartbeat comment on each stream every 15 s, and ends a stream whose
   socket stays full for 30 s, its reader having stopped: its subscriptions free
   their queued messages, and the reader reconnects and syncs again if it ever
@@ -287,9 +317,9 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 
 | Route | Scope | Answers |
 | --- | --- | --- |
-| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core or module state family, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`. |
-| `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept. |
-| `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, pages, MCP tools and whether it shows settings. |
+| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core or module state family the caller may see, not those of a device its grant does not name, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`, and an owner's refusal its code without its detail. |
+| `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept, narrowed as a family read is. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
+| `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, and its pages, MCP tools and whether it shows settings when the caller may use them. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the caller's devices and the place links, from the edge section. |
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as a producer's setup checks its credential (#926). |
@@ -299,25 +329,38 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `/mcp` | client credentials | [MCP](#mcp). |
 | `/api/sdk/v1/*` | per call | The SDK edge, above. |
 
-A module is called only while it runs (otherwise `unavailable`), within 5 s
-(otherwise `unavailable`). A contribution that throws fails its module, as a
-handler that throws does, and answers `internal`. A page, settings or tool
-answer that holds a secret a module read is never served: `internal`.
+A module's pages, content, settings and tools are a caller's only when its grant
+names every device the module names, as the old Hub narrowed a device's
+dashboard parts and MCP tools; otherwise they answer 403 with `forbidden`, and
+the module list shows the module without them. A module that names no device is
+every reader's. A module is called only while it runs (otherwise
+`unavailable`), within 5 s (otherwise `unavailable`). A contribution that throws
+fails its module, as a handler that throws does, and answers `internal`. A page,
+settings, text or JSON content, or tool answer that holds a secret a module
+read is never served: `internal`. A tool's refusal is checked too, its detail
+included.
+
+The `/api/v2` documents have no published JSON schemas yet; #922, their first
+consumer, adds them to the contracts package.
 
 ### MCP
 
-`/mcp` serves MCP through `packages/mcp`, unchanged, for client credentials
-only: a browser session or a page's `Origin` is refused before MCP sees the
-request. Each module's read tools come from its manifest, as
-`<module>_<tool>`, and the core contributes `core_sessions`; a credential with
-`read` lists and calls them. With `control` it also gets
+`/mcp` serves MCP through `packages/mcp`, unchanged, only when the edge section
+sets `"mcp": true`, as the old Hub served it only with its `mcp` set; otherwise
+it answers 404 with `not-found`. It serves client credentials only: a browser
+session is told so with `forbidden` first, and a page's `Origin` is refused
+before MCP sees the request. Each module's read tools come from its manifest,
+as `<module>_<tool>`, and the core contributes `core_sessions`; a credential with
+`read` lists and calls those of each module whose every device its grant names. With `control` it also gets
 `core_recover_approval`, which sends `approval-recover` to the core as the
 credential's source. Action tools for devices come with #782's dispatcher. A
 tool's result is `{kind: "extension", data: {result}}`, and a refusal
 `{kind: "extension", data: {error}}` with the shared error body and
-`isError: true`. Arguments a tool does not take are refused before it runs by the
-MCP package, with its `gateway-error` and the registry's `invalid-request`. MCP's
-own protocol errors, such as an unknown tool, keep the MCP specification.
+`isError: true`. The refusals the MCP package makes itself, before a tool runs,
+such as arguments a tool does not take, keep its released 1.x `gateway-error`
+result with the registry's code and no detail: an exception to the shared error
+body, since the issue reuses the package unchanged. MCP's own protocol errors,
+such as an unknown tool, keep the MCP specification.
 
 ### Retired routes
 
@@ -371,9 +414,10 @@ The configuration file's `edge` section names a private credentials file,
 ```
 
 It follows the configuration file's private-file rules, at most 64 KiB, and
-holds at most 32 credentials, each with a distinct ID and digest, a source that
-is not the core's (`bunny/core`), a module's (`bunny/modules/<name>`) or the
-runtime's own (`bunny/runtime/...`), distinct scopes from `read`, `control`,
+holds at most 32 credentials, each with a distinct ID, digest and source, a
+source that is not the core's (`bunny/core`), a module's
+(`bunny/modules/<name>`), the runtime's own (`bunny/runtime/...`) or the browser
+sessions' (`bunny/parts/dashboard`), distinct scopes from `read`, `control`,
 `ingest` and `admin`, and at most 64 distinct device routing IDs. It holds no
 token: a caller's token is compared with each digest in constant time. The
 runtime refuses to start with `edge-config-missing` (no edge section),
@@ -383,21 +427,40 @@ refusal quotes the file.
 
 Credentials are granted, revoked and rotated by changing the file, as today:
 `grantCredential(file, credential)` and `revokeCredential(file, id)` rewrite it
-whole and owner-only, as a producer's setup does (#926). SIGHUP, or
-`Runtime.reload()`, reads it again: a new credential is taken, and one revoked
-or changed has its streams ended and its next call refused with
-`unauthenticated`. A file the runtime refuses keeps the credentials it had. Each
-reload logs one `runtime.edge.reloaded` record: INFO with `bunny.outcome`
+whole and owner-only, as a producer's setup does (#926), and
+`writeEdgeCredentials(file, credentials)` writes it as the installer does. Each
+writer holds the file's lock, `<file>.lock`, which names its process: writers in
+one process take turns, so a grant and a revocation made at once both take
+effect, and a writer in another process is refused with
+`edge-credentials-busy`. A lock whose process has gone, and the temporary files
+a crashed writer left, are taken over. A writer reads the file, writes its new
+one beside it under a name of its own and renames it over the file only if the
+file still holds what it read; a change made meanwhile, such as an edit by hand,
+refuses the write with `configuration-changed` and stands. A grant of a
+credential the file holds as it is changes nothing; one whose ID the file holds
+with another digest, source, scopes or devices, or whose source another
+credential has, belongs to another owner and is refused with
+`edge-credential-conflict`, as the old setup authority refused. To rotate a
+token, revoke the credential and grant it again.
+
+SIGHUP, or `Runtime.reload()`, reads the file again: a new credential is taken,
+and one revoked or changed has its streams ended and its next call refused with
+`unauthenticated`. A SIGHUP while the runtime still starts is kept and runs once
+the gateway serves. A file the runtime refuses keeps the credentials it had.
+Each reload logs one `runtime.edge.reloaded` record: INFO with `bunny.outcome`
 `succeeded` and the count, or ERROR with `failed` and the refusal's
 `error.code`. Automatic rotation is not built.
 
 At the cutover the installer (#935) runs `convertHubEdge(hubConfig)` offline on
 the old Hub's configuration: each credential keeps its ID, digest, scopes and
 device grants, and acts as `bunny/parts/<its ID in routing form>`, so the token
-its client holds authenticates unchanged; `browserAccess`, `editorLinks` and
-`placeLinks` become the edge section's. It refuses, with `convert-invalid`, IDs
-that would share a source and device grants or editor links that are not
-routing IDs, which the owner renames first.
+its client holds authenticates unchanged; one called `dashboard` acts as
+`bunny/parts/dashboard-credential`, since the browser sessions' source is theirs
+alone. `browserAccess`, `mcp`, `editorLinks` and `placeLinks` become the edge
+section's, checked as the runtime's reader checks them. It refuses, with
+`convert-invalid`, IDs that would share a source, device grants or editor links
+that are not routing IDs, and links or counts the runtime would refuse, which the
+owner fixes first.
 
 ## Configuration
 
@@ -418,6 +481,7 @@ edge's section (#835):
   "edge": {
     "credentials": "/home/owner/.config/agent-device-hub/secrets/edge-credentials.json",
     "browserAccess": "trusted-loopback",
+    "mcp": true,
     "editorLinks": {"sign-1": "http://127.0.0.1:9100/editor"},
     "placeLinks": {"kitchen": "http://127.0.0.1:9200/"}
   }
@@ -428,8 +492,9 @@ The `edge` section names the [credentials file](#credentials) by its absolute
 path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),
 `editorLinks` (at most 16, by device routing ID) and `placeLinks` (at most 8,
 with a port, never `bunny`): loopback `http` links without credentials, query
-or fragment. `"launcher": false` turns the launcher's socket off. `--edge`
-needs the section; anything else in it refuses the file with `config-invalid`.
+or fragment. `"launcher": false` turns the launcher's socket off, and
+`"mcp": true` turns [MCP](#mcp) on. `--edge` needs the section; anything else in
+it refuses the file with `config-invalid`.
 
 The file follows the [state](#state) rules: an absolute path off `/mnt`, no
 link anywhere along it, outside every Git checkout, and a regular file with one
@@ -860,15 +925,16 @@ The catalog holds:
   reaches the presented speaker only; a Move that goes silent mid-song, so the
   record turns stale with its song kept and a command is refused `unavailable`,
   with one degradation and one recovery logged; and a command the Move never
-  answers, `uncertain` in history and the inbox and never sent again. Time is
-  real in a disposable run, so the step to `unavailable` at 30 s is left to the
-  module's own tests.
+  answers, `uncertain` in history and the inbox and never sent again. A part
+  whose grant does not name the speakers may neither command nor read them. Time
+  is real in a disposable run, so the step to `unavailable` at 30 s is left to
+  the module's own tests;
 - the LIFX module (#928) with a simulated pendant and Beam: the pendant follows the
   core's sessions in Work, painting once per change, a restart writes nothing to
   it, Free never paints it, a color command reaches it, and once it is switched
   off at the wall it shows unavailable and a command to it ends uncertain in the
   inbox; the Beam has no controls and gets no packet, and no address leaves the
-  module.
+  module;
 - the [Tidbyt module](../../modules/tidbyt/README.md) (#930) on a simulated
   cloud: an idle start writes nothing; the status tile follows the core's
   sessions, and a burst of changes inside the 15-second gate makes one later
@@ -886,13 +952,17 @@ The catalog holds:
   credential or browser session used from another site, a hook reading, and a
   route of the old Hub, logged with its route;
 - a token outside its grant refused (a hook's command, a reader's command, the
-  operator's command to a device it may not command) and a command a raw HTTP
-  client sends again refused as `duplicate-conflict`, with the lamp running it
-  once;
+  operator's command to a device it may not command), a command whose subject
+  names another lamp than its key refused as `invalid-message`, a hook's message
+  of another family on a lifecycle key refused and heard by nobody, and a
+  command a raw HTTP client sends again refused as `duplicate-conflict`, with the
+  lamp running it once;
 - an operator recovering an approval that a restart left uncertain, through
   `POST /api/v2/commands/approval-recover`, after a stale revision is refused;
 - a module's page, the preview it loads by reference, its settings and its MCP
-  tool served from its manifest, with the page refused without a session.
+  tool served from its manifest, with the page refused without a session, and
+  none of them, nor the sign's records, for a part whose grant does not name
+  the sign.
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

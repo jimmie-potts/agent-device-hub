@@ -799,7 +799,7 @@ A sync request SHALL be refused in the shared error body, naming its `requestId`
 
 ### Requirement: Edge grants by calls and routing keys
 
-A `RemoteEdge` grant MAY list the `calls` it may make and the routing-key patterns, `keys`, it may use; either left out SHALL allow all. A key a part publishes or requests SHALL match one of its patterns, and a pattern it subscribes or responds to, and the state keys `bunny.state.<family>.*` of each family it syncs or serves, SHALL lie within one; `reply` SHALL come with `respond` and `answer` with `serve`, and every part MAY open its stream and close what it opened on it. Anything else SHALL be refused with `forbidden` before it reaches the bus, recorded as an `edge.refused` warning with the part's source. The edge SHALL refuse at start a grant whose calls are not its own or whose patterns it cannot read, without naming the token. A host MAY authenticate calls itself with `authenticate(request)`, which returns the principal a call acts as, `{source, id?, calls?, keys?}`, or undefined for `unauthenticated`, and `disconnectPrincipal(id)` SHALL end the streams a principal opened. The client SHALL name its source in every call's `bunny-source` header, and the edge SHALL refuse a token used under another source with `forbidden` at connect.
+A `RemoteEdge` grant MAY list the `calls` it may make and the routing-key patterns, `keys`, it may use; either left out SHALL allow all. A key a part publishes or requests SHALL match one of its patterns, and a pattern it subscribes or responds to, and the state keys `bunny.state.<family>.*` of each family it syncs or serves, SHALL lie within one; `reply` SHALL come with `respond` and `answer` with `serve`, and every part MAY open its stream and close what it opened on it. A grant MAY also list `publishes`, the payload families, by the family of a message's `dataschema`, that it may publish, and `excluded`, key patterns it may never use or receive though `keys` covers them: a key it publishes or requests, or a pattern it responds to, that meets an exclusion SHALL be `forbidden`; a subscription SHALL never queue a message whose key an exclusion matches; and a sync answer SHALL leave out every record, and every member of its membership, whose state key an exclusion matches, with the owner's revision unchanged. Anything else SHALL be refused with `forbidden` before it reaches the bus, recorded as an `edge.refused` warning with the part's source. The edge SHALL refuse at start a grant whose calls are not its own, whose patterns or exclusions it cannot read or whose families are malformed, without naming the token. A host MAY authenticate calls itself with `authenticate(request)`, which returns the principal a call acts as, `{source, id?, calls?, keys?, publishes?, excluded?}`, or undefined for `unauthenticated`, and `disconnectPrincipal(id)` SHALL end the streams a principal opened. The client SHALL name its source in every call's `bunny-source` header, and the edge SHALL refuse a token used under another source with `forbidden` at connect. A refusal's detail SHALL be fixed text that quotes nothing the caller sent, such as a key, a path, an ID or a source, and every answer of the edge SHALL carry `x-content-type-options: nosniff`.
 
 #### Scenario: A grant's calls and keys
 - **WHEN** a part granted only `publish` on `bunny.event.test-turn.*` publishes there and elsewhere, requests, subscribes and syncs; a reader granted `subscribe` and `sync` on every state and event key syncs, publishes, responds and serves; and a panel granted `request` on one device and `subscribe` on one family commands that device and another, subscribes within and beyond its pattern, and syncs
@@ -809,9 +809,21 @@ A `RemoteEdge` grant MAY list the `calls` it may make and the routing-key patter
 - **WHEN** a part connects with another source's token, or posts a call naming another source
 - **THEN** both are `forbidden` and no stream opens, while the token's own source connects
 
+#### Scenario: The families a part may publish
+- **WHEN** a part granted `publish` on every event key but only the `test-turn` family publishes an outcome on an event key, and its own observation
+- **THEN** the outcome is `forbidden` and no subscriber hears it, and the observation goes through
+
+#### Scenario: Exclusions narrow what a part receives
+- **WHEN** a reader whose grant excludes `bunny.*.*.s2` syncs a family whose owner holds `s1` and `s2`, subscribes to it while the owner changes both, and requests a command for `s2` and for `s1`
+- **THEN** its copy and the answer's membership hold `s1` alone, its subscription hears `s1`'s change alone with its key, nothing for it was queued or dropped, the command for `s2` is `forbidden` and the one for `s1` is accepted
+
+#### Scenario: Refusals quote nothing the caller sent
+- **WHEN** a part calls a route the edge does not have, a key outside its grant and a command from another source, each naming a marker
+- **THEN** each answer is the shared error body without the marker or the other source, with `nosniff`
+
 ### Requirement: Commands are never sent twice through an edge
 
-The edge SHALL remember each command it hands its bus, by the sender's source and the message ID, until the command's `expiresat`, and SHALL refuse the same message again with `duplicate-conflict` before anything happens, whether or not the first one has settled, so a raw HTTP client cannot make a responder run a command twice. A command refused before it reached the bus SHALL NOT be remembered. At most 16,384 commands SHALL be remembered at once, expired ones forgotten first; past that a new command SHALL be refused with the retryable `capacity`. A new edge, as after a restart, SHALL remember none.
+The edge SHALL remember each command it hands its bus, by the sender's source and the message ID, and SHALL refuse the same message again with `duplicate-conflict` before anything happens, whether or not the first one has settled, so a raw HTTP client cannot make a responder run a command twice. It SHALL remember a command while its bus has it, and once settled until its `expiresat`, at most `REMEMBER_MS`, 10 minutes. A command refused before it reached the bus, or one the bus refused with no reply, before any responder had it, SHALL be forgotten, since sending it again is safe. One source SHALL have at most `MAX_REMEMBERED_PER_SOURCE`, 1,024, remembered at once, and all sources `MAX_REMEMBERED_COMMANDS`, 65,536; past either, that source's next command SHALL be refused with the retryable `capacity`, settled entries whose time has passed being forgotten first, and another source's SHALL still go through. A new edge, as after a restart, SHALL remember none.
 
 #### Scenario: A command repeated after its first forward settled
 - **WHEN** a raw client sends a command that the responder accepts, then the same message again, then a new message with the same request ID
@@ -824,6 +836,26 @@ The edge SHALL remember each command it hands its bus, by the sender's source an
 #### Scenario: A refusal is not remembered
 - **WHEN** a command is refused for a key outside the grant, then sent with a key inside it
 - **THEN** the second is accepted
+
+#### Scenario: One source's quota
+- **WHEN** one source's quota is two and it sends three commands, and another source sends one
+- **THEN** its third is refused with `capacity`, retryable, and the other source's goes through
+
+#### Scenario: Forgotten when refused, bounded once settled
+- **WHEN** a command with a minute to its expiry goes to a key nobody responds to, then again once a responder registers, again, and again 999 ms and 1,000 ms after it settled, with `rememberMs` 1,000
+- **THEN** the answers are `unavailable`, accepted, `duplicate-conflict`, `duplicate-conflict` and accepted, and the responder ran it twice
+
+### Requirement: Commands bound to their key's entity
+
+By ADR 0012's routing-ID rule an entity's ID is the last token of its routing keys, so a command's `subject`, the entity it is for, SHALL be its key's last token. The bus SHALL refuse any other command, on every transport, from `request` and from a remote edge's `requestMessage`, with `invalid-message` before a responder has it, so a grant of a key covers exactly the entity a responder acts on. A remote edge SHALL refuse with `invalid-message` a message a remote part publishes whose subject is not its key's last token; a malformed key SHALL still be the bus's `invalid-request`. A handler SHALL receive each message with the routing key it was published on, on every transport, and `subscribe` SHALL take `accept(key)`, which keeps only the messages whose key it accepts: one it declines is never queued, so it is neither delivered nor counted as dropped. The bus's own refusals SHALL quote no key, pattern or source.
+
+#### Scenario: A command for another entity than its key's
+- **WHEN** a participant in process, a raw client and the SDK's client each send, on a key their grant covers, a command whose subject names another entity, and then one for the key's own
+- **THEN** each misrouted one is `invalid-message`, nothing reaches a queue or a responder, and the last is accepted
+
+#### Scenario: A remote publish for another entity
+- **WHEN** a remote part publishes an observation on `bunny.event.test-turn.s1` whose subject is `s2`
+- **THEN** it is refused with `invalid-message` and no subscriber hears it
 
 ### Requirement: Stream liveness
 

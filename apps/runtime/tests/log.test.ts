@@ -11,7 +11,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
 import {shippedModules, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter, errorFields} from '../src/log.js';
-import {RUNTIME_PACKAGE_VERSION, UUID, contextOf, fixture, health, it, modeFor, setMode, stateDir, waitFor} from './support.js';
+import {RUNTIME_PACKAGE_VERSION, UUID, contextOf, fixture, health, it, modeFor, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));

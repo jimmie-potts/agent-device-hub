@@ -36,3 +36,13 @@
 - [x] 6.2 Show negative controls fail named tests: the edge's key and call checks, the declared source, the command memory, the stall and idle limits, a credential from a page, a browser change without the header, a reload that changes nothing, settings or a tool answer with a secret, an ingest scope that may request, contributions without 1.2, a route left out of the map, a recovery without its revision guard, a token in a refusal, and a throwing contribution that does not fail its module.
 - [x] 6.3 Run build, typecheck, lint, the SDK, runtime, scenario, verify, event, observability, MCP and workflow checks, and OpenSpec validation.
 - [x] 6.4 Synchronize the affected specifications and archive the change.
+
+## 7. Review fix round
+
+- [x] 7.1 Enforce the routing-ID rule for commands in the bus and for remote publishes at the edge; give grants `publishes` families and `excluded` keys, narrow subscriptions (`accept`, handlers told the key) and sync answers.
+- [x] 7.2 Bound the command memory per source, by `REMEMBER_MS`, and forget commands the bus refused before a responder had them.
+- [x] 7.3 Narrow `/api/v2` reads, module contributions and MCP tools by device grant; serve MCP only with the edge section's `mcp`; accept the request's own loopback origin; end evicted and expired sessions' streams; check the credential route first on `/mcp`.
+- [x] 7.4 Check refusal and content text for secrets, serve owners' refusals without detail, match snapshot records by family, quote nothing a caller sent, and add `nosniff`.
+- [x] 7.5 Lock credential writes, refuse changed files and other owners' grants, refuse duplicate and dashboard sources, queue SIGHUP during start, carry `mcp` and check links at conversion, and name #922 for the label command.
+- [x] 7.6 Show negative controls fail named tests for each protection, and rerun the gate on the rebased head.
+

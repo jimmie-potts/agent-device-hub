@@ -276,7 +276,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
   failures are summarized rather than logged per attempt. Within one command, a
   module may repeat an idempotent device write that its device protocol expects
   to be repeated, inside the command's deadline and a fixed budget that its
-  tests count.
+  tests count. A remote edge refuses a command that a client sends again with
+  the same `(source, id)` as `duplicate-conflict`, the code for a reused
+  `(source, id)`, whether or not its content differs (settled in review, #835).
 - **Deadlines and cancellation** end waiting, not work already done.
   Cancellation is not undo. A command still queued at its deadline is
   `expired`, and one its handler had is `uncertain`. An outcome keeps any

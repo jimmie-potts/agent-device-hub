@@ -13,7 +13,7 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | --- | --- | --- |
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
 | Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
-| Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
+| Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
 | Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, and a harness module that reports what the bus publishes |
 | Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
@@ -260,6 +260,11 @@ npm run -s verify:runtime -- capture <run-id> scenario-grants-and-duplicates
 npm run -s verify:runtime -- capture <run-id> scenario-approval-recovery
 npm run -s verify:runtime -- stop <run-id>
 npm run -s verify:runtime -- start --scenario module-contributions   # the sign's page, preview, settings and tool
+origin=<this run's origin>; tokens=<this run's runtime dir>/data/config/part-tokens.json
+panel=$(node -p "require('$tokens').panel"); reader=$(node -p "require('$tokens').reader")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/modules/sign/settings"     # the sign's settings: the reader's grant names it
+curl -s -H "authorization: Bearer $panel" "$origin/api/v2/modules/sign/settings"      # forbidden: the panel's grant does not name the sign
+curl -s -H "authorization: Bearer $panel" "$origin/api/v2/families/sign"              # no records, for the same reason
 npm run -s verify:runtime -- capture <run-id> scenario-module-contributions
 npm run -s verify:runtime -- stop <run-id>
 ```

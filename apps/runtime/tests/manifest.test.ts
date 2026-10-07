@@ -2,7 +2,7 @@
 // refused and never started; health says why, and the other modules run.
 import assert from 'node:assert/strict';
 import {checkApiVersion} from '@jimmie-potts/sdk';
-import {contextOf, entry, fixture, health, it, run, modeFor, setMode, type Fixture} from './support.js';
+import {contextOf, entry, fixture, health, it, run, modeFor, type Fixture} from './support.js';
 
 it('refuses a module whose API version does not match, and starts the others', async context => {
   const started: string[] = [];

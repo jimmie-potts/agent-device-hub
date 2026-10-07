@@ -88,13 +88,16 @@ The `Sdk` calls:
 | --- | --- |
 | `publish(key, draft, {parent?})` | Queues a state, removal, occurrence or outcome message for every matching subscriber and resolves with the message. It never waits for a handler. |
 | `publishMessage(key, message)` | Publishes a message built earlier, unchanged: its `id`, `time` and trace stay. An outbox resends a stored message this way. A message from another source is refused with `forbidden`, and one that is not published with `invalid-request`. |
-| `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
+| `subscribe(pattern, handler)` | Delivers matching messages to `handler(message, key)`, one at a time and in publish order, with the routing key each was published on. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
 | `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
 | `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. Only a shared family, `device`, may have other owners too. See [Owners](#owners). |
 
-`subscribe` also takes `{onOverflow}`; see [Delivery](#delivery).
+`subscribe` also takes `{onOverflow}`; see [Delivery](#delivery). Its
+`{accept(key)}` keeps only the messages whose key it accepts: one it declines is
+never queued, so it is neither delivered nor counted as dropped. A remote edge
+uses it to narrow what a part receives to its grant (Hub #835).
 
 `subscribe`, `respond` and `serveSync` resolve with a subscription. Its
 `close()` stops delivery, drops queued messages and resolves when a running
@@ -123,6 +126,13 @@ Each kind has its own key class:
 - state and removal messages use `bunny.state` keys;
 - occurrence and outcome messages use `bunny.event` keys;
 - commands use `bunny.cmd` keys, through `request` and `respond` only.
+
+The routing-ID rule (ADR 0012) makes an entity's ID the last token of its keys.
+A command's `subject` is the entity it is for, so it must be its key's last
+token: on every transport the bus refuses any other command with
+`invalid-message` before a responder has it (Hub #835). A responder that acts on
+the subject therefore acts on the key's entity, and a grant of the key covers
+it. A remote edge checks the same of every message a remote part publishes.
 
 Replies go straight back to their requester. Sync messages use no routing key:
 a sync request goes to the owner it names, or to the one owner of its families,
@@ -904,7 +914,7 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?, excluded?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
   principal opened, as when the host revokes it.
@@ -916,17 +926,29 @@ HTTP status that fits its code.
   with `serve`, and every part may hold its stream and close what it opened on
   it. Anything else is refused with `forbidden` before it reaches the bus, and
   the edge refuses at start a grant whose calls or patterns it cannot read.
+  `publishes` names the payload families, by the family of a message's
+  `dataschema`, it may publish, so a hook's grant can carry lifecycle
+  observations only. `excluded` names key patterns it may never use or receive,
+  though `keys` covers them, such as `bunny.*.*.<device>` for a device its grant
+  does not name: a key it publishes or requests, or a pattern it responds to,
+  that meets one is `forbidden`, and the edge leaves out of what it receives
+  every message whose key one matches, through a subscription's `accept`, and
+  every record of a sync answer, with its membership.
 - **Declared source.** The client names the source it acts as in every call's
   `bunny-source` header (`SOURCE_HEADER`), and the edge refuses a token used
   under another source with `forbidden` at once, before the stream opens.
 - **Commands are never sent twice.** The edge remembers each command it hands
-  its bus, by source and message ID, until its `expiresat`, and refuses the same
-  message again with `duplicate-conflict` before anything happens, even after
-  the first one settled. A raw HTTP client that repeats a command therefore
-  cannot make a responder run it twice. A command refused before it reached the
-  bus is not remembered. At most `MAX_REMEMBERED_COMMANDS` (16,384) are
-  remembered at once; past that a new command is refused with the retryable
-  `capacity`. A new edge, as after a restart, remembers none.
+  its bus, by source and message ID, and refuses the same message again with
+  `duplicate-conflict` before anything happens, even after the first one
+  settled. A raw HTTP client that repeats a command therefore cannot make a
+  responder run it twice. It remembers a command while its bus has it, and once
+  settled until its `expiresat`, at most `REMEMBER_MS` (10 minutes). A command
+  refused before it reached the bus, or one the bus refused before any responder
+  had it, is forgotten, since sending it again is safe. One source may have
+  `MAX_REMEMBERED_PER_SOURCE` (1,024) remembered at once and all sources
+  `MAX_REMEMBERED_COMMANDS` (65,536); past either, that source's next command is
+  refused with the retryable `capacity`, while another source's still goes
+  through. A new edge, as after a restart, remembers none.
 - **Liveness.** The edge writes a heartbeat comment line on each stream every
   `heartbeatMs` (`HEARTBEAT_MS`, 15 s). A stream whose socket stays full for
   `stallMs` (`STALL_MS`, 30 s), its reader having stopped, is ended: its

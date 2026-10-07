@@ -90,16 +90,16 @@ export type GatewayAnswer = {status: number; headers: Readonly<Record<string, st
 /**
  * Each part's grant at the edge, as a run seeds it and the in-memory harness configures it (Hub #835): the old Hub's
  * scopes and device grants. The hook may only publish lifecycle observations; the reader may only read, and reads the
- * sign its grant names; the operator and the panel read and command their devices and the core's operator commands. A
- * device a grant does not name, such as the sign for the panel, is left out of what that part reads. The operator's
- * grant also names `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the lamp refuses
- * it.
+ * sign and the playback record its grant names; the operator and the panel read and command their devices and the
+ * core's operator commands. A device a grant does not name, such as the sign or the speakers for the panel, is left out
+ * of what that part reads, and its commands are forbidden, as the old Hub's were. The operator's grant also names
+ * `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the lamp refuses it.
  */
 export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]; devices: readonly string[]}>> = {
   hook: {scopes: ['ingest'], devices: []},
-  operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1']},
+  operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1', SIMULATED_SECTION.id]},
   panel: {scopes: ['read', 'control'], devices: ['lamp-1']},
-  reader: {scopes: ['read'], devices: ['sign-1']},
+  reader: {scopes: ['read'], devices: ['sign-1', SIMULATED_SECTION.id]},
 };
 /**
  * The synthetic prefix of every part's token in a harness: no record, message, health entry, answer or proof may carry
@@ -809,6 +809,14 @@ const speakerPlayback: Scenario = {
   steps: [
     expect('the core and the playback module are running', h => running(h, ['core', 'playback'])),
     expect('the reader\'s copy shows the speakers available with nothing playing over AirPlay', h => playbackShows(h, 'available inactive "" []'), 5000),
+    // As the old Hub did, a part whose grant does not name the speakers may neither command nor read them (Hub #835).
+    expect('the panel, whose grant does not name the speakers, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/panel', playbackCommand('pause'), 'req-pb-panel', 'msg-pb-panel')))), 403, 'forbidden')),
+    expect('nor read their record', async h => {
+      const answer = keep(h, await h.gateway({as: 'panel', method: 'GET', path: '/api/v2/families/playback'}));
+      const records = bodyOf<{records?: unknown[]}>(answer)?.records;
+      return (answer.status === 200 && records?.length === 0) || `${answer.status} ${answer.text.slice(0, 200)}`;
+    }),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
     act('the operator pauses it as req-pb-pause', h => sendOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),

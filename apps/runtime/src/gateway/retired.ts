@@ -52,8 +52,14 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   {method: 'PUT', path: '/api/automation/v1/settings', status: 'replaced', replacement: 'automation on the runtime bus', owner: '#925'},
   {method: 'GET', path: '/api/automation/v1/log', status: 'replaced', replacement: 'automation on the runtime bus, and history', owner: '#925'},
   {method: 'GET', path: '/api/wispr/v1/{operation}', status: 'replaced', replacement: 'the Wispr module', owner: '#927'},
-  {method: 'GET', path: '/api/playback/v1/snapshot', status: 'replaced', replacement: `${SDK}: sync playback`, owner: '#929'},
-  {method: 'POST', path: '/api/playback/v1/commands', status: 'replaced', replacement: `${SDK}: request bunny.cmd.playback-control.<id>`, owner: '#929'},
+  {
+    method: 'GET', path: '/api/playback/v1/snapshot', status: 'replaced',
+    replacement: `GET /api/v2/families/playback or ${SDK}: sync playback, served by the playback module (runtime-playback)`, owner: '#929',
+  },
+  {
+    method: 'POST', path: '/api/playback/v1/commands', status: 'replaced',
+    replacement: `${SDK}: request bunny.cmd.playback-control.<id>, which the playback module (runtime-playback) answers for a caller its grant names`, owner: '#929',
+  },
   {method: 'GET', path: '/api/controllers/v1/{device}/snapshot', status: 'replaced', replacement: `${SDK}: sync the device's family`},
   {method: 'POST', path: '/api/controllers/v1/{device}/commands', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
   {method: 'POST', path: '/api/controllers/v1/{device}/moment', status: 'replaced', replacement: 'moments on the runtime bus', owner: '#925'},
