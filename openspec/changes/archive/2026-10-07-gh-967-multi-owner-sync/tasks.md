@@ -15,6 +15,6 @@
 ## 3. Docs and qualification
 
 - [x] 3.1 Document the rule, the call shape for a consumer of a shared family and the kit's named-owner checks in the SDK README, where an owner's source comes from in the runtime README, and the `device-owners` run in the verification README.
-- [ ] 3.2 Show negative controls fail named tests: ownership keyed by family again, a sync with no owner spread across owners, a named copy that follows every owner's live messages, an edge that drops the owner, and a kit that does not check the named owner.
-- [ ] 3.3 Run build, typecheck, lint, the SDK, runtime, scenario, verification, event, maintenance and workflow checks, and OpenSpec validation, on a committed head.
-- [ ] 3.4 Synchronize the affected specifications and archive the change.
+- [x] 3.2 Show negative controls fail named tests: ownership keyed by family again (9 SDK and runtime tests and `device-owners` on both transports), a sync with no owner spread across every owner (the no-owner suite on both transports, the edge test, the runtime test and `device-owners` on both), a named copy that follows every owner's live messages (the two-owner suite on both transports, the buffer test and `device-owners` on both), an edge that drops the owner (four remote tests, the runtime test and `device-owners` over remote), and a kit that does not check the named owner (the kit's named-owner test).
+- [x] 3.3 Run build, typecheck, lint, the SDK, runtime, scenario, verification, event, maintenance and workflow checks, and OpenSpec validation, on a committed head.
+- [x] 3.4 Synchronize the affected specifications and archive the change.
