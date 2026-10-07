@@ -38,8 +38,8 @@ pinned Nanoleaf and Pixoo cores remain 1.1.0, whose `help` does not advertise
 this operation; treat those adapters as unsupported until they adopt 1.3.
 
 Capture only the reference steps before `handoff`, so the verified set holds
-only passed captures; the #496 delivery preflight rejects any other. CI's
-`steps.test.mjs` already proves that the `control-*` steps fail and that the
+only passed captures; the #496 delivery preflight rejects any other. The local
+`steps.test.mjs` check already proves that the `control-*` steps fail and that the
 reference steps fail on known-broken behavior. If you do run controls on a
 handed-over run, their fresh reseeds change the preview: finish with
 `npm run -s verify -- scenario <run-id> lifecycle-basic` before the owner
@@ -115,7 +115,7 @@ the wall's mode as if it changed on the wall itself.
 
 The reference steps must also fail on known-broken behavior. A scenario
 seed's `fault` field selects one in `serve.mjs`. Only a seed file selects a
-fault, never the environment, and an unknown fault refuses to start. CI's
+fault, never the environment, and an unknown fault refuses to start.
 `steps.test.mjs` judges the unchanged reference steps under each:
 
 | Fault | Broken behavior | Reference step and the assertion that fails |
@@ -196,17 +196,17 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 
 ## Checks
 
-`npm run test:hub:verify` builds, then runs [`tests/`](tests):
+`npm run test:hub:verify` builds, then runs [`tests/`](tests). Since #827 these
+checks run locally, not in CI, until #839 deletes the old Hub:
 
 - `steps.test.mjs` judges steps with `runCaptureStep` against a freshly
   seeded `serve.mjs` per step, without a supervisor. The seven reference steps
   pass on the correct app and fail at their named assertions under each
   fault above; the two `control-*` steps fail for their stated reasons; and no
-  run credential appears in any of their logs. It needs only Chromium and runs
-  in CI.
+  run credential appears in any of their logs. It needs only Chromium.
 - `build.test.mjs` shows that a newer package source, Places manifest or
   dashboard build script fails `build-current`, and that every esbuild input
-  of the dashboard is a build source. It runs in CI.
+  of the dashboard is a build source.
 - `runs.test.mjs` drives the documented wrapper against real transient user
   units, with private roots:
   - start with build identity and checks, and `help`;
@@ -222,8 +222,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   - a hub that refuses to start;
   - a run that keeps serving after the scope that started it is stopped.
 
-  Without a user manager, as in the App verification CI job, it skips with the printed
-  reason.
+  Without a user manager it skips with the printed reason.
 - `compose.test.mjs` drives `compose.mjs` against real user units with
   this checkout's Hub and two stand-in consumer adapters
   ([`fixture-consumer.mjs`](tests/fixture-consumer.mjs)) in disposable
@@ -278,7 +277,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 - `lock.test.mjs` races eight processes for the composition lock
   ([`lock.mjs`](lock.mjs)) while some die holding it: no two live holders
   are ever inside at once, and a dead holder's lock is broken. It needs no
-  systemd and runs in CI.
+  systemd.
 
 The hub keeps a Unix socket at `<state root>/<run-id>/data/h/bunny-launch.sock`,
 which must stay under 108 bytes. The default state root,

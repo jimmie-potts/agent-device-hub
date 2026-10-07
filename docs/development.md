@@ -757,8 +757,9 @@ Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
 exit zero. Both languages execute the same 190 schema and 137 semantic cases,
 including the API 1.1 moment cases from Hub #292. Contracts 1.2.0 additionally
 runs the shared install receipt corpus through both validators, including
-identity equality and timestamp consistency; the existing test globs and
-contracts CI matrix include it. See [the install contract](install-contract.md).
+identity equality and timestamp consistency; the existing test globs include
+it. CI runs the TypeScript side (`test:contracts:built`); since #827 the Python
+side and `test:package` run locally. See [the install contract](install-contract.md).
 Hub packaging pins the published controller contracts 1.2.0 archive and its
 manifest hashes, including the install-receipt validator. Its manifest also
 records every bundled dependency file shipped by npm; package checks verify that
@@ -1018,8 +1019,8 @@ notice-to-evaluation timing, not installed or physical latency.
 The runner tests in the same `test:tidbyt` suite cover authenticated loopback
 feed reads, wrong-owner and malformed responses, body/time bounds, private
 configuration, local process exclusion, crash release and shutdown. They use
-a real in-memory shared owner with fake cloud transport and run in the existing
-Tidbyt CI jobs. No installed service or physical device participates.
+a real in-memory shared owner with fake cloud transport and run locally with the
+rest of `test:tidbyt`. No installed service or physical device participates.
 
 Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
 controller. Use Node 24 and Python 3.14. Run `npm run build`,
@@ -1158,7 +1159,7 @@ retain the 64 MiB default limit for release inventories.
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
 `apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
-packaged hub tests already include, so they need no new CI job. They run over
+packaged hub tests already include. They run over
 loopback HTTP against the shared fake controller in
 `apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
 `'1.0'`, `'1.0-negotiating'` and `'1.0-unknown-route'` (Nanoleaf's 404 refusal), epoch restarts, injected timeouts and 5xx answers,
@@ -1173,7 +1174,7 @@ codex-nanoleaf#158 and divoom-app-upgrade#92.
 The moment sender for #335 is covered by `apps/hub/tests/moment-sender.test.mjs`,
 the slot-wait cases in `apps/hub/tests/controllers.test.mjs` and the moment command
 cases in `apps/hub/tests/controller-versions.test.mjs`, which the same hub suites
-already include, so they need no new CI job. The shared fake now admits commands
+already include. The shared fake now admits commands
 through the contract's reference `admit`, and its `answerNext`, `hold` and
 `moments()` script a device's answer, stall a request and list the moment POSTs.
 The cases inject the hub-monotonic clock and cover the bounded slot wait, the
@@ -1184,7 +1185,7 @@ serves 1.1 and a caller such as #336 or #358.
 
 The owner moment route for #336, `POST /api/controllers/v1/:id/moment`, is covered
 by `apps/hub/tests/moment-route.test.mjs`, which `test:hub:built` and the packaged
-hub tests already include, so it needs no new CI job. It runs against the shared
+hub tests already include. It runs against the shared
 fake and covers:
 
 - `forbidden` for `read` scope, another device grant and a missing mutation header;
@@ -1200,7 +1201,7 @@ fake and covers:
 
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
-the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
+the `apps/hub/tests/*.test.mjs` pattern. It runs the
 shared playback module against fake sources with no speaker code, the Sony
 module against a fake loopback receiver and the Sonos module against a fake
 loopback AVTransport service. Freshness checks use a controlled clock. The #233
@@ -1756,7 +1757,7 @@ Unicode display fields, credential rejection before deduplication, legacy log
 rows, restart readback, blocked moments and duplicate/replay protection. The
 fixture cases in `automation.test.mjs` also read the metadata through the
 authenticated log route and verify that controller intents retain their strict
-1.1 shape. No new CI job is needed; the existing hub suites run both files.
+1.1 shape. The existing hub suites run both files.
 
 ## Bounded cross-device compatibility
 
@@ -2081,7 +2082,7 @@ legacy projections and synthetic restart. Hook tests cover explicit version
 selection, bounded Codex/Claude title reads, missing sources and content
 exclusion. HTTP tests exercise the configured Desktop index and Unicode labels;
 MCP and browser checks cover metadata exposure. The existing glob-based suites
-and CI matrix include these tests; `test:dashboard:browser` also runs
+include these tests; the Hub's run locally since #827. `test:dashboard:browser` also runs
 `apps/dashboard/tests/session-metadata.mjs` for desktop/mobile candidates.
 
 Run build/type, controller, lifecycle, state, agent-status, Tidbyt, LIFX,
@@ -2126,7 +2127,8 @@ memory-only owner map, `/clear`, retirement, expiry, failed commits, restart and
 durable 2.1 exports. The Hub's `host-session.test.mjs` reads the
 on-disk store and checks it against the stored durable 2.1 schema. The setup,
 setup-hook and MCP suites cover the 1.2 selection. The existing
-glob-based suites and CI jobs run all of them, so no new command or CI job is needed.
+glob-based suites run all of them, so no new command is needed. CI runs the
+agent-state suites; the Hub's run locally since #827.
 
 Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
 workflow checks listed above. Synthetic environments prove the mapping only;
