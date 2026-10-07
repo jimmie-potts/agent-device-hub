@@ -8,7 +8,6 @@ import {DatabaseSync} from 'node:sqlite';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
 import {followRegistry, loadConfig, registeredDevices} from './configuration.js';
-import {connectState} from './database.js';
 import {DEFAULT, deviceOf, lockFile, metaKey} from './devices.js';
 import {dashboard, type Indication} from './line-projection.js';
 import {applyPending, locateState, palette, paletteRgb, renderConfig} from './project-map.js';
@@ -104,21 +103,68 @@ export async function updateDisplay(db: Db, config: RenderConfig, snapshot: read
   });
 }
 
-/** Record a failed pass for this device only; false when even that cannot be written. */
-export function recordFailure(directory: string, device: string = DEFAULT): boolean {
+/** Record a failed pass for this device only, in one transaction on the module's connection; false when even that cannot be written. */
+export function recordFailure(db: Db, device: string = DEFAULT): boolean {
   try {
-    const db = connectState(directory);
-    try {
-      db.exec('BEGIN IMMEDIATE');
+    transaction(db, () => {
       execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey('control_error', device), 'Light update failed; retrying.');
       markDirty(db);
-      db.exec('COMMIT');
-    } finally {
-      db.close();
-    }
+    });
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Why `superviseWorker` ended: the stop signal; another instance holding the device's lock; shared input no longer
+ * selected; the device no longer registered; or a failure that could not even be recorded.
+ */
+export type SupervisorEnd = 'stopped' | 'locked' | 'paused' | 'unregistered' | 'unrecorded';
+
+/**
+ * Keep one device's worker running, as the `worker` command did (bridge.main), and never reject for a failed pass: a
+ * device outage must not stop the module (module failure policy A). A failed pass records this device's own failure
+ * and runs again 2 s later, while the device is registered; a worker that ends runs again 1 s later, while shared input
+ * is selected and the device is registered. Each wait is on the runtime's scheduler and ends at the stop signal.
+ */
+export async function superviseWorker(options: WorkerOptions): Promise<SupervisorEnd> {
+  const {directory, signal, scheduler} = options;
+  const device = options.device ?? DEFAULT;
+  const registered = (): boolean => registeredDevices(directory).includes(device);
+  // True when the wait ran its full time, false when the stop signal ended it.
+  const wait = (seconds: number): Promise<boolean> => new Promise<boolean>(resolve => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = (): void => {
+      cancel();
+      resolve(false);
+    };
+    const cancel = scheduler.after(seconds * 1000, () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(!signal.aborted);
+    });
+    signal.addEventListener('abort', onAbort, {once: true});
+  });
+  for (;;) {
+    let failed = false;
+    try {
+      if (!await runWorker(options)) return 'locked';
+    } catch {
+      failed = true;
+    }
+    if (signal.aborted) return 'stopped';
+    if (!registered()) return 'unregistered';
+    if (failed) {
+      if (!recordFailure(options.database(), device)) return 'unrecorded';
+      // Release the device between attempts; each retry reads the newest mode.
+      if (!await wait(2)) return 'stopped';
+    } else {
+      if (!selected(options.database())) return 'paused';
+      if (!await wait(1)) return 'stopped';
+    }
   }
 }
 
