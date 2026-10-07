@@ -600,7 +600,7 @@ refusals a correct caller should never receive (`unauthenticated`,
 | `sync.restarted` | DEBUG | The copy's transport, when an overflow restarted its sync. |
 | `edge.connected`, `edge.disconnected` | INFO | The edge, for a remote part's stream. |
 | `edge.refused` | The code's level | The edge, for a call it refused. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. |
-| `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type only. |
+| `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type, never its message. After dispatch it also carries the command's key, request ID, message ID and trace. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
 | `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
 
@@ -683,7 +683,8 @@ HTTP status that fits its code.
   command to its bus, it answers one with `uncertain-result` and the fixed
   detail `the edge failed after it sent the command` instead, because a handler
   may have run it. Either is reported once as an `edge.failed` diagnostic with
-  the code it answered and the exception's type. The exception's message, stack
+  the code it answered and the exception's type, and after dispatch with the
+  command's key, request ID, message ID and trace. The exception's message, stack
   and cause stay in memory. The edge's and the SDK's own refusals keep their
   text, which may quote what the caller sent, such as a path, a claimed source,
   an id or an attribute the validator refused; their `edge.refused` diagnostic

@@ -326,8 +326,14 @@ it('an edge that fails after it handed a command to its bus answers uncertain-re
       ['command.admitted', 'info', undefined], ['command.replied', 'info', undefined], ['edge.failed', 'error', 'uncertain-result'],
       ['remote.command.uncertain', 'warn', 'uncertain-result'],
     ]);
-    assert.deepEqual(edge.diagnostics.find(record => record.event === 'edge.failed'),
-      {event: 'edge.failed', level: 'error', route: 'request', code: 'uncertain-result', source: 'bunny/core', errorType: 'Error'});
+    // The failure names the command it may have left uncertain, as the bus's records do, so the two join on its trace.
+    const admitted = edge.diagnostics.find(record => record.event === 'command.admitted');
+    assert.ok(admitted?.messageId !== undefined && admitted.trace !== undefined);
+    assert.deepEqual(edge.diagnostics.find(record => record.event === 'edge.failed'), {
+      event: 'edge.failed', level: 'error', route: 'request', code: 'uncertain-result', source: 'bunny/core',
+      key: 'bunny.cmd.mode.wall', requestId: 'req-ran', messageId: admitted.messageId, trace: admitted.trace, errorType: 'Error',
+    });
+    assert.equal(admitted.trace.traceparent.slice(3, 35), TRACE_ID, 'in the requester\'s trace');
     assert.equal(JSON.stringify({result, diagnostics: edge.diagnostics}).includes(SECRET), false);
   });
 });

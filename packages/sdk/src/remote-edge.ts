@@ -6,10 +6,11 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
   MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
 } from '@jimmie-potts/event-contracts/v2';
-import {errorType, levelOf, reporter, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
+import {errorType, levelOf, reporter, type Diagnostic, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage, type Content} from './envelope.js';
 import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
+import {parseKey} from './routing.js';
 import {CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, frame, statusOf, type Call, type StreamEventName} from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type Scheduler, type Sdk, type Subscription} from './sdk.js';
 import type {Snapshot, SyncAnswer, SyncRequest} from './sync.js';
@@ -73,6 +74,24 @@ const isCall = (value: string): value is Call => (CALLS as readonly string[]).in
 /** The route a record names: one of the edge's calls or its stream, or `other` for any path the caller chose. */
 const routeOf = (route: string): EdgeRoute => isCall(route) || route === 'stream' ? route : 'other';
 type Fields = Record<string, unknown>;
+/** A command the edge has handed to its bus, with its routing key: from then on a failure may follow a handler's effect. */
+type Dispatched = {key: string; command: Command<object>};
+/** Where a call stands: `dispatched` once its command is with the bus. */
+type Progress = {dispatched?: Dispatched};
+
+/**
+ * What a failure's record names of the command it may have left uncertain: its routing key, request ID, message ID and
+ * trace, as the bus's own records of it do. The edge validated the command; a key or request ID the bus would refuse is
+ * left out, so the record keeps the rest.
+ */
+function commandFacts({key, command}: Dispatched): Pick<Diagnostic, 'key' | 'requestId' | 'messageId' | 'trace'> {
+  const {requestId} = command.data as {requestId?: unknown};
+  return {
+    ...(parseKey(key)?.category === 'cmd' ? {key} : {}),
+    ...(typeof requestId === 'string' && ID.test(requestId) ? {requestId} : {}),
+    messageId: command.id, trace: {traceparent: command.traceparent},
+  };
+}
 const fields = (value: unknown): Fields | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Fields : undefined;
 
 function text(body: Fields, name: string): string {
@@ -175,8 +194,7 @@ export class RemoteEdge {
     const path = new URL(request.url ?? '/', 'http://edge').pathname;
     const route = path.startsWith(`${REMOTE_PATH}/`) ? path.slice(REMOTE_PATH.length + 1) : path;
     let source: string | undefined;
-    // Set once a command is handed to the bus: from then on a failure may follow a handler's effect.
-    const progress = {dispatched: false};
+    const progress: Progress = {};
     try {
       source = this.#authenticate(request);
       if (request.method === 'GET' && route === 'stream') {
@@ -194,14 +212,20 @@ export class RemoteEdge {
     } catch (error) {
       // The edge's and the SDK's own refusals keep their text, which may quote what the caller sent, and are recorded as
       // refusals, without that text. Anything else gets fixed text, `internal`, or `uncertain-result` once a command was
-      // handed to the bus, and is recorded once as a failure with that code and the exception's type. The exception
-      // itself stays in memory.
+      // handed to the bus, and is recorded once as a failure with that code and the exception's type, and then with
+      // the command's own key, IDs and trace, so the failure joins the bus's records of it. The exception itself stays
+      // in memory.
       const known = error instanceof Refusal || error instanceof SdkError;
-      const refused = known ? error.body : progress.dispatched ? FAILED_AFTER_DISPATCH : FAILED;
+      const {dispatched} = progress;
+      const refused = known ? error.body : dispatched === undefined ? FAILED : FAILED_AFTER_DISPATCH;
       const {code} = refused.error;
       const who = source === undefined ? {} : {source};
-      if (known) this.#diagnose({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
-      else this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, errorType: errorType(error)});
+      if (known) {
+        this.#diagnose({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
+      } else {
+        const about = dispatched === undefined ? {} : commandFacts(dispatched);
+        this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
+      }
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');
     }
@@ -253,7 +277,7 @@ export class RemoteEdge {
     return body;
   }
 
-  async #call(source: string, call: Call, body: Fields, signal: AbortSignal, progress: {dispatched: boolean}): Promise<object> {
+  async #call(source: string, call: Call, body: Fields, signal: AbortSignal, progress: Progress): Promise<object> {
     switch (call) {
       case 'publish':
         await this.#participant(source).publishMessage(text(body, 'key'), this.#inbound(source, body.message));
@@ -264,7 +288,7 @@ export class RemoteEdge {
         const command = this.#inbound(source, body.command) as Command<object>;
         const key = text(body, 'key');
         // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal.
-        progress.dispatched = true;
+        progress.dispatched = {key, command};
         const result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), signal);
         return {result};
       }

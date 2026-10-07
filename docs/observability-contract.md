@@ -186,7 +186,8 @@ earlier profile rejects each addition. The additions:
 - **The edge's unexpected exception,** `runtime.edge.failed`, at ERROR with
   only its route, its granted source if any, the code it answered (`internal`,
   or `uncertain-result` once it had handed a command to the bus) and
-  `error.type`.
+  `error.type`; after dispatch, also the command's `bunny.routing.key`,
+  `bunny.request.id`, `bunny.message.id` and trace.
 - **Module events:** an outcome's first publication from a module's outbox
   (`outcome.published`), a run of publishes refused after their commits
   (`outbox.deferred`), and a device that stops or starts answering

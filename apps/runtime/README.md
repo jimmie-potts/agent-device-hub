@@ -101,7 +101,9 @@ error, and a validation refusal is INFO. A refusal never holds the edge's detail
 quote what the caller sent. The edge answers an exception it did not expect
 with fixed text, never its message: `internal`, or `uncertain-result` once it
 has handed a command to the bus. It logs one `runtime.edge.failed` record at
-ERROR with only its route, its granted source, that code and `error.type`.
+ERROR with only its route, its granted source, that code and `error.type`,
+and after dispatch the command's routing key, request and message IDs and
+trace, so the failure sits in the request's trace beside the bus's records.
 Token rotation and grant permissions belong to #835.
 
 `runMain`'s `onEdge` option hands the caller the edge once it serves. A

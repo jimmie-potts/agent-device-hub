@@ -7,7 +7,10 @@ import {chmod, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {DeviceAvailability, connectRemote, traceFields, type Command, type Reply} from '@jimmie-potts/sdk';
+import {diagnosticWriter} from '../src/diagnostics.js';
 import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
+import {LogWriter} from '../src/log.js';
+import {RUNTIME_SCOPE} from '../src/record.js';
 import {contextOf, deferred, fixture, it, manualClock, run, setMode, stateDir} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
@@ -164,4 +167,22 @@ it('a polled device that stays offline writes one degradation and one recovery a
   ], 'one degradation and one recovery, not a warning per poll');
   const summaries = records.filter(record => record.severity_text === 'DEBUG');
   assert.ok(summaries.length > 0 && summaries.length <= 10, `the repeats are summarized at most once a minute: ${summaries.length}`);
+});
+
+it('an edge failure after dispatch is one valid record in the command\'s trace, beside the bus\'s records', () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', {now: () => Date.parse('2026-10-07T12:00:00.000Z')});
+  const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+  diagnosticWriter(writer.logger(RUNTIME_SCOPE))({
+    event: 'edge.failed', level: 'error', route: 'request', code: 'uncertain-result', source: 'bunny/core', key: KEY, requestId: 'req-ran',
+    messageId: '6d1f0f6e-3b5e-4c8b-9b51-1d0c2f8a7e11', trace: {traceparent}, errorType: 'Error',
+  });
+  assert.deepEqual(writer.counts(), {written: 1, dropped: 0, failed: 0});
+  const [record] = written;
+  assert.equal(record?.severity_text, 'ERROR');
+  assert.equal(record.trace_id, '0af7651916cd43dd8448eb211c80319c');
+  assert.deepEqual(record.attributes, {
+    'bunny.participant': 'bunny/core', 'bunny.routing.key': KEY, 'bunny.request.id': 'req-ran', 'bunny.message.id': '6d1f0f6e-3b5e-4c8b-9b51-1d0c2f8a7e11',
+    'bunny.code': 'uncertain-result', 'bunny.route': 'request', 'error.type': 'Error', 'bunny.provenance': 'source',
+  });
 });
