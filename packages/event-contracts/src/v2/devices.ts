@@ -103,7 +103,12 @@ export function nativeMode(kind: string, mode: Mode): string | undefined {
   return participating(kind) ? HUB_MODE_TABLE[kind][mode] : undefined;
 }
 
+/** A device ID is also the last token of the device's routing keys: lowercase letters and digits with single hyphens. */
+const DEVICE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const after = (message: Message, atMs: number): boolean => atMs > Date.parse(message.time);
+// A general command goes to one device, named by its subject.
+const checkCommand: PayloadCheck = message =>
+  message.subject.length <= 128 && DEVICE_ID.test(message.subject) ? undefined : 'envelope /subject not a device id';
 const checkDevice: PayloadCheck = message => {
   const record = message.data as DeviceRecord;
   if (message.subject !== record.id) return 'envelope /subject not the entity';
@@ -124,13 +129,13 @@ export type {PayloadFamily} from './registry.js';
  */
 export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
-  defineFamily('power-set', 'command', 'org.bunny.power.set.requested'),
-  defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested'),
-  defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested'),
-  defineFamily('zone-power-set', 'command', 'org.bunny.zone-power.set.requested'),
-  defineFamily('media-start', 'command', 'org.bunny.media.start.requested'),
-  defineFamily('media-control', 'command', 'org.bunny.media.control.requested'),
-  defineFamily('device-mode-set', 'command', 'org.bunny.device-mode.set.requested'),
+  defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
+  defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
+  defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),
+  defineFamily('zone-power-set', 'command', 'org.bunny.zone-power.set.requested', checkCommand),
+  defineFamily('media-start', 'command', 'org.bunny.media.start.requested', checkCommand),
+  defineFamily('media-control', 'command', 'org.bunny.media.control.requested', checkCommand),
+  defineFamily('device-mode-set', 'command', 'org.bunny.device-mode.set.requested', checkCommand),
 ];
 
 /**

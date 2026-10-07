@@ -302,7 +302,7 @@ Hub's controller configuration.
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
 | `apiVersion` | envelope `dataschema` | `https://bunny.invalid/events/device/2.0`. |
-| `identity`, `identity.deviceId` | `device /id` | The envelope subject. |
+| `identity`, `identity.deviceId` | `device /id` | The envelope subject. It is also the last token of the device's routing keys, so 2.0 narrows it to lowercase letters and digits with single hyphens; 1.x allowed any neutral ID. |
 | `identity.controllerId`, `identity.sourceId` | envelope `source` | `bunny/modules/<module>`. Controller and source IDs become module-internal. |
 | `identity.controllerEpoch` | owner's store | The module's own continuity. Consumers follow `revision` and resync instead. |
 | `identity.label` | `device /label` | The owner's label, at most 80 characters, with the session family's display-text and credential checks. |
@@ -347,7 +347,7 @@ and refuses an operation the device does not offer with `unsupported-capability`
 | --- | --- | --- |
 | `apiVersion` | envelope `dataschema` | The family's schema, such as `https://bunny.invalid/events/power-set/2.0`. |
 | `controllerId` | the routing key | The module answers `bunny.cmd.<family>.<device id>`. |
-| `deviceId` | envelope `subject` | The payload names no device. |
+| `deviceId` | envelope `subject` | The payload names no device. The subject must be a device ID (validator). |
 | `requestId`, `requestId.epoch`, `requestId.sequence` | `/requestId` | A string, as in [Controller receipt](#controller-receipt). How history migration spells a 1.x ticket is deferred to #840. |
 | `expectedConfigurationRevision` | `/expectedConfigurationRevision` | Optional in 2.0. A stale one is refused with `revision-conflict` before any change. |
 | `expectedGeneration` | `/expectedGeneration` | Optional in 2.0. A stale one is refused with `revision-conflict` before any change. |

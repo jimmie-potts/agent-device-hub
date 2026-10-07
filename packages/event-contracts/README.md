@@ -223,7 +223,9 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
 A `device` record is the full record of one device, published by the module
-that controls it, with the device `id` as its `subject`. It holds:
+that controls it, with the device `id` as its `subject`. The `id` is lowercase
+letters and digits with single hyphens, because it is also the last token of
+the device's routing keys. It holds:
 - the device's `kind`, such as `nanoleaf` or `pixoo`, and an optional owner
   `label`;
 - `availability`: `unknown`, `available`, `degraded` or `unavailable`. A device
@@ -243,8 +245,9 @@ that controls it, with the device `id` as its `subject`. It holds:
   with its evidence time.
 
 No device record carries an address, credential or private path. The checks
-refuse a desired mode the device does not advertise and an observation or
-external-control reading after the envelope `time`.
+refuse a desired mode the device does not advertise, an observation or
+external-control reading after the envelope `time`, and a general command whose
+`subject` is not a device ID.
 
 Each general command maps one kind of controller v1's closed command union,
 and its verb is the family's last word. Each carries a `requestId` and the

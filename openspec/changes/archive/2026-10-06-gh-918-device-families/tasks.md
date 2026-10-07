@@ -15,4 +15,4 @@
 ## 3. Docs and checks
 
 - [x] 3.1 Document the device families, the Hub-mode table and the status helper in the package README; export `./v2/devices` and `./v2/status`; update `docs/development.md` and `docs/architecture.md`.
-- [x] 3.2 Run build, typecheck, `lint:js`, `test:events:built`, `test:events:python`, `test:sdk:built`, `test:runtime:built`, `test:workflow`, `check:workflow` and strict spec validation, with negative controls; then sync and archive this change. Evidence: every check exits zero, and fourteen negative controls each fail a named test.
+- [x] 3.2 Run build, typecheck, `lint:js`, `test:events:built`, `test:events:python`, `test:sdk:built`, `test:runtime:built`, `test:workflow`, `check:workflow` and strict spec validation, with negative controls; then sync and archive this change. Evidence: every check exits zero, and sixteen negative controls each fail a named test.

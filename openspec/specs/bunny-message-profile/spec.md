@@ -236,7 +236,7 @@ The package SHALL publish a mapping from every 1.x field to its 2.0 home. It cov
 ### Requirement: Device state family
 
 The profile SHALL define `device`, a state family registered under `https://bunny.invalid/events/device/2.0` and sent as `org.bunny.device.updated`, whose message carries the full record of one device and whose envelope subject is the device `id`. The module that controls the device SHALL publish it. The record SHALL carry:
-- the device's `id`, `revision` and kebab-case `kind`, and an optional owner label with the session family's display-text checks;
+- the device's `id`, which is lowercase letters and digits with single hyphens because it is also the device's routing-key token, its `revision` and kebab-case `kind`, and an optional owner label with the session family's display-text checks;
 - `availability`: `unknown`, `available`, `degraded` or `unavailable`, where `unavailable` means the module cannot reach the device;
 - the `configurationRevision` and the `generation` ticket that commands guard on;
 - capabilities for power, brightness, native modes, moments, media, scenes, zones and preview, each `{supported: false}` or `{supported: true}` with its constraints, none optional;
@@ -251,12 +251,12 @@ A known desired mode SHALL be one the device advertises. An observation or exter
 - **THEN** each is accepted, and the unreachable device keeps its last observation with its evidence time
 
 #### Scenario: Device record rules
-- **WHEN** a record omits a capability, gives an unsupported capability constraints, lacks the core moods for supported moments, desires a mode it does not advertise, carries an observation without its evidence time or after the message time, carries an address or a token, uses 1.x service health or controller ownership, or is sent under another subject, kind or type
+- **WHEN** a record has an `id` that cannot be a routing-key token, omits a capability, gives an unsupported capability constraints, lacks the core moods for supported moments, desires a mode it does not advertise, carries an observation without its evidence time or after the message time, carries an address or a token, uses 1.x service health or controller ownership, or is sent under another subject, kind or type
 - **THEN** it is refused with `invalid-message` and a detail naming where
 
 ### Requirement: General device commands
 
-The profile SHALL define one command family for each kind of controller contract v1's closed command union: `power-set` (`on`), `brightness-set` (`percent`, 0 to 100), `scene-activate` (`sceneId`), `zone-power-set` (`zoneId`, `on`), `media-start` (`playlistId`), `media-control` (`action`) and `device-mode-set` (a native `mode`). Each SHALL be sent as `org.bunny.<entity>.<verb>.requested`, whose verb is the family's last word, and SHALL carry a `requestId` and optional `expectedConfigurationRevision` and `expectedGeneration` guards. The envelope subject SHALL name the device, and no payload SHALL name a device, controller, address, credential or raw protocol. Their replies and outcomes SHALL use the profile's reply and outcome payloads. `registerDeviceFamilies` SHALL register the device families after the core families. `commandSupported(capabilities, command)` SHALL report a command, `moment-play` included, as supported only when its capability is supported and the named scene, zone, playlist, action, native mode or mood is advertised, and a moment fits the device's maximum duration.
+The profile SHALL define one command family for each kind of controller contract v1's closed command union: `power-set` (`on`), `brightness-set` (`percent`, 0 to 100), `scene-activate` (`sceneId`), `zone-power-set` (`zoneId`, `on`), `media-start` (`playlistId`), `media-control` (`action`) and `device-mode-set` (a native `mode`). Each SHALL be sent as `org.bunny.<entity>.<verb>.requested`, whose verb is the family's last word, and SHALL carry a `requestId` and optional `expectedConfigurationRevision` and `expectedGeneration` guards. The envelope subject SHALL name the device by its device ID, and no payload SHALL name a device, controller, address, credential or raw protocol. Their replies and outcomes SHALL use the profile's reply and outcome payloads. `registerDeviceFamilies` SHALL register the device families after the core families. `commandSupported(capabilities, command)` SHALL report a command, `moment-play` included, as supported only when its capability is supported and the named scene, zone, playlist, action, native mode or mood is advertised, and a moment fits the device's maximum duration.
 
 #### Scenario: Each command reaches a device that supports it
 - **WHEN** each general command fixture is checked against its target device's capabilities
@@ -267,7 +267,7 @@ The profile SHALL define one command family for each kind of controller contract
 - **THEN** `commandSupported` returns false, so the module refuses it with `unsupported-capability`
 
 #### Scenario: Malformed commands
-- **WHEN** a command names a device, a controller or a raw protocol, misses its value, sets a brightness over 100 or a fractional one, names a playlist by a path, uses a media action outside the union, a 1.x mode spelling, a 1.x ticket as its request ID, or another kind or type
+- **WHEN** a command names a device, a controller or a raw protocol, goes to a subject that is not a device ID, misses its value, sets a brightness over 100 or a fractional one, names a playlist by a path, uses a media action outside the union, a 1.x mode spelling, a 1.x ticket as its request ID, or another kind or type
 - **THEN** it is refused with `invalid-message` and a detail naming where
 
 ### Requirement: Notice acknowledgment
