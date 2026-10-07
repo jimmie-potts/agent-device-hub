@@ -51,6 +51,9 @@ it('idle paints warm white 2700 K at zero saturation, at the brightness cap', as
   await world.mode(PENDANT.id, 'work');
   assert.equal(paints(world), 1);
   assert.deepEqual(shownColor(world.network, PENDANT.address), {hue: 0, saturation: 0, brightness: 50, kelvin: 2700, power: true});
+  // A paint the module makes itself serves no request, yet it is a transmission the record shows (#918).
+  const sent = world.device(PENDANT.id)?.lastTransmission;
+  assert.deepEqual(sent?.status === 'known' && {requestId: sent.requestId, operationIds: sent.operationIds}, {requestId: undefined, operationIds: ['status']});
 });
 
 it('Quiet paints attention at the quiet cap and nothing else; leaving attention writes nothing', async () => {
