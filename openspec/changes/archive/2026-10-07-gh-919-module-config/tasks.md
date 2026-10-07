@@ -28,3 +28,13 @@
 - [x] 5.2 Run build, typecheck, lint, the SDK, runtime, scenario, verify, event and workflow checks, and OpenSpec validation.
 - [x] 5.3 Show negative controls fail named tests: another module's section or secret readable, a linked or world-readable configuration file, a secret in a log, the policy A check removed, and a worker call not cancelled on stop.
 - [x] 5.4 Synchronize the affected specifications and archive the change.
+
+## 6. Review fixes (PR #960)
+
+- [x] 6.1 End a worker call that the worker had as `uncertain-result` on a stop, an abort, a worker error, an unreadable reply or an exit without one, keeping `cancelled` for a signal aborted before the worker starts (`workers.test.ts`, `config.test.ts`).
+- [x] 6.2 Share one redaction registry with the service process, so `runtime.failed` leaves out an error code that holds a module's secret (`process.test.ts`, the reviewer's case).
+- [x] 6.3 Refuse a private file whose opened file is not the one at its path, after a directory swap (`config.test.ts`), and count a file the runtime's user may not read as not private.
+- [x] 6.4 Scan the commands and sync requests a module sends, and test a secret in a command and one only in synced state (`kit.test.ts`).
+- [x] 6.5 Name the refusals a seed expects, so the in-memory harness stays strict elsewhere (`runner.test.ts`).
+- [x] 6.6 Type `config` as `Config | undefined`, report the sign's failed renders against the sign, word privacy as no permissions for group or others, match numbers in redaction, and test a hard-linked configuration file, unquoted refusals and malformed secrets.
+- [x] 6.7 Show each fix's mutant fails its named tests, and rerun the gate.
