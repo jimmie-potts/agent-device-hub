@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/device/2.0",
+  "description": "State: the full record of one device, which the module that controls it publishes (Hub #918). The envelope subject is the device `id`, which is also its routing-key token and unique across modules. `kind` names the device kind, such as `nanoleaf` or `pixoo`. Capabilities say what the device offers, with constraints. Desired and observed values stay separate: missing evidence is `{status: unknown}`, never off, and only a reading from the device is an observation, with its own evidence time; a transport acknowledgment never is, and `lastTransmission` records it apart. `availability` is `unavailable` when the module cannot reach the device, which never fails the module. Native modes are the device's own, kebab-case; the Hub's mode lives only in mode/2.0. The validator refuses a desired mode the device does not advertise, evidence or a transmission after the envelope time, and pending kinds that disagree with the pending count (devices.ts). No device record carries an address, credential or private path. `registerDeviceFamilies` registers it after the core families, because `label` uses the session family's display text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "kind", "availability", "configurationRevision", "generation", "capabilities", "desired", "observed", "pending",
+    "pendingKinds", "lastOutcome", "lastTransmission", "externalControl"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "kind": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
+    "label": {"type": "string", "$ref": "https://bunny.invalid/events/session/2.0#/$defs/displayText", "maxLength": 80},
+    "availability": {"enum": ["unknown", "available", "degraded", "unavailable"]},
+    "configurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"},
+    "capabilities": {"$ref": "#/$defs/capabilities"},
+    "desired": {"type": "object", "additionalProperties": false, "required": ["power", "brightness", "mode"],
+      "properties": {"power": {"$ref": "#/$defs/power"}, "brightness": {"$ref": "#/$defs/brightness"}, "mode": {"$ref": "#/$defs/mode"}}},
+    "observed": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "observedAtMs", "power", "brightness"],
+        "properties": {
+          "status": {"const": "known"},
+          "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+          "power": {"$ref": "#/$defs/power"},
+          "brightness": {"$ref": "#/$defs/brightness"}
+        }}
+    ]},
+    "pending": {"description": "Commands the module has accepted and not yet completed. The core's tracker holds each one.",
+      "type": "integer", "minimum": 0, "maximum": 1024},
+    "pendingKinds": {"description": "The command families among the pending commands, each once, such as `device-mode-set`. Empty exactly when nothing is pending (validator).",
+      "type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"}},
+    "lastOutcome": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "outcome"],
+        "properties": {"status": {"const": "known"}, "outcome": {"$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome"}}}
+    ]},
+    "lastTransmission": {"description": "The last send that reached the device's transport, for a command or for a paint the module made itself, which the tracker never sees. `requestId` names the command it served, if any; `operationIds` name what it sent. A transmission is never an observation.",
+      "oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "transmittedAtMs", "operationIds"],
+        "properties": {
+          "status": {"const": "known"},
+          "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+          "transmittedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+          "operationIds": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}
+        }}
+    ]},
+    "externalControl": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "owner", "observedAtMs"],
+        "properties": {
+          "status": {"const": "known"},
+          "owner": {"enum": ["module", "external"]},
+          "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+        }}
+    ]}
+  },
+  "$defs": {
+    "unsupported": {"type": "object", "additionalProperties": false, "required": ["supported"], "properties": {"supported": {"const": false}}},
+    "ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
+    "nativeMode": {"description": "A mode the device itself offers, such as Nanoleaf's `work` or Pixoo's `monitor`. Never the Hub's mode.",
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
+    "mediaAction": {"enum": ["pause", "resume", "stop", "next", "previous", "restart-with-changes", "clear"]},
+    "percent": {"type": "integer", "minimum": 0, "maximum": 100},
+    "power": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "value"],
+        "properties": {"status": {"const": "known"}, "value": {"type": "boolean"}}}
+    ]},
+    "brightness": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "value"],
+        "properties": {"status": {"const": "known"}, "value": {"$ref": "#/$defs/percent"}}}
+    ]},
+    "mode": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "value"],
+        "properties": {"status": {"const": "known"}, "value": {"$ref": "#/$defs/nativeMode"}}}
+    ]},
+    "capabilities": {
+      "description": "Every capability is listed, supported or not. A supported one carries its constraints; preview profiles never imply physical accuracy.",
+      "type": "object", "additionalProperties": false,
+      "required": ["power", "brightness", "modes", "moments", "media", "scenes", "zones", "preview"],
+      "properties": {
+        "power": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported"], "properties": {"supported": {"const": true}}}]},
+        "brightness": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "minimum", "maximum"],
+            "properties": {"supported": {"const": true}, "minimum": {"const": 0}, "maximum": {"const": 100}}}]},
+        "modes": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "values"],
+            "properties": {"supported": {"const": true},
+              "values": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/nativeMode"}}}}]},
+        "moments": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "moods", "maxDurationMs", "coversStatus"],
+            "properties": {
+              "supported": {"const": true},
+              "moods": {"type": "array", "minItems": 3, "maxItems": 64, "uniqueItems": true,
+                "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
+                "allOf": [{"contains": {"const": "celebrate"}}, {"contains": {"const": "setback"}}, {"contains": {"const": "reminder"}}]},
+              "maxDurationMs": {"type": "integer", "minimum": 1000, "maximum": 300000},
+              "coversStatus": {"type": "boolean"}
+            }}]},
+        "media": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "actions", "playlistIds", "renditionIds"],
+            "properties": {
+              "supported": {"const": true},
+              "actions": {"type": "array", "maxItems": 7, "uniqueItems": true, "items": {"$ref": "#/$defs/mediaAction"}},
+              "playlistIds": {"$ref": "#/$defs/ids"},
+              "renditionIds": {"$ref": "#/$defs/ids"}
+            }}]},
+        "scenes": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "sceneIds"],
+            "properties": {"supported": {"const": true}, "sceneIds": {"$ref": "#/$defs/ids"}}}]},
+        "zones": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "zoneIds"],
+            "properties": {"supported": {"const": true}, "zoneIds": {"$ref": "#/$defs/ids"}}}]},
+        "preview": {"oneOf": [{"$ref": "#/$defs/unsupported"},
+          {"type": "object", "additionalProperties": false, "required": ["supported", "profiles"],
+            "properties": {
+              "supported": {"const": true},
+              "profiles": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {
+                "type": "object", "additionalProperties": false, "required": ["profileId", "profileVersion"],
+                "properties": {
+                  "profileId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+                  "profileVersion": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", "maxLength": 32}
+                }}}
+            }}]}
+      }
+    },
+    "command": {
+      "description": "What every general device command carries: its request ID and the optional guards. A module refuses a stale `expectedConfigurationRevision` or `expectedGeneration` with `revision-conflict` before changing anything.",
+      "type": "object", "required": ["requestId"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "expectedConfigurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "expectedGeneration": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"}
+      }
+    }
+  }
+}

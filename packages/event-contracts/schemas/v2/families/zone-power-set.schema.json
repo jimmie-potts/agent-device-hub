@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/zone-power-set/2.0",
+  "description": "Command: switch one zone of a device on or off (Hub #918), from controller v1's `zone.power.set`. The envelope subject names the device; the payload names no device, controller, address or credential. The optional `expectedConfigurationRevision` and `expectedGeneration` refuse the request with `revision-conflict` when the device's configuration revision or generation has moved on. The module refuses an operation the device does not offer with `unsupported-capability` (`commandSupported`). The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/device/2.0#/$defs/command",
+  "unevaluatedProperties": false,
+  "required": ["zoneId", "on"],
+  "properties": {"zoneId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}, "on": {"type": "boolean"}}
+}

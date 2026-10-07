@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/lifecycle/2.0",
-  "description": "Occurrence: one agent hook observation for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field; event kinds are kebab-case. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
+  "description": "Occurrence: one agent hook observation for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field except the acknowledgment, which a consumer now sends as the `notice-acknowledge` command (Hub #918); event kinds are kebab-case. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
   "type": "object",
   "additionalProperties": false,
   "required": ["identity", "turn", "parent", "event", "observedAtMs", "ordering"],
@@ -17,12 +17,6 @@
         "properties": {
           "kind": {"enum": ["question-continuing", "attention-input", "attention-approval", "attention-resolved"]},
           "attention": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/knownId"}
-        }},
-      {"type": "object", "additionalProperties": false, "required": ["kind", "consumerId", "noticeId"],
-        "properties": {
-          "kind": {"const": "notice-acknowledged"},
-          "consumerId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
-          "noticeId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
         }},
       {"type": "object", "additionalProperties": false, "required": ["kind", "state"],
         "properties": {"kind": {"const": "read-observed"}, "state": {"enum": ["read", "unread"]}}},

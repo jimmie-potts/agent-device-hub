@@ -690,19 +690,31 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
-`test:events:built` also runs the core payload family tests (Hub #842):
+`test:events:built` also runs the core and device payload family tests (Hub #842,
+#918):
 - `tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
-  for every family, each invalid case with its expected detail, and removal,
+  for every core family, each invalid case with its expected detail, and removal,
   expiry and sync scenarios through the reference consumer in
   `tests/consumer.mjs`.
+- `tests/devices.test.mjs` runs `fixtures/v2/devices.json`: a valid message for
+  every device family, a reply and an outcome for each command family, each
+  invalid case with its registry code and detail, the capability rule, the
+  routing-key subject of every command family, and the Hub-mode table for each
+  participating device kind, which must equal the package README's.
+- `tests/status.test.mjs` runs the 2.0 status helper's copied cases against
+  valid `session/2.0` records, and checks its ranking and colors against the 1.x
+  `@jimmie-potts/agent-status`.
 - `tests/mapping.test.mjs` checks that
-  [MAPPING.md](../packages/event-contracts/MAPPING.md) names every 1.x field.
-  It converts the 1.x lifecycle, snapshot and controller receipt corpora, and it
-  drives a real agent-state owner through expiry and retirement.
+  [MAPPING.md](../packages/event-contracts/MAPPING.md) names every 1.x field,
+  including every field of the controller snapshot, its capabilities and each
+  kind of the general command union. It converts the 1.x lifecycle, snapshot,
+  controller receipt, controller snapshot and command corpora, compares the 2.0
+  capability rule with 1.x admission, and drives a real agent-state owner
+  through expiry and retirement.
 
-The mapping test imports the built `@jimmie-potts/agent-state` and
-`@jimmie-potts/device-contracts`, the package's devDependencies, so run the full
-`npm run build` first, as CI does.
+The mapping and status tests import the built `@jimmie-potts/agent-state`,
+`@jimmie-potts/agent-status` and `@jimmie-potts/device-contracts`, the package's
+devDependencies, so run the full `npm run build` first, as CI does.
 
 ## SDK checks
 

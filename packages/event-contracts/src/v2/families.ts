@@ -1,13 +1,14 @@
+// The core payload families of profile 2.0 (Hub #842, #918): the facts every module can rely on, and the commands
+// that change them. Each payload schema lives in `schemas/v2/families/<family>.schema.json` and is built from the
+// shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {SCHEMA_BASE, type ErrorDetail, type Message, type MessageKind, type MessageValidator, type PayloadCheck} from './index.js';
+import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
+import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 
-/**
- * The core payload families of profile 2.0 (Hub #842): the facts every module can rely on. Each payload schema lives
- * in `schemas/v2/families/<family>.schema.json` and is built from the shared blocks. `MAPPING.md` shows where each
- * 1.x field lands.
- */
-export const FAMILY_VERSION = '2.0';
+export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
+/** A core payload family. */
+export type CoreFamily = PayloadFamily;
+
 /** A moment request's start lies at most this far after the request was sent. */
 export const MOMENT_MAX_LEAD_MS = 60_000;
 /** Freshness is `uncertain` once this long has passed without session evidence. */
@@ -41,10 +42,12 @@ export type SessionRecord = {
 export type LifecycleEvent =
   | {kind: 'session-started' | 'turn-started' | 'activity-observed' | 'turn-ended' | 'turn-interrupted' | 'runtime-ended'}
   | {kind: 'question-continuing' | 'attention-input' | 'attention-approval' | 'attention-resolved'; attention: KnownId}
-  | {kind: 'notice-acknowledged'; consumerId: string; noticeId: string}
   | {kind: 'read-observed'; state: 'read' | 'unread'}
   | ({kind: 'evidence-unavailable'} & Unavailable);
-/** `org.bunny.lifecycle.observed`: one hook observation for the core. */
+/**
+ * `org.bunny.lifecycle.observed`: one hook observation for the core. A consumer's acknowledgment is not an observation:
+ * it is the `notice-acknowledge` command (Hub #918).
+ */
 export type LifecycleObservation = {
   identity: Identity; turn: KnownId; parent: Parent; nativeEventId?: string; event: LifecycleEvent;
   observedAtMs: number; occurredAtMs?: number; ordering: Ordering;
@@ -75,7 +78,18 @@ export type InboxItem = {
       evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
     };
 };
+/**
+ * `org.bunny.notice.acknowledge.requested`: a consumer acknowledges one turn-ended notice for its own consumer ID. The
+ * envelope subject is the session's `id`. The acknowledgment is recorded for that consumer, and each consumer's policy
+ * decides which acknowledgments clear what it shows. It proves no readership.
+ */
+export type NoticeAcknowledgeRequest = {requestId: string; consumerId: string; noticeId: string};
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
+/**
+ * `org.bunny.playback.control.requested`: one action for the presented playback source. The envelope subject is the
+ * playback record's `id`; its owner sends the action once, to the source presented at admission.
+ */
+export type PlaybackControlRequest = {requestId: string; action: PlaybackAction; expectedRevision?: number};
 export type PlaybackState = {
   id: string; revision: number; availability: 'available' | 'stale' | 'unavailable'; observedAtMs?: number;
   playback: {status: 'unknown'} | {
@@ -151,15 +165,12 @@ const checkInbox: PayloadCheck = message => {
   return entity(message, message.data.id) ??
     (item.kind === 'turn-ended' && item.session !== sessionEntityId(item.identity) ? 'payload /item/session not the identity key' : undefined);
 };
-const checkMoment: PayloadCheck = message => (message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
-  `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined;
-
-export type CoreFamily = {family: string; kind: MessageKind; type: string; dataschema: string; schema: object; check?: PayloadCheck};
-const define = (family: string, kind: MessageKind, type: string, check?: PayloadCheck): CoreFamily => ({
-  family, kind, type, dataschema: `${SCHEMA_BASE}${family}/${FAMILY_VERSION}`,
-  schema: JSON.parse(readFileSync(new URL(`../../schemas/v2/families/${family}.schema.json`, import.meta.url), 'utf8')) as object,
-  ...(check === undefined ? {} : {check}),
-});
+// A moment goes to one device, named by its subject.
+const checkMoment: PayloadCheck = message => routedSubject('device')(message) ??
+  ((message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
+    `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined);
+// The command goes to the session it acknowledges, whose entity ID is a SHA-256 hash.
+const checkAcknowledge: PayloadCheck = message => /^[0-9a-f]{64}$/.test(message.subject) ? undefined : 'envelope /subject not a session id';
 
 /** Every core family, in registration order: the session schema holds definitions the other agent families use. */
 export const coreFamilies: readonly CoreFamily[] = [
@@ -175,6 +186,8 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('moment-ended', 'occurrence', 'org.bunny.moment.ended'),
   define('mode-set', 'command', 'org.bunny.mode.set.requested'),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
+  define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkAcknowledge),
+  define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
 ];
 
 /**
@@ -182,11 +195,5 @@ export const coreFamilies: readonly CoreFamily[] = [
  * outcomes, removals and sync messages use the payloads the profile owns.
  */
 export function registerCoreFamilies(validator: MessageValidator): void {
-  for (const {family, kind, type, dataschema, schema, check} of coreFamilies) {
-    validator.register(dataschema, schema, message => {
-      if (message.kind !== kind) return `envelope /kind ${family} is a ${kind} family`;
-      if (message.type !== type) return `envelope /type ${family} uses ${type}`;
-      return check?.(message);
-    });
-  }
+  registerFamilies(validator, coreFamilies);
 }

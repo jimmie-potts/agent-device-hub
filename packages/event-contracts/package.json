@@ -15,6 +15,14 @@
     "./v2/families": {
       "types": "./dist/v2/families.d.ts",
       "import": "./dist/v2/families.js"
+    },
+    "./v2/devices": {
+      "types": "./dist/v2/devices.d.ts",
+      "import": "./dist/v2/devices.js"
+    },
+    "./v2/status": {
+      "types": "./dist/v2/status.d.ts",
+      "import": "./dist/v2/status.js"
     }
   },
   "dependencies": {
@@ -22,6 +30,7 @@
   },
   "devDependencies": {
     "@jimmie-potts/agent-state": "3.6.0",
+    "@jimmie-potts/agent-status": "0.1.0",
     "@jimmie-potts/device-contracts": "1.2.0"
   }
 }

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/device-mode-set/2.0",
+  "description": "Command: select one of the device's native modes, such as Nanoleaf `work` or Pixoo `monitor` (Hub #918), from controller v1's `mode.set`. It is never the Hub's mode: the Hub mode owner maps its own mode through the Hub-mode table before sending it. The envelope subject names the device; the payload names no device, controller, address or credential. The optional `expectedConfigurationRevision` and `expectedGeneration` refuse the request with `revision-conflict` when the device's configuration revision or generation has moved on. The module refuses an operation the device does not offer with `unsupported-capability` (`commandSupported`). The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "$ref": "https://bunny.invalid/events/device/2.0#/$defs/command",
+  "unevaluatedProperties": false,
+  "required": ["mode"],
+  "properties": {"mode": {"$ref": "https://bunny.invalid/events/device/2.0#/$defs/nativeMode"}}
+}

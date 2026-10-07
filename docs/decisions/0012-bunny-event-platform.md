@@ -169,8 +169,9 @@ State events and telemetry are not tracked.
 - A finished turn is not an inbox item. Its unread state stays on the session
   record, which consumers sync and derive what they show from. Evidence clears
   it: read evidence for a consumer that uses it, the session's end, or a new
-  turn in that session for a consumer set to clear on one. A consumer's own
-  acknowledgment clears it on that consumer only.
+  turn in that session for a consumer set to clear on one. Acknowledgments are
+  recorded per consumer, and each consumer's policy decides which
+  acknowledgments clear what it shows, as today.
 - The session's existing expiry still applies: a session with no lifecycle
   evidence for 24 hours is forgotten, and its unread state with it, as today.
   History keeps the turn-ended occurrence.
@@ -390,4 +391,10 @@ a finished turn from session state when they sync.
 turn-ended variant of the 2.0 `inbox-item` family: the turn-ended sentence in
 MAPPING.md's `notices` row, the synced `bunny-message-profile` requirement on a
 turn-ended item's `session`, and the README, schema, types, checks and fixtures
-that carry it.
+that carry it. Corrected the same day during
+[#918](https://github.com/jimmie-potts/agent-device-hub/issues/918)'s review
+(owner, 2026-10-06): "Inbox and history" first said that a consumer's own
+acknowledgment clears a finished turn on that consumer only. Acknowledgment
+scope stays as today instead: acknowledgments are recorded per consumer, and
+each consumer's policy decides which ones clear what it shows. LIFX and Tidbyt
+clear a finished turn on any consumer's acknowledgment.
