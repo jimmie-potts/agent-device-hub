@@ -185,11 +185,12 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   15 s. The 15 s run from the end of the tile's last call: its answer, a failure
   such as a refused connection, or its 10 s deadline when nothing came back. A
   request reaches the cloud before its call ends, however long it takes on the
-  way, so the cloud sees a tile's pushes at least 15 s apart; a render and any
-  wait in the queue come before the request and never shorten the gap either.
-  Changes in between coalesce into one push of the latest state. An unchanged
-  frame is pushed again 10 minutes after its push ended. The start's
-  installation listing counts against the gate, as the runner's did.
+  way, so within one start, while the wall clock does not step forward, the
+  cloud sees a tile's pushes at least 15 s apart; a render and any wait in the
+  queue come before the request and never shorten the gap either. Changes in
+  between coalesce into one push of the latest state. An unchanged frame is
+  pushed again 10 minutes after its push ended. The start's installation listing
+  counts against the gate, as the runner's did.
 - **Removal.** A tile with nothing to show is removed. When its presence is
   unknown, the tile reads the installation list first and deletes only an
   installation that is there.
@@ -207,7 +208,10 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   leaves the installation's presence unknown, and the next start reads the list
   before it trusts it. Such a write keeps the time its request went out, because
   nothing is stored once the module stops, and the next start's gate runs from
-  that time. Start and restart write nothing until the shown state is known; see
+  that time. Its frame is unknown, so that start pushes the current frame again
+  once the gate allows, and the push can reach the cloud less than 15 s after
+  the stopped one, by the stopped request's travel time. Start and restart write
+  nothing until the shown state is known; see
   [The start window](#the-start-window).
 - **The clock.** The gate and the refresh run on the runtime's wall clock, so
   they hold across a restart. A time in the future, after the clock was set

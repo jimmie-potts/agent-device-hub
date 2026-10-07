@@ -84,6 +84,18 @@ test('an unchanged frame is pushed again only after 10 minutes', async context =
   await until(() => pushes(h) === 2, 'the refresh');
 });
 
+test('the refresh of an unchanged frame comes 10 minutes after its push ended, not after it was sent', async context => {
+  // The push takes 5 s to reach the cloud and is answered as it arrives; the refresh arrives at once.
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY, pushTransitMs: [5 * SECOND]});
+  await h.advance(6 * SECOND, SECOND);
+  await until(() => pushes(h) === 1, 'the first push');
+  await h.advance(10 * MINUTE + 5 * SECOND, SECOND);
+  await until(() => pushes(h) === 2, 'the refresh');
+  const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
+  assert.equal(second - first, 10 * MINUTE, 'the refresh reached the cloud 10 minutes after the push it repeats ended');
+  assert.deepEqual(h.problems(), []);
+});
+
 test('an idle start removes leftover tiles once, after the listing shows them, and leaves absent ones alone', async context => {
   const leftover = await host(context, {cloud: {installations: [STATUS, NOW_PLAYING]}});
   await until(() => calls(leftover).filter(call => call.startsWith('DELETE')).length === 2, 'both removals');
@@ -458,6 +470,9 @@ test('a push that never answers holds the gate from its deadline, since it may h
   await until(() => pushes(h) === 2, 'the next push');
   const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
   assert.ok(second - first >= 15 * SECOND, `the cloud saw the pushes ${second - first} ms apart`);
+  // The first push went out 9 s before it arrived, so its call ended at its deadline 1 s after that.
+  const deadline = first - 9 * SECOND + 10 * SECOND;
+  assert.ok(second >= deadline + 15 * SECOND, `the next push went out ${second - deadline} ms after the deadline`);
   assert.deepEqual(h.problems(), []);
 });
 

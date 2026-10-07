@@ -4,9 +4,9 @@ The Tidbyt module ([Hub #930](https://github.com/jimmie-potts/agent-device-hub/i
 
 ## What Changes
 
-- Each tile's gate runs from the end of its previous call: the answer, a failure such as a refused connection, or the call's 10-second deadline when nothing came back. A request reaches the cloud before its call ends, so the cloud receives a tile's writes at least 15 s apart.
+- Each tile's gate runs from the end of its previous call: the answer, a failure such as a refused connection, or the call's 10-second deadline when nothing came back. A request reaches the cloud before its call ends, so within one start of the module, while the wall clock does not step forward, the cloud receives a tile's writes at least 15 s apart.
 - The refresh of an unchanged frame runs 10 minutes from the end of that frame's push.
-- Unchanged: the stored gate time, the wall-clock rule that a stored time in the future counts as now, and the uncertain store before a write goes out. A write the module stops or crashes during keeps the time its request went out.
+- Unchanged: the stored gate time, the wall-clock rule that a stored time in the future counts as now, and the uncertain store before a write goes out. A write the module stops or crashes during keeps the time its request went out, so the next start's first push can reach the cloud less than 15 s after it, by that request's travel time.
 
 ## Capabilities
 

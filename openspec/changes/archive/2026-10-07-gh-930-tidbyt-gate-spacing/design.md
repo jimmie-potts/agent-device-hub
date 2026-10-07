@@ -4,7 +4,7 @@
 
 ## Goals / Non-Goals
 
-**Goals:** two writes of a tile reach the cloud at least 15 s apart, however long each request takes to arrive; nothing else about the gate changes.
+**Goals:** within one start of the module, while the wall clock does not step forward, two writes of a tile reach the cloud at least 15 s apart, however long each request takes to arrive; nothing else about the gate changes.
 
 **Non-Goals:** a different interval, a gate shared by the two tiles, or changes to the queue's holds.
 
@@ -13,7 +13,7 @@
 - **Time the gate from the end of the call.** A request can reach the cloud only before its call ends, so a gate that starts when the call ends keeps the next request's arrival at least 15 s after the previous one's. The alternative, measuring at the cloud, is not possible: the cloud's answer carries no arrival time.
 - **A call with no answer ends at its 10-second deadline.** The request may have arrived at any time before then, so the gate runs from the deadline and the next write goes out at least 25 s after the unanswered one went out. The uncertain write already counts as not confirmed sent, so its backoff applies too. Timing it from the send instead would let a request that arrived late be followed within less than 15 s.
 - **The refresh runs from the same moment.** `sent.atMs` is the end of the push, so the refresh comes 10 minutes after the frame was confirmed. The refresh had no spacing problem of its own, because every push passes the gate; one moment for both keeps the writer simple.
-- **Stops and crashes keep the send time.** The writer still stores the uncertain write, with the send time, before the request goes out, and the module stores nothing once it stops. A start after a stop or a crash during a write runs its gate from that send time. The cloud can then see two pushes less than 15 s apart by the stopped request's travel time, but only if the restart and a change both come within 15 s of that send.
+- **Stops and crashes keep the send time.** The writer still stores the uncertain write, with the send time, before the request goes out, and the module stores nothing once it stops. A start after a stop or a crash during a write runs its gate from that send time. The uncertain write also drops the frame's key, so that start pushes the current frame again as soon as the gate allows, with no change needed. That first push after the restart can reach the cloud less than 15 s after the stopped one, by the stopped request's travel time.
 
 ## Risks / Trade-offs
 
