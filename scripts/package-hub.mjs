@@ -17,8 +17,10 @@ const released={
  'device-mcp':{version:'1.0.1',sha256:'e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32',manifest:'949ef80fd0a440e1816bc2dc250f63c5f40ff6369f251519cad1e3408d036a3e'}
 };
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
-// Lock paths that the root manifest and the workspaces outside modules/ need at run time.
-// Staged device modules under modules/ are not part of the Hub package (Hub #25).
+// Lock paths the Hub needs at run time: apps/hub's own dependency tree, through the
+// workspace packages it links to. npm pack bundles only that tree, so nothing another
+// workspace needs, such as the B.U.N.N.Y. runtime's device modules and their sharp
+// binaries (Hub #843), belongs in the closure.
 function runtimeClosure(lock){
  const packages=lock.packages,seen=new Set();
  // Node's lookup: the package's own node_modules, then each enclosing one, then the root's.
@@ -29,8 +31,7 @@ function runtimeClosure(lock){
   if(entry.link)return visit(entry.resolved);
   for(const field of ['dependencies','optionalDependencies','peerDependencies'])for(const name of Object.keys(entry[field]??{})){const found=resolveFrom(path,name);if(found)visit(found);}
  };
- visit('');
- for(const workspace of packages[''].workspaces??[])if(!workspace.startsWith('modules/'))visit(workspace);
+ visit('apps/hub');
  return seen;
 }
 // Keep the installed consumer outside every checkout so workspace resolution
