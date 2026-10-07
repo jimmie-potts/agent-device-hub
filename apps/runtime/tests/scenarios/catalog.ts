@@ -1432,7 +1432,21 @@ const completedAs = (h: Harness, requestId: string, result: string, evidence: st
 const pixooAvailability = (h: Harness, availability: DeviceRecord['availability']): Outcome =>
   pixooDevice(h)?.availability === availability || `the reader's copy shows the Pixoo ${String(pixooDevice(h)?.availability)}`;
 const shownFrames = (h: Harness, frames: number): Outcome => h.devices().pixoo.shown?.frames === frames || `the Pixoo shows ${show(h.devices().pixoo.shown)}`;
-const PIXOO_SEED: Seed = {modules: ['core', 'pixoo'], follows: [CORE_FAMILIES, PIXOO_FAMILIES], config: {pixoo: PIXOO_SECTION}};
+/**
+ * The Pixoo with the owners of what it follows: the core's sessions for Monitor, and the playback module's record for
+ * Now Playing, as in the shipped list, so its syncs are served and a run's records show only what its scenario does.
+ */
+const PIXOO_SEED: Seed = {
+  modules: ['core', 'playback', 'pixoo'], follows: [CORE_FAMILIES, PIXOO_FAMILIES], config: {playback: PLAYBACK_SECTION, pixoo: PIXOO_SECTION},
+};
+const PIXOO_MODULES = ['core', 'playback', 'pixoo'] as const;
+/** The runtime's refusals of the Pixoo's own syncs, as `<pattern> <code>`. */
+const pixooRefusals = (h: Harness): string[] => h.logs().map(({record}) => record)
+  .filter(record => record.event_name === 'runtime.sync.refused' && record.attributes['bunny.participant'] === PIXOO_OWNER)
+  .map(record => `${String(record.attributes['bunny.pattern'])} ${String(record.attributes['bunny.code'])}`);
+const followsItsOwners = (): Step =>
+  expect('the runtime refused none of the Pixoo\'s syncs: the core and the playback module serve what it follows', h =>
+    pixooRefusals(h).length === 0 || `refused ${show(pixooRefusals(h))}`);
 
 /** Monitor follows the core's sessions: a session that waits for approval pulses on the Pixoo, and calms once approved. */
 const pixooMonitor: Scenario = {
@@ -1440,7 +1454,7 @@ const pixooMonitor: Scenario = {
   title: 'the Pixoo\'s Monitor follows the agent sessions the core holds',
   seed: PIXOO_SEED,
   steps: [
-    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
     expect('the reader\'s copy shows the simulated Pixoo available', h => pixooAvailability(h, 'available')),
     act('the operator selects Monitor', h => sendOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-1')),
     expect('Monitor\'s selection completes as the module\'s own observed state', h => completedAs(h, 'pixoo-monitor-1', 'succeeded', 'observed')),
@@ -1456,7 +1470,8 @@ const pixooMonitor: Scenario = {
     expect('the Pixoo shows the session\'s dashboard, pulsing in two frames for the approval', h => shownFrames(h, 2), 5000),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approve-1'))),
     expect('the Pixoo shows the calm dashboard in one frame', h => shownFrames(h, 1), 8000),
-    expect('the core and the Pixoo are still running', h => running(h, ['core', 'pixoo'])),
+    expect('the core, the playback module and the Pixoo are still running', h => running(h, PIXOO_MODULES)),
+    followsItsOwners(),
   ],
 };
 
@@ -1490,7 +1505,7 @@ const pixooMedia: Scenario = {
   title: 'a media command to the Pixoo is accepted, then completed once the media reaches the device',
   seed: PIXOO_SEED,
   steps: [
-    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
     ...pixooPlaylist(),
     expect('the playlist is among the Pixoo\'s capabilities', h => {
       const media = pixooDevice(h)?.capabilities.media;
@@ -1504,6 +1519,7 @@ const pixooMedia: Scenario = {
       const last = pixooDevice(h)?.lastTransmission;
       return (last?.status === 'known' && last.requestId === 'pixoo-start-1') || `last transmission ${show(last)}`;
     }),
+    followsItsOwners(),
   ],
 };
 
@@ -1574,7 +1590,7 @@ const pixooOffline: Scenario = {
   title: 'the Pixoo module starts while its device is offline, reports it unavailable, and recovers once it answers',
   seed: PIXOO_SEED,
   steps: [
-    expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
+    expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
     act('the Pixoo goes offline, and the runtime restarts', async h => {
       h.simulate({device: 'pixoo', action: 'offline'});
       await h.restart();
@@ -1586,6 +1602,7 @@ const pixooOffline: Scenario = {
     act('the Pixoo comes back online', h => { h.simulate({device: 'pixoo', action: 'online'}); }),
     expect('the reader\'s copy shows the Pixoo available', h => pixooAvailability(h, 'available'), 35_000),
     expect('the module logged one recovery', h => pixooLogged(h, 'device.available', 'INFO', 2) === 1 || `${pixooLogged(h, 'device.available', 'INFO', 2)} recoveries`),
+    followsItsOwners(),
   ],
 };
 

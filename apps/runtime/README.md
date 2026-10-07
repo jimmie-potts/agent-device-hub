@@ -983,7 +983,8 @@ The catalog holds:
 - a module's page, the preview it loads by reference, its settings and its MCP
   tool served from its manifest, with the page refused without a session and
   the settings refused to the hook, which may not read;
-- the Pixoo (#843), with its simulated Pixoo:
+- the Pixoo (#843), with its simulated Pixoo and the playback module (#929),
+  whose record Now Playing follows, so none of the Pixoo's syncs is refused:
   - Monitor following the core's sessions (`pixoo-monitor`);
   - a media command accepted, then completed once the media reached the device
     (`pixoo-media`);

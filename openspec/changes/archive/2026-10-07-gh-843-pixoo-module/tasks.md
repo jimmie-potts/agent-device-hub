@@ -20,7 +20,7 @@
 ## 4. Runtime
 
 - [x] 4.1 Ship `pixooFactory`, and assert the shipped process, its log records and the journal intake's clean run with the Pixoo (`process`, `log`, maintenance `runtime-journal` tests).
-- [x] 4.2 Add the four Pixoo scenarios, Now Playing on the playback module (#929), and play them in the in-memory harness on both transports (`test:runtime:scenarios`).
+- [x] 4.2 Add the four Pixoo scenarios, each with the playback module (#929) as the owner Now Playing follows, and play them in the in-memory harness on both transports (`test:runtime:scenarios`).
 - [x] 4.3 Reach the child's simulated Pixoo from the supervisor, and watch the module's sources in `build-current` (`verify/tests/build.test.ts`).
 - [x] 4.4 Give the factory a `simulatedSection`, which main's one helper (`tests/fixtures/simulated.ts`) writes for the shipped process, the `shipped` run, the journal intake's clean run and the memory script's `simulated` variant.
 
