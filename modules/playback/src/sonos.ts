@@ -86,8 +86,8 @@ export function sonosSource(config: SonosConfiguration, transport: SpeakerTransp
     async command(action) {
       const reply = await call(SONOS_ACTIONS[action], action === 'play' ? '<Speed>1</Speed>' : '');
       if (reply.status === 200) return 'sent';
-      // A SOAP fault is the Move refusing before any effect; any other reply leaves the result uncertain.
-      if (reply.status === 500 && hasElement(reply.body, 'Fault')) return 'failed';
+      // A SOAP fault is the Move refusing a command it heard; any other reply leaves the result uncertain.
+      if (reply.status === 500 && hasElement(reply.body, 'Fault')) return 'refused';
       throw new Error('invalid-response');
     },
   };

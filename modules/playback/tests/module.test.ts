@@ -12,7 +12,9 @@ import {ModuleHarness, moduleConformance} from '@jimmie-potts/sdk/testing';
 import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule} from '../src/module.js';
 import {SimulatedSpeakers} from '../src/simulated.js';
 import {httpSpeakers} from '../src/transport.js';
-import {ID, SECTION, airplay, fakeSonos, fakeSony, flush, host, playingInfo, reportsUnavailable, test, type Hosted} from './support.js';
+import {
+  HeldBus, ID, SECTION, airplay, fakeSonos, fakeSony, flush, hooked, host, lockDatabase, playingInfo, reportsUnavailable, storedCommands, test, type Hosted,
+} from './support.js';
 
 const playing = (title: string) => ({input: 'airplay', status: 'playing', title, artist: 'Artist'}) as const;
 
@@ -172,16 +174,127 @@ test('a command in flight stays with its source when another takes over, and its
   clean(hosted);
 });
 
-test('a speaker that refuses an action reports a failed outcome with no evidence of an effect', async context => {
+test('a speaker that refuses an action reports a failed outcome, with evidence that the command reached it', async context => {
   const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
   const hosted = await host(context, speakers);
   speakers.nextCommand('sony', 'refuse');
   assert.equal(answer(await hosted.send('previous', 'r-refused')), 'accepted');
+  // The speaker answered with a refusal, so the command reached it: evidence `none` would claim nothing did.
   assert.deepEqual(outcome(hosted, 'r-refused'), [{
-    requestId: 'r-refused', result: 'failed', evidence: 'none', error: {code: 'invalid-state', retryable: false, detail: 'the speaker refused the action'},
+    requestId: 'r-refused', result: 'failed', evidence: 'transmitted', error: {code: 'invalid-state', retryable: false, detail: 'the speaker refused the action'},
   }]);
   assert.equal(answer(await hosted.send('previous', 'r-again')), 'accepted', 'the next command is answered again');
   assert.deepEqual(outcome(hosted, 'r-again'), [{requestId: 'r-again', result: 'succeeded', evidence: 'transmitted'}]);
+  clean(hosted);
+});
+
+test('the module stores a command\'s intent before the speaker hears it', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  const heard: string[][] = [];
+  let stateDir = '';
+  const hosted = await host(context, speakers, {transport: hooked(speakers, () => { heard.push(storedCommands(stateDir)); })});
+  stateDir = hosted.stateDir;
+  assert.equal(answer(await hosted.send('next', 'r-intent')), 'accepted');
+  assert.deepEqual(heard, [['r-intent pending']], 'when the speaker heard next, the module had stored the command without an outcome');
+  assert.deepEqual(storedCommands(stateDir), ['r-intent succeeded']);
+  clean(hosted);
+});
+
+test('the reply comes once the outcome is committed and published, so a requester that hears accepted finds the outcome', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  const bus = new HeldBus();
+  const hosted = await host(context, speakers, {bus});
+  bus.hold();
+  let answered: string | undefined;
+  const pending = hosted.send('next', 'r-held').then(result => { answered = answer(result); });
+  await hosted.advance(1000);
+  assert.deepEqual(speakers.state().sony.commands, ['next'], 'the speaker heard the command');
+  assert.equal(answered, undefined, 'no reply while the outcome waits to be published');
+  assert.deepEqual(storedCommands(hosted.stateDir), ['r-held succeeded'], 'the outcome is committed');
+  bus.release();
+  await pending;
+  await flush();
+  assert.equal(answered, 'accepted');
+  assert.equal(outcome(hosted, 'r-held').length, 1);
+  clean(hosted);
+});
+
+test('stopping during a speaker call ends the call at once, keeps its outcome uncertain and leaves nothing behind', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  const transport = hooked(speakers, () => {});
+  const hosted = await host(context, speakers, {transport});
+  speakers.nextCommand('sony', 'hang');
+  void hosted.send('pause', 'r-stop');
+  await hosted.advance(500);
+  assert.equal(transport.inFlight(), 1, 'the speaker is still silent on pause');
+  const started = performance.now();
+  await hosted.stop();
+  assert.ok(performance.now() - started < 2000, 'the stop does not wait for the call');
+  assert.deepEqual(hosted.harness.failures, [], 'nothing outlasted its stop deadline');
+  assert.equal(hosted.harness.pendingTimers(), 0, 'no timer is left');
+  await flush();
+  assert.equal(transport.inFlight(), 0, 'no call is left');
+  assert.deepEqual(storedCommands(hosted.stateDir), ['r-stop uncertain'], 'its outcome is stored as uncertain');
+  await hosted.start();
+  assert.deepEqual(outcome(hosted, 'r-stop').at(-1), {
+    requestId: 'r-stop', result: 'uncertain', evidence: 'none', error: {code: 'uncertain-result', retryable: false, detail: 'the speaker did not answer the action'},
+  }, 'and goes out at the next start at the latest');
+  assert.deepEqual(speakers.state().sony.commands, ['pause'], 'it was sent once');
+  clean(hosted);
+});
+
+const storage = (hosted: Hosted): string[] => hosted.logs().filter(record => record.fields['bunny.operation'] === 'storage')
+  .map(record => `${record.level} ${record.event} ${String(record.fields['bunny.code'] ?? record.fields['bunny.outcome'])}`);
+
+test('a command whose intent the database cannot store is refused capacity, with one warning per run of refusals and one recovery', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  const hosted = await host(context, speakers);
+  const release = lockDatabase(hosted.stateDir);
+  assert.equal(answer(await hosted.send('next', 'r-busy-1')), 'capacity');
+  assert.equal(answer(await hosted.send('next', 'r-busy-2')), 'capacity');
+  assert.deepEqual(speakers.state().sony.commands, [], 'a refused command reaches no speaker');
+  assert.deepEqual(storage(hosted), ['warn operation.failed unavailable'], 'one warning for the run of refusals');
+  release();
+  assert.equal(answer(await hosted.send('next', 'r-busy-3')), 'accepted');
+  assert.deepEqual(speakers.state().sony.commands, ['next']);
+  assert.deepEqual(storage(hosted), ['warn operation.failed unavailable', 'info operation.completed succeeded'], 'and one recovery');
+  clean(hosted);
+});
+
+test('an outcome the database cannot store after the speaker heard the command is committed later, and the module keeps running', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  let release: (() => void) | undefined;
+  let stateDir = '';
+  // The database refuses commits from the moment the speaker hears the command: the intent is stored, the outcome is not.
+  const hosted = await host(context, speakers, {transport: hooked(speakers, () => { release ??= lockDatabase(stateDir); })});
+  stateDir = hosted.stateDir;
+  assert.equal(answer(await hosted.send('next', 'r-late')), 'accepted', 'the answer never claims the command had no effect');
+  assert.deepEqual(outcome(hosted, 'r-late'), [], 'the outcome waits');
+  assert.deepEqual(storedCommands(stateDir), ['r-late pending']);
+  await hosted.advance(5000);
+  assert.deepEqual(storage(hosted), ['warn operation.failed unavailable'], 'one warning while the retries fail');
+  release?.();
+  await hosted.advance(10_000);
+  assert.deepEqual(outcome(hosted, 'r-late'), [{requestId: 'r-late', result: 'succeeded', evidence: 'transmitted'}], 'a retry commits and publishes it');
+  assert.deepEqual(storedCommands(stateDir), ['r-late succeeded']);
+  assert.deepEqual(storage(hosted), ['warn operation.failed unavailable', 'info operation.completed succeeded']);
+  assert.equal(answer(await hosted.send('next', 'r-after')), 'accepted', 'the module keeps running');
+  assert.deepEqual(speakers.state().sony.commands, ['next', 'next']);
+  clean(hosted);
+});
+
+test('a queued command is admitted against what the speaker reports after the command ahead of it', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  const hosted = await host(context, speakers);
+  const [first, second] = await Promise.all([hosted.send('pause', 'q-1'), hosted.send('pause', 'q-2')]);
+  assert.deepEqual([answer(first), answer(second)], ['accepted', 'unsupported-capability'], 'the HT-A9 paused, so a second pause is not offered');
+  assert.deepEqual(speakers.state().sony.commands, ['pause']);
+  speakers.otherInput('sony');
+  speakers.play('sonos', {title: 'Move song'});
+  await hosted.advance(2000);
+  const [pause, play] = await Promise.all([hosted.send('pause', 'q-3'), hosted.send('play', 'q-4')]);
+  assert.deepEqual([answer(pause), answer(play)], ['accepted', 'accepted'], 'the Move paused, so play is offered');
+  assert.deepEqual(speakers.state().sonos.commands, ['pause', 'play']);
   clean(hosted);
 });
 

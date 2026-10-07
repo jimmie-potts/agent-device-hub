@@ -9,13 +9,18 @@ import {join} from 'node:path';
 import {test as nodeTest, type TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {DatabaseSync} from 'node:sqlite';
+import {
+  InProcessBus, type CommandDraft, type Draft, type Handler, type Participant, type RequestOptions, type RequestResult, type Responder, type Scheduler,
+  type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
+} from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord} from '@jimmie-potts/sdk/testing';
 import {CONTROL_PATH} from '../src/sonos.js';
 import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule, type PlaybackModuleOptions} from '../src/module.js';
 import type {PlaybackAction} from '../src/playback.js';
 import type {Deadline} from '../src/sources.js';
 import type {SimulatedSpeakers} from '../src/simulated.js';
+import type {SpeakerTransport} from '../src/transport.js';
 
 /** node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. */
 export function test(name: string, body: (context: TestContext) => void | Promise<void>): void {
@@ -208,11 +213,92 @@ export type Hosted = {
   stateDir: string;
 };
 
-export async function host(context: TestContext, speakers: SimulatedSpeakers, options: Omit<PlaybackModuleOptions, 'transport'> & {section?: unknown} = {}): Promise<Hosted> {
-  const {section = SECTION, ...moduleOptions} = options;
+/** Whether a speaker call is a command rather than one of the reads every poll makes. */
+const isCommand = (call: string): boolean => call !== 'getPlayingContentInfo' && !call.startsWith('Get');
+
+/**
+ * The simulated speakers with a hook that runs as a speaker hears each command, before it answers, and a count of the
+ * calls still in progress.
+ */
+export function hooked(speakers: SimulatedSpeakers, onCommand: (call: string) => void): SpeakerTransport & {inFlight: () => number} {
+  let inFlight = 0;
+  const track = async <T>(call: string, work: () => Promise<T>): Promise<T> => {
+    inFlight += 1;
+    try {
+      if (isCommand(call)) onCommand(call);
+      return await work();
+    } finally {
+      inFlight -= 1;
+    }
+  };
+  return {
+    sony: (endpoint, method, version, signal) => track(method, () => speakers.sony(endpoint, method, version, signal)),
+    sonos: (endpoint, action, args, signal) => track(action, () => speakers.sonos(endpoint, action, args, signal)),
+    inFlight: () => inFlight,
+  };
+}
+
+/** Takes the module database's write lock from another connection, as a busy or full disk refuses commits; returns its release. */
+export function lockDatabase(stateDir: string): () => void {
+  const lock = new DatabaseSync(join(stateDir, 'playback.sqlite'));
+  lock.exec('BEGIN IMMEDIATE');
+  return () => {
+    lock.exec('ROLLBACK');
+    lock.close();
+  };
+}
+
+/** The module's stored commands, read from another connection, as `request_id result`. */
+export function storedCommands(stateDir: string): string[] {
+  const database = new DatabaseSync(join(stateDir, 'playback.sqlite'), {readOnly: true});
+  try {
+    return (database.prepare('SELECT request_id, result FROM playback_commands ORDER BY seq').all() as {request_id: string; result: string | null}[])
+      .map(row => `${row.request_id} ${row.result ?? 'pending'}`);
+  } finally {
+    database.close();
+  }
+}
+
+/** A bus that can hold the playback module's outcome publications until released, as a slow publish would. */
+export class HeldBus extends InProcessBus {
+  #gate: Promise<void> | undefined;
+  #open: () => void = () => {};
+
+  hold(): void {
+    this.#gate ??= new Promise(resolve => { this.#open = resolve; });
+  }
+
+  release(): void {
+    this.#open();
+    this.#gate = undefined;
+  }
+
+  override connect(source: string): Participant {
+    const inner = super.connect(source);
+    if (source !== 'bunny/modules/playback') return inner;
+    return {
+      source: inner.source,
+      publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => inner.publish(key, draft, options),
+      publishMessage: async <T extends object>(key: string, message: Message<T>) => {
+        if (message.kind === 'outcome') await this.#gate;
+        return inner.publishMessage(key, message);
+      },
+      subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => inner.subscribe<T>(pattern, handler, options),
+      request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => inner.request(key, draft, options),
+      respond: <T extends object>(pattern: string, responder: Responder<T>) => inner.respond<T>(pattern, responder),
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => inner.sync<T>(families, handler, options),
+      serveSync: (families: readonly string[], provider: SyncProvider) => inner.serveSync(families, provider),
+      close: () => inner.close(),
+    };
+  }
+}
+
+type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {section?: unknown; transport?: SpeakerTransport; bus?: InProcessBus};
+
+export async function host(context: TestContext, speakers: SimulatedSpeakers, options: HostOptions = {}): Promise<Hosted> {
+  const {section = SECTION, bus = new InProcessBus(), ...moduleOptions} = options;
   const clock = manualClock();
   const stateDir = await mkdtemp(join(tmpdir(), 'playback-module-'));
-  const bus = new InProcessBus();
   const requester = bus.connect('bunny/parts/operator');
   const watcher = bus.connect('bunny/parts/watcher');
   const published: Message[] = [];

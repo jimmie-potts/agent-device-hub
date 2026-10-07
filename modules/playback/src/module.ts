@@ -7,7 +7,8 @@ import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contra
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, Outbox, SdkError, type BunnyModule, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
+  DeviceAvailability, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
+  type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
 import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
@@ -25,6 +26,9 @@ export const POLL_MS = 2000;
 export const CALL_TIMEOUT_MS = 1500;
 /** How many handled commands the module remembers, so a repeated `requestId` is answered without sending it again. */
 export const RETAINED = 64;
+/** The first wait before an outcome the database refused is committed again; each later wait doubles, up to the last. */
+export const OUTCOME_RETRY_MS = 1000;
+export const OUTCOME_RETRY_MAX_MS = 60_000;
 // The diagnostic contract's `bunny.device.id` pattern.
 const DEVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -67,7 +71,16 @@ function recordOf(id: string, revision: number, {availability, observedAtMs, obs
   };
   return {id, revision, availability, ...(observedAtMs === undefined ? {} : {observedAtMs}), playback};
 }
-const codeOf = (error: unknown): ErrorCode => error instanceof SdkError ? error.body.error.code : 'internal';
+// SQLite's result codes, from a node:sqlite error's `errcode`.
+const SQLITE_BUSY = 5, SQLITE_LOCKED = 6, SQLITE_FULL = 13;
+const errcode = (error: unknown): number | undefined =>
+  typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode : undefined;
+/** A database refusal's registry code: `capacity` for a full disk, `unavailable` for a database another writer holds. */
+function storageCode(error: unknown): ErrorCode {
+  if (error instanceof SdkError) return error.body.error.code;
+  const code = errcode(error);
+  return code === SQLITE_FULL ? 'capacity' : code === SQLITE_BUSY || code === SQLITE_LOCKED ? 'unavailable' : 'internal';
+}
 
 type Handled = {body: string; result: string | null};
 
@@ -136,29 +149,38 @@ BunnyModule<PlaybackConfig> {
       const deviceField = (device: string): LogFields => DEVICE_ID.test(device) ? {'bunny.device.id': device} : {};
       const reach = new DeviceAvailability({log, clock});
 
+      // Every commit shares one run of database refusals: one record when they start, and one when a commit works again.
+      let storageFailing = false;
+      const storageFailed = (error: unknown, fields: LogFields = {}, parent?: TraceContext): void => {
+        if (storageFailing) return;
+        storageFailing = true;
+        const code = storageCode(error);
+        log[code === 'internal' ? 'error' : 'warn']('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code, ...fields}, parent);
+      };
+      const storageWorked = (): void => {
+        if (!storageFailing) return;
+        storageFailing = false;
+        log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+      };
+
       // The record as last committed. Each start publishes a new revision, unavailable until a speaker answers.
       const stored = db.prepare('SELECT revision FROM playback_records WHERE id = ?').get(id) as {revision: number} | undefined;
       let record = recordOf(id, (stored?.revision ?? 0) + 1, presentation.view());
       /** Whether the last commit failed, so the next evaluation publishes whatever it finds. */
       let dirty = false;
-      let storageFailing = false;
       const commit = (next: PlaybackState): Promise<void> => {
         const previous = record;
         record = next;
         return outbox.transaction(add => {
           saveRevision.run(id, next.revision);
           add(playbackKey(id), {kind: 'state', ...stateOf(next)});
-        }).then(() => {
-          if (storageFailing) log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
-          storageFailing = false;
-        }, (error: unknown) => {
-          // Nothing committed. One record per run of failures, and the next evaluation tries again.
+        }).then(storageWorked, (error: unknown) => {
+          // Nothing committed, and the next evaluation tries again.
           if (record === next) {
             record = previous;
             dirty = true;
           }
-          if (!storageFailing) log.warn('operation.failed', {'bunny.operation': 'storage', 'bunny.code': codeOf(error)});
-          storageFailing = true;
+          storageFailed(error);
         });
       };
       await commit(record);
@@ -179,70 +201,9 @@ BunnyModule<PlaybackConfig> {
         if (wait !== undefined) freshness = scheduler.after(Math.ceil(wait), evaluate);
       };
 
-      await sdk.serveSync(['playback'], () => ({revision: record.revision, states: [stateOf(record)]}));
-      await sdk.respond<Omit<PlaybackControlRequest, 'requestId'>>(`bunny.cmd.playback-control.${id}`,
-        async (command: Command<Omit<PlaybackControlRequest, 'requestId'>>): Promise<Reply> => {
-          const {requestId, action, expectedRevision} = command.data as Partial<PlaybackControlRequest> & {requestId: string};
-          if (command.subject !== id) return errorBody('invalid-request', {detail: 'the subject must be the playback record\'s id'});
-          if (!isAction(action)) return errorBody('invalid-request', {detail: 'action must be play, pause, next or previous'});
-          if (expectedRevision !== undefined && !Number.isSafeInteger(expectedRevision)) {
-            return errorBody('invalid-request', {detail: 'expectedRevision must be an integer'});
-          }
-          if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
-          const body = JSON.stringify({action, expectedRevision: expectedRevision ?? null});
-          const prior = handled.get(command.source, requestId) as Handled | undefined;
-          if (prior !== undefined) {
-            // The same request again is accepted and sends nothing: its outcome went out once, from the outbox.
-            if (prior.body === body) return {status: 'accepted'};
-            return errorBody('duplicate-conflict', {detail: 'this requestId was used for another playback command'});
-          }
-          if (expectedRevision !== undefined && expectedRevision !== record.revision) {
-            return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
-          }
-          // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
-          const index = presentation.presented();
-          const source = sources[index], device = devices[index];
-          if (source === undefined || device === undefined || presentation.availability(index) !== 'available') {
-            return errorBody('unavailable', {detail: 'the presented speaker has not answered recently'});
-          }
-          if (!(presentation.observation(index)?.controls ?? []).includes(action)) {
-            return errorBody('unsupported-capability', {detail: 'the presented speaker does not offer this action now'});
-          }
-          // The intent is stored before the speaker hears anything, so a crash never leaves a command to send again.
-          try {
-            await outbox.transaction(() => { admit.run(command.source, requestId, body); });
-          } catch (error) {
-            log.warn('operation.failed', {...deviceField(device), 'bunny.operation': 'storage', 'bunny.code': codeOf(error), 'bunny.request.id': requestId}, command);
-            return errorBody('capacity', {detail: 'the playback module could not record the command'});
-          }
-          log.info('command.executing', {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId}, command);
-          // The speaker call has its own span, the command's child; the speaker gets no trace context.
-          const call = trace.start('bunny.device.call', {
-            parent: command, kind: 'client', attributes: {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId},
-          });
-          let outcome: CompletedOutcome;
-          try {
-            // Sent once. A refusal is failed with no effect; no answer, or an answer that is neither, is uncertain. Neither is retried.
-            const sent = await source.command(action);
-            outcome = sent === 'sent' ? {requestId, result: 'succeeded', evidence: 'transmitted'} : {
-              requestId, result: 'failed', evidence: 'none', error: errorBody('invalid-state', {detail: 'the speaker refused the action'}).error,
-            };
-            call.end(sent === 'sent' ? 'unset' : 'error');
-          } catch {
-            outcome = {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
-            call.end('error');
-          }
-          await outbox.transaction(add => {
-            finish.run(outcome.result, command.source, requestId);
-            forget.run(RETAINED);
-            add(outcomeKey, completed(outcome), {parent: command});
-          });
-          return {status: 'accepted'};
-        });
-
       // Each speaker is read now and then about every `pollMs`, without overlapping reads: a read still in progress when
       // the next is due is not repeated. Start does not wait for any of them (policy A).
-      const reading = sources.map(() => false);
+      const inFlight: (Promise<void> | undefined)[] = sources.map(() => undefined);
       const read = async (index: number): Promise<void> => {
         const source = sources[index], device = devices[index];
         if (source === undefined || device === undefined) return;
@@ -258,13 +219,135 @@ BunnyModule<PlaybackConfig> {
         }
         evaluate();
       };
+      /** The speaker's read in progress, or a new one. */
+      const readNow = (index: number): Promise<void> => {
+        const running = inFlight[index];
+        if (running !== undefined) return running;
+        const started = read(index).finally(() => { inFlight[index] = undefined; });
+        inFlight[index] = started;
+        return started;
+      };
+      /** A read that starts after this moment: after the read in progress, if there is one. */
+      const readAfter = (index: number): Promise<void> => {
+        const running = inFlight[index];
+        return running === undefined ? readNow(index) : running.then(() => readNow(index));
+      };
       const tick = (index: number): void => {
         if (signal.aborted) return;
         scheduler.after(pollMs, () => { tick(index); });
-        if (reading[index] === true) return;
-        reading[index] = true;
-        void read(index).finally(() => { reading[index] = false; });
+        void readNow(index);
       };
+
+      /**
+       * The read of a speaker that follows its last command. The next command's admission waits for it, at most one call's
+       * deadline, so a queued command is checked against what the speaker reports after the command ahead of it.
+       */
+      let settling: Promise<void> | undefined;
+      const settled = async (): Promise<void> => {
+        const pending = settling;
+        settling = undefined;
+        if (pending === undefined) return;
+        let cancel: Cancel = () => {};
+        const late = new Promise<void>(resolve => { cancel = scheduler.after(timeoutMs, resolve); });
+        try {
+          await Promise.race([pending, late]);
+        } finally {
+          cancel();
+        }
+      };
+
+      /**
+       * Commits a command's outcome with its result, then publishes it. While the database refuses, it tries again with
+       * capped backoff; the stored intent keeps the command from being sent again, and if no retry commits before the
+       * module stops, the next start reports the command uncertain. It never rejects.
+       */
+      const saveOutcome = async (command: Command<object>, requestId: string, outcome: CompletedOutcome, attempt = 0): Promise<void> => {
+        try {
+          await outbox.transaction(add => {
+            finish.run(outcome.result, command.source, requestId);
+            forget.run(RETAINED);
+            add(outcomeKey, completed(outcome), {parent: command});
+          });
+          storageWorked();
+        } catch (error) {
+          storageFailed(error, {'bunny.request.id': requestId}, command);
+          if (signal.aborted) return;
+          scheduler.after(Math.min(OUTCOME_RETRY_MAX_MS, OUTCOME_RETRY_MS * 2 ** attempt), () => saveOutcome(command, requestId, outcome, attempt + 1));
+        }
+      };
+
+      await sdk.serveSync(['playback'], () => ({revision: record.revision, states: [stateOf(record)]}));
+      await sdk.respond<Omit<PlaybackControlRequest, 'requestId'>>(`bunny.cmd.playback-control.${id}`,
+        async (command: Command<Omit<PlaybackControlRequest, 'requestId'>>): Promise<Reply> => {
+          const {requestId, action, expectedRevision} = command.data as Partial<PlaybackControlRequest> & {requestId: string};
+          if (command.subject !== id) return errorBody('invalid-request', {detail: 'the subject must be the playback record\'s id'});
+          if (!isAction(action)) return errorBody('invalid-request', {detail: 'action must be play, pause, next or previous'});
+          if (expectedRevision !== undefined && !Number.isSafeInteger(expectedRevision)) {
+            return errorBody('invalid-request', {detail: 'expectedRevision must be an integer'});
+          }
+          if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
+          const body = JSON.stringify({action, expectedRevision: expectedRevision ?? null});
+          const prior = handled.get(command.source, requestId) as Handled | undefined;
+          if (prior !== undefined) {
+            // The same request again is accepted and sends nothing: its outcome goes out once, from the outbox.
+            if (prior.body === body) return {status: 'accepted'};
+            return errorBody('duplicate-conflict', {detail: 'this requestId was used for another playback command'});
+          }
+          await settled();
+          if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
+          if (expectedRevision !== undefined && expectedRevision !== record.revision) {
+            return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
+          }
+          // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
+          const index = presentation.presented();
+          const source = sources[index], device = devices[index];
+          if (source === undefined || device === undefined || presentation.availability(index) !== 'available') {
+            return errorBody('unavailable', {detail: 'the presented speaker has not answered recently'});
+          }
+          if (!(presentation.observation(index)?.controls ?? []).includes(action)) {
+            return errorBody('unsupported-capability', {detail: 'the presented speaker does not offer this action now'});
+          }
+          // The intent is stored before the speaker hears anything, so a crash never leaves a command to send again.
+          try {
+            await outbox.transaction(() => { admit.run(command.source, requestId, body); });
+            storageWorked();
+          } catch (error) {
+            storageFailed(error, {...deviceField(device), 'bunny.request.id': requestId}, command);
+            return errorBody('capacity', {detail: 'the playback module could not record the command'});
+          }
+          log.info('command.executing', {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId}, command);
+          // The speaker call has its own span, the command's child; the speaker gets no trace context.
+          const call = trace.start('bunny.device.call', {
+            parent: command, kind: 'client', attributes: {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId},
+          });
+          let outcome: CompletedOutcome;
+          try {
+            // Sent once, and never retried. A speaker that answers with a refusal heard the command, so its evidence is
+            // `transmitted`; no answer, or an answer that is neither, is uncertain.
+            const sent = await source.command(action);
+            switch (sent) {
+              case 'sent':
+                outcome = {requestId, result: 'succeeded', evidence: 'transmitted'};
+                break;
+              case 'refused':
+                outcome = {requestId, result: 'failed', evidence: 'transmitted', error: errorBody('invalid-state', {detail: 'the speaker refused the action'}).error};
+                break;
+              case 'unsent':
+                outcome = {requestId, result: 'failed', evidence: 'none', error: errorBody('unsupported-capability', {detail: 'the speaker has no command for this action'}).error};
+                break;
+            }
+            call.end(sent === 'sent' ? 'unset' : 'error');
+          } catch {
+            outcome = {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
+            call.end('error');
+          }
+          // The reply follows the outcome's commit and publication. A database refusal never escapes: the outcome is
+          // committed later, and the reply still says the module answers for it.
+          await saveOutcome(command, requestId, outcome);
+          if (!signal.aborted) settling = readAfter(index);
+          return {status: 'accepted'};
+        });
+
       sources.forEach((_, index) => { tick(index); });
     },
     stop: () => {},

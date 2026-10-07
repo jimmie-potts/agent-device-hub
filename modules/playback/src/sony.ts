@@ -54,9 +54,10 @@ export function sonySource(config: SonyConfiguration, transport: SpeakerTranspor
     async command(action) {
       const method = SONY_METHODS[action];
       // An action the receiver has no method for never reaches it.
-      if (method === undefined) return 'failed';
+      if (method === undefined) return 'unsent';
       const reply = await call(...method);
-      return 'result' in reply ? 'sent' : 'failed';
+      // A JSON-RPC error is the receiver refusing a command it heard.
+      return 'result' in reply ? 'sent' : 'refused';
     },
   };
 }

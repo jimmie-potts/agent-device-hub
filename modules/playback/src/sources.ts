@@ -15,10 +15,11 @@ export interface SpeakerSource {
   /** One complete read, normalized. Rejects when any call fails: a failed read is never an observation. */
   read(): Promise<PlaybackObservation>;
   /**
-   * Sends `action` once. Resolves `sent` when the speaker took it, or `failed` when it refused before any effect.
-   * Rejects when the result is uncertain: no answer by the deadline, or an answer that is neither.
+   * Sends `action` once. Resolves `sent` when the speaker took it, `refused` when it answered with a refusal, so it heard
+   * the command, or `unsent` when the speaker has no command for the action and nothing was sent. Rejects when the result
+   * is uncertain: no answer by the deadline, or an answer that is none of these.
    */
-  command(action: PlaybackAction): Promise<'sent' | 'failed'>;
+  command(action: PlaybackAction): Promise<'sent' | 'refused' | 'unsent'>;
 }
 
 /** The source for one configured speaker. */

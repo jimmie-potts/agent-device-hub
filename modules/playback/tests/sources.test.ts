@@ -86,15 +86,15 @@ test('only successful Sony reads refresh freshness, which ages through stale to 
   }
 });
 
-test('Sony commands call the qualified method once and report sent, failed or uncertain', async () => {
+test('Sony commands call the qualified method once and report sent, refused, unsent or uncertain', async () => {
   const sony = await fakeSony();
   const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const commands = () => sony.calls.filter(call => call.method !== 'getPlayingContentInfo').map(call => [call.method, call.version, call.params]);
   try {
     assert.equal(await source.command('next'), 'sent');
-    assert.equal(await source.command('play'), 'failed', 'the HT-A9 cannot resume, so play never reaches it');
+    assert.equal(await source.command('play'), 'unsent', 'the HT-A9 cannot resume, so play never reaches it');
     sony.set(call => call.method === 'getPlayingContentInfo' ? playingInfo([airplay()]) : {error: [40000, 'refused']});
-    assert.equal(await source.command('previous'), 'failed');
+    assert.equal(await source.command('previous'), 'refused', 'a JSON-RPC error is the receiver refusing a command it heard');
     sony.set(call => call.method === 'getPlayingContentInfo' ? playingInfo([airplay()]) : 'hang');
     await assert.rejects(source.command('pause'), 'an unanswered command is uncertain');
     assert.deepEqual(commands(), [['setPlayNextContent', '1.0', [{output: ''}]], ['setPlayPreviousContent', '1.0', [{output: ''}]], ['pausePlayingContent', '1.1', [{output: ''}]]]);
@@ -187,7 +187,7 @@ test('only complete Sonos reads refresh freshness', async () => {
   }
 });
 
-test('Sonos commands post one SOAP action and report sent, failed or uncertain', async () => {
+test('Sonos commands post one SOAP action and report sent, refused or uncertain', async () => {
   const sonos = await fakeSonos();
   const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   try {
@@ -196,7 +196,7 @@ test('Sonos commands post one SOAP action and report sent, failed or uncertain',
     assert.equal(sonosCommands(sonos.calls)[0]?.body.includes('<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play>'),
       true, 'Play carries speed 1');
     sonos.set(call => call.action === 'Next' ? {status: 500, body: soapFault(701)} : undefined);
-    assert.equal(await source.command('next'), 'failed');
+    assert.equal(await source.command('next'), 'refused', 'a SOAP fault is the Move refusing a command it heard');
     sonos.set(call => call.action === 'Previous' ? 'hang' : undefined);
     await assert.rejects(source.command('previous'), 'an unanswered command is uncertain');
     sonos.set(call => call.action === 'Previous' ? {status: 500, body: '<broken'} : undefined);
