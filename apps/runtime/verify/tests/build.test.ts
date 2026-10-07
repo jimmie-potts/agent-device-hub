@@ -21,6 +21,7 @@ void test('a newer source of the runtime, its run or a workspace package it load
       'packages/sdk/src/index.ts', 'packages/app-verify/src/index.ts', 'packages/event-contracts/src/v2/index.ts',
       'packages/observability/src/catalog.json', 'modules/playback/src/module.ts', 'modules/lifx/src/module.ts', 'modules/tidbyt/src/module.ts',
       'modules/nanoleaf/src/index.ts',
+      'modules/codex-desktop/src/module.ts',
     ];
     for (const file of [...sources, ...BUILD_OUTPUTS]) {
       await mkdir(dirname(join(repo, file)), {recursive: true});
@@ -66,7 +67,7 @@ void test('build-current watches every source the run loads, and the served cand
   }
   assert.deepEqual(unwatched, [], 'every runtime source the run loads is a build source');
   for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'modules/playback', 'modules/lifx', 'modules/tidbyt', 'modules/pixoo',
-    'modules/nanoleaf']) {
+    'modules/nanoleaf', 'modules/codex-desktop']) {
     assert.ok(packages.has(name), `the run loads ${name}: ${[...packages].join(', ')}`);
   }
   const candidate = artifactFiles();

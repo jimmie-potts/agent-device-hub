@@ -15,6 +15,7 @@ import {join, resolve} from 'node:path';
 import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
+import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
@@ -26,7 +27,7 @@ import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
-import {simulatePlayback} from '../tests/scenarios/parts.js';
+import {simulateMarker, simulatePlayback} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
@@ -49,6 +50,8 @@ const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 const STOP_MS = 8000;
 /** How long a flush or control waits for the child's answer. */
 const ANSWER_MS = 3000;
+/** The longest a restart may keep the runtime stopped before it starts it again. */
+const MAX_HOLD_MS = 10_000;
 /** The lowest level the run's runtime writes, which the run states instead of leaving to the runtime's default. */
 const LOG_LEVEL = 'info';
 
@@ -63,6 +66,8 @@ const signs = new SimulatedSigns();
 const speakers = new SimulatedSpeakers();
 const lifx = new SimulatedLifx();
 const cloud = new SimulatedCloud();
+/** The Codex Desktop module's simulated marker (Hub #926); a read waits while its folder stalls, whichever runtime asked. */
+const marker = new SimulatedMarker();
 /** Each request the Tidbyt cloud still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const cloudCalls = new Map<string, AbortController>();
 /** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -224,6 +229,10 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       controller?.abort();
       return;
     }
+    case 'marker.read':
+      // A runtime that ended meanwhile no longer hears the answer: `tell` sends only to a connected child.
+      marker.read('', message.stamp).then(read => { tell(child, {type: 'marker.answered', id: message.id, read}); }, () => { tell(child, {type: 'marker.failed', id: message.id}); });
+      return;
     case 'published':
       published.push({generation: number, message: message.message});
       return;
@@ -330,12 +339,16 @@ async function stopRuntime(): Promise<void> {
   await flushed;
 }
 
-/** Stops the runtime and starts it again, after any start or restart before it. A runtime that cannot start ends the run. */
-function restart(): Promise<void> {
+/**
+ * Stops the runtime and starts it again, after any start or restart before it, `holdMs` after it stopped, so that a
+ * hook can meet a stopped runtime (Hub #926). A runtime that cannot start ends the run.
+ */
+function restart(holdMs = 0): Promise<void> {
   return queue(async () => {
     restarting = true;
     try {
       await stopRuntime();
+      if (holdMs > 0) await new Promise(resolve => { setTimeout(resolve, holdMs); });
       await start();
     } catch (error) {
       startFailed(error);
@@ -487,6 +500,9 @@ async function simulate(request: SimulateRequest): Promise<boolean> {
     case 'nanoleaf':
       nanoleaf.act(request.action);
       return true;
+    case 'codex-desktop':
+      simulateMarker(marker, request);
+      return true;
     case 'lamp':
       break;
   }
@@ -520,7 +536,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       const state: HarnessState = {
         generation, devices: {
           lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state(), pixoo,
-          nanoleaf: nanoleaf.state(),
+          nanoleaf: nanoleaf.state(), codexDesktop: marker.state(),
         },
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
@@ -561,9 +577,14 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       await ask(id => ({type: 'disconnect', id, source}));
       return answer(response, 200, {status: 'applied'});
     }
-    case 'POST /restart':
-      await restart();
+    case 'POST /restart': {
+      const {holdMs = 0} = await body(request) as {holdMs?: unknown};
+      if (typeof holdMs !== 'number' || !Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > MAX_HOLD_MS) {
+        return answer(response, 400, refusal('invalid-request', `holdMs is a whole number of milliseconds from 0 to ${MAX_HOLD_MS}`));
+      }
+      await restart(holdMs);
       return answer(response, 200, {status: 'restarted', generation});
+    }
     default:
       return answer(response, 404, refusal('not-found', 'no such route'));
   }
