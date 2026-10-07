@@ -721,8 +721,8 @@ removes the paths `destination-not-empty` lists.
 The Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
 carries the Nanoleaf bridge's preferences into the
 [Nanoleaf module's](../../modules/nanoleaf/README.md#migration) store and
-folder, and its registry into the module's section of the
-[configuration file](#configuration), with each device's token as a secret
+folder. It also turns the bridge's registry into the module's section of the
+[configuration file](#configuration), with each device's token in a secret
 file. Run it with Node 24 from the repository root, after `npm run build`:
 
 ```bash
@@ -750,7 +750,7 @@ Every path is absolute.
   takes the configuration file itself and reads the section there.
 
 `verify` compares the store, the folder, the section and every secret file
-with the source, reading each secret through the runtime's own secret reader.
+with the source. It reads each secret through the runtime's own secret reader.
 Both operations hold the runtime's lease and write one JSON line to stdout,
 `{"schema": "nanoleaf-migration/1.0", "operation", "result", ...}`, with counts,
 codes and SHA-256 digests only: never a token, an address, a path, a name or a
