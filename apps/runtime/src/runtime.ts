@@ -3,7 +3,7 @@
 // HTTP on the same listener, each with a grant from the state directory.
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
-import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, errorBody, errorCodes} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
   MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type EdgeLogRecord, type Scheduler,
@@ -59,9 +59,10 @@ export type RuntimeOptions = {
   /**
    * Serves the SDK edge on the health listener once every module has started, with the grants in the state
    * directory's `edge-grants.json` (`readEdgeGrants`). `schemas` are the modules' own payload schemas; the edge checks
-   * remote parts' messages against them and the core families.
+   * remote parts' messages against them and the core families. `onServing` is called with the edge once it serves, so
+   * that a verification run can drop a part's stream as a lost connection would (#920).
    */
-  edge?: {schemas: Readonly<Record<string, object>>};
+  edge?: {schemas: Readonly<Record<string, object>>; onServing?: (edge: RemoteEdge) => void};
 };
 
 export interface Runtime {
@@ -77,8 +78,15 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 
-/** Where the listener sends the SDK edge's routes: nowhere without an edge, a refusal while modules start, or the edge. */
-type EdgeRoute = {state: 'off'} | {state: 'starting'} | {state: 'serving'; edge: RemoteEdge};
+/**
+ * Where the listener sends the SDK edge's routes: nowhere without an edge, the edge while it serves, and a refusal while
+ * the modules start or the runtime stops.
+ */
+type EdgeRoute = {state: 'off'} | {state: 'starting'} | {state: 'serving'; edge: RemoteEdge} | {state: 'stopping'};
+const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
+  starting: 'the edge serves once every module has started',
+  stopping: 'the runtime is stopping',
+};
 
 /**
  * Serves health, and the SDK edge when there is one, on loopback. A request must name this listener as its host and
@@ -103,7 +111,7 @@ function serve(port: number, health: () => RuntimeHealth, edge: () => EdgeRoute)
     }
     if (remote) {
       if (route.state === 'serving') route.edge.handle(request, response);
-      else answer(response, 503, errorBody('unavailable', {detail: 'the edge serves once every module has started'}));
+      else answer(response, 503, errorBody('unavailable', {detail: UNAVAILABLE[route.state]}));
       return;
     }
     const found = request.method === 'GET' && request.url === HEALTH_PATH;
@@ -128,11 +136,23 @@ function close(server: Server): Promise<void> {
   });
 }
 
-/** The edge's records in the runtime's log. They never carry a credential. */
+/** The edge's routes: its stream and the calls a remote part makes (`sdk-remote/1.0`). */
+const EDGE_ROUTES: ReadonlySet<string> = new Set(['stream', 'publish', 'subscribe', 'request', 'respond', 'reply', 'sync', 'serve', 'answer', 'close']);
+
+/**
+ * The edge's records in the runtime's log. As the diagnostic contract requires, a record holds no raw message: a refusal
+ * carries its registry code and that code's fixed meaning, never the edge's detail, which may quote what the caller sent
+ * or an exception's message. A route that is not one of the edge's is `other`. The source is a granted one, and no record
+ * carries a credential.
+ */
 function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
-  return ({event, route, code, source, detail}) => {
-    const fields = {'bunny.route': route, ...(code === undefined ? {} : {'bunny.code': code}), ...(source === undefined ? {} : {'bunny.source': source}),
-      ...(detail === undefined ? {} : {'bunny.detail': detail})};
+  return ({event, route, code, source}) => {
+    const known = code !== undefined && Object.hasOwn(errorCodes, code) ? code : code === undefined ? undefined : 'internal';
+    const fields = {
+      'bunny.route': EDGE_ROUTES.has(route) ? route : 'other',
+      ...(known === undefined ? {} : {'bunny.code': known, 'bunny.reason': errorCodes[known]?.meaning ?? ''}),
+      ...(source === undefined ? {} : {'bunny.source': source}),
+    };
     switch (event) {
       case 'edge.refused':
         log.warn('runtime.edge.refused', fields);
@@ -200,26 +220,32 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       },
     }, worker);
   }
+  // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   log.info('runtime.started', {'bunny.url': url, 'bunny.modules': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
   await host.start();
   if (grants !== undefined && validator !== undefined) {
+    let mounted: RemoteEdge;
     try {
-      edge = {state: 'serving', edge: new RemoteEdge({bus: host.bus, validator, grants, log: edgeLog(log), now: () => clock.now(), scheduler})};
+      mounted = new RemoteEdge({bus: host.bus, validator, grants, log: edgeLog(log), now: () => clock.now(), scheduler});
     } catch (error) {
       // The grants were checked when read; the edge refuses only what they could not show, such as a malformed one.
       await host.stop();
       await close(server);
       throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
     }
+    edge = {state: 'serving', edge: mounted};
+    log.info('runtime.edge.serving', {'bunny.url': url, 'bunny.grants': grants.length});
+    options.edge?.onServing?.(mounted);
   }
   let stopping: Promise<void> | undefined;
   return {
     url,
     health,
     stop: () => stopping ??= (async () => {
-      // Remote parts go first, so none acts on a module that is stopping.
+      // Remote parts go first, so none acts on a module that is stopping. Until the listener closes, the edge's routes
+      // answer that the runtime is stopping.
       const serving = edge;
-      edge = {state: 'off'};
+      if (serving.state !== 'off') edge = {state: 'stopping'};
       if (serving.state === 'serving') await serving.edge.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);

@@ -1,9 +1,11 @@
 // The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> -- <runtime
 // arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
 // whose simulated transport reaches the supervisor's simulated device over the IPC channel. With any module, a harness
-// module reports every message the bus publishes. The supervisor's controls arm a crash between the lamp's commit and its publish, lose
-// the core's next acknowledgment to the lamp, or make the chime's next ring fail.
-import type {BunnyModule} from '@jimmie-potts/sdk';
+// module reports every message the bus publishes. The supervisor's controls arm a crash between the lamp's commit and
+// its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
+// stream at the edge, which `runMain` hands over once it serves.
+import http from 'node:http';
+import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
@@ -21,6 +23,7 @@ const take = (control: Control): boolean => {
 
 const switches = new Map<number, {resolve: (power: Power) => void; reject: (error: Error) => void}>();
 let next = 0;
+let edge: RemoteEdge | undefined;
 
 // The supervisor is this checkout's own code, so its messages are taken as typed.
 process.on('message', (value: unknown) => {
@@ -36,6 +39,11 @@ process.on('message', (value: unknown) => {
       return;
     case 'control':
       flags[message.control] = true;
+      send({type: 'applied', id: message.id});
+      return;
+    case 'disconnect':
+      // The supervisor admits only parts' sources, so the edge never drops a module's or the core's.
+      edge?.disconnect(message.source);
       send({type: 'applied', id: message.id});
       return;
     case 'flush':
@@ -85,11 +93,17 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
     onAcknowledgment: () => take('lose-acknowledgment') ? 'lose' : 'apply',
   }), lampSchemas),
   chime: fixture('chime', () => createChimeModule({transport: chime})),
-  // The installed-port negative control: a module that reaches for the installed Hub. The guard refuses it.
+  // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
+  // guard refuses both before they connect.
   prober: fixture('prober', () => ({
     manifest: {name: 'prober', apiVersion: '1.0'},
     async start() {
-      await fetch('http://127.0.0.1:8788/api/hub/v1/health', {signal: AbortSignal.timeout(2000)}).catch(() => undefined);
+      const url = 'http://127.0.0.1:8788/api/hub/v1/health';
+      await fetch(url, {signal: AbortSignal.timeout(2000)}).catch(() => undefined);
+      await new Promise<void>(settled => {
+        const request = http.get(url, {timeout: 2000}, response => { response.resume(); settled(); });
+        request.on('error', () => { settled(); }).on('timeout', () => { request.destroy(); });
+      });
     },
     stop: () => {},
   })),
@@ -105,4 +119,4 @@ const factories = names.map(name => {
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge still knows the
 // fixture families the scenario's parts use, as the in-memory harness's does.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: lampSchemas});
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: lampSchemas, onEdge: served => { edge = served; }});

@@ -3,6 +3,7 @@
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
+import type {RemoteEdge} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
 import {LogWriter, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
@@ -62,10 +63,12 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
 
 
 /**
- * What the caller adds to the parsed options: the module factories, and the payload schemas of families the edge
- * accepts although no module here owns them, such as a verification run's fixture families (#920).
+ * What the caller adds to the parsed options: the module factories, the payload schemas of families the edge accepts
+ * although no module here owns them, such as a verification run's fixture families (#920), and a hook that gets the
+ * edge once it serves. The shipped entry point passes only the factories.
  */
-export type ProcessInputs = {modules: readonly ModuleFactory[]; schemas?: Readonly<Record<string, object>>};
+export type ProcessInputs = {modules: readonly ModuleFactory[]} & EdgeInputs;
+export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (edge: RemoteEdge) => void};
 
 /**
  * Runs the runtime until SIGTERM or SIGINT, which stop it and exit 0, also when one arrives while the modules start. An
@@ -101,7 +104,9 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       logLevel: options.logLevel, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
-      ...(options.edge ? {edge: {schemas: {...options.schemas, ...moduleSchemas(options.modules)}}} : {}),
+      ...(options.edge ? {edge: {
+        schemas: {...options.schemas, ...moduleSchemas(options.modules)}, ...(options.onEdge === undefined ? {} : {onServing: options.onEdge}),
+      }} : {}),
     });
   } catch (error) {
     return fail(error);
@@ -116,9 +121,9 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
 /**
  * The entry point: parses `argv`, exiting with status 2 and a usage line when it is malformed, then runs the process with
  * a module from each factory: with its simulated transport under `--simulate`. `schemas` are families the edge accepts
- * beyond the modules' own.
+ * beyond the modules' own; `onEdge` gets the edge once it serves under `--edge`.
  */
-export async function runMain(argv: readonly string[], modules: readonly ModuleFactory[], {schemas}: {schemas?: Readonly<Record<string, object>>} = {}): Promise<void> {
+export async function runMain(argv: readonly string[], modules: readonly ModuleFactory[], {schemas, onEdge}: EdgeInputs = {}): Promise<void> {
   let options: ProcessOptions;
   try {
     options = parseArguments(argv);
@@ -127,5 +132,5 @@ export async function runMain(argv: readonly string[], modules: readonly ModuleF
     process.stderr.write(`${error.message}\n${USAGE}\n`);
     process.exit(2);
   }
-  await runProcess({...options, modules, ...(schemas === undefined ? {} : {schemas})});
+  await runProcess({...options, modules, ...(schemas === undefined ? {} : {schemas}), ...(onEdge === undefined ? {} : {onEdge})});
 }

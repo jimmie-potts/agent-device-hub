@@ -7,6 +7,7 @@ import {access, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {validateReceipt} from '@jimmie-potts/app-verify';
+import {HEALTH_PATH} from '../../src/index.js';
 import {base, listening, ROOT} from './support.js';
 
 const wrapper = join(ROOT, 'scripts/verify-runtime.mjs');
@@ -56,6 +57,9 @@ void test('a run serves the runtime with the fixture modules and, reseeded, with
   const started = await verify('start', '--scenario', 'fixtures', '--lease', '10');
   assert.equal(started.result.state, 'running', JSON.stringify(started.result));
   const runId = String(started.result.runId);
+  const preview = new URL(String(started.result.url));
+  assert.equal(preview.pathname, HEALTH_PATH, 'the preview links the runtime\'s health page');
+  assert.equal((await fetch(preview)).status, 200, 'and the page answers');
   const runtimeDir = join(root, 's', runId);
   const grants = JSON.parse(await readFile(join(runtimeDir, 'data/state/edge-grants.json'), 'utf8')) as {grants: {token: string}[]};
   const receipt = JSON.parse(await readFile(join(root, 'p', runId, 'receipt.json'), 'utf8')) as {checks?: {id: string; outcome: string}[]};
@@ -91,7 +95,7 @@ void test('a boundary negative control fails its start with check-failed and lea
   const started = await verify('start', '--scenario', 'control-installed-port', '--lease', '5');
   assert.equal(started.result.state, 'failed');
   assert.equal(started.result.cause, 'check-failed');
-  assert.match(String(started.result.detail), /^no-outbound-connections: the runtime tried to connect to 127\.0\.0\.1:8788/);
+  assert.match(String(started.result.detail), /^no-outbound-connections: the runtime tried to reach tcp 127\.0\.0\.1:8788/);
   const runId = String(started.result.runId);
   assert.equal(units(runId), '', 'no unit or timer is left');
   await assert.rejects(access(join(root, 's', runId)), 'the runtime directory is gone');

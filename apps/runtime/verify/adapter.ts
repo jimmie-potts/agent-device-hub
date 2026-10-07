@@ -2,12 +2,13 @@
 // The scenario's parts are remote parts, each with its run-generated grant, connected to the run's SDK edge; the
 // simulated devices, the run's controls, its log records and what its bus published come from the run's harness API.
 // Time is real. The catalog's reads are synchronous, so the adapter keeps a copy of the run's state, refreshed on every
-// wait and after every action, and the harness API's flush makes that copy current. A part dropped by `disconnect`
-// connects again at the next wait, as the in-memory harness's does when virtual time moves.
+// wait and after every action, and the harness API's flush makes that copy current. `disconnect` has the runtime's edge
+// end the part's stream, and the same remote part reconnects on its own, as in the in-memory harness; its timers wait
+// until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, type CommandDraft, type Participant} from '@jimmie-potts/sdk';
+import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {ROLES, type DeviceStates, type Generational, type Harness, type Role, type Seed, type Simulation} from '../tests/scenarios/catalog.js';
 import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
@@ -22,9 +23,41 @@ export interface RunHarness extends Harness {
   close(): Promise<void>;
 }
 
-/** How long a dropped remote part waits before it connects again. */
+/** How long a remote part whose stream was lost waits before it reconnects. */
 const RECONNECT_MS = 50;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
+
+/**
+ * A remote part's scheduler on real timers, which the adapter can hold: a callback scheduled while it is held, such as
+ * the reconnect after a dropped stream, starts its delay only once it is released.
+ */
+class HeldScheduler implements Scheduler {
+  #held = false;
+  readonly #waiting = new Set<{delayMs: number; callback: () => void; cancel?: () => void}>();
+
+  after(delayMs: number, callback: () => void): () => void {
+    if (!this.#held) {
+      const timer = setTimeout(callback, delayMs);
+      return () => { clearTimeout(timer); };
+    }
+    const entry: {delayMs: number; callback: () => void; cancel?: () => void} = {delayMs, callback};
+    this.#waiting.add(entry);
+    return () => { if (!this.#waiting.delete(entry)) entry.cancel?.(); };
+  }
+
+  hold(): void {
+    this.#held = true;
+  }
+
+  release(): void {
+    this.#held = false;
+    for (const entry of [...this.#waiting]) {
+      this.#waiting.delete(entry);
+      const timer = setTimeout(entry.callback, entry.delayMs);
+      entry.cancel = () => { clearTimeout(timer); };
+    }
+  }
+}
 
 /** The run's grants, by source, from the state directory. They are never printed. */
 export async function readGrants(dataDir: string): Promise<Map<string, string>> {
@@ -32,7 +65,7 @@ export async function readGrants(dataDir: string): Promise<Map<string, string>> 
   return new Map(document.grants.map(({source, token}) => [source, token]));
 }
 
-type Part = {role: Role; participant: Participant | undefined; closed: boolean};
+type Part = {role: Role; participant: Participant | undefined; closed: boolean; scheduler: HeldScheduler};
 
 class Run implements RunHarness {
   readonly tier = 'run';
@@ -44,7 +77,10 @@ class Run implements RunHarness {
   readonly #validator = scenarioValidator();
   readonly #answers = new Map<string, string>();
   readonly #problems: string[] = [];
-  readonly #reconnect: Part[] = [];
+  /** Parts whose stream was dropped; their timers wait until the next wait. */
+  readonly #held: Part[] = [];
+  /** The runtime's origin: the run's URL names its health page. */
+  readonly #origin: string;
   #state: HarnessState = {generation: 0, devices: {lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}}, logs: [], published: []};
   /** Actions run one after another in the order the scenario calls them. */
   #actions: Promise<unknown> = Promise.resolve();
@@ -54,8 +90,9 @@ class Run implements RunHarness {
   constructor(target: RunTarget, grants: Map<string, string>) {
     this.#target = target;
     this.#grants = grants;
+    this.#origin = new URL(target.url).origin;
     this.reader = new Reader(target.seed.follows);
-    this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false}]));
+    this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler()}]));
   }
 
   async open(): Promise<void> {
@@ -103,7 +140,7 @@ class Run implements RunHarness {
 
   async health(): Promise<readonly ModuleHealth[]> {
     await this.#actions;
-    const response = await fetch(new URL(HEALTH_PATH, this.#target.url));
+    const response = await fetch(new URL(HEALTH_PATH, this.#origin));
     if (!response.ok) throw new Error(`health answered ${response.status}`);
     return (await response.json() as RuntimeHealth).modules;
   }
@@ -118,20 +155,19 @@ class Run implements RunHarness {
 
   async wait(ms: number): Promise<void> {
     await this.#actions;
+    for (const part of this.#held.splice(0)) part.scheduler.release();
     await sleep(ms);
-    for (const part of this.#reconnect.splice(0)) {
-      await sleep(RECONNECT_MS);
-      await this.#connect(part);
-    }
     await this.#refresh();
   }
 
+  /** The runtime's edge ends the part's stream; the same remote part reconnects once the next wait releases its timers. */
   disconnect(role: Role): Promise<void> {
     return this.#act(async () => {
       await this.#refresh();
       const part = this.#part(role);
-      await this.#retire(part);
-      this.#reconnect.push(part);
+      part.scheduler.hold();
+      this.#held.push(part);
+      await this.#post('disconnect', {source: sourceOf(role)});
     });
   }
 
@@ -164,6 +200,7 @@ class Run implements RunHarness {
     await this.#actions.catch(() => {});
     for (const part of this.#parts.values()) {
       part.closed = true;
+      part.scheduler.release();
       await this.#retire(part);
     }
   }
@@ -205,7 +242,7 @@ class Run implements RunHarness {
     const token = this.#grants.get(source);
     if (token === undefined) throw new Error(`the run has no grant for ${source}`);
     part.participant = await connectRemote({
-      url: this.#target.url, source, token, reconnectDelayMs: RECONNECT_MS,
+      url: this.#origin, source, token, reconnectDelayMs: RECONNECT_MS, scheduler: part.scheduler,
       onError: (error, scope) => {
         // While a runtime restarts, a remote part's reconnects meet a closed port or an edge still starting.
         if (scope.pattern !== 'stream') this.#problems.push(`${scope.source} on ${scope.pattern}: ${describe(error)}`);

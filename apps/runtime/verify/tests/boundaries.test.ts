@@ -58,7 +58,8 @@ void test('a correct run passes every check, and each negative control fails exa
       const seen = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
       assert.equal(seen.home, `${run.dataDir}/home`, `${scenario}: the runtime's home is observed`);
       if (scenario === 'fixtures') {
-        assert.deepEqual([...seen.stateFiles].sort(), [`${run.dataDir}/state/modules/core.sqlite`, `${run.dataDir}/state/modules/lamp.sqlite`], 'the databases the runtime has open are observed');
+        const modules = ['chime', 'core', 'lamp'].map(name => `${run.dataDir}/state/modules/${name}.sqlite`);
+        assert.deepEqual(seen.stateFiles, modules, 'the databases the runtime has open are observed');
       }
       if (scenario === 'control-installed-port') {
         assert.ok(seen.outbound.filter(attempt => attempt.protocol === 'tcp' && attempt.port === 8788).length >= 2, `fetch and node:http were both refused: ${JSON.stringify(seen.outbound)}`);

@@ -1,8 +1,9 @@
 // What a verification run's parts say to each other (Hub #920). The supervisor and its runtime child talk over the
 // child's IPC channel: the child reaches the simulated devices, which the supervisor holds, and reports what its bus
-// published and every outbound connection the guard refused; the supervisor sends the run's controls. One channel carries
-// them all in order, so a flush that comes back means every earlier message has arrived. A run adapter reads and drives
-// the run through the supervisor's loopback harness API, whose documents are below.
+// published; the supervisor sends the run's controls. One channel carries them all in order, so a flush that comes back
+// means every earlier message has arrived. The network guard writes each refusal to the run's report file instead, so
+// that worker threads and the child's own child processes report too. A run adapter reads and drives the run through
+// the supervisor's loopback harness API, whose documents are below.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord} from '../src/index.js';
 import type {ChimeRing} from '../tests/fixtures/chime.js';
@@ -17,7 +18,6 @@ export type ChildMessage =
   | {type: 'lamp.show'; indicator: Indicator}
   | {type: 'chime.ring'; ring: ChimeRing}
   | {type: 'published'; message: Message}
-  | {type: 'guard'; host: string; port: number}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
 
@@ -25,6 +25,8 @@ export type SupervisorMessage =
   | {type: 'lamp.switched'; id: number; power: Power}
   | {type: 'lamp.failed'; id: number; detail: string}
   | {type: 'control'; id: number; control: Control}
+  /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
+  | {type: 'disconnect'; id: number; source: string}
   | {type: 'flush'; id: number};
 
 /** The harness API's routes, under the supervisor's own loopback listener (the run's `harness` endpoint). */
@@ -61,6 +63,9 @@ export type BoundaryReport = {
   /** Every outbound connection or datagram the guard refused, from the runtime and every process it started. */
   outbound: Attempt[];
 };
+
+/** `POST disconnect`: the remote part whose stream the edge ends. Only a part's source, `bunny/parts/<role>`, is taken. */
+export type DisconnectRequest = {source: string};
 
 /** `POST simulate`: what a device should do, as the catalog's `Simulation`. */
 export type SimulateRequest = {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'} | {device: 'chime'; action: 'fault-next'};

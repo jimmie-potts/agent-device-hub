@@ -1,13 +1,14 @@
 // The process a disposable runtime run serves (Hub #920): `node supervisor.js --data <dir> --port <port> --harness-port
 // <port>`. It holds the run's simulated devices, which outlive the runtime as real ones would, and runs the runtime as a
-// child: its own shipped entry point, or child.js with the fixture modules, both with
-// `--simulate`, `--edge` and the run's own state directory, and with a network guard that refuses every outbound
-// connection. A child that dies on its own is started again on the same port and state directory, as the service
-// manager would restart the runtime. A loopback harness API lets a run adapter drive the devices and the run's controls
-// and read what the run did. Its ready line names the runtime's URL and the harness as an extra endpoint.
+// child: its own shipped entry point, or child.js with the fixture modules, both with `--simulate`, `--edge` and the
+// run's own state directory, and with a network guard (guard.ts) that refuses every outbound connection and datagram.
+// A child that dies on its own is started again on the same port and state directory, as the service manager would
+// restart the runtime, within a burst limit. Starts and restarts run one after another. A loopback harness API lets a
+// run adapter drive the devices and the run's controls and read what the run did. Its ready line names the runtime's
+// health page, which the preview card links, and the harness as an extra endpoint.
 import {fork, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
-import {readFileSync, statSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync, readlinkSync, statSync} from 'node:fs';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join, resolve} from 'node:path';
@@ -15,20 +16,25 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
+import {guardEnvironment} from './environment.js';
 import {
-  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type HarnessState, type SimulateRequest, type SupervisorMessage,
+  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type HarnessState,
+  type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
+import {BurstLimit} from './restarts.js';
 import {RUN_FILE, homeOf, stateDirOf, type RunFile} from './seed.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const CHILD = fileURLToPath(new URL('./child.js', import.meta.url));
-const GUARD = new URL('./guard.js', import.meta.url).href;
-/** How often the run starts a runtime that died on its own again before it gives up, as a restart burst limit would. */
+/** How many times within `CRASH_WINDOW_MS` the run starts again a runtime that died on its own before it gives up. */
 const MAX_CRASHES = 5;
+const CRASH_WINDOW_MS = 60_000;
+/** A part's source, the only kind whose stream the harness may drop. */
+const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 /** How long a runtime has to stop on SIGTERM before it is killed. */
 const STOP_MS = 8000;
 /** How long a flush or control waits for the child's answer. */
@@ -43,19 +49,29 @@ const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const logs: Generational<{record: LogRecord}>[] = [];
 const published: Generational<{message: Message}>[] = [];
-const outbound: Attempt[] = [];
+/** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
+const guardReport = join(dataDir, 'guard-report.jsonl');
 const waiting = new Map<number, () => void>();
 /** The newest log record of one runtime with this event name. */
 const newest = (number: number, event: string): LogRecord | undefined =>
   [...logs].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
 let runtimePort = Number(values.port ?? '0');
 let generation = 0;
-let crashes = 0;
+const crashes = new BurstLimit(MAX_CRASHES, CRASH_WINDOW_MS);
 let current: ChildProcess | undefined;
+/** The home the current runtime has, read from its environment once it was ready. */
+let observedHome = '';
 let runtimeUrl = '';
 let stopping = false;
 let restarting = false;
 let next = 0;
+/** Starts and restarts run one after another, so two never race for the runtime's port. */
+let lifecycle: Promise<void> = Promise.resolve();
+function queue(task: () => Promise<void>): Promise<void> {
+  const done = lifecycle.then(task);
+  lifecycle = done.catch(() => {});
+  return done;
+}
 
 /** The runtime's arguments. A boundary negative control leaves out what keeps its run inside its boundary. */
 function runtimeArgs(): string[] {
@@ -98,9 +114,6 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
     case 'published':
       published.push({generation: number, message: message.message});
       return;
-    case 'guard':
-      outbound.push({protocol: 'tcp', host: message.host, port: message.port});
-      return;
     case 'applied':
     case 'flushed':
       waiting.get(message.id)?.();
@@ -115,7 +128,7 @@ function spawnRuntime(): Promise<string> {
   const number = generation;
   const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', '--', ...runtimeArgs()] : runtimeArgs();
   const child = fork(fixtures ? CHILD : MAIN, args, {
-    execArgv: ['--import', GUARD], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir)},
+    execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
   current = child;
   lines(child.stderr, line => {
@@ -145,24 +158,39 @@ function spawnRuntime(): Promise<string> {
   });
 }
 
+/** The value of one variable in a process's environment, from /proc, or '' when it cannot be read. */
+function environmentOf(pid: number | undefined, name: string): string {
+  try {
+    const entry = readFileSync(`/proc/${String(pid)}/environ`, 'utf8').split('\0').find(line => line.startsWith(`${name}=`));
+    return entry?.slice(name.length + 1) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
   runtimePort = Number(new URL(runtimeUrl).port);
+  observedHome = environmentOf(current?.pid, 'HOME');
 }
 
-/** A runtime that died on its own, such as an armed crash, is started again on the same port and state directory. */
+const startFailed = (error: unknown): void => {
+  process.stderr.write(`runtime-start-failed: ${error instanceof Error ? error.message : 'unknown'}\n`);
+  void shutdown(1);
+};
+
+/**
+ * A runtime that died on its own, such as an armed crash, is started again on the same port and state directory. Only
+ * the current runtime counts: one that a restart or the run's stop ended, or an earlier generation, does not.
+ */
 function died(number: number): void {
   if (stopping || restarting || number !== generation || runtimeUrl === '') return;
-  crashes += 1;
-  if (crashes > MAX_CRASHES) {
+  if (!crashes.allow()) {
     process.stderr.write('runtime-start-failed: crash-loop\n');
     void shutdown(1);
     return;
   }
-  start().catch((error: unknown) => {
-    process.stderr.write(`runtime-start-failed: ${error instanceof Error ? error.message : 'unknown'}\n`);
-    void shutdown(1);
-  });
+  queue(start).catch(startFailed);
 }
 
 async function stopRuntime(): Promise<void> {
@@ -175,14 +203,20 @@ async function stopRuntime(): Promise<void> {
   clearTimeout(timer);
 }
 
-async function restart(): Promise<void> {
-  restarting = true;
-  try {
-    await stopRuntime();
-    await start();
-  } finally {
-    restarting = false;
-  }
+/** Stops the runtime and starts it again, after any start or restart before it. A runtime that cannot start ends the run. */
+function restart(): Promise<void> {
+  return queue(async () => {
+    restarting = true;
+    try {
+      await stopRuntime();
+      await start();
+    } catch (error) {
+      startFailed(error);
+      throw error;
+    } finally {
+      restarting = false;
+    }
+  });
 }
 
 /** Sends the child a control or a flush and waits for its answer. A run of the shipped runtime has neither. */
@@ -200,6 +234,37 @@ function ask(build: (id: number) => SupervisorMessage): Promise<void> {
 const control = (name: Control): Promise<void> => ask(id => ({type: 'control', id, control: name}));
 const flush = (): Promise<void> => ask(id => ({type: 'flush', id}));
 
+/** The SQLite files a process has open, from its file descriptors in /proc. */
+function openStateFiles(pid: number | undefined): string[] {
+  const dir = `/proc/${String(pid)}/fd`;
+  const files = new Set<string>();
+  try {
+    for (const fd of readdirSync(dir)) {
+      try {
+        const target = readlinkSync(join(dir, fd));
+        if (target.endsWith('.sqlite')) files.add(target);
+      } catch {
+        // Closed while it was read.
+      }
+    }
+  } catch {
+    // No such process.
+  }
+  return [...files].sort();
+}
+
+/** Every attempt the guard refused, from its report file. */
+function refusedAttempts(): Attempt[] {
+  let text: string;
+  try {
+    text = readFileSync(guardReport, 'utf8');
+  } catch {
+    return [];
+  }
+  return text.split('\n').filter(line => line !== '').map(line => JSON.parse(line) as Attempt);
+}
+
+/** What the boundary checks judge, observed from the running runtime and the run's directory, not from its arguments. */
 function report(): BoundaryReport {
   const started = newest(generation, 'runtime.started')?.attributes['bunny.simulate'];
   let grantsMode: number | null = null;
@@ -209,9 +274,9 @@ function report(): BoundaryReport {
     // No grants file.
   }
   return {
-    runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null,
-    dataDir, home: homeOf(dataDir), defaultState: false, stateFiles: [], grantsMode,
-    outbound: [...outbound],
+    runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null, dataDir, home: observedHome,
+    defaultState: observedHome !== '' && existsSync(join(observedHome, '.local/state')), stateFiles: openStateFiles(current?.pid), grantsMode,
+    outbound: refusedAttempts(),
   };
 }
 
@@ -278,6 +343,15 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no fixture modules'));
       await control(route === 'POST /arm-crash' ? 'arm-crash' : 'lose-acknowledgment');
       return answer(response, 200, {status: 'applied'});
+    case 'POST /disconnect': {
+      if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no fixture modules'));
+      const {source} = await body(request) as Partial<DisconnectRequest>;
+      if (typeof source !== 'string' || !PART_SOURCE.test(source)) {
+        return answer(response, 400, refusal('invalid-request', 'only a part\'s stream, bunny/parts/<role>, can be dropped'));
+      }
+      await ask(id => ({type: 'disconnect', id, source}));
+      return answer(response, 200, {status: 'applied'});
+    }
     case 'POST /restart':
       await restart();
       return answer(response, 200, {status: 'restarted', generation});
@@ -302,7 +376,7 @@ process.on('SIGTERM', () => { void shutdown(0); });
 process.on('SIGINT', () => { void shutdown(0); });
 
 try {
-  await start();
+  await queue(start);
 } catch (error) {
   process.stderr.write(`runtime-start-failed: ${error instanceof Error ? error.message : 'unknown'}\n`);
   process.exit(1);
@@ -312,4 +386,4 @@ await new Promise<void>((listening, failed) => {
   server.listen({host: '127.0.0.1', port: harnessPort}, () => { listening(); });
 });
 harnessPort = (server.address() as AddressInfo).port;
-process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtimeUrl, endpoints: {harness: `http://127.0.0.1:${harnessPort}/`}})}\n`);
+process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: `${runtimeUrl}${HEALTH_PATH}`, endpoints: {harness: `http://127.0.0.1:${harnessPort}/`}})}\n`);

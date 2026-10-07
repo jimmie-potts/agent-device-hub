@@ -22,7 +22,7 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
 const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json'), 'utf8')) as {version: string}).version;
 
-/** The served candidate: the built runtime, its verification run and fixtures, and the SDK, in a stable order. */
+/** The served candidate: the built runtime, its verification run and fixtures, the SDK and the profile, in a stable order. */
 export function artifactFiles(at = root): string[] {
   const built = (dir: string, keep: (file: string) => boolean = () => true): string[] => {
     const path = join(at, dir);
@@ -32,17 +32,18 @@ export function artifactFiles(at = root): string[] {
   return [
     ...built('apps/runtime/dist/src'), ...built('apps/runtime/dist/verify', file => !file.startsWith('tests/')),
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
-    ...built('packages/sdk/dist/src'),
+    ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
   ];
 }
 
 export const BUILD_SOURCES = [
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
-  ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**',
+  ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
+  'packages/event-contracts/dist/v2/index.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -111,11 +112,24 @@ const CHECKS: readonly [string, (report: BoundaryReport) => CheckOutcome][] = [
   ['simulated-transports', checkSimulatedTransports], ['no-outbound-connections', checkNoOutboundConnections], ['private-state', checkPrivateState],
 ];
 
-/** The page a step leaves on screen: the runtime's own health document. */
+/** Opens the runtime's own health document, at a step's start and again at its end, so the screenshot shows it then. */
 async function showHealth(t: CaptureContext): Promise<void> {
   const page = t.page as {goto(url: string): Promise<unknown>};
   await page.goto(new URL(HEALTH_PATH, t.url).href);
 }
+
+/** A step's body between two loads of the health page: the screenshot after it shows health as the step left it. */
+const onHealth = (body: (t: CaptureContext) => Promise<void>) => async (t: CaptureContext): Promise<void> => {
+  await showHealth(t);
+  try {
+    await body(t);
+  } finally {
+    await showHealth(t);
+  }
+};
+
+/** The runtime's origin, where remote parts reach its edge: the run's URL names its health page. */
+const originOf = (t: CaptureContext): string => new URL(t.url).origin;
 
 async function boundariesHold(t: CaptureContext): Promise<void> {
   await t.expect('the run stayed inside its boundaries: simulated transports, no outbound connection, its own state', async () => {
@@ -129,7 +143,6 @@ async function boundariesHold(t: CaptureContext): Promise<void> {
 
 /** Runs one scenario through the run adapter, attaches its result and expects every step to pass. */
 async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
-  await showHealth(t);
   const run = await connectRun({url: t.url, harness: harnessOf(t), dataDir: t.dataDir, seed: scenario.seed});
   let result;
   try {
@@ -155,7 +168,7 @@ const scenarioSteps: Record<string, CaptureStep> = Object.fromEntries(SCENARIOS.
   scenario: scenario.id,
   fresh: true,
   timeoutMs: 120_000,
-  run: (t: CaptureContext) => judge(t, scenario),
+  run: onHealth(t => judge(t, scenario)),
 } satisfies CaptureStep]));
 
 export default definePlugin({
@@ -214,13 +227,12 @@ export default definePlugin({
       description: 'A remote part with the run\'s grant connects and syncs the stand-in core\'s sessions; one without a grant is unauthenticated',
       scenario: 'fixtures',
       fresh: true,
-      run: async t => {
-        await showHealth(t);
+      run: onHealth(async t => {
         const grants = await readGrants(t.dataDir);
         const source = sourceOf('reader');
         const observed: Record<string, unknown> = {synthetic: true};
         await t.expect('a remote part with the run\'s reader grant syncs the stand-in core\'s sessions', async () => {
-          const remote = await connectRemote({url: t.url, source, token: grants.get(source) ?? ''});
+          const remote = await connectRemote({url: originOf(t), source, token: grants.get(source) ?? ''});
           try {
             const synced = await remote.sync(['session', 'inbox-item'], () => {}, {timeoutMs: 5000});
             if (synced.status !== 'synced') throw new Error(`the sync was ${synced.error.error.code}`);
@@ -231,7 +243,7 @@ export default definePlugin({
           }
         });
         await t.expect('a remote part without a grant is unauthenticated', async () => {
-          const refused = await connectRemote({url: t.url, source, token: randomBytes(32).toString('base64url')}).then(
+          const refused = await connectRemote({url: originOf(t), source, token: randomBytes(32).toString('base64url')}).then(
             async remote => { await remote.close(); return 'connected'; },
             (error: unknown) => error instanceof SdkError ? error.body.error.code : 'failed',
           );
@@ -240,15 +252,14 @@ export default definePlugin({
         });
         await t.attach('edge-grants.json', JSON.stringify(observed, null, 2));
         await boundariesHold(t);
-      },
+      }),
     },
     ...scenarioSteps,
     'control-scenario-fails': {
       description: 'Negative control, not a catalog scenario: expects lamp-1 on though nothing switched it, so it must fail',
       scenario: 'fixtures',
       fresh: true,
-      run: async t => {
-        await showHealth(t);
+      run: onHealth(async t => {
         const seed = {modules: ['core', 'lamp', 'chime'], follows: [['session'], ['lamp']]} as const;
         const run = await connectRun({url: t.url, harness: harnessOf(t), dataDir: t.dataDir, seed});
         try {
@@ -259,7 +270,7 @@ export default definePlugin({
         } finally {
           await run.close();
         }
-      },
+      }),
     },
   },
 });
