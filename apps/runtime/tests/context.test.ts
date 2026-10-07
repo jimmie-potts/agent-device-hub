@@ -144,6 +144,8 @@ it('a module gets its own SQLite file in the runtime\'s private state directory,
   });
   const quiet = fixture('quiet');
   const first = await startRuntime({modules: [writer, quiet], port: 0, stateDir: dir, log: () => {}});
+  // A failed check still stops it; stopping again returns the same promise.
+  context.after(() => first.stop());
   const file = join(dir, 'modules', 'notes.sqlite');
   assert.deepEqual(settings, {journal: 'wal', synchronous: 2, foreignKeys: 1}, 'WAL, synchronous FULL and foreign keys');
   assert.equal((await stat(file)).mode & 0o777, 0o600);

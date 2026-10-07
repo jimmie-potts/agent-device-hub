@@ -1,6 +1,6 @@
 // One run of a module's process for the outbox's crash tests (Hub #972). It opens the module's database file in WAL mode
-// at `synchronous = FULL`, as the runtime does, and either commits one transaction that stores a state, an occurrence
-// and an outcome, or republishes what the file still holds, as a module's start does. Each message it sends, and each
+// at `synchronous = FULL`, as the runtime does, and either commits one transaction that stores a state, an outcome and
+// an occurrence, or republishes what the file still holds, as a module's start does. Each message it sends, and each
 // record its outbox writes, is appended to the wire file, which outlives the process as a consumer's copy and the
 // runtime's journal would. The process kills itself with SIGKILL where its mode says:
 //   node outbox-crash.js <database> <wire> commit before-send    between the commit and the first send
@@ -43,10 +43,11 @@ if (action === 'republish') {
 } else {
   await outbox.transaction(add => {
     database.prepare('INSERT INTO lamps (id, power) VALUES (?, ?)').run('lamp-1', 'on');
+    // The outcome comes before the last message, so a first publication recorded before the bookkeeping commits shows.
     add('bunny.state.session.s1', {kind: 'state', type: 'org.bunny.session.updated', subject: 's1', dataschema: `${BASE}test-session/2.0`, data: {id: 's1', revision: 1}});
-    add('bunny.event.session.s1', {kind: 'occurrence', type: 'org.bunny.turn.ended', subject: 's1', dataschema: `${BASE}test-turn/2.0`, data: {sessionId: 's1'}});
     add('bunny.event.mode.wall', {kind: 'outcome', type: 'org.bunny.mode.set.completed', subject: 'wall', dataschema: `${BASE}outcome/2.0`,
       data: {requestId: 'req-1', result: 'succeeded', evidence: 'observed'}});
+    add('bunny.event.session.s1', {kind: 'occurrence', type: 'org.bunny.turn.ended', subject: 's1', dataschema: `${BASE}test-turn/2.0`, data: {sessionId: 's1'}});
   });
   append({committed: true});
 }

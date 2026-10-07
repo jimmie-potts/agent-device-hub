@@ -12,8 +12,9 @@
 //   each outcome; `--commands` commands.
 // Run `npm run build` first, with TMPDIR outside every Git checkout; each run uses a temporary state directory there.
 // The probe wraps node:sqlite's `exec`, `prepare` and statement calls in its own process only. A commit is a `COMMIT`
-// that ends a transaction, or a write outside a transaction that changed a row (SQLite's autocommit); the blocked time is
-// every SQLite call's duration on a module database. The event-loop delay is `monitorEventLoopDelay` at 1 ms resolution
+// that ends a transaction, or a write outside a transaction that changed a row (SQLite's autocommit); a synced commit is
+// one that waits for the disk: any commit in rollback journal mode, and one at `synchronous = FULL` or above in WAL mode.
+// The blocked time is every SQLite call's duration on a module database. The event-loop delay is `monitorEventLoopDelay` at 1 ms resolution
 // over the measured window. Output is one JSON line per run, then a summary.
 import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {cpus, release, tmpdir} from 'node:os';
@@ -55,29 +56,42 @@ const nameOf = database => {
     return undefined;
   }
 };
-function note(name, ms, committed) {
-  const entry = window.databases[name] ??= {commits: 0, commitMs: [], sqliteMs: 0};
+const pragmas = new WeakMap();
+/** Whether a commit on this connection now waits for the disk, read before the call so its time is not counted. */
+function syncing(database) {
+  let read = pragmas.get(database);
+  if (read === undefined) {
+    read = {mode: prepare.call(database, 'PRAGMA journal_mode'), level: prepare.call(database, 'PRAGMA synchronous')};
+    pragmas.set(database, read);
+  }
+  return get.call(read.mode).journal_mode !== 'wal' || get.call(read.level).synchronous >= 2;
+}
+function note(name, ms, committed, synced) {
+  const entry = window.databases[name] ??= {commits: 0, synced: 0, commitMs: [], sqliteMs: 0};
   entry.sqliteMs += ms;
   if (committed) {
     entry.commits += 1;
+    if (synced) entry.synced += 1;
     entry.commitMs.push(ms);
   }
 }
 const exec = DatabaseSync.prototype.exec;
+const prepare = DatabaseSync.prototype.prepare;
+const get = StatementSync.prototype.get;
 DatabaseSync.prototype.exec = function (sql) {
   const name = window === undefined ? undefined : nameOf(this);
   if (name === undefined) return exec.call(this, sql);
   const before = this.isTransaction;
+  const synced = syncing(this);
   const began = performance.now();
   try {
     return exec.call(this, sql);
   } finally {
     const after = this.isOpen && this.isTransaction;
     const ended = before && !after && /\b(COMMIT|END)\b/i.test(sql);
-    note(name, performance.now() - began, ended || (!before && !after && WRITE.test(sql)));
+    note(name, performance.now() - began, ended || (!before && !after && WRITE.test(sql)), synced);
   }
 };
-const prepare = DatabaseSync.prototype.prepare;
 DatabaseSync.prototype.prepare = function (sql) {
   const statement = prepare.call(this, sql);
   owners.set(statement, this);
@@ -90,13 +104,14 @@ for (const method of ['run', 'get', 'all']) {
     const name = window === undefined || database === undefined ? undefined : nameOf(database);
     if (name === undefined) return original.apply(this, args);
     const before = database.isTransaction;
+    const synced = !before && method === 'run' && syncing(database);
     const began = performance.now();
     let result;
     try {
       result = original.apply(this, args);
       return result;
     } finally {
-      note(name, performance.now() - began, method === 'run' && !before && Number(result?.changes ?? 0) > 0);
+      note(name, performance.now() - began, method === 'run' && !before && Number(result?.changes ?? 0) > 0, synced);
     }
   };
 }
@@ -115,13 +130,14 @@ function measure() {
     const all = Object.values(databases);
     const commitMs = all.flatMap(entry => entry.commitMs).sort((a, b) => a - b);
     const commits = all.reduce((sum, entry) => sum + entry.commits, 0);
+    const synced = all.reduce((sum, entry) => sum + entry.synced, 0);
     const sqliteMs = all.reduce((sum, entry) => sum + entry.sqliteMs, 0);
     return {
-      elapsedMs: round(elapsedMs), commits, commitsPerMinute: round(commits / elapsedMs * 60_000),
+      elapsedMs: round(elapsedMs), commits, synced, commitsPerMinute: round(commits / elapsedMs * 60_000), syncedPerMinute: round(synced / elapsedMs * 60_000),
       commitMs: {p50: round(percentile(commitMs, 50)), p90: round(percentile(commitMs, 90)), max: round(commitMs.at(-1) ?? 0), total: round(commitMs.reduce((a, b) => a + b, 0))},
       blockedMs: round(sqliteMs), blockedMsPerMinute: round(sqliteMs / elapsedMs * 60_000),
       eventLoopDelayMs: {p50: round(delay.percentile(50) / 1e6), p99: round(delay.percentile(99) / 1e6), max: round(delay.max / 1e6)},
-      byDatabase: Object.fromEntries(Object.entries(databases).map(([name, entry]) => [name, {commits: entry.commits, blockedMs: round(entry.sqliteMs)}])),
+      byDatabase: Object.fromEntries(Object.entries(databases).map(([name, entry]) => [name, {commits: entry.commits, synced: entry.synced, blockedMs: round(entry.sqliteMs)}])),
     };
   };
 }
@@ -180,7 +196,7 @@ async function intake() {
     await wait(500);
     const result = end();
     return {scenario: 'intake', rate, seconds, observations: total, received, ...result, commitsPerObservation: round(result.commits / total * 100) / 100,
-      blockedMsPerObservation: round(result.blockedMs / total)};
+      syncedPerObservation: round(result.synced / total * 100) / 100, blockedMsPerObservation: round(result.blockedMs / total)};
   } finally {
     await runtime.stop();
     await directory.remove();
@@ -220,6 +236,7 @@ async function lifx() {
     const result = end();
     const sorted = list => list.sort((a, b) => a - b);
     return {scenario: 'lifx', commands, results, ...result, commitsPerCommand: round(result.commits / commands * 100) / 100,
+      syncedPerCommand: round(result.synced / commands * 100) / 100,
       blockedMsPerCommand: round(result.blockedMs / commands),
       replyMs: {p50: round(percentile(sorted(replyMs), 50)), max: round(replyMs.at(-1))}, outcomeMs: {p50: round(percentile(sorted(outcomeMs), 50)), max: round(outcomeMs.at(-1))}};
   } finally {
@@ -271,7 +288,8 @@ async function outbox() {
     await wait(100);
     const result = end();
     await module.close();
-    return {scenario: 'outbox', commands, ...result, commitsPerCommand: round(result.commits / commands * 100) / 100, blockedMsPerCommand: round(result.blockedMs / commands)};
+    return {scenario: 'outbox', commands, ...result, commitsPerCommand: round(result.commits / commands * 100) / 100,
+      syncedPerCommand: round(result.synced / commands * 100) / 100, blockedMsPerCommand: round(result.blockedMs / commands)};
   } finally {
     database.close();
     await directory.remove();
@@ -291,9 +309,10 @@ for (const name of scenarios) {
     const list = results.map(pick);
     return [Math.min(...list), Math.max(...list)];
   };
-  const per = name === 'intake' ? 'commitsPerObservation' : 'commitsPerCommand';
-  const blocked = name === 'intake' ? 'blockedMsPerObservation' : 'blockedMsPerCommand';
-  summary[name] = {runs, [per]: span(result => result[per]), [blocked]: span(result => result[blocked]), commitsPerMinute: span(result => result.commitsPerMinute),
+  const unit = name === 'intake' ? 'Observation' : 'Command';
+  const [per, synced, blocked] = [`commitsPer${unit}`, `syncedPer${unit}`, `blockedMsPer${unit}`];
+  summary[name] = {runs, [per]: span(result => result[per]), [synced]: span(result => result[synced]), [blocked]: span(result => result[blocked]),
+    commitsPerMinute: span(result => result.commitsPerMinute), syncedPerMinute: span(result => result.syncedPerMinute),
     blockedMsPerMinute: span(result => result.blockedMsPerMinute), commitMsP50: span(result => result.commitMs.p50), commitMsP90: span(result => result.commitMs.p90),
     eventLoopDelayP99Ms: span(result => result.eventLoopDelayMs.p99)};
 }

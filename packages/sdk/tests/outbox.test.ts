@@ -628,12 +628,12 @@ it('killed after its sends and before their bookkeeping commits, a module sends 
   const crash = await crashWorld(context);
   assert.equal(await crash.run('commit', 'after-send'), 'SIGKILL');
   const killed = await crash.wire();
-  assert.deepEqual(sentKinds(killed), ['state', 'occurrence', 'outcome'], 'all three went out before the kill');
+  assert.deepEqual(sentKinds(killed), ['state', 'outcome', 'occurrence'], 'all three went out before the kill');
   assert.equal(killed.some(line => line.committed === true || line.record === 'outcome.published'), false, 'nothing after the sends');
 
   assert.equal(await crash.run('republish'), null);
   const restarted = (await crash.wire()).slice(killed.length);
-  assert.deepEqual(sentKinds(restarted), ['state', 'occurrence', 'outcome'], 'the batch whose bookkeeping never committed goes out again');
+  assert.deepEqual(sentKinds(restarted), ['state', 'outcome', 'occurrence'], 'the batch whose bookkeeping never committed goes out again');
   assert.deepEqual(restarted.at(-1), {republished: 3});
   const taken = takenOnce([...killed, ...restarted]);
   assert.deepEqual([...taken.values()], killed.flatMap(line => line.message ?? []), 'the consumer takes each message once, as first sent');
@@ -654,14 +654,14 @@ it('killed between its commit and its first send, a module sends everything at i
   try {
     assert.deepEqual(stored.prepare('SELECT id, power FROM lamps').all().map(row => ({...row})), [{id: 'lamp-1', power: 'on'}], 'the work committed');
     assert.deepEqual(stored.prepare('SELECT kind, published FROM bunny_outbox ORDER BY seq').all().map(row => ({...row})),
-      [{kind: 'state', published: 0}, {kind: 'occurrence', published: 0}, {kind: 'outcome', published: 0}], 'every message stored, none published');
+      [{kind: 'state', published: 0}, {kind: 'outcome', published: 0}, {kind: 'occurrence', published: 0}], 'every message stored, none published');
   } finally {
     stored.close();
   }
   assert.equal(await crash.run('republish'), null);
   assert.equal(await crash.run('republish'), null);
   const all = await crash.wire();
-  assert.deepEqual(sentKinds(all), ['state', 'occurrence', 'outcome', 'outcome'], 'each at the first start, then only the outcome');
+  assert.deepEqual(sentKinds(all), ['state', 'outcome', 'occurrence', 'outcome'], 'each at the first start, then only the outcome');
   assert.equal(takenOnce(all).size, 3);
   assert.equal(all.filter(line => line.record === 'outcome.published').length, 1);
 });
