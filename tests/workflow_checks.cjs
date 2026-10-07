@@ -256,7 +256,7 @@ test('every workflow skips guide-only changes and Checks also skips Markdown-onl
   }
 });
 
-test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => {
+test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
   const checks = read('checks.yml'), guide = read('guide.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
@@ -269,7 +269,7 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
   const ci = { ...checks, jobs: { ...checks.jobs, ...workflowChecks.jobs } };
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 6, 'normal CI must run exactly six jobs');
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 5, 'normal CI must run exactly five jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -279,17 +279,16 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'node --test docs/work-guide/contracts/records.test.mjs',
       'node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs', 'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
-      'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built'],
-    dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
+      'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built', 'npm run test:dashboard'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built'],
+    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
+      'npm run test:dashboard:smoke', 'npm run test:observability:browser'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
     core: 'Build, lint and core tests on ${{ matrix.os }}',
-    dashboard: 'Dashboard browser and contracts on ${{ matrix.os }}',
     firmware: 'Firmware host tests and ARM build on ${{ matrix.os }}',
     'app-verify': 'App verification on ${{ matrix.os }}',
   };
@@ -316,11 +315,11 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
       * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], '${{ matrix.os }}');
-    // The core job runs every Node and Python suite once; it takes about 8.5 minutes. The dashboard job took
-    // 523 s on GitHub-hosted runners (#870). App verification took 7-9.6 minutes and once timed out at 10, because
+    // The core job runs every kept Node and Python suite once; it took about 12 minutes on 2026-10-07 before the old
+    // system's checks left CI (#827). App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
     // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite.
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 25 : ['core', 'dashboard'].includes(id) ? 15 : 10);
+    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 25 : id === 'core' ? 15 : 10);
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
@@ -339,7 +338,17 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 3);
+  assert.equal(builds, 2);
+  // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
+  // locally until #839 deletes that code. CI runs the dashboard's smoke check instead.
+  const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  for (const name of ['test:hub:built', 'test:hub:package:built', 'test:hub:verify:built', 'test:agent-status:built', 'test:lifx:built',
+    'test:tidbyt:built', 'test:tidbyt:python', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
+    'test:performance', 'test:dashboard:browser']) {
+    assert.ok(scripts[name], `${name} stays available for local runs`);
+    assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs locally, not in CI`);
+  }
+  assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
 });
 
 // Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.

@@ -1,5 +1,6 @@
 # Markdown-only changes skip this workflow; the Workflow and Work guide workflows still run (#861).
 # GitHub-hosted runners replaced Depot CI in #870.
+# The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
 
 name: Checks
 on:
@@ -46,9 +47,6 @@ jobs:
       - run: npm run test:observability:query
       - run: npm run test:observability:package:built
       - run: npm run test:contracts:built
-      - run: npm run test:contracts:python
-      - run: npm run test:performance
-      - run: npm run test:package:built
       - run: npm run test:events:built
       - run: npm run test:events:python
       - run: npm run test:sdk:built
@@ -57,16 +55,9 @@ jobs:
       - run: npm run test:lifecycle:built
       - run: npm run test:lifecycle:python
       - run: npm run test:lifecycle:package:built
-      - run: npm run test:hub:built
-      - run: npm run test:hub:package:built
       - run: npm run test:agent-state:built
       - run: npm run test:agent-state:python
       - run: npm run test:agent-state:package:built
-      - run: npm run test:agent-status:built
-      - run: npm run test:lifx:built
-      - run: npm run test:tidbyt:built
-      - run: npm run test:local-controllers:built
-      - run: npm run test:tidbyt:python
       - run: npm run test:wispr:built
       - run: npm run test:wispr:package:built
       - run: npm run test:chompi-bridge:built
@@ -79,6 +70,8 @@ jobs:
       - run: npm run test:playback:built
       - run: npm run test:lifx-module:built
       - run: npm run test:tidbyt-module:built
+      # The old dashboard's unit tests stay, because #922 copies the dashboard into the runtime; App verification runs its browser smoke check.
+      - run: npm run test:dashboard
   firmware:
     name: Firmware host tests and ARM build on ${{ matrix.os }}
     strategy:
@@ -95,27 +88,6 @@ jobs:
           cache: npm
       - run: npm run test:firmware
       - run: npm run test:firmware:arm
-  dashboard:
-    name: Dashboard browser and contracts on ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    # The first GitHub-hosted run took 523 s of the earlier 600 s budget (#870).
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run test:dashboard
-      - run: npm run test:dashboard:browser
-      - run: npm run test:observability:browser
   app-verify:
     name: App verification on ${{ matrix.os }}
     strategy:
@@ -140,12 +112,14 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests, including the Hub's steps, always run.
+      # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests always run.
       - run: npm run test:app-verify:built
       - run: npm run test:app-verify:package:built
-      - run: npm run test:hub:verify:built
       - run: npm run test:verify-host
       # Hub #853: CHOMPI bridge boundary checks with real crossing runs, every capture step through runCaptureStep, and the control page's browser and accessibility check.
       - run: npm run test:chompi-bridge:verify:built
       - run: npm run test:chompi-bridge:browser
       - run: npm run test:runtime:verify:built
+      # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
+      - run: npm run test:dashboard:smoke
+      - run: npm run test:observability:browser

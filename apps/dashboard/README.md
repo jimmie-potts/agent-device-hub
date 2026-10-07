@@ -538,6 +538,13 @@ opening assembly and reduced motion through a component harness. `tests/art.test
 ported layout validator. Retain side-by-side comparison evidence against the
 wall map on the same fixture before merge; human approval is not required.
 
+`npm run test:dashboard:smoke` runs `tests/smoke.mjs`, the short check CI runs
+in place of the browser suite (Hub #827). It loads the built dashboard signed in
+through trusted loopback, checks the home's session and device widgets and its
+axe result, and sends one guarded mode command from the wall widget. The full
+browser suite runs locally; see
+[Dashboard checks](../../docs/development.md#dashboard-checks).
+
 The activity view requests snapshot 1.2 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. Retain the current candidate’s automated and browser evidence under the SDLC UI verification policy.
 
 Session headings use label, then shared title, then session ID. Project display

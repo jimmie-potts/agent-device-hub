@@ -18,6 +18,8 @@ npm run test:wispr:package
 
 `test:wispr:built` runs synthetic pure, reader, store, contract and CLI checks against fresh build output. `test:wispr:package:built` verifies the extracted offline artifact and isolated contract consumer. These are development checks; they do not use an installed Wispr database.
 
+After a change to the collector's aggregate output, also run `npm run test:hub` locally. It includes `tests/wispr_hub_producer.test.mjs`, which checks the output against the old Hub's consumer fixture and routes; that check left CI in #827, and the running old Hub still reads these files.
+
 `npm run test:wispr:native:built` must also run with native Windows Node 24 and synthetic files on a local Windows drive. It must fail, rather than skip and report success, on other platforms. Linux tests do not qualify Windows WAL, locks, ACLs or atomic replacement. See [development checks](../../docs/development.md#wispr-collector-checks) for the required evidence.
 
 

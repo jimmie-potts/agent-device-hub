@@ -150,7 +150,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-core and dashboard jobs' fifteen and the App verification job's twenty-five. Branch pushes do not duplicate PR checks.
+core job's fifteen and the App verification job's twenty-five. Branch pushes do not duplicate PR checks.
 The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
 because GitHub keeps the manually disabled state of the retired `ci.yml` and
 `work-guide.yml` copies, whose earlier billing-blocked runs do not validate a
@@ -193,24 +193,50 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one of them:
+Normal CI has five GitHub-hosted Linux jobs, and each suite runs in exactly one of them:
 
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, the runtime and its scenario catalog, agent state and status, Hub with its setup and MCP tests, MCP, the Tidbyt and LIFX controllers, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest, the Nanoleaf port, and the playback, LIFX and Tidbyt modules), and the Python consumers, the Tidbyt controller's Pillow golden-image check and performance checks |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the old dashboard's unit tests, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
-| Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the Hub, CHOMPI bridge and runtime adapters' steps and the bridge control page's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the old dashboard's smoke check and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 
-The Checks workflow performs three full builds across its jobs. The Python
-contract, state and Tidbyt suites run on Python 3.14 only, the version of the
-installed Nanoleaf runtime. They protect the Python consumers of shared contracts
-and retire with that code (#839). Checks that call the runner's system
+The Checks workflow performs two full builds across its jobs. The Python
+suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
+Checks that call the runner's system
 `/usr/bin/python3`, such as the Linux performance qualification and the
 maintenance closeout fixtures, use Ubuntu 24.04's Python 3.12. Local validation runs the same commands. Later runtime and browser
 changes must add their own issue-appropriate checks.
+
+### Old system checks
+
+The old system is the old Hub (`apps/hub`), its dashboard (`apps/dashboard`),
+the old controllers and services, and the 1.x controller contracts. It keeps
+running on the owner's machine until the cutover (#840), receives no further
+changes, and #839 deletes it. Since #827, CI no longer runs the checks below,
+and the owner accepts that the old system may break in source. Their npm scripts
+stay until #839, so run them locally when a change touches that code:
+
+- `npm run test:hub` and `npm run test:hub:package`, which include the setup,
+  Hub MCP, automation, Wispr producer and compatibility-process tests, and
+  `npm run test:hub:verify`;
+- `npm run test:agent-status`, `npm run test:lifx`, `npm run test:tidbyt`,
+  `npm run test:tidbyt:python` and `npm run test:local-controllers`;
+- `npm run test:contracts:python` and `npm run test:package`, the 1.x
+  contracts' Python consumer and archive check;
+- `npm run test:performance`, the early hook measurement tooling;
+- `npm run test:dashboard:browser`, the old dashboard's full browser suite
+  (see [Dashboard checks](#dashboard-checks)).
+
+CI still covers the old code that kept checks rely on. `npm run build` and
+`npm run typecheck` compile it, because kept suites import it.
+`test:contracts:built` runs because MCP, maintenance, the event mapping tests
+and the observability pilot import `@jimmie-potts/device-contracts` from source.
+`test:dashboard` and `test:dashboard:smoke` run because #922 copies the
+dashboard into the runtime. The Python setup still installs
+`requirements-contracts.txt`, whose Pillow pin only the local Tidbyt check uses.
 
 Native Windows is outside the supported CI matrix. Windows development uses
 Linux Node/Python runtimes inside WSL. Ubuntu CI does not establish installed
@@ -220,25 +246,31 @@ Existing provider qualification records and device ownership are unchanged.
 ### CI cost and suite timings
 
 Each job takes runner time, so a duplicate suite or an extra full run costs as
-much as a new one. These step times come from #860's last PR run on Depot on
-2026-10-06, before #861 combined the jobs. GitHub-hosted runners may differ.
+much as a new one. These step times come from main's
+[run 37669983471](https://github.com/jimmie-potts/agent-device-hub/actions/runs/37669983471)
+on GitHub-hosted runners on 2026-10-07, before #827 left the old system's
+checks to local runs.
 
 | Job and step | Seconds |
 | --- | ---: |
-| Core: `test:hub:package:built` | 145 |
-| Core: `test:hub:built` | 107 |
-| Core: `test:observability:pilot` | 39 |
-| Core: build, typecheck and lint | about 52 |
-| Dashboard: `test:dashboard:browser`, in total | 461 |
-| Dashboard: `browser.mjs` and `matrix.mjs`, including three fixed waits of about 10 s each | about 290 |
-| Dashboard: `art.mjs` | about 70 |
-| Dashboard: `moments.mjs` | about 48 |
-| Dashboard: each other browser script | under 20 |
-| App verification: `test:hub:verify:built` | 141 |
-| App verification: `test:chompi-bridge:verify:built` | 106 |
+| Core: build, typecheck and lint | 134 |
+| Core: `test:runtime:built` | 61 |
+| Core: `test:runtime:scenarios:built` | 33 |
+| Core: `test:observability:pilot` | 28 |
+| App verification: `test:chompi-bridge:verify:built` | 207 |
+| App verification: `test:runtime:verify:built` | 199 |
+| App verification: Playwright install with system dependencies | 25 (22 to 227 across runs) |
+| Left CI in #827: the Dashboard job, with `test:dashboard:browser` at 500 | 591 |
+| Left CI in #827: core `test:hub:package:built` and `test:hub:built` | 216 |
+| Left CI in #827: core's eight other old-system steps | 41 |
+| Left CI in #827: App verification `test:hub:verify:built` | 158 |
 
-The dashboard figures are read from log markers, so script boundaries are
-approximate. [#862](https://github.com/jimmie-potts/agent-device-hub/issues/862) owns speedups. Measure before changing a wait,
+Measured locally on 2026-10-07, the full dashboard browser suite takes about
+485 s: `matrix.mjs` 268, `art.mjs` 72, `moments.mjs` 51, `browser.mjs` 33,
+`trusted.mjs` 18, `local-controllers.mjs` and `pixoo-refresh.mjs` 11 each,
+`pixoo-media.mjs` 10 and each other script under 6. The smoke check that
+replaces it in CI takes about 2 s locally.
+[#862](https://github.com/jimmie-potts/agent-device-hub/issues/862) owns speedups. Measure before changing a wait,
 and keep the waits that test safety behavior.
 
 ## Static analysis
@@ -725,8 +757,9 @@ Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
 exit zero. Both languages execute the same 190 schema and 137 semantic cases,
 including the API 1.1 moment cases from Hub #292. Contracts 1.2.0 additionally
 runs the shared install receipt corpus through both validators, including
-identity equality and timestamp consistency; the existing test globs and
-contracts CI matrix include it. See [the install contract](install-contract.md).
+identity equality and timestamp consistency; the existing test globs include
+it. CI runs the TypeScript side (`test:contracts:built`); since #827 the Python
+side and `test:package` run locally. See [the install contract](install-contract.md).
 Hub packaging pins the published controller contracts 1.2.0 archive and its
 manifest hashes, including the install-receipt validator. Its manifest also
 records every bundled dependency file shipped by npm; package checks verify that
@@ -948,8 +981,8 @@ No command installs hooks, launches a client or contacts a device.
 
 `npm run test:performance` uses Python 3.12 or 3.14 to check measurement
 statistics, pinned source verification, isolated legacy admission and bounded
-worker failure handling. The core CI job runs this command on Ubuntu with
-Python 3.14. The tests use synthetic state and do not
+worker failure handling. It is an [old system check](#old-system-checks) that
+runs locally, not in CI. The tests use synthetic state and do not
 establish installed-client, full hook,
 helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
 for actual profile commands and pending budget gates.
@@ -985,7 +1018,7 @@ checks, reconnect/idle deadlines, bounded notices, stop and the fixed recovery
 poll under storms. `npm run test:lifx` and `npm run test:tidbyt` cover notice-driven
 reevaluation, stop during reads, retained write outcomes and the existing device
 policies. `npm run test:local-controllers` verifies their owning host consumers.
-These existing commands run in CI's contracts matrix; source fakes establish
+These are [old system checks](#old-system-checks) that run locally; source fakes establish
 notice-to-evaluation timing, not installed or physical latency.
 
 ## Tidbyt controller checks
@@ -993,8 +1026,8 @@ notice-to-evaluation timing, not installed or physical latency.
 The runner tests in the same `test:tidbyt` suite cover authenticated loopback
 feed reads, wrong-owner and malformed responses, body/time bounds, private
 configuration, local process exclusion, crash release and shutdown. They use
-a real in-memory shared owner with fake cloud transport and run in the existing
-Tidbyt CI jobs. No installed service or physical device participates.
+a real in-memory shared owner with fake cloud transport and run locally with the
+rest of `test:tidbyt`. No installed service or physical device participates.
 
 Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
 controller. Use Node 24 and Python 3.14. Run `npm run build`,
@@ -1004,8 +1037,7 @@ If the system Python lacks Pillow, create a virtual environment, install
 `requirements-contracts.txt` into it and run the command with that environment
 active (the #222 and #241 closeouts both hit this).
 Keep running the shared controller-contract and workflow checks alongside them.
-The core CI job runs `npm run test:tidbyt:built` and
-`npm run test:tidbyt:python` with Python 3.14.
+Both are [old system checks](#old-system-checks) that run locally, not in CI.
 
 The TypeScript suite covers the renderer, including golden WebP bytes, invalid
 frames and its import boundary. It also covers the cloud connection against a
@@ -1059,8 +1091,8 @@ device consumes), `HubStatusFeed` and its bounded hub GET helpers
 (`hubOrigin`, `hubToken`, `hubJson`, `HUB_ID`), and the generic feed-cadence
 machinery (`EvaluationLoop`, `BoundedReader`, `systemTimers`). Use Node 24 and
 run `npm run build`, `npm run typecheck` and `npm run test:agent-status` from
-the worktree root. The core CI job runs
-`test:agent-status:built` after its fresh build.
+the worktree root. It is an [old system check](#old-system-checks) that runs
+locally, not in CI.
 
 Tests cover the ranking (attention over working over done, an active child
 making its root working, read evidence never retiring done), `highestStatus`
@@ -1090,9 +1122,8 @@ and integrated performance remain separately evidenced downstream gates.
 
 Hub #5 targets Node 24 on Linux in WSL. Run `npm ci`, `npm run build`,
 `npm run typecheck`, `npm run test:hub` and `npm run test:hub:package` from the worktree root, alongside
-the shared controller/lifecycle/state/MCP and workflow suites. The core
-CI job runs `npm run test:hub:built` and `npm run test:hub:package:built` after its fresh
-build. Tests use disposable private Linux state, synthetic credentials and
+the shared controller/lifecycle/state/MCP and workflow suites. Both are
+[old system checks](#old-system-checks) that run locally, not in CI. Tests use disposable private Linux state, synthetic credentials and
 fake loopback controllers. They do not start installed services or operate
 devices. The source includes supervised child release, fenced import, route readiness,
 interrupted coordinator recovery and rollback tests. Full integrated performance
@@ -1117,8 +1148,8 @@ Complete dependency inventories and the 8 MiB manifest boundary are covered;
 oversized or invalid metadata still reports unknown.
 
 Hub upgrade command checks use `apps/hub/tests/install-*.test.mjs` through
-`npm run test:hub` and `npm run test:hub:package`. The core CI job runs both
-suites after build/typecheck. Use the private test TMPDIR
+`npm run test:hub` and `npm run test:hub:package`, which run locally, not in CI.
+Use the private test TMPDIR
 above. Fixtures cover approval drift, package/dependency inventories, compatible
 latest-state recovery, both shared-layout adoption orders, interruption,
 receipt finalization and owned retention. They use synthetic state and fake
@@ -1135,7 +1166,7 @@ retain the 64 MiB default limit for release inventories.
 Controller contract 1.1 reads for #576 are covered by
 `apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
 `apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
-packaged hub tests already include, so they need no new CI job. They run over
+packaged hub tests already include. They run over
 loopback HTTP against the shared fake controller in
 `apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
 `'1.0'`, `'1.0-negotiating'` and `'1.0-unknown-route'` (Nanoleaf's 404 refusal), epoch restarts, injected timeouts and 5xx answers,
@@ -1150,7 +1181,7 @@ codex-nanoleaf#158 and divoom-app-upgrade#92.
 The moment sender for #335 is covered by `apps/hub/tests/moment-sender.test.mjs`,
 the slot-wait cases in `apps/hub/tests/controllers.test.mjs` and the moment command
 cases in `apps/hub/tests/controller-versions.test.mjs`, which the same hub suites
-already include, so they need no new CI job. The shared fake now admits commands
+already include. The shared fake now admits commands
 through the contract's reference `admit`, and its `answerNext`, `hold` and
 `moments()` script a device's answer, stall a request and list the moment POSTs.
 The cases inject the hub-monotonic clock and cover the bounded slot wait, the
@@ -1161,7 +1192,7 @@ serves 1.1 and a caller such as #336 or #358.
 
 The owner moment route for #336, `POST /api/controllers/v1/:id/moment`, is covered
 by `apps/hub/tests/moment-route.test.mjs`, which `test:hub:built` and the packaged
-hub tests already include, so it needs no new CI job. It runs against the shared
+hub tests already include. It runs against the shared
 fake and covers:
 
 - `forbidden` for `read` scope, another device grant and a missing mutation header;
@@ -1177,7 +1208,7 @@ fake and covers:
 
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
-the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
+the `apps/hub/tests/*.test.mjs` pattern. It runs the
 shared playback module against fake sources with no speaker code, the Sony
 module against a fake loopback receiver and the Sonos module against a fake
 loopback AVTransport service. Freshness checks use a controlled clock. The #233
@@ -1353,7 +1384,8 @@ and CSV/JSON exports. A disposable stalled worker verifies the 2.5-second
 deadline and worker retirement; its factory seam is unavailable to installed
 configuration. `tests/wispr_hub_producer.test.mjs` verifies that the bundled
 consumer fixture exactly matches current collector output. The existing `test:hub:built` glob and offline Hub package
-suite include it; the core CI job already runs those commands.
+suite include it. They run locally, not in CI, so run `npm run test:hub` after a
+change to the collector's aggregate output.
 Use the private cache TMPDIR described above. Run build/typecheck, Hub/package,
 Hub MCP, setup and the shared controller/lifecycle/state/MCP/workflow suites.
 Fixtures never open Wispr or collector databases or enable installed collection.
@@ -1405,7 +1437,7 @@ collection and personal-data validation require their own authorization.
 ## Dashboard checks
 
 Hub #471 adds `apps/dashboard/tests/wispr.test.mjs` to the unit glob and
-`apps/dashboard/tests/wispr.mjs` to the existing browser matrix and Dashboard CI.
+`apps/dashboard/tests/wispr.mjs` to the existing browser matrix.
 After `npm run build`, run `node apps/dashboard/tests/wispr.mjs` for the focused
 real synthetic SQLite collector → aggregate files → authenticated Hub → browser
 check. Use the outside-checkout `TMPDIR` documented under Standalone hub checks;
@@ -1418,12 +1450,33 @@ in-flight snapshot/opt-out guards. No personal database or installed service is 
 Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
 `npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`
 and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
-synthetic state and fake controllers. The dashboard CI job runs these checks;
-shared hub, contract/state, MCP and workflow jobs remain required. No check
-installs a personal service, opens live state or contacts hardware. A change
-to `apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
+synthetic state and fake controllers. No check installs a personal service,
+opens live state or contacts hardware. A change to
+`apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
 [Hub verification](../apps/hub/verify/README.md) step drives also runs
-`npm run test:hub:verify`; the App verification CI job runs it.
+`npm run test:hub:verify`.
+
+Since #827, CI runs only the unit tests (`npm run test:dashboard`, in the core
+job) and a smoke check (`npm run test:dashboard:smoke`, in the App verification
+job). The full browser suite took 500 s in CI, so it runs
+locally: run `npm run test:dashboard:browser` when a change touches
+`apps/dashboard`, its fixture or fakes, or the Hub code they drive, and when
+#922 copies the dashboard into the runtime.
+
+`apps/dashboard/tests/smoke.mjs` opens one trusted-loopback page on the
+fixture's Hub and checks that:
+
+- the Hub serves the built dashboard, which opens signed in without a login form;
+- the home renders the fixture's session and its `wall` and `pixel` widgets
+  without sending a device command;
+- axe finds no WCAG 2.1 A or AA violation on the home at 1,280 px;
+- choosing Quiet in the `wall` widget's mode select sends exactly one guarded
+  `mode.set` command with the snapshot's request ID, configuration revision and
+  generation.
+
+It takes about 2 s locally. When #922 copies the dashboard, give the
+copy the same pattern: a short smoke check in CI and its full browser suite as a
+local check.
 
 The browser matrix's `running Hub build` cases check Connections with synthetic
 known metadata and an older context without a build field. They cover read-only
@@ -1437,8 +1490,8 @@ Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
 `npm run test:hub:package` with disposable owner-launch and browser-session
 checks. Cover single-use and expired codes, rejected cross-origin exchanges,
 read/control alias bounds without ingest/admin/MCP access, disconnect, reload
-and inspection without device writes. The existing Dashboard CI job and shared
-Hub/package jobs run these checks on Node 24. They do not use the installed Hub.
+and inspection without device writes. They run on Node 24 and do not use the
+installed Hub.
 
 Hub #276 adds `apps/hub/tests/trusted-loopback.test.mjs` to `npm run test:hub`
 and `apps/dashboard/tests/trusted.mjs` to `npm run test:dashboard:browser`.
@@ -1462,8 +1515,7 @@ tab, while a link from another host name and an iframe are refused. A negative
 control has a page on another loopback port re-navigate a window it opened to
 the Hub every 10 to 30 ms. The owner's session must survive and the Hub must
 hold at most two sessions; without the opener policy the owner is evicted
-within about two seconds. The existing Hub, package and Dashboard CI jobs run
-them.
+within about two seconds.
 
 Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
 `apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
@@ -1474,8 +1526,7 @@ keeps its tickets and streams. A monitor, controller or integration write whose
 body arrives after logout is refused before any controller call, as is a late
 write from a configured credential rotated in the meantime.
 Deferred fake operations cover a pending command that resolves, rejects or
-outlives its caller after retirement. The existing Hub jobs run them; no new CI
-job is needed.
+outlives its caller after retirement.
 
 Hub #151 extends the matrix with general-control scenarios: one guarded command
 per control in Media, Monitor gating with the explicit Media switch and a pending
@@ -1490,8 +1541,7 @@ the mapping. Record current-candidate UI evidence under the
 Hub #323 adds a read-only Nanoleaf scenario to the same matrix, using the
 fixture's optional `panels` component. `apps/hub/tests/integration.test.mjs`
 checks that a read-only extension snapshot validates and passes through the
-integration route. The existing Hub and Dashboard jobs run both; no new CI job
-is needed.
+integration route.
 
 Hub #153 adds Nanoleaf scenarios to the same matrix: power and brightness in
 Work with the override hint, Work gating with the explicit Free switch through
@@ -1517,8 +1567,8 @@ labels, keyboard selection shared with the mapping form, pending marks, one
 geometry read per session, a stale controller, the Panels with their controller
 offline, the schematic fallbacks, the retried read, reads only and axe at
 1280 px and 390 px, then drives status, activity, mode, the opening assembly and
-reduced motion through a component harness bundled from `tests/art-harness.tsx`. The
-existing Dashboard CI job runs both; no new job is needed. Record current-candidate UI evidence under the
+reduced motion through a component harness bundled from `tests/art-harness.tsx`.
+Record current-candidate UI evidence under the
 [UI verification policy](sdlc.md#ui-approval-scope).
 
 Hub #231 adds matrix scenarios for fresh guards and one-step settings:
@@ -1556,7 +1606,7 @@ the Pixoo brightness form and the Pause action. A failed device read before
 sending sends nothing, recovery sends one command with current guards, a failed
 read after an accepted command keeps its receipt, and a double click sends one
 command. The app's reads resolve with an error record rather than rejecting, so
-the rejected-promise paths are covered by the unit tests. The existing Dashboard CI job runs both; no new job is needed.
+the rejected-promise paths are covered by the unit tests.
 
 Hub #37 adds a now-playing matrix scenario with a fake Sony receiver behind the
 fixture's hub. It covers only declared controls (no Play), one Next command,
@@ -1568,8 +1618,8 @@ fresh-read command builder and the receipt mapping. The hub's `playback.test.mjs
 covers the launcher session's playback grant, the context field and the paused
 Sony declaration. `mcp.test.mjs` covers the source-bound playback tools:
 discovery by scope and grant, `hub_devices`, duplicate request IDs, typed
-rejections, uncertain results, credential changes and a staged hub. The existing
-Hub, MCP and Dashboard jobs run all of them. None contacts a receiver. The
+rejections, uncertain results, credential changes and a staged hub. None
+contacts a receiver. The
 owner's 2026-09-25 paused-state live check is recorded in the issue's refined
 acceptance and in PR #275. Installed browser and Codex MCP acceptance come after
 merge under the applicable [installation authority](sdlc.md#installation-and-evidence)
@@ -1581,7 +1631,7 @@ and `widgets.test.mjs` run under `npm run test:dashboard`; the browser suite
 adds the first-screen, width-reach, route, alias-collision, unknown-address and
 1,280 px height checks, and the matrix and local-controllers suites address
 navigation links and open the Details disclosure where a fact moved behind it.
-Hub #444 extends the existing Dashboard browser and CI check with six registered
+Hub #444 extends the existing Dashboard browser check with six registered
 components. Their full widget bounds must fit the first screen at the owner's
 2,133 × 1,200 viewport, 1,440 × 900 and 1,280 × 720; merely starting in view
 is insufficient. The check also looks for text overlap at all three desktop
@@ -1641,8 +1691,8 @@ Browser suite gotchas, learned in #277:
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`
-builds and runs isolated configuration, credential and hook tests; CI runs
-`npm run test:setup:built` after its fresh build. The hub package check also
+builds and runs isolated configuration, credential and hook tests, which
+`test:hub:built` also runs. The hub package check also
 executes these tests in the offline installed archive. Use Node 24 on Linux/WSL.
 These tests also refuse a `TMPDIR` inside a Git checkout; see
 [Standalone hub checks](#standalone-hub-checks).
@@ -1672,28 +1722,27 @@ eviction, old-export recovery, freshness/restart and TypeScript/Python snapshot
 compatibility. The original ordinary-provider regression failed before the fix.
 `test:setup:built` runs the packaged Desktop hook against the real host and reopens
 the same synthetic store. `test:hub:package:built` repeats that check after an
-offline archive installation. CI runs both in the core job, the setup tests
-through `test:hub:built`. Run the pinned consumer check above locally as well. Publish new state
+offline archive installation. Both run locally, not in CI; `test:hub:built`
+includes the setup tests. Run the pinned consumer check above locally as well. Publish new state
 2.0.0 and Hub 0.2.0 archives with hashes and the merged source revision; preserve
 previous release bytes. Package version changes do not change snapshot/storage 1.0.
 
 ## Standalone hub MCP checks
 
-`npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
+`npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. The broader hub and installed archive tests also include these scenarios; all of them run locally, not in CI. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
 
 The media cases cover alias-bound playlist start and controller v1 playback
 actions, strict inputs, current control/device permissions, typed owner
-rejections, replay and ambiguous results without automatic retries. The core
-CI job runs these cases directly and in the offline hub archive; they require no new CI job or shared package change.
+rejections, replay and ambiguous results without automatic retries. The Hub
+suites run these cases directly and in the offline hub archive.
 
 ## Hub automation checks
 
 Hub #358 adds event rules, the interrupt set, event intake, arbitration and the
 automation log. `npm run test:hub:automation` builds and runs
 `apps/hub/tests/automation.test.mjs` on its own. The file also runs in
-`npm run test:hub`, in the CI `test:hub:built` step and in the packaged hub
-tests through the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI
-job. Set `TMPDIR` outside any Git checkout, as for the
+`npm run test:hub` and in the packaged hub tests through the
+`apps/hub/tests/*.test.mjs` pattern. Set `TMPDIR` outside any Git checkout, as for the
 [standalone hub checks](#standalone-hub-checks).
 
 The tests use disposable private stores, synthetic credentials, a fake event
@@ -1715,7 +1764,7 @@ Unicode display fields, credential rejection before deduplication, legacy log
 rows, restart readback, blocked moments and duplicate/replay protection. The
 fixture cases in `automation.test.mjs` also read the metadata through the
 authenticated log route and verify that controller intents retain their strict
-1.1 shape. No new CI job is needed; the existing hub suites run both files.
+1.1 shape. The existing hub suites run both files.
 
 ## Bounded cross-device compatibility
 
@@ -1748,9 +1797,9 @@ CI retains its existing component, contract, browser and package tests without
 adding private repository credentials. Run `npm run typecheck`,
 `npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
 `npm run check:workflow` and `npm run test:workflow` alongside the source check.
-The Hub command includes `tests/compatibility_process.test.mjs`, so the core CI
-job checks forced process cleanup and failed preflight reports
-without private source access.
+The Hub command includes `tests/compatibility_process.test.mjs`, which checks
+forced process cleanup and failed preflight reports without private source
+access.
 No product code or contract changes are intended. The #30 performance report is
 a separate required completion input. Source compatibility does not install
 hooks, start an actual agent client or establish visible-device behavior.
@@ -1778,7 +1827,7 @@ failures and is not a substitute for installed or physical acceptance.
 Use Node 24 and run `npm ci`, `npm run build`, `npm run typecheck` and
 `npm run test:lifx` from the worktree root. Run shared controller-contract
 TypeScript/Python and package checks plus `check:workflow` and `test:workflow`.
-The core CI job runs `test:lifx:built` after its fresh build. Fake transports and fake sockets cover packet encoding,
+It is an [old system check](#old-system-checks) that runs locally, not in CI. Fake transports and fake sockets cover packet encoding,
 reply correlation, deadlines, bounded retry, replay, cancellation, overlapping
 commands, unsupported capabilities and partial multi-bulb results. Tests validate
 common receipts/snapshots against controller v1 and never open a native socket.
@@ -1974,8 +2023,8 @@ Hub #289 adds `apps/local-controllers`, the loopback host that serves controller
 v1 and the LIFX `lifx-light` profile for the in-process Tidbyt and LIFX
 controllers. Use Node 24 and run `npm run build`, `npm run typecheck` and
 `npm run test:local-controllers` from the worktree root, plus the controller
-contract, Tidbyt, LIFX, hub, MCP, dashboard and workflow checks. The core CI
-job runs `npm run test:local-controllers:built` after its fresh build.
+contract, Tidbyt, LIFX, hub, MCP, dashboard and workflow checks. It is an
+[old system check](#old-system-checks) that runs locally, not in CI.
 
 The suite starts the real host with a fake Tidbyt connection, fake LIFX
 transports and a loopback feed from a real in-memory shared owner. It covers
@@ -2040,7 +2089,7 @@ legacy projections and synthetic restart. Hook tests cover explicit version
 selection, bounded Codex/Claude title reads, missing sources and content
 exclusion. HTTP tests exercise the configured Desktop index and Unicode labels;
 MCP and browser checks cover metadata exposure. The existing glob-based suites
-and CI matrix include these tests; `test:dashboard:browser` also runs
+include these tests; the Hub's run locally since #827. `test:dashboard:browser` also runs
 `apps/dashboard/tests/session-metadata.mjs` for desktop/mobile candidates.
 
 Run build/type, controller, lifecycle, state, agent-status, Tidbyt, LIFX,
@@ -2085,7 +2134,8 @@ memory-only owner map, `/clear`, retirement, expiry, failed commits, restart and
 durable 2.1 exports. The Hub's `host-session.test.mjs` reads the
 on-disk store and checks it against the stored durable 2.1 schema. The setup,
 setup-hook and MCP suites cover the 1.2 selection. The existing
-glob-based suites and CI jobs run all of them, so no new command or CI job is needed.
+glob-based suites run all of them, so no new command is needed. CI runs the
+agent-state suites; the Hub's run locally since #827.
 
 Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
 workflow checks listed above. Synthetic environments prove the mapping only;
@@ -2186,7 +2236,8 @@ entry point is `npm run -s verify -- <operation>` after `npm run build`, and
 its README keeps the feature map of steps, UI entries, driver actions,
 scenarios and expected observations. Run `npm run test:hub:verify` with the
 checks above and the Standalone hub and Dashboard checks, because the adapter
-reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
+reuses `apps/dashboard/tests/fixture.mjs`. It is an
+[old system check](#old-system-checks) that runs locally, not in CI. It covers:
 
 - its unsupervised step test judges the seven reference steps on the correct
   app and under each seeded fault (`write-on-read`, `duplicate-forward`,
@@ -2217,8 +2268,8 @@ Hub #495 composes one preview from the three adapters with
 [Composed previews](app-verification.md#composed-previews). The composition
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
-adapters in disposable pinned Git checkouts and skip without a user manager,
-as in the App verification CI job. They also check that a composition is
+adapters in disposable pinned Git checkouts and skip without a user manager.
+They also check that a composition is
 refused beside a live run and starts its own three runs under the one-run
 guard (Hub #944). The safety-thaw cases also change a run's own lease
 without updating the composition, expire it during a freeze, and verify stop
@@ -2350,8 +2401,7 @@ malformed responses and zero command writes. Its reusable synthetic catalog and
 PNG generator live in `apps/hub/tests/pixoo-catalog-fixture.mjs`.
 
 `apps/dashboard/tests/pixoo-client.test.mjs` covers authenticated PNG scheduling;
-`apps/dashboard/tests/pixoo-media.mjs` runs in `test:dashboard:browser` and the
-existing Dashboard CI job. It checks a 20-frame variable-delay animation,
+`apps/dashboard/tests/pixoo-media.mjs` runs in `test:dashboard:browser`. It checks a 20-frame variable-delay animation,
 full-color pixels, reduced motion, ordered/unnamed playlists, pagination, catalog
 revision refresh, hidden-widget cancellation, accessibility and mobile overflow.
 It also pages away from a slow preview read still in flight (Hub #946): the next
@@ -2404,7 +2454,7 @@ The source contract in `packages/observability` uses Node 24 and Python 3.14. Fr
 `npm run test:observability:python`, `npm run test:observability:query` and
 `npm run test:observability:package` and `npm run test:observability:browser`
 (with Chromium in the shared Playwright cache). The browser check runs in the
-existing dashboard CI job, where Chromium is already installed. The core CI job
+App verification CI job, where Chromium is already installed. The core CI job
 runs the built conformance, Python, query and archive-consumer checks. Keep
 the shared controller/lifecycle/workflow and affected consumer checks required
 by the final change.

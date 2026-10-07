@@ -595,10 +595,13 @@ Pending host behavior, left explicit rather than inferred:
   does not read back under their systemd 255 (#873), so the App verification
   job hides the user bus. CI runs
   the core's receipt, supervisor-refusal, lock and unsupervised capture tests
-  (through `runCaptureStep`), and the Hub's `steps.test.mjs` (its seven
-  fixture reference steps, including the three Hub #336 moment steps, under
-  every seeded fault, and its two `control-*` steps) and `build.test.mjs`. The lifecycle and Hub run tests skip there with a printed
-  reason and run on this PC.
+  (through `runCaptureStep`) and the CHOMPI bridge and runtime adapters'
+  verification suites. The lifecycle tests skip there with a printed reason
+  and run on this PC. Since #827 the Hub adapter's tests run locally, not in
+  CI, until #839 deletes the old Hub: its `steps.test.mjs` (its seven fixture
+  reference steps, including the three Hub #336 moment steps, under every
+  seeded fault, and its two `control-*` steps), `build.test.mjs` and its run
+  tests.
 - Codex sandbox: this session ran from Claude Code, where Windows interop and
   `systemd-run` work. Earlier evidence shows Codex's sandbox refusing Windows
   interop; whether it can create user units is unknown until tried there.
