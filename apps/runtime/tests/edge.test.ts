@@ -49,7 +49,7 @@ async function refusesToStart(dir: string, accept: (error: unknown) => boolean, 
   assert.fail(`${what}: the runtime started`);
 }
 
-it('a remote part with a run grant connects and syncs the stand-in core\'s sessions; one without a grant is unauthenticated', async context => {
+it('a remote part with a run grant connects and syncs the core\'s sessions; one without a grant is unauthenticated', async context => {
   const dir = await stateDir(context);
   const reader = {source: 'bunny/parts/reader', token: token()};
   await grant(dir, [reader]);
@@ -58,7 +58,7 @@ it('a remote part with a run grant connects and syncs the stand-in core\'s sessi
   const remote = await connectRemote({url: runtime.url, source: reader.source, token: reader.token});
   context.after(() => remote.close());
   const synced = await remote.sync(['session'], () => {}, {timeoutMs: 5000});
-  assert.equal(synced.status, 'synced', 'the stand-in core serves its sessions to the remote part');
+  assert.equal(synced.status, 'synced', 'the core serves its sessions to the remote part');
   if (synced.status === 'synced') await synced.copy.close();
 
   // A part that connects anyway is closed, so a failed check leaves no stream open.
@@ -247,7 +247,7 @@ it('every registry code has a fixed registered reason, except internal and uncer
     if (code === 'internal' || code === 'uncertain-result') assert.equal(reason, undefined, `${code} has no reason: its effect is unknown`);
     else assert.ok(reasons.includes(reason), `${code}: ${String(reason)}`);
   }
-  assert.equal(REGISTRY_REASONS['duplicate-conflict'], 'duplicate', 'as the stand-in core logs a conflict');
+  assert.equal(REGISTRY_REASONS['duplicate-conflict'], 'duplicate', 'as the core\'s stand-in history logs a conflict');
 });
 
 it('a module factory builds the module with its real transport, or with its simulated one', () => {

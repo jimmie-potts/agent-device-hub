@@ -22,7 +22,10 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
 const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json'), 'utf8')) as {version: string}).version;
 
-/** The served candidate: the built runtime, its verification run and fixtures, the SDK and the profile, in a stable order. */
+/**
+ * The served candidate: the built runtime, its verification run and fixtures, the SDK, the profile, and the agent-state
+ * owner the core runs with its lifecycle contracts (#831), in a stable order.
+ */
 export function artifactFiles(at = root): string[] {
   const built = (dir: string, keep: (file: string) => boolean = () => true): string[] => {
     const path = join(at, dir);
@@ -33,6 +36,7 @@ export function artifactFiles(at = root): string[] {
     ...built('apps/runtime/dist/src'), ...built('apps/runtime/dist/verify', file => !file.startsWith('tests/')),
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
+    ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -46,11 +50,13 @@ export const BUILD_SOURCES = [
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
+  ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
+  'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -221,7 +227,7 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --environment test and the run\'s state directory'},
     {id: 'sdk-edge', kind: 'actual', note: 'the runtime\'s SDK edge on its listener; each part has a run-generated grant in the state directory'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the stand-in core (session owner, history and inbox until #831, #782 and #923), the fixture lamp and chime, and a harness module that reports what the bus publishes'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp and chime, and a harness module that reports what the bus publishes'},
     {id: 'devices', kind: 'simulated', note: 'SimulatedLamps and SimulatedChime in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
     {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step'},
   ],
@@ -231,14 +237,14 @@ export default definePlugin({
   ],
   captureSteps: {
     'edge-grants': {
-      description: 'A remote part with the run\'s grant connects and syncs the stand-in core\'s sessions; one without a grant is unauthenticated',
+      description: 'A remote part with the run\'s grant connects and syncs the core\'s sessions; one without a grant is unauthenticated',
       scenario: 'fixtures',
       fresh: true,
       run: onHealth(async t => {
         const grants = await readGrants(t.dataDir);
         const source = sourceOf('reader');
         const observed: Record<string, unknown> = {synthetic: true};
-        await t.expect('a remote part with the run\'s reader grant syncs the stand-in core\'s sessions', async () => {
+        await t.expect('a remote part with the run\'s reader grant syncs the core\'s sessions', async () => {
           const remote = await connectRemote({url: originOf(t), source, token: grants.get(source) ?? ''});
           try {
             const synced = await remote.sync(['session', 'inbox-item'], () => {}, {timeoutMs: 5000});

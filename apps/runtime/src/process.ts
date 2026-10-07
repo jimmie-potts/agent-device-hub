@@ -9,6 +9,7 @@ import {INSTANCE_ID, LogWriter, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
+import {RuntimeError} from './state.js';
 
 export type ProcessOptions = {
   port: number; stateDir: string; lagLimitMs: number; logLevel: LogLevel;
@@ -113,6 +114,8 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
     runtime = await startRuntime({
       modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate,
+      // The runtime cannot continue without the one owner of agent sessions: the service manager restarts it whole.
+      onCoreFailure: () => { fail(new RuntimeError('core-failed', 'the core failed')); },
       ...(options.edge ? {edge: {
         schemas: {...options.schemas, ...moduleSchemas(options.modules)}, ...(options.onEdge === undefined ? {} : {onServing: options.onEdge}),
       }} : {}),

@@ -13,7 +13,7 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | --- | --- | --- |
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test` and the run's state directory: the shipped module list, or the fixture modules |
 | SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
-| Fixture modules | simulated | The stand-in core (session owner, history and inbox until #831, #782 and #923), the fixture lamp and chime, and a harness module that reports what the bus publishes |
+| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp and chime, and a harness module that reports what the bus publishes |
 | Devices | simulated | `SimulatedLamps` and `SimulatedChime`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
@@ -30,8 +30,8 @@ the runtime's health does. Ending a stream takes only a part's source, `bunny/pa
 
 | Scenario | Starts |
 | --- | --- |
-| `fixtures` | The stand-in core, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list, empty today |
+| `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
+| `shipped` | The runtime's own entry point with the shipped module list: the core alone, with no device module |
 | one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
@@ -39,7 +39,7 @@ the runtime's health does. Ending a stream takes only a part's source, `bunny/pa
 
 | Step | What it does |
 | --- | --- |
-| `edge-grants` | A remote part with the run's reader grant syncs the stand-in core's sessions; one with a made-up token is `unauthenticated` |
+| `edge-grants` | A remote part with the run's reader grant syncs the core's sessions; one with a made-up token is `unauthenticated` |
 | `scenario-<catalog id>` | Runs that catalog scenario through the run adapter on a freshly seeded run, attaches `scenario-result.json`, and expects every step to pass, every message to follow profile 2.0 and the boundaries to hold |
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
 

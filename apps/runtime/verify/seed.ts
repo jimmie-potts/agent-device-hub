@@ -1,5 +1,5 @@
 // The seeds of a disposable runtime run (Hub #920): which modules the runtime starts and the parts' run-generated
-// grants. Each catalog scenario seeds its own modules; `fixtures` starts the stand-in core, the lamp and the chime for
+// grants. Each catalog scenario seeds its own modules; `fixtures` starts the core with its stand-in parts, the lamp and the chime for
 // exploring. Names starting with `control-` cross a boundary on purpose, so their start fails a boundary check.
 import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
@@ -27,8 +27,8 @@ export const stateDirOf = (dataDir: string): string => join(dataDir, 'state');
 export const homeOf = (dataDir: string): string => join(dataDir, 'home');
 
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
-  fixtures: {description: 'The stand-in core, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
-  shipped: {description: 'The runtime\'s own entry point with the shipped module list, which is empty today', runtime: 'shipped', modules: []},
+  fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
+  shipped: {description: 'The runtime\'s own entry point with the shipped module list: the core alone, with no device module', runtime: 'shipped', modules: []},
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
   } satisfies RunScenario])),

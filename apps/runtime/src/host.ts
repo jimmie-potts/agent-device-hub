@@ -23,6 +23,11 @@ export type Reason = {code: string; detail: string};
 export type ModuleHealth = {name: string; apiVersion: string; state: ModuleState; healthy: boolean; syncRestarts: number; reason?: Reason};
 
 export type HostOptions = {
+  /**
+   * Hears that the core failed. The core is the one owner of agent sessions (Hub #831), so the runtime cannot continue
+   * without it: the service process ends with a failure exit, and the service manager restarts the whole runtime.
+   */
+  onCoreFailure?: (error: unknown) => void;
   clock: Clock;
   scheduler: Scheduler;
   stateDir: string;
@@ -109,6 +114,11 @@ export function contain(error: unknown): boolean {
 
 const stopped = (): SdkError => new SdkError(errorBody('invalid-state', {detail: 'the module has stopped'}));
 
+/** The module the runtime hosts as the core (Hub #831), with the source `bunny/core`; every other module is `bunny/modules/<name>`. */
+export const CORE_MODULE = 'core';
+/** A module's source on the bus. */
+export const sourceOf = (name: string): string => name === CORE_MODULE ? 'bunny/core' : `bunny/modules/${name}`;
+
 export class ModuleHost {
   readonly #slots: Slot[] = [];
   readonly #bySource = new Map<string, Slot>();
@@ -180,7 +190,7 @@ export class ModuleHost {
 
   async #start(slot: Slot): Promise<void> {
     this.#log.debug('runtime.module.starting', {'bunny.module': slot.name});
-    const participant = this.#bus.connect(`bunny/modules/${slot.name}`);
+    const participant = this.#bus.connect(sourceOf(slot.name));
     slot.participant = participant;
     this.#bySource.set(participant.source, slot);
     const context = this.#context(slot, participant);
@@ -326,6 +336,7 @@ export class ModuleHost {
     slot.reason = {code: failure.code, detail: failure.detail};
     this.#log.error('runtime.module.failed', {...fields, ...reasonFields(failure)});
     void this.#teardown(slot);
+    if (slot.name === CORE_MODULE) this.#options.onCoreFailure?.(error);
   }
 
   /**

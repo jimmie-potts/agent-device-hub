@@ -37,8 +37,13 @@ export type RuntimeHealth = {
 };
 
 export type RuntimeOptions = {
-  /** The modules to host, in order. The service process passes the shipped list. */
+  /** The modules to host, in order. The service process passes the shipped list, whose first module is the core. */
   modules: readonly BunnyModule[];
+  /**
+   * Hears that the core failed (Hub #831). The service process ends with a failure exit, so the service manager restarts
+   * the runtime; without it, the core stays failed as any other module would.
+   */
+  onCoreFailure?: (error: unknown) => void;
   /** The private state directory. It is created owner-only when missing; see `prepareStateDirectory`. */
   stateDir: string;
   /** The loopback port for health. 0 picks a free port. */
@@ -190,7 +195,10 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     evicted = Math.min(Number.MAX_SAFE_INTEGER, evicted + 1);
   };
   const tracing = await startTracing(logs.resource, options.spans ?? keep, log);
-  const host = new ModuleHost(modules, {clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing})});
+  const host = new ModuleHost(modules, {
+    clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}),
+    ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
+  });
   const startedAtMs = clock.now();
   let lagCheck: RuntimeHealth['lagCheck'] = {status: 'off'};
   const health = (): RuntimeHealth => {

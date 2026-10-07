@@ -2,6 +2,7 @@
 // device transport, or, when the runtime runs with `--simulate`, with its simulated one, so a disposable verification
 // run (#920) touches no device. Adding or removing a module is a code change here; nothing loads modules at run time.
 import type {BunnyModule} from '@jimmie-potts/sdk';
+import {CORE_MODULE, createCoreModule} from './core/core.js';
 
 /** How the runtime creates one module: the `create<Name>Module({transport})` convention with each transport chosen. */
 export type ModuleFactory = {
@@ -15,7 +16,14 @@ export type ModuleFactory = {
   readonly schemas?: Readonly<Record<string, object>>;
 };
 
-export const shippedModules: readonly ModuleFactory[] = [];
+/**
+ * The core (Hub #831) comes first: it registers before its first await, and the runtime starts the next module once it
+ * awaits, so device modules that sync from it or republish to it at their start find it listening. It reaches no device,
+ * so its real and simulated builds are the same.
+ */
+export const coreFactory: ModuleFactory = {name: CORE_MODULE, create: () => createCoreModule(), simulate: () => createCoreModule()};
+
+export const shippedModules: readonly ModuleFactory[] = [coreFactory];
 
 /** Each factory's module, with its simulated transport when `simulate` is set and its real one otherwise. */
 export function buildModules(factories: readonly ModuleFactory[], simulate: boolean): BunnyModule[] {

@@ -1,7 +1,8 @@
 // A runtime process with in-test fixture modules, run as `node process.js <scenario> <runtime arguments>`. It goes
 // through the same entry point as the shipped runtime, with these modules instead of the shipped list.
 import type {BunnyModule} from '@jimmie-potts/sdk';
-import {runMain, type ModuleFactory} from '../../src/index.js';
+import {createCoreModule as createRealCore, runMain, type ModuleFactory} from '../../src/index.js';
+import {approvalPrompt, observation} from './agents.js';
 import {createCoreModule} from './core.js';
 import {SimulatedLamps, createLampModule, switchLamp} from './lamp.js';
 
@@ -45,7 +46,31 @@ const driver = module('driver', ({sdk, scheduler, log}) => {
   });
 });
 
+/** A hook's observation of an approval prompt, shortly after the modules have started. */
+const hook = module('hook', ({sdk, scheduler, clock}) => {
+  scheduler.after(100, async () => {
+    const {key, draft} = observation(approvalPrompt('approval-1'), clock.now());
+    await sdk.publish(key, draft);
+  });
+});
+/** A consumer that hears the core's messages and drops duplicates by (source, id), logging each it takes or drops. */
+const listener = module('listener', async ({sdk, log}) => {
+  const heard = new Set<string>();
+  await sdk.subscribe('bunny.*.*.*', message => {
+    if (message.source !== 'bunny/core') return;
+    const duplicate = heard.has(message.id);
+    heard.add(message.id);
+    log.info('message.received', {
+      'bunny.participant': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.outcome': duplicate ? 'duplicate' : 'accepted',
+    });
+  });
+});
+
 const scenarios: Record<string, readonly BunnyModule[]> = {
+  // The process dies between the core's commit and its publish (Hub #831): its outbox holds the session's messages.
+  'core-crash': [createRealCore({beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), listener, hook],
+  // The next start, with no hook: the core sends what it stored, once.
+  'core-restart': [createRealCore(), listener],
   // The process dies between the lamp's commit and its publish (Hub #882): its outbox holds the outcome.
   'lamp-crash': [createCoreModule(), createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), driver],
   // The next start, with no driver: nothing sends the command again.

@@ -1,5 +1,5 @@
 {
- "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain.",
+ "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12, and `inbox-item-turn-ended`, which #782 removes, names the finished turn's notice at a revision before the turn ends.",
  "valid": {
   "session": {
    "specversion": "1.0",
@@ -15,8 +15,8 @@
    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
    "data": {
     "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
-    "revision": 12,
-    "generation": 3,
+    "revision": 7,
+    "generation": 1,
     "identity": {
      "provider": "codex",
      "client": "desktop",
@@ -47,7 +47,7 @@
     ],
     "notices": [
      {
-      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+      "id": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0",
       "kind": "turn-ended",
       "turn": {
        "status": "known",
@@ -71,8 +71,8 @@
      "epoch": "codex-epoch-1",
      "sequence": 41
     },
-    "observedAtMs": 1791287998000,
-    "lastEvidenceAtMs": 1791287998000,
+    "observedAtMs": 1791287997400,
+    "lastEvidenceAtMs": 1791288000000,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
@@ -105,8 +105,8 @@
    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
    "data": {
     "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
-    "revision": 11,
-    "generation": 9,
+    "revision": 3,
+    "generation": 3,
     "identity": {
      "provider": "codex",
      "client": "desktop",
@@ -131,12 +131,21 @@
     "attention": [],
     "notices": [],
     "read": "unknown",
-    "unavailable": [],
+    "unavailable": [
+     {
+      "dimension": "turn",
+      "reason": "missing"
+     },
+     {
+      "dimension": "ordering",
+      "reason": "missing"
+     }
+    ],
     "ordering": {
      "status": "unknown"
     },
-    "observedAtMs": 1791287999000,
-    "lastEvidenceAtMs": 1791287999000,
+    "observedAtMs": 1791287992000,
+    "lastEvidenceAtMs": 1791288000000,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
@@ -233,8 +242,8 @@
    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
    "data": {
     "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
-    "revision": 15,
-    "generation": 3,
+    "revision": 8,
+    "generation": 1,
     "identity": {
      "provider": "codex",
      "client": "desktop",
@@ -249,11 +258,11 @@
      "status": "known",
      "id": "turn-7"
     },
-    "activity": "active",
+    "activity": "idle",
     "attention": [],
     "notices": [
      {
-      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+      "id": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0",
       "kind": "turn-ended",
       "turn": {
        "status": "known",
@@ -277,12 +286,12 @@
      "epoch": "codex-epoch-1",
      "sequence": 42
     },
-    "observedAtMs": 1791287999500,
-    "lastEvidenceAtMs": 1791287999500,
+    "observedAtMs": 1791287997600,
+    "lastEvidenceAtMs": 1791288000000,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
-     "active": 0,
+     "active": 1,
      "uncertain": 0
     },
     "label": {
@@ -349,7 +358,7 @@
       "status": "known",
       "id": "turn-7"
      },
-     "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+     "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
     }
    }
   },
@@ -698,14 +707,14 @@
      "id": "turn-7"
     },
     "observedAtMs": 1791287997000,
+    "occurredAtMs": 1791287996900,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
      "sequence": 40
     },
-    "revision": 9,
-    "occurredAtMs": 1791287996900,
+    "revision": 4,
     "attention": {
      "id": {
       "status": "known",
@@ -744,14 +753,14 @@
      "status": "known",
      "id": "turn-7"
     },
-    "observedAtMs": 1791287999500,
+    "observedAtMs": 1791287997600,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
      "sequence": 42
     },
-    "revision": 15,
+    "revision": 8,
     "attention": {
      "id": {
       "status": "known",
@@ -789,16 +798,16 @@
     },
     "turn": {
      "status": "known",
-     "id": "turn-8"
+     "id": "turn-9"
     },
-    "observedAtMs": 1791287999600,
+    "observedAtMs": 1791287998200,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 43
+     "sequence": 45
     },
-    "revision": 16,
+    "revision": 11,
     "attention": {
      "id": {
       "status": "unknown"
@@ -806,7 +815,7 @@
      "kind": "approval",
      "turn": {
       "status": "known",
-      "id": "turn-7"
+      "id": "turn-8"
      }
     },
     "cause": "turn-retired"
@@ -837,15 +846,15 @@
      "status": "known",
      "id": "turn-7"
     },
-    "observedAtMs": 1791287998000,
+    "observedAtMs": 1791287997400,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
      "sequence": 41
     },
-    "revision": 12,
-    "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+    "revision": 6,
+    "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
    }
   },
   "session-ended": {
@@ -871,16 +880,16 @@
     },
     "turn": {
      "status": "known",
-     "id": "turn-8"
+     "id": "turn-9"
     },
-    "observedAtMs": 1791287999700,
+    "observedAtMs": 1791287998500,
     "ordering": {
      "status": "known",
      "authority": "codex-desktop",
      "epoch": "codex-epoch-1",
-     "sequence": 44
+     "sequence": 46
     },
-    "revision": 17
+    "revision": 12
    }
   },
   "moment-ended": {
@@ -1066,7 +1075,7 @@
    "data": {
     "requestId": "req-ack-1",
     "consumerId": "pixoo",
-    "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+    "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
    },
    "expiresat": "2026-10-06T12:00:05.000Z"
   },
@@ -1201,7 +1210,7 @@
      "family": "session",
      "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a"
     },
-    "revision": 17,
+    "revision": 12,
     "reason": "retired"
    }
   },
@@ -1222,7 +1231,7 @@
      "family": "session",
      "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d"
     },
-    "revision": 17,
+    "revision": 12,
     "reason": "retired"
    }
   },
@@ -1290,7 +1299,7 @@
     ]
    }
   },
-  "session-at-5": {
+  "session-at-2": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
    "id": "msg-session-root-5",
@@ -1304,8 +1313,8 @@
    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
    "data": {
     "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
-    "revision": 5,
-    "generation": 3,
+    "revision": 2,
+    "generation": 1,
     "identity": {
      "provider": "codex",
      "client": "desktop",
@@ -1320,34 +1329,10 @@
      "status": "known",
      "id": "turn-7"
     },
-    "activity": "idle",
-    "attention": [
-     {
-      "id": {
-       "status": "known",
-       "id": "approval-1"
-      },
-      "kind": "approval",
-      "turn": {
-       "status": "known",
-       "id": "turn-7"
-      }
-     }
-    ],
-    "notices": [
-     {
-      "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
-      "kind": "turn-ended",
-      "turn": {
-       "status": "known",
-       "id": "turn-7"
-      },
-      "acknowledgedBy": [
-       "nanoleaf"
-      ]
-     }
-    ],
-    "read": "unread",
+    "activity": "active",
+    "attention": [],
+    "notices": [],
+    "read": "unknown",
     "unavailable": [
      {
       "dimension": "parent",
@@ -1360,12 +1345,12 @@
      "epoch": "codex-epoch-1",
      "sequence": 39
     },
-    "observedAtMs": 1791287996000,
-    "lastEvidenceAtMs": 1791287996000,
+    "observedAtMs": 1791287991500,
+    "lastEvidenceAtMs": 1791288000000,
     "freshness": "current",
     "restartUncertain": false,
     "children": {
-     "active": 1,
+     "active": 0,
      "uncertain": 0
     },
     "label": {
@@ -1655,7 +1640,7 @@
    "base": "session",
    "set": {
     "/data/notices/1": {
-     "id": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc",
+     "id": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0",
      "kind": "turn-ended",
      "turn": {
       "status": "unknown"
@@ -2065,7 +2050,7 @@
    "name": "a generation after the revision",
    "base": "session",
    "set": {
-    "/data/generation": 13
+    "/data/generation": 8
    },
    "expect": "invalid-message",
    "detail": "payload /generation after the revision"
@@ -2134,7 +2119,7 @@
     "/data/event": {
      "kind": "notice-acknowledged",
      "consumerId": "pixoo",
-     "noticeId": "6e79577269cf3704d43b5cbd9703191a51c48e8354aa0e47c20a889cae17cbcc"
+     "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
     }
    },
    "expect": "invalid-message",
@@ -2353,13 +2338,13 @@
   {
    "name": "an entity above the sync revision survives the sync",
    "steps": [
-    "session-at-5",
+    "session-at-2",
     "sync-request-2",
     "session-claude-at-15",
     "sync-completed-at-14"
    ],
    "expect": [
-    "session-at-5",
+    "session-at-2",
     "session-claude-at-15"
    ]
   },

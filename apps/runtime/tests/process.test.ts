@@ -9,6 +9,7 @@ import {access, chmod, mkdir, readFile, symlink, writeFile} from 'node:fs/promis
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
@@ -48,12 +49,12 @@ async function launch(context: TestContext, script: string, args: readonly strin
 
 const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
 
-it('the shipped runtime starts with zero modules, serves health and stops cleanly on SIGTERM', async context => {
+it('the shipped runtime starts with the core and zero device modules, serves health and stops cleanly on SIGTERM', async context => {
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context)]);
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, 'ok');
-  assert.deepEqual(body.modules, []);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0}]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -205,7 +206,7 @@ it('a health port already in use names its reason in the runtime.failed record',
 });
 
 it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again', async context => {
-  // Hub #882: the lamp's outbox holds the outcome across the kill; the stand-in core keeps what it took in its own file.
+  // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps what its stand-in history took in its own file.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
   const of = (runtime: Spawned, module: string, event: string): LogRecord[] =>
@@ -245,6 +246,70 @@ async function grants(dir: string, sources: readonly string[]): Promise<{source:
   await chmod(join(dir, EDGE_GRANTS_FILE), 0o600);
   return list;
 }
+
+it('a kill between the core\'s commit and its publish loses and duplicates nothing: the restart sends each stored message once', async context => {
+  // Hub #831: the core's outbox holds the session's state and occurrence across the kill.
+  const dir = await stateDir(context);
+  const args = ['--port', '0', '--state-dir', dir];
+  const of = (runtime: Spawned, module: string, event: string): LogRecord[] =>
+    runtime.records().filter(record => record.attributes['bunny.module'] === module && record.event_name === event);
+  const heard = (runtime: Spawned, outcome: string): string[] => of(runtime, 'listener', 'message.received')
+    .filter(record => record.attributes['bunny.outcome'] === outcome).map(record => String(record.attributes['bunny.message.id']));
+
+  const crashed = spawnRuntime(context, FIXTURE, ['core-crash', ...args]);
+  assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
+  assert.deepEqual(heard(crashed, 'accepted'), [], 'nothing was published before the kill');
+  const database = new DatabaseSync(join(dir, 'modules', 'core.sqlite'), {readOnly: true});
+  const stored = database.prepare('SELECT id, kind FROM bunny_outbox ORDER BY seq').all().map(row => ({...row}) as {id: string; kind: string});
+  const committed = (database.prepare('SELECT revision FROM state').get() as {revision: number} | undefined)?.revision;
+  database.close();
+  assert.deepEqual(stored.map(row => row.kind), ['state', 'occurrence'], 'the session and its attention-raised, committed and unpublished');
+  assert.ok((committed ?? 0) > 0);
+
+  const restarted = await launch(context, FIXTURE, ['core-restart', ...args]);
+  await waitFor(() => heard(restarted, 'accepted').length >= 2, 10_000, 'the stored messages');
+  restarted.child.kill('SIGTERM');
+  assert.deepEqual(await restarted.exited, {code: 0, signal: null});
+  const ids = heard(restarted, 'accepted');
+  for (const {id} of stored) assert.equal(ids.filter(heardId => heardId === id).length, 1, `${id} went out once, with its stored id`);
+  assert.deepEqual(heard(restarted, 'duplicate'), [], 'nothing twice');
+
+  // Published, they are gone from the outbox: the next start sends none of them again.
+  const again = await launch(context, FIXTURE, ['core-restart', ...args]);
+  again.child.kill('SIGTERM');
+  assert.deepEqual(await again.exited, {code: 0, signal: null});
+  assert.equal(heard(again, 'accepted').filter(id => stored.some(row => row.id === id)).length, 0);
+});
+
+it('a core that fails ends the runtime with a failure exit, so the service manager restarts it whole', async context => {
+  // A store the core cannot read: the core's start fails, and with it the runtime.
+  const dir = await stateDir(context);
+  await mkdir(join(dir, 'modules'), {mode: 0o700});
+  const file = join(dir, 'modules', 'core.sqlite');
+  const database = new DatabaseSync(file);
+  database.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL); INSERT INTO state VALUES (1, 1, \'{"not": "a store"}\')');
+  database.close();
+  await chmod(file, 0o600);
+  const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
+  assert.deepEqual(await runtime.exited, {code: 1, signal: null});
+  const failed = runtime.records().find(record => record.event_name === 'runtime.module.failed');
+  assert.deepEqual([failed?.attributes['bunny.module'], failed?.attributes['bunny.phase']], ['core', 'start']);
+  const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
+  assert.deepEqual([fatal?.attributes['error.type'], fatal?.attributes['error.code'], fatal?.severity_text], ['RuntimeError', 'core-failed', 'FATAL']);
+  assert.equal(runtime.stdout(), '', 'no ready line');
+});
+
+it('a second runtime on the same state directory cannot take the core\'s lease: its core fails, and it exits, while the first serves on', async context => {
+  const dir = await stateDir(context);
+  const first = await launch(context, MAIN, ['--port', '0', '--state-dir', dir]);
+  const second = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
+  assert.deepEqual(await second.exited, {code: 1, signal: null}, 'refused once agent-state\'s three-second deadline passes');
+  assert.equal(second.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'core-failed');
+  const report = await health(first.url);
+  assert.equal(entry(report.body, 'core').state, 'running');
+  first.child.kill('SIGTERM');
+  assert.deepEqual(await first.exited, {code: 0, signal: null});
+});
 
 it('the shipped entry point runs with --simulate and --edge, and a remote part with a run grant reaches the edge', async context => {
   const dir = await stateDir(context);
