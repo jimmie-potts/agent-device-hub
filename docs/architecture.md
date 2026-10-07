@@ -105,7 +105,7 @@ mapping is in [MAPPING.md](../packages/event-contracts/MAPPING.md).
   or restarts, then follows live events. Copies of other owners' state are
   rebuilt by sync, not stored.
 - **Commands.** Commands are live-only requests with expiry. The core tracks
-  device commands, moments, mode changes and notices from sent to completed.
+  device commands, moments and mode changes from sent to completed.
 - **Conventions.** Every message uses profile 2.0: one CloudEvents envelope, one
   error body and code registry, and shared payload building blocks.
 - **Edges.** Remote parts (hooks, the dashboard, MCP clients, the CHOMPI bridge
