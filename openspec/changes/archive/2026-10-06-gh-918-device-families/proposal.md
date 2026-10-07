@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- **`device/2.0`**, a state family for one device's full record: its kind and label, availability, configuration revision and generation, capabilities (power, brightness, native modes, moments, media, scenes, zones and preview, each supported or not, with constraints), desired and observed values with tagged unknowns and an evidence time, the pending count, the last outcome and external control.
+- **`device/2.0`**, a state family for one device's full record: its kind and label, availability, configuration revision and generation, capabilities (power, brightness, native modes, moments, media, scenes, zones and preview, each supported or not, with constraints), desired and observed values with tagged unknowns and an evidence time, the pending count and pending command kinds, the last outcome, the last transmission and external control. Its `id` is a routing ID (a new building block): an identifier that is also an SDK routing-key token.
 - **General command families** mapped from v1's closed union: `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control` and `device-mode-set`, each with the optional configuration revision and generation guards. `commandSupported` carries v1 admission's capability rule.
 - **Core commands:** `notice-acknowledge`, which a consumer sends to the core to acknowledge one turn-ended notice for its own consumer ID, and `playback-control` for the owner of the `playback` record. The acknowledgment replaces the `lifecycle` family's `notice-acknowledged` event, which the core no longer accepts as a hook observation.
 - **The Hub-mode table:** Nanoleaf Work, Quiet and Free one to one; Pixoo Work and Quiet to Monitor and Free to Media; LIFX, Tidbyt and playback do not take part. It lives in the package README and in `HUB_MODE_TABLE`/`nativeMode`.
@@ -28,5 +28,5 @@ None.
   - `fixtures/v2/devices.json` and `fixtures/v2/families.json`;
   - `tests/devices.test.mjs`, `tests/status.test.mjs` and `tests/mapping.test.mjs`;
   - the `./v2/devices` and `./v2/status` exports, and `@jimmie-potts/agent-status` as a test devDependency (one lockfile line).
-- **Docs:** the package README and MAPPING.md, the event contract checks in `docs/development.md` and one sentence in `docs/architecture.md`.
+- **Docs:** the package README and MAPPING.md, the event contract checks in `docs/development.md`, one sentence in `docs/architecture.md`, and ADR 0012's acknowledgment sentence under "Inbox and history", corrected with a dated clause in its inbox-scope amendment (owner decision in review, 2026-10-06).
 - **Nothing else:** no runtime, SDK, module, Hub, controller or device change. `packages/agent-status` and controller contract v1 stay unchanged for the old controllers until #839. Delivery target: source-only.

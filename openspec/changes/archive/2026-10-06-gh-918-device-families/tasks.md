@@ -16,3 +16,10 @@
 
 - [x] 3.1 Document the device families, the Hub-mode table and the status helper in the package README; export `./v2/devices` and `./v2/status`; update `docs/development.md` and `docs/architecture.md`.
 - [x] 3.2 Run build, typecheck, `lint:js`, `test:events:built`, `test:events:python`, `test:sdk:built`, `test:runtime:built`, `test:workflow`, `check:workflow` and strict spec validation, with negative controls; then sync and archive this change. Evidence: every check exits zero, and sixteen negative controls each fail a named test.
+
+## 4. Review round 1
+
+- [x] 4.1 P2-1: keep the status helper's default, where any consumer's acknowledgment retires `done`, and correct ADR 0012's "Inbox and history" sentence with a dated clause in its inbox-scope amendment (owner decision, 2026-10-06). Make the spec, design.md, the README, MAPPING.md and the `notice-acknowledge` schema say the same. Evidence: the status test pinning the default and the named-consumer case.
+- [x] 4.2 P2-2: give `device/2.0` `pendingKinds` and `lastTransmission`, map 1.x `pending[].command.kind` and `lastSuccessfulSend` to them, and drop the tracker disposition. Evidence: fixtures and invalid cases for both, and the controller snapshot conversion that checks each 1.x send and pending kind.
+- [x] 4.3 Standards coverage: one case per required capability, per unroutable ID class and length for the record ID and every command family's subject, and per schema bound. Add the routing-key subject check to `moment-play` and `playback-control`, and narrow the `playback` record ID to the new `routingId` block. Evidence: red commit 4d4f1551, then green.
+- [x] 4.4 Specification P3s: device IDs unique across modules, when to send the guards, and design.md's statement about PR #913. Evidence: README, spec and design.md text.
