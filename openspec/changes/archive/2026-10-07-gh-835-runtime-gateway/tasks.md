@@ -59,4 +59,4 @@
 - [x] 9.3 Apply the routing-ID rule to in-process states and removals.
 - [x] 9.4 Test the lock takeover that finds a fresh lock.
 - [x] 9.5 Drop device-limited grants (owner decision, 2026-10-07): remove the edge's `excluded` and `limited` permissions, its sync narrowing and the `accept` filter, the gateway's record filtering and its device checks on contributions, links and MCP tools, and the credentials' `devices`; make the conversion drop each device grant and list, by ID, each credential it widened.
-
+- [x] 9.6 After rebasing onto #973, expect the bus's `invalid-message` for a misrouted Tidbyt command in the module's test, README and `runtime-tidbyt` specification, and state that a module that never served a family is not counted as its owner.

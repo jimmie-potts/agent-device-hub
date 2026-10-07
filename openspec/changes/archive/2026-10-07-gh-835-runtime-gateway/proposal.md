@@ -25,6 +25,7 @@ None.
 - `bunny-sdk`: module API 1.2 contributions in the manifest checks, edge grants by calls and routing keys, a host's own authentication, declared sources, command memory and stream liveness.
 - `bunny-message-profile`: the `approval-recover` core command family, and `duplicate-conflict` for a command sent again.
 - `shared-observability-contract`: artifact 1.4.0 with profile 1.4.
+- `lifx-module`, `runtime-playback` and `runtime-tidbyt`: a command whose subject names another device than its key never reaches the module, since the bus refuses it with `invalid-message`.
 
 ## Impact
 

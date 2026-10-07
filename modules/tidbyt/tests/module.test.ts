@@ -6,7 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {join} from 'node:path';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
 import {picture} from '../src/picture.js';
 import {statusFrame, statusView} from '../src/status.js';
@@ -530,8 +530,9 @@ test('polling that changes nothing publishes nothing, and the device record offe
   const draft = {type: 'org.bunny.power.set.requested', subject: 'tidbyt', dataschema: 'https://bunny.invalid/events/power-set/2.0', data: {on: true}};
   const refused = await requester.request('bunny.cmd.power-set.tidbyt', draft, {timeoutMs: 5000});
   assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unsupported-capability');
-  const wrong = await requester.request('bunny.cmd.power-set.tidbyt', {...draft, subject: 'other'}, {timeoutMs: 5000});
-  assert.equal(wrong.status === 'rejected' && wrong.error.error.code, 'invalid-request');
+  // A subject that is not the key's Tidbyt never reaches the module: the bus refuses it on every transport (Hub #835).
+  await assert.rejects(requester.request('bunny.cmd.power-set.tidbyt', {...draft, subject: 'other'}, {timeoutMs: 5000}),
+    (error: unknown) => error instanceof SdkError && error.body.error.code === 'invalid-message', 'a subject that is not the key\'s Tidbyt');
   // `device` is a family several modules serve, so a reader names this module as its owner (#967).
   const sync = await requester.sync(['device'], () => {}, {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'});
   assert.equal(sync.status, 'synced');
