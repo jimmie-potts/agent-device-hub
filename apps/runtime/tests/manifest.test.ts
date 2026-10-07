@@ -7,23 +7,27 @@ import {contextOf, entry, fixture, health, it, run, setMode} from './support.js'
 it('refuses a module whose API version does not match, and starts the others', async context => {
   const started: string[] = [];
   const track = (name: string, apiVersion: string) => fixture(name, () => { started.push(name); }, apiVersion);
-  const modules = [track('newer-major', '2.0'), track('newer-minor', '1.1'), track('older-major', '0.9'), track('malformed', 'one'), track('current', '1.0')];
+  const modules = [
+    track('newer-major', '2.0'), track('newer-minor', '1.2'), track('older-major', '0.9'), track('malformed', 'one'), track('current', '1.1'),
+    track('older-minor', '1.0'),
+  ];
   const {runtime, logs} = await run(context, {modules});
-  assert.deepEqual(started, ['current']);
+  assert.deepEqual(started.sort(), ['current', 'older-minor'], 'an older minor version only lacks later additions');
 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200, 'the runtime itself answers');
   assert.equal(body.status, 'degraded');
   const mismatch = (apiVersion: string) => ({
     apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
-    reason: {code: 'unsupported-version', detail: `module API ${apiVersion} does not match this runtime's 1.0`},
+    reason: {code: 'unsupported-version', detail: `module API ${apiVersion} does not match this runtime's 1.1`},
   });
   assert.deepEqual(body.modules, [
     {name: 'newer-major', ...mismatch('2.0')},
-    {name: 'newer-minor', ...mismatch('1.1')},
+    {name: 'newer-minor', ...mismatch('1.2')},
     {name: 'older-major', ...mismatch('0.9')},
     {name: 'malformed', apiVersion: 'one', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'}},
-    {name: 'current', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
+    {name: 'current', apiVersion: '1.1', state: 'running', healthy: true, syncRestarts: 0},
+    {name: 'older-minor', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
   ]);
   assert.equal(modules.reduce((stops, module) => stops + module.stops, 0), 0, 'a refused module is never stopped, and the running one not yet');
   const refusals = logs.filter(record => record.event_name === 'runtime.module.refused');

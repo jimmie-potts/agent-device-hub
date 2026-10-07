@@ -338,3 +338,32 @@ it('--edge refuses a missing grants file and a grant that acts as the core or a 
     assert.equal(runtime.stdout(), '', 'no ready line');
   }
 });
+
+it('--config reads a private configuration file, and a file the runtime cannot trust names its reason in runtime.failed', async context => {
+  const root = await stateDir(context);
+  const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {}});
+  const write = async (name: string, text: string, mode = 0o600): Promise<string> => {
+    await writeFile(join(root, name), text, {mode});
+    await chmod(join(root, name), mode);
+    return join(root, name);
+  };
+  const good = await write('config.json', valid);
+  const cases: readonly (readonly [string, string])[] = [
+    ['relative/config.json', 'config-relative'],
+    [join(root, 'missing.json'), 'config-missing'],
+    [await write('shared.json', valid, 0o644), 'config-not-private'],
+    [await write('broken.json', '{'), 'config-invalid'],
+  ];
+  await symlink(good, join(root, 'linked.json'));
+  for (const [file, code] of [...cases, [join(root, 'linked.json'), 'config-link'] as const]) {
+    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', file]);
+    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, file);
+    assert.deepEqual(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes,
+      {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, file);
+    assert.equal(runtime.stdout(), '', `${file}: no ready line`);
+  }
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
+  assert.equal((await health(runtime.url)).body.status, 'ok');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+});

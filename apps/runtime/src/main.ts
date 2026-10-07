@@ -1,4 +1,5 @@
-// The runtime's entry point: `node apps/runtime/dist/src/main.js --port <port> [--state-dir <dir>] [--lag-limit-ms <ms>]`.
+// The runtime's entry point: `node apps/runtime/dist/src/main.js --port <port> [--state-dir <dir>] [--config <file>]`, with
+// the options `parseArguments` lists.
 // It imports only the launcher; everything else loads through it.
 import {launch} from './launch.js';
 

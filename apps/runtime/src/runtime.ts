@@ -10,7 +10,7 @@ import {diagnosticWriter} from './diagnostics.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
-import {RuntimeError, prepareStateDirectory, readEdgeGrants, type EdgeGrant} from './state.js';
+import {RuntimeError, prepareStateDirectory, readEdgeGrants, readRuntimeConfig, type EdgeGrant, type RuntimeConfig} from './state.js';
 import {startTracing, type SpanSink} from './tracing.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
@@ -46,6 +46,11 @@ export type RuntimeOptions = {
   onCoreFailure?: (error: unknown) => void;
   /** The private state directory. It is created owner-only when missing; see `prepareStateDirectory`. */
   stateDir: string;
+  /**
+   * The private configuration file (`--config`) that holds each module's own section, read before the runtime serves;
+   * see `readRuntimeConfig`. Without one, a module that declares `configure` is refused.
+   */
+  configFile?: string;
   /** The loopback port for health. 0 picks a free port. */
   port: number;
   /** The clock for the bus, the modules and log records. Defaults to `Date.now()`. */
@@ -172,8 +177,9 @@ function edgeValidator(schemas: Readonly<Record<string, object>>): MessageValida
 }
 
 /**
- * Prepares the state directory and reads the edge's grants, if any, serves health, then starts the modules and
- * resolves when each start has settled. The edge serves only once every start has settled.
+ * Prepares the state directory and reads the configuration file and the edge's grants, if any, serves health, then
+ * admits and starts the modules and resolves when each start has settled. The edge serves only once every start has
+ * settled.
  */
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
@@ -183,6 +189,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const logs = new LogWriter(options.log ?? stderrSink, options.logLevel ?? 'info', clock, runtimeResource(options.environment ?? 'development', INSTANCE_ID));
   const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
+  const config: RuntimeConfig | undefined = options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile);
   const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
@@ -196,7 +203,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   const tracing = await startTracing(logs.resource, options.spans ?? keep, log);
   const host = new ModuleHost(modules, {
-    clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}),
+    clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
   });
   const startedAtMs = clock.now();

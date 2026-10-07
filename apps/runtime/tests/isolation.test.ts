@@ -1,6 +1,8 @@
-// Failure isolation (ADR 0012): a module's thrown error, rejected promise or device timeout stops only that module,
-// through its participant's close, and health shows it unhealthy. The other modules keep working, and a module's stop
-// never waits on another module's handler.
+// Failure isolation (ADR 0012, policy A): a device's errors and timeouts are not module failures. A module turns them
+// into outcomes and an `unavailable` device state, and the module test kit fails a module whose start waits on its
+// device (Hub #919). An error that escapes a module, thrown, rejected or a start that outlasts its deadline, stops only
+// that module, through its participant's close, and health shows it unhealthy. The other modules keep working, and a
+// module's stop never waits on another module's handler.
 import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Worker} from 'node:worker_threads';
@@ -92,7 +94,7 @@ it('a module whose start rejects or throws is stopped and shown unhealthy, while
   await stillWorks(probe);
 });
 
-it('a module whose start outlasts the start deadline, as when its device never answers, is stopped', async context => {
+it('a module whose start outlasts the start deadline, as when it waits on something that never answers, is stopped', async context => {
   const silent = fixture('silent', () => deferred<undefined>().promise);
   const probe = fixture('probe');
   const {runtime, logs} = await run(context, {modules: [silent, steady(), probe], startTimeoutMs: 50});
@@ -105,7 +107,7 @@ it('a module whose start outlasts the start deadline, as when its device never a
   await stillWorks(probe);
 });
 
-it('a module whose scheduled device call times out is stopped', async context => {
+it('a module whose scheduled callback leaves its device call\'s timeout unhandled is stopped', async context => {
   const polling = fixture('polling', ({scheduler}) => {
     scheduler.after(1, async () => {
       await Promise.resolve();

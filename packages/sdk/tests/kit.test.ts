@@ -1,11 +1,11 @@
-// The module test kit (Hub #882): one conformance suite that every module runs in a few lines. A small bulb module
-// passes it; each broken variant fails exactly the check that names its fault.
+// The module test kit (Hub #882, #919): one conformance suite that every module runs in a few lines. A small bulb module
+// and a configured beacon pass it; each broken variant fails exactly the checks that see its fault.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, Outbox, type BunnyModule, type Command, type ModuleContext, type StateDraft} from '../src/index.js';
 import {CHECKS, ModuleHarness, checkModuleRecord, conformanceChecks, moduleConformance, type ConformanceSpec, type HarnessRecord} from '../src/testing/index.js';
 import {it} from './support.js';
@@ -15,9 +15,16 @@ const BULB_SCHEMA = `${BASE}kit-bulb/2.0`;
 const SWITCH_SCHEMA = `${BASE}kit-bulb-switch/2.0`;
 const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name}`});
 const power = {enum: ['on', 'off']};
+const BEACON_SCHEMA = `${BASE}kit-beacon/2.0`;
+const PING_SCHEMA = `${BASE}kit-beacon-ping/2.0`;
 const schemas = {
   [BULB_SCHEMA]: {type: 'object', additionalProperties: false, required: ['id', 'revision', 'power'], properties: {id: block('id'), revision: block('revision'), power}},
   [SWITCH_SCHEMA]: {type: 'object', additionalProperties: false, required: ['requestId', 'power'], properties: {requestId: block('requestId'), power}},
+  [BEACON_SCHEMA]: {
+    type: 'object', additionalProperties: false, required: ['id', 'revision', 'availability'],
+    properties: {id: block('id'), revision: block('revision'), availability: {enum: ['unknown', 'available', 'unavailable']}, label: {type: 'string', maxLength: 64}},
+  },
+  [PING_SCHEMA]: {type: 'object', additionalProperties: false, required: ['requestId'], properties: {requestId: block('requestId')}},
 };
 
 /** What a broken bulb gets wrong. */
@@ -217,6 +224,132 @@ it('the harness stops a module as the runtime does: a participant without close,
   assert.ok(performance.now() - started < 2000, 'the stop deadline ends the wait');
   assert.equal(hanging.databaseOpen(), false);
   assert.equal(hanging.failures.length, 1, 'a stop past its deadline is a failure');
+});
+
+/** The synthetic secret the beacon's token file holds (Hub #919). It must never reach a message, record or reply. */
+const SECRET = 'tok_SYNTHETIC919';
+
+/** A beacon's device: online, or offline and never answering, as a device that is switched off, until the call ends. */
+class Lantern {
+  readonly tokens: string[] = [];
+  readonly #online: boolean;
+
+  constructor(online: boolean) {
+    this.#online = online;
+  }
+
+  reach(token: string, signal: AbortSignal): Promise<void> {
+    this.tokens.push(token);
+    if (this.#online) return Promise.resolve();
+    return new Promise((_, reject) => { signal.addEventListener('abort', () => { reject(new Error('the beacon did not answer')); }, {once: true}); });
+  }
+}
+
+/** What a broken beacon gets wrong: it waits on its device in start, or puts its secret in a record, a message or a reply. */
+type BeaconFault = {waitInStart?: boolean; leak?: 'log' | 'message' | 'reply'};
+type Beacon = {id: string; revision: number; availability: 'unknown' | 'available' | 'unavailable'; label?: string};
+
+/**
+ * A configured module (Hub #919): its section names the beacon's address and its token file. Its start reads the token,
+ * keeps a file in its private folder and serves its beacon's availability, and reaches the beacon only afterwards, on
+ * its scheduler, with a deadline: a beacon that never answers is `unavailable` (policy A). It refuses every command.
+ */
+function beacon(device: Lantern, fault: BeaconFault = {}): BunnyModule<{address: string}> {
+  return {
+    manifest: {
+      name: 'beacon', apiVersion: '1.1',
+      configure: section => {
+        const {address, secrets} = section as {address?: unknown; secrets?: {token?: unknown}};
+        if (typeof address !== 'string' || secrets?.token === undefined) return errorBody('invalid-request', {detail: 'a beacon needs an address and a token'});
+        return {config: {address}, devices: ['beacon-1']};
+      },
+    },
+    async start({sdk, config, secrets, files, scheduler, log}) {
+      const token = await secrets.read('token');
+      await writeFile(join(files(), 'layout.json'), JSON.stringify({address: config.address}), {mode: 0o600});
+      const beacon: Beacon = {id: 'beacon-1', revision: 0, availability: 'unknown', ...(fault.leak === 'message' ? {label: token} : {})};
+      const state = (): StateDraft<Beacon> => ({type: 'org.bunny.kit-beacon.updated', subject: beacon.id, dataschema: BEACON_SCHEMA, data: {...beacon}});
+      await sdk.serveSync(['kit-beacon'], () => ({revision: beacon.revision, states: [state()]}));
+      await sdk.respond('bunny.cmd.kit-beacon.*', () => errorBody('invalid-state', {detail: fault.leak === 'reply' ? `the beacon holds ${token}` : 'the beacon takes no commands'}));
+      if (fault.leak === 'log') log.info('operation.completed', {'bunny.message.id': token});
+      if (fault.leak === 'message') await sdk.publish('bunny.state.kit-beacon.beacon-1', {kind: 'state', ...state()});
+      const reach = async (): Promise<void> => {
+        const controller = new AbortController();
+        const cancel = scheduler.after(100, () => { controller.abort(); });
+        try {
+          await device.reach(token, controller.signal);
+          beacon.availability = 'available';
+        } catch {
+          beacon.availability = 'unavailable';
+        } finally {
+          cancel();
+        }
+        beacon.revision += 1;
+        await sdk.publish('bunny.state.kit-beacon.beacon-1', {kind: 'state', ...state()});
+      };
+      if (fault.waitInStart === true) await device.reach(token, new AbortController().signal);
+      else scheduler.after(0, reach);
+    },
+    stop: () => {},
+  };
+}
+
+const beaconSpec = (fault: BeaconFault = {}, config: unknown = {address: '192.0.2.20', secrets: {token: '/nowhere/beacon-token'}}): ConformanceSpec => ({
+  create: () => beacon(new Lantern(true), fault),
+  schemas,
+  serves: ['kit-beacon'],
+  config,
+  secrets: {token: SECRET},
+  refused: {key: 'bunny.cmd.kit-beacon.beacon-1', draft: {type: 'org.bunny.kit-beacon.ping.requested', subject: 'beacon-1', dataschema: PING_SCHEMA, data: {}}, code: 'invalid-state'},
+  offline: {
+    create: () => beacon(new Lantern(false), fault),
+    unavailable: (message: Message) => message.dataschema === BEACON_SCHEMA && (message.data as Partial<Beacon>).availability === 'unavailable',
+  },
+  timeoutMs: 1000,
+});
+
+it('a configured module gets its own section, secret and folder, and passes every check, policy A\'s included', async () => {
+  assert.deepEqual(conformanceChecks(beaconSpec()).map(check => check.name), [CHECKS.manifest, CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
+  assert.deepEqual(await failing(beaconSpec()), []);
+});
+
+it('the kit fails a module whose start waits on its device: policy A\'s check', async () => {
+  // Reached in start, an online beacon answers at once, so only the check with an offline beacon catches it.
+  assert.deepEqual(await failing(beaconSpec({waitInStart: true})), [CHECKS.offline]);
+});
+
+it('the kit catches a configuration the module refuses or lacks: the module never starts', async () => {
+  const every = [CHECKS.manifest, CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
+  assert.deepEqual(await failing(beaconSpec({}, {address: 7})), every);
+  assert.deepEqual(await failing({...beaconSpec(), config: undefined}), every, 'a module with configure needs a section');
+});
+
+it('the kit catches a module that puts a secret it read in a log record, a message or a reply', async () => {
+  assert.deepEqual(await failing(beaconSpec({leak: 'log'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
+  assert.deepEqual(await failing(beaconSpec({leak: 'message'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
+  assert.deepEqual(await failing(beaconSpec({leak: 'reply'})), [CHECKS.refuses]);
+});
+
+it('the harness gives a module only the secrets its section names, from memory, and a private folder', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'bunny-harness-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  let seen: ModuleContext | undefined;
+  const harness = new ModuleHarness({manifest: {name: 'probe', apiVersion: '1.1'}, start: given => { seen = given; }, stop: () => {}}, {
+    bus: new InProcessBus(), stateDir: dir, section: {secrets: {token: '/nowhere/token', missing: '/nowhere/missing'}}, secrets: {token: `${SECRET}\n`, other: 'x'},
+  });
+  await harness.start();
+  assert.ok(seen);
+  assert.equal(await seen.secrets.read('token'), SECRET, 'without its trailing line break');
+  const code = (expected: string) => (error: unknown): boolean => error instanceof Error && 'body' in error && (error.body as {error: {code: string}}).error.code === expected;
+  await assert.rejects(seen.secrets.read('other'), code('not-found'), 'a secret the section does not name');
+  await assert.rejects(seen.secrets.read('missing'), code('not-found'), 'a named secret with no file');
+  const folder = seen.files();
+  assert.equal(folder, join(dir, 'probe'));
+  assert.equal((await stat(folder)).mode & 0o777, 0o700);
+  assert.equal(seen.config, undefined, 'a module without configure has no configuration');
+  await harness.stop();
+  await assert.rejects(seen.secrets.read('token'), code('invalid-state'));
+  assert.throws(() => seen?.files(), code('invalid-state'));
 });
 
 it('loading the kit neither loads nor starts node:test, so another runner can use its checks', () => {

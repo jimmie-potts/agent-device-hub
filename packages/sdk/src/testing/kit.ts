@@ -10,6 +10,10 @@
 // The kit also checks the baseline records and spans (Hub #949): the bus's records of the accepted and refused commands,
 // with the command's trace; their request, queue and execute spans and their parents; and the outcome's publication,
 // recorded once, with its replay linked to the stored context. No span may lose its parent.
+//
+// A module opens only local resources in start and reaches its device later, so the kit also starts a module whose
+// device never answers and fails it when that start does not finish, or when it never reports the device unavailable.
+// No message, record or reply may carry one of the module's secrets (Hub #919).
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -18,7 +22,7 @@ import {MessageValidator, compareDelivery, type ErrorCode, type Message} from '@
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {Diagnostic} from '../diagnostics.js';
 import {InProcessBus} from '../in-process.js';
-import {checkManifest, type BunnyModule} from '../module.js';
+import {checkConfiguration, checkManifest, type BunnyModule} from '../module.js';
 import type {CommandDraft, Participant, RequestResult, TraceContext} from '../sdk.js';
 import {schemaFamily, type Snapshot} from '../sync.js';
 import {traceFields} from '../trace.js';
@@ -40,6 +44,20 @@ export type ConformanceSpec = {
   accepted?: {key: string; draft: CommandDraft<object>};
   /** A command the module refuses, and the registry code it refuses it with, if it answers any. */
   refused?: {key: string; draft: CommandDraft<object>; code: ErrorCode};
+  /**
+   * The module's section of the runtime's configuration file, as the runtime would read it, for a module that takes one.
+   * The manifest check fails when the runtime would refuse it.
+   */
+  config?: unknown;
+  /** The synthetic text of each secret file the section names, by name. No message, record or reply may carry one. */
+  secrets?: Readonly<Record<string, string>>;
+  /**
+   * Policy A (ADR 0012, "Failure isolation"), for a module that reaches a device: a fresh instance whose simulated
+   * device never answers, with the same section and secrets, and how to recognize the state message by which the module
+   * reports that device `unavailable`. Its start must finish within `startWithinMs`, 1000 by default, because start opens
+   * only local resources and the module reaches its device later.
+   */
+  offline?: {create: () => BunnyModule; unavailable: (message: Message) => boolean; startWithinMs?: number};
   /** How long a start, stop, request, sync or awaited message may take, in milliseconds. Defaults to 5000. */
   timeoutMs?: number;
 };
@@ -54,6 +72,7 @@ export type ConformanceCheck = {name: string; run: () => Promise<void>};
 export const CHECKS = {
   manifest: 'declares a manifest the runtime accepts',
   lifecycle: 'starts, and stops leaving nothing behind',
+  offline: 'starts while its device never answers, and reports it unavailable',
   serves: 'serves its families through sync',
   copies: 'copies the families it follows',
   accepts: 'accepts a command and replies',
@@ -62,6 +81,8 @@ export const CHECKS = {
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/** How long a module's start may take while its device never answers: long enough for local resources only. */
+const OFFLINE_START_MS = 1000;
 const flush = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
 
 /** Rejects when `work` has not settled within `timeoutMs`. */
@@ -99,6 +120,8 @@ class World {
   readonly spans = new RecordedSpans();
   /** The trace contexts of the replies the kit's requests got. */
   readonly #replies: TraceContext[] = [];
+  /** What the kit's own participant got back: request results with their replies, and synced states. */
+  readonly answers: unknown[] = [];
   readonly #invalid: string[] = [];
   readonly #errors: unknown[] = [];
   readonly #validator = new MessageValidator();
@@ -144,9 +167,13 @@ class World {
     return world;
   }
 
-  /** A new instance of the module on this world's bus and state directory. */
-  fresh(): ModuleHarness {
-    const harness = new ModuleHarness(this.#spec.create(), {bus: this.bus, stateDir: this.#dir, stopTimeoutMs: this.timeoutMs, spans: this.spans});
+  /** A new instance of the module, from `create`, on this world's bus and state directory, with the spec's section and secrets. */
+  fresh(create: () => BunnyModule = this.#spec.create): ModuleHarness {
+    const {config, secrets} = this.#spec;
+    const harness = new ModuleHarness(create(), {
+      bus: this.bus, stateDir: this.#dir, stopTimeoutMs: this.timeoutMs, spans: this.spans,
+      ...(config === undefined ? {} : {section: config}), ...(secrets === undefined ? {} : {secrets}),
+    });
     this.#hosted.push(harness);
     return harness;
   }
@@ -163,6 +190,7 @@ class World {
   async request(command: {key: string; draft: CommandDraft<object>}): Promise<RequestResult> {
     const result = await this.probe.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
     if (result.status !== 'uncertain' && result.reply !== undefined) this.#replies.push({traceparent: result.reply.traceparent});
+    this.answers.push(result);
     return result;
   }
 
@@ -204,7 +232,8 @@ class World {
 
   /**
    * Every message the world saw followed profile 2.0, every record the module logged is one the runtime writes whole as a
-   * diagnostic-contract record, no span lost its parent, and no handler, timer or worker of the module failed.
+   * diagnostic-contract record, no span lost its parent, no message, record or answer carries one of the module's
+   * secrets, and no handler, timer or worker of the module failed.
    */
   async verify(): Promise<void> {
     await flush();
@@ -215,7 +244,23 @@ class World {
     const unwritten = this.#hosted.flatMap(harness => harness.logs.map(entry => checkModuleRecord(harness.name, entry)))
       .filter(problem => problem !== undefined);
     assert.deepEqual(unwritten, [], 'every log record is a registered module record');
+    assert.deepEqual(this.#leaks(), [], 'no message, log record or answer carries a secret the module read');
     assert.deepEqual([...this.#errors, ...this.#hosted.flatMap(harness => harness.failures)], [], 'no handler, timer or worker of the module failed');
+  }
+
+  /** Where one of the spec's secrets appears, named by kind and never quoted. */
+  #leaks(): string[] {
+    const secrets = Object.values(this.#spec.secrets ?? {}).map(text => text.replace(/[\r\n]+$/, '')).filter(text => text !== '');
+    if (secrets.length === 0) return [];
+    const carries = (value: unknown): boolean => {
+      const text = JSON.stringify(value);
+      return secrets.some(secret => text.includes(secret) || text.includes(JSON.stringify(secret).slice(1, -1)));
+    };
+    const places: [string, readonly unknown[]][] = [
+      ['a published message', this.seen], ['a sync request', this.syncRequests], ['an answer the kit got', this.answers],
+      ['a log record', this.#hosted.flatMap(harness => harness.logs)],
+    ];
+    return places.filter(([, values]) => values.some(carries)).map(([place]) => `${place} carries a secret`);
   }
 
   async close(): Promise<void> {
@@ -245,10 +290,23 @@ async function inWorld(spec: ConformanceSpec, body: (world: World) => Promise<vo
 type Command = {key: string; draft: CommandDraft<object>};
 
 const manifest = (spec: ConformanceSpec): Promise<void> => {
-  const problem = checkManifest(spec.create().manifest);
+  const declared = spec.create().manifest;
+  const problem = checkManifest(declared);
   assert.equal(problem, undefined, problem?.detail);
+  const configured = checkConfiguration(declared, spec.config);
+  assert.equal(configured.status, 'accepted', configured.status === 'refused' ? `the runtime would refuse its section: ${configured.problem.detail}` : '');
   return Promise.resolve();
 };
+
+/** Policy A: started while its device never answers, the module still starts at once and reports the device unavailable. */
+const offline = (spec: ConformanceSpec, given: NonNullable<ConformanceSpec['offline']>): Promise<void> => inWorld(spec, async world => {
+  world.harness = world.fresh(given.create);
+  const limit = given.startWithinMs ?? OFFLINE_START_MS;
+  await within(world.harness.start(), limit, 'while its device never answers, the module\'s start, which under policy A opens only local resources,');
+  const source = world.harness.source;
+  await waitFor(() => world.seen.find(message => message.source === source && message.kind === 'state' && given.unavailable(message)), world.timeoutMs,
+    'a state that reports the device unavailable');
+});
 
 const lifecycle = (spec: ConformanceSpec): Promise<void> => inWorld(spec, async world => {
   await world.start();
@@ -274,6 +332,7 @@ const serves = (spec: ConformanceSpec, families: readonly string[]): Promise<voi
   world.check(result.message, 'sync.completed');
   for (const state of result.copy.states()) {
     world.check(state, 'a synced state');
+    world.answers.push(state);
     assert.equal(state.source, world.harness.source);
     assert.ok(families.includes(schemaFamily(state.dataschema) ?? ''), `${state.dataschema} is a served family`);
   }
@@ -354,7 +413,8 @@ export function conformanceChecks(spec: ConformanceSpec): ConformanceCheck[] {
     {name: CHECKS.manifest, run: () => manifest(spec)},
     {name: CHECKS.lifecycle, run: () => lifecycle(spec)},
   ];
-  const {serves: served, copies: copied, accepted, refused} = spec;
+  const {serves: served, copies: copied, accepted, refused, offline: unreachable} = spec;
+  if (unreachable !== undefined) checks.push({name: CHECKS.offline, run: () => offline(spec, unreachable)});
   if (served !== undefined) checks.push({name: CHECKS.serves, run: () => serves(spec, served)});
   if (copied !== undefined) checks.push({name: CHECKS.copies, run: () => copies(spec, copied.families)});
   if (accepted !== undefined) checks.push({name: CHECKS.accepts, run: () => accepts(spec, accepted)});

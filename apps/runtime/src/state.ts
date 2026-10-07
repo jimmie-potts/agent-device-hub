@@ -1,6 +1,7 @@
-// The runtime's private state directory and each module's own SQLite file in it. Runtime state stays outside every Git
+// The runtime's private state directory, each module's own SQLite file and private folder in it, and the private files
+// it reads: its configuration file and the modules' secret files (Hub #919). Runtime state stays outside every Git
 // checkout and off Windows mounts, private to its owner, as the Hub's stores are (AGENTS.md, ADR 0011).
-import {closeSync, constants, fstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
+import {closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
 import {lstat, mkdir, open, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -19,18 +20,26 @@ export class RuntimeError extends Error {
 const missing = (error: unknown): boolean =>
   error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
 
-/** Refuses a path with a `.git` directory or worktree file in it or in any directory above it. */
-async function outsideCheckouts(path: string): Promise<void> {
+/** The Git checkout `path` lies in, the nearest directory at or above it with a `.git` directory or worktree file, if any. */
+async function checkoutOf(path: string): Promise<string | undefined> {
   for (let parent = path; ; parent = dirname(parent)) {
     try {
       await lstat(join(parent, '.git'));
-      throw new RuntimeError('state-dir-checkout', `the state directory is inside a Git checkout: ${parent}`);
+      return parent;
     } catch (error) {
       if (!missing(error)) throw error;
     }
-    if (parent === dirname(parent)) return;
+    if (parent === dirname(parent)) return undefined;
   }
 }
+
+/** Refuses a path with a `.git` directory or worktree file in it or in any directory above it. */
+async function outsideCheckouts(path: string): Promise<void> {
+  const checkout = await checkoutOf(path);
+  if (checkout !== undefined) throw new RuntimeError('state-dir-checkout', `the state directory is inside a Git checkout: ${checkout}`);
+}
+
+const onWindowsMount = (path: string): boolean => path === '/mnt' || path.startsWith('/mnt/');
 
 /** The nearest part of `path` that exists, with its `lstat`, which does not follow a link at its end. */
 async function nearestExisting(path: string): Promise<{path: string; info: Stats}> {
@@ -53,7 +62,7 @@ const linked = (): RuntimeError => new RuntimeError('state-dir-link', 'the state
 export async function prepareStateDirectory(dir: string): Promise<string> {
   if (!isAbsolute(dir)) throw new RuntimeError('state-dir-relative', 'the state directory must be an absolute path');
   const path = resolve(dir);
-  if (path === '/mnt' || path.startsWith('/mnt/')) throw new RuntimeError('state-dir-mount', 'the state directory must not be on a Windows mount');
+  if (onWindowsMount(path)) throw new RuntimeError('state-dir-mount', 'the state directory must not be on a Windows mount');
   const uid = process.getuid?.();
   if (uid === undefined) throw new RuntimeError('posix-host-required', 'the runtime needs a POSIX host');
   const existing = await nearestExisting(path);
@@ -91,6 +100,138 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
   const database = new DatabaseSync(file);
   database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
   return database;
+}
+
+/**
+ * Creates a module's private folder, `modules/<name>/` in the state directory beside its SQLite file, owner-only, and
+ * returns its absolute path. Refuses, with `module-folder-not-private`, a `modules` directory or a folder that is a link,
+ * is not a directory, belongs to another user or that others can open.
+ */
+export function openModuleFolder(stateDir: string, name: string): string {
+  const parent = join(stateDir, 'modules');
+  const folder = join(parent, name);
+  mkdirSync(folder, {recursive: true, mode: 0o700});
+  for (const dir of [parent, folder]) {
+    const info = lstatSync(dir);
+    if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
+      throw new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner (mode 700), not a link`);
+    }
+  }
+  return folder;
+}
+
+/** Why the runtime refuses a private file: the configuration file or a module's secret file. */
+export type FileProblem = 'relative' | 'mount' | 'missing' | 'link' | 'checkout' | 'not-file' | 'not-private' | 'too-large';
+
+/** A private file the runtime refuses to read. It carries no path or contents of the file beyond its message. */
+export class PrivateFileError extends Error {
+  override readonly name = 'PrivateFileError';
+  readonly problem: FileProblem;
+
+  constructor(problem: FileProblem, path: string) {
+    super(`${path}: ${problem}`);
+    this.problem = problem;
+  }
+}
+
+/**
+ * Reads a private file whole, as #880's state rules require: an absolute path, off Windows mounts, with no link anywhere
+ * along it, outside every Git checkout, and a regular file with one link and no permission for group or others, owned
+ * by the runtime's user, of at most `maxBytes`. It never follows a link, and it checks the file it opened, so a file
+ * swapped in between is checked too. Throws `PrivateFileError` naming the problem.
+ */
+export async function readPrivateFile(file: string, maxBytes: number): Promise<Buffer> {
+  if (!isAbsolute(file)) throw new PrivateFileError('relative', file);
+  const path = resolve(file);
+  if (onWindowsMount(path)) throw new PrivateFileError('mount', path);
+  let parent: string;
+  try {
+    parent = await realpath(dirname(path));
+  } catch (error) {
+    if (missing(error)) throw new PrivateFileError('missing', path);
+    throw error;
+  }
+  if (parent !== dirname(path)) throw new PrivateFileError('link', path);
+  if (await checkoutOf(dirname(path)) !== undefined) throw new PrivateFileError('checkout', path);
+  let handle;
+  try {
+    // Nonblocking, so that a FIFO in its place cannot hold the open; the check below refuses it.
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (missing(error)) throw new PrivateFileError('missing', path);
+    if (error instanceof Error && 'code' in error && error.code === 'ELOOP') throw new PrivateFileError('link', path);
+    throw error;
+  }
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new PrivateFileError('not-file', path);
+    if (info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new PrivateFileError('not-private', path);
+    if (info.size > maxBytes) throw new PrivateFileError('too-large', path);
+    // One byte more than allowed shows a file that grew after the check.
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    for (;;) {
+      const {bytesRead} = await handle.read(buffer, length, buffer.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+      if (length > maxBytes) throw new PrivateFileError('too-large', path);
+    }
+    return buffer.subarray(0, length);
+  } finally {
+    await handle.close();
+  }
+}
+/** The configuration file's schema. */
+export const CONFIG_SCHEMA = 'runtime-config/1.0';
+/** The largest configuration file the runtime reads, 1 MiB. */
+export const MAX_CONFIG_BYTES = 1_048_576;
+/** The largest secret file a module may read, 64 KiB. */
+export const MAX_SECRET_BYTES = 65_536;
+
+/** The runtime's configuration file (`--config`): each module's own section, by module name. */
+export type RuntimeConfig = {readonly modules: Readonly<Record<string, unknown>>};
+
+/** A module's own section of the configuration, or undefined when the file has none for it. */
+export function sectionOf(config: RuntimeConfig | undefined, name: string): unknown {
+  return config !== undefined && Object.hasOwn(config.modules, name) ? config.modules[name] : undefined;
+}
+
+const CONFIG_CODES: Readonly<Record<FileProblem, string>> = {
+  relative: 'config-relative', mount: 'config-mount', missing: 'config-missing', link: 'config-link', checkout: 'config-checkout',
+  'not-file': 'config-not-file', 'not-private': 'config-not-private', 'too-large': 'config-too-large',
+};
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Reads the runtime's configuration file, `{"schema": "runtime-config/1.0", "modules": {<name>: <section>}}`: a private
+ * file, as `readPrivateFile` requires, of at most 1 MiB. A section is the module's own; the runtime checks each one only
+ * when it admits that module, so a bad section refuses only its module. Refuses the whole file with a `RuntimeError`
+ * whose code names why: `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`,
+ * `config-not-file`, `config-not-private`, `config-too-large`, or `config-invalid` for a file that is not JSON, names
+ * another schema, lacks `modules`, has a `modules` that is not an object or has any other member. No refusal quotes
+ * what the file holds.
+ */
+export async function readRuntimeConfig(file: string): Promise<RuntimeConfig> {
+  let bytes: Buffer;
+  try {
+    bytes = await readPrivateFile(file, MAX_CONFIG_BYTES);
+  } catch (error) {
+    if (error instanceof PrivateFileError) throw new RuntimeError(CONFIG_CODES[error.problem], `the configuration file ${error.message}`);
+    throw error;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+  } catch {
+    throw new RuntimeError('config-invalid', 'the configuration file is not JSON');
+  }
+  if (!isRecord(parsed) || parsed.schema !== CONFIG_SCHEMA) throw new RuntimeError('config-invalid', `the configuration file is not ${CONFIG_SCHEMA}`);
+  const {modules} = parsed;
+  if (!isRecord(modules)) throw new RuntimeError('config-invalid', 'the configuration file\'s modules must be an object of sections by module name');
+  if (Object.keys(parsed).some(key => key !== 'schema' && key !== 'modules')) {
+    throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema and modules');
+  }
+  return {modules};
 }
 
 /** The file in the state directory that holds the SDK edge's grants (Hub #920). */

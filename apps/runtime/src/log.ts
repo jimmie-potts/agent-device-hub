@@ -51,6 +51,8 @@ export class LogWriter {
   readonly #minimum: number;
   readonly #clock: Clock;
   readonly #resource: Resource;
+  /** The secrets modules have read, which no record may carry (Hub #919). */
+  readonly #secrets = new Set<string>();
   #written = 0;
   #dropped = 0;
   #failed = 0;
@@ -72,13 +74,28 @@ export class LogWriter {
     return {written: this.#written, dropped: this.#dropped, failed: this.#failed};
   }
 
+  /**
+   * Keeps every later record that would carry `secret` in an attribute out of the log: such a record is dropped whole
+   * and counted, as one the contract refuses. The runtime calls it with each secret a module reads.
+   */
+  redact(secret: string): void {
+    if (secret !== '') this.#secrets.add(secret);
+  }
+
+  #carriesSecret(attributes: LogFields): boolean {
+    if (this.#secrets.size === 0) return false;
+    return Object.values(attributes).some(value => typeof value === 'string' && [...this.#secrets].some(secret => value.includes(secret)));
+  }
+
   /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
   logger(scope: string, base: LogFields = {}): RuntimeLogger {
     const at = (level: LogLevel) => (event: string, fields: LogFields = {}, trace?: TraceContext): void => {
       if (LEVELS.indexOf(level) < this.#minimum) return;
       let entry: LogRecord | undefined;
       try {
-        entry = record(level, scope, event, {...fields, ...base}, this.#clock.now(), this.#resource, trace === undefined ? undefined : traceFields(trace));
+        const attributes = {...fields, ...base};
+        entry = this.#carriesSecret(attributes) ? undefined
+          : record(level, scope, event, attributes, this.#clock.now(), this.#resource, trace === undefined ? undefined : traceFields(trace));
       } catch {
         entry = undefined;
       }

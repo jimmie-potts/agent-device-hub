@@ -17,9 +17,11 @@ export type {
   SyncRequest, SyncResult,
 } from './sync.js';
 export {
-  MODULE_API_VERSION, checkApiVersion, checkManifest, checkModuleName, type BunnyModule, type ManifestProblem, type LogFields, type Logger, type ModuleContext, type ModuleManifest, type ModuleScheduler,
-  type Tracing, type Workers,
+  MAX_SECRETS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkManifest, checkModuleName, type BunnyModule,
+  type ConfigurationCheck, type Configured, type ManifestProblem, type LogFields, type Logger, type ModuleContext, type ModuleManifest,
+  type ModuleScheduler, type Secrets, type Tracing, type WorkerCallOptions, type Workers,
 } from './module.js';
+export {WorkerCalls, type WorkerCallsOptions} from './workers.js';
 export {childOf, traceFields} from './trace.js';
 export {REFUSAL_WINDOW_MS, RemoteEdge, type EdgeOptions, type RemoteGrant} from './remote-edge.js';
 export {connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
