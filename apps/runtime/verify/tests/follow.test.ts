@@ -190,9 +190,11 @@ void test('what the run could not keep is reported: spans evicted, a file read c
   assert.equal(lost.searched.unreadableSpans, 2);
   const unknown = follow({...base, spans: present((await endToEnd()).spans, {evicted: undefined})}, {request: 'req-gap'});
   assert.ok(kinds(unknown).includes('spans-eviction-unknown'));
-  const none = follow({...base, spans: {recorded: false}}, {request: 'req-gap'});
+  const none = follow({...base, spans: {recorded: false, reason: 'not-recorded'}}, {request: 'req-gap'});
   assert.deepEqual(none.spans, []);
   assert.ok(kinds(none).includes('spans-not-recorded'));
+  const unreadable = follow({...base, spans: {recorded: false, reason: 'unreadable'}}, {request: 'req-gap'});
+  assert.ok(kinds(unreadable).includes('spans-unreadable'));
 });
 
 void test('a span whose parent is not kept says so, and a span that is not kept is never reported', {timeout: 60_000}, async () => {

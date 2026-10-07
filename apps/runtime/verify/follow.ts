@@ -19,9 +19,11 @@ export type Limits = {records: number; spans: number};
 export type JournalEntry = {generation: number; record: unknown};
 /**
  * The run's spans: the lines of its span file, how many spans the file let go, and what the reader could not read.
- * `recorded: false` is a run that records no spans.
+ * `recorded: false` is a run with no span file, or one that could not be read.
  */
-export type SpanEvidence = {recorded: false} | {recorded: true; lines: readonly string[]; evicted: number | undefined; unreadable: number; truncated: boolean};
+export type SpanEvidence =
+  | {recorded: false; reason: 'not-recorded' | 'unreadable'}
+  | {recorded: true; lines: readonly string[]; evicted: number | undefined; unreadable: number; truncated: boolean};
 export type Evidence = {
   /** How many runtimes the run has started: the current one is live, and the ones before it have ended. */
   generation: number;
@@ -225,6 +227,7 @@ export type Gap =
   | {kind: 'spans-eviction-unknown'}
   | {kind: 'spans-truncated'}
   | {kind: 'spans-not-recorded'}
+  | {kind: 'spans-unreadable'}
   | {kind: 'unreadable'; records: number; spans: number}
   | {kind: 'parent-missing'; spans: number}
   | {kind: 'capped'; records: number; spans: number};
@@ -235,7 +238,8 @@ const MEANINGS: Readonly<Record<Gap['kind'], string>> = {
   'spans-evicted': 'The span file keeps the latest spans and let this many older ones go, so spans of older requests may be absent.',
   'spans-eviction-unknown': 'The span file does not say how many older spans it let go, so an absent span may have been evicted.',
   'spans-truncated': 'A span file was longer than its bound, so the read stopped there and later spans were not read.',
-  'spans-not-recorded': 'This run records no spans, so no span is evidence either way.',
+  'spans-not-recorded': 'This run has no span file, so no span is evidence either way.',
+  'spans-unreadable': 'The run\'s span file could not be read, so no span is evidence either way.',
   'unreadable': 'Some records or spans were not valid contract records. They are counted and not shown.',
   'parent-missing': 'These spans continue a parent that is not in the evidence: it was evicted, lost or never ended.',
   'capped': 'The query left out matches beyond its limits. Raise a limit, or query by trace.',
@@ -408,7 +412,7 @@ function gapsOf(
       if (dropped + failed > 0) gaps.push({kind: 'telemetry-lost', generation, dropped, failed});
     }
   }
-  if (!evidence.spans.recorded) gaps.push({kind: 'spans-not-recorded'});
+  if (!evidence.spans.recorded) gaps.push({kind: evidence.spans.reason === 'unreadable' ? 'spans-unreadable' : 'spans-not-recorded'});
   else {
     if (evidence.spans.evicted === undefined) {
       if (evidence.spans.lines.length > 0) gaps.push({kind: 'spans-eviction-unknown'});

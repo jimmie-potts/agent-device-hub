@@ -15,6 +15,7 @@ import {SCENARIOS, expect, runScenario, type Scenario} from '../tests/scenarios/
 import {sourceOf} from '../tests/scenarios/parts.js';
 import {connectRun, readGrants} from './adapter.js';
 import {checkNoOutboundConnections, checkPrivateState, checkSimulatedTransports} from './boundaries.js';
+import {ask, followProof} from './follow-proof.js';
 import {HARNESS_PATH, type BoundaryReport} from './protocol.js';
 import {RUN_SCENARIOS, START_ONLY, seedRun} from './seed.js';
 
@@ -268,6 +269,25 @@ export default definePlugin({
       }),
     },
     ...scenarioSteps,
+    'follow-one-request': {
+      description: 'Follows one request through the run\'s journal records and spans in four cases (a success, a refusal, an uncertain effect, a replayed outcome), then one whose runtime was killed, one never sent and one over its limits',
+      scenario: 'fixtures',
+      fresh: true,
+      timeoutMs: 120_000,
+      run: onHealth(async t => {
+        await followProof(t, harnessOf(t));
+        await boundariesHold(t);
+      }),
+    },
+    'control-follow-fails': {
+      description: 'Negative control, not a catalog scenario: expects the run to find a request that was never sent, so it must fail',
+      scenario: 'fixtures',
+      fresh: true,
+      run: onHealth(async t => {
+        const followed = await ask(harnessOf(t), 'request=never-sent');
+        await t.expect('the run found a request that was never sent', () => followed.result === 'found');
+      }),
+    },
     'control-scenario-fails': {
       description: 'Negative control, not a catalog scenario: expects lamp-1 on though nothing switched it, so it must fail',
       scenario: 'fixtures',

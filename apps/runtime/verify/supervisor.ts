@@ -16,12 +16,13 @@ import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord} from '../src/index.js';
+import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
 import {guardEnvironment} from './environment.js';
+import {FollowRefusal, follow, limitsOf, selectorOf, type Evidence, type SpanEvidence} from './follow.js';
 import {
   HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type HarnessState,
   type SimulateRequest, type SupervisorMessage,
@@ -40,6 +41,10 @@ const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 const STOP_MS = 8000;
 /** How long a flush or control waits for the child's answer. */
 const ANSWER_MS = 3000;
+/** How long a stopped runtime's last records have to reach the journal before the next runtime starts. */
+const DRAIN_MS = 1000;
+/** The lowest level the run's runtime writes, which the run states instead of leaving to the runtime's default. */
+const LOG_LEVEL = 'info';
 
 const {values} = parseArgs({options: {data: {type: 'string'}, port: {type: 'string'}, 'harness-port': {type: 'string'}}, strict: true});
 if (values.data === undefined) throw new Error('usage: supervisor.js --data <dir> --port <port> --harness-port <port>');
@@ -84,9 +89,11 @@ function queue(task: () => Promise<void>): Promise<void> {
 function runtimeArgs(): string[] {
   return [
     // A disposable run's records are a test environment's (Hub #903).
-    '--port', String(runtimePort), '--environment', 'test', ...(run.fault === 'real-transports' ? [] : ['--simulate']),
+    '--port', String(runtimePort), '--environment', 'test', '--log-level', LOG_LEVEL, ...(run.fault === 'real-transports' ? [] : ['--simulate']),
     ...(run.fault === 'default-state' ? [] : ['--state-dir', stateDirOf(dataDir), '--edge']),
     ...(run.config === undefined ? [] : ['--config', run.config]),
+    // Its spans go to a bounded private file in the state directory, which outlives a crash and which the follow query reads (Hub #950).
+    '--record-spans',
   ];
 }
 
@@ -231,10 +238,18 @@ async function stopRuntime(): Promise<void> {
   const child = current;
   if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, 'exit');
+  const closed = once(child, 'close');
   child.kill('SIGTERM');
   const timer = setTimeout(() => { child.kill('SIGKILL'); }, STOP_MS);
   await exited;
   clearTimeout(timer);
+  // Its stderr may hold records still to be read, `runtime.stopped` the last: wait for them before anything starts again,
+  // so the journal shows a clean stop as one. A descendant that keeps the pipe open costs only the drain bound.
+  await new Promise<void>(drained => {
+    const drain = setTimeout(drained, DRAIN_MS);
+    const done = (): void => { clearTimeout(drain); drained(); };
+    closed.then(done, done);
+  });
 }
 
 /** Stops the runtime and starts it again, after any start or restart before it. A runtime that cannot start ends the run. */
@@ -314,6 +329,20 @@ function report(): BoundaryReport {
   };
 }
 
+/** What the follow query reads: the journal's records, with the runtime that wrote each, and the span file. */
+function evidence(): Evidence {
+  let spans: SpanEvidence;
+  try {
+    const read = readSpanFile(stateDirOf(dataDir));
+    spans = read.present
+      ? {recorded: true, lines: read.lines, evicted: read.evicted, unreadable: read.unreadable, truncated: read.truncated}
+      : {recorded: false, reason: 'not-recorded'};
+  } catch {
+    spans = {recorded: false, reason: 'unreadable'};
+  }
+  return {generation, minimumLevel: LOG_LEVEL, journal: logs.map(entry => ({generation: entry.generation, record: entry.record})), spans};
+}
+
 const answer = (response: ServerResponse, status: number, body: object): void => {
   response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
 };
@@ -375,6 +404,21 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     }
     case 'GET /boundaries':
       return answer(response, 200, report());
+    case 'GET /follow': {
+      let query;
+      try {
+        query = {
+          selector: selectorOf({request: url.searchParams.get('request'), trace: url.searchParams.get('trace')}),
+          limits: limitsOf({records: url.searchParams.get('records'), spans: url.searchParams.get('spans')}),
+        };
+      } catch (error) {
+        if (error instanceof FollowRefusal) return answer(response, 400, refusal('invalid-request', error.message));
+        throw error;
+      }
+      // The runtime has written every record and span it finished before it answers its flush.
+      await flush();
+      return answer(response, 200, follow(evidence(), query.selector, query.limits));
+    }
     case 'POST /simulate':
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no simulated devices'));
       await simulate(await body(request) as SimulateRequest);
