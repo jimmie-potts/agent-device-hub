@@ -23,7 +23,8 @@ import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/catalog.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
-import {FollowRefusal, follow, limitsOf, selectorOf, type Evidence, type SpanEvidence} from './follow.js';
+import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
+import {Journal} from './journal.js';
 import {
   HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type HarnessState,
   type SimulateRequest, type SupervisorMessage,
@@ -55,14 +56,14 @@ const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
-const logs: Generational<{record: LogRecord}>[] = [];
+const journal = new Journal();
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
 const guardReport = join(dataDir, 'guard-report.jsonl');
 const waiting = new Map<number, () => void>();
 /** The newest log record of one runtime with this event name. */
 const newest = (number: number, event: string): LogRecord | undefined =>
-  [...logs].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
+  [...journal.entries].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
 let runtimePort = Number(values.port ?? '0');
 let generation = 0;
 const crashes = new BurstLimit(MAX_CRASHES, CRASH_WINDOW_MS);
@@ -165,12 +166,7 @@ function spawnRuntime(): Promise<string> {
   current = child;
   lines(child.stderr, line => {
     process.stderr.write(`${line}\n`);
-    try {
-      const record = JSON.parse(line) as LogRecord;
-      if (typeof record.event_name === 'string') logs.push({generation: number, record});
-    } catch {
-      // Not a log record, such as a usage line.
-    }
+    journal.take(number, line);
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
   child.once('exit', () => {
@@ -335,7 +331,7 @@ function evidence(): Evidence {
   } catch {
     spans = {recorded: false, reason: 'unreadable'};
   }
-  return {generation, minimumLevel: LOG_LEVEL, journal: logs.map(entry => ({generation: entry.generation, record: entry.record})), spans};
+  return {generation, minimumLevel: LOG_LEVEL, journal: journal.entries.map(entry => ({generation: entry.generation, record: entry.record})), skippedLines: journal.skipped, spans};
 }
 
 const answer = (response: ServerResponse, status: number, body: object): void => {
@@ -393,7 +389,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       await flush();
       const state: HarnessState = {
         generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state()},
-        logs: logs.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
+        logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);
     }
@@ -402,10 +398,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /follow': {
       let query;
       try {
-        query = {
-          selector: selectorOf({request: url.searchParams.get('request'), trace: url.searchParams.get('trace')}),
-          limits: limitsOf({records: url.searchParams.get('records'), spans: url.searchParams.get('spans')}),
-        };
+        query = queryOf(url.searchParams);
       } catch (error) {
         if (error instanceof FollowRefusal) return answer(response, 400, refusal('invalid-request', error.message));
         throw error;

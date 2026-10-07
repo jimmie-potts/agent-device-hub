@@ -72,5 +72,5 @@ void test('the follow step attaches one answer for each case it judges, and each
   assert.equal(answers.get('follow-missing.json')?.followed.result, 'none-found');
   assert.equal(answers.get('follow-crash.json')?.followed.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), true);
   assert.equal(answers.get('follow-capped.json')?.followed.gaps.some(gap => gap.kind === 'capped'), true);
-  assert.ok(result.assertions.length >= 8, 'each case is judged');
+  assert.equal(result.assertions.length, 9, 'each of the eight cases is judged, and the run\'s boundaries');
 });

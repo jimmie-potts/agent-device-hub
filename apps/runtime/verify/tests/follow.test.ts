@@ -10,7 +10,7 @@ import {INSTANCE_ID} from '../../src/log.js';
 import {RUNTIME_SCOPE, record, runtimeResource, type LogRecord, type Resource} from '../../src/record.js';
 import {contextOf, fixture, run, setMode, waitFor} from '../../tests/support.js';
 import {
-  FollowRefusal, follow, limitsOf, selectorOf, type Evidence, type Followed, type JournalEntry, type Limits, type Selector, type SpanEvidence,
+  FollowRefusal, follow, limitsOf, queryOf, selectorOf, type Evidence, type Followed, type JournalEntry, type Limits, type Selector, type SpanEvidence,
 } from '../follow.js';
 
 const SECRET = 'tok_SYNTHETIC950';
@@ -47,7 +47,7 @@ const present = (lines: readonly string[], extra: Partial<Extract<SpanEvidence, 
 /** The scenario's evidence: the end-to-end path crashed generation 1 and restarted cleanly after it, to generation 4. */
 async function evidence(over: Partial<Evidence> = {}): Promise<Evidence> {
   const {journal, spans} = await endToEnd();
-  return {generation: 4, minimumLevel: 'info', journal: [...journal, stopped(2), stopped(3)], spans: present(spans), ...over};
+  return {generation: 4, minimumLevel: 'info', skippedLines: 0, journal: [...journal, stopped(2), stopped(3)], spans: present(spans), ...over};
 }
 
 const ids = (followed: Followed): (string | undefined)[] => followed.records.map(entry => entry.attributes['bunny.request.id'] as string | undefined);
@@ -58,14 +58,14 @@ void test('a command that succeeded: its decisions, its module\'s records and it
   assert.equal(followed.result, 'found');
   assert.equal(followed.schema, 'runtime-follow/1.0');
   assert.deepEqual(events(followed), ['runtime.command.admitted', 'command.executing', 'outcome.published', 'command.completed', 'runtime.command.replied', 'message.received']);
-  assert.deepEqual(followed.decision, {admitted: 1, ended: true, endings: [{generation: 1, event: 'replied', level: 'INFO'}]});
+  assert.deepEqual(followed.decision, {admitted: 1, unended: 0, ended: true, endings: [{generation: 1, event: 'replied', level: 'INFO'}]});
   assert.deepEqual(followed.names, {
     'bunny.command.execute': 1, 'bunny.command.queue': 1, 'bunny.command.request': 1, 'bunny.device.call': 1, 'bunny.outcome.publish': 1,
   });
   assert.equal(followed.traces.length, 1, 'the command, its module and its outcome share one trace');
   assert.ok(followed.records.every(entry => entry.attributes['bunny.request.id'] === 'req-gap'));
   assert.ok(followed.spans.every(span => span.attributes['bunny.request.id'] === 'req-gap' || span.name === 'bunny.device.call'));
-  assert.deepEqual(followed.omitted, {records: 0, spans: 0});
+  assert.deepEqual(followed.omitted, {records: 0, spans: 0, traces: 0, endings: 0});
   for (const span of followed.spans) {
     assert.ok(span.durationMs >= 0 && span.startedAt.endsWith('Z'), `${span.name} has a start and a duration`);
     assert.notEqual(span.parent?.state, 'missing', `${span.name} has its parent`);
@@ -80,7 +80,7 @@ void test('a command that succeeded: its decisions, its module\'s records and it
 
 void test('a command refused at its deadline: one WARN refusal, the spans it had, and no span for the work it never reached', {timeout: 60_000}, async () => {
   const followed = follow(await evidence(), {request: 'req-queued'});
-  assert.deepEqual(followed.decision, {admitted: 1, ended: true, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'expired'}]});
+  assert.deepEqual(followed.decision, {admitted: 1, unended: 0, ended: true, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'expired'}]});
   assert.equal(followed.names['bunny.command.request'], 1);
   assert.equal(followed.names['bunny.command.queue'], 1);
   assert.equal(followed.names['bunny.command.execute'], undefined, 'it never started, so the query reports no execute span');
@@ -123,7 +123,7 @@ void test('a command whose runtime crashed: no ending is recorded, the generatio
   const spans = base.spans.recorded ? base.spans.lines.filter(line => !(request(line) && line.includes('bunny.command.execute'))) : [];
   const followed = follow({...base, journal: base.journal.filter(entry => !afterKill(entry)), spans: present(spans)}, {request: 'req-crash'});
   assert.equal(followed.result, 'found');
-  assert.deepEqual(followed.decision, {admitted: 1, ended: false, endings: []});
+  assert.deepEqual(followed.decision, {admitted: 1, unended: 1, ended: false, endings: []});
   assert.deepEqual(followed.gaps.filter(gap => gap.kind === 'generation-ended-without-stop').map(gap => gap.kind === 'generation-ended-without-stop' && gap.generation), [1]);
   assert.equal(followed.names['bunny.command.execute'], undefined, 'the execute span never ended, so it is not reported');
   assert.equal(followed.names['bunny.device.call'], 1, 'the device call ended before the kill');
@@ -144,7 +144,7 @@ void test('a query over its limits says so: what it matched, what it returned an
   assert.equal(capped.records.length, 2);
   assert.equal(capped.spans.length, 1);
   assert.deepEqual(capped.matched, all.matched);
-  assert.deepEqual(capped.omitted, {records: all.matched.records - 2, spans: all.matched.spans - 1});
+  assert.deepEqual(capped.omitted, {records: all.matched.records - 2, spans: all.matched.spans - 1, traces: 0, endings: 0});
   assert.ok(capped.gaps.some(gap => gap.kind === 'capped'), 'the cap is a named gap');
   assert.deepEqual(capped.records.map(entry => entry.event), events(all).slice(0, 2), 'the first in order, so the start of the chain stays');
   assert.equal(all.gaps.some(gap => gap.kind === 'capped'), false, 'and no cap is reported when nothing was left out');
@@ -160,10 +160,10 @@ void test('a request never takes another request\'s records, even on the same tr
   };
   const journal = [made('runtime.command.admitted', 'req-a'), made('runtime.command.admitted', 'req-b'), made('runtime.command.replied', 'req-a'),
     made('runtime.command.replied', 'req-b'), made('runtime.ready', undefined), stopped(1)];
-  const followed = follow({generation: 1, minimumLevel: 'info', journal, spans: present([])}, {request: 'req-a'});
+  const followed = follow({generation: 1, minimumLevel: 'info', skippedLines: 0, journal, spans: present([])}, {request: 'req-a'});
   assert.deepEqual(ids(followed), ['req-a', 'req-a'], 'only its own');
   assert.deepEqual(followed.otherOnTrace, {records: 3, spans: 0}, 'the trace holds three more, which the trace query shows');
-  const bytrace = follow({generation: 1, minimumLevel: 'info', journal, spans: present([])}, {trace: trace.traceId});
+  const bytrace = follow({generation: 1, minimumLevel: 'info', skippedLines: 0, journal, spans: present([])}, {trace: trace.traceId});
   assert.equal(bytrace.records.length, 5, 'the trace query takes all of it');
 });
 
@@ -258,7 +258,7 @@ void test('an exception that holds a secret never reaches the answer: a real han
   assert.notEqual(result.status, 'accepted', 'the handler failed');
   await runtime.stop();
   await waitFor(() => logs.some(entry => entry.event_name === 'runtime.stopped'));
-  const followed = follow({generation: 1, minimumLevel: 'info', journal: logs.map(entry => ({generation: 1, record: entry})), spans: present(spans)}, {request: 'req-secret'});
+  const followed = follow({generation: 1, minimumLevel: 'info', skippedLines: 0, journal: logs.map(entry => ({generation: 1, record: entry})), spans: present(spans)}, {request: 'req-secret'});
   assert.equal(followed.result, 'found');
   assert.ok(followed.decision.admitted >= 1);
   assert.equal(JSON.stringify(logs).includes(SECRET), false, 'the runtime wrote no secret');
@@ -289,4 +289,104 @@ void test('a selector or limit that is not an identifier, a trace or a small cou
   for (const input of [{records: '0'}, {records: '101'}, {spans: '-1'}, {spans: '1.5'}, {records: `${SECRET}`}, {records: '1e2'}]) refused(() => limitsOf(input));
   assert.deepEqual(limitsOf({}), {records: 50, spans: 50} satisfies Limits);
   assert.deepEqual(limitsOf({records: '7', spans: '100'}), {records: 7, spans: 100});
+});
+
+/** A bus record of one command, built the way the runtime builds it, with the command's own message ID and trace. */
+function bus(event: string, request: string, message: string, trace: string, extra: Record<string, string | number | boolean> = {}, generation = 1): JournalEntry {
+  const made = record(event === 'runtime.command.refused' ? 'warn' : 'info', RUNTIME_SCOPE, event, {'bunny.request.id': request, 'bunny.message.id': message, ...extra}, NOW,
+    runtimeResource('test', INSTANCE_ID), {traceId: trace.padEnd(32, '0'), spanId: trace.padEnd(16, '1').slice(0, 16), flags: '01'});
+  assert.ok(made, `${event} is a valid record`);
+  return {generation, record: made};
+}
+const live = (journal: readonly JournalEntry[], generation = 1): Evidence => ({generation, minimumLevel: 'info', skippedLines: 0, journal, spans: present([])});
+
+void test('an ending counts only for the admission it follows: a refusal that was never admitted does not end the command that was', () => {
+  const refused = bus('runtime.command.refused', 'req-a', 'm1', 'a1', {'bunny.code': 'unavailable'});
+  const admitted = bus('runtime.command.admitted', 'req-a', 'm2', 'a2');
+  // One refused with no admission, one admitted, then the runtime was killed: the admitted command never ended.
+  const killed = follow(live([refused, admitted], 2), {request: 'req-a'});
+  assert.deepEqual(killed.decision, {admitted: 1, unended: 1, ended: false, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'unavailable'}]});
+  // The same pair, with the admitted command's own ending: both ended.
+  const replied = bus('runtime.command.replied', 'req-a', 'm2', 'a2');
+  assert.deepEqual(follow(live([refused, admitted, replied]), {request: 'req-a'}).decision,
+    {admitted: 1, unended: 0, ended: true, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'unavailable'}, {generation: 1, event: 'replied', level: 'INFO'}]});
+  // A refusal alone, which the bus makes with no admission, is an ended command.
+  assert.deepEqual(follow(live([refused]), {request: 'req-a'}).decision, {admitted: 0, unended: 0, ended: true, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'unavailable'}]});
+  // An ending of another command with the same request ID does not end this one, though the order alone would pair them.
+  const other = bus('runtime.command.replied', 'req-a', 'm9', 'a9');
+  assert.deepEqual(follow(live([admitted, other]), {request: 'req-a'}).decision.unended, 1);
+  // Two admitted commands and one ending: one is unended.
+  const second = bus('runtime.command.admitted', 'req-a', 'm3', 'a3');
+  assert.deepEqual(follow(live([admitted, second, replied]), {request: 'req-a'}).decision, {admitted: 2, unended: 1, ended: false, endings: [{generation: 1, event: 'replied', level: 'INFO'}]});
+});
+
+void test('the traces and the endings are capped, and the cap is counted and named, as the records and the spans are', () => {
+  const journal: JournalEntry[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    const id = `m${String(index).padStart(2, '0')}`;
+    journal.push(bus('runtime.command.admitted', 'req-many', id, `b${String(index).padStart(2, '0')}`), bus('runtime.command.replied', 'req-many', id, `b${String(index).padStart(2, '0')}`));
+  }
+  const all = follow(live(journal), {request: 'req-many'}, {records: 100, spans: 100});
+  assert.equal(all.traces.length, 16, 'at most 16 traces are named');
+  assert.equal(all.omitted.traces, 4, 'and the other four are counted');
+  assert.equal(all.decision.endings.length, 20, 'the endings are not cut by the trace cap');
+  const cap = all.gaps.find(gap => gap.kind === 'capped');
+  assert.deepEqual(cap && 'traces' in cap ? cap.traces : undefined, 4, 'and the cap is a named gap');
+  // The endings follow the record limit, whatever the records that carry them: 20 endings with 5 records.
+  const few = follow(live(journal), {request: 'req-many'}, {records: 5, spans: 5});
+  assert.equal(few.decision.endings.length, 5);
+  assert.deepEqual([few.omitted.endings, few.decision.admitted, few.decision.unended, few.decision.ended], [15, 20, 0, true], 'what was left out is counted, and the verdict still covers every command');
+  const capped = few.gaps.find(gap => gap.kind === 'capped');
+  assert.deepEqual(capped && 'endings' in capped ? [capped.endings, capped.records] : undefined, [15, 35]);
+  const none = follow(live(journal.slice(0, 2)), {request: 'req-many'}, {records: 100, spans: 100});
+  assert.deepEqual([none.omitted, none.gaps.some(gap => gap.kind === 'capped')], [{records: 0, spans: 0, traces: 0, endings: 0}, false], 'nothing is reported when nothing was left out');
+});
+
+void test('a runtime that has not stopped is a standing gap: its losses are counted only at its stop, so an answer cannot call the evidence complete', async () => {
+  const base = await evidence();
+  const standing = (followed: Followed): unknown[] => followed.gaps.filter(gap => gap.kind === 'losses-uncounted').map(gap => gap.kind === 'losses-uncounted' && gap.generation);
+  assert.deepEqual(standing(follow(base, {request: 'req-gap'})), [4], 'the live runtime, whether the request is found');
+  assert.deepEqual(standing(follow(base, {request: 'req-never-sent'})), [4], 'or not');
+  const meaning = follow(base, {request: 'req-never-sent'}).gaps.find(gap => gap.kind === 'losses-uncounted')?.meaning ?? '';
+  assert.match(meaning, /only when it stops/);
+  // Once it has stopped, the gap gives way to what it counted.
+  const stoppedNow = follow({...base, journal: [...base.journal, stopped(4, 2, 0)]}, {request: 'req-gap'});
+  assert.deepEqual([standing(stoppedNow), stoppedNow.gaps.some(gap => gap.kind === 'telemetry-lost' && gap.generation === 4)], [[], true]);
+});
+
+void test('an answer that found nothing carries the same caveats as one that found something', async () => {
+  const none = follow(await evidence(), {request: 'req-never-sent'});
+  const found = follow(await evidence(), {request: 'req-gap'});
+  for (const note of [none.note, found.note]) {
+    assert.match(note, /below the minimum level are not written/);
+    assert.match(note, /queues drop under pressure/);
+    assert.match(note, /ends abruptly loses/);
+    assert.match(note, /not evidence that nothing happened/);
+  }
+  assert.match(none.note, /No record or span in the evidence carries this ID/);
+});
+
+void test('lines of the journal that were not records are counted with the records the contract refused', async () => {
+  const base = await evidence();
+  const followed = follow({...base, skippedLines: 7}, {request: 'req-gap'});
+  assert.equal(followed.searched.unreadableRecords, 7);
+  const gap = followed.gaps.find(entry => entry.kind === 'unreadable');
+  assert.deepEqual(gap && 'records' in gap ? gap.records : undefined, 7);
+});
+
+void test('a query takes each parameter once, and ignores the ones it does not know', () => {
+  const refused = (query: string): FollowRefusal => {
+    try {
+      queryOf(new URLSearchParams(query));
+    } catch (error) {
+      assert.ok(error instanceof FollowRefusal, query);
+      return error;
+    }
+    return assert.fail(`${query} was taken`);
+  };
+  for (const query of ['request=a&request=b', 'request=a&request=a', `trace=${'b'.repeat(32)}&trace=${'c'.repeat(32)}`, 'request=a&records=1&records=2', 'request=a&spans=1&spans=2', 'request=&request=a']) {
+    const error = refused(query);
+    assert.equal(error.message, 'name each parameter once', `${query}: a fixed message`);
+  }
+  assert.deepEqual(queryOf(new URLSearchParams('request=req-1&records=3&unknown=1&unknown=2')), {selector: {request: 'req-1'}, limits: {records: 3, spans: 50}});
 });

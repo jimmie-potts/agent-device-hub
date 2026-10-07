@@ -185,26 +185,31 @@ void test('a run follows one request: its decisions, its module\'s records and i
   const unknown = await follow(run, 'request=req-never');
   assert.equal(unknown.status, 200);
   assert.equal(unknown.body.result, 'none-found', 'an absent request is reported absent');
-  assert.deepEqual(body.gaps, [], 'a clean first runtime has no gap');
+  assert.deepEqual(body.gaps.map(gap => gap.kind), ['losses-uncounted'], 'a clean first runtime has only the gap that it has not stopped');
 });
 
 void test('the shipped runtime of a run records spans too: its span file is there, and the query reports no gap for it', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'shipped');
   const answer = await follow(run, 'request=req-none');
   assert.equal(answer.status, 200);
-  assert.deepEqual([answer.body.result, answer.body.gaps], ['none-found', []]);
+  assert.deepEqual([answer.body.result, answer.body.gaps.map(gap => gap.kind)], ['none-found', ['losses-uncounted']], 'a live runtime is a standing gap: its losses are counted at its stop');
   assert.equal(((await stat(join(run.dataDir, 'state/spans.ndjson'))).mode & 0o777), 0o600);
 });
 
 void test('a follow query that names no selector, two, or a malformed one is refused with 400 and never echoed', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'fixtures');
-  for (const query of ['', 'request=req-1&trace=' + 'a'.repeat(32), 'request=tok_SYNTHETIC950%2F..%2Fx', 'trace=short', 'request=req-1&records=0', 'request=req-1&spans=1000']) {
+  const repeated = ['request=req-1&request=req-2', 'request=req-1&records=1&records=2', 'request=req-1&spans=1&spans=2', 'trace=' + 'a'.repeat(32) + '&trace=' + 'b'.repeat(32)];
+  for (const query of ['', 'request=req-1&trace=' + 'a'.repeat(32), 'request=tok_SYNTHETIC950%2F..%2Fx', 'trace=short', 'request=req-1&records=0', 'request=req-1&spans=1000', ...repeated]) {
     const response = await fetch(new URL(`${HARNESS_PATH}/follow?${query}`, run.harness));
     assert.equal(response.status, 400, query);
     const text = await response.text();
     assert.equal((JSON.parse(text) as {error: {code: string}}).error.code, 'invalid-request');
     assert.equal(text.includes('tok_SYNTHETIC950'), false, 'the refusal never echoes the query');
   }
+  // A parameter the query does not know is ignored, and the answer is the one without it.
+  const ignored = await fetch(new URL(`${HARNESS_PATH}/follow?request=req-1&nothing=1&nothing=2`, run.harness));
+  assert.equal(ignored.status, 200);
+  assert.deepEqual(((await ignored.json()) as Followed).query, {request: 'req-1'});
 });
 
 void test('after a clean restart the first runtime has its stop record, and after a crash it shows as ended without one, with its spans kept', {timeout: 90_000}, async context => {
@@ -213,7 +218,7 @@ void test('after a clean restart the first runtime has its stop record, and afte
   for (let restarts = 0; restarts < 3; restarts += 1) assert.equal((await post(run, 'restart')).status, 200);
   const restarted = (await follow(run, 'request=req-before')).body;
   assert.equal(restarted.searched.generations, 4);
-  assert.deepEqual(restarted.gaps.map(gap => gap.kind), [], 'every earlier runtime stopped cleanly, and its stop record is in the journal');
+  assert.deepEqual(restarted.gaps.map(gap => gap.kind), ['losses-uncounted'], 'every earlier runtime stopped cleanly, and its stop record is in the journal; only the live one is a gap');
 
   assert.equal((await post(run, 'arm-crash')).status, 200);
   assert.equal(await send(context, run, 'req-crash'), 'uncertain-result', 'the remote requester cannot know the fate');
@@ -224,8 +229,9 @@ void test('after a clean restart the first runtime has its stop record, and afte
   // The kill came before the request settled, so the request and execute spans never ended; the queue and device spans did,
   // and the query names each of them as continuing a parent that is not kept.
   assert.deepEqual(crashed.gaps.map(({meaning: _meaning, ...gap}) => gap),
-    [{kind: 'generation-ended-without-stop', generation: 4}, {kind: 'parent-missing', spans: 2}], 'the killed runtime lacks its stop record, and two spans lack parents');
-  assert.deepEqual(crashed.decision, {admitted: 1, ended: false, endings: []}, 'the killed runtime recorded no ending, and the query says none is recorded');
+    [{kind: 'generation-ended-without-stop', generation: 4}, {kind: 'losses-uncounted', generation: 5}, {kind: 'parent-missing', spans: 2}],
+    'the killed runtime lacks its stop record, the live one has not stopped, and two spans lack parents');
+  assert.deepEqual(crashed.decision, {admitted: 1, unended: 1, ended: false, endings: []}, 'the killed runtime recorded no ending, and the query says none is recorded');
   assert.deepEqual(crashed.spans.filter(span => span.generation === 4).map(span => [span.name, span.parent?.state]).sort(),
     [['bunny.command.queue', 'missing'], ['bunny.device.call', 'missing']], 'the spans it finished before the kill are in the file, whose parents never ended');
   assert.deepEqual([crashed.names['bunny.command.request'], crashed.names['bunny.command.execute']], [undefined, undefined], 'unfinished spans are not reported');

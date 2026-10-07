@@ -66,18 +66,19 @@ curl -s "<harness endpoint>api/harness/v1/follow?request=<request id>"
 curl -s "<harness endpoint>api/harness/v1/follow?trace=<32 hex digits>&records=20&spans=20"
 ```
 
-The `start` result and the preview card name the harness endpoint. Name exactly one of `request` and `trace`; each
-limit is a whole number from 1 to 100 and defaults to 50. A request or limit that is not valid is a `400` with
-`invalid-request` and a fixed message, and the query never echoes it. The answer is JSON (`runtime-follow/1.0`):
+The `start` result and the preview card name the harness endpoint. Name exactly one of `request` and `trace`, and give
+each of `request`, `trace`, `records` and `spans` at most once; each limit is a whole number from 1 to 100 and defaults to
+50. A parameter the query does not know is ignored. A request or limit that is not valid, or a parameter given twice, is a
+`400` with `invalid-request` and a fixed message, and the query never echoes it. The answer is JSON (`runtime-follow/1.0`):
 
 | Field | What it says |
 | --- | --- |
 | `result` | `found`, or `none-found`: no record or span carries the ID, which says nothing of what happened. See `gaps` |
 | `records` | The log records, each with the runtime that wrote it (`generation`), its level, event, trace and registered attributes |
 | `spans` | The spans, with kind, status, duration, links and `parent`: `span` (kept), `caller` (the remote part's context, which the run does not record), `stored-message` (the context a stored message carried) or `missing` (not kept) |
-| `decision` | How many commands the bus admitted, each ending it recorded (`replied`, `refused`, `cancelled` or `uncertain`, with level and code), and whether every one has an ending (`ended`) |
+| `decision` | How many commands the bus admitted (`admitted`), how many of them have no ending of their own (`unended`, so `ended` is true only when none lacks one), and the endings it recorded (`replied`, `refused`, `cancelled` or `uncertain`, with level and code). An ending belongs to the command with its message ID: a refusal for no responder, which is never admitted, ends no admitted command. `endings` lists at most as many as the `records` limit |
 | `names` | How many matched spans have each name. A name no span has is not listed |
-| `matched`, `omitted`, `traces`, `otherOnTrace` | What the query matched, what its limits left out, the traces it touched, and what else those traces hold, such as another request's records |
+| `matched`, `omitted`, `traces`, `otherOnTrace` | What the query matched, what its limits left out (`omitted` counts records, spans and endings past the limits, and trace IDs past the 16 that `traces` names), the traces it touched, and what else those traces hold, such as another request's records |
 | `searched` | How many records and spans it read and how many it could not, the runtimes the run has started, and the lowest level written |
 | `gaps` | Each way the evidence can be incomplete, with its meaning, below |
 
@@ -90,15 +91,16 @@ text reaches it, and a record or span the contract refuses is counted in `search
 | --- | --- |
 | `generation-ended-without-stop` | A runtime ended without writing `runtime.stopped`, as after a crash or kill: its last records, its counts of lost telemetry and the spans it had not written are unknown |
 | `telemetry-lost` | A runtime said at its stop that its queues or the contract refused this many records and spans |
-| `spans-evicted`, `spans-eviction-unknown` | The span file keeps the latest 1,024 spans and let this many go, or does not say |
+| `losses-uncounted` | A runtime has not stopped: it counts the records and spans that its queues dropped or its sinks lost, with its minimum level's absences, only when it stops, so those losses are not shown yet. Every answer about a live runtime has this gap |
+| `spans-evicted`, `spans-eviction-unknown` | The span file keeps the latest 512 to 1,024 spans and let this many go, or does not say, as after a runtime was killed between starting a segment and writing its header |
 | `spans-truncated` | A span file was longer than its bound, so the read stopped |
 | `spans-not-recorded`, `spans-unreadable` | The run has no span file, or it could not be read |
-| `unreadable` | Records or spans that were not valid contract records, counted and not shown |
+| `unreadable` | Journal lines that were not records, records the contract refused and spans that were not valid, counted and not shown |
 | `parent-missing` | Spans continue a parent that is not kept: it was evicted, lost or never ended |
-| `capped` | The query's limits left out matches |
+| `capped` | The query's limits left out records, spans or endings, or trace IDs past the 16 it names |
 
 The `follow-one-request` step runs the cases against a freshly seeded run and attaches each answer as
-`follow-<case>.json` in its capture directory: `success` (one trace, every span's parent kept, no gap), `refusal` (the lamp
+`follow-<case>.json` in its capture directory: `success` (one trace, no span's parent missing, and no gap but the live runtime's `losses-uncounted`), `refusal` (the lamp
 refused `lamp-9` with `not-found` at INFO, and no device call), `uncertain` (the device held the switch past the deadline:
 `uncertain-result` at WARN, and the late outcome), `replayed` (a lost acknowledgment and a restart: one publication record,
 two publish spans, the second a new root that links to the stored context, and the core's duplicate), `crash` (the
@@ -109,7 +111,8 @@ follow one command end to end, or run `scenario-end-to-end` and query any of its
 route runs only the core's operations, so a reviewer on it runs the step and reads the attached answers; one who can reach
 the run's loopback harness queries it directly.
 
-The harness's journal is what the supervisor read from the runtime's stderr, and the supervisor waits for a stopped
+The harness's journal is what the supervisor read from the runtime's stderr: each line that is a JSON object with an
+event name, and a count of every other line with content, such as a stack trace. The supervisor waits for a stopped
 runtime's stderr to drain before it starts the next, so a clean stop shows its `runtime.stopped` record. Records below
 `info` are not written, so a DEBUG observation, such as a duplicate that a consumer only counts, is absent by design.
 

@@ -65,14 +65,15 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
     let answer = await send('ok', 'follow-ok', 'lamp-1', 5000);
     const success = await until(harness, 'request=follow-ok', followed => count(followed, 'outcome.published') > 0 && followed.names['bunny.outcome.publish'] !== undefined);
     await keep(t, 'success', 'a success', success);
-    await t.expect('a success: the lamp accepted it, and the run follows it from its admission to its outcome in one trace, with every span\'s parent kept', () => {
+    await t.expect('a success: the lamp accepted it, and the run follows it from its admission to its outcome in one trace, with no span\'s parent missing', () => {
       must(answer === 'accepted', `the answer was ${answer}`);
       must(endings(success).join() === 'replied INFO' && success.decision.ended, `its endings were ${endings(success).join()}`);
       must(['runtime.command.admitted', 'command.executing', 'outcome.published'].every(event => eventsOf(success).includes(event)), `its records were ${eventsOf(success).join()}`);
       must(Object.keys(success.names).sort().join() === 'bunny.command.execute,bunny.command.queue,bunny.command.request,bunny.device.call,bunny.outcome.publish', `its spans were ${Object.keys(success.names).join()}`);
       must(success.traces.length === 1, `it had ${success.traces.length} traces`);
       must(orphans(success).length === 0, `${orphans(success).join()} lost their parent`);
-      must(success.gaps.length === 0 && success.omitted.records + success.omitted.spans === 0, `it reported ${gapKinds(success).join()}`);
+      // The one gap a healthy live run has: its losses are counted only when its runtime stops.
+      must(gapKinds(success).join() === 'losses-uncounted' && Object.values(success.omitted).every(left => left === 0), `it reported ${gapKinds(success).join()}`);
     });
 
     // A refusal: the lamp is not one the module has, so the owner refuses it, which is a domain refusal at INFO.
@@ -128,7 +129,7 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
     await keep(t, 'crash', 'a runtime killed before its command finished', crashed);
     await t.expect('missing evidence: the killed runtime recorded no ending, so the answer says none is recorded, names the runtime that ended without its stop record, and reports no span that never ended', () => {
       must(answer === 'uncertain-result', `the answer was ${answer}`);
-      must(crashed.decision.admitted === 1 && !crashed.decision.ended && crashed.decision.endings.length === 0, `its decision was ${JSON.stringify(crashed.decision)}`);
+      must(crashed.decision.admitted === 1 && crashed.decision.unended === 1 && !crashed.decision.ended && crashed.decision.endings.length === 0, `its decision was ${JSON.stringify(crashed.decision)}`);
       must(crashed.gaps.some(gap => gap.kind === 'generation-ended-without-stop' && gap.generation === 2), `its gaps were ${gapKinds(crashed).join()}`);
       must(crashed.names['bunny.command.request'] === undefined && crashed.names['bunny.command.execute'] === undefined, 'a span that never ended is reported');
       must(orphans(crashed).length === 2 && gapKinds(crashed).includes('parent-missing'), `${orphans(crashed).join()} lack parents`);
@@ -140,8 +141,8 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
     await keep(t, 'missing', 'a request nothing carries', never);
     await t.expect('absent evidence: a request nothing carries is reported none-found, with the killed runtime named, and the note says it is not evidence that nothing happened', () => {
       must(never.result === 'none-found' && never.records.length === 0 && never.spans.length === 0 && never.traces.length === 0, 'it found something');
-      must(never.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), 'it named no reason the evidence could be incomplete');
-      must(never.note.includes('not evidence that nothing happened'), 'its note does not say so');
+      must(never.gaps.some(gap => gap.kind === 'generation-ended-without-stop') && gapKinds(never).includes('losses-uncounted'), 'it named no reason the evidence could be incomplete');
+      must(never.note.includes('not evidence that nothing happened') && never.note.includes('below the minimum level'), 'its note does not say so');
     });
 
     // A query over its limits, against the same request asked for in full a moment before.

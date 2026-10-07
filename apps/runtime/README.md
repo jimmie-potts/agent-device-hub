@@ -471,15 +471,22 @@ outside the runtime can read the spans, and a crash keeps those it had finished
 
 - `spans.ndjson` is the segment being written and `spans.previous.ndjson` the one
   before it. Each segment holds at most 512 spans or 2 MiB, so the pair holds the
-  latest 1,024 spans within the contract's 4 MiB queue bound. The next segment
-  replaces the segment before it.
+  latest 512 to 1,024 spans, within the contract's 4 MiB queue bound. The next
+  segment replaces the segment before it.
 - A segment starts with one header line, `{"schema":"runtime-spans/1.0","evicted":N}`,
   that counts the spans let go before it. A reader can tell a span that was let go
   from one that never arrived, as `runtime.spans()` does for memory. A runtime
-  that restarts on the same state directory continues the same files.
+  that restarts on the same state directory continues the same files. If a kill
+  came between starting a segment and writing its header, so that the current
+  segment is missing or empty beside a previous one, the next header says
+  `"evicted":null`: the count is unknown, never 0, and it stays unknown for the
+  files' life.
 - Both files are owner-only (mode 600), opened without following a link, and must
-  be regular files with one link; any other file is refused with
-  `span-file-not-private`, and the runtime does not start.
+  be regular files with one link; any other file, the previous segment included, is
+  refused with `span-file-not-private`, and the runtime does not start.
+- A span that cannot start a segment, because the rename or the open fails, is lost
+  and counted. The next span tries again, so recording resumes once the cause has
+  gone.
 - A span the file cannot take, because it is closed or the disk refuses it, is
   lost and counted in `runtime.stopped` like any other span the sink fails to
   take. A reader returns each complete line that is a span and counts a complete

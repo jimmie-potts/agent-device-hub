@@ -30,6 +30,8 @@ export type Evidence = {
   /** The lowest level the runtime writes, so a reader knows what a lower one's absence means. */
   minimumLevel: string;
   journal: readonly JournalEntry[];
+  /** Lines of the journal that were not records, such as a stack trace or a usage line: counted, never shown. */
+  skippedLines: number;
   spans: SpanEvidence;
 };
 
@@ -72,6 +74,20 @@ function limit(value: string | null | undefined): number {
 /** The most records and spans an answer returns. */
 export function limitsOf(input: {records?: string | null | undefined; spans?: string | null | undefined}): Limits {
   return {records: limit(input.records), spans: limit(input.spans)};
+}
+
+/**
+ * The selector and the limits of a query string. Each of `request`, `trace`, `records` and `spans` is given at most once:
+ * a repeated one is refused, since an answer for one of two requests would be an answer for neither. A parameter the query
+ * does not know is ignored.
+ */
+export function queryOf(params: URLSearchParams): {selector: Selector; limits: Limits} {
+  for (const name of ['request', 'trace']) if (params.getAll(name).length > 1) throw new FollowRefusal('invalid-selector', 'name each parameter once');
+  for (const name of ['records', 'spans']) if (params.getAll(name).length > 1) throw new FollowRefusal('invalid-limit', 'name each parameter once');
+  return {
+    selector: selectorOf({request: params.get('request'), trace: params.get('trace')}),
+    limits: limitsOf({records: params.get('records'), spans: params.get('spans')}),
+  };
 }
 
 // Spans
@@ -228,9 +244,10 @@ export type Gap =
   | {kind: 'spans-truncated'}
   | {kind: 'spans-not-recorded'}
   | {kind: 'spans-unreadable'}
+  | {kind: 'losses-uncounted'; generation: number}
   | {kind: 'unreadable'; records: number; spans: number}
   | {kind: 'parent-missing'; spans: number}
-  | {kind: 'capped'; records: number; spans: number};
+  | {kind: 'capped'; records: number; spans: number; traces: number; endings: number};
 
 const MEANINGS: Readonly<Record<Gap['kind'], string>> = {
   'generation-ended-without-stop': 'This runtime ended without writing runtime.stopped, as after a crash or a kill. Records and spans it had not yet written, and its counts of lost telemetry, are unknown.',
@@ -240,9 +257,10 @@ const MEANINGS: Readonly<Record<Gap['kind'], string>> = {
   'spans-truncated': 'A span file was longer than its bound, so the read stopped there and later spans were not read.',
   'spans-not-recorded': 'This run has no span file, so no span is evidence either way.',
   'spans-unreadable': 'The run\'s span file could not be read, so no span is evidence either way.',
-  'unreadable': 'Some records or spans were not valid contract records. They are counted and not shown.',
+  'losses-uncounted': 'This runtime has not stopped. It counts the records and spans that its queues dropped or its sinks lost, and says so in runtime.stopped, only when it stops, so those losses are not shown yet.',
+  'unreadable': 'Some lines of the journal and some spans were not valid contract records. They are counted and not shown.',
   'parent-missing': 'These spans continue a parent that is not in the evidence: it was evicted, lost or never ended.',
-  'capped': 'The query left out matches beyond its limits. Raise a limit, or query by trace.',
+  'capped': 'The query left out records, spans or endings beyond its limits, or trace IDs beyond the 16 it names. Raise a limit, or query by trace.',
 };
 
 export type FollowedGap = Gap & {meaning: string};
@@ -257,13 +275,18 @@ export type Followed = {
   searched: {records: number; spans: number; unreadableRecords: number; unreadableSpans: number; generations: number; minimumLevel: string};
   /** Matches before the limits. */
   matched: {records: number; spans: number};
-  omitted: {records: number; spans: number};
-  /** The traces of the matches, in the order they first appear. */
+  /** What the limits left out: records, spans and endings past them, and trace IDs past the 16 an answer names. */
+  omitted: {records: number; spans: number; traces: number; endings: number};
+  /** The traces of the matches, in the order they first appear, at most 16. */
   traces: string[];
   /** Records and spans on those traces that the query did not match, such as another request's; query by trace to read them. */
   otherOnTrace: {records: number; spans: number};
-  /** The bus's decisions among the matches. `ended`: every admitted command has an ending recorded. */
-  decision: {admitted: number; ended: boolean; endings: Ending[]};
+  /**
+   * The bus's decisions among the matches. An ending counts for the command it follows: `unended` is how many admitted
+   * commands have no ending of their own among the matches, and `ended` says none lacks one. `endings` lists at most as
+   * many as the record limit allows, and counts of the rest are in `omitted`.
+   */
+  decision: {admitted: number; unended: number; ended: boolean; endings: Ending[]};
   /** How many matched spans have each name. A name no matched span has is not listed: it is absent, not zero evidence. */
   names: Record<string, number>;
   records: FollowedRecord[];
@@ -272,8 +295,9 @@ export type Followed = {
   note: string;
 };
 
-const NOTE_FOUND = 'Records below the minimum level are not written, telemetry queues drop under pressure and a runtime that ends abruptly loses what it had not written. A record or span that is not here is not evidence that nothing happened.';
-const NOTE_NONE = 'No record or span in the evidence carries this ID. That is not evidence that nothing happened: see the gaps for what the run could not keep.';
+const CAVEATS = 'Records below the minimum level are not written, telemetry queues drop under pressure and a runtime that ends abruptly loses what it had not written.';
+const NOTE_FOUND = `${CAVEATS} A record or span that is not here is not evidence that nothing happened.`;
+const NOTE_NONE = `No record or span in the evidence carries this ID. ${CAVEATS} That is not evidence that nothing happened: see the gaps for what the run could not keep.`;
 
 const ENDINGS: readonly Ending['event'][] = ['refused', 'cancelled', 'replied', 'uncertain'];
 const counted = (value: unknown): number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -372,25 +396,34 @@ export function follow(evidence: Evidence, selector: Selector, limits: Limits = 
 
   const names: Record<string, number> = {};
   for (const {span} of found) names[span.name] = (names[span.name] ?? 0) + 1;
-  const endings = records.flatMap(({generation, record}): Ending[] => {
+  // An ending belongs to the command it follows: the bus's records of one command share its message ID, and a refusal that
+  // was never admitted, such as one for no responder, ends no admitted command.
+  const commandOf = (record: DiagnosticRecord): string => String(record.attributes['bunny.message.id'] ?? `${String(record.trace_id)}:${String(record.span_id)}`);
+  const endings = records.flatMap(({generation, record}): (Ending & {command: string})[] => {
     const event = ENDINGS.find(ending => record.event_name === `runtime.command.${ending}`);
     const code = record.attributes['bunny.code'];
-    return event === undefined ? [] : [{generation, event, level: record.severity_text, ...(typeof code === 'string' ? {code} : {})}];
+    return event === undefined ? [] : [{command: commandOf(record), generation, event, level: record.severity_text, ...(typeof code === 'string' ? {code} : {})}];
   });
-  const admitted = records.filter(({record}) => record.event_name === 'runtime.command.admitted').length;
+  const ended = new Set(endings.map(({command}) => command));
+  const admissions = records.filter(({record}) => record.event_name === 'runtime.command.admitted');
+  const unended = admissions.filter(({record}) => !ended.has(commandOf(record))).length;
+  const shownEndings = endings.slice(0, limits.records).map(({command: _command, ...ending}): Ending => ending);
 
-  const omitted = {records: records.length - shownRecords.length, spans: found.length - shownSpans.length};
+  const omitted = {
+    records: records.length - shownRecords.length, spans: found.length - shownSpans.length, traces: Math.max(0, traces.length - MAX_TRACES),
+    endings: endings.length - shownEndings.length,
+  };
   const gaps = gapsOf(evidence, entries, {
-    unreadable: {records: unreadableRecords, spans: unreadableSpans}, omitted, parentsMissing: placed.filter(({parent}) => parent?.state === 'missing').length,
+    unreadable: {records: unreadableRecords + evidence.skippedLines, spans: unreadableSpans}, omitted, parentsMissing: placed.filter(({parent}) => parent?.state === 'missing').length,
   });
   const result = records.length + found.length === 0 ? 'none-found' : 'found';
   return {
     schema: FOLLOW_SCHEMA, query: selector, limits, result,
     searched: {
-      records: entries.length, spans: spans.length, unreadableRecords, unreadableSpans, generations: evidence.generation, minimumLevel: evidence.minimumLevel,
+      records: entries.length, spans: spans.length, unreadableRecords: unreadableRecords + evidence.skippedLines, unreadableSpans, generations: evidence.generation, minimumLevel: evidence.minimumLevel,
     },
     matched: {records: records.length, spans: found.length}, omitted, traces: traces.slice(0, MAX_TRACES), otherOnTrace,
-    decision: {admitted, ended: endings.length > 0 && endings.length >= admitted, endings},
+    decision: {admitted: admissions.length, unended, ended: admissions.length + endings.length > 0 && unended === 0, endings: shownEndings},
     names, records: shownRecords, spans: shownSpans, gaps, note: result === 'found' ? NOTE_FOUND : NOTE_NONE,
   };
 }
@@ -398,15 +431,16 @@ export function follow(evidence: Evidence, selector: Selector, limits: Limits = 
 /** The ways the evidence is incomplete, each with its fixed meaning. */
 function gapsOf(
   evidence: Evidence, entries: readonly Entry[],
-  seen: {unreadable: {records: number; spans: number}; omitted: {records: number; spans: number}; parentsMissing: number},
+  seen: {unreadable: {records: number; spans: number}; omitted: {records: number; spans: number; traces: number; endings: number}; parentsMissing: number},
 ): FollowedGap[] {
   const gaps: Gap[] = [];
   const stops = new Map<number, DiagnosticRecord>();
   for (const {generation, record} of entries) if (record.event_name === 'runtime.stopped') stops.set(generation, record);
-  // The current runtime is live; every one before it has ended, and a clean end writes runtime.stopped.
-  for (let generation = 1; generation < evidence.generation; generation += 1) {
+  // Every runtime before the current one has ended, and a clean end writes runtime.stopped. The current one is live, and
+  // counts what it lost only when it stops.
+  for (let generation = 1; generation <= evidence.generation; generation += 1) {
     const stop = stops.get(generation);
-    if (stop === undefined) gaps.push({kind: 'generation-ended-without-stop', generation});
+    if (stop === undefined) gaps.push(generation < evidence.generation ? {kind: 'generation-ended-without-stop', generation} : {kind: 'losses-uncounted', generation});
     else {
       const [dropped, failed] = [counted(stop.attributes['bunny.telemetry.dropped_count']), counted(stop.attributes['bunny.telemetry.failure_count'])];
       if (dropped + failed > 0) gaps.push({kind: 'telemetry-lost', generation, dropped, failed});
@@ -421,6 +455,6 @@ function gapsOf(
   }
   if (seen.unreadable.records + seen.unreadable.spans > 0) gaps.push({kind: 'unreadable', ...seen.unreadable});
   if (seen.parentsMissing > 0) gaps.push({kind: 'parent-missing', spans: seen.parentsMissing});
-  if (seen.omitted.records + seen.omitted.spans > 0) gaps.push({kind: 'capped', ...seen.omitted});
+  if (seen.omitted.records + seen.omitted.spans + seen.omitted.traces + seen.omitted.endings > 0) gaps.push({kind: 'capped', ...seen.omitted});
   return gaps.map(gap => ({...gap, meaning: MEANINGS[gap.kind]}));
 }
