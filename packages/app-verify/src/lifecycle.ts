@@ -9,7 +9,7 @@ import {latestFrozen, recoverOnStop, uncommitted} from './handoff.js';
 import {declaresInputs, NAME, resolveInputs} from './inputs.js';
 import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
-import {runActiveDetail} from './single-run.js';
+import {holdSingleRun, SingleRunRefused, type SingleRun} from './single-run.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunInputs, type RunState} from './types.js';
 import {errorText, hex256, iso, loopback, newRunId, pause, redact, runIdPattern, UsageError, which} from './util.js';
@@ -381,15 +381,27 @@ export interface StartOptions {
 }
 
 export async function start(plugin: AppPlugin, io: Io, options: StartOptions): Promise<{code: number; receipt?: Receipt; value: Record<string, unknown>}> {
-  const operation = {operation: 'start'};
   const supervisor = await systemd.supervisor();
-  if (!supervisor.available) return {code: EXIT.unavailable, value: {...operation, state: 'failed', cause: 'supervisor-unavailable', detail: supervisor.reason}};
+  if (!supervisor.available) return {code: EXIT.unavailable, value: {operation: 'start', state: 'failed', cause: 'supervisor-unavailable', detail: supervisor.reason}};
+  if (!options.single) return begin(plugin, io, options);
   // A refusal, not a failed start: it comes before anything is created, so the line carries the error body and no run id.
-  if (options.single) {
-    const live = await systemd.liveRuns();
-    if (live === undefined) io.progress('could not list the host\'s run units; the one-run check was skipped');
-    else if (live.length) throw new Failure('run-active', runActiveDetail(live));
+  let slot: SingleRun;
+  try {
+    slot = await holdSingleRun(line => io.progress(line));
+  } catch (error) {
+    if (error instanceof SingleRunRefused) throw new Failure('run-active', error.detail);
+    throw error;
   }
+  try {
+    return await begin(plugin, io, options);
+  } finally {
+    await slot.release();
+  }
+}
+
+/** `start` once the supervisor answers and, when the wrapper opted in, this start holds the host's one-run slot. */
+async function begin(plugin: AppPlugin, io: Io, options: StartOptions): Promise<{code: number; receipt?: Receipt; value: Record<string, unknown>}> {
+  const operation = {operation: 'start'};
   let rootsFound: Roots;
   try {
     rootsFound = await resolveRoots(plugin, io.env);

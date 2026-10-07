@@ -316,19 +316,27 @@ in the same way once it vendors a core that has this.
   failed unit never blocks a start. A live unit whose receipt is stale does
   count, because it still holds memory: `doctor` shows it, `stop <run-id>`
   ends it, and its lease ends it otherwise.
-- **What it does not check.** A run has no unit until its build step, seed and
-  lease are done, so two starts begun within that window can both pass. The
-  guard stops a second start beside a run that is serving; it is not a lock.
-  If `systemctl` cannot list units, the start goes ahead and says on stderr
-  that the check was skipped.
+- **Starts begun together.** A run has no unit until its build, seed and lease
+  steps are done, so a guarded start first takes a claim: a transient unit,
+  `app-verify-start-claim.service`, that lives while the starting process does
+  and that systemd stops after 30 minutes in any case. `systemd-run` refuses a
+  unit name that exists, so of two starts begun together one holds the claim and
+  the other is refused. It says `another start is still creating a run`, or
+  names the run once that run's unit exists. The claim is held until `start`
+  returns and given back whether it started a run or not. A start killed without
+  giving it back leaves it for about a second. If `systemctl` cannot create the
+  claim or list units, the start goes ahead and says so on stderr.
 - **Other operations.** `restart` replaces a run and is never refused.
   `scenario`, `capture`, `handoff`, `extend`, `doctor` and `stop` never read the
   variable.
 - **A composition** that starts several runs through wrappers counts as one
-  run. Its orchestrator checks once itself, with the package's `liveRuns()`
-  (the live run ids, or `undefined` when units cannot be listed) and
-  `runActiveDetail(runIds)` (the refusal's `detail`), and removes the variable
-  from the environment of the runs it starts.
+  run. Its orchestrator takes the slot itself with the package's
+  `holdSingleRun(progress)`, which throws `SingleRunRefused` (its `detail` is
+  the refusal's) while a run is live or another start holds the claim, and
+  returns `{release()}` to call when the runs have started. It removes the
+  variable from the environment of the runs it starts. The package also exports
+  `liveRuns()` (the live run ids, or `undefined` when units cannot be listed)
+  and `runActiveDetail(runIds)`.
 
 ## Capture without a supervisor
 
@@ -389,10 +397,13 @@ inside a checkout.
   Each test stops the units of its own app name when it ends and fails if any
   remain. Test leases are at most ten minutes, so even a killed run leaves
   nothing past that. `tests/single-run.test.mjs` also starts stand-in units
-  (a failed one, a stray lease timer, a lease service and a host-route command
-  unit) to show that only a live run blocks, and stops each when it ends.
-  The suite's sandbox never sets `APP_VERIFY_SINGLE_RUN`; each guarded command
-  passes it.
+  (a failed one, a stray lease timer, a lease service, a host-route command
+  unit and a held claim) to show that only a live run or a held claim blocks,
+  and stops each when it ends. The suite's sandbox never sets
+  `APP_VERIFY_SINGLE_RUN`; each guarded command passes it, with a `systemctl`
+  and `systemd-run` on its PATH (`tests/scope-shim.mjs`) that scope the guard's
+  listing and claim to the test's own apps, so a run or a start that another
+  session has in flight cannot decide the result.
   These tests skip, each with the reason, when no user manager exists, and
   fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. CI hides the runner's user
   manager until the lease works under systemd 255 (#873), so they run on a

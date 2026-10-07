@@ -164,15 +164,20 @@ whichever application started it:
   once they vendor a core that has this.
 - A unit that is `active (running)` or `activating` counts. A failed, inactive
   or stopping unit, a lease or thaw timer or its service, and the host route's
-  command unit do not, so a stale or failed unit never blocks a start. A live
+  command unit do not, so a stale or failed unit never blocks a start. A claim
+  left by a killed start goes within about a second, and in any case after 30
+  minutes. A live
   unit with a stale receipt does count, because it still holds memory:
   `doctor` shows it and `stop <run-id>` ends it.
-- The check reads units, so it sees a run only once its unit exists. Two starts
-  begun within the same build, seed and lease steps can both pass.
+- A run has no unit until its build, seed and lease steps are done, so a guarded
+  start first takes a claim, the transient unit `app-verify-start-claim.service`,
+  that lives while the starting process does. `systemd-run` refuses a name that
+  exists, so of two starts begun together one is refused, with `run-active`.
 - `restart` is never refused. A composition counts as one run: `verify:compose`
-  checks once, before it creates anything, and starts its three runs without the
-  variable. Its refusal keeps the composition's own 1.x line, `{"operation",
-  "error": "run-active", "detail"}`.
+  holds the claim for the whole composition, refuses beside any live run before
+  it creates anything, and starts its three runs without the variable. Its
+  refusal keeps the composition's own 1.x line, `{"operation", "error":
+  "run-active", "detail"}`.
 
 The [core README](../packages/app-verify/README.md#one-run-at-a-time) has the
 details.

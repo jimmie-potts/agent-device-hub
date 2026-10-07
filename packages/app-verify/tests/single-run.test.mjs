@@ -1,38 +1,31 @@
 // Hub #944: the opt-in, host-wide refusal of a second run. A wrapper opts in with APP_VERIFY_SINGLE_RUN=1; these tests
 // pass it per command, and the suite's own sandbox never sets it, so every other test still starts runs side by side.
 //
-// The guard reads the whole host, and another session may have a run live while this suite runs. Each guarded command
-// here therefore runs with a systemctl on its PATH that lists only this sandbox's run units (`scoped`), or none at all
-// (`blind`); every other systemctl call passes through. The real listing is exercised directly through `liveRuns`.
+// The guard reads the whole host and holds one host-wide claim unit, and another session may have a run or a start in
+// flight while this suite runs. Each guarded command here therefore runs with a systemctl and a systemd-run on its PATH
+// (scope-shim.mjs) that list only this sandbox's run units and take a claim of their own (`scoped`), or cannot list
+// units at all (`blind`); every other call passes through. The real listing is exercised directly through `liveRuns`.
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {chmod, mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
+import {readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
 import {liveRuns, runActiveDetail} from '@jimmie-potts/app-verify';
 import {assertRefusal, expectedBody, sandbox, show, supervisorSkipReason, units, until} from './helpers.mjs';
+import {scopeShim} from './scope-shim.mjs';
 
 const skip = supervisorSkipReason();
 const systemctl = (...args) => spawnSync('systemctl', ['--user', ...args], {encoding: 'utf8'});
 const transient = (...args) => spawnSync('systemd-run', ['--user', '--quiet', ...args], {encoding: 'utf8'});
 const unloaded = unit => show(unit, 'LoadState').LoadState !== 'loaded';
+/** The claim unit a scoped guarded start takes. */
+const claimOf = box => `app-verify-start-claim-${box.app}.service`;
 
-/**
- * The environment of a guarded command. `scoped` narrows the core's unit listing to this sandbox's apps, `blind` makes
- * that listing fail; either way every other systemctl call reaches the real one.
- */
+/** The environment of a guarded command: the guard on, and a PATH whose systemctl and systemd-run are scoped to this sandbox. */
 async function guarded(box, mode = 'scoped') {
-  const real = spawnSync('sh', ['-c', 'command -v systemctl'], {encoding: 'utf8'}).stdout.trim();
-  const dir = join(box.base, `systemctl-${mode}`);
-  if (!existsSync(dir)) {
-    await mkdir(dir);
-    const swap = mode === 'blind' ? 'exit 1' : `a='app-verify-${box.app}-*.service'`;
-    await writeFile(join(dir, 'systemctl'), `#!/bin/sh\nn=$#\ni=0\nwhile [ "$i" -lt "$n" ]; do\n  a=$1; shift; i=$((i+1))\n  [ "$a" = 'app-verify-*.service' ] && ${swap}\n  set -- "$@" "$a"\ndone\nexec ${real} "$@"\n`);
-    await chmod(join(dir, 'systemctl'), 0o755);
-  }
-  return {APP_VERIFY_SINGLE_RUN: '1', PATH: `${dir}:${process.env.PATH}`};
+  return {APP_VERIFY_SINGLE_RUN: '1', PATH: await scopeShim(join(box.base, `shim-${mode}`), box.app, {blind: mode === 'blind'})};
 }
 
 // No skip: the wording, and the README's example of it, need no user manager.
@@ -81,6 +74,7 @@ test('a second start is refused while a run is live: it names the run, creates n
     assert.deepEqual(await readdir(box.proofRoot), before.proof, 'a refusal creates no proof directory');
     assert.deepEqual(await readdir(box.stateRoot), before.runtime, 'and no runtime directory');
     assert.deepEqual(units(box.app), before.units, 'and no unit or timer');
+    assert.equal(unloaded(claimOf(box)), true, 'and the start claim is given back, after a start and after a refusal');
     assert.deepEqual(await box.receipt(runId), before.receipt, 'the live run keeps its receipt');
     assert.deepEqual(show(`app-verify-${runId}.service`, 'ActiveState', 'MainPID', 'ExecMainStartTimestampMonotonic'), before.unit, 'its process');
     assert.deepEqual(show(`app-verify-${runId}-lease.timer`, 'ActiveState', 'NextElapseUSecRealtime'), before.timer, 'and its lease');
@@ -95,6 +89,56 @@ test('a second start is refused while a run is live: it names the run, creates n
     assert.equal(next.code, 0, next.stderr);
     assert.equal((await box.cli(['stop', next.result.runId], {entry: other})).code, 0);
   } finally {
+    await box.close();
+  }
+});
+
+test('two starts begun together cannot both pass: one runs, the other is refused, and the claim is given back', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  try {
+    const env = await guarded(box);
+    const both = await Promise.all([box.cli(['start', '--lease', '5'], {extraEnv: env}), box.cli(['start', '--lease', '5'], {extraEnv: env})]);
+    const [won, lost] = both.sort((a, b) => a.code - b.code);
+    assert.equal(won.code, 0, won.stderr);
+    assert.equal(lost.code, 1, lost.stderr);
+    assertRefusal(lost.result, 'run-active');
+    assert.match(lost.result.detail, new RegExp(`${won.result.runId}\\b|another start is still creating a run`), 'the loser names the run, or the start still creating it');
+    assert.deepEqual(await readdir(box.stateRoot), [won.result.runId], 'only the winner created a runtime directory');
+    assert.deepEqual((await readdir(box.proofRoot)), [won.result.runId], 'and a proof directory');
+    assert.equal(unloaded(claimOf(box)), true, 'and the claim is given back');
+    assert.equal((await box.cli(['stop', won.result.runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a start whose claim is held by another start is refused and creates nothing; a start killed mid-way leaves no claim behind', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  try {
+    const env = await guarded(box);
+    // Another start is in flight: its claim exists and no run does yet.
+    assert.equal(transient(`--unit=${claimOf(box).replace(/\.service$/, '')}`, '--collect', 'sleep', '120').status, 0);
+    const refused = await box.cli(['start', '--lease', '5'], {extraEnv: env});
+    assert.equal(refused.code, 1, refused.stderr);
+    assertRefusal(refused.result, 'run-active');
+    assert.match(refused.result.detail, /another start is still creating a run/);
+    assert.equal(existsSync(box.proofRoot), false, 'a refused start creates no proof directory');
+    assert.equal(existsSync(box.stateRoot), false, 'and no runtime directory');
+    assert.deepEqual(units(box.app), [], 'and no unit');
+    assert.equal(systemctl('stop', claimOf(box)).status, 0);
+    const started = await box.cli(['start', '--lease', '5'], {extraEnv: env});
+    assert.equal(started.code, 0, 'the start goes ahead once the claim is gone: ' + started.stderr);
+    assert.equal((await box.cli(['stop', started.result.runId])).code, 0);
+
+    // A claim names the process that holds it: when that process is gone, the claim goes within seconds.
+    const holder = spawn('sleep', ['3'], {stdio: 'ignore'});
+    const script = `import {claimStart} from ${JSON.stringify(new URL('../dist/systemd.js', import.meta.url).href)}; const first = await claimStart(${holder.pid}); const second = await claimStart(process.pid); console.log(JSON.stringify([first, second]));`;
+    const claimed = spawnSync(process.execPath, ['--input-type=module', '-e', script], {env: {...process.env, PATH: env.PATH}, encoding: 'utf8'});
+    assert.deepEqual(JSON.parse(claimed.stdout), ['claimed', 'held'], claimed.stderr);
+    assert.equal(unloaded(claimOf(box)), false, 'the claim exists while its process lives');
+    await until(() => unloaded(claimOf(box)), 'the claim goes when its process does', 15000);
+  } finally {
+    systemctl('stop', claimOf(box));
     await box.close();
   }
 });

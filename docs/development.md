@@ -1963,7 +1963,8 @@ The suite has two parts:
   relaunch, scenario-specific inputs, redacted failure details and extra
   endpoints (`tests/endpoints.test.mjs`), and the one-run guard: a second
   `start` with `APP_VERIFY_SINGLE_RUN=1` is refused beside a live run of any
-  app and leaves that run untouched, while failed units, stray timers and the
+  app and leaves that run untouched, two starts begun together cannot both
+  pass, a held claim refuses a start, and failed units, stray timers and the
   host route's command unit never block it. Without a
   manager they skip, each with the printed reason, unless
   `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence

@@ -552,14 +552,6 @@ async function startUnlocked(options, io) {
   }
   const manager = await supervisor();
   if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason ?? 'no usable user manager', null, EXIT.unavailable);
-  // Hub #944: a composition is one run, so it is refused beside any live run before anything is created. Its own runs
-  // start without the variable (see runCompose), or the second of them would be refused for the first.
-  if (io.singleRun) {
-    const {liveRuns, runActiveDetail} = await import('@jimmie-potts/app-verify');
-    const live = await liveRuns();
-    if (live === undefined) progress('could not list the host\'s run units; the one-run check was skipped');
-    else if (live.length) throw new ComposeFailure('run-active', runActiveDetail(live));
-  }
   // Identity before anything is created: each checkout clean at its pin, unless explicitly unpinned.
   /** @type {string[]} */
   const mismatches = [];
@@ -956,8 +948,28 @@ async function extendUnlocked(id, leaseMinutes, io) {
 // Public operations take the same lock even when called without the CLI.
 /** @param {Parameters<typeof startUnlocked>[0]} options @param {Io} io */
 export async function start(options, io) {
-  return options.restarts ? operation(options.restarts, {...io, hubRoot: options.hubRoot ?? io.hubRoot}, () => startUnlocked(options, io)) : startUnlocked(options, io);
+  // Hub #944: a composition is one run, so a start that opted in holds the host's one-run slot for the whole composition
+  // and is refused beside any live run before anything is created. Its own runs start without the variable (see
+  // runCompose), or the second of them would be refused for the first.
+  const slot = io.singleRun ? await holdSingleRun(io.progress) : undefined;
+  try {
+    return options.restarts ? await operation(options.restarts, {...io, hubRoot: options.hubRoot ?? io.hubRoot}, () => startUnlocked(options, io)) : await startUnlocked(options, io);
+  } finally {
+    await slot?.release();
+  }
 }
+
+/** @param {Progress} progress */
+async function holdSingleRun(progress) {
+  const {holdSingleRun: hold, SingleRunRefused} = await import('@jimmie-potts/app-verify');
+  try {
+    return await hold(progress);
+  } catch (error) {
+    if (error instanceof SingleRunRefused) throw new ComposeFailure('run-active', error.detail);
+    throw error;
+  }
+}
+
 /** @param {string | undefined} id @param {Io} io */
 export const stop = (id, io) => operation(id, io, () => stopUnlocked(id, io));
 /** @param {string | undefined} id @param {Io} io */

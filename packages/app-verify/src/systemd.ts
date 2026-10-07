@@ -103,6 +103,29 @@ export async function liveRuns(): Promise<string[] | undefined> {
   return runs.sort();
 }
 
+/** The host-wide claim a guarded start holds while it creates a run (Hub #944). */
+export const START_CLAIM = 'app-verify-start-claim.service';
+
+/**
+ * Take the claim: a transient unit that lives while process `pid` does. systemd-run refuses a unit name that already
+ * exists, so only one start holds it. A start killed without releasing it leaves the unit for about a second, when its
+ * loop sees `pid` gone; `RuntimeMaxSec` ends it in any case, so a stale claim never blocks for long.
+ * `held` when another start has it, `failed` with a reason when the unit could not be created for another reason.
+ */
+export async function claimStart(pid: number): Promise<'claimed' | 'held' | {failed: string}> {
+  const shell = which('sh', '/usr/bin:/bin', '/');
+  if (!shell) return {failed: 'sh was not found in /usr/bin or /bin'};
+  const result = await exec('systemd-run', [
+    '--user', `--unit=${START_CLAIM.replace(/\.service$/, '')}`, '--collect', '--quiet',
+    '--property=RuntimeMaxSec=1800s', '--property=TimeoutStopSec=5s', '--property=Description=app-verify start claim',
+    '--', shell, '-c', 'while kill -0 "$1" 2>/dev/null; do sleep 1; done', 'sh', String(pid),
+  ], {timeoutMs: 30000});
+  if (result.code === 0) return 'claimed';
+  const claim = await show(START_CLAIM, ['LoadState', 'ActiveState']);
+  if (claim?.LoadState === 'loaded' && (claim.ActiveState === 'active' || claim.ActiveState === 'activating')) return 'held';
+  return {failed: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]};
+}
+
 export interface ServiceSpec {
   unit: string;
   argv: readonly string[];
