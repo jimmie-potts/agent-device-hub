@@ -8,7 +8,7 @@ import {createNanoleafModule, nanoleafMessageSchemas, SimulatedNanoleaf, SYNTHET
 import {READ_FAMILIES, SECTION} from './module-support.js';
 
 const reportsUnavailable = (message: Message): boolean =>
-  message.dataschema === 'https://bunny.invalid/events/device/2.0' && (message.data as {availability?: unknown}).availability === 'unavailable';
+  message.dataschema === 'https://bunny.invalid/events/device/2.1' && (message.data as {availability?: unknown}).availability === 'unavailable';
 
 moduleConformance({
   create: () => createNanoleafModule({transport: new SimulatedNanoleaf().request}),

@@ -1654,10 +1654,16 @@ async function syncDevicesAlone(h: Harness): Promise<void> {
   alone.set(h, `synced ${[...new Set(states.map(state => state.dataschema.split('/').at(-2)))].join(',')}:${states.map(state => (state.data as {id?: string}).id).join(',')}`);
   await result.copy.close();
 }
-/** Whether the reader's wall view shows a hold after an uncertain write, with the device record's availability. */
-const wallHeld = (h: Harness, held: boolean, availability: DeviceRecord['availability']): Outcome => {
+/**
+ * Whether the reader's wall view shows a hold after an uncertain write, with the device record's availability, and
+ * whether the record's `held` names the held write's request (`device/2.1`, Hub #975): `held` is that request, or
+ * undefined for a wall nothing holds, whose record then has no `held`.
+ */
+const wallHeld = (h: Harness, held: string | undefined, availability: DeviceRecord['availability']): Outcome => {
   const view = h.reader.states<{id: string; held: boolean}>(NANOLEAF_FAMILIES.wall.family, NANOLEAF_OWNER).find(state => state.data.id === 'wall')?.data;
-  return (view?.held === held && wallRecord(h)?.availability === availability) || `the wall is ${String(wallRecord(h)?.availability)}, held ${String(view?.held)}`;
+  const record = wallRecord(h);
+  return (view?.held === (held !== undefined) && record?.availability === availability && record.held?.requestId === held) ||
+    `the wall is ${String(record?.availability)}, held ${String(view?.held)}, and its record holds ${show(record?.held)}`;
 };
 const linesTaken = (h: Harness, count: number): Outcome => {
   const taken = wallTasks(h).filter(task => task.element !== null).length;
@@ -1674,8 +1680,8 @@ const wallBrightness = (requestId: string, percent: number): {key: string; draft
  * animation outside Free, reports the power the wall itself reports, and shows the wall unavailable while it does not
  * answer, logging the outage once each way. A mode is the module's own state, so a mode command completes as observed
  * even while the wall does not answer, holds nothing, and the wall shows the mode and a new session once it answers; a
- * write whose answer is lost holds the wall, shown as held and degraded, until the operator's next mode command. The
- * token appears nowhere.
+ * write whose answer is lost holds the wall, shown as held and degraded, with the device record's `held` naming that
+ * write (Hub #975), until the operator's next mode command. The token appears nowhere.
  */
 const nanoleafWall: Scenario = {
   id: 'nanoleaf-wall',
@@ -1738,7 +1744,7 @@ const nanoleafWall: Scenario = {
     act('the wall answers again', h => { h.simulate({device: 'nanoleaf', action: 'online'}); }),
     expect('the reader\'s copy shows the wall available', h => wallAvailability(h, 'available'), 40_000),
     expect('nothing is held, and the wall shows Quiet once it answers', h => {
-      const shown = wallHeld(h, false, 'available') === true ? desiredMode(h, 'quiet') : wallHeld(h, false, 'available');
+      const shown = wallHeld(h, undefined, 'available') === true ? desiredMode(h, 'quiet') : wallHeld(h, undefined, 'available');
       return shown === true ? theLines(h)?.brightness === 10 || `the Lines are at ${String(theLines(h)?.brightness)}` : shown;
     }, 10_000),
     act('the hook observes a second session start and a turn', async h => {
@@ -1754,13 +1760,15 @@ const nanoleafWall: Scenario = {
     act('the wall will lose its answer to the next brightness write', h => { h.simulate({device: 'nanoleaf', action: 'lose-next-answer'}); }),
     act('the operator sets the Lines to 20% as req-lost', h => sendOnce(h, 'operator', 'lost', wallBrightness('req-lost', 20), 'req-lost')),
     expect('history holds req-lost uncertain: the write may have reached the wall', h => recorded(h, 'req-lost', 'uncertain', 'none'), 10_000),
-    expect('the reader\'s copy shows the wall held and degraded, not unavailable', h => wallHeld(h, true, 'degraded'), 15_000),
+    expect('the reader\'s copy shows the wall held and degraded, not unavailable, and its device record names req-lost as held', h =>
+      wallHeld(h, 'req-lost', 'degraded'), 15_000),
     expect('the hold was logged once', h => {
       const holds = logged(h, 'nanoleaf', 'operation.failed').filter(({record}) => record.attributes['bunny.code'] === 'uncertain-result').length;
       return holds === 1 || `${holds} hold records`;
     }),
     act('the operator sets the wall to Work as req-release', h => sendOnce(h, 'operator', 'release', wallMode('req-release', 'work'), 'req-release')),
-    expect('the mode command released the hold: the wall is available and not held', h => wallHeld(h, false, 'available'), 10_000),
+    expect('the mode command released the hold: the wall is available, not held, and its device record has no held', h =>
+      wallHeld(h, undefined, 'available'), 10_000),
     holds('no log record, message, health entry or reader copy carries the token', h => noToken(h), 300),
   ],
 };

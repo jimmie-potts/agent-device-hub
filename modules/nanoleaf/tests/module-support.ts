@@ -286,10 +286,11 @@ export class ModuleWorld {
     return answered as RequestResult;
   }
 
-  /** The newest published state of one entity of the module's. */
+  /** The newest published state of one entity of the module's, at the version the module publishes: `device/2.1` (Hub #975), or 2.0. */
   state<T>(family: string, id: string): T | undefined {
+    const version = family === 'device' ? '2.1' : '2.0';
     const message = [...this.seen].reverse().find(item => item.kind === 'state' && item.source === 'bunny/modules/nanoleaf'
-      && item.dataschema === `https://bunny.invalid/events/${family}/2.0` && (item.data as {id?: unknown}).id === id);
+      && item.dataschema === `https://bunny.invalid/events/${family}/${version}` && (item.data as {id?: unknown}).id === id);
     return message?.data as T | undefined;
   }
 

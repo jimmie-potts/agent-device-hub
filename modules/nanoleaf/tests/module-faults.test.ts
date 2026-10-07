@@ -1,5 +1,5 @@
 // The Nanoleaf module's faults and recoveries (Hub #844 review): a command that expires unsent holds nothing, a hold
-// after an uncertain write is its own state, a device that answers with an HTTP error is reached and ends the command
+// after an uncertain write is its own state, named in the device record's `held` (Hub #975), a device that answers with an HTTP error is reached and ends the command
 // with its code, a worker that a store failure stops starts again, a read failure while publishing never fails the
 // module, commands expire without a worker, and an idle wall publishes nothing new. Each test runs on a manual clock
 // against a simulated Lines controller.
@@ -31,8 +31,12 @@ const transmission = (world: ModuleWorld): {transmittedAtMs: number; requestId?:
   const shown = world.device_()?.lastTransmission;
   return shown?.status === 'known' ? shown : undefined;
 };
-const deviceRecords = (world: ModuleWorld): number =>
-  world.seen.filter(message => message.kind === 'state' && message.dataschema === 'https://bunny.invalid/events/device/2.0').length;
+const DEVICE_SCHEMA = 'https://bunny.invalid/events/device/2.1';
+const deviceRecords = (world: ModuleWorld): number => world.seen.filter(message => message.kind === 'state' && message.dataschema === DEVICE_SCHEMA).length;
+/** The device record's hold (`device/2.1`, Hub #975), or undefined when the record has none. */
+const heldOf = (world: ModuleWorld): {requestId: string; heldAtMs: number} | undefined => world.device_()?.held;
+/** When the module stamped a request's one outcome: the hold that outcome leaves begins in the same transaction. */
+const endedAtMs = (world: ModuleWorld, requestId: string): number => Date.parse(world.outcomes(requestId)[0]?.time ?? '');
 const logged = (world: ModuleWorld, event: string, fields: Record<string, unknown>): number =>
   world.logs().filter(record => record.event === event && Object.entries(fields).every(([key, value]) => record.fields[key] === value)).length;
 const mode = (requestId: string, value: string): {key: string; draft: CommandDraft<object>} => deviceCommand('device-mode-set', {requestId, mode: value});
@@ -68,6 +72,7 @@ suite('expiry and holds', () => {
     world.device.online();
     await world.until(() => availability(world) === 'available', 40_000, 'the wall available once it answers');
     assert.equal(world.wall()?.held, false, 'an unsent write proves no effect, so it holds nothing');
+    assert.equal(heldOf(world), undefined, 'nor does the device record');
     assert.deepEqual(world.query("SELECT value FROM meta WHERE key LIKE 'controller_hold_revision%'"), []);
     // The wall follows the module's mode once it answers, at Quiet's own level: the expired brightness never applies.
     await world.until(() => world.device.state().devices[LINES_ADDRESS]?.brightness === 10, 10_000, 'the Quiet level');
@@ -84,13 +89,20 @@ suite('expiry and holds', () => {
     assert.equal((await world.request(key, draft)).status, 'accepted');
     assert.equal((await outcomeOf(world, 'lost')).result, 'uncertain');
     await world.until(() => world.wall()?.held === true, 2000, 'the wall view shows the hold');
+    // The device record names the held write and when its hold began: as its outcome ended it uncertain (Hub #975).
+    const held = {requestId: 'lost', heldAtMs: endedAtMs(world, 'lost')};
+    assert.deepEqual(heldOf(world), held);
     await world.advance(20_000);
     assert.equal(availability(world), 'degraded', 'the device answers its polls, and the module withholds its writes');
+    assert.deepEqual(heldOf(world), held, 'the hold keeps its operation and its start while it lasts');
+    assert.equal(world.seen.filter(message => message.kind === 'state' && message.dataschema.endsWith('/device/2.0')).length, 0,
+      'the module publishes device/2.1');
     assert.equal(logged(world, 'operation.failed', {'bunny.code': 'uncertain-result', 'bunny.write.possible': true}), 1, 'the hold is logged once');
     const {key: workKey, draft: workDraft} = mode('release', 'work');
     assert.equal((await world.request(workKey, workDraft)).status, 'accepted');
     assert.equal((await outcomeOf(world, 'release')).evidence, 'observed');
     await world.until(() => world.wall()?.held === false && availability(world) === 'available', 5000, 'the hold released');
+    assert.equal(Object.hasOwn(world.device_() ?? {}, 'held'), false, 'the record after the release has no hold');
     assert.equal(logged(world, 'operation.completed', {'bunny.operation': 'status', 'bunny.outcome': 'current'}), 1, 'the release is logged once');
     for (const record of world.logs()) assert.equal(checkModuleRecord('nanoleaf', record), undefined, record.event);
     world.verify();
@@ -107,6 +119,24 @@ suite('expiry and holds', () => {
     assert.equal((await outcomeOf(world, 'out')).result, 'uncertain');
     await world.until(() => world.wall()?.held === true && availability(world) === 'degraded', 10_000, 'the hold shown');
     assert.deepEqual(world.query("SELECT value FROM meta WHERE key LIKE 'control_error%'"), [], 'only the hold makes the device degraded');
+    // The restart found the write without a result: the hold names it, from the moment the restart ended it uncertain.
+    assert.deepEqual(heldOf(world), {requestId: 'out', heldAtMs: endedAtMs(world, 'out')});
+    world.verify();
+  });
+
+  test('a fresh control releases a hold: the record drops held, and the new write goes out', async context => {
+    const world = await showing(context);
+    world.device.loseNextAnswer('/state');
+    const lost = brightness('lost-again', 20);
+    assert.equal((await world.request(lost.key, lost.draft)).status, 'accepted');
+    assert.equal((await outcomeOf(world, 'lost-again')).result, 'uncertain');
+    await world.until(() => heldOf(world)?.requestId === 'lost-again' && availability(world) === 'degraded', 2000, 'the hold in the record');
+    const fresh = brightness('fresh', 30);
+    assert.equal((await world.request(fresh.key, fresh.draft)).status, 'accepted');
+    assert.deepEqual(await outcomeOf(world, 'fresh'), {requestId: 'fresh', result: 'succeeded', evidence: 'transmitted'});
+    await world.until(() => world.wall()?.held === false && availability(world) === 'available', 5000, 'the hold released');
+    assert.equal(Object.hasOwn(world.device_() ?? {}, 'held'), false, 'the record after the release has no hold');
+    assert.equal(world.device.state().devices[LINES_ADDRESS]?.brightness, 30, 'the fresh write reached the wall');
     world.verify();
   });
 
@@ -434,7 +464,7 @@ suite('publication', () => {
     const seen = world.seen.length;
     await world.restart();
     assert.deepEqual(await outcomeOf(world, 'waiting'), failed('waiting', 'none', 'cancelled'));
-    await world.until(() => world.seen.slice(seen).some(message => message.dataschema.endsWith('/device/2.0')), 5000, 'the record after the restart');
+    await world.until(() => world.seen.slice(seen).some(message => message.dataschema === DEVICE_SCHEMA), 5000, 'the record after the restart');
     await world.advance(TRANSMISSION_MS);
     assert.deepEqual(world.device_()?.lastTransmission, written, 'the record still shows the power write after the restart');
     world.verifyMessages();
