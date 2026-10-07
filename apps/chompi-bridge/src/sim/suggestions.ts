@@ -1,4 +1,5 @@
 import { MAX_SUGGESTIONS, type NextSteps } from '../os-adapter.js';
+import { claudeWindowTree, locateBand, type BandNesting } from './band-tree.js';
 import { PickerRefusal, type PickerEvent, type PickerResult } from './pickers.js';
 
 /**
@@ -15,6 +16,9 @@ import { PickerRefusal, type PickerEvent, type PickerResult } from './pickers.js
  * - Sending a message hides the band and the ghost text (the mod hides it on `turn.start`).
  * - With `lag` set, the read after each change returns the state from before it, once, as a lagging UI Automation view
  *   would.
+ * - The band is found the way the helper finds it: `locateBand` over a synthetic window in the live layout, with the
+ *   band at `nesting` (by default as observed on 2026-10-07, two groups below the branch beside the composer's group).
+ *   A band the locator cannot find counts as none.
  *
  * Suggestion text is synthetic and stays in the simulation: reads return counts and booleans only.
  */
@@ -38,6 +42,8 @@ export function composerValueEmpty(value: string): boolean {
 export class SimSuggestions {
   /** When true, the read after each change returns the state from before it, once (a lagging UI Automation view). */
   lag = false;
+  /** Where the band sits in the synthetic window tree (`band-tree.ts`). */
+  nesting: BandNesting = 'observed';
   readonly #composer: SuggestionComposer;
   #labels: string[] = [];
   /** The suggestion holding keyboard focus; it loses focus whenever the composer takes it. */
@@ -123,16 +129,25 @@ export class SimSuggestions {
 
   #current(): number | null { return this.#composer.focused() ? null : this.#focused; }
 
+  /** How many suggestions the locator finds in the window: 0 without a band, or when it sits where the locator does not look. */
+  #found(): number {
+    if (this.#labels.length === 0) return 0;
+    const { window, composer } = claudeWindowTree(this.#labels, this.nesting);
+    return locateBand(window, composer)?.buttons.length ?? 0;
+  }
+
   #read(): NextSteps {
+    const count = this.#found();
     return {
-      count: this.#labels.length, focused: this.#current(),
+      count, focused: count ? this.#current() : null,
       composer: { focused: this.#composer.focused(), empty: composerValueEmpty(this.#composer.text()) },
     };
   }
 
   #check(index: number, count: number): void {
-    if (this.#labels.length === 0) throw new PickerRefusal('band-absent');
-    if (this.#labels.length !== count) throw new PickerRefusal('band-changed');
+    const found = this.#found();
+    if (found === 0) throw new PickerRefusal('band-absent');
+    if (found !== count) throw new PickerRefusal('band-changed');
     if (!Number.isInteger(index) || index < 0 || index >= count) throw new PickerRefusal('invalid-suggestion-index');
   }
 

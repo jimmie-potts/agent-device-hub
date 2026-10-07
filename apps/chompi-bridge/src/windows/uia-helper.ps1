@@ -677,8 +677,9 @@ function FocusComposer($request) {
   return @{ focused = (Settle { [bool]$composers[0].GetCurrentPropertyValue($AE::HasKeyboardFocusProperty) }) }
 }
 
-# Claude's next-step suggestions (#907). The band is a Group beside the composer's group holding a Text "next:", one
-# Button per suggestion and a Button "dismiss". Names are compared here only to find the band and its "dismiss" button,
+# Claude's next-step suggestions (#907). The band is a Group holding a Text "next:", one Button per suggestion and a
+# Button "dismiss", inside a branch beside the composer's: on Claude 2.19675.0.0 (2026-10-07) it sits two Groups below
+# the sibling of the composer's group. Names are compared here only to find the band and its "dismiss" button,
 # and the composer's Value only with the empty forms; replies carry counts, indexes and booleans, never a suggestion's
 # text, which is model output.
 $BandLabel = 'next:'
@@ -686,8 +687,11 @@ $BandDismiss = 'dismiss'
 $MaxSuggestions = 8
 # A band holds the label, the suggestions and "dismiss"; a group with more Text and Button children is not the band.
 $MaxBandChildren = 16
-# A level of the walk up from the composer with more Group children than this is not searched further.
-$MaxBandGroups = 64
+# The band group may sit at most this many Groups below the branch beside the composer's ancestor (0: the branch itself).
+$BandSearchDepth = 3
+# More Text elements named "next:" in the window than this is not qualified.
+$MaxBandLabels = 32
+$GroupId = [System.Windows.Automation.ControlType]::Group.Id
 
 # Claude's one composer: the Edit carrying the ProseMirror class token. None or several is an error.
 function ClaudeComposer($window) {
@@ -739,29 +743,53 @@ function BandSuggestions($group) {
   return ,$buttons
 }
 
-# The band, as @{ buttons; level }: walking up from the composer through at most 8 ancestors, the first level whose
-# parent directly holds a Group of the band's shape beside the composer's ancestor; several there is an error, none at
-# any level is no band ($null).
+# The level of the first of the composer's ancestors ($chain, the composer first) that $group hangs under, at most
+# $BandSearchDepth Groups below the branch beside it, through a branch other than the composer's own; -1 when none.
+function BandLevel($group, $chain, $walker) {
+  $at = $group
+  for ($step = 0; $step -le $BandSearchDepth; $step++) {
+    $up = $walker.GetParent($at)
+    if ($null -eq $up) { return -1 }
+    for ($j = 1; $j -lt $chain.Count; $j++) {
+      if ([System.Windows.Automation.Automation]::Compare($up, $chain[$j])) {
+        if ([System.Windows.Automation.Automation]::Compare($at, $chain[$j - 1])) { return -1 }
+        return $j - 1
+      }
+    }
+    $at = $up
+  }
+  return -1
+}
+
+# The band, as @{ buttons; level }: among the window's Text elements named "next:" (at most 32), the parent Groups of
+# the band's shape that hang under one of the composer's 8 nearest ancestors, at most $BandSearchDepth Groups below the
+# branch beside it; the one at the lowest level. Two at that level is an error; none is no band ($null).
 function SuggestionBand($composer, $window) {
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $chain = New-Object System.Collections.ArrayList
   $node = $composer
-  for ($depth = 0; $depth -lt $MaxComposerAncestors; $depth++) {
+  for ($depth = 0; $depth -le $MaxComposerAncestors; $depth++) {
+    [void]$chain.Add($node)
     if ([System.Windows.Automation.Automation]::Compare($node, $window)) { break }
-    $parent = $walker.GetParent($node)
-    if ($null -eq $parent) { break }
-    $groups = $parent.FindAll($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Group)))
-    if ($groups.Count -gt $MaxBandGroups) { break }
-    $found = New-Object System.Collections.ArrayList
-    foreach ($group in $groups) {
-      if ([System.Windows.Automation.Automation]::Compare($group, $node)) { continue }
-      $buttons = BandSuggestions $group
-      if ($null -ne $buttons) { [void]$found.Add(@{ buttons = $buttons; level = $depth }) }
-    }
-    if ($found.Count -gt 1) { Fail 'suggestion-band-ambiguous' }
-    if ($found.Count -eq 1) { return $found[0] }
-    $node = $parent
+    $node = $walker.GetParent($node)
+    if ($null -eq $node) { break }
   }
-  return $null
+  $labels = $window.FindAll($Scope::Descendants, [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@(
+    (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)), (Condition $AE::NameProperty $BandLabel))))
+  if ($labels.Count -gt $MaxBandLabels) { Fail 'suggestion-band-ambiguous' }
+  $best = $null; $tied = 0
+  foreach ($label in $labels) {
+    $group = $walker.GetParent($label)
+    if ($null -eq $group -or $group.Current.ControlType.Id -ne $GroupId) { continue }
+    $level = BandLevel $group $chain $walker
+    if ($level -lt 0) { continue }
+    $buttons = BandSuggestions $group
+    if ($null -eq $buttons) { continue }
+    if ($null -eq $best -or $level -lt $best.level) { $best = @{ buttons = $buttons; level = $level }; $tied = 1 }
+    elseif ($level -eq $best.level) { $tied++ }
+  }
+  if ($tied -gt 1) { Fail 'suggestion-band-ambiguous' }
+  return $best
 }
 
 # The band's suggestion count (0 without a band), the focused suggestion (-1 for none), the level it was found at and

@@ -313,6 +313,15 @@ for (const [name, make] of Object.entries(DRIVERS)) {
     assert.deepEqual(await fresh.adapter.tapInClient('claude', ['Right'], 1), known(true));
     assert.equal(fresh.draft(), labels[2], 'the ghost text is the draft');
     assert.deepEqual((await fresh.adapter.suggestionState('claude')).value.composer, { focused: true, empty: false });
+    // The band is found as nested on the live client (two groups below the branch beside the composer's group), and in
+    // the direct-sibling shape; one group deeper than the locator's bound is no band (#907, 2026-10-07).
+    assert.equal(fresh.suggestions.nesting, 'observed');
+    fresh.suggestions.nesting = 'sibling';
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.count, 3);
+    fresh.suggestions.nesting = 'too-deep';
+    assert.equal((await fresh.adapter.suggestionState('claude')).value.count, 0);
+    assert.equal((await fresh.adapter.focusSuggestion('claude', 0, 3)).status, 'unknown', 'no band, no focus');
+    fresh.suggestions.nesting = 'observed';
     // A lagging read shows the state from before the last change, once.
     fresh.suggestions.lag = true;
     await fresh.adapter.focusSuggestion('claude', 2, 3);
