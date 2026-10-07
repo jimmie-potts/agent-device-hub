@@ -20,7 +20,9 @@ in `CONTRACT.md`). Profile 1.3 adds the runtime's decision records, the outbox's
 and a device's module records, three attributes and two span names (see
 "Decision records and spans"). The catalog's `additions` lists what each profile
 adds, span names included, and `scope_rules` lists the service and events each
-runtime scope allows. Producers still default to profile 1.1; a 1.2 or 1.3
+runtime scope allows. A span's name must belong to its metadata's profile: the
+host adapter and the Python helper record no `bunny.device.call` or
+`bunny.outcome.publish` span at profile 1.2 or earlier. Producers still default to profile 1.1; a 1.2 or 1.3
 producer sets `schema_version` itself.
 
 `createRecord` / `create_record` selects registered fields before serialization,

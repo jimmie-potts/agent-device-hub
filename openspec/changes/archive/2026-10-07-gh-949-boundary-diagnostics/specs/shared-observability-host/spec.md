@@ -20,6 +20,10 @@
 - **WHEN** a host with the runtime's resource names profile 1.3 and records a module span and a runtime span, and another names no profile
 - **THEN** both spans are recorded with profile 1.3 metadata, a module span without its module's name is not, and the host without a profile refuses the runtime's resource
 
+#### Scenario: Span names by profile
+- **WHEN** hosts at profiles 1.3, 1.2 and 1.1 each start a `bunny.command.request`, a `bunny.device.call` and a `bunny.outcome.publish` span, and the Python helper at its default profile records the same names
+- **THEN** only the 1.3 host records all three; the others record `bunny.command.request` or `bunny.helper.run` only and count each refused span as invalid, and the projection refuses a span whose name its metadata's profile does not register
+
 #### Scenario: Two hosts in one process
 - **WHEN** two hosts with `globalContext: false` record spans at the same time
 - **THEN** each sink receives only its own host's spans, with their explicit parents, and neither host registers a context manager

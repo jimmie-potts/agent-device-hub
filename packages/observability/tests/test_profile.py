@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'python'))
-from bunny_observability import ARTIFACT_VERSION, create_record, validate_record
+from bunny_observability import ARTIFACT_VERSION, _definitions, _profile_span_names, create_record, validate_record
 
 
 def hub_record():
@@ -14,6 +14,15 @@ def hub_record():
 
 
 class Profiles(unittest.TestCase):
+    def test_each_profile_registers_only_its_own_span_names(self):
+        catalog = _definitions()[0]
+        later = catalog['additions']['1.3']['span_names']
+        self.assertEqual(later, ['bunny.outcome.publish', 'bunny.device.call'])
+        for version in ('1.0', '1.1', '1.2'):
+            self.assertEqual([name for name in _profile_span_names(catalog, version) if name in later], [], version)
+        self.assertEqual(_profile_span_names(catalog, '1.3'), catalog['span_names'])
+        self.assertEqual(_profile_span_names(catalog, '1.4'), [])
+
     def test_default_profile_leaves_out_later_attributes(self):
         record = hub_record()
         del record['schema_version']

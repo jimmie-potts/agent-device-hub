@@ -135,6 +135,17 @@ def _profile_attributes(catalog, version):
     return [name for name in catalog['attributes'] if name not in later]
 
 
+def _profile_span_names(catalog, version):
+    """The span names a profile registers: every name but those a later profile adds. An unknown profile registers none."""
+    versions = catalog['schema_versions']
+    if type(version) is not str or version not in versions:
+        return []
+    later = set()
+    for following in versions[versions.index(version) + 1:]:
+        later.update(catalog['additions'].get(following, {}).get('span_names', []))
+    return [name for name in catalog['span_names'] if name not in later]
+
+
 def create_record(value):
     try:
         if type(value) is not dict:

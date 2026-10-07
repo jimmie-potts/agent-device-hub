@@ -1,7 +1,7 @@
 import { trace } from '@opentelemetry/api';
 import { catalog, createRecord, validateRecord, MAX_QUEUE_RECORDS, MAX_QUEUE_BYTES, MAX_RECORD_BYTES } from '@jimmie-potts/bunny-observability';
 import { createBoundedSink } from './bounded-sink.mjs';
-import { projectSpan } from './span-projection.mjs';
+import { profileSpanNames, projectSpan } from './span-projection.mjs';
 import { createDeliveryEvidence } from './delivery-evidence.mjs';
 const automaticScopes = new Set(['@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-undici']);
 const key = identity => identity && trace.isSpanContextValid(identity) ? `${identity.traceId}:${identity.spanId}` : undefined;
@@ -24,7 +24,10 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
   function register(span, metadata, name, links, automatic = false) {
     const id = key(span.spanContext());
     const size = Buffer.byteLength(JSON.stringify({ metadata, name, links }));
-    if (!id || !catalog.span_names.includes(name) || !validateRecord(metadata).ok || size > MAX_RECORD_BYTES) { count('invalid'); return; }
+    // A name a later profile adds is no name of the metadata's profile, so an earlier host records no such span.
+    if (!id || !validateRecord(metadata).ok || !profileSpanNames(metadata.schema_version).includes(name) || size > MAX_RECORD_BYTES) {
+      count('invalid'); return;
+    }
     const evidenceId=evidence.begin({traceId:span.spanContext().traceId,spanId:span.spanContext().spanId,name,
       resource:metadata.resource,scope:metadata.scope});
     if (stopped || active.has(id) || active.size >= maxActiveRecords || bytes + size > maxActiveBytes) {

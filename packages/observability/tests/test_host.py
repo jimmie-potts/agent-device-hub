@@ -95,6 +95,41 @@ class HostTests(unittest.TestCase):
             server.server_close()
             serving.join()
 
+    def test_spans_take_only_the_host_profile_names(self):
+        # The host's records are profile 1.1, so a span name that profile 1.3 adds is no span of it; the operation's
+        # record is still written, without a trace.
+        from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+        received=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"partialSuccess":{"rejectedLogRecords":"0","rejectedSpans":"0"}}')
+        server=ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        serving=Thread(target=server.serve_forever, daemon=True)
+        serving.start()
+        lines=[]
+        host=HostDiagnostics(enabled=True, resource=RESOURCE, local_sink=lines.append, tracing=True,
+                             sampling_ratio=1, collector_origin=f'http://127.0.0.1:{server.server_port}')
+        try:
+            for name in ('bunny.helper.run', 'bunny.device.call', 'bunny.outcome.publish'):
+                with host.operation('bunny.controller', 'brightness', span_name=name, root=True):
+                    pass
+            host.close()
+            spans=[span for value in received for resource in value.get('resourceSpans',[]) for scope in resource['scopeSpans'] for span in scope['spans']]
+            logs=[json.loads(line) for line in lines]
+            self.assertEqual([span['name'] for span in spans], ['bunny.helper.run'])
+            self.assertEqual(len(logs), 3)
+            self.assertEqual(['trace_id' in log for log in logs], [True, False, False])
+        finally:
+            host.close()
+            server.shutdown()
+            server.server_close()
+            serving.join()
+
     def test_stalled_sink_queue_and_close_are_bounded(self):
         from threading import Event
         import time

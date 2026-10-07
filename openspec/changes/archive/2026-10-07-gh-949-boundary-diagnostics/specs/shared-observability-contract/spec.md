@@ -8,7 +8,7 @@ The artifact SHALL be version 1.3.0 with profiles 1.0, 1.1, 1.2 and 1.3, and pro
 - the attributes `bunny.routing.key`, an SDK routing key of at most 512 characters, `bunny.outbox.waiting_count` and `bunny.attempt_count`;
 - the span names `bunny.outcome.publish` and `bunny.device.call`.
 
-Profiles 1.0, 1.1 and 1.2 SHALL reject every profile 1.3 event and attribute, and the catalog SHALL list the span names each profile adds. `bunny.request.id` SHALL keep its profile 1.0 pattern. The Python helper SHALL validate and convert profile 1.3 records.
+Profiles 1.0, 1.1 and 1.2 SHALL reject every profile 1.3 event and attribute, and the catalog SHALL list the span names each profile adds. A profile SHALL register every span name but those a later profile adds, so the TypeScript host adapter and the Python helper SHALL record no span whose name the profile of its metadata does not register. `bunny.request.id` SHALL keep its profile 1.0 pattern. The Python helper SHALL validate and convert profile 1.3 records.
 
 #### Scenario: Additions closed to earlier profiles
 - **WHEN** a record uses a profile 1.3 event or attribute and claims profile 1.0, 1.1 or 1.2

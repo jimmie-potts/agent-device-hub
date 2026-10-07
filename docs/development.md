@@ -2223,9 +2223,10 @@ projections, privacy, context isolation and bounded sink failures. Profile 1.2
 fixtures cover the runtime's records and their negative controls, profile 1.3
 fixtures its decision, outbox and device records and theirs (#949), and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
-earlier profile rejects each profile's additions, span names included, and the
-runtime scopes' rules. `tests/host.test.mjs` also records spans through the host
-adapter's bounded local span sink with no collector.
+earlier profile rejects each profile's additions, and the runtime scopes'
+rules. `tests/host.test.mjs` checks that a host records only its profile's span
+names, which `test_host.py` checks for the Python helper, and records spans
+through the host adapter's bounded local span sink with no collector.
 The package check verifies immutable archive contents and independent TypeScript/Python
 consumers. These checks use synthetic records, no collector, device or live
 state. Real ingestion and Grafana queries belong to the separately bounded functional

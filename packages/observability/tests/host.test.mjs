@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {record} from './sample.mjs';
+import {catalog} from '@jimmie-potts/bunny-observability';
 import {createHostDiagnostics} from '../runtime/host.mjs';
+import {profileSpanNames, projectSpan} from '../runtime/span-projection.mjs';
 import {ROOT_CONTEXT, trace} from '@opentelemetry/api';
 
 test('disabled host preserves action results without constructing output', async () => {
@@ -161,4 +163,35 @@ test('a host names the profile of its records and of its spans\' metadata',async
  assert.deepEqual(lines.map(group=>[group.scope.name,group.spans[0].name]),[['bunny.module','bunny.device.call'],['bunny.runtime','bunny.command.request']]);
  assert.ok(lines[0].spans[0].attributes.some(item=>item.key==='bunny.schema.version'&&item.value.stringValue==='1.3'));
  assert.equal(host.counts().traces.invalid,1,'a module span without its module\'s name is not recorded');
+});
+
+test('each profile registers only its own span names, so an earlier host records no span a later profile adds',async()=>{
+ const later=catalog.additions['1.3'].span_names;
+ assert.deepEqual(later,['bunny.outcome.publish','bunny.device.call']);
+ for(const version of ['1.0','1.1','1.2'])assert.deepEqual(profileSpanNames(version).filter(name=>later.includes(name)),[],`profile ${version}`);
+ assert.deepEqual(profileSpanNames('1.3'),catalog.span_names);
+ assert.deepEqual(profileSpanNames('1.4'),[],'an unknown profile registers none');
+ // A host's spans carry its records' profile, so a 1.2 or 1.1 host records the names its profile has and drops the rest.
+ const recorded=async(schemaVersion,resource,scope)=>{
+  const names=[];
+  const host=await createHostDiagnostics({enabled:true,resource,schemaVersion,tracing:true,samplingRatio:1,globalContext:false,localSink:()=>{},
+   localSpanSink:line=>{names.push(JSON.parse(line).resourceSpans[0].scopeSpans[0].spans[0].name);}});
+  const tracer=host.tracerFor({resource,scope});
+  for(const name of ['bunny.command.request','bunny.device.call','bunny.outcome.publish'])
+   tracer.startSpan(name,{attributes:{'bunny.provenance':'source'}},ROOT_CONTEXT).end();
+  await host.shutdown();
+  const {invalid,unassociated}=host.counts().traces;
+  return {names,invalid,unassociated};
+ };
+ // Refused when the span starts, so it is never registered and its end finds nothing to project.
+ assert.deepEqual(await recorded('1.3',runtimeResource,'bunny.runtime'),
+  {names:['bunny.command.request','bunny.device.call','bunny.outcome.publish'],invalid:0,unassociated:0});
+ assert.deepEqual(await recorded('1.2',runtimeResource,'bunny.runtime'),{names:['bunny.command.request'],invalid:2,unassociated:2});
+ assert.deepEqual(await recorded('1.1',record.resource,'bunny.http'),{names:['bunny.command.request'],invalid:2,unassociated:2});
+ // The projection checks the name against its metadata's own profile too.
+ const span={spanContext:()=>({traceId:'1'.repeat(32),spanId:'2'.repeat(16),traceFlags:1}),startTime:[1,0],endTime:[1,5],kind:0,status:{code:0}};
+ assert.ok(projectSpan(span,{...record,schema_version:'1.3'},'bunny.device.call'));
+ assert.equal(projectSpan(span,{...record,schema_version:'1.2'},'bunny.device.call'),undefined);
+ assert.equal(projectSpan(span,{...record,schema_version:'1.1'},'bunny.outcome.publish'),undefined);
+ assert.ok(projectSpan(span,{...record,schema_version:'1.1'},'bunny.helper.run'));
 });
