@@ -70,6 +70,9 @@ export function simulatePlayback(speakers: SimulatedSpeakers, {speaker, action, 
     case 'silent':
       speakers.silent(speaker);
       return;
+    case 'slow':
+      speakers.slow(speaker);
+      return;
     case 'answer':
       speakers.answer(speaker);
       return;

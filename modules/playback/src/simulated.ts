@@ -2,8 +2,9 @@
 // is touched. They answer each protocol as the qualified speakers do (docs/iphone-apple-music-qualification.md): the
 // Sony HT-A9's Audio Control API JSON-RPC and the Sonos Move's AVTransport SOAP, with the replies the old Hub's tests
 // recorded, so the module's own parsing runs on them. Like real speakers, they keep their state when the runtime
-// restarts. A test can play, pause or stop either one, switch it to another input, make it stop answering, or make
-// its next command fail or never answer. They ignore the endpoint they are called at.
+// restarts. A test can play, pause or stop either one, switch it to another input, make it stop answering or answer
+// each call slowly, or make its next command fail or never answer. They ignore the endpoint they are called at.
+import type {Scheduler} from '@jimmie-potts/sdk';
 import type {PlaybackSection} from './configuration.js';
 import type {PlaybackAction} from './playback.js';
 import {SONOS_SERVICE, type SonosReply, type SonyReply, type SpeakerTransport} from './transport.js';
@@ -18,10 +19,14 @@ export const SIMULATED_SECTION: PlaybackSection = {
   id: 'living-room',
   sources: [{kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control'}, {kind: 'sony', endpoint: 'http://127.0.0.1:10000/sony'}],
 };
+/** How long a slow speaker takes to answer each call: within a call's 1.5-second deadline, but a Sonos read takes three. */
+export const SLOW_MS = 400;
 /** What one simulated speaker shows, as plain data. */
 export type SpeakerState = {
   /** Whether it answers. One that does not never replies, until the call's signal aborts. */
   answering: boolean;
+  /** How long it takes to answer each call, reads and commands alike: 0 at once, or more for a slow speaker. */
+  delayMs: number;
   /** `airplay` while the phone plays to it over AirPlay; `other` for another input. */
   input: 'airplay' | 'other';
   status: 'playing' | 'paused' | 'stopped';
@@ -63,16 +68,28 @@ const silence = (signal: AbortSignal): Promise<never> => new Promise((_, reject)
 });
 
 const initial = (given: Partial<SpeakerState> = {}): SpeakerState => ({
-  answering: true, input: 'other', status: 'stopped', nextCommand: 'answer', calls: 0, peak: 0, ...given, commands: [...(given.commands ?? [])],
+  answering: true, delayMs: 0, input: 'other', status: 'stopped', nextCommand: 'answer', calls: 0, peak: 0, ...given, commands: [...(given.commands ?? [])],
 });
+/** Real time, for the runtime's `--simulate` and disposable runs. */
+const REAL_TIME: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
+
+export type SimulatedSpeakersOptions = {
+  /** The scheduler a slow speaker waits on: real time by default, or a test's manual clock. */
+  scheduler?: Scheduler;
+};
 
 /** A Sony HT-A9 and a Sonos Move, simulated at their protocols. Each starts answering, on another input, unless told otherwise. */
 export class SimulatedSpeakers implements SpeakerTransport {
   readonly #speakers: Record<SimulatedKind, SpeakerState>;
   readonly #active: Record<SimulatedKind, number> = {sony: 0, sonos: 0};
+  readonly #scheduler: Scheduler;
 
-  constructor(given: Partial<Record<SimulatedKind, Partial<SpeakerState>>> = {}) {
+  constructor(given: Partial<Record<SimulatedKind, Partial<SpeakerState>>> = {}, {scheduler = REAL_TIME}: SimulatedSpeakersOptions = {}) {
     this.#speakers = {sony: initial(given.sony), sonos: initial(given.sonos)};
+    this.#scheduler = scheduler;
   }
 
   sony(_endpoint: string, method: string, _version: string, signal: AbortSignal): Promise<SonyReply> {
@@ -114,8 +131,15 @@ export class SimulatedSpeakers implements SpeakerTransport {
     this.#speakers[kind].answering = false;
   }
 
+  /** The speaker takes `delayMs` to answer each call, as a busy one or one on a weak network does. */
+  slow(kind: SimulatedKind, delayMs = SLOW_MS): void {
+    this.#speakers[kind].delayMs = delayMs;
+  }
+
+  /** The speaker answers again, and at once. */
   answer(kind: SimulatedKind): void {
     this.#speakers[kind].answering = true;
+    this.#speakers[kind].delayMs = 0;
   }
 
   /** The speaker's next command ends as given, then commands are answered again. */
@@ -134,12 +158,34 @@ export class SimulatedSpeakers implements SpeakerTransport {
     this.#active[kind] += 1;
     speaker.peak = Math.max(speaker.peak, this.#active[kind]);
     try {
+      if (speaker.delayMs > 0) await this.#wait(speaker.delayMs, signal);
       if (!speaker.answering) return await silence(signal);
+      // A slow speaker answers with what it shows when it answers.
       const answer = reply();
       return answer === 'hang' ? await silence(signal) : answer;
     } finally {
       this.#active[kind] -= 1;
     }
+  }
+
+  /** Waits `ms` on the scheduler, or rejects once `signal` aborts, as a call that ran out of time would. */
+  #wait(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let cancel = (): void => {};
+      const lost = (): void => {
+        cancel();
+        reject(new Error('the speaker did not answer'));
+      };
+      if (signal.aborted) {
+        lost();
+        return;
+      }
+      signal.addEventListener('abort', lost, {once: true});
+      cancel = this.#scheduler.after(ms, () => {
+        signal.removeEventListener('abort', lost);
+        resolve();
+      });
+    });
   }
 
   /** The command's ending: `answer` unless a test set another for this one command. */

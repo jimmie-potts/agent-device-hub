@@ -198,7 +198,7 @@ Normal CI has six GitHub-hosted Linux jobs, and each suite runs in exactly one o
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, agent state and status, Hub with its setup and MCP tests, MCP, Tidbyt, LIFX, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest, the Nanoleaf port and the playback module), and the Python consumers, Tidbyt Pillow golden-image check and performance checks |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every Node `:built` suite and package consumer (contracts, lifecycle, events, SDK, the runtime and its scenario catalog, agent state and status, Hub with its setup and MCP tests, MCP, the Tidbyt and LIFX controllers, local controllers, Wispr, maintenance, observability, CHOMPI bridge, the Pixoo module with Vitest, the Nanoleaf port, and the playback, LIFX and Tidbyt modules), and the Python consumers, the Tidbyt controller's Pillow golden-image check and performance checks |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build, controller-backed browser fixtures and accessibility |
@@ -873,7 +873,7 @@ job judges the fourth layer's capture steps without a user manager.
 
 | Layer | Command | What it runs |
 | --- | --- | --- |
-| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built` | The package's and its modules' own tests, moved tests included |
+| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built`, `npm run test:tidbyt-module:built` | The package's and its modules' own tests, moved tests included |
 | Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
 | End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
 | Acceptance | `npm run -s verify:runtime -- <operation>`, with `npm run test:runtime:verify:built` in CI | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
@@ -1849,6 +1849,38 @@ configures every shipped module from its factory's `simulatedSection`. The runti
 scenario `lifx-bulbs` runs the module in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical check
 belong to the cutover (#840).
+
+## Tidbyt module checks
+
+Hub #930 copies the Tidbyt controller's renderer, cloud connection, queue and
+publishers into the runtime module `modules/tidbyt`, under the
+[strict profile](#strict-profile-for-new-code) and the module boundary. Its
+[README](../modules/tidbyt/README.md) records the provenance and maps each
+copied test. The runtime ships it after the playback module, whose record its
+now-playing tile follows. `controllers/tidbyt` stays unchanged for the installed
+local controller host until #839, and keeps its own
+[checks](#tidbyt-controller-checks), its Pillow check included.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:tidbyt-module` from the worktree root. `test:tidbyt-module`
+builds, then runs `test:tidbyt-module:built`: the compiled tests in
+`modules/tidbyt/dist/tests/`. The core CI job runs
+`npm run test:tidbyt-module:built` after its fresh build. The suite covers the
+copied renderer, status, now-playing, cloud and cadence cases; the golden frames
+decoded by an independent libwebp build through `sharp`, pixel by pixel, with a
+corrupted golden as its negative control, in place of the controller's Pillow
+check; both tiles from synced records, the write gate under bursts, the refresh,
+removal and the listing check, a lost copy, failed, uncertain and held writes, a
+cloud that does not answer at start, rendering in a worker thread and its end at
+stop, a restart, the writer lease, a database that refuses commits, the
+cutover's conversion, and the
+[module test kit](../packages/sdk/README.md#module-test-kit) with policy A's
+check. It uses the module's `SimulatedCloud`, a fake `fetch`, a manual clock,
+real worker threads and SQLite files under the system temporary directory, and
+reaches no cloud. The runtime's catalog scenario `tidbyt-tiles` runs the module
+in `test:runtime:scenarios:built` and in
+[disposable runs](#runtime-verification-runs). Installation and the physical
+check belong to the cutover (#840).
 
 ## Nanoleaf port
 

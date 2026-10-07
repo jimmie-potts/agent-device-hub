@@ -14,6 +14,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
 import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
 import {RemoteEdge, connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
+import {SimulatedCloud, createTidbytModule} from '@jimmie-potts/tidbyt';
 import {followStandInAcks} from '@jimmie-potts/sdk/testing';
 import {diagnosticWriter} from '../../src/diagnostics.js';
 import {ModuleHost} from '../../src/host.js';
@@ -94,8 +95,11 @@ class Memory implements MemoryHarness {
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
   readonly #signs = new SimulatedSigns();
-  readonly #speakers = new SimulatedSpeakers();
+  /** The simulated speakers, a slow one waiting on the harness's virtual time. */
+  readonly #speakers = new SimulatedSpeakers({}, {scheduler: this.#clock.scheduler});
   readonly #lifx = new SimulatedLifx();
+  /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
+  readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
   readonly #parts: ReadonlyMap<Role, Part>;
   /** The seed's configuration file, read as the runtime reads it, if it has one. */
   #config: RuntimeConfig | undefined;
@@ -185,7 +189,7 @@ class Memory implements MemoryHarness {
   }
 
   devices(): DeviceStates {
-    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state()};
+    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state()};
   }
 
   simulate(simulation: Simulation): void {
@@ -203,6 +207,10 @@ class Memory implements MemoryHarness {
       case 'lifx':
         if (simulation.action === 'online') this.#lifx.online(simulation.address);
         else this.#lifx.offline(simulation.address);
+        return;
+      case 'tidbyt':
+        if (simulation.action === 'online') this.#cloud.online();
+        else this.#cloud.offline();
         return;
       case 'lamp':
         break;
@@ -381,6 +389,9 @@ class Memory implements MemoryHarness {
       case 'lifx':
         // The module follows the stand-in core's acknowledgments until #782's, so its outbox forgets what the core took.
         return createLifxModule({transport: this.#lifx, acknowledgments: followStandInAcks});
+      case 'tidbyt':
+        // A render's worker answers in real time while virtual time runs ahead, so renders get a deadline no step reaches.
+        return createTidbytModule({transport: this.#cloud.fetch, renderTimeoutMs: 3_600_000});
     }
   }
 

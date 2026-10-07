@@ -9,6 +9,7 @@ import http from 'node:http';
 import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
+import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
 import {followStandInAcks} from '@jimmie-potts/sdk/testing';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
@@ -30,6 +31,7 @@ const switches = new Map<number, {resolve: (power: Power) => void; reject: (erro
 const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
 const speakerCalls = new Map<number, {resolve: (reply: SonyReply | SonosReply) => void; reject: (error: Error) => void}>();
 const exchanges = new Map<number, {resolve: (payload: Buffer) => void; reject: (error: Error) => void}>();
+const cloudCalls = new Map<number, {resolve: (response: Response) => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -68,6 +70,17 @@ process.on('message', (value: unknown) => {
     case 'lifx.failed':
       exchanges.get(message.id)?.reject(new Error('the bulb refused the packet'));
       exchanges.delete(message.id);
+      return;
+    case 'cloud.answered':
+      cloudCalls.get(message.id)?.resolve(new Response(message.body, {status: message.status, headers: message.headers}));
+      cloudCalls.delete(message.id);
+      return;
+    case 'cloud.failed':
+      // A refused connection fails as undici reports one, so the module knows nothing was sent.
+      cloudCalls.get(message.id)?.reject(message.refused ?
+        new TypeError('fetch failed', {cause: Object.assign(new Error('connect ECONNREFUSED'), {code: 'ECONNREFUSED'})}) :
+        new DOMException('the cloud did not answer', 'AbortError'));
+      cloudCalls.delete(message.id);
       return;
     case 'control':
       flags[message.control] = true;
@@ -162,6 +175,28 @@ const bulbs: LifxNetwork = {connect: address => ({
   }),
   close: () => {},
 })};
+/**
+ * The Tidbyt cloud, reached over the IPC channel: each request goes to the supervisor's simulated cloud (Hub #930), which
+ * answers as the cloud would. A cloud that does not answer never replies, so the module's own deadline aborts the call,
+ * which then tells the supervisor's cloud to stop waiting.
+ */
+const cloud: CloudFetch = (url, init) => new Promise<Response>((resolve, reject) => {
+  next += 1;
+  const id = next;
+  const abandon = (): void => {
+    if (!cloudCalls.delete(id)) return;
+    send({type: 'cloud.abandon', id});
+    reject(new DOMException('the cloud did not answer', 'AbortError'));
+  };
+  cloudCalls.set(id, {
+    resolve: response => { init.signal.removeEventListener('abort', abandon); resolve(response); },
+    reject: error => { init.signal.removeEventListener('abort', abandon); reject(error); },
+  });
+  init.signal.addEventListener('abort', abandon, {once: true});
+  if (init.signal.aborted) abandon();
+  else send({type: 'cloud.call', id, method: init.method, url, authorization: init.headers.authorization ?? '', ...(init.body === undefined ? {} : {body: init.body})});
+});
+
 /** The speakers, reached over the IPC channel; the supervisor's simulated speakers answer. Their addresses stay here. */
 const speakers: SpeakerTransport = {
   sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
@@ -203,6 +238,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   playback: fixture('playback', () => createPlaybackModule({transport: speakers})),
   // The shipped LIFX module with simulated bulbs; it follows the fixture core's stand-in acknowledgments until #782.
   lifx: fixture('lifx', () => createLifxModule({transport: bulbs, acknowledgments: followStandInAcks}), lifxSchemas),
+  // The shipped Tidbyt module with the supervisor's simulated cloud (Hub #930).
+  tidbyt: fixture('tidbyt', () => createTidbytModule({transport: cloud})),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({

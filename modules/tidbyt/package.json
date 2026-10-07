@@ -1,0 +1,20 @@
+{
+  "name": "@jimmie-potts/tidbyt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The B.U.N.N.Y. Tidbyt module: agent status and now playing on the Tidbyt from the runtime (Hub #930)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
+  },
+  "devDependencies": {
+    "sharp": "0.35.4"
+  }
+}

@@ -78,6 +78,7 @@ jobs:
       - run: npm run test:nanoleaf:built
       - run: npm run test:playback:built
       - run: npm run test:lifx-module:built
+      - run: npm run test:tidbyt-module:built
   firmware:
     name: Firmware host tests and ARM build on ${{ matrix.os }}
     strategy:

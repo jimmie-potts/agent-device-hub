@@ -9,6 +9,7 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
+import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {ROLES, type DeviceStates, type Generational, type Harness, type Role, type Seed, type Simulation} from '../tests/scenarios/catalog.js';
@@ -85,7 +86,7 @@ class Run implements RunHarness {
   #state: HarnessState = {
     generation: 0, devices: {
       lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
-      playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []},
+      playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(),
     },
     logs: [], published: [],
   };

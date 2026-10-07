@@ -17,6 +17,7 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
+import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {EDGE_GRANTS_FILE, HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
@@ -59,6 +60,9 @@ const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
 const speakers = new SimulatedSpeakers();
 const lifx = new SimulatedLifx();
+const cloud = new SimulatedCloud();
+/** Each request the Tidbyt cloud still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
+const cloudCalls = new Map<string, AbortController>();
 /** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const exchanges = new Map<string, AbortController>();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -190,6 +194,25 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       controller?.abort();
       return;
     }
+    case 'cloud.call': {
+      const key = `${number} ${message.id}`;
+      const controller = new AbortController();
+      cloudCalls.set(key, controller);
+      const headers: Record<string, string> = {authorization: message.authorization, ...(message.body === undefined ? {} : {'content-type': 'application/json'})};
+      cloud.fetch(message.url, {method: message.method, redirect: 'error', signal: controller.signal, headers, ...(message.body === undefined ? {} : {body: message.body})})
+        .then(async answer => {
+          const body = await answer.text();
+          if (cloudCalls.delete(key)) tell(child, {type: 'cloud.answered', id: message.id, status: answer.status, headers: Object.fromEntries(answer.headers), body});
+        }, (error: unknown) => { if (cloudCalls.delete(key)) tell(child, {type: 'cloud.failed', id: message.id, refused: error instanceof TypeError}); });
+      return;
+    }
+    case 'cloud.abandon': {
+      const key = `${number} ${message.id}`;
+      const controller = cloudCalls.get(key);
+      cloudCalls.delete(key);
+      controller?.abort();
+      return;
+    }
     case 'published':
       published.push({generation: number, message: message.message});
       return;
@@ -216,8 +239,8 @@ function spawnRuntime(): Promise<string> {
   });
   child.on('message', message => { heard(child, number, message as ChildMessage); });
   child.once('exit', () => {
-    // A runtime that ended no longer waits on its shows, its speakers' calls or its bulbs' answers.
-    for (const waiting of [shows, speakerCalls, exchanges]) {
+    // A runtime that ended no longer waits on its shows, its speakers' calls, its bulbs' answers or its cloud's.
+    for (const waiting of [shows, speakerCalls, exchanges, cloudCalls]) {
       for (const [key, controller] of waiting) {
         if (!key.startsWith(`${number} `)) continue;
         waiting.delete(key);
@@ -412,6 +435,10 @@ async function simulate(request: SimulateRequest): Promise<boolean> {
       if (request.action === 'online') lifx.online(request.address);
       else lifx.offline(request.address);
       return true;
+    case 'tidbyt':
+      if (request.action === 'online') cloud.online();
+      else cloud.offline();
+      return true;
     case 'lamp':
       break;
   }
@@ -443,7 +470,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state()},
+        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state()},
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);

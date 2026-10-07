@@ -20,6 +20,7 @@
     "@jimmie-potts/lifx": "0.1.0",
     "@jimmie-potts/playback": "0.1.0",
     "@jimmie-potts/sdk": "0.1.0",
+    "@jimmie-potts/tidbyt": "0.1.0",
     "@opentelemetry/api": "1.9.1"
   }
 }

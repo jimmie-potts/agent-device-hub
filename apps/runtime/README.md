@@ -6,8 +6,9 @@ hosts a fixed list of modules on the SDK's in-process bus and serves health,
 and with `--edge` the SDK edge for remote parts, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
 and, after it, the device modules: the
-[playback module](../../modules/playback/README.md) (#929) and the
-[LIFX module](../../modules/lifx/README.md) (#928) so far. Module stories
+[playback module](../../modules/playback/README.md) (#929), the
+[LIFX module](../../modules/lifx/README.md) (#928) and the
+[Tidbyt module](../../modules/tidbyt/README.md) (#930) so far. Module stories
 add theirs after the core, and the runtime also runs with no module at all.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
@@ -24,7 +25,8 @@ and secrets come from one private [configuration file](#configuration).
 A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
-reads no secret, such as the playback and LIFX modules, omits `secrets`. One helper,
+reads no secret, such as the playback and LIFX modules, omits `secrets`; the Tidbyt module names `token`, its API
+key's file. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -661,6 +663,17 @@ The catalog holds:
   off at the wall it shows unavailable and a command to it ends uncertain in the
   inbox; the Beam has no controls and gets no packet, and no address leaves the
   module.
+- the [Tidbyt module](../../modules/tidbyt/README.md) (#930) on a simulated
+  cloud: an idle start writes nothing; the status tile follows the core's
+  sessions, and a burst of changes inside the 15-second gate makes one later
+  push of the latest state; the now-playing tile follows the playback module's
+  record through play and pause, behind its own gate, and leaves the rotation
+  when the music stops; a restart while the song's card has stood past its gate,
+  with the Move answering 400 ms late, neither removes nor pushes the card, and
+  the status rows come back dimmed as uncertain; the reader holds the Tidbyt's
+  device record with no control; and neither the API key nor the cloud device
+  appears anywhere. The simulated cloud shows each tile as text rows, and the
+  scenario compares them with the frames the reader's own copies call for.
 
 A seed's `config` gives configured modules their sections. Each harness writes
 them, as the installer would, into a private configuration file with a token

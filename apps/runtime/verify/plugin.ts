@@ -39,6 +39,7 @@ export function artifactFiles(at = root): string[] {
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
     ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'), ...built('modules/playback/dist/src'), ...built('modules/lifx/dist/src'),
+    ...built('modules/tidbyt/dist/src'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -53,12 +54,14 @@ export const BUILD_SOURCES = [
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**',
+  ':(glob)modules/tidbyt/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js',
+  'modules/tidbyt/dist/src/index.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -229,8 +232,8 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --environment test and the run\'s state directory'},
     {id: 'sdk-edge', kind: 'actual', note: 'the runtime\'s SDK edge on its listener; each part has a run-generated grant in the state directory'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and sign, the shipped LIFX module, and a harness module that reports what the bus publishes'},
-    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns and SimulatedLifx in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and sign, the shipped playback, LIFX and Tidbyt modules, and a harness module that reports what the bus publishes'},
+    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns, SimulatedSpeakers, SimulatedLifx and the Tidbyt module\'s SimulatedCloud in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
     {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step'},
   ],
   checks: [
