@@ -68,7 +68,11 @@ test('a silent source turns stale after 5 s and unavailable after 30 s, when old
   const hosted = await host(context, speakers, {section: {id: ID, sources: [SECTION.sources[1]]}});
   const before = hosted.records().length;
   speakers.silent('sony');
-  await hosted.advance(40_000);
+  await hosted.advance(6000);
+  assert.equal(hosted.record().availability, 'stale');
+  assert.equal(answer(await hosted.send('pause', 'r-stale')), 'unavailable', 'a stale speaker takes no command');
+  assert.deepEqual(speakers.state().sony.commands, [], 'and hears nothing');
+  await hosted.advance(34_000);
   const [stale, unavailable, ...more] = hosted.published.filter(message => message.dataschema === PLAYBACK_SCHEMA).slice(before);
   assert.equal(more.length, 0, 'two new revisions, not one per poll');
   const observedAtMs = hosted.records()[before - 1]?.observedAtMs ?? 0;

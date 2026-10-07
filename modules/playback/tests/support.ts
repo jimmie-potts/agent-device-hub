@@ -17,9 +17,9 @@ import type {PlaybackAction} from '../src/playback.js';
 import type {Deadline} from '../src/sources.js';
 import type {SimulatedSpeakers} from '../src/simulated.js';
 
-/** node:test's test(), whose returned promise the runner awaits itself. */
+/** node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. */
 export function test(name: string, body: (context: TestContext) => void | Promise<void>): void {
-  void nodeTest(name, body);
+  void nodeTest(name, {timeout: 30_000}, body);
 }
 
 export const START_MS = Date.parse('2026-10-07T12:00:00.000Z');
