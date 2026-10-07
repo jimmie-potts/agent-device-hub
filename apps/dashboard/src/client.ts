@@ -109,8 +109,8 @@ export class Api {
  private queues=new Map<string,{running:boolean;pending:{write:boolean;start:()=>void}[]}>();
  /**
   * One request at a time per device, because the hub gives each controller one slot and answers a read that finds it busy with capacity.
-  * Reads wait their turn, bounded by the five second wait and by the sources that issue them, which each await one read at a time; a page full of
-  * waiting reads never refuses the status poll. Only commands are counted: at most four wait, and the oldest command goes first.
+  * Reads wait their turn in arrival order and are never refused for the number of reads ahead of them; one that waits five seconds is refused with
+  * capacity. Only commands are counted: at most four wait, and the oldest command goes first.
   * A caller that cancels a read in flight is released at once, but the read keeps the device until the hub answers, because the hub holds its slot
   * until the controller does. Starting the next read earlier would have the hub refuse it.
   */

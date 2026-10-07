@@ -440,8 +440,8 @@ The bounded authenticated change feed requests current monitor snapshots on stat
 or resync events. A stream reconnect uses its last cursor and backs off up to ten
 seconds. Periodic reads recover observations; reads and writes share one queue per
 device, with pending explicit writes ahead of polling and at most four writes waiting.
-A waiting read is never refused for the number of reads ahead of it, so the page's own
-widgets cannot starve the poll; it waits at most five seconds. A read cancelled in flight
+A waiting read is never refused for the number of reads ahead of it; after five seconds
+of waiting it is refused with `capacity`. A read cancelled in flight
 releases its caller at once but keeps the device until the hub answers, because the hub
 holds its one controller slot until the controller does, and refuses a read that finds it
 busy with `capacity`. Devices remain independent.
