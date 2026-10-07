@@ -23,7 +23,6 @@ import type { RoutingProfile } from './profile.js';
  *   model list left without a pick first gets `Invoke` on the current model, which returns to the picker unchanged;
  *   `Select` on the current model does nothing there (both observed 2026-10-07).
  *
- *
  * Knob 3 picks Claude's suggested next step (#907), as the 2026-10-06 qualification on #907 recorded the band above
  * Claude's composer:
  *
