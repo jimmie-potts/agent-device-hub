@@ -8,8 +8,8 @@ issue. Before changing ownership, provider contracts, APIs, state, integration
 or hosting, read docs/architecture.md and the linked device contracts.
 Before designing or changing communication between components, read
 [ADR 0012](docs/decisions/0012-bunny-event-platform.md). This covers events,
-commands, replies, errors, message formats, consumer state and trace
-propagation, and all such work follows that ADR.
+commands, replies, errors and their effects, retries, message formats, consumer
+state, logging and tracing, and all such work follows that ADR.
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
 the rebuild and its one offline cutover. Until that cutover, extend each
 component's released 1.x contract only additively. This includes the owner's CHOMPI work. Do not add
