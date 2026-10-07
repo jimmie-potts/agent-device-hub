@@ -11,14 +11,17 @@ const RETRYABLE = {
   'not-found': false,
   'invalid-state': false,
   'revision-conflict': false,
-  capacity: true,
+  'duplicate-conflict': false,
   unavailable: true,
   internal: false,
 } as const;
 
 export type RefusalCode = keyof typeof RETRYABLE;
 
-/** The 2.0 code for each blocked reason, as the README lists them. Any other reason is `internal`. */
+/**
+ * The 2.0 code for each blocked reason, as the README lists them. Any other reason is `internal`. The command line
+ * passes `invalid-state` instead for `invalid-or-unavailable-intake` when the operator's configuration fails to load.
+ */
 export const REASON_CODES: Readonly<Record<string, RefusalCode>> = Object.freeze({
   'invalid-or-unavailable-intake': 'invalid-request',
   'invalid-request': 'invalid-request',
@@ -28,7 +31,7 @@ export const REASON_CODES: Readonly<Record<string, RefusalCode>> = Object.freeze
   'unauthorized-maintenance': 'forbidden',
   'expired-deadline': 'expired',
   'unknown-run': 'not-found',
-  'run-identity-mismatch': 'invalid-state',
+  'run-identity-mismatch': 'duplicate-conflict',
   'interrupted-run-needs-reconciliation': 'invalid-state',
   'interrupted-before-evidence': 'invalid-state',
   'missing-retained-evidence': 'invalid-state',
@@ -44,11 +47,11 @@ export const REASON_CODES: Readonly<Record<string, RefusalCode>> = Object.freeze
   'issue-inventory-capped': 'invalid-state',
   'source-not-current': 'revision-conflict',
   'publication-inventory-changed': 'revision-conflict',
-  'evidence-capacity': 'capacity',
+  'evidence-capacity': 'invalid-state',
+  'process-output-limit': 'invalid-state',
   'process-deadline': 'unavailable',
   'process-unavailable': 'unavailable',
   'process-failed': 'unavailable',
-  'process-output-limit': 'unavailable',
   'invalid-issue-inventory': 'unavailable',
   'invalid-issue-response': 'unavailable',
   'invalid-source-revision': 'unavailable',
@@ -64,11 +67,12 @@ export interface ErrorBody {
 /** The registry's limit on `detail`. */
 export const MAX_DETAIL = 1024;
 
+const codeFor = (reason: string): RefusalCode => (Object.hasOwn(REASON_CODES, reason) ? (REASON_CODES[reason] ?? 'internal') : 'internal');
+
 /**
- * The 2.0 body for a blocked reason. `detail` is the reason, cut to the registry's limit, so the body still names it
- * after #839 removes the old fields.
+ * The 2.0 body for a blocked reason, with the reason's code unless the caller knows a more exact one. `detail` is the
+ * reason, cut to the registry's limit, so the body still names it after #839 removes the old fields.
  */
-export function refusalBody(reason: string): ErrorBody {
-  const code = Object.hasOwn(REASON_CODES, reason) ? (REASON_CODES[reason] ?? 'internal') : 'internal';
+export function refusalBody(reason: string, code: RefusalCode = codeFor(reason)): ErrorBody {
   return {error: {code, retryable: RETRYABLE[code], detail: reason.slice(0, MAX_DETAIL)}};
 }

@@ -60,7 +60,11 @@ stdout gains only this field.
 ```
 
 - `code` is the registry code for the reason in the table below, and
-  `retryable` is that code's registry flag.
+  `retryable` is that code's registry flag. One reason has two codes:
+  `invalid-or-unavailable-intake` is `invalid-request` for a malformed
+  invocation, an oversized stdin or a request that is not JSON, and
+  `invalid-state` when the `--config` file is missing or invalid, or a pinned
+  file no longer matches its fingerprint. The reason stays the same.
 - `detail` is the reason, so the body still names it after
   [#839](https://github.com/jimmie-potts/agent-device-hub/issues/839) removes
   the old fields.
@@ -79,7 +83,7 @@ stdout gains only this field.
 | `unauthorized-maintenance` | `forbidden` | no |
 | `expired-deadline` | `expired` | no |
 | `unknown-run` | `not-found` | no |
-| `run-identity-mismatch` | `invalid-state` | no |
+| `run-identity-mismatch` | `duplicate-conflict` | no |
 | `interrupted-run-needs-reconciliation` | `invalid-state` | no |
 | `interrupted-before-evidence` | `invalid-state` | no |
 | `missing-retained-evidence` | `invalid-state` | no |
@@ -95,11 +99,11 @@ stdout gains only this field.
 | `issue-inventory-capped` | `invalid-state` | no |
 | `source-not-current` | `revision-conflict` | no |
 | `publication-inventory-changed` | `revision-conflict` | no |
-| `evidence-capacity` | `capacity` | yes |
+| `evidence-capacity` | `invalid-state` | no |
+| `process-output-limit` | `invalid-state` | no |
 | `process-deadline` | `unavailable` | yes |
 | `process-unavailable` | `unavailable` | yes |
 | `process-failed` | `unavailable` | yes |
-| `process-output-limit` | `unavailable` | yes |
 | `invalid-issue-inventory` | `unavailable` | yes |
 | `invalid-issue-response` | `unavailable` | yes |
 | `invalid-source-revision` | `unavailable` | yes |

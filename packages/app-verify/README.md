@@ -43,8 +43,9 @@ npm install --save-dev file:vendor/jimmie-potts-app-verify-1.1.0.tgz
 Version 1.1 only adds to 1.0: a 1.0 plug-in runs unchanged, and receipts stay
 `app-verification/1`. See [What 1.1 adds](#what-11-adds).
 
-The workspace source is now 1.3.0, with a read-only `prerequisites` diagnostic
-and optional frozen-proof HTTP delivery.
+The workspace source is now 1.3.0, with a read-only `prerequisites` diagnostic,
+optional frozen-proof HTTP delivery and the shared `errorBody` on refusal lines
+(see [Refusal error body](#refusal-error-body)).
 The release example above remains the published 1.1 adoption path; this source
 change does not publish a 1.3 release or update another repository's pin.
 
@@ -261,7 +262,9 @@ cleanup, which `restart` passes on. Failed outcomes, such as a `start` with
   the check skips with a printed reason.
 
 When 1.x retires ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)),
-`error` becomes this object and `errorBody` goes away.
+a refusal line becomes `{"operation", "error": {"code", "retryable", "detail"}}`:
+the string `error`, the 1.x `detail` and `errorBody` are removed, and `error`
+holds the body that `errorBody` holds now.
 
 | 1.x `error` | 2.0 `code` | Retryable |
 | --- | --- | --- |

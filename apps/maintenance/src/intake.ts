@@ -3,12 +3,12 @@ import {Adapters,eligible} from './adapters.js';
 import {Finding,Extract} from './journal.js';
 import {investigate,Proposal} from './planner.js';
 import {PrivateStore,requireValue} from './storage.js';
-import {ErrorBody,refusalBody} from './error-body.js';
+import {ErrorBody,RefusalCode,refusalBody} from './error-body.js';
 
 export type Selection={schemaVersion:1;source:'maintenance';authority:string;repository:typeof REPOSITORY;issue:number;selectionEvidence:string};
 // A blocked response adds the shared 2.0 error body beside its 1.x fields (#921); the others are unchanged.
 export type Response={schemaVersion:1;status:'complete'|'uncertain';selections:Selection[];reason:string}|({schemaVersion:1;status:'blocked';selections:[];reason:string}&ErrorBody);
-export const blocked=(reason:string):Response=>({schemaVersion:1,status:'blocked',selections:[],reason,...refusalBody(reason)});
+export const blocked=(reason:string,code?:RefusalCode):Response=>({schemaVersion:1,status:'blocked',selections:[],reason,...refusalBody(reason,code)});
 type FindingState={schemaVersion:1;fingerprint:string;phase:'investigating'|'deferred'|'publishing'|'selected'|'resolved';revision:string;marker:string;body?:string;issue?:number;origin?:'created'|'reused';reason:string};
 type Run={schemaVersion:1;runId:string;authority:string;deadline:number;phase:'collecting'|'processing'|'complete';since:number;until:number;fingerprints:string[];selections:Selection[];decisions:Array<{fingerprint:string;reason:string;issue?:number}>;coverage?:Extract['coverage'];sourceRevision?:string;response?:Response};
 const marker=(fingerprint:string)=>`<!-- bunny-maintenance:v1:${fingerprint} -->`;
