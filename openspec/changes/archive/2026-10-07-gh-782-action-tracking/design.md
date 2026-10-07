@@ -1,0 +1,42 @@
+## Context
+
+ADR 0012 tracks device commands, moments and mode changes in the core, keeps history there, and has each module report outcomes through its outbox until the core has them. #831 gave the core its store and extension point, #835 the gateway and a `control` scope that requests every command, #846 the catalog with stand-ins for history and the inbox, and #882 and #948 the outbox, which keeps outcomes until acknowledged. The owner's 2026-10-07 decisions move history's read API and the inbox to #923, keep compact change events in history, and drop device-limited grants.
+
+## Goals / Non-Goals
+
+**Goals:** one dispatcher that every action goes through; a tracker whose state machine, deadlines and deduplication are easy to find and test; durable outcome intake; the real acknowledgment, followed by every module through the SDK; history written in each commit's transaction; the action routes; the turn-ended inbox variant removed.
+
+**Non-Goals:** inbox items, handling and views, the timeline, history's read API and filters (#923); per-device filtering; sync paging; replay; automatic retry.
+
+## Decisions
+
+1. **The dispatcher is the core's own, reached in process.** The core module exposes `actions` (`CoreModule`), which the runtime hands its gateway, and parts get `CoreHandle.dispatch`. A bus command to the core was considered: its reply could only say `accepted` or a refusal, never the device's uncertain result, so a caller would lose the answer it waits for. The gateway calls the dispatcher in the core's flow (`host.invoke`), so a core that is not running answers `unavailable`.
+2. **Actions are sent as `bunny/core`, and a request ID names one action.** Every device command now comes from one source, so the tracker keys operations by request ID alone: the same caller asking for the same action again (same key, type, schema and canonical payload) gets the recorded answer and nothing is sent; anything else is `duplicate-conflict`. Who asked is the operation's `requestedBy`.
+3. **Sent is durable before anything is sent.** The `sent` row commits first, so a full disk refuses with `unavailable`/`storage-full` (the issue's wording; the core's own session refusals keep `capacity`), and a crash after it leaves a pending row that ends uncertain at its deadline. A restart never sends again; a pending operation only waits for its deadline or a late outcome.
+4. **Per-kind deadlines.** Reply 5 s for every kind, the gateway's existing command deadline. Outcome: device 30 s, the longest a module's own device budget allows; moment 150 s, a moment's 60 s maximum lead and 60 s maximum tolerance plus 30 s to report; mode 60 s, for a mode's fan-out. A slow module's late outcome still completes the record.
+5. **Rejections are failures.** A refusal proves no effect, so a rejected action is `failed` with evidence `none`, and an expiry is failed too ("failed, including expired"). The caller also gets the refusal at once. A stopped module's command is a bus refusal, `unavailable`, recorded failed.
+6. **Late and conflicting outcomes** follow ADR 0012 exactly: definitive over uncertain, uncertain adds evidence only, succeeded with failed is `conflict` with both kept, and a reused `(source, id)` is a faulty message with no change, no item and no acknowledgment. The tracker gives parts every change (`tracked`), so #923 opens, updates or reopens its one item per operation; handling is #923's, so "a late outcome after handling updates only the tracker and history" holds on this side by construction.
+7. **Outcomes match by request ID, target, type and owner.** An outcome whose subject, type or (once replied) source differs from the operation's is kept in history and acknowledged, and changes no operation.
+8. **History is the duplicate store.** Every removal, occurrence and outcome is one history row, unique by `(source, message_id)`, so history drops duplicates durably and forever without a second copy in `core_taken`, which keeps only lifecycle observations' 24-hour window. States need no check: a copy changes nothing.
+9. **Compact change events need a baseline.** `core_history_latest` holds the latest record history saw per `(source, family, id)`; a removal leaves a tombstone at its revision. This is history's own bookkeeping, not a consumer's copy of another owner's state.
+10. **One intake subscription, `bunny.*.*.*`.** Two subscriptions would interleave a participant's states and events out of their published order in history.
+11. **The acknowledgment is an occurrence from the core** on `bunny.event.outcome-recorded.<module>`, validated as core family `outcome-recorded`: only `bunny/core` may send it, and its subject is the outcome's ID. A new outcome's acknowledgment goes in its commit's transaction, so it leaves only after the commit; a duplicate's is published directly, with no durable work, so it is sent again even on a full disk.
+12. **The SDK path follows acknowledgments.** `Outbox.republish()` subscribes to the module's acknowledgment key first, when its participant can subscribe, and forgets an outcome only when the envelope's `source`, which the bus and every edge set from the authenticated participant, is the core. No module needs code of its own; a module that wraps its participant passes `subscribe` through. `edgeValidator(schemas)` is the validator a remote outbox passes so a refused message cannot stall outcomes. Module API stays 1.2: nothing in the manifest or context changed.
+13. **Remote grants request only the core's operator commands** (`DIRECT_COMMANDS`): the dispatcher's list, which `control` maps to keys. Module-internal and core action families alike are `forbidden` at the edge.
+14. **Spans.** The dispatcher serves each action as a server span `bunny.command.request` that the bus's client request continues, so a dispatched action has no lost parent and one trace.
+15. **Logs.** Tracker steps use the module events the catalog already registers (`command.queued`, `command.admitted`, `command.rejected`, `command.completed`, `message.received`), so the diagnostic catalog is unchanged. A duplicate outcome is INFO, a recovery of a lost acknowledgment; other duplicates stay DEBUG.
+
+## Risks / Trade-offs
+
+- **One transaction per intake message.** Every module state costs a commit; at desk volume this is milliseconds (#976 watches the cost).
+- **History grows without bound**, by owner decision; compact events keep it small.
+- **The catalog no longer plays a requester that closes while queued**: through the dispatcher a caller that goes away does not cancel its action. The SDK's conformance suite keeps that case per transport.
+- **A wrapper participant without `subscribe` never hears acknowledgments.** The kit's new check fails such a module.
+
+## Migration Plan
+
+None: the runtime is not installed, and history starts fresh at the cutover (owner decision 10). The core store's history table changes shape before any install.
+
+## Open Questions
+
+None for this story. #923 decides how a conflict shows in an inbox item, since the item's schema holds failed and uncertain results only.

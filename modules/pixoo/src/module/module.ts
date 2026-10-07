@@ -16,7 +16,7 @@ import {
 } from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply, type Sdk,
+  DeviceAvailability, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type Snapshot, type StateDraft, type SyncChange,
 } from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
@@ -70,11 +70,6 @@ export type PixooOptions = {
   transport: PixooTransport;
   /** Replaces the render worker's file, so a test can make every render fail. */
   renderWorker?: URL;
-  /**
-   * Follows the core's acknowledgments of this module's outcomes, so its outbox forgets them. The core's acknowledgment
-   * belongs to Hub #782; until it exists, tests pass the module test kit's stand-in.
-   */
-  acknowledgments?: (sdk: Sdk, outbox: Pick<Outbox, 'acknowledge'>) => Promise<unknown>;
   /** Shorter waits for tests. */
   timing?: Partial<PixooTiming>;
 };
@@ -222,8 +217,8 @@ class PixooRuntime {
     });
     store.prune(clock.now());
     const outbox = this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
-    // Follow the core's acknowledgments first, so one of a resent outcome is not missed, then send what is still stored.
-    await this.#options.acknowledgments?.(sdk, outbox);
+    // The outbox follows the core's acknowledgments itself (Hub #782), first, so one of a resent outcome is not missed,
+    // then sends what is still stored.
     const republished = await outbox.republish();
     log.info('outbox.republished', {'bunny.outbox.republished_count': republished});
 

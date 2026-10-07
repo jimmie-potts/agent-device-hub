@@ -14,7 +14,6 @@ import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, 
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
-import {followStandInAcks} from '@jimmie-potts/sdk/testing';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
@@ -285,12 +284,12 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   chime: fixture('chime', () => createChimeModule({transport: chime})),
   sign: fixture('sign', () => createSignModule({transport: signs}), signSchemas),
   playback: fixture('playback', () => createPlaybackModule({transport: speakers})),
-  // The shipped LIFX module with simulated bulbs; it follows the fixture core's stand-in acknowledgments until #782.
-  lifx: fixture('lifx', () => createLifxModule({transport: bulbs, acknowledgments: followStandInAcks}), lifxSchemas),
+  // The shipped LIFX module with simulated bulbs; its outbox follows the core's acknowledgments.
+  lifx: fixture('lifx', () => createLifxModule({transport: bulbs}), lifxSchemas),
   // The shipped Tidbyt module with the supervisor's simulated cloud (Hub #930).
   tidbyt: fixture('tidbyt', () => createTidbytModule({transport: cloud})),
-  // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
-  pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo, acknowledgments: followStandInAcks}), pixooOwnSchemas),
+  // Its outbox follows the core's acknowledgments, so it forgets what the core took.
+  pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo}), pixooOwnSchemas),
   nanoleaf: fixture('nanoleaf', () => createNanoleafModule({transport: nanoleaf}), nanoleafSchemas),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.

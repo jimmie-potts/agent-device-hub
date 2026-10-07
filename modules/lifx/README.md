@@ -161,9 +161,9 @@ configured and for a bulb whose lease it could not take for another reason than
 another holder. It skips only the commands of a bulb whose lease another holder has
 (`busy`): another instance on the same state directory may still have that work in
 hand. The outbox sends a stored outcome again at each start until the core
-acknowledges it; until [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)
-defines that acknowledgment, tests and the fixture core pass the kit's stand-in
-through the `acknowledgments` option, and the shipped module keeps its outcomes.
+acknowledges it, and follows the core's acknowledgments itself
+([#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)): it forgets an
+outcome once the core, and only the core, says it recorded it.
 
 ## Automatic agent status
 
@@ -288,6 +288,5 @@ See [LIFX module checks](../../docs/development.md#lifx-module-checks).
   [#362](https://github.com/jimmie-potts/agent-device-hub/issues/362).
   `externalControl` stays `unknown`.
 - LIFX in the Hub mode: [#415](https://github.com/jimmie-potts/agent-device-hub/issues/415).
-- The core's acknowledgment of outcomes: #782.
 - Pages, MCP tools and settings for the module: module API 1.2
   ([#835](https://github.com/jimmie-potts/agent-device-hub/issues/835)).

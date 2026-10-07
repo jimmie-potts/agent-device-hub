@@ -4,10 +4,9 @@
 // browser sessions its configuration file's `edge` section grants.
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
-import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {MODULE_API_VERSION, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {isCoreModule} from './core/core.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
@@ -191,18 +190,6 @@ function close(server: Server): Promise<void> {
 }
 
 /**
- * The edge's validator: profile 2.0, the core families, the device families that every device module answers (#918,
- * #928), and the modules' own payload schemas.
- */
-function edgeValidator(schemas: Readonly<Record<string, object>>): MessageValidator {
-  const validator = new MessageValidator();
-  registerCoreFamilies(validator);
-  registerDeviceFamilies(validator);
-  for (const [dataschema, schema] of Object.entries(schemas)) validator.register(dataschema, schema);
-  return validator;
-}
-
-/**
  * Prepares the state directory and reads the configuration file and the edge's grants, if any, serves health, then
  * admits and starts the modules and resolves when each start has settled. The edge serves only once every start has
  * settled.
@@ -290,9 +277,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   await host.start();
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
+    // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
+    const actions = modules.find(isCoreModule)?.actions;
     const gateway = new Gateway({
       bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
-      clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}),
+      clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}), ...(actions === undefined ? {} : {actions}),
     });
     try {
       await gateway.start(url, [`${HOST}:${bound}`, `localhost:${bound}`]);

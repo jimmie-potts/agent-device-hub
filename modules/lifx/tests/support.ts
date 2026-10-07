@@ -1,5 +1,5 @@
 // What the LIFX module's tests share (Hub #928): a manual clock and scheduler, the module hosted in the kit's
-// `ModuleHarness` on its own bus with simulated bulbs, a stand-in core that serves sessions and acknowledges outcomes,
+// `ModuleHarness` on its own bus with simulated bulbs, a stand-in core that serves sessions and acknowledges outcomes as the core does,
 // and builders for sessions and commands. Every message the bus carries is checked against profile 2.0 with the core,
 // device and LIFX families.
 import {copyFile, mkdtemp, rm} from 'node:fs/promises';
@@ -10,8 +10,8 @@ import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
-import {followStandInAcks, ModuleHarness, RecordedSpans, standInAck, standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import {InProcessBus, acknowledgmentOf, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {
   createLifxModule, LIFX_COLOR_SET_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, registerLifxFamilies, SimulatedLifx, type LifxConfig, type LifxModuleOptions,
   type LifxNetwork,
@@ -80,13 +80,12 @@ export function manualClock(start = START_MS): ManualClock {
   };
 }
 
-/** Profile 2.0 with the core, device and LIFX families and the kit's stand-in acknowledgment. */
+/** Profile 2.0 with the core, device and LIFX families, the core's outcome acknowledgment among them. */
 export function fullValidator(): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);
   registerLifxFamilies(validator);
-  for (const [dataschema, schema] of Object.entries(standInAckSchemas)) validator.register(dataschema, schema);
   return validator;
 }
 
@@ -136,7 +135,7 @@ export type WorldOptions = {
   /** How many messages one subscription's queue on the bus holds. Defaults to the bus's 1024. */
   maxQueued?: number;
   network?: SimulatedLifx;
-  /** Whether the module follows the stand-in core's acknowledgments. Defaults to true. */
+  /** Whether the stand-in core acknowledges the module's outcomes, as the core does (Hub #782). Defaults to true. */
   acknowledged?: boolean;
   /** Whether the stand-in core serves sessions. Defaults to true. */
   core?: boolean;
@@ -204,10 +203,8 @@ export class World {
 
   /** Starts a new instance of the module on the same state directory, as the runtime does at each start. */
   async start(options: Partial<LifxModuleOptions> = {}): Promise<void> {
-    const {acknowledged = true, beforePublish} = this.#options;
-    const inner = createLifxModule({
-      transport: this.#options.transport ?? this.network, ...(acknowledged ? {acknowledgments: followStandInAcks} : {}), ...(beforePublish === undefined ? {} : {beforePublish}), ...options,
-    });
+    const {beforePublish} = this.#options;
+    const inner = createLifxModule({transport: this.#options.transport ?? this.network, ...(beforePublish === undefined ? {} : {beforePublish}), ...options});
     // The same module, with its database kept here, so a test can fill the disk under it.
     const module: BunnyModule<LifxConfig> = {
       manifest: inner.manifest,
@@ -320,7 +317,7 @@ export class World {
     await rm(this.dir, {recursive: true, force: true});
   }
 
-  /** The stand-in core: it serves the sessions, and acknowledges each outcome it hears, as the fixture core does. */
+  /** The stand-in core: it serves the sessions, and acknowledges each outcome it hears, as the core does (Hub #782). */
   async serveCore(): Promise<void> {
     const core = this.#connect('bunny/core');
     this.#core = core;
@@ -329,8 +326,8 @@ export class World {
       states: [...this.sessions.values()].map(record => ({type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record})),
     }));
     await core.subscribe('bunny.event.*.*', async message => {
-      if (message.kind !== 'outcome') return;
-      const {key, draft} = standInAck(message);
+      if (message.kind !== 'outcome' || this.#options.acknowledged === false) return;
+      const {key, draft} = acknowledgmentOf(message);
       await core.publish(key, draft, {parent: message});
     });
   }

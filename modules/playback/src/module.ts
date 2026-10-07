@@ -110,8 +110,8 @@ BunnyModule<PlaybackConfig> {
       const forget = db.prepare('DELETE FROM playback_commands WHERE result IS NOT NULL AND seq <= (SELECT MAX(seq) FROM playback_commands) - ?');
       const outbox = new Outbox({sdk, database: db, clock, log, trace});
 
-      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again. The core's
-      // acknowledgment belongs to Hub #782; until then a stored outcome goes out again at every start.
+      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again. The outbox
+      // follows the core's acknowledgments first (Hub #782), so it forgets each outcome the core recorded.
       const republished = await outbox.republish();
       log.info('outbox.republished', {'bunny.outbox.republished_count': republished});
       const outcomeKey = `bunny.event.playback-control.${id}`;

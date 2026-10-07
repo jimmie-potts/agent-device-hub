@@ -256,9 +256,10 @@ still queued at its deadline is refused `expired` by the bus. The module
 remembers the last 64 commands, across restarts too; an older `requestId`
 counts as new.
 
-Until the core acknowledges outcomes
-([#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)), every
-stored outcome goes out again at each start, and the core drops the duplicates.
+Every stored outcome goes out again at each start until the core acknowledges it,
+and the core drops the duplicates. The outbox follows the core's acknowledgments
+([#782](https://github.com/jimmie-potts/agent-device-hub/issues/782)) and forgets each
+outcome the core recorded.
 
 ## Polling and failures
 

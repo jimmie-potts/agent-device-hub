@@ -39,6 +39,10 @@ type Fault = {
   strayParent?: boolean;
   /** A record the bulb writes when it switches, in place of its registered `command.completed`. */
   switchRecord?: {event: string; fields: Readonly<Record<string, string | number | boolean>>};
+  /** Its outbox's participant cannot subscribe, so the outbox never hears the core's acknowledgments (Hub #782). */
+  deafOutbox?: boolean;
+  /** It forgets an outcome on any acknowledgment that names it, whoever sent it: the payload, not the sender. */
+  trustsPayload?: boolean;
 };
 type Switch = {power: 'on' | 'off'};
 
@@ -55,7 +59,13 @@ function bulb(fault: Fault = {}): BunnyModule {
       const db = database();
       db.exec('CREATE TABLE IF NOT EXISTS bulbs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, power TEXT NOT NULL)');
       db.exec('INSERT OR IGNORE INTO bulbs VALUES (\'b1\', 0, \'off\')');
-      const outbox = new Outbox({sdk, database: db, clock, ...(fault.silentOutbox === true ? {} : {log, trace})});
+      const participant = fault.deafOutbox === true ? {source: sdk.source, publishMessage: <T extends object>(key: string, message: Message<T>) => sdk.publishMessage(key, message)} : sdk;
+      const outbox = new Outbox({sdk: participant, database: db, clock, ...(fault.silentOutbox === true ? {} : {log, trace})});
+      if (fault.trustsPayload === true) {
+        await sdk.subscribe<{id: string}>('bunny.event.outcome-recorded.bulb', message => {
+          if (outbox.acknowledge(message.data.id)) log.info('outbox.acknowledged', {'bunny.message.id': message.data.id}, message);
+        });
+      }
       await outbox.republish();
       const state = (row: {id: string; revision: number; power: string}) => ({
         type: 'org.bunny.kit-bulb.updated', subject: row.id, dataschema: BULB_SCHEMA,
@@ -115,13 +125,20 @@ moduleConformance(spec());
 
 it('a conforming module passes every check', async () => {
   assert.deepEqual(conformanceChecks(spec()).map(check => check.name), [
-    CHECKS.manifest, CHECKS.lifecycle, CHECKS.serves, CHECKS.accepts, CHECKS.refuses, CHECKS.outbox,
+    CHECKS.manifest, CHECKS.lifecycle, CHECKS.serves, CHECKS.accepts, CHECKS.refuses, CHECKS.outbox, CHECKS.acknowledged,
   ], 'no copies check without copied families');
   assert.deepEqual(await failing(spec()), []);
 });
 
 it('the kit catches a module that reports its outcome without the outbox', async () => {
-  assert.deepEqual(await failing(spec({plainOutcome: true})), [CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({plainOutcome: true})), [CHECKS.outbox, CHECKS.acknowledged]);
+});
+
+it('the kit catches a module that never hears the core\'s acknowledgment, and one that forgets an outcome on anyone\'s (Hub #782)', async () => {
+  assert.deepEqual(await failing(spec({deafOutbox: true})), [CHECKS.acknowledged]);
+  assert.deepEqual(await failing(spec({trustsPayload: true})), [CHECKS.acknowledged]);
+  const check = conformanceChecks(spec({trustsPayload: true})).find(item => item.name === CHECKS.acknowledged);
+  await assert.rejects(check?.run() ?? Promise.resolve(), /an acknowledgment from another participant than the core is ignored/);
 });
 
 it('the kit catches a manifest the runtime would refuse', async () => {
@@ -133,35 +150,35 @@ it('the kit catches a refusal with another code than the module declares', async
 });
 
 it('the kit catches a stop that never finishes', async () => {
-  assert.deepEqual(await failing(spec({hangingStop: true})), [CHECKS.lifecycle, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({hangingStop: true})), [CHECKS.lifecycle, CHECKS.outbox, CHECKS.acknowledged]);
 });
 
 it('the kit catches an outbox that records nothing, naming the missing publication record', async () => {
-  assert.deepEqual(await failing(spec({silentOutbox: true})), [CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({silentOutbox: true})), [CHECKS.outbox, CHECKS.acknowledged]);
   const check = conformanceChecks(spec({silentOutbox: true})).find(item => item.name === CHECKS.outbox);
   await assert.rejects(check?.run() ?? Promise.resolve(), /recorded once: pass the module's log and trace to its Outbox/);
 });
 
 it('the kit catches a span whose parent is lost', async () => {
-  assert.deepEqual(await failing(spec({strayParent: true})), [CHECKS.accepts, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({strayParent: true})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
 });
 
 it('the kit catches a message that breaks its payload schema', async () => {
   // Every state the bulb sends says `dim`, which its schema does not allow: in a sync and in what the command publishes.
-  assert.deepEqual(await failing(spec({dimState: true})), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({dimState: true})), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
 });
 
 it('the kit catches a module that logs an event the diagnostic catalog does not register for modules', async () => {
-  // Every check that sees the record fails: the accepted command's and the outbox's.
-  assert.deepEqual(await failing(spec({switchRecord: {event: 'bulb.switched', fields: {}}})), [CHECKS.accepts, CHECKS.outbox]);
-  assert.deepEqual(await failing(spec({switchRecord: {event: 'runtime.module.started', fields: {}}})), [CHECKS.accepts, CHECKS.outbox],
+  // Every check that sees the record fails: the accepted command's, the outbox's and the acknowledgment's.
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'bulb.switched', fields: {}}})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'runtime.module.started', fields: {}}})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged],
     'a module cannot write the runtime\'s own events');
 });
 
 it('the kit catches a module record with an unregistered attribute or a value outside its registered type', async () => {
   const leak = 'GET http://192.0.2.7/api?token=secret-token refused';
-  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'error.message': leak}}})), [CHECKS.accepts, CHECKS.outbox]);
-  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'bunny.device.id': leak}}})), [CHECKS.accepts, CHECKS.outbox]);
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'error.message': leak}}})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
+  assert.deepEqual(await failing(spec({switchRecord: {event: 'command.completed', fields: {'bunny.device.id': leak}}})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
 });
 
 it('a module record is checked as the runtime writes it: the module scope, its name and the registered vocabulary', () => {

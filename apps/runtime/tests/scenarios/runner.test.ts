@@ -38,7 +38,7 @@ it('an act that throws and a hold that breaks both fail', async () => {
   try {
     const thrown = await runScenario({id: 'control-throws', title: 'negative control', seed: EMPTY, steps: [
       act('switch a lamp nobody serves', async probe => {
-        const answer = await probe.send('operator', 'none', {key: 'bunny.cmd.lamp.lamp-1', draft: {
+        const answer = await probe.send('operator', 'none', {key: 'bunny.cmd.lamp-switch.lamp-1', draft: {
           type: 'org.bunny.lamp.switch.requested', subject: 'lamp-1', dataschema: 'https://bunny.invalid/events/lamp-switch/2.0', data: {power: 'on'},
         }}, {timeoutMs: 1000, requestId: 'req-none'});
         throw new Error(`the request is ${answer}`);

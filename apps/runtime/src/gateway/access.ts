@@ -8,6 +8,7 @@ import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/sdk';
+import {DIRECT_COMMANDS} from '../core/tracker.js';
 import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
 /** The source every browser session acts as: the dashboard's grant (Hub #835, #922), which no credential may take. */
@@ -40,17 +41,20 @@ export type Refusal = {readonly code: ErrorCode; readonly detail: string};
 export type Admission = {readonly principal: Principal} | {readonly refusal: Refusal};
 
 /**
- * The commands the `control` scope may request: every command key, the core's operator commands (an approval recovery
- * and a consumer's notice acknowledgment, which the core still checks against the sender's source) and every device's
- * commands. #782's dispatcher narrows what a remote grant may request directly.
+ * The commands the `control` scope may request directly at the SDK edge: the core's operator commands only, an
+ * approval recovery and a consumer's notice acknowledgment, which the core still checks against the sender's source.
+ * The core's dispatcher decides this list (#782): every other command, a device's, a moment, a mode change or a
+ * module's own family, module-internal ones included, goes through the dispatcher's action routes, so nothing
+ * bypasses tracking.
  */
-const CONTROL_KEYS = ['bunny.cmd.*.*'];
+export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bunny.cmd.${family}.*`);
 
 /**
  * The SDK edge's permissions for a caller's scopes (Hub #835): `read` subscribes to and syncs every state and event
  * key; `ingest` publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control`
- * requests every command; `admin` adds nothing at the edge. A part may serve or respond to nothing yet: a remote
- * owner's grant comes with its own story.
+ * requests the core's operator commands, and sends every other command through the dispatcher's action routes
+ * (#782); `admin` adds nothing at the edge. A part may serve or respond to nothing yet: a remote owner's grant comes
+ * with its own story.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
   const calls = new Set<Call>();

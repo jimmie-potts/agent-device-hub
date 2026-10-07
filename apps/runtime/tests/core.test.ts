@@ -8,7 +8,7 @@ import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type BunnyModule, type CommandDraft, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
-import {ModuleHarness, moduleConformance, standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import {ModuleHarness, moduleConformance} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreOptions, type CorePart, type LogRecord, type Runtime, type RuntimeOptions} from '../src/index.js';
 import {
   IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted, turnEnded, turnStarted, unknownApproval,
@@ -35,7 +35,7 @@ moduleConformance({
 
 const validator = new MessageValidator();
 registerCoreFamilies(validator);
-for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...historySchemas, ...lampSchemas})) validator.register(dataschema, schema);
+for (const [dataschema, schema] of Object.entries({...historySchemas, ...lampSchemas})) validator.register(dataschema, schema);
 
 type CoreRun = {
   runtime: Runtime;

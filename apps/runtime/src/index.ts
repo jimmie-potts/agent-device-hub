@@ -1,6 +1,16 @@
 export {CORE_MODULE, contain, sourceOf, type ModuleHealth, type ModuleState, type Reason} from './host.js';
-export {DEFAULT_CONSUMERS, OWNER_ID, consumerOf, createCoreModule, type CoreHandle, type CoreOptions, type CorePart} from './core/core.js';
+export {
+  DEFAULT_CONSUMERS, OWNER_ID, consumerOf, createCoreModule, isCoreModule, type CoreHandle, type CoreModule, type CoreOptions, type CorePart,
+} from './core/core.js';
 export {type CoreChange, type CoreTransaction, type Deriver} from './core/store.js';
+export {
+  DIRECT_COMMANDS, type Action, type ActionAnswer, type CompletedOutcome, type CoreActions, type OperationChange, type Tracked,
+} from './core/tracker.js';
+export {
+  DEADLINES, advance, kindOf, pending, type ActionKind, type Evidence, type Operation, type OperationEvent, type OperationResult, type OperationStatus,
+  type TakenOutcome,
+} from './core/operations.js';
+export {MAX_REFUSED, type ChangeEvent, type HistoryKind, type OperationStep} from './core/history.js';
 export {Redactions, type LogSink} from './log.js';
 export {buildModules, coreFactory, moduleSchemas, shippedModules, type ModuleFactory} from './modules.js';
 export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type EdgeInputs, type ProcessInputs, type ProcessOptions} from './process.js';

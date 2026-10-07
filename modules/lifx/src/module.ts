@@ -19,7 +19,7 @@ import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
 import {
   DeviceAvailability, errorType, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
-  type Reply, type Sdk, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
+  type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
 import {DEVICE_SCHEMA, LIFX_COLOR_SET_SCHEMA, LIFX_LIGHT_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, lifxValidator, OUTCOME_SCHEMA, type LifxLight} from './families.js';
@@ -77,12 +77,6 @@ export const udpNetwork: LifxNetwork = {connect: address => new UdpTransport({ad
 export type LifxModuleOptions = {
   /** How the module reaches its bulbs: `udpNetwork`, or `SimulatedLifx` in tests and disposable runs. */
   transport: LifxNetwork;
-  /**
-   * Follows the core's acknowledgments of the module's outcomes, so its outbox forgets each one the core took. The core's
-   * acknowledgment belongs to Hub #782; until then tests and the fixture core pass the kit's stand-in
-   * (`followStandInAcks`), and the shipped module keeps its outcomes and sends them again at each start.
-   */
-  acknowledgments?: (sdk: Sdk, outbox: Pick<Outbox, 'acknowledge'>) => Promise<unknown>;
   /** Runs before each message leaves the outbox, with the message. A crash test ends the runtime here, after the commit. */
   beforePublish?: (message: Message<unknown>) => void;
 };
@@ -224,8 +218,9 @@ class LifxRun {
     const store = new LifxStore(db);
     this.#store = store;
     const {beforePublish} = this.#options;
+    // The outbox follows the core's acknowledgments itself (Hub #782), through the module's own participant.
     const outbox = new Outbox({
-      sdk: beforePublish === undefined ? sdk : {source: sdk.source, publishMessage: (key, message) => {
+      sdk: beforePublish === undefined ? sdk : {source: sdk.source, subscribe: (...args) => sdk.subscribe(...args), publishMessage: (key, message) => {
         beforePublish(message);
         return sdk.publishMessage(key, message);
       }},
@@ -237,14 +232,8 @@ class LifxRun {
     for (const config of this.#config.bulbs) this.#bulbs.set(config.id, this.#bulb(config, store, leases));
     signal.addEventListener('abort', () => { this.#close(); }, {once: true});
 
-    // Follow the core's acknowledgments first, so a resent outcome's acknowledgment is heard; then send what is stored.
-    if (this.#options.acknowledgments !== undefined) {
-      await this.#options.acknowledgments(sdk, {acknowledge: id => {
-        const forgot = outbox.acknowledge(id);
-        if (forgot) log.info('outbox.acknowledged', {'bunny.message.id': id});
-        return forgot;
-      }});
-    }
+    // The outbox follows the core's acknowledgments first, so a resent outcome's acknowledgment is heard, then sends
+    // what is stored.
     log.info('outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
     await this.#settle();
 

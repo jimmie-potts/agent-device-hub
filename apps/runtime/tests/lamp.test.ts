@@ -1,5 +1,5 @@
 // The fixture modules (Hub #882, #846): the lamp and the chime pass the module test kit, and the lamp runs under the
-// real runtime with the core, whose stand-in history takes its outcomes.
+// real runtime with the core, whose history takes its outcomes (#782).
 import assert from 'node:assert/strict';
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
 import {chimeSpec} from './fixtures/chime.js';
@@ -32,7 +32,7 @@ it('under the runtime, the lamp copies the core\'s mode and stays off in quiet m
   assert.equal(result.error.error.code, 'invalid-state');
 });
 
-it('the core\'s stand-in history refuses a message that reuses (source, id) with other content, with the registry\'s reason for that conflict', async context => {
+it('the core\'s history refuses a message that reuses (source, id) with other content, with the registry\'s reason for that conflict', async context => {
   const sender = fixture('sender');
   const {logs} = await run(context, {modules: [createCoreModule(), sender]});
   const {sdk} = contextOf(sender);

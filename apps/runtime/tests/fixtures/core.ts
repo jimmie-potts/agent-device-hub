@@ -1,28 +1,28 @@
 // The core as runtime tests and runs host it (Hub #831): the real core, `createCoreModule` from src/core, owning the
-// agent sessions, with stand-in parts for what other stories own, each until its owner lands:
-// - history, until #782: it records every outcome as a `stand-in-history` entry, then acknowledges the outcome with the
-//   kit's stand-in acknowledgment;
-// - the inbox, until #923: it records a failed or uncertain outcome as an `inbox-item` operation;
-// - the mode's owner, until #695.
-// The parts join through the core's extension point, `CorePart`: they take every occurrence and outcome other than a
-// hook's lifecycle observation once by (source, id), across restarts, in the core store's transactions, and go out
-// through the core's outbox. The core serves their families through its sync. Each message they take or drop is logged,
-// so a test in another process can count them.
+// agent sessions, tracking every action it dispatches and taking every outcome, with its real history and outcome
+// acknowledgment (#782). Stand-in parts play what other stories own, each until its owner lands, and derive their rows
+// from the real tracker's changes through the core's extension point, `CorePart`, in the tracker's own transactions:
+// - a readable copy of the tracked actions' results, until #923's history read API: a `stand-in-history` entry for
+//   each outcome the tracker took for an action, and for each result an action reached without one (a refusal, an
+//   expiry or an uncertain end), so a reader in another process can see what history recorded;
+// - the inbox, until #923: a failed or uncertain action as one `inbox-item` operation;
+// - the mode's owner, until #924.
+// The core serves their families through its sync, and their changes go out through the core's outbox.
 import {createHash} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import type {ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import type {InboxItem, Mode} from '@jimmie-potts/event-contracts/v2/families';
-import type {BunnyModule, StateDraft} from '@jimmie-potts/sdk';
-import {standInAck} from '@jimmie-potts/sdk/testing';
-import {DEFAULT_CONSUMERS, createCoreModule as createRealCore, type CoreOptions, type CorePart} from '../../src/index.js';
+import type {StateDraft} from '@jimmie-potts/sdk';
+import {DEFAULT_CONSUMERS, createCoreModule as createRealCore, type CoreModule, type CoreOptions, type CorePart} from '../../src/index.js';
 import {modeState} from './lamp.js';
 
 const BASE = 'https://bunny.invalid/events/';
 export const HISTORY_SCHEMA = `${BASE}stand-in-history/2.0`;
-const LIFECYCLE_TYPE = 'org.bunny.lifecycle.observed';
 const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name}`});
 
-/** One outcome the stand-in history recorded, as its `stand-in-history` family carries it until #782's history. */
+/**
+ * One result history recorded for a tracked action, as the `stand-in-history` family carries it until #923's history
+ * read API: an outcome the tracker took, by its `source`, or a result the action reached without one, by the core.
+ */
 export type HistoryEntry = {
   id: string; revision: number; source: string; requestId: string; command: string; target: string;
   result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'; takenAtMs: number;
@@ -53,10 +53,7 @@ const FAMILIES = {
 } as const;
 type Family = keyof typeof FAMILIES;
 type Entity = {id: string; revision: number};
-type Outcome = {requestId: string; result: HistoryEntry['result']; evidence: HistoryEntry['evidence']; error?: ErrorDetail};
 const isFamily = (family: string): family is Family => Object.hasOwn(FAMILIES, family);
-/** How the core took a message, as its `message.received` record's outcome: once, as a duplicate, or not, as a conflict. */
-const TAKEN = {new: 'accepted', duplicate: 'duplicate', conflict: 'rejected'} as const;
 const draftOf = (family: Family, record: Entity): StateDraft =>
   ({type: FAMILIES[family].type, subject: record.id, dataschema: FAMILIES[family].dataschema, data: record});
 /** An entity ID that is also a routing key token, whatever the source and ID it names. */
@@ -84,51 +81,28 @@ export function standInParts(mode: Mode = 'work'): CorePart {
       }
       return states;
     },
-    start(core) {
-      return core.sdk.subscribe('bunny.event.*.*', async message => {
-        // The core itself takes the hooks' lifecycle observations.
-        if (message.source === core.sdk.source || message.type === LIFECYCLE_TYPE) return;
-        await core.ready;
-        const verdict = core.received(message);
-        const requestId = (message.data as {requestId?: unknown}).requestId;
-        core.log.info('message.received', {
-          'bunny.participant': message.source, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind, 'bunny.outcome': TAKEN[verdict],
-          // A conflict is `duplicate-conflict` in the registry; its registered reason is `duplicate`, as in the edge's records.
-          ...(verdict === 'conflict' ? {'bunny.reason': 'duplicate'} : {}), ...(typeof requestId === 'string' ? {'bunny.request.id': requestId} : {}),
-        });
-        if (verdict === 'conflict' || (verdict === 'duplicate' && message.kind !== 'outcome')) return;
-        await core.transaction(tx => {
-          const save = (family: Family, record: Entity): void => {
-            statements?.write.run(family, record.id, JSON.stringify(record));
-            tx.add(`bunny.state.${family}.${record.id}`, {kind: 'state', ...draftOf(family, record)});
-          };
-          if (verdict === 'new') {
-            tx.take(message);
-            if (message.kind === 'outcome') {
-              const {requestId: request, result, evidence, error} = message.data as Outcome;
-              const command = message.type.replace(/\.completed$/, '.requested');
-              const revision = tx.revision();
-              const entry: HistoryEntry = {
-                id: keyed(message.source, message.id), revision, source: message.source, requestId: request, command, target: message.subject,
-                result, evidence, takenAtMs: tx.atMs,
-              };
-              save('stand-in-history', entry);
-              if (result !== 'succeeded') {
-                const item: InboxItem = {
-                  id: keyed(message.source, request), revision, createdAtMs: tx.atMs, dismissedBy: [],
-                  item: {kind: 'operation', requestId: request, command, target: message.subject, result, evidence, ...(error === undefined ? {} : {error})},
-                };
-                save('inbox-item', item);
-              }
-            }
-          }
-          // An outcome is acknowledged after it commits, and again for a duplicate, so a lost acknowledgment recovers.
-          if (message.kind === 'outcome') {
-            const {key, draft: ack} = standInAck(message);
-            tx.add(key, ack, {parent: message});
-          }
-        });
-      });
+    tracked({operation, previous, outcome}, tx) {
+      const save = (family: Family, record: Entity): void => {
+        statements?.write.run(family, record.id, JSON.stringify(record));
+        tx.add(`bunny.state.${family}.${record.id}`, {kind: 'state', ...draftOf(family, record)});
+      };
+      const {requestId, command, target, result} = operation;
+      const revision = tx.revision();
+      const entry = (source: string, id: string, settled: HistoryEntry['result'], evidence: HistoryEntry['evidence']): void => {
+        const record: HistoryEntry = {id: keyed(source, id), revision, source, requestId, command, target, result: settled, evidence, takenAtMs: tx.atMs};
+        save('stand-in-history', record);
+      };
+      if (outcome !== undefined) entry(outcome.source, outcome.id, outcome.data.result, outcome.data.evidence);
+      else if (result !== undefined && result !== 'conflict' && result !== previous?.result) entry('bunny/core', `${requestId}.${operation.status}`, result, operation.evidence ?? 'none');
+      // One inbox item per failed or uncertain action. A later result never removes it: a person handles it (#923).
+      if (result === 'failed' || result === 'uncertain') {
+        const {evidence, error} = operation;
+        const item: InboxItem = {
+          id: keyed('operation', requestId), revision, createdAtMs: tx.atMs, dismissedBy: [],
+          item: {kind: 'operation', requestId, command, target, result, ...(evidence === undefined ? {} : {evidence}), ...(error === undefined ? {} : {error})},
+        };
+        save('inbox-item', item);
+      }
     },
   };
 }
@@ -139,6 +113,6 @@ export type FixtureCoreOptions = Pick<CoreOptions, 'beforePublish'> & {
 };
 
 /** The real core with the stand-in parts and the fixture consumers. */
-export function createCoreModule({mode = 'work', beforePublish}: FixtureCoreOptions = {}): BunnyModule {
+export function createCoreModule({mode = 'work', beforePublish}: FixtureCoreOptions = {}): CoreModule {
   return createRealCore({parts: [standInParts(mode)], consumers: FIXTURE_CONSUMERS, ...(beforePublish === undefined ? {} : {beforePublish})});
 }

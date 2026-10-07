@@ -13,7 +13,7 @@ import {
   type CloudState,
 } from '@jimmie-potts/tidbyt';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {LogRecord, ModuleHealth} from '../../src/index.js';
+import {DEADLINES, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {
   OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, runtimeEnded, sessionStarted, turnEnded, turnStarted, unknownApproval,
   type ObservationOptions,
@@ -144,13 +144,20 @@ export interface Harness {
   /** The role's participant now: a new one in process after a reconnect or restart, the same one remotely. */
   sdk(role: Role): Participant;
   /**
-   * Sends a command as `role` and records how it ends under `label`. Resolves with the answer, which a step may also
-   * leave to `answer`.
+   * Sends a command as `role` straight through the SDK and records how it ends under `label`. Resolves with the answer,
+   * which a step may also leave to `answer`. A remote grant may request only the core's own operator commands this way
+   * (#782); every device command goes through `dispatch`.
    */
   send(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, options: {timeoutMs: number; requestId: string}): Promise<string>;
   /**
-   * How the request under `label` ended: `accepted`, the refusal's or uncertain result's error code, `pending`, or
-   * `lost` when its requester died with the runtime.
+   * Sends a device's command, a moment or a mode change as `role` through the core's dispatcher, on the gateway's action
+   * route `POST /api/v2/commands/<family>` (#782), on both transports, and records how it ends under `label`. The
+   * command's key names its family and target, and its draft's payload is the action's data.
+   */
+  dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string>;
+  /**
+   * How the request or action under `label` ended: `accepted`, the refusal's or uncertain result's error code,
+   * `pending`, or `lost` when its requester died with the runtime or its HTTP call lost its connection.
    */
   answer(label: string): string;
   readonly reader: ReaderView;
@@ -265,14 +272,14 @@ export async function runScenario(scenario: Scenario, h: Harness, onStep?: (resu
 const show = (value: unknown): string => JSON.stringify(value);
 /** The expectation for the harness's transport, where the two transports end a case differently. */
 const byTransport = <T>(h: Harness, answers: Readonly<Record<TransportName, T>>): T => answers[h.transport];
-/**
- * How long past its deadline a remote requester waits for the edge before it settles a command itself: the SDK's
- * `REQUESTER_GRACE_MS`, which the package does not export.
- */
-const REQUESTER_GRACE_MS = 1000;
 const answered = (h: Harness, label: string, expected: string): Outcome => h.answer(label) === expected || `${label} is ${h.answer(label)}`;
 const sendOnce = async (h: Harness, role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<void> => {
   const answer = await h.send(role, label, command, {timeoutMs: 5000, requestId});
+  if (answer !== 'accepted') throw new Error(`${label} is ${answer}`);
+};
+/** Sends a device's command through the core's dispatcher (#782) and expects it accepted. */
+const dispatchOnce = async (h: Harness, role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<void> => {
+  const answer = await h.dispatch(role, label, command, requestId);
   if (answer !== 'accepted') throw new Error(`${label} is ${answer}`);
 };
 const publish = async (h: Harness, event: Parameters<typeof observation>[0], options: ObservationOptions = {}): Promise<void> => {
@@ -294,11 +301,23 @@ const copied = (h: Harness, power: Power): Outcome => {
   const lamp = h.reader.states<Lamp>('lamp').find(state => state.data.id === 'lamp-1')?.data;
   return lamp?.power === power || `the reader's copy shows lamp-1 ${String(lamp?.power)}`;
 };
+/**
+ * What history recorded of a tracked action, as the stand-in copy shows it until #923's history read API: each outcome
+ * the tracker took, and each result the action reached without one, which the core recorded.
+ */
 const historyOf = (h: Harness, requestId: string): HistoryEntry[] =>
   h.reader.states<HistoryEntry>('stand-in-history').map(state => state.data).filter(entry => entry.requestId === requestId);
+/** The outcomes history took for a tracked action, each once. */
+const outcomesOf = (h: Harness, requestId: string): HistoryEntry[] => historyOf(h, requestId).filter(entry => entry.source !== 'bunny/core');
+/** History took exactly one outcome for the action, with this result and evidence. */
 const recorded = (h: Harness, requestId: string, result: HistoryEntry['result'], evidence: HistoryEntry['evidence']): Outcome => {
-  const rows = historyOf(h, requestId).map(entry => `${entry.result}/${entry.evidence}`);
+  const rows = outcomesOf(h, requestId).map(entry => `${entry.result}/${entry.evidence}`);
   return show(rows) === show([`${result}/${evidence}`]) || `history holds ${show(rows)} for ${requestId}`;
+};
+/** The results the core recorded for an action that ended without an outcome: a refusal, an expiry or an uncertain end. */
+const endedAs = (h: Harness, requestId: string, expected: readonly string[]): Outcome => {
+  const rows = historyOf(h, requestId).filter(entry => entry.source === 'bunny/core').map(entry => `${entry.result}/${entry.evidence}`);
+  return show(rows) === show(expected) || `the core recorded ${show(rows)} for ${requestId}`;
 };
 const inboxOf = (h: Harness, requestId: string): InboxItem['item'][] =>
   h.reader.states<InboxItem>('inbox-item').map(state => state.data.item).filter(item => item.kind === 'operation' && item.requestId === requestId);
@@ -317,6 +336,10 @@ const commands = (h: Harness, from = 1): Generational<{record: LogRecord}>[] => 
 const received = (h: Harness, requestId: string): number =>
   commands(h).filter(entry => entry.record.attributes['bunny.request.id'] === requestId).length;
 const acknowledgments = (h: Harness, from = 1): number => logged(h, 'lamp', 'outbox.acknowledged', from).length;
+/** The core's tracker records of one action in every generation, as `<event> <severity> <outcome>` (#782). */
+const tracked = (h: Harness, requestId: string): string[] => h.logs().map(({record}) => record)
+  .filter(record => record.attributes['bunny.module'] === 'core' && record.attributes['bunny.request.id'] === requestId && record.event_name.startsWith('command.'))
+  .map(record => `${record.event_name} ${record.severity_text} ${String(record.attributes['bunny.outcome'])}`);
 /**
  * The bus's records of one request in every generation, as `<event> <severity> <code>` (Hub #949). A request's records
  * must all carry one trace: its command's.
@@ -419,13 +442,15 @@ const commandWithTrackedOutcome: Scenario = {
   title: 'a command with a tracked outcome',
   seed: {modules: ['core', 'lamp'], follows: FOLLOW_ALL},
   steps: [
-    act('the operator switches lamp-1 on as req-on', h => sendOnce(h, 'operator', 'on', switchLamp('lamp-1', 'on'), 'req-on')),
+    act('the operator switches lamp-1 on as req-on, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'on', switchLamp('lamp-1', 'on'), 'req-on')),
     expect('the lamp is on', h => lampPower(h, 'on')),
     expect('history holds one succeeded outcome for req-on, observed on the device', h => recorded(h, 'req-on', 'succeeded', 'observed')),
+    expect('the core tracked req-on from sent to accepted to completed', h =>
+      show(tracked(h, 'req-on')) === show(['command.queued INFO queued', 'command.admitted INFO accepted', 'command.completed INFO succeeded']) || show(tracked(h, 'req-on'))),
     expect('the reader\'s copy shows lamp-1 on', h => copied(h, 'on')),
     expect('the core acknowledged the outcome, and the lamp forgot it', h => acknowledgments(h) === 1 || `${acknowledgments(h)} acknowledgments`),
     act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
-    act('the operator switches lamp-1 off as req-off; the lamp accepts it', h => sendOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-off')),
+    act('the operator switches lamp-1 off as req-off; the lamp accepts it', h => dispatchOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-off')),
     expect('history holds a failed outcome for req-off, with no evidence it reached the device', h => recorded(h, 'req-off', 'failed', 'none')),
     expect('the inbox holds the failed operation', h => failedOperation(h, 'req-off')),
     holds('the lamp stays on, and a succeeded operation never enters the inbox', h =>
@@ -445,7 +470,7 @@ const moduleFailsOthersContinue: Scenario = {
       return (chime?.state === 'failed' && chime.reason?.detail === 'a handler threw') || `chime ${show(chime)}`;
     }),
     expect('the core and the lamp keep running', h => running(h, ['core', 'lamp'])),
-    act('the operator switches lamp-1 on as req-on', h => sendOnce(h, 'operator', 'on', switchLamp('lamp-1', 'on'), 'req-on')),
+    act('the operator switches lamp-1 on as req-on', h => dispatchOnce(h, 'operator', 'on', switchLamp('lamp-1', 'on'), 'req-on')),
     expect('the lamp is on, and history holds its outcome', h => lampPower(h, 'on') === true ? recorded(h, 'req-on', 'succeeded', 'observed') : lampPower(h, 'on')),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the lamp shows idle again', h => indicator(h, 'idle')),
@@ -467,7 +492,7 @@ const remotePartReconnects: Scenario = {
       await h.disconnect('reader');
     }),
     act('while it is away, the operator switches lamp-1 on as req-away and the lamp accepts it', async h => {
-      await sendOnce(h, 'operator', 'away', switchLamp('lamp-1', 'on'), 'req-away');
+      await dispatchOnce(h, 'operator', 'away', switchLamp('lamp-1', 'on'), 'req-away');
       closeGap(h);
     }),
     act('and the hook observes an approval prompt', h => publish(h, approvalPrompt('approval-1'))),
@@ -486,9 +511,9 @@ const zeroModules: Scenario = {
   steps: [
     expect('health lists no module', async h => (await h.health()).length === 0 || `${(await h.health()).length} modules`),
     act('the hook publishes an observation that no module takes', h => publish(h, sessionStarted)),
-    act('the operator asks for a lamp that no module serves', h => h.send('operator', 'none', switchLamp('lamp-1', 'on'), {timeoutMs: 5000, requestId: 'req-none'})),
-    expect('the request is unavailable', h => answered(h, 'none', 'unavailable')),
-    expect('the bus recorded the refusal once, at WARN', h => recordedAs(h, 'req-none', ['runtime.command.refused WARN unavailable'])),
+    act('the operator asks for a lamp that no module serves', h => h.dispatch('operator', 'none', switchLamp('lamp-1', 'on'), 'req-none')),
+    expect('the action is unavailable: no core runs to dispatch it', h => answered(h, 'none', 'unavailable')),
+    expect('nothing reached the bus', h => recordedAs(h, 'req-none', [])),
     act('the reader asks for the sessions, and nobody serves them', async h => {
       const result = await h.sdk('reader').sync(['session'], () => {}, {timeoutMs: 1000});
       if (result.status === 'synced') {
@@ -575,9 +600,10 @@ const agentSessions: Scenario = {
 
 /**
  * The early end-to-end path (#827's plan): a hook observation, the committed session, the simulated device's update, a
- * command, its outcome, history and inbox rows, then sync and read, with a duplicate command, the deadline answers, a
- * disconnect, a crash-restart on the same state directory, a failed command and a lost acknowledgment. Stand-ins play
- * history until #782 and the inbox items until #923; the core owns the sessions (#831).
+ * tracked action through the core's dispatcher (#782), its outcome, history and inbox rows, then sync and read, with the
+ * same action sent again, the deadline answers, a disconnect, a crash-restart on the same state directory, a failed
+ * command and a lost acknowledgment. The core tracks every action and keeps history; stand-ins show its results until
+ * #923's history read API and play the inbox items until #923.
  */
 const endToEnd: Scenario = {
   id: 'end-to-end',
@@ -585,54 +611,54 @@ const endToEnd: Scenario = {
   seed: {modules: ['core', 'lamp'], follows: FOLLOW_ALL},
   steps: [
     ...theApproval,
-    act('the operator switches lamp-1 on as req-1', h => sendOnce(h, 'operator', 'first', switchLamp('lamp-1', 'on'), 'req-1')),
+    act('the operator switches lamp-1 on as req-1, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'first', switchLamp('lamp-1', 'on'), 'req-1')),
     expect('the device switched lamp-1 on', h => lampPower(h, 'on')),
     expect('history holds its outcome, and the reader reads it', h => recorded(h, 'req-1', 'succeeded', 'observed')),
     expect('the bus recorded req-1\'s admission and the lamp\'s reply once each, at INFO, in its command\'s trace',
       h => recordedAs(h, 'req-1', ['runtime.command.admitted INFO', 'runtime.command.replied INFO'])),
     expect('the reader\'s copy of the lamp shows it on', h => copied(h, 'on')),
 
-    act('the operator sends req-1 again, a duplicate; the lamp accepts it', h => sendOnce(h, 'operator', 'again', switchLamp('lamp-1', 'on'), 'req-1')),
+    act('the operator sends req-1 again: the same action, which the core answers itself', h => dispatchOnce(h, 'operator', 'again', switchLamp('lamp-1', 'on'), 'req-1')),
     holds('history keeps one outcome for req-1, and the device switched once', h =>
-      historyOf(h, 'req-1').length === 1 && switches(h) === 1 ? true : `${historyOf(h, 'req-1').length} outcomes, ${switches(h)} switches`, 500),
-    expect('the lamp knew it for a duplicate', h => {
-      const duplicates = logged(h, 'lamp', 'command.completed').filter(entry => entry.record.attributes['bunny.outcome'] === 'duplicate').length;
-      return duplicates === 1 || `${duplicates} duplicates`;
+      outcomesOf(h, 'req-1').length === 1 && switches(h) === 1 ? true : `${outcomesOf(h, 'req-1').length} outcomes, ${switches(h)} switches`, 500),
+    expect('the core knew it for the same action and sent nothing: the lamp never got it again', h => {
+      const duplicate = tracked(h, 'req-1').filter(record => record === 'command.completed INFO duplicate').length;
+      return (duplicate === 1 && received(h, 'req-1') === 1) || `${duplicate} duplicate records, the lamp received req-1 ${received(h, 'req-1')} times`;
     }),
 
     act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
-    act('the operator switches lamp-1 off as req-fail; the lamp accepts it', h => sendOnce(h, 'operator', 'fail', switchLamp('lamp-1', 'off'), 'req-fail')),
+    act('the operator switches lamp-1 off as req-fail; the lamp accepts it', h => dispatchOnce(h, 'operator', 'fail', switchLamp('lamp-1', 'off'), 'req-fail')),
     expect('history holds a failed outcome for req-fail, with no evidence it reached the device', h => recorded(h, 'req-fail', 'failed', 'none')),
     expect('the inbox holds req-fail as a failed operation, and the reader reads it', h => failedOperation(h, 'req-fail')),
     holds('lamp-1 stays on, and the device got no switch for req-fail', h => (lampPower(h, 'on') === true && switches(h) === 1) || `${switches(h)} switches`, 300),
 
     act('the lamp\'s device holds every switch until released', h => { h.simulate({device: 'lamp', action: 'hold'}); }),
-    act('the operator switches lamp-1 off as req-held, with a 2 s deadline', h => { void h.send('operator', 'held', switchLamp('lamp-1', 'off'), {timeoutMs: 2000, requestId: 'req-held'}); }),
+    act('the operator switches lamp-1 off as req-held', h => { void h.dispatch('operator', 'held', switchLamp('lamp-1', 'off'), 'req-held'); }),
     expect('the device has req-held and holds it', h => (h.devices().lamp.held && switches(h) === 2) || `held ${String(h.devices().lamp.held)}, ${switches(h)} switches`),
-    act('the operator sends req-queued behind it, with a 500 ms deadline', h => { void h.send('operator', 'queued', switchLamp('lamp-1', 'on'), {timeoutMs: 500, requestId: 'req-queued'}); }),
-    act('the panel sends req-closed behind both, with a 5 s deadline', h => { void h.send('panel', 'closed', switchLamp('lamp-1', 'on'), {timeoutMs: 5000, requestId: 'req-closed'}); }),
-    act('the panel gives up and closes', h => h.closePart('panel')),
-    // `bunny-sdk` "One conformance suite for every transport" fixes this case per transport.
-    expect('req-closed ends as the transport says: cancelled in process, uncertain-result remotely',
-      h => answered(h, 'closed', byTransport(h, {'in-process': 'cancelled', remote: 'uncertain-result'}))),
-    // `bunny-sdk` "Request and respond with expiry", which the remote transport keeps ("Deadlines").
-    expect('req-queued is expired at its deadline, on both transports: it never reached the lamp', h => answered(h, 'queued', 'expired'), 1500),
-    expect('req-held is uncertain-result at its deadline, on both transports: the lamp had it', h => answered(h, 'held', 'uncertain-result'), 3000),
+    act('the operator sends req-queued behind it', h => { void h.dispatch('operator', 'queued', switchLamp('lamp-1', 'on'), 'req-queued'); }),
+    // `bunny-sdk` "Request and respond with expiry", which the remote transport keeps ("Deadlines"): the dispatcher sends
+    // each device command with the device kind's 5 s reply deadline, on both transports.
+    expect('req-queued is expired at its deadline: it never reached the lamp', h => answered(h, 'queued', 'expired'), DEADLINES.device.replyMs + 1500),
+    expect('req-held is uncertain-result at its deadline: the lamp had it', h => answered(h, 'held', 'uncertain-result'), 3000),
+    expect('the core recorded req-queued expired and req-held uncertain, and the inbox holds both', h => {
+      const queued = endedAs(h, 'req-queued', ['failed/none']), held = endedAs(h, 'req-held', ['uncertain/none']);
+      const items = [...inboxOf(h, 'req-queued'), ...inboxOf(h, 'req-held')].map(item => `${item.result} ${String(item.error?.code)}`);
+      return queued !== true ? queued : held !== true ? held : show(items) === show(['failed expired', 'uncertain uncertain-result']) || `inbox ${show(items)}`;
+    }),
     act('the device answers', h => { h.simulate({device: 'lamp', action: 'release'}); }),
-    expect('lamp-1 turns off, and history records req-held\'s late outcome', h => lampPower(h, 'off') === true ? recorded(h, 'req-held', 'succeeded', 'observed') : lampPower(h, 'off')),
-    holds('the lamp never received req-queued or req-closed, and the device switched only twice', h =>
-      (received(h, 'req-queued') + received(h, 'req-closed') === 0 && switches(h) === 2) || `${switches(h)} switches`, 500),
-    // ADR 0012's levels: a queued expiry and an uncertain result are WARN, an expected cancellation INFO. In process the
-    // bus cancels req-closed; remotely the panel may drop its call before the edge reads it, before the bus queues it or
-    // while it waits, and the bus records only what it decided.
-    expect('the bus recorded each deadline answer once, at its level: req-queued expired, req-held uncertain, req-closed cancelled', h => {
-      const cancelled = ['runtime.command.admitted INFO', 'runtime.command.cancelled INFO cancelled'];
-      const closed = decided(h, 'req-closed');
+    expect('lamp-1 turns off, and history records req-held\'s late outcome beside its uncertain end', h =>
+      lampPower(h, 'off') === true ? recorded(h, 'req-held', 'succeeded', 'observed') : lampPower(h, 'off')),
+    expect('the late outcome completes req-held\'s record, and nothing was sent again', h => {
+      const steps = tracked(h, 'req-held');
+      return show(steps) === show(['command.queued INFO queued', 'command.completed WARN uncertain', 'command.completed INFO succeeded']) || show(steps);
+    }),
+    holds('the lamp never received req-queued, and the device switched only twice', h =>
+      (received(h, 'req-queued') === 0 && switches(h) === 2) || `${switches(h)} switches`, 500),
+    // ADR 0012's levels: a queued expiry and an uncertain result are WARN.
+    expect('the bus recorded each deadline answer once, at its level: req-queued expired, req-held uncertain', h => {
       const answers = [
         recordedAs(h, 'req-queued', ['runtime.command.admitted INFO', 'runtime.command.refused WARN expired']),
         recordedAs(h, 'req-held', ['runtime.command.admitted INFO', 'runtime.command.uncertain WARN uncertain-result']),
-        byTransport(h, {'in-process': [cancelled], remote: [[], cancelled.slice(1), cancelled]}).some(expected => show(expected) === show(closed)) ||
-          `req-closed: ${show(closed)}`,
       ];
       return answers.find(answer => answer !== true) ?? true;
     }),
@@ -642,7 +668,7 @@ const endToEnd: Scenario = {
       await h.disconnect('reader');
     }),
     act('while it is away, the operator switches lamp-1 on as req-gap and the lamp accepts it', async h => {
-      await sendOnce(h, 'operator', 'gap', switchLamp('lamp-1', 'on'), 'req-gap');
+      await dispatchOnce(h, 'operator', 'gap', switchLamp('lamp-1', 'on'), 'req-gap');
       closeGap(h);
     }),
     expect('the reader reconnected and synced each copy again', h => synced(h, 2)),
@@ -651,13 +677,11 @@ const endToEnd: Scenario = {
     holds('nothing published while it was away was replayed to it', h => noReplay(h), 500),
 
     act('the runtime will crash between the lamp\'s next commit and its publish', h => { h.armCrash(); }),
-    act('the operator switches lamp-1 off as req-crash', h => { void h.send('operator', 'crash', switchLamp('lamp-1', 'off'), {timeoutMs: 5000, requestId: 'req-crash'}); }),
+    act('the operator switches lamp-1 off as req-crash', h => { void h.dispatch('operator', 'crash', switchLamp('lamp-1', 'off'), 'req-crash'); }),
     expect('the runtime crashed and started again on the same state directory', h => h.generation() === 2 || `generation ${h.generation()}`),
-    // A remote requester survives the crash: the remote client settles a call whose connection dropped as
-    // uncertain-result, at the latest at the command's deadline plus its grace. An in-process requester dies with the
-    // runtime; `lost` is the harness's label for that, not an answer the SDK gives.
-    expect('req-crash ends as the transport allows: its in-process requester died with the runtime, a remote one is uncertain-result',
-      h => answered(h, 'crash', byTransport(h, {'in-process': 'lost', remote: 'uncertain-result'})), 5000 + REQUESTER_GRACE_MS),
+    // The operator's HTTP call loses its connection with the runtime: its answer is lost, and the action's fate is the
+    // tracker's to know.
+    expect('req-crash\'s call lost its connection with the runtime', h => answered(h, 'crash', 'lost'), 5000),
     expect('at the restart the lamp republished its state, occurrence and outcome, once', h => {
       const counts = republished(h, 2);
       return show(counts) === show([3]) || `republished ${show(counts)}`;
@@ -672,7 +696,7 @@ const endToEnd: Scenario = {
     holds('the reader never heard a message twice', h => heardOnce(h), 100),
 
     act('the core\'s next acknowledgment to the lamp is lost on its way', h => { h.loseAcknowledgment(); }),
-    act('the operator switches lamp-1 on as req-lost; the lamp accepts it', h => sendOnce(h, 'operator', 'lost', switchLamp('lamp-1', 'on'), 'req-lost')),
+    act('the operator switches lamp-1 on as req-lost; the lamp accepts it', h => dispatchOnce(h, 'operator', 'lost', switchLamp('lamp-1', 'on'), 'req-lost')),
     expect('history holds req-lost\'s outcome', h => recorded(h, 'req-lost', 'succeeded', 'observed')),
     act('the runtime restarts cleanly', h => h.restart()),
     expect('at the restart the lamp reported req-lost\'s outcome again, and nothing else', h => {
@@ -686,8 +710,8 @@ const endToEnd: Scenario = {
       return (duplicates === 1 && acknowledged === 1) || `${duplicates} duplicates, ${acknowledged} acknowledgments`;
     }),
     holds('history keeps one outcome each for req-crash and req-lost, and no command was sent again', h =>
-      (historyOf(h, 'req-crash').length === 1 && historyOf(h, 'req-lost').length === 1 && commands(h, 3).length === 0 && switches(h) === 5) ||
-      `${historyOf(h, 'req-crash').length} and ${historyOf(h, 'req-lost').length} outcomes, ${switches(h)} switches`, 500),
+      (outcomesOf(h, 'req-crash').length === 1 && outcomesOf(h, 'req-lost').length === 1 && commands(h, 3).length === 0 && switches(h) === 5) ||
+      `${outcomesOf(h, 'req-crash').length} and ${outcomesOf(h, 'req-lost').length} outcomes, ${switches(h)} switches`, 500),
     act('the runtime restarts cleanly again', h => h.restart()),
     expect('the lamp republished nothing, since the core acknowledged every outcome', h => {
       const counts = republished(h, 4);
@@ -816,14 +840,14 @@ const speakerPlayback: Scenario = {
   steps: [
     expect('the core and the playback module are running', h => running(h, ['core', 'playback'])),
     expect('the reader\'s copy shows the speakers available with nothing playing over AirPlay', h => playbackShows(h, 'available inactive "" []'), 5000),
-    expect('the operator\'s playback command for another speaker on its key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
-      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', {key: playbackCommand('pause').key,
-        draft: {...playbackCommand('pause').draft, subject: 'kitchen'}}, 'req-pb-misrouted', 'msg-pb-misrouted')))), 400, 'invalid-message')),
+    // A playback command goes through the core's dispatcher, so it is tracked: no grant requests it directly (#782).
+    expect('the operator may not request a playback command directly at the SDK edge', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', playbackCommand('pause'), 'req-pb-direct', 'msg-pb-direct')))), 403, 'forbidden')),
     expect('the reader, whose grant may only read, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
       `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/reader', playbackCommand('pause'), 'req-pb-reader', 'msg-pb-reader')))), 403, 'forbidden')),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
-    act('the operator pauses it as req-pb-pause', h => sendOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
+    act('the operator pauses it as req-pb-pause, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
     expect('the pause went to the HT-A9 only, once', h => speakersGot(h, 'move [] ht-a9 [pause]')),
     expect('history holds req-pb-pause as succeeded, transmitted', h => recorded(h, 'req-pb-pause', 'succeeded', 'transmitted')),
     expect('the reader sees the HT-A9 paused, offering next and previous only', h => playbackShows(h, 'available paused "HT-A9 Song" [next,previous]'), 5000),
@@ -832,12 +856,12 @@ const speakerPlayback: Scenario = {
       h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'});
     }),
     expect('the reader sees the Move\'s song', h => playbackShows(h, 'available playing "Move Song" [pause,next,previous]'), 5000),
-    act('the operator pauses again as req-pb-move', h => sendOnce(h, 'operator', 'pb-move', playbackCommand('pause'), 'req-pb-move')),
+    act('the operator pauses again as req-pb-move', h => dispatchOnce(h, 'operator', 'pb-move', playbackCommand('pause'), 'req-pb-move')),
     expect('the pause went to the Move only', h => speakersGot(h, 'move [pause] ht-a9 [pause]')),
     expect('the reader sees the Move paused, offering play, next and previous', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 5000),
     act('the Move stops answering mid-song', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'silent'}); }),
     expect('the reader sees the record stale, still showing the Move\'s song', h => playbackShows(h, 'stale paused "Move Song" [play,next,previous]'), 9000),
-    act('the operator asks the Move to play as req-pb-stale', h => h.send('operator', 'pb-stale', playbackCommand('play'), {timeoutMs: 5000, requestId: 'req-pb-stale'})),
+    act('the operator asks the Move to play as req-pb-stale', h => h.dispatch('operator', 'pb-stale', playbackCommand('play'), 'req-pb-stale')),
     expect('req-pb-stale is refused unavailable, and no speaker heard it', h => answered(h, 'pb-stale', 'unavailable') === true ? speakersGot(h, 'move [pause] ht-a9 [pause]') : answered(h, 'pb-stale', 'unavailable')),
     expect('the playback module logged one degradation for the Move', h => show(playbackRecords(h, 'device.unavailable')) === show(['WARN living-room.sonos']) || show(playbackRecords(h, 'device.unavailable'))),
     act('the Move answers again', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
@@ -848,7 +872,7 @@ const speakerPlayback: Scenario = {
     }),
     act('the Move will never answer its next command', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'hang-next'}); }),
     // The module answers once the Move's call reaches its deadline, so the step does not wait for the answer.
-    act('the operator asks the Move to play as req-pb-hang', h => { void h.send('operator', 'pb-hang', playbackCommand('play'), {timeoutMs: 5000, requestId: 'req-pb-hang'}); }),
+    act('the operator asks the Move to play as req-pb-hang', h => { void h.dispatch('operator', 'pb-hang', playbackCommand('play'), 'req-pb-hang'); }),
     expect('req-pb-hang is accepted once the Move\'s call reaches its deadline', h => answered(h, 'pb-hang', 'accepted'), 5000),
     expect('history and the inbox hold req-pb-hang as uncertain', h => {
       const items = inboxOf(h, 'req-pb-hang');
@@ -856,7 +880,7 @@ const speakerPlayback: Scenario = {
       const inbox = (items.length === 1 && item?.kind === 'operation' && item.result === 'uncertain' && item.error?.code === 'uncertain-result') || `inbox ${show(items)}`;
       return recorded(h, 'req-pb-hang', 'uncertain', 'none') === true ? inbox : recorded(h, 'req-pb-hang', 'uncertain', 'none');
     }, 5000),
-    act('the operator sends req-pb-hang again', h => sendOnce(h, 'operator', 'pb-again', playbackCommand('play'), 'req-pb-hang')),
+    act('the operator sends req-pb-hang again: the same action, which the core answers itself', h => dispatchOnce(h, 'operator', 'pb-again', playbackCommand('play'), 'req-pb-hang')),
     holds('the Move heard play once: an uncertain command is never sent again', h => speakersGot(h, 'move [pause,play] ht-a9 [pause]'), 500),
     holds('no message, reader copy or log record names a speaker\'s address, and nothing carries the token', async h => {
       const address = noSpeakerAddress(h);
@@ -926,10 +950,9 @@ const lifxBulbs: Scenario = {
       const ids = (answer: GatewayAnswer): string => show(bodyOf<{records?: {id: string}[]}>(answer)?.records?.map(record => record.id).sort());
       return (ids(panel) === show(['beam', 'pendant-1']) && ids(reader) === show(['beam', 'pendant-1'])) || `panel ${ids(panel)}, reader ${ids(reader)}`;
     }),
-    expect('the operator\'s command for the Beam on pendant-1\'s key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
-      lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', {key: lifxMode('work').key, draft: {...lifxMode('work').draft, subject: 'beam'}}, 'req-lifx-misrouted',
-        'msg-lifx-misrouted')))), 400, 'invalid-message')),
-    act('the operator sets pendant-1 to work as req-work', h => sendOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
+    expect('nor may the operator request it directly: a bulb\'s command goes through the core\'s dispatcher (#782)', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', lifxMode('work'), 'req-lifx-direct', 'msg-lifx-direct')))), 403, 'forbidden')),
+    act('the operator sets pendant-1 to work as req-work, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
     expect('history holds req-work succeeded, and the reader shows pendant-1 in work', h =>
       recorded(h, 'req-work', 'succeeded', 'transmitted') === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :
         recorded(h, 'req-work', 'succeeded', 'transmitted')),
@@ -946,26 +969,26 @@ const lifxBulbs: Scenario = {
     expect('the core and the LIFX module are running again', h => running(h, ['core', 'lifx'])),
     holds('the restart wrote nothing to pendant-1, which still shows attention', h =>
       (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
-    act('the operator sets pendant-1 to free as req-free', h => sendOnce(h, 'operator', 'free', lifxMode('free'), 'req-free')),
+    act('the operator sets pendant-1 to free as req-free', h => dispatchOnce(h, 'operator', 'free', lifxMode('free'), 'req-free')),
     expect('history holds req-free succeeded', h => recorded(h, 'req-free', 'succeeded', 'transmitted')),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the reader\'s session no longer waits', h => waiting(h, [])),
     holds('in free nothing paints pendant-1, which keeps its amber', h =>
       (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
     act('the operator sets pendant-1 to hue 120 at full saturation as req-color', h =>
-      sendOnce(h, 'operator', 'color', bulbCommand('lifx-color-set', 'org.bunny.lifx-color.set.requested', 'pendant-1', {hue: 120, saturation: 100}), 'req-color')),
+      dispatchOnce(h, 'operator', 'color', bulbCommand('lifx-color-set', 'org.bunny.lifx-color.set.requested', 'pendant-1', {hue: 120, saturation: 100}), 'req-color')),
     expect('pendant-1 shows green, and history holds req-color succeeded', h =>
       pendantShows(h, {hue: 120, saturation: 100}) === true ? recorded(h, 'req-color', 'succeeded', 'transmitted') : pendantShows(h, {hue: 120, saturation: 100})),
     act('pendant-1 is switched off at the wall', h => { h.simulate({device: 'lifx', action: 'offline', address: PENDANT_AT}); }),
     act('the operator switches pendant-1 off as req-off; the module accepts it', h =>
-      sendOnce(h, 'operator', 'off', bulbCommand('power-set', 'org.bunny.power.set.requested', 'pendant-1', {on: false}), 'req-off')),
+      dispatchOnce(h, 'operator', 'off', bulbCommand('power-set', 'org.bunny.power.set.requested', 'pendant-1', {on: false}), 'req-off')),
     expect('history holds req-off uncertain, with no evidence it reached the bulb, and the inbox holds it', h => {
-      const rows = historyOf(h, 'req-off').map(entry => `${entry.result}/${entry.evidence}`);
+      const rows = outcomesOf(h, 'req-off').map(entry => `${entry.result}/${entry.evidence}`);
       const items = inboxOf(h, 'req-off');
       return (show(rows) === show(['uncertain/none']) && items.length === 1) || `history ${show(rows)}, inbox ${show(items)}`;
     }, 5000),
     expect('the reader shows pendant-1 unavailable', h => lifxDevice(h, 'pendant-1')?.availability === 'unavailable' || String(lifxDevice(h, 'pendant-1')?.availability)),
-    act('the operator asks the Beam to switch on', h => h.send('operator', 'beam', bulbCommand('power-set', 'org.bunny.power.set.requested', 'beam', {on: true}), {timeoutMs: 5000, requestId: 'req-beam'})),
+    act('the operator asks the Beam to switch on', h => h.dispatch('operator', 'beam', bulbCommand('power-set', 'org.bunny.power.set.requested', 'beam', {on: true}), 'req-beam')),
     expect('the Beam refuses it: it offers no power control', h => answered(h, 'beam', 'unsupported-capability')),
     holds('the Beam got no packet, and no message or record carries a bulb\'s address', h => {
       const places = [h.logs(), h.published(), h.reader.heard(), ...h.reader.families().map(family => h.reader.states(family))];
@@ -1286,38 +1309,57 @@ const gatewayReads: Scenario = {
 
 /**
  * Each part may use only what its grant allows (Hub #835): a hook's credential may not request a command or read, and
- * publishes lifecycle observations only; the reader's may not command, and the operator's commands a device with a
- * command whose subject is its key's last token. A command that a raw HTTP client sends again is refused as a
- * duplicate, and the lamp runs it once.
+ * publishes lifecycle observations only; the reader's may not command; the operator's requests only the core's own
+ * operator commands directly, each with a subject that is its key's last token, and sends every device command through
+ * the core's dispatcher (#782). A command that a raw HTTP client sends again is refused as a duplicate, and the core
+ * runs it once.
  */
 const grantsAndDuplicates: Scenario = {
   id: 'grants-and-duplicates',
   title: 'a token outside its grant is refused, and a command sent again runs once',
   seed: {modules: ['core', 'lamp'], follows: FOLLOW_ALL},
   steps: [
-    expect('the hook\'s credential may not request a lamp command', answers(rawRequest('hook', 'bunny.cmd.lamp.lamp-1',
+    expect('the hook\'s credential may not request a lamp command', answers(rawRequest('hook', switchLamp('lamp-1', 'on').key,
       {}), answer => refusedWith(answer, 403, 'forbidden'))),
-    expect('nor may the reader\'s', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader', 'bunny.cmd.lamp.lamp-1',
+    expect('nor may the reader\'s', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader', switchLamp('lamp-1', 'on').key,
       rawCommand(h, 'bunny/parts/reader', switchLamp('lamp-1', 'on'), 'req-reader', 'msg-reader')))), 403, 'forbidden')),
-    expect('nor may the operator send, on lamp-1\'s key, a command whose subject names another lamp: it is invalid-message', async h =>
-      refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
-        rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-9', 'on'), 'req-misrouted', 'msg-misrouted')))), 400, 'invalid-message')),
+    expect('nor may the operator\'s: a device\'s command goes through the core\'s dispatcher, which tracks it', async h =>
+      refusedWith(keep(h, await h.gateway(rawRequest('operator', switchLamp('lamp-1', 'on').key,
+        rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-direct', 'msg-direct')))), 403, 'forbidden')),
+    expect('nor may the operator send, on a session\'s key, a recovery whose subject names another session: it is invalid-message', async h =>
+      refusedWith(keep(h, await h.gateway(rawRequest('operator', `bunny.cmd.approval-recover.${SESSION_ID}`,
+        rawCommand(h, 'bunny/parts/operator', recoverIn(OTHER_ID), 'req-misrouted', 'msg-misrouted')))), 400, 'invalid-message')),
     holds('no lamp switched', h => switches(h) === 0 || `${switches(h)} switches`, 200),
     expect('the hook may publish lifecycle observations only: another family on a lifecycle key is forbidden', async h =>
       refusedWith(keep(h, await h.gateway(rawMomentEnded(h, 'hook', 'bunny.event.lifecycle.wall'))), 403, 'forbidden')),
     holds('and nobody heard it', h => !h.reader.heard().some(message => message.type === 'org.bunny.moment.ended') || 'the reader heard the forged moment', 200),
-    act('the operator sends a raw command to switch lamp-1 on', async h => {
-      const answer = keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1', rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-raw', 'msg-raw-1'))));
+    act('the hook observes a finished turn', async h => {
+      await publish(h, sessionStarted);
+      await publish(h, turnStarted);
+      await publish(h, turnEnded);
+    }),
+    expect('the reader holds the finished turn\'s notice', h => session(h)?.notices.length === 1 || 'no notice'),
+    act('the panel sends a raw command acknowledging the notice for itself', async h => {
+      const answer = keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key, rawCommand(h, 'bunny/parts/panel', acknowledgment(h, 'panel'), 'req-raw', 'msg-raw-1'))));
       const result = bodyOf<{result?: {status?: string}}>(answer)?.result;
       if (answer.status !== 200 || result?.status !== 'accepted') throw new Error(`${answer.status} ${answer.text.slice(0, 200)}`);
     }),
-    expect('the lamp is on', h => lampPower(h, 'on')),
-    expect('the same message sent again is refused as duplicate-conflict', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
-      rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-raw', 'msg-raw-1')))), 409, 'duplicate-conflict')),
-    holds('the lamp ran it once', h => (received(h, 'req-raw') === 1 && switches(h) === 1) || `received ${received(h, 'req-raw')}, ${switches(h)} switches`, 300),
+    expect('the notice is acknowledged by the panel', h => session(h)?.notices[0]?.acknowledgedBy.includes('panel') === true || show(session(h)?.notices)),
+    expect('the same message sent again is refused as duplicate-conflict', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key,
+      rawCommand(h, 'bunny/parts/panel', acknowledgment(h, 'panel'), 'req-raw', 'msg-raw-1')))), 409, 'duplicate-conflict')),
+    holds('the core ran it once', h => {
+      const ran = logged(h, 'core', 'command.completed').filter(({record}) => record.attributes['bunny.request.id'] === 'req-raw').length;
+      return ran === 1 || `the core ran req-raw ${ran} times`;
+    }, 300),
     holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
   ],
 };
+
+/** An approval recovery addressed to the session `subject`, on whatever key it is sent. */
+const recoverIn = (subject: string): {key: string; draft: CommandDraft<object>} => ({
+  key: `bunny.cmd.approval-recover.${subject}`,
+  draft: {type: 'org.bunny.approval.recover.requested', subject, dataschema: 'https://bunny.invalid/events/approval-recover/2.0', data: {turnId: 'turn-1', expectedRevision: 1}},
+});
 
 /** The approval-recover command's draft for the session in the reader's copy. */
 const recovery = (record: SessionRecord): object => ({session: record.id, turnId: 'turn-1', expectedRevision: record.revision});
@@ -1459,7 +1501,7 @@ const pixooMonitor: Scenario = {
   steps: [
     expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
     expect('the reader\'s copy shows the simulated Pixoo available', h => pixooAvailability(h, 'available')),
-    act('the operator selects Monitor', h => sendOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-1')),
+    act('the operator selects Monitor', h => dispatchOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-1')),
     expect('Monitor\'s selection completes as the module\'s own observed state', h => completedAs(h, 'pixoo-monitor-1', 'succeeded', 'observed')),
     act('the hook observes a session start and an approval prompt', async h => {
       await publish(h, sessionStarted);
@@ -1480,17 +1522,17 @@ const pixooMonitor: Scenario = {
 
 /** The operator imports a picture, creates a playlist and puts the picture in it, as a person would in the Pixoo pages. */
 const pixooPlaylist = (): Step[] => [
-  act('the operator imports a picture', h => sendOnce(h, 'operator', 'pixoo-import',
+  act('the operator imports a picture', h => dispatchOnce(h, 'operator', 'pixoo-import',
     pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {change: {operation: 'import', name: 'Red', content: {inline: RED_PIXEL}}}), 'pixoo-import-1')),
   expect('the import completes, decoded in the module\'s media process', h => completedAs(h, 'pixoo-import-1', 'succeeded', 'observed'), 20_000),
   expect('the reader\'s copy of the catalog holds the rendition', h => h.reader.states<RenditionRecord>(PIXOO.rendition).length === 1 || 'no rendition'),
-  act('the operator creates a playlist', h => sendOnce(h, 'operator', 'pixoo-playlist',
+  act('the operator creates a playlist', h => dispatchOnce(h, 'operator', 'pixoo-playlist',
     pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {change: {operation: 'create', name: 'Desk'}}), 'pixoo-playlist-1')),
   expect('the reader\'s copy holds the playlist', h => h.reader.states<PlaylistRecord>(PIXOO.playlist).length === 1 || 'no playlist'),
   act('the operator puts the picture in the playlist', h => {
     const [rendition] = h.reader.states<RenditionRecord>(PIXOO.rendition), [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
     if (rendition === undefined || list === undefined) throw new Error('the catalog is missing');
-    return sendOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+    return dispatchOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
       change: {operation: 'items', playlistId: list.data.id, revision: list.data.playlistRevision, items: [{renditionId: rendition.data.id}]},
     }), 'pixoo-items-1');
   }),
@@ -1499,7 +1541,7 @@ const pixooPlaylist = (): Step[] => [
 const startPlaylist = (h: Harness, label: string, requestId: string): Promise<string> => {
   const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
   if (list === undefined) throw new Error('no playlist');
-  return h.send('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), {timeoutMs: 5000, requestId});
+  return h.dispatch('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), requestId);
 };
 
 /** A media command: imported media in a playlist, started, accepted at once and completed once the media reached the Pixoo. */
@@ -1550,7 +1592,7 @@ const pixooNowPlaying: Scenario = {
   },
   steps: [
     expect('the core, the playback module and the Pixoo are running', h => running(h, ['core', 'playback', 'pixoo'])),
-    act('the operator selects Monitor', h => sendOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-2')),
+    act('the operator selects Monitor', h => dispatchOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-monitor-2')),
     act('the hook observes a session start', h => publish(h, sessionStarted)),
     expect('the Pixoo shows the session\'s dashboard', h => (h.devices().pixoo.shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: PIXOO_SONG}); }),
@@ -1561,7 +1603,7 @@ const pixooNowPlaying: Scenario = {
     }),
     holds('the card stays bright through the pop-up while the song plays on unchanged', h => showsCard(h), 7000),
     expect('after ten seconds Monitor shows the dashboard again', h => pixooDisplay(h)?.showing === 'dashboard' || `display ${show(pixooDisplay(h))}`, 5000),
-    act('the operator asks for a whole takeover in Media', h => sendOnce(h, 'operator', 'pixoo-whole',
+    act('the operator asks for a whole takeover in Media', h => dispatchOnce(h, 'operator', 'pixoo-whole',
       pixooCommand(PIXOO.nowPlaying, 'pixoo-now-playing.set', {media: 'whole'}), 'pixoo-whole-1')),
     expect('the setting completes', h => completedAs(h, 'pixoo-whole-1', 'succeeded', 'observed')),
     ...pixooPlaylist(),
@@ -1709,25 +1751,25 @@ const nanoleafWall: Scenario = {
     expect('the Lines show the task\'s indicator', h => theLines(h)?.effect === 'custom' || `the Lines show ${String(theLines(h)?.select)}`, 5000),
     act('the hook observes the turn end', h => publish(h, turnEnded)),
     expect('the wall shows the finished turn, unread', h => onTheWall(h, 'unread'), 5000),
-    act('the operator sets the wall to Quiet as req-quiet', h => sendOnce(h, 'operator', 'quiet', wallMode('req-quiet', 'quiet'), 'req-quiet')),
+    act('the operator sets the wall to Quiet as req-quiet', h => dispatchOnce(h, 'operator', 'quiet', wallMode('req-quiet', 'quiet'), 'req-quiet')),
     expect('history holds req-quiet succeeded as observed: the mode is the module\'s own, and the wall follows it', h =>
       recorded(h, 'req-quiet', 'succeeded', 'observed'), 5000),
     expect('the reader\'s copy shows Quiet, and the Lines dim to the Quiet level', h =>
       desiredMode(h, 'quiet') === true ? theLines(h)?.brightness === 10 || `the Lines are at ${String(theLines(h)?.brightness)}` : desiredMode(h, 'quiet')),
-    act('the operator sets the wall to Free as req-free', h => sendOnce(h, 'operator', 'free', wallMode('req-free', 'free'), 'req-free')),
+    act('the operator sets the wall to Free as req-free', h => dispatchOnce(h, 'operator', 'free', wallMode('req-free', 'free'), 'req-free')),
     expect('the Lines play their saved scene again', h => theLines(h)?.select === 'Beach Waves' || `the Lines show ${String(theLines(h)?.select)}`, 5000),
-    act('the operator asks the wall for a moment as req-moment', h => h.send('operator', 'moment', {
+    act('the operator asks the wall for a moment as req-moment', h => h.dispatch('operator', 'moment', {
       key: 'bunny.cmd.moment-play.wall', draft: {type: 'org.bunny.moment.play.requested', subject: 'wall', dataschema: 'https://bunny.invalid/events/moment-play/2.0',
         data: {momentId: 'moment-1', mood: 'calm', durationMs: 1000, priorityClass: 'event', coversStatus: false, startAtMs: h.now(), toleranceMs: 100}},
-    }, {timeoutMs: 5000, requestId: 'req-moment'})),
+    }, 'req-moment')),
     expect('the moment is refused: the wall plays no moments', h => answered(h, 'moment', 'unsupported-capability')),
-    act('the operator sets the wall to Work as req-work', h => sendOnce(h, 'operator', 'work', wallMode('req-work', 'work'), 'req-work')),
+    act('the operator sets the wall to Work as req-work', h => dispatchOnce(h, 'operator', 'work', wallMode('req-work', 'work'), 'req-work')),
     expect('the Lines show the task again', h => desiredMode(h, 'work') === true ? theLines(h)?.effect === 'custom' && theLines(h)?.select === '*Dynamic*' ||
       `the Lines show ${String(theLines(h)?.select)}` : desiredMode(h, 'work'), 5000),
-    act('the operator asks for an animation in Work as req-play', h => h.send('operator', 'play', {
+    act('the operator asks for an animation in Work as req-play', h => h.dispatch('operator', 'play', {
       key: `bunny.cmd.${NANOLEAF_FAMILIES.animationPlay.family}.wall`, draft: {type: NANOLEAF_FAMILIES.animationPlay.type, subject: 'wall',
         dataschema: `https://bunny.invalid/events/${NANOLEAF_FAMILIES.animationPlay.family}/2.0`, data: {animation: {preset: 'ocean'}}},
-    }, {timeoutMs: 5000, requestId: 'req-play'})),
+    }, 'req-play')),
     expect('the animation is refused: Work presents agent status', h => answered(h, 'play', 'unsupported-capability')),
     act('the wall is switched off from the Nanoleaf app', h => { h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
     expect('the reader\'s copy shows the power the wall reports: off', h => observedPower(h, false), 15_000),
@@ -1738,7 +1780,7 @@ const nanoleafWall: Scenario = {
     expect('the reader\'s copy shows the wall unavailable, and the module runs on', async h =>
       wallAvailability(h, 'unavailable') === true ? running(h, ['core', 'nanoleaf']) : wallAvailability(h, 'unavailable'), 10_000),
     act('the operator sets the wall to Quiet as req-offline while it does not answer', h =>
-      sendOnce(h, 'operator', 'offline', wallMode('req-offline', 'quiet'), 'req-offline')),
+      dispatchOnce(h, 'operator', 'offline', wallMode('req-offline', 'quiet'), 'req-offline')),
     expect('history holds req-offline succeeded as observed: the mode commits whether or not the wall answers', h =>
       recorded(h, 'req-offline', 'succeeded', 'observed'), 5000),
     act('the wall answers again', h => { h.simulate({device: 'nanoleaf', action: 'online'}); }),
@@ -1758,7 +1800,7 @@ const nanoleafWall: Scenario = {
       return show(events) === show(['device.unavailable', 'device.available']) || `logged ${show(events)}`;
     }),
     act('the wall will lose its answer to the next brightness write', h => { h.simulate({device: 'nanoleaf', action: 'lose-next-answer'}); }),
-    act('the operator sets the Lines to 20% as req-lost', h => sendOnce(h, 'operator', 'lost', wallBrightness('req-lost', 20), 'req-lost')),
+    act('the operator sets the Lines to 20% as req-lost', h => dispatchOnce(h, 'operator', 'lost', wallBrightness('req-lost', 20), 'req-lost')),
     expect('history holds req-lost uncertain: the write may have reached the wall', h => recorded(h, 'req-lost', 'uncertain', 'none'), 10_000),
     expect('the reader\'s copy shows the wall held and degraded, not unavailable, and its device record names req-lost as held', h =>
       wallHeld(h, 'req-lost', 'degraded'), 15_000),
@@ -1766,7 +1808,7 @@ const nanoleafWall: Scenario = {
       const holds = logged(h, 'nanoleaf', 'operation.failed').filter(({record}) => record.attributes['bunny.code'] === 'uncertain-result').length;
       return holds === 1 || `${holds} hold records`;
     }),
-    act('the operator sets the wall to Work as req-release', h => sendOnce(h, 'operator', 'release', wallMode('req-release', 'work'), 'req-release')),
+    act('the operator sets the wall to Work as req-release', h => dispatchOnce(h, 'operator', 'release', wallMode('req-release', 'work'), 'req-release')),
     expect('the mode command released the hold: the wall is available, not held, and its device record has no held', h =>
       wallHeld(h, undefined, 'available'), 10_000),
     holds('no log record, message, health entry or reader copy carries the token', h => noToken(h), 300),

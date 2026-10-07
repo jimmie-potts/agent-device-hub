@@ -1,9 +1,10 @@
 // MCP on the runtime (Hub #835), through `packages/mcp` unchanged: each module's read tools from its manifest, named
-// `<module>_<tool>`, and the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
-// command. A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
+// `<module>_<tool>`, the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
+// command, and `core_send_command`, which sends a device's command, a moment or a mode change through the core's
+// dispatcher, so it is tracked (#782). A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
 // keep the MCP specification. The refusals `packages/mcp` makes itself, before a tool runs, keep its released 1.x
 // `gateway-error` result with no detail, since the package is reused unchanged. Only a client credential reaches MCP:
-// `read` lists and calls every module's read tools, and `control` the action.
+// `read` lists and calls every module's read tools, and `control` the actions.
 import {
   bindServiceTools, createDeviceRegistry, createMcpHandler, type DeviceRegistration, type JsonSchema, type MachinePrincipal,
   type McpHandler, type ServiceExtension,
@@ -11,6 +12,7 @@ import {
 import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ModuleTool} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
+import type {ActionAnswer} from '../core/tracker.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
 import type {Access} from './access.js';
 
@@ -40,6 +42,8 @@ export type McpHost = {
   invoke: <T>(name: string, call: () => T | Promise<T>) => Promise<T>;
   /** Sends `approval-recover` to the core as the credential's source; resolves with the reply or a refusal. */
   recover: (credentialId: string, input: {session: string; turnId: string; expectedRevision: number; requestId?: string}) => Promise<{status: 'accepted'; requestId: string} | ErrorBody>;
+  /** Sends one action through the core's dispatcher as the credential's source (#782); resolves with its answer. */
+  dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string}) => Promise<ActionAnswer>;
   access: Access;
   scheduler: {after: (delayMs: number, callback: () => void) => () => void};
   /** Whether text holds a secret a module read, which no result may carry. */
@@ -132,6 +136,41 @@ function recoverTool(host: McpHost): ServiceExtension {
 }
 
 /**
+ * The core's dispatcher as an MCP action (#782): one device command, moment or mode change, tracked from sent to its
+ * outcome. Its answer is the owner's reply, `accepted`, or a refusal; an uncertain result is never retried.
+ */
+function commandTool(host: McpHost): ServiceExtension {
+  return {
+    inputSchema: {
+      type: 'object', additionalProperties: false, required: ['family', 'target', 'data'],
+      properties: {
+        family: {type: 'string', pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)+$', maxLength: 64}, target: {type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 128},
+        data: {type: 'object'}, requestId: {type: 'string', pattern: ID},
+      },
+    },
+    outputSchema: resultSchema({
+      type: 'object', additionalProperties: false, required: ['status', 'requestId'],
+      properties: {status: {const: 'accepted'}, requestId: {type: 'string', pattern: ID}},
+    }, 'urn:bunny:tool:core:send_command:output'),
+    scope: 'control',
+    description: 'Only on the user\'s explicit request, send one command to one device, such as power-set {"on": true}, brightness-set {"percent": 40} '
+      + 'or playback-control {"action": "pause"}, through the core, which tracks it until its outcome. family is the command family, target the device\'s '
+      + 'routing ID, and data the command\'s payload without a requestId. accepted means the device took responsibility, not that anything changed. '
+      + 'Never retry an uncertain or failed result automatically, and never reuse a requestId for another command.',
+    annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},
+    async invoke(args, context) {
+      const credential = host.access.current(context.principalId);
+      if (credential === undefined) return failure(errorBody('unauthenticated', {detail: 'the credential was revoked'}));
+      if (!credential.scopes.includes('control')) return failure(errorBody('forbidden', {detail: 'the credential may not control'}));
+      const {family, target, data, requestId} = args as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
+      if (Object.hasOwn(data, 'requestId')) return failure(errorBody('invalid-request', {detail: 'the command\'s payload names no requestId; pass it beside data'}));
+      const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId})});
+      return 'error' in answer ? failure(answer) : {data: {result: answer}};
+    },
+  };
+}
+
+/**
  * The MCP handler at `/mcp`, for the listener's host names. It authenticates every request again with the credential's
  * token, so a revoked credential stops at once; a browser session never reaches it.
  */
@@ -143,7 +182,10 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
     if (!module.admitted) continue;
     const extensions: Record<string, ServiceExtension> = {};
     for (const tool of module.manifest.tools ?? []) extensions[tool.name] = readTool(host, module.name, tool, ajv.compile(tool.output));
-    if (module.name === 'core') extensions.recover_approval = recoverTool(host);
+    if (module.name === 'core') {
+      extensions.recover_approval = recoverTool(host);
+      extensions.send_command = commandTool(host);
+    }
     if (Object.keys(extensions).length === 0) continue;
     registrations.push({controllerId: CONTROLLER, deviceId: module.name, extensions});
     bindings.push({deviceId: module.name, bindings: Object.keys(extensions).map(extension => ({extension, name: `${module.name}_${extension}`}))});

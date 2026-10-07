@@ -12,6 +12,13 @@ import {MODULE_SCOPE, RUNTIME_SCOPE} from '../src/record.js';
 import {contextOf, deferred, edgeConfig, fixture, it, manualClock, run, modeFor, setMode} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
+/** A consumer's notice acknowledgment for `session`: one of the core's operator commands, which a remote grant may request directly. */
+const acknowledge = (session: string): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} => ({
+  key: `bunny.cmd.notice-acknowledge.${session}`,
+  draft: {type: 'org.bunny.notice.acknowledge.requested', subject: session, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0', data: {consumerId: 'panel', noticeId: 'a'.repeat(64)}},
+});
+const ANSWERED = '5'.repeat(64);
+const UNANSWERED = '6'.repeat(64);
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
 const block = (name: string): object => ({$ref: `https://bunny.invalid/events/blocks/2.0#/$defs/${name}`});
 const modeSchema = {type: 'object', additionalProperties: false, required: ['requestId', 'mode'], properties: {requestId: block('requestId'), mode: {type: 'string'}}};
@@ -23,9 +30,9 @@ const about = (logs: readonly LogRecord[], requestId: string): string[] => logs
   .map(record => `${record.event_name} ${record.severity_text}`);
 
 /** A module that answers mode commands with `answer`, keeping each command it receives. */
-function wall(answer: (command: Command<{mode: string}>) => Reply | Promise<Reply>, commands: Command<{mode: string}>[] = []): ReturnType<typeof fixture> {
+function wall(answer: (command: Command<{mode: string}>) => Reply | Promise<Reply>, commands: Command<{mode: string}>[] = [], key = KEY): ReturnType<typeof fixture> {
   return fixture('wall', async ({sdk}) => {
-    await sdk.respond<{mode: string}>(KEY, command => {
+    await sdk.respond<{mode: string}>(key, command => {
       commands.push(command);
       return answer(command);
     });
@@ -58,14 +65,18 @@ it('a module\'s accepted request makes one admission and one reply record, contr
 it('a remote part\'s refused request, and one with no responder, make their records at their levels', async context => {
   const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url')};
   const {config} = await edgeConfig(context, [operator]);
+  // A stand-in answers the core's operator command, the only kind a remote grant may request directly (#782).
+  const answered = acknowledge(ANSWERED), unanswered = acknowledge(UNANSWERED);
   const {runtime, logs} = await run(context, {
-    modules: [wall(() => errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'}))], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
+    modules: [wall(() => errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'}), [], answered.key)], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
   });
   const remote = await connectRemote({url: runtime.url, source: operator.source, token: operator.token});
   context.after(() => remote.close());
-  const refused = await remote.request(KEY, setMode, {timeoutMs: 2000, requestId: 'req-refused'});
+  const device = await remote.request(KEY, setMode, {timeoutMs: 2000, requestId: 'req-device'});
+  assert.equal(device.status === 'rejected' && device.error.error.code, 'forbidden', 'a device\'s command goes through the core\'s dispatcher, never directly');
+  const refused = await remote.request(answered.key, answered.draft, {timeoutMs: 2000, requestId: 'req-refused'});
   assert.equal(refused.status === 'rejected' && refused.error.error.code, 'invalid-state');
-  const none = await remote.request('bunny.cmd.mode.none', modeFor('none'), {timeoutMs: 2000, requestId: 'req-none'});
+  const none = await remote.request(unanswered.key, unanswered.draft, {timeoutMs: 2000, requestId: 'req-none'});
   assert.equal(none.status === 'rejected' && none.error.error.code, 'unavailable');
   await remote.close();
   await runtime.stop();
@@ -73,7 +84,7 @@ it('a remote part\'s refused request, and one with no responder, make their reco
   assert.deepEqual(about(logs, 'req-none'), ['runtime.command.refused WARN'], 'no responder is WARN');
   const replied = logs.find(record => record.event_name === 'runtime.command.replied');
   assert.deepEqual(replied?.attributes, {
-    'bunny.provenance': 'source', 'bunny.participant': operator.source, 'bunny.routing.key': KEY, 'bunny.request.id': 'req-refused',
+    'bunny.provenance': 'source', 'bunny.participant': operator.source, 'bunny.routing.key': answered.key, 'bunny.request.id': 'req-refused',
     'bunny.message.id': replied?.attributes['bunny.message.id'] ?? '', 'bunny.outcome': 'rejected', 'bunny.code': 'invalid-state', 'bunny.reason': 'invalid-input',
   });
   const unrouted = logs.find(record => record.event_name === 'runtime.command.refused');

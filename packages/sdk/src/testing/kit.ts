@@ -14,6 +14,9 @@
 // with the command's trace; their request, queue and execute spans and their parents; and the outcome's publication,
 // recorded once, with its replay linked to the stored context. No span may lose its parent.
 //
+// A module forgets an outcome only on the core's acknowledgment (Hub #782): the kit sends one from another participant,
+// which the module must ignore, and then the core's, after which a restart sends the outcome no more.
+//
 // A module opens only local resources in start and reaches its device later, so the kit also starts a module whose
 // device never answers and fails it when that start does not finish, or when it never reports the device unavailable.
 // No message, command, sync request, record, span, reply or synced state may carry one of the module's secrets (Hub #919).
@@ -25,11 +28,11 @@ import {MessageValidator, compareDelivery, type ErrorCode, type Message} from '@
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {Diagnostic} from '../diagnostics.js';
 import {InProcessBus} from '../in-process.js';
+import {CORE_SOURCE, acknowledgmentOf} from '../acknowledgment.js';
 import {checkConfiguration, checkManifest, type BunnyModule} from '../module.js';
 import type {CommandDraft, Participant, RequestResult, TraceContext} from '../sdk.js';
 import {schemaFamily, type Snapshot} from '../sync.js';
 import {traceFields} from '../trace.js';
-import {standInAckSchemas} from './acknowledge.js';
 import {ModuleHarness} from './harness.js';
 import {checkModuleRecord} from './records.js';
 import {RecordedSpans, lostParents, type RecordedSpan} from './spans.js';
@@ -85,9 +88,15 @@ export const CHECKS = {
   accepts: 'accepts a command and replies',
   refuses: 'refuses a command with the shared error body',
   outbox: 'keeps the outcome in its outbox and sends it again after a restart',
+  acknowledged: 'forgets the outcome on the core\'s acknowledgment, and only the core\'s',
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/**
+ * The participant that forges an acknowledgment in the `acknowledged` check. Only the core may acknowledge, so profile
+ * 2.0 refuses what it sends, and the world leaves its messages unchecked.
+ */
+const FORGER = 'bunny/kit-forger';
 /** How long a module's start may take while its device never answers: long enough for local resources only. */
 const OFFLINE_START_MS = 1000;
 const flush = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
@@ -147,7 +156,7 @@ class World {
     this.#dir = dir;
     this.timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     registerCoreFamilies(this.#validator);
-    for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...spec.schemas})) this.#validator.register(dataschema, schema);
+    for (const [dataschema, schema] of Object.entries(spec.schemas ?? {})) this.#validator.register(dataschema, schema);
     this.bus = new InProcessBus({
       onError: (error, {source}) => { if (source === this.harness.source) this.#errors.push(error); },
       onDiagnostic: diagnostic => { this.diagnostics.push(diagnostic); }, spans: this.spans,
@@ -160,7 +169,7 @@ class World {
     const world = new World(spec, await mkdtemp(join(tmpdir(), 'bunny-kit-')));
     const watcher = world.#connect('bunny/kit-watch');
     await watcher.subscribe('bunny.*.*.*', message => {
-      world.check(message, 'a published message');
+      if (message.source !== FORGER) world.check(message, 'a published message');
       world.seen.push(message);
     });
     const {copies} = spec;
@@ -269,6 +278,11 @@ class World {
       ['a span', this.spans.spans],
     ];
     return places.filter(([, values]) => values.some(carries)).map(([place]) => `${place} carries a secret`);
+  }
+
+  /** A participant of the kit's own, closed with the world. */
+  participant(source: string): Participant {
+    return this.#connect(source);
   }
 
   async close(): Promise<void> {
@@ -397,7 +411,7 @@ const outbox = (spec: ConformanceSpec, command: Command): Promise<void> => inWor
   const isOutcome = (message: Message): boolean =>
     message.source === source && message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === result.requestId;
   const outcome = await waitFor(() => world.seen.find(isOutcome), world.timeoutMs, 'the outcome');
-  // The kit's stand-in core never acknowledges it, so a restart sends it again, unchanged: a consumer that missed it
+  // The kit acknowledges nothing here, so a restart sends it again, unchanged: a consumer that missed it
   // still gets it, and one that has it drops the duplicate by (source, id). A module that publishes the outcome
   // outside its outbox never sends it again.
   await world.harness.stop();
@@ -422,6 +436,37 @@ const outbox = (spec: ConformanceSpec, command: Command): Promise<void> => inWor
   assert.deepEqual(replay?.links, [{traceId: stored?.traceId, spanId: stored?.spanId}], 'the replay links to the stored context');
 });
 
+/**
+ * The core's acknowledgment (Hub #782): an acknowledgment of the outcome from a participant other than the core is
+ * ignored, so a restart still sends the outcome; once the core acknowledges it, the outbox forgets it, and a restart
+ * sends it no more. A module whose outbox's participant cannot subscribe never hears an acknowledgment.
+ */
+const acknowledged = (spec: ConformanceSpec, command: Command): Promise<void> => inWorld(spec, async world => {
+  await world.start();
+  const result = await world.request(command);
+  assert.equal(result.status, 'accepted');
+  const source = world.harness.source;
+  const copies = (id: string): number => world.seen.filter(message => message.source === source && message.id === id).length;
+  const outcome = await waitFor(() => world.seen.find(message =>
+    message.source === source && message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === result.requestId), world.timeoutMs, 'the outcome');
+  const {key, draft} = acknowledgmentOf(outcome);
+  await world.participant(FORGER).publish(key, draft, {parent: outcome});
+  await flush();
+  await world.harness.stop();
+  world.harness = world.fresh();
+  await world.start();
+  await waitFor(() => copies(outcome.id) > 1 ? true : undefined, world.timeoutMs, 'the outcome again: an acknowledgment from another participant than the core is ignored');
+  await world.participant(CORE_SOURCE).publish(key, draft, {parent: outcome});
+  await waitFor(() => world.harness.logs.some(entry => entry.event === 'outbox.acknowledged' && entry.fields['bunny.message.id'] === outcome.id) ? true : undefined,
+    world.timeoutMs, 'the module\'s outbox.acknowledged record: pass the module\'s own participant, which can subscribe, and its log to its Outbox');
+  const sent = copies(outcome.id);
+  await world.harness.stop();
+  world.harness = world.fresh();
+  await world.start();
+  await flush();
+  assert.equal(copies(outcome.id), sent, 'the core\'s acknowledgment made the outbox forget the outcome, so a restart sends it no more');
+});
+
 /** The conformance checks that apply to one module, in the order of `CHECKS`, to run under any test runner. */
 export function conformanceChecks(spec: ConformanceSpec): ConformanceCheck[] {
   const checks: ConformanceCheck[] = [
@@ -435,6 +480,7 @@ export function conformanceChecks(spec: ConformanceSpec): ConformanceCheck[] {
   if (accepted !== undefined) checks.push({name: CHECKS.accepts, run: () => accepts(spec, accepted)});
   if (refused !== undefined) checks.push({name: CHECKS.refuses, run: () => refuses(spec, refused)});
   if (accepted !== undefined) checks.push({name: CHECKS.outbox, run: () => outbox(spec, accepted)});
+  if (accepted !== undefined) checks.push({name: CHECKS.acknowledged, run: () => acknowledged(spec, accepted)});
   return checks;
 }
 

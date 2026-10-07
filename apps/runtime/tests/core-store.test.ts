@@ -48,8 +48,19 @@ it('a committed observation publishes its session state and occurrence after the
   assert.equal(state?.revision, 2);
   assert.equal(validateExport(JSON.parse(state?.payload ?? '')).ok, true, 'the agent-state 2.1 format the old Hub keeps');
   assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 2}]);
-  assert.deepEqual((world.rows('SELECT type, message_id FROM core_history') as {type: string; message_id: string}[]).map(row => [row.type, row.message_id]),
-    [['org.bunny.attention.raised', raised?.id]]);
+  // History (#782) keeps each state as a compact change event, what changed since the record it held, and the
+  // occurrence whole, all in the change's own transaction.
+  const history = world.rows('SELECT kind, revision, type, message_id, record FROM core_history ORDER BY seq') as {kind: string; revision: number; type: string; message_id: string; record: string}[];
+  assert.deepEqual(history.map(row => [row.kind, row.revision, row.type, row.message_id]), [
+    ['change', 1, 'org.bunny.session.updated', created?.id], ['change', 2, 'org.bunny.session.updated', waiting?.id], ['occurrence', 2, 'org.bunny.attention.raised', raised?.id],
+  ]);
+  const [first, second] = history.map(row => JSON.parse(row.record) as {family: string; id: string; revision: number; previous: number | null; changed: Record<string, unknown>; removed: string[]});
+  assert.deepEqual([first?.family, first?.id, first?.revision, first?.previous], ['session', SESSION_ID, 1, null], 'a new entity changes from nothing');
+  assert.ok(first !== undefined && 'identity' in first.changed && !('id' in first.changed) && !('revision' in first.changed));
+  assert.deepEqual([second?.revision, second?.previous, second?.removed], [2, 1, []]);
+  assert.deepEqual(second?.changed.attention, (waiting?.data as SessionRecord).attention, 'only what changed, with its new value');
+  assert.equal('identity' in (second?.changed ?? {}), false, 'not a snapshot: what stayed the same is left out');
+  assert.deepEqual(JSON.parse(history[2]?.record ?? '{}'), raised, 'an occurrence is kept whole');
   assert.equal(world.rows('SELECT * FROM core_taken').length, 2, 'both observations, by (source, id)');
   assert.deepEqual(world.rows('SELECT * FROM bunny_outbox'), [], 'published, so the outbox let them go');
 });

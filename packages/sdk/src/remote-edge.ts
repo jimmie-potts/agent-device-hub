@@ -774,7 +774,10 @@ export class RemoteEdge {
     return snapshot as Snapshot;
   }
 
-  /** Every message of a sync answer must fit the profile's cap at a remote edge; paging is not built yet (#782). */
+  /**
+   * Every message of a sync answer must fit the profile's cap at a remote edge. Paging is not built: it waits for any
+   * family's snapshot nearing the cap (Hub #923's deferral).
+   */
   #capped(answer: Extract<SyncAnswer, {status: 'served'}>): void {
     for (const message of [...answer.states, answer.completed]) {
       const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8');

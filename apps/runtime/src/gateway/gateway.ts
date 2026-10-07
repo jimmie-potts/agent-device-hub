@@ -1,5 +1,6 @@
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
-// the `/api/v2` read routes and the core's operator action, MCP, the modules' pages and content, and browser sign-in,
+// the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
+// modules' pages and content, and browser sign-in,
 // each with one error body from the 2.0 registry. Every caller is a client credential or a browser session (access.ts),
 // each with the old Hub's scopes; no caller is limited to some devices (owner decision, 2026-10-07). A route of the old Hub answers `not-found` and is logged with the
 // route it asked for (retired.ts), for the retirement story's check (#839).
@@ -13,9 +14,10 @@ import {
   CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, statusOf, type Cancel, type Clock, type Diagnostic, type EdgeRoute,
   type InProcessBus, type ModulePage, type OnDiagnostic, type Participant, type Scheduler, type SyncedCopy,
 } from '@jimmie-potts/sdk';
+import {DIRECT_COMMANDS, type ActionAnswer, type CoreActions} from '../core/tracker.js';
 import type {EdgeCredential, Scope} from '../credentials.js';
 import {REGISTRY_REASONS, diagnosticWriter} from '../diagnostics.js';
-import {ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
+import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
 import {
@@ -46,6 +48,10 @@ const FAMILY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SESSION = /^[0-9a-f]{64}$/;
 const RECOVER_SCHEMA = `${SCHEMA_BASE}approval-recover/2.0`;
+/** A device's routing ID: the last token of its keys. */
+const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A placeholder trace context for checking an action's command before it is sent; the command itself gets its own. */
+const CHECK_TRACE = `00-${'1'.repeat(32)}-${'1'.repeat(16)}-01`;
 
 /** A route's answer: its HTTP status, headers and body. */
 type Answer = {status: number; body: string | Uint8Array; headers: Record<string, string>};
@@ -93,6 +99,8 @@ export type GatewayOptions = {
   liveness?: {heartbeatMs?: number; stallMs?: number; scheduler?: Scheduler};
   /** Hears each of the edge's decisions too, after the log does, as a test harness collects them. */
   onDiagnostic?: OnDiagnostic;
+  /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
+  actions?: CoreActions;
 };
 
 /** One repeated refusal: its record, the repeats since, and its window. */
@@ -151,7 +159,8 @@ export class Gateway {
     if (this.#options.edge.mcp) {
       this.#mcp = createGatewayMcp({
         modules: () => this.#options.host.modules(), invoke: (name, call) => this.#options.host.invoke(name, call), access: this.access,
-        recover: (id, input) => this.#recoverFor(id, input), scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
+        recover: (id, input) => this.#recoverFor(id, input), dispatch: (id, input) => this.#dispatchFor(id, input),
+        scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
       }, hosts);
     }
     if (this.#options.edge.launcher) this.#closeLauncher = await startLauncher(this.#options.stateDir, () => ({url: `${this.#origin}/`, code: this.access.issueLaunch()}));
@@ -285,6 +294,14 @@ export class Gateway {
       const answer = await this.#recover(principal, recoveryInput(input));
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     }
+    const commandFamily = /^\/api\/v2\/commands\/([^/]+)$/.exec(path)?.[1];
+    if (method === 'POST' && commandFamily !== undefined) {
+      noQuery();
+      needs('control');
+      const input = actionInput(await readBody(request));
+      const answer = await this.#dispatch(principal, commandFamily, input);
+      return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
+    }
     if (method !== 'GET') throw refuse('not-found', 'no such route');
     needs('read');
     if (path === '/api/v2/modules') {
@@ -326,7 +343,7 @@ export class Gateway {
     return {
       name, apiVersion: manifest.apiVersion, state,
       pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
-      tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval'] : [])] : [],
+      tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,
     };
   }
@@ -538,6 +555,60 @@ export class Gateway {
     return result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
   }
 
+  /** The dispatcher's action for a client credential, by its ID, as MCP calls it. */
+  async #dispatchFor(id: string, input: ActionInput & {family: string}): Promise<ActionAnswer> {
+    const credential = this.access.current(id);
+    if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
+    return this.#dispatch(principalOf(credential), input.family, input);
+  }
+
+  /**
+   * Sends one command through the core's dispatcher (#782) for the caller: a device's command, a moment or a mode
+   * change, by its family and target, as `bunny.cmd.<family>.<target>`. The command is checked first against its
+   * family's schema, as the SDK edge checks a remote part's, so invalid input is refused with a registry code and
+   * nothing is tracked. The answer is the dispatcher's: `accepted`, the owner's or the bus's refusal, or
+   * `uncertain-result`, which is never retried.
+   */
+  async #dispatch(principal: Principal, family: string, input: ActionInput): Promise<ActionAnswer> {
+    if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
+    const command = this.#command(principal.source, family, input);
+    if ('error' in command) return command;
+    const {actions} = this.#options;
+    if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
+    try {
+      return await this.#options.host.invoke(CORE_MODULE, () => actions.dispatch({
+        ...command, requestedBy: principal.source, ...(input.requestId === undefined ? {} : {requestId: input.requestId}),
+      }));
+    } catch (error) {
+      if (error instanceof ModuleUnavailable) return errorBody('unavailable', {detail: 'the core is not running'});
+      return errorBody('internal', {detail: 'the core failed'});
+    }
+  }
+
+  /**
+   * The command an action names: its key, and a draft whose type, `org.bunny.<entity>.<verb>.requested`, and schema,
+   * `<family>/2.0`, follow from the family (ADR 0012's command naming), checked against the family's schema.
+   */
+  #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
+    const verb = family.lastIndexOf('-');
+    if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
+    if (DIRECT_COMMANDS.includes(family)) return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
+    const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
+    const dataschema = `${SCHEMA_BASE}${family}/2.0`;
+    const now = this.#options.clock.now();
+    const checked = this.#options.validator.validate({
+      specversion: '1.0', bunnyprofile: '2.0', id: 'action-check', source, type, subject: target, time: new Date(now).toISOString(), kind: 'command',
+      datacontenttype: 'application/json', dataschema, traceparent: CHECK_TRACE, expiresat: new Date(now + COMMAND_TIMEOUT_MS).toISOString(),
+      data: {...data, requestId: requestId ?? 'action-check'},
+    }, {nowMs: now});
+    if (!checked.ok) {
+      return checked.error.code === 'unknown-schema'
+        ? errorBody('not-found', {detail: 'no module in this runtime answers this command family'})
+        : errorBody('invalid-request', {detail: 'the command does not fit its family\'s schema'});
+    }
+    return {key: `bunny.cmd.${family}.${target}`, draft: {type, subject: target, dataschema, data}};
+  }
+
   /** The bus participant a caller's commands come from: its own source, so the core and the records name it. */
   #participant(source: string): Participant {
     let participant = this.#participants.get(source);
@@ -626,6 +697,7 @@ function templateOf(path: string): string | undefined {
   if (path === '/mcp') return '/mcp';
   if (path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
+  if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
   if (/^\/api\/v2\/modules\/[^/]+\/settings$/.test(path)) return '/api/v2/modules/{module}/settings';
@@ -649,6 +721,19 @@ function recoveryInput(input: Record<string, unknown>): RecoveryInput {
     throw refuse('invalid-request', 'the recovery is {session, turnId, expectedRevision, requestId?}: a session ID, a turn ID, the record\'s revision and an identifier');
   }
   return {session, turnId, expectedRevision, ...(typeof requestId === 'string' ? {requestId} : {})};
+}
+
+/** An action's input (#782): its target's routing ID, the command's payload without its request ID, and an optional request ID. */
+type ActionInput = {target: string; data: Record<string, unknown>; requestId?: string};
+
+function actionInput(input: Record<string, unknown>): ActionInput {
+  const {target, data, requestId} = input;
+  if (Object.keys(input).some(key => !['target', 'data', 'requestId'].includes(key)) || typeof target !== 'string' || target.length > 128 ||
+    !ROUTING_ID.test(target) || typeof data !== 'object' || data === null || Array.isArray(data) || Object.hasOwn(data, 'requestId') ||
+    (requestId !== undefined && (typeof requestId !== 'string' || !ID.test(requestId)))) {
+    throw refuse('invalid-request', 'an action is {target, data, requestId?}: the device\'s routing ID, the command\'s payload without a request ID, and an identifier');
+  }
+  return {target, data: data as Record<string, unknown>, ...(typeof requestId === 'string' ? {requestId} : {})};
 }
 
 /** Reads a JSON object body of at most 16 KiB, sent as `application/json`. */

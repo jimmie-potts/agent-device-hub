@@ -15,7 +15,7 @@ import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from
 import {
   ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type Role, type Seed, type Simulation,
 } from '../tests/scenarios/catalog.js';
-import {GatewayClient, Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
+import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
 import {partTokensOf} from './seed.js';
 
@@ -139,6 +139,18 @@ class Run implements RunHarness {
     const started = this.#act(() => Promise.resolve({request: this.sdk(role).request(key, draft, options)}));
     return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${describe(error)}`).then(async answer => {
       // What the run published before the answer is in the copy before the scenario reads it.
+      await this.#refresh();
+      this.#answers.set(label, answer);
+      return answer;
+    });
+  }
+
+  dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
+    this.#answers.set(label, 'pending');
+    // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
+    // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
+    const started = this.#act(() => Promise.resolve({call: this.#client.call(actionCall(role, command, requestId))}));
+    return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
       await this.#refresh();
       this.#answers.set(label, answer);
       return answer;
