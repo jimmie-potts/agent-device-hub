@@ -7,7 +7,7 @@ import {chmod, mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {checkConfiguration} from '@jimmie-potts/sdk';
-import {configureLifx, convertLegacyConfiguration, createLifxModule, readLegacyModes, SimulatedLifx, type LegacyMode} from '../src/index.js';
+import {configureLifx, convertLegacyConfiguration, createLifxModule, lifxModuleFactory, readLegacyModes, SimulatedLifx, type LegacyMode} from '../src/index.js';
 import {BEAM, it, PENDANT, SECTION} from './support.js';
 
 const refusal = (section: unknown): string | undefined => {
@@ -23,6 +23,8 @@ it('the section names the bulbs as the module\'s devices, with the default bound
   assert.deepEqual(answer.config.bulbs[0]?.status, {brightnessCapPercent: 50, quietCapPercent: 20});
   const checked = checkConfiguration(createLifxModule({transport: new SimulatedLifx()}).manifest, SECTION);
   assert.equal(checked.status, 'accepted', 'the runtime\'s own check accepts it');
+  const simulated = checkConfiguration(lifxModuleFactory.simulate().manifest, {...lifxModuleFactory.simulatedSection.config});
+  assert.deepEqual(simulated.status === 'accepted' && simulated.devices, ['pendant-1', 'beam'], 'the factory\'s simulated section');
 });
 
 it('a malformed section is refused with fixed text that repeats no value from it', () => {

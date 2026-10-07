@@ -5,7 +5,7 @@
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SIMULATED_SECTION, controlPlayback, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
-import {PACKET, type LifxDeviceState} from '@jimmie-potts/lifx';
+import {LIFX_SIMULATED_SECTION, PACKET, type LifxDeviceState} from '@jimmie-potts/lifx';
 import type {CommandDraft, Participant} from '@jimmie-potts/sdk';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
@@ -804,16 +804,8 @@ const speakerPlayback: Scenario = {
 
 // The LIFX module (Hub #928)
 
-/**
- * The LIFX module's section in a run's configuration file (Hub #919, #928): pendant-1, a qualified A19 that shows agent
- * status, and the Beam, which is not qualified. The addresses are documentation addresses; the bulbs are simulated.
- */
-export const LIFX_SECTION = {
-  bulbs: [
-    {id: 'pendant-1', address: '192.0.2.40', vendor: 1, product: 27, firmwareMajor: 2, firmwareMinor: 90, status: {brightnessCapPercent: 50, quietCapPercent: 20}},
-    {id: 'beam', address: '192.0.2.41', vendor: 1, product: 38, firmwareMajor: 3, firmwareMinor: 70},
-  ],
-};
+/** The LIFX module's section (Hub #919, #928): its factory's simulated section, `pendant-1` and the unqualified Beam. */
+export const LIFX_SECTION = LIFX_SIMULATED_SECTION;
 const PENDANT_AT = '192.0.2.40';
 const BEAM_AT = '192.0.2.41';
 /** The hue in degrees each agent status paints, from the shared status colors. */

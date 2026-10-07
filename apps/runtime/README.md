@@ -24,7 +24,7 @@ and secrets come from one private [configuration file](#configuration).
 A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
-reads no secret, such as the playback module, omits `secrets`. One helper,
+reads no secret, such as the playback and LIFX modules, omits `secrets`. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
