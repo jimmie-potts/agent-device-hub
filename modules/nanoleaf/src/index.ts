@@ -27,3 +27,5 @@ export * from './transport.js';
 export * from './worker.js';
 // The runtime module (Hub #844): its factory, configuration, families and simulated controllers.
 export * from './module/index.js';
+// The migration of the bridge's state into the module's store, folder and section (Hub #933).
+export * from './migration/index.js';

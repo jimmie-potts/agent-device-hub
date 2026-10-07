@@ -36,6 +36,17 @@ export type Sender = (config: RenderConfig, snapshot: readonly Indication[], ins
 const isScene = (value: unknown): value is Scene => isObject(value) && typeof value.name === 'string' && value.name !== ''
   && typeof value.brightness === 'number' && Number.isInteger(value.brightness) && value.brightness >= 0 && value.brightness <= 100;
 
+/**
+ * Whether a parsed scene file is one `SceneRestorer` reads: version 1, an `owned` flag, and a scene and a Quiet level that
+ * are valid when present. The migration (Hub #933) checks a source scene file with it before carrying it.
+ */
+export function validSceneState(saved: unknown): saved is Record<string, unknown> {
+  if (!isObject(saved)) return false;
+  const level = saved.quiet_brightness;
+  return saved.version === 1 && typeof saved.owned === 'boolean' && (saved.scene === undefined || saved.scene === null || isScene(saved.scene))
+    && (level === undefined || level === null || (typeof level === 'number' && Number.isInteger(level) && level >= 0 && level <= 100));
+}
+
 const address = (config: RenderConfig): {ip: string; token: string} => ({ip: config.ip ?? '', token: config.token ?? ''});
 
 export class SceneRestorer {
@@ -55,12 +66,7 @@ export class SceneRestorer {
     this.draw = draw ?? ((value, snapshot, instant, loop) => this.render(value, snapshot, instant, loop));
     if (!existsSync(this.path)) return;
     const saved = readJson(this.path, true);
-    if (!isObject(saved)) throw new ValueError('Invalid saved scene state.');
-    const level = saved.quiet_brightness;
-    if (saved.version !== 1 || typeof saved.owned !== 'boolean' || (saved.scene !== undefined && saved.scene !== null && !isScene(saved.scene))
-        || (level !== undefined && level !== null && (typeof level !== 'number' || !Number.isInteger(level) || level < 0 || level > 100))) {
-      throw new ValueError('Invalid saved scene state.');
-    }
+    if (!validSceneState(saved)) throw new ValueError('Invalid saved scene state.');
     // The only level earlier versions wrote.
     if (!Object.hasOwn(saved, 'quiet_brightness') && saved.quiet_scene !== undefined && saved.quiet_scene !== null) saved.quiet_brightness = 10;
     const state: Record<string, unknown> = {...this.state};

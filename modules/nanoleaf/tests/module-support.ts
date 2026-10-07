@@ -168,6 +168,8 @@ export type WorldOptions = {
   maxQueued?: number;
   /** Records the module's spans. */
   spans?: RecordedSpans;
+  /** The secrets the section names, by name: the synthetic token under `token` by default. */
+  secrets?: Readonly<Record<string, string>>;
 };
 
 /** The schema the module publishes a state family's records under: `device/2.1`, which carries `held` (Hub #975), or 2.0. */
@@ -193,6 +195,7 @@ export class ModuleWorld {
   #section: unknown;
   #watcher: Participant | undefined;
   readonly #spans: RecordedSpans | undefined;
+  readonly #secrets: Readonly<Record<string, string>>;
   readonly #locks: DatabaseSync[] = [];
 
   private constructor(options: WorldOptions) {
@@ -200,6 +203,7 @@ export class ModuleWorld {
     this.device = new SimulatedNanoleaf({online: options.online ?? true, now: () => this.clock.now(), ...(options.devices === undefined ? {} : {devices: options.devices})});
     this.#section = options.section ?? SECTION;
     this.#spans = options.spans;
+    this.#secrets = options.secrets ?? {token: SYNTHETIC_TOKEN};
     registerCoreFamilies(this.#validator);
     registerDeviceFamilies(this.#validator);
     for (const [dataschema, schema] of Object.entries(nanoleafSchemas)) this.#validator.register(dataschema, schema);
@@ -227,7 +231,7 @@ export class ModuleWorld {
   #fresh(): ModuleHarness {
     const harness = new ModuleHarness(createNanoleafModule({transport: this.device.request}), {
       bus: this.bus, stateDir: this.stateDir, clock: {now: this.clock.now}, scheduler: this.clock.scheduler, section: this.#section,
-      secrets: {token: SYNTHETIC_TOKEN}, ...(this.#spans === undefined ? {} : {spans: this.#spans}),
+      secrets: this.#secrets, ...(this.#spans === undefined ? {} : {spans: this.#spans}),
     });
     this.harnesses.push(harness);
     return harness;
