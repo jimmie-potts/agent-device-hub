@@ -10,6 +10,7 @@ import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-con
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type Participant, type Scheduler, type Snapshot} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans, type HarnessRecord} from '@jimmie-potts/sdk/testing';
+import type {CloudFetch} from '../src/cloud.js';
 import {DEVICE_SCHEMA, SIMULATED_SECTION, createTidbytModule, type TidbytModuleOptions} from '../src/module.js';
 import {SIMULATED_API_KEY, SimulatedCloud, type SimulatedCloudOptions} from '../src/simulated.js';
 
@@ -173,6 +174,11 @@ export type HostOptions = {
   /** The module's section. Defaults to the simulated section with the API key's file. */
   section?: unknown;
   cloud?: SimulatedCloudOptions;
+  /**
+   * How long each push takes to reach the cloud on the manual clock, the first push first, as on a slow network; pushes
+   * past the list reach it at once.
+   */
+  pushTransitMs?: readonly number[];
   module?: Omit<TidbytModuleOptions, 'transport'>;
   /** How many messages one subscription queue holds, so a test can overflow a copy. */
   maxQueued?: number;
@@ -252,7 +258,21 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);
   // A worker answers in real time while a test moves the manual clock fast, so renders get a deadline no test reaches.
-  const build = (): ModuleHarness => new ModuleHarness(createTidbytModule({transport: cloud.fetch, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module}), {
+  let pushesSent = 0;
+  const transport: CloudFetch = async (url, init) => {
+    const transitMs = init.method === 'POST' ? options.pushTransitMs?.[pushesSent++] ?? 0 : 0;
+    if (transitMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const cancel = clock.scheduler.after(transitMs, resolve);
+        init.signal.addEventListener('abort', () => {
+          cancel();
+          reject(new DOMException('the request was ended on its way', 'AbortError'));
+        }, {once: true});
+      });
+    }
+    return cloud.fetch(url, init);
+  };
+  const build = (): ModuleHarness => new ModuleHarness(createTidbytModule({transport, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module}), {
     bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
   });
   const instances: ModuleHarness[] = [];

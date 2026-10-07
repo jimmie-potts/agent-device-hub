@@ -10,6 +10,9 @@
 // - What a tile last sent, when, and whether its installation is present survive a restart in the module's database,
 //   so a restart writes nothing while the tile stands, and the 15-second gate holds across it. Before a write goes out,
 //   the tile stores it as uncertain, so a stop or a crash before its answer leaves the installation's presence unknown.
+// - The gate runs from the end of a tile's last call, its answer, failure or deadline, where the runner's ran from the
+//   decision to write: a request can reach the cloud any time before its call ends, so two writes reach the cloud at
+//   least 15 s apart.
 // - The gate and the refresh run on the runtime's wall clock, so they hold across a restart. A time in the future, after
 //   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -182,7 +185,7 @@ export type TileWriterOptions = {
  */
 export class TileWriter {
   readonly #options: TileWriterOptions;
-  /** The last frame the cloud accepted, and when that push was made. */
+  /** The last frame the cloud accepted, and when that push ended. */
   #sent: {key: string; atMs: number} | undefined;
   #lastWriteAtMs: number | undefined;
   /** Consecutive writes not confirmed sent; each after the first doubles the wait before the next. */
@@ -221,11 +224,20 @@ export class TileWriter {
     if (call === undefined) return Math.min(pollMs, refreshDue);
     const wait = this.#lastWriteAtMs === undefined ? 0 : this.#lastWriteAtMs + this.#backoffMs() - now;
     if (wait > 0) return wait;
-    // The gate runs from the moment each request goes out, after a render and any wait in the queue, so two writes of
-    // this tile reach the cloud at least `minIntervalMs` apart. It is set now too, so a stop before the send keeps it.
+    // The gate runs from the end of each call that went out: its answer or failure, or its deadline or the stop. A
+    // request reaches the cloud before its call ends, however long it took on the way, so two writes of this tile reach
+    // the cloud at least `minIntervalMs` apart. It is set now, and again as the request goes out, which is the time a stop
+    // or a crash before the answer leaves stored.
     this.#lastWriteAtMs = now;
     /** What ends the call that went out, once it has an answer; undefined while nothing went out. */
     let ended: ((succeeded: boolean) => void) | undefined;
+    /** The call that went out has ended, answered or not: the gate runs from now. Nothing happens if none went out. */
+    const end = (succeeded: boolean): void => {
+      if (ended === undefined) return;
+      this.#lastWriteAtMs = clock();
+      ended(succeeded);
+      ended = undefined;
+    };
     const sending = (sent: CallKind) => (): void => {
       this.#lastWriteAtMs = clock();
       ended = this.#options.begin(sent);
@@ -240,8 +252,7 @@ export class TileWriter {
     if (call === 'remove' && this.#presence === 'unknown' && !queue.held()) {
       // Read the installation list first, so an installation that is already gone is not deleted again.
       const listing = await queue.list(installation, sending('list'));
-      ended?.('ok' in listing && listing.ok);
-      ended = undefined;
+      end('ok' in listing && listing.ok);
       this.#options.report({call: 'list', result: listing});
       if ('ok' in listing && listing.ok && !listing.present) {
         this.#presence = 'absent';
@@ -266,12 +277,12 @@ export class TileWriter {
       // The render was a wait: nothing goes out once the module stops.
       if (stopped()) return pollMs;
       result = await queue.push(webp, installation, sending('push'));
-      ended?.(result.outcome === 'sent');
+      end(result.outcome === 'sent');
       this.#options.report({call: 'push', result});
       this.#record('push', result, target.key, this.#lastWriteAtMs);
     } else {
       result = await queue.remove(installation, sending('remove'));
-      ended?.(result.outcome === 'sent');
+      end(result.outcome === 'sent');
       this.#options.report({call: 'remove', result});
       this.#record('remove', result, undefined, this.#lastWriteAtMs);
     }

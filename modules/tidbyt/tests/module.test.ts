@@ -84,6 +84,18 @@ test('an unchanged frame is pushed again only after 10 minutes', async context =
   await until(() => pushes(h) === 2, 'the refresh');
 });
 
+test('the refresh of an unchanged frame comes 10 minutes after its push ended, not after it was sent', async context => {
+  // The push takes 5 s to reach the cloud and is answered as it arrives; the refresh arrives at once.
+  const h = await host(context, {sessions: [working()], section: STATUS_ONLY, pushTransitMs: [5 * SECOND]});
+  await h.advance(6 * SECOND, SECOND);
+  await until(() => pushes(h) === 1, 'the first push');
+  await h.advance(10 * MINUTE + 5 * SECOND, SECOND);
+  await until(() => pushes(h) === 2, 'the refresh');
+  const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
+  assert.equal(second - first, 10 * MINUTE, 'the refresh reached the cloud 10 minutes after the push it repeats ended');
+  assert.deepEqual(h.problems(), []);
+});
+
 test('an idle start removes leftover tiles once, after the listing shows them, and leaves absent ones alone', async context => {
   const leftover = await host(context, {cloud: {installations: [STATUS, NOW_PLAYING]}});
   await until(() => calls(leftover).filter(call => call.startsWith('DELETE')).length === 2, 'both removals');
@@ -414,7 +426,7 @@ test('a failed push is not replayed, repeated failures back off, and an uncertai
   assert.deepEqual(calls(uncertain), ['POST unknown', 'GET list'], 'nothing to delete: the uncertain push left nothing');
 });
 
-test('the gate runs from the moment a push goes out, so a slow render never brings the next push closer', async context => {
+test('the gate runs from the push, never from the decision before it, so a slow render never brings the next push closer', async context => {
   const slow = new URL('./fixtures/slow-worker.js', import.meta.url);
   const h = await host(context, {sessions: [working({label: label('one')})], section: STATUS_ONLY, module: {renderWorker: slow}});
   await until(() => h.harness.runningWorkers() === 1, 'the slow render');
@@ -430,6 +442,38 @@ test('the gate runs from the moment a push goes out, so a slow render never brin
   await until(() => pushes(h) === 2, 'the next push');
   const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
   assert.ok(second - first >= 15 * SECOND, `the pushes went out ${second - first} ms apart`);
+});
+
+test('the gate runs from the push\'s answer, so a push that reaches the cloud late is still followed by the next 15 s after it arrived', async context => {
+  // The first push takes 300 ms to reach the cloud, as on a slow network or a busy machine; the next one arrives at once.
+  const h = await host(context, {sessions: [working({label: label('one')})], section: STATUS_ONLY, pushTransitMs: [300]});
+  await h.advance(SECOND);
+  await until(() => pushes(h) === 1, 'the first push');
+  await core(h).set(asking({label: label('two')}));
+  await h.advance(20 * SECOND);
+  await until(() => pushes(h) === 2, 'the next push');
+  const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
+  assert.ok(second - first >= 15 * SECOND, `the cloud saw the pushes ${second - first} ms apart`);
+  assert.ok(second - first < 15 * SECOND + 500, `the next push waited no longer than the gate: ${second - first} ms`);
+  assert.deepEqual(h.problems(), []);
+});
+
+test('a push that never answers holds the gate from its deadline, since it may have reached the cloud at any time before', async context => {
+  // The first push takes 9 s to reach the cloud, and its answer is lost: the call ends uncertain at its 10 s deadline.
+  const h = await host(context, {
+    sessions: [working({label: label('one')})], section: STATUS_ONLY, pushTransitMs: [9 * SECOND], before: cloud => { cloud.loseNextAnswer(); },
+  });
+  await h.advance(11 * SECOND);
+  assert.equal(pushes(h), 1, 'the cloud took the push');
+  await core(h).set(asking({label: label('two')}));
+  await h.advance(30 * SECOND);
+  await until(() => pushes(h) === 2, 'the next push');
+  const [first = 0, second = 0] = shown(h, STATUS).pushedAtMs;
+  assert.ok(second - first >= 15 * SECOND, `the cloud saw the pushes ${second - first} ms apart`);
+  // The first push went out 9 s before it arrived, so its call ended at its deadline 1 s after that.
+  const deadline = first - 9 * SECOND + 10 * SECOND;
+  assert.ok(second >= deadline + 15 * SECOND, `the next push went out ${second - deadline} ms after the deadline`);
+  assert.deepEqual(h.problems(), []);
 });
 
 test('a refused key holds every later call, and a rate limit holds them for its Retry-After', async context => {
