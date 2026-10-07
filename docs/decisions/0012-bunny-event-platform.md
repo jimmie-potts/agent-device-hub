@@ -261,19 +261,21 @@ evidence say what may have happened. Every boundary keeps the two apart.
 - **`accepted`.** The owner's `accepted` reply means it validated the command
   and is responsible for reporting its outcome. When finishing the command needs
   durable state, the owner stores that state before it replies, and with a full
-  disk it refuses instead. Stored intent is responsibility, never a queue: after
+  disk it refuses instead. It stores its own record of the work, never the
+  command message. Stored intent is responsibility, never a queue: after
   a restart the owner reports an outcome for each accepted command that has
   none. That outcome is `uncertain`, or `failed` when the owner's records prove
   no effect began, and the command never runs again.
 - **Retries.** A code's `retryable` flag says whether the condition may clear.
-  It never permits resending a command, and nothing resends one
-  automatically: not the SDK, a remote edge, a module or the core. Only
-  reconnection, observation and sync retry on their own. Each retry loop has
-  one owner and capped backoff, each observation or sync attempt has a
-  deadline, and repeated failures are summarized rather than logged per
-  attempt. Within one command, a module may repeat an idempotent device write
-  that its device protocol expects to be repeated, inside the command's
-  deadline and a fixed budget that its tests count.
+  It never permits resending a command, and nothing resends one automatically:
+  not the SDK, a remote edge, a module or the core. Only reconnection,
+  observation, sync and outbox publication repeat on their own, and the core
+  acknowledges a duplicate outcome again. Each retry loop has one owner and
+  capped backoff, each observation or sync attempt has a deadline, and repeated
+  failures are summarized rather than logged per attempt. Within one command, a
+  module may repeat an idempotent device write that its device protocol expects
+  to be repeated, inside the command's deadline and a fixed budget that its
+  tests count.
 - **Deadlines and cancellation** end waiting, not work already done.
   Cancellation is not undo. A command still queued at its deadline is
   `expired`, and one its handler had is `uncertain`. An outcome keeps any
@@ -299,31 +301,44 @@ evidence say what may have happened. Every boundary keeps the two apart.
     a person handles it. It is not dismissed automatically.
   - An identical retransmission is deduplicated.
   - Two different definitive outcomes for one operation keep both pieces of
-    evidence, and the item shows a conflict for a person to decide. Arrival
-    order never picks the winner.
+    evidence. The tracker records a conflict with both outcomes, and the
+    operation's item, opened if it had none, shows the conflict for a person
+    to decide. Arrival order never picks the winner.
+  - After a person has handled the item, a late outcome updates only the
+    tracker and history; a conflict reopens the operation's item, because it
+    needs a decision.
+  - A reused `(source, id)` with different content is a faulty message, not a
+    conflicting outcome: the core refuses it with `duplicate-conflict` and
+    keeps it for diagnosis, with no inbox item.
   - An operation has at most one inbox item.
-- **Safe errors.** Error bodies, logs, health, history and proof carry registry
-  codes and fixed text from the code that raised the error, never an
-  exception's message, stack or cause. The original cause stays in memory.
+- **Safe errors.** Error bodies, health, history and proof carry registry codes
+  and fixed text from the code that raised the error. Log records carry codes,
+  error types and their registered static bodies only. None carries an
+  exception's message, stack or cause; the original cause stays in memory.
 
 ### Observability
 
-- **Correlation.** Every HTTP call and every message carries W3C
-  `traceparent`, and every log line carries `trace_id` and `span_id` under the
+- **Correlation.** Every HTTP call and every message between B.U.N.N.Y.
+  components carries W3C `traceparent`, and every log line carries `trace_id`
+  and `span_id` under the
   [diagnostic contract](../observability-contract.md), so one request can be
   followed through every component.
 - **Recorded spans.** Spans with a start, end, status and parent or links are
   recorded through the observability package's host adapter
   (`createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`),
-  with tracing on, no exporter and the contract's bounded local sink. The SDK
-  defines a small span interface, and the runtime implements it with that
+  with tracing on, no exporter and a bounded local span sink. Today the adapter
+  records spans only with a collector, so #949 adds that sink to the adapter
+  and the diagnostic contract, within the contract's queue bounds. A
+  disposable run samples every request, so one request can always be
+  followed; #949 sets the installed runtime's ratio within the contract. The
+  SDK defines a small span interface, and the runtime implements it with that
   adapter; there is no second tracing implementation. Span names are the
   contract's registered names.
 - **Context stays inside B.U.N.N.Y.** A boundary trusts incoming context only
   after it authenticates and validates the input. No trace context reaches a
-  device or vendor; a module's device calls may have local spans. Work replayed
-  after a restart links to its original context and is never reparented, and no
-  span stays open across downtime.
+  device or vendor; a module's device calls may have local spans. A message
+  republished after a restart links to its original context and is never
+  reparented, and no span stays open across downtime.
 - **Records at decision points.** The boundary that makes a decision records
   it, once:
   - the SDK bus and remote edges: admission or refusal, no responder, a full
@@ -339,8 +354,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
   - DEBUG: bounded retries, polling and duplicate observations.
   - INFO: accepted work, success, recovery, expected cancellation, and
     validation and domain refusals.
-  - WARN: unexpected refusals, lost capacity, queued expiry, failed and
-    uncertain outcomes, and a device becoming unreachable.
+  - WARN: refusals a correct caller should never receive (`unauthenticated`,
+    `forbidden`, `too-large` and `duplicate-conflict`), lost capacity, queued
+    expiry, failed and uncertain outcomes, and a device becoming unreachable.
   - ERROR: internal faults, a module failure, and configuration that prevents
     operation.
   - FATAL: the runtime cannot continue.
@@ -353,7 +369,8 @@ evidence say what may have happened. Every boundary keeps the two apart.
   changed nothing.
 - **Logs are not history.** History holds domain records and logs hold
   diagnostics. They share request and trace IDs, codes and entity IDs, never
-  payloads. A replayed or duplicate outcome writes no second execution record.
+  payloads. A republished or duplicate outcome writes no second execution
+  record.
 - **Bounds.** The diagnostic contract's queue bounds, field rules and
   exclusions apply. Request and trace IDs never become metric or stream labels.
   A failing sink never changes a domain result and never logs its own failure
@@ -546,6 +563,10 @@ change and its trade-off:
 - **Late and conflicting outcomes.** A late definitive outcome resolves the
   tracker but not the inbox item; a person still handles it. Conflicting
   outcomes keep both pieces of evidence instead of letting the last one win.
+  Three edge cases were settled in review rather than by the owner, and the
+  owner may revisit them: a conflict opens or reopens the operation's one
+  item, a late outcome after handling updates only the tracker and history,
+  and a reused `(source, id)` is a faulty message with no inbox item.
   [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) and
   [#923](https://github.com/jimmie-potts/agent-device-hub/issues/923)
   implement it.

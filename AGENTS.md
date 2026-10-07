@@ -6,10 +6,12 @@ Read the README sections relevant to the task for current implementation state
 and setup. For planning or delivery, read docs/sdlc.md and the exact GitHub
 issue. Before changing ownership, provider contracts, APIs, state, integration
 or hosting, read docs/architecture.md and the linked device contracts.
-Before designing or changing communication between components, read
+Before designing or changing communication between components, or how a
+component handles errors, logs or traces, read
 [ADR 0012](docs/decisions/0012-bunny-event-platform.md). This covers events,
 commands, replies, errors and their effects, retries, message formats, consumer
-state, logging and tracing, and all such work follows that ADR.
+state, logging and tracing, and all such work follows that ADR and, for logs
+and traces, the [diagnostic contract](docs/observability-contract.md).
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
 the rebuild and its one offline cutover. Until that cutover, extend each
 component's released 1.x contract only additively. This includes the owner's CHOMPI work. Do not add
