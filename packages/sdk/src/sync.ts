@@ -1,6 +1,6 @@
 // Sync (ADR 0012, "Consumers and recovery"): a consumer's copy of one owner's families. The copy takes the owner's
 // current state at a revision, then follows live messages from that owner alone. Several owners may serve a shared
-// family, such as `device`, each for its own entities; a copy names its owner, or follows the owner that served it.
+// family, such as `device`, each for its own entities; a copy names its owner, or follows the owner that first served it.
 // This file is transport-neutral; a transport supplies the live subscriptions and the sync request through
 // `SyncTransport`.
 import {randomUUID} from 'node:crypto';
@@ -195,8 +195,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
   readonly #owner: string | undefined;
   /**
    * The owner whose live messages alone the copy follows: the one it names or, without one, the source of the
-   * `sync.completed` that last served it. Until a copy without an owner first syncs, it holds every message it buffers
-   * and applies only its owner's once it knows that owner.
+   * `sync.completed` that first served it. Until a copy without an owner first syncs, it holds every message it buffers
+   * and applies only its owner's once it knows that owner. It never follows another owner after that.
    */
   #following: string | undefined;
   readonly #held = new Map<string, Held<T>>();
@@ -408,14 +408,17 @@ class Copy<T extends object> implements SyncedCopy<T> {
   }
 
   /**
-   * A served answer from another owner than the named one, as a transport that ignored the owner could let happen, is
-   * no answer from that owner: refused as `unavailable`, which ends a first sync or the copy.
+   * A served answer from another owner than the copy's, as a transport that ignored a named owner could give, or a
+   * resync that another owner answered after the copy's owner stopped serving, is no answer from that owner: refused as
+   * `unavailable`, which ends a first sync or the copy. One copy never holds two owners' records, whose revisions do not
+   * compare (ADR 0012, "Ownership and publication").
    */
   #fromOwner(answer: SyncAnswer): SyncAnswer {
-    const owner = this.#owner;
+    const owner = this.#owner ?? this.#following;
     if (answer.status !== 'served' || owner === undefined || answer.completed.source === owner) return answer;
     const {requestId} = answer;
-    const detail = `the answer came from ${answer.completed.source}, not the named owner ${owner}`.slice(0, MAX_DETAIL);
+    const which = this.#owner === undefined ? `the owner ${owner} the copy follows` : `the named owner ${owner}`;
+    const detail = `the answer came from ${answer.completed.source}, not ${which}`.slice(0, MAX_DETAIL);
     return {status: 'rejected', requestId, error: errorBody('unavailable', {requestId, traceId: traceIdOf(answer.completed.traceparent), detail})};
   }
 
@@ -432,8 +435,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
       else await this.#notify({type: 'failed', error: answer.error});
       return;
     }
-    // The copy follows the owner that served it from now on, so buffered and live messages from another owner of a
-    // shared family never mix into it.
+    // The copy follows the owner that first served it from now on, so buffered and live messages from another owner of
+    // a shared family never mix into it. A later answer comes from the same owner, or was refused above.
     this.#following = answer.completed.source;
     // The copy takes the snapshot, its membership and the buffered messages in one step; the handler hears of each
     // change afterwards, in that order.

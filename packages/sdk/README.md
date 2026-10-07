@@ -279,11 +279,14 @@ A copy follows one owner:
   from another owner, as a transport that ignored `owner` could give, is no
   answer: it is refused as `unavailable`, which ends a first sync or the copy.
 - Without `owner`, each request goes to the families' only owner, as before,
-  and the copy follows the owner that served it, the source of its
-  `sync.completed`, as a named copy does. While several owners serve one of the
-  families, a request is refused with `invalid-request`, saying to name the
-  owner, and it is never spread across them; a copy whose later request is
-  refused so ends with `failed`.
+  and the copy follows the owner that first served it, the source of its
+  `sync.completed`, as a named copy does. It never switches owners: a later
+  answer from another owner, as when its owner stopped serving and another now
+  serves the family alone, is refused as `unavailable` and ends the copy with
+  `failed`, so one copy never holds two owners' records. While several owners
+  serve one of the families, a request is refused with `invalid-request`,
+  saying to name the owner, and it is never spread across them; a copy whose
+  later request is refused so ends with `failed` too.
 
 A consumer of a shared family always names its owner, even while only one owner
 serves it: another may start at any time, and a sync that names none is then

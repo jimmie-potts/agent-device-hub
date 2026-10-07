@@ -21,8 +21,9 @@
 
 ## 4. Fix round (PR #970)
 
-- [x] 4.1 Assert, red against `e374ec49`, that a copy without an owner follows only the owner that served it once a second owner serves `device` (both transports), drops another owner's buffered messages from its first sync, and that a named copy refuses an answer from another owner; pin the copy to its `sync.completed` source and check a named copy's answer.
+- [x] 4.1 Assert, red against `e374ec49`, that a copy without an owner follows only the owner that first served it once a second owner serves `device` (both transports), drops another owner's buffered messages from its first sync, and that a named copy refuses an answer from another owner; pin the copy to its `sync.completed` source and check a named copy's answer.
 - [x] 4.2 Assert, red against `e374ec49`, that another source serving a family that is not shared is refused with `invalid-state` while `device` keeps several owners (both transports, and `sync.test.ts`'s original cross-source assertions); add `SHARED_FAMILIES`.
 - [x] 4.3 Assert, red against `e374ec49`, that the bus names each source's served families and health lists them as `serves`, in the runtime test and the `device-owners` scenario; add `InProcessBus.served` and the health field.
 - [x] 4.4 Document the rules, the consumer guidance, the owners from health and the change `type` in the READMEs, rewrap the long lines, and update the design, both specifications and the archived deltas.
 - [x] 4.5 Show mutants fail named tests, and run the gate on a committed head.
+- [x] 4.6 Assert, red against `0b10960d`, that a copy without an owner whose resync another owner answers ends with `failed` and holds none of that owner's records (both transports); refuse such an answer as `unavailable`, and list `serves` in the runtime's health requirement.

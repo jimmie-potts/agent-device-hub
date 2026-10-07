@@ -1,3 +1,49 @@
+## MODIFIED Requirements
+
+### Requirement: Start and serve health with zero modules
+
+The runtime SHALL start with the fixed module list shipped in its code, and SHALL NOT load modules any other way. The shipped list SHALL hold the agent-session core first, then the device modules, the playback module (`runtime-playback`) and the LIFX module (`lifx-module`, Hub #928) so far, and the runtime SHALL also run with no module at all. Without a configuration file, the runtime SHALL refuse each shipped module that takes one, as "Module configuration" requires, with `not-found`, show it `refused` in health, and run the others. It SHALL serve `GET /api/runtime/v1/health` on the loopback address at a configured port, where 0 picks a free port. Health SHALL answer 200 with a `runtime-health/1.0` document while the process serves: `status` `ok` when every module runs and the lag check, if any, is active, and `degraded` otherwise; the supported module API version, the start time, uptime, the process's memory, the lag check's status; and one entry per module with its name, API version, state, `healthy`, its count of sync restarts, `serves` with the families it serves through sync while it serves any (Hub #967) and, when refused or failed, a reason whose code comes from the 2.0 error registry. The server SHALL answer only a request that names it as its host, `127.0.0.1:<port>` or `localhost:<port>` in any letter case with the exact port, and carries no `Origin` and no `Sec-Fetch-Site` other than `none`; any other request SHALL answer 403 with the shared error body and code `forbidden`. Every other method, path or query SHALL answer 404 with the shared error body and code `not-found`, except the SDK edge's routes while the edge is configured (see "Simulated modules and the SDK edge"). Stopping the runtime SHALL stop every module and close the health server; stopping again SHALL return the same result. In the service process, SIGTERM or SIGINT SHALL stop every module and exit 0. The entry point SHALL catch both signals before the rest of the runtime loads: a signal while it loads SHALL exit 0 before anything is created, and a signal while modules start SHALL stop them once their starts settle, without a ready line.
+
+#### Scenario: Zero modules
+- **WHEN** the runtime starts with no modules on port 0
+- **THEN** health on a loopback port answers 200 with schema `runtime-health/1.0`, status `ok`, module API version `1.1`, positive memory figures and no modules
+
+#### Scenario: Another route
+- **WHEN** a client sends GET to `/`, POST to the health path, GET with a query string or GET to another version's path
+- **THEN** each answers 404 with `{"error": {"code": "not-found", "retryable": false, "detail": "no such route"}}`
+
+#### Scenario: A request that does not name the listener
+- **WHEN** a request names another host, omits the port, carries an `Origin`, or carries `Sec-Fetch-Site` `cross-site` or `same-origin`
+- **THEN** it answers 403 with `forbidden`, as does one naming another port, while requests naming `127.0.0.1:<port>` or `localhost:<port>` in any letter case, with or without `Sec-Fetch-Site` `none`, answer 200
+
+#### Scenario: Sync restarts in health
+- **WHEN** a module's sync copy overflows a buffer of one while its handler is stalled, and restarts its sync
+- **THEN** that module's health entry counts one sync restart, another module counts none, and the module keeps running
+
+#### Scenario: Stopping
+- **WHEN** the runtime stops, and stops again
+- **THEN** the health server no longer accepts connections, and the second stop resolves
+
+#### Scenario: The shipped process
+- **WHEN** the shipped entry point runs with `--port 0` and a private state directory
+- **THEN** it writes a `runtime.ready` line with its URL, health is `degraded` and lists the core running and each shipped device module, the playback and LIFX modules, `refused` with `not-found`, because the process has no configuration file, the records name each refusal, and SIGTERM stops it with exit status 0
+
+#### Scenario: A signal while the runtime loads
+- **WHEN** SIGTERM or SIGINT arrives while the entry point still loads the runtime, whether loading turns the event loop or blocks it
+- **THEN** the process exits 0 with no ready line, and the state directory was never created
+
+#### Scenario: The entry point loads through its launcher
+- **WHEN** the built entry point is read
+- **THEN** its only static import is the launcher
+
+#### Scenario: A signal during startup
+- **WHEN** SIGTERM or SIGINT arrives while a module's start is still running
+- **THEN** the process stops that module once its start settles, writes no ready line and exits 0
+
+#### Scenario: Malformed arguments
+- **WHEN** the entry point runs without `--port`, with a port that is not an integer from 0 to 65535, a lag limit that is not a positive integer or an unknown option
+- **THEN** it exits with status 2 and a usage line
+
 ## ADDED Requirements
 
 ### Requirement: Modules that serve one family side by side

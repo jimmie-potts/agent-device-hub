@@ -213,6 +213,39 @@ function suite(transport: Transport): void {
     await result.copy.close();
   }));
 
+  it(name('a copy that names no owner never switches owners: a resync that another owner answers ends the copy'), () => using(transport, {}, async world => {
+    const first = await world.connect('bunny/core');
+    const second = world.local('bunny/second');
+    const consumer = await world.connect('bunny/wall');
+    const firstOwner = await first.serveSync([DEVICE_FAMILY], () => ({revision: 10, states: [device('bulb-1', 10)]}));
+    const gate = deferred<undefined>();
+    const changes: string[] = [];
+    const result = await consumer.sync<DeviceRecord>([DEVICE_FAMILY], async change => {
+      changes.push(show(change));
+      if (show(change) === 'updated bulb-1@11') await gate.promise;
+    }, {timeoutMs: 5000, maxBuffered: 1});
+    assert.equal(result.status, 'synced');
+    if (result.status !== 'synced') return;
+    try {
+      // The handler stalls on bulb-1@11 while two more updates arrive: more than the buffer holds, so the copy wants a
+      // resync, which it sends once the handler returns.
+      await first.publish('bunny.state.device.bulb-1', device('bulb-1', 11));
+      await until(() => changes.includes('updated bulb-1@11'), 'the stalled handler');
+      await first.publish('bunny.state.device.bulb-1', device('bulb-1', 12));
+      await first.publish('bunny.state.device.bulb-1', device('bulb-1', 13));
+      await until(() => world.diagnostics.some(record => record.event === 'sync.restarted' && record.source === 'bunny/wall'), 'the restart');
+      // The first owner goes away, and a second becomes the family's only owner, at a lower revision.
+      await firstOwner.close();
+      await second.serveSync([DEVICE_FAMILY], () => ({revision: 2, states: [device('panel-1', 2)]}));
+    } finally {
+      gate.resolve(undefined);
+    }
+    await until(() => changes.includes('failed unavailable'), 'the failed copy');
+    await flush();
+    assert.deepEqual(changes, ['updated bulb-1@10', 'synced @10', 'updated bulb-1@11', 'failed unavailable']);
+    assert.deepEqual(held(result.copy), ['bulb-1@11'], 'the copy keeps its last records and takes none of the second owner\'s');
+  }));
+
   it(name('a malformed owner is refused with invalid-request before any request is sent'), () => using(transport, {}, async world => {
     let served = 0;
     await world.local('bunny/core').serveSync([DEVICE_FAMILY], () => {
