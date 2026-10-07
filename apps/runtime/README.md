@@ -670,10 +670,10 @@ The catalog holds:
   record through play and pause, behind its own gate, and leaves the rotation
   when the music stops; a restart while the song's card has stood past its gate,
   with the Move answering 400 ms late, neither removes nor pushes the card, and
-  the status rows come back dimmed as uncertain; the reader holds the Tidbyt's device record with no
-  control; and neither the API key nor the cloud device appears anywhere. The
-  simulated cloud shows each tile as text rows, and the scenario compares them
-  with the frames the reader's own copies call for.
+  the status rows come back dimmed as uncertain; the reader holds the Tidbyt's
+  device record with no control; and neither the API key nor the cloud device
+  appears anywhere. The simulated cloud shows each tile as text rows, and the
+  scenario compares them with the frames the reader's own copies call for.
 
 A seed's `config` gives configured modules their sections. Each harness writes
 them, as the installer would, into a private configuration file with a token

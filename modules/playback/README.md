@@ -132,13 +132,13 @@ The old Hub's snapshot gave the latest read's time and its age instead. Judge
 freshness by `availability`, never by the age of `observedAtMs`: the module
 publishes the change to `stale` and to `unavailable` when the last read crosses
 each threshold. Each start publishes a new `unavailable` revision and keeps it
-until every configured speaker's first read has settled: answered, or failed at
-its 1.5 s deadline. Then it publishes what those reads present. A speaker that
-answers first never stands in for one still being read, so after a restart an
-HT-A9 on another input never publishes `inactive` while the Move, read more
-slowly, plays. A speaker that does not answer by its deadline releases the
-record with what the others report; with no observation from before the start,
-it is then `unavailable` and ranks last
+until every configured speaker's first read has settled, by answering or by
+failing; a speaker that does not answer fails at its call's 1.5 s deadline. Then
+it publishes what those reads present. A speaker that answers first never stands
+in for one still being read, so after a restart an HT-A9 on another input never
+publishes `inactive` while the Move, read more slowly, plays. A speaker that
+does not answer by its deadline releases the record with what the others report:
+with no observation since the start, it is `unavailable` and ranks last
 ([#930](https://github.com/jimmie-potts/agent-device-hub/issues/930)).
 
 ### Which speaker is presented
@@ -231,13 +231,13 @@ command is admitted only once the speaker has answered or the call's 1.5 s
 deadline has passed. The admission also waits, at most another 1.5 s, for the
 read that follows the command ahead, or, right after a start, for every
 speaker's first read. So a command that finds the module idle gets its reply
-within about 3 s, inside a requester's usual 5 s deadline. A
-command queued behind one whose speaker does not answer waits up to about 3 s
-more, so its reply can take about 6 s. A requester whose deadline passes first
-gets `uncertain-result` from the SDK, and the outcome still follows. A command
-whose deadline passed while it waited for a read is never sent: the
-module records it, and its outcome is `failed` with evidence `none` and
-`expired`, the definitive answer after the SDK's `uncertain-result`.
+within about 3 s, inside a requester's usual 5 s deadline. A command queued
+behind one whose speaker does not answer waits up to about 3 s more, so its
+reply can take about 6 s. A requester whose deadline passes first gets
+`uncertain-result` from the SDK, and the outcome still follows. A command whose
+deadline passed while it waited for a read is never sent: the module records it,
+and its outcome is `failed` with evidence `none` and `expired`, the definitive
+answer after the SDK's `uncertain-result`.
 
 The module handles one command at a time: the SDK queues a second command until
 the first has its outcome. It is then admitted against the speaker presented at
@@ -321,7 +321,9 @@ interface, and the module tests use `SimulatedSpeakers` on a manual clock.
   and the conversion.
 - `module.test.ts`: the module test kit, with policy A's offline check, and the
   module's record, staleness, commands, duplicates, failed and uncertain
-  outcomes, both speakers offline at start, the bounded memory of commands, a
+  outcomes, both speakers offline at start, the record and commands while the
+  first reads after a start run, a slow or silent speaker's included, the
+  bounded memory of commands, a
   crash between intent and outcome, and polling over HTTP without overlapping
   reads.
 

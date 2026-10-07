@@ -1037,8 +1037,8 @@ const gaps = (h: Harness, installation: string): number[] => {
  * core's sessions, and a burst of changes inside the 15-second gate makes one later push of the latest state; the
  * now-playing tile follows the playback module's record through play and pause, each tile behind its own gate, and is
  * removed when the music stops. A restart while the card has stood past its gate, with the Move answering late, neither
- * removes nor pushes it, and brings the status rows back dimmed as uncertain. The reader holds the Tidbyt's device record with no control, and neither the API key
- * nor the cloud device appears anywhere.
+ * removes nor pushes it, and brings the status rows back dimmed as uncertain. The reader holds the Tidbyt's device
+ * record with no control, and neither the API key nor the cloud device appears anywhere.
  */
 const tidbytTiles: Scenario = {
   id: 'tidbyt-tiles',

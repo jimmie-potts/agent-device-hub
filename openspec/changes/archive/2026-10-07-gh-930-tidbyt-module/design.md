@@ -41,6 +41,9 @@ stays aligned; the adjustments below are routine and within its scope.
 - **Hold until the shown state is known.** The status tile waits for the first sync of the sessions to settle; a refused
   sync shows `FEED ?`, as the runner's failed read did. The now-playing tile waits until its copy first syncs, for at most
   30 s, so a playback module that starts a moment later never removes a playing card.
+- **The owner says when it knows (PR #973 review).** After a restart the HT-A9 can answer before the Move. The playback
+  module, which owns the fact, keeps its record `unavailable` until every speaker's first read settles. The Tidbyt's start
+  window holds only that `unavailable` record and follows any other, so no consumer has to guess which record to trust.
 - **A lost copy stands in for a failed read.** With 2.0 the module cannot judge age from `observedAtMs`; a copy that stops
   following dims the card and removes it 30 s after the loss, as the runner removed a card 30 s after its last good read.
 - **Tile memory survives a restart.** What a tile sent, when, and the installation's presence are kept in the module's
