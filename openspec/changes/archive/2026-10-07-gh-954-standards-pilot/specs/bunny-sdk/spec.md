@@ -2,7 +2,7 @@
 
 ### Requirement: Module test kit
 
-The SDK SHALL export, from `@jimmie-potts/sdk/testing`, one conformance suite that any module runs from a description of it: a factory for fresh instances, its payload schemas, and, each optional, its section of the configuration file, its secrets' synthetic text, an instance whose device never answers with how to recognize its `unavailable` report, the families it serves, the families it copies with the snapshot a stand-in owner serves, a command it accepts and a command it refuses with its error code. `moduleConformance(spec)` SHALL register the checks as a node:test suite named for the module and SHALL be the only part of the kit that loads `node:test`. `conformanceChecks(spec)` SHALL return the checks that apply as `{name, run}` for any runner. Each check SHALL host a fresh instance with `ModuleHarness` on its own bus and state directory, with a stand-in owner for the copied families: `bunny/core`, or the owner the description names for them, as a module that copies one device module's `device` records names it. Each check SHALL fail when any message it sees breaks profile 2.0, with the core families, the stand-in acknowledgment and the module's schemas registered; when a record the module logs is not one the runtime writes whole as a diagnostic-contract record, because its event is not registered for the `bunny.module` scope, a field is not a registered attribute, or a value is outside its registered type; when a message it sees, a command or sync request the module sends, a record the module logs, a span, a reply or a synced state carries one of the module's secrets, naming where but never the secret; or when a handler, timer or worker of the module fails, or its stop throws or outlasts its deadline. `checkModuleRecord(name, record)` SHALL return that record check's reason, naming the event and attribute keys but never a value, or undefined. The checks SHALL be:
+The SDK SHALL export, from `@jimmie-potts/sdk/testing`, one conformance suite that any module runs from a description of it: a factory for fresh instances, its payload schemas, and, each optional, its section of the configuration file, its secrets' synthetic text, an instance whose device never answers with how to recognize its `unavailable` report, the families it serves, the families it copies with the snapshot a stand-in owner serves, a command it accepts and a command it refuses with its error code. `moduleConformance(spec)` SHALL register the checks as a node:test suite named for the module and SHALL be the only part of the kit that loads `node:test`. `conformanceChecks(spec)` SHALL return the checks that apply as `{name, run}` for any runner. Each check SHALL host a fresh instance with `ModuleHarness` on its own bus and state directory, with a stand-in owner for the copied families: `bunny/core`, or the owner the description names for them, as a module that copies one device module's `device` records names it. Each check SHALL fail when any message it sees breaks profile 2.0, with the core families, the core's acknowledgment among them, and the module's schemas registered; when a record the module logs is not one the runtime writes whole as a diagnostic-contract record, because its event is not registered for the `bunny.module` scope, a field is not a registered attribute, or a value is outside its registered type; when a message it sees, a command or sync request the module sends, a record the module logs, a span, a reply or a synced state carries one of the module's secrets, naming where but never the secret; or when a handler, timer or worker of the module fails, or its stop throws or outlasts its deadline. `checkModuleRecord(name, record)` SHALL return that record check's reason, naming the event and attribute keys but never a value, or undefined. The checks SHALL be:
 - always, the manifest is one the runtime accepts, and `checkConfiguration` accepts the module's section;
 - always, the module starts and stops within the deadline, and afterwards its accepted command and its served families, synced from the module by name, when given, are `unavailable`, and no timer or worker it started through its context and no open database is left;
 - with an instance whose device never answers, policy A: that instance's start finishes within 1000 ms by default, because start opens only local resources, and the module then publishes a state that reports the device `unavailable`;
@@ -11,11 +11,12 @@ The SDK SHALL export, from `@jimmie-potts/sdk/testing`, one conformance suite th
 - with copied families, its start syncs them and asks for nothing else, and, when the description names their owner, every sync of them names that owner;
 - with an accepted command, it accepts it;
 - with a refused command, it refuses it in its own reply with the declared code;
-- with an accepted command, the command's outcome is published, and published again, unchanged, after a restart on the same database without an acknowledgment.
+- with an accepted command, the command's outcome is published, and published again, unchanged, after a restart on the same database without an acknowledgment;
+- with an accepted command, an acknowledgment of its outcome from a participant other than the core changes nothing, so a restart publishes the outcome again; once `bunny/core` acknowledges it, the module records `outbox.acknowledged`, and the next restart publishes it no more (Hub #782).
 
 `ModuleHarness` SHALL host a module as the runtime does: its section, checked with `checkConfiguration` before start, which throws the refusal's `SdkError` and never starts a module the runtime would refuse; its own participant with source `bunny/modules/<name>`, given to the module without `close`, whose commands and sync requests it keeps, each sync with the owner it names, since no subscriber sees them; a context whose SQLite file is `<name>.sqlite` and whose private folder is `<name>/` in a given directory, whose `secrets.read` serves the given secrets' text from memory for the names the section gives, and whose worker calls are the runtime's; and a stop that aborts the signal, cancels timers, closes the participant, runs `stop()`, ends workers and closes the database. The participant close and `stop()` SHALL each have a deadline, 5 s by default, and a step that throws or outlasts it SHALL be recorded as a failure without keeping the later steps from running.
 
-Until Hub #782 defines the core's acknowledgment, the kit SHALL offer a stand-in: `standInAck(outcome)`, an occurrence on `bunny.event.stand-in-ack.<module>`, and `followStandInAcks(sdk, outbox)`, which passes each one naming the module's outcome to `outbox.acknowledge`.
+The kit's stand-in acknowledgment is gone: a test's stand-in core SHALL publish the core's own, `acknowledgmentOf(outcome)`, as `bunny/core` (Hub #782).
 
 #### Scenario: A conforming module passes
 - **WHEN** a module that serves its family, answers its command and reports the outcome through its outbox runs the suite
@@ -31,11 +32,11 @@ Until Hub #782 defines the core's acknowledgment, the kit SHALL offer a stand-in
 
 #### Scenario: The kit catches a non-conforming module
 - **WHEN** a module publishes its outcome without the outbox, declares an unsupported API version, refuses with another code, has a stop that never finishes, or sends a state its schema refuses
-- **THEN** the outbox check; the manifest check; the refusal check; the lifecycle and outbox checks; or the sync, accept and outbox checks fail, respectively, and every other check passes
+- **THEN** the outbox and acknowledgment checks; the manifest check; the refusal check; the lifecycle, outbox and acknowledgment checks; or the sync, accept, outbox and acknowledgment checks fail, respectively, and every other check passes
 
 #### Scenario: The kit catches a module record the runtime would not write
 - **WHEN** a module logs an event the catalog does not register for modules, one of the runtime's own events, an unregistered attribute holding a raw message, or a URL in a registered attribute, while it handles its accepted command
-- **THEN** the accept and outbox checks fail, every other check passes, and the reason names no value
+- **THEN** the accept, outbox and acknowledgment checks fail, every other check passes, and the reason names no value
 
 #### Scenario: The harness stops a module as the runtime does
 - **WHEN** a hosted module's stop throws, or never finishes
@@ -60,6 +61,10 @@ Until Hub #782 defines the core's acknowledgment, the kit SHALL offer a stand-in
 #### Scenario: The harness's secrets and folder
 - **WHEN** a hosted module reads a named secret held with a trailing line break, a secret its section does not name, and a named secret with no text, and asks for its folder, then stops
 - **THEN** it gets the text without the line break, `not-found` twice, a mode 700 folder `<name>/`, and after the stop `invalid-state` for both
+
+#### Scenario: The kit catches a module that mishandles the core's acknowledgment
+- **WHEN** a module's outbox gets a participant that cannot subscribe, or a module forgets an outcome on any acknowledgment that names it, whoever sent it
+- **THEN** only the acknowledgment check fails, and for the second it says that an acknowledgment from another participant than the core must be ignored
 
 #### Scenario: A module that answers outside the request
 - **WHEN** a module that serves two families answers every sync with both, whatever the request names

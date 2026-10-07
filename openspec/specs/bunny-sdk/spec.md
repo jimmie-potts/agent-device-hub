@@ -612,6 +612,7 @@ The SDK SHALL export, from `@jimmie-potts/sdk/testing`, one conformance suite th
 - always, the module starts and stops within the deadline, and afterwards its accepted command and its served families, synced from the module by name, when given, are `unavailable`, and no timer or worker it started through its context and no open database is left;
 - with an instance whose device never answers, policy A: that instance's start finishes within 1000 ms by default, because start opens only local resources, and the module then publishes a state that reports the device `unavailable`;
 - with served families, a sync of them that names the module as its owner completes with states of those families from the module;
+- with more than one served family, a sync of each family alone that names the module as its owner completes with states of that family only, so a module that answers outside the request fails, as a reader whose grant reads one family would find it;
 - with copied families, its start syncs them and asks for nothing else, and, when the description names their owner, every sync of them names that owner;
 - with an accepted command, it accepts it;
 - with a refused command, it refuses it in its own reply with the declared code;
@@ -669,6 +670,10 @@ The kit's stand-in acknowledgment is gone: a test's stand-in core SHALL publish 
 #### Scenario: The kit catches a module that mishandles the core's acknowledgment
 - **WHEN** a module's outbox gets a participant that cannot subscribe, or a module forgets an outcome on any acknowledgment that names it, whoever sent it
 - **THEN** only the acknowledgment check fails, and for the second it says that an acknowledgment from another participant than the core must be ignored
+
+#### Scenario: A module that answers outside the request
+- **WHEN** a module that serves two families answers every sync with both, whatever the request names
+- **THEN** only the check that syncs each family alone fails; the same module answering with the requested family only passes every check, and a module that serves one family runs no such check
 
 ### Requirement: Decision records at the SDK's boundaries
 
