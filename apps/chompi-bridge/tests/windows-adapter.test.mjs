@@ -42,10 +42,10 @@ function adapter(win32, helper = fakeHelper(() => ({ ok: false, reason: 'unused'
   return createWindowsAdapter({ win32: async () => win32, helper, codexHome: '/nonexistent', claudeSessionsRoot: '/nonexistent', env: {}, ...extra });
 }
 
-test('the Windows adapter implements interface version 5', async () => {
+test('the Windows adapter implements interface version 6', async () => {
   const instance = adapter(fakeWin32());
   assert.equal(instance.version, OS_ADAPTER_VERSION);
-  assert.equal(instance.version, 5);
+  assert.equal(instance.version, 6);
   assert.equal(instance.platform, 'win32');
   await instance.close();
 });
@@ -756,4 +756,72 @@ test('claudeSettings reads the session store and fails closed without one (#906)
   assert.deepEqual(await withStore.claudeSettings('not-a-local-id'), { status: 'unknown', reason: 'invalid-local-id' });
   await withStore.close();
   assert.deepEqual(await withStore.claudeSettings('local_4f1e2d3c-1b2a-4c5d-8e9f-a0b1c2d3e4f5'), { status: 'unknown', reason: 'adapter-closed' });
+});
+
+test('suggestionState reads Claude\'s next-step band and composer as counts and booleans only, and only for Claude in front (#907)', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  let reply = { ok: true, value: { suggestions: 3, focused: -1, composerFocused: true, composerEmpty: true, level: 2 } };
+  const helper = fakeHelper(() => reply);
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.suggestionState('claude'), known({ count: 3, focused: null, composer: { focused: true, empty: true } }));
+  assert.deepEqual(helper.calls.at(-1), { op: 'suggestionState', client: 'claude', hwnd: 0x1234, processId: 4242 });
+  reply = { ok: true, value: { suggestions: 0, focused: -1, composerFocused: false, composerEmpty: false } };
+  assert.deepEqual(await instance.suggestionState('claude'), known({ count: 0, focused: null, composer: { focused: false, empty: false } }), 'no band');
+  reply = { ok: true, value: { suggestions: 2, focused: 1, composerFocused: false, composerEmpty: true } };
+  assert.deepEqual(await instance.suggestionState('claude'), known({ count: 2, focused: 1, composer: { focused: false, empty: true } }));
+  for (const value of [
+    { suggestions: 9, focused: -1, composerFocused: true, composerEmpty: true }, { suggestions: 2, focused: 2, composerFocused: true, composerEmpty: true },
+    { suggestions: 2, focused: -1, composerFocused: 'yes', composerEmpty: true }, { suggestions: 2, focused: -1, composerFocused: true }, { suggestions: '2', focused: -1, composerFocused: true, composerEmpty: true },
+    null, 7,
+  ]) {
+    reply = { ok: true, value };
+    assert.deepEqual(await instance.suggestionState('claude'), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+  }
+  reply = { ok: false, reason: 'suggestion-band-ambiguous' };
+  assert.deepEqual(await instance.suggestionState('claude'), { status: 'unknown', reason: 'suggestion-band-ambiguous' });
+  const calls = helper.calls.length;
+  assert.deepEqual(await instance.suggestionState('codex'), { status: 'unknown', reason: 'invalid-client' }, 'Codex has no next-step band (#908)');
+  win32.state.family = CODEX_PACKAGE_FAMILY;
+  assert.deepEqual(await instance.suggestionState('claude'), { status: 'unknown', reason: 'claude-not-foreground' });
+  assert.equal(helper.calls.length, calls, 'no window was queried');
+  await instance.close();
+  assert.deepEqual(await instance.suggestionState('claude'), { status: 'unknown', reason: 'adapter-closed' });
+});
+
+test('focusSuggestion and invokeSuggestion pass only an index and a count and read back an index or a boolean (#907)', async () => {
+  const win32 = fakeWin32({ family: CLAUDE_PACKAGE_FAMILY });
+  const replies = { focusSuggestion: { focused: 1 }, invokeSuggestion: { invoked: true } };
+  const helper = fakeHelper(op => ({ ok: true, value: replies[op] }));
+  const instance = adapter(win32, helper);
+  assert.deepEqual(await instance.focusSuggestion('claude', 1, 3), known(1));
+  assert.deepEqual(await instance.invokeSuggestion('claude', 1, 3), known(true));
+  assert.deepEqual(helper.calls.map(({ hwnd: _h, processId: _p, ...call }) => call), [
+    { op: 'focusSuggestion', client: 'claude', index: 1, count: 3 }, { op: 'invokeSuggestion', client: 'claude', index: 1, count: 3 },
+  ]);
+  replies.focusSuggestion = { focused: -1 };
+  assert.deepEqual(await instance.focusSuggestion('claude', 1, 3), known(null), 'focus landed on no suggestion');
+  replies.invokeSuggestion = { invoked: false };
+  assert.deepEqual(await instance.invokeSuggestion('claude', 1, 3), known(false), 'focus moved or the composer holds a draft: nothing invoked');
+  for (const value of [{ focused: 3 }, { focused: '1' }, {}]) {
+    replies.focusSuggestion = value;
+    assert.deepEqual(await instance.focusSuggestion('claude', 1, 3), { status: 'unknown', reason: 'helper-invalid-reply' }, JSON.stringify(value));
+  }
+  replies.invokeSuggestion = { invoked: 1 };
+  assert.deepEqual(await instance.invokeSuggestion('claude', 1, 3), { status: 'unknown', reason: 'helper-invalid-reply' });
+  const calls = helper.calls.length;
+  for (const [call, reason] of [
+    [() => instance.focusSuggestion('codex', 0, 3), 'invalid-client'],
+    [() => instance.invokeSuggestion('codex', 0, 3), 'invalid-client'],
+    [() => instance.focusSuggestion('claude', 3, 3), 'invalid-suggestion-index'],
+    [() => instance.invokeSuggestion('claude', 0, 9), 'invalid-suggestion-index'],
+    [() => instance.invokeSuggestion('claude', -1, 3), 'invalid-suggestion-index'],
+    [() => instance.focusSuggestion('claude', 0, 0), 'invalid-suggestion-index'],
+  ]) assert.deepEqual(await call(), { status: 'unknown', reason }, reason);
+  assert.equal(helper.calls.length, calls, 'refused before any UI query');
+  helper.request = async () => ({ ok: false, reason: 'band-changed' });
+  assert.deepEqual(await instance.invokeSuggestion('claude', 0, 3), { status: 'unknown', reason: 'band-changed' });
+  win32.state.family = CODEX_PACKAGE_FAMILY;
+  assert.deepEqual(await instance.focusSuggestion('claude', 0, 3), { status: 'unknown', reason: 'claude-not-foreground' });
+  await instance.close();
+  assert.deepEqual(await instance.invokeSuggestion('claude', 0, 3), { status: 'unknown', reason: 'adapter-closed' });
 });

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { normalizeSnapshot } from '../dist/routing/feed.js';
 import { hubEnvelope, hubSession } from '../dist/sim/hub.js';
 import { PickerRefusal, SimPickers } from '../dist/sim/pickers.js';
+import { SimSuggestions } from '../dist/sim/suggestions.js';
 import { NAVIGATION_KEYS } from '../dist/os-adapter.js';
 import { KEY_NAMES } from '../dist/routing/profile.js';
 
@@ -76,15 +77,16 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 }
 
 /**
- * A scripted desktop behind OS adapter interface version 5. By default the apps behave as qualified:
+ * A scripted desktop behind OS adapter interface version 6. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
  * selects the target and raises Claude with its composer focused. Like Claude Desktop, the link stamps the target's
  * `lastFocusedAt` unless Claude was already in front with that session selected. Tests then break one step.
  * Cards are scripted per client with `openCard`; pressing a card button closes the card as the clients do. The model
- * and effort controls (#906) are the simulated desktop's own model (`SimPickers`), so both drive the same behavior.
+ * and effort controls (#906) and Claude's next-step suggestion band with its ghost text (#907) are the simulated
+ * desktop's own models (`SimPickers`, `SimSuggestions`), so both drive the same behavior.
  */
 export class FakeAdapter {
-  version = 5;
+  version = 6;
   platform = 'win32';
   calls = [];
   keys = [];
@@ -196,9 +198,25 @@ export class FakeAdapter {
    * `pickers.lag = true` to make every read after a change return the state from before it once.
    */
   pickers = new SimPickers(() => this.claudeSelected ?? '');
+  /** Claude's composer text, for the next-step knob (#907); its focus is `composer.claude`. */
+  claudeDraft = '';
   /**
-   * Keys `tapInClient` typed: { client, keys, picker }, where `picker` is what was open in that client when the key went
-   * in: 'codex-picker' (focused), another menu or slider kind, or null.
+   * Claude's next-step suggestion band and ghost text (#907), over the composer above. Set `suggestions.lag = true` to
+   * make every read after a change return the state from before it once.
+   */
+  suggestions = new SimSuggestions({
+    focused: () => this.composer.claude,
+    setFocused: focused => { this.composer.claude = focused; },
+    text: () => this.claudeDraft,
+    setText: text => { this.claudeDraft = text; },
+  });
+  /** Suggestion band changes, as the simulated desktop logs them: { action, position?, count? }. */
+  suggestionEvents = [];
+  suggestionUnknown = false;
+  /**
+   * Keys `tapInClient` typed: { client, keys, picker, composer }, where `picker` is what was open in that client when the
+   * key went in: 'codex-picker' (focused), another menu or slider kind, or null; and `composer`, for Claude, whether its
+   * composer was 'focused-empty', 'focused-draft' or 'unfocused' then.
    */
   clientTaps = [];
   /** Picker changes, as the simulated desktop logs them: { client, action, label?, position?, count? }. */
@@ -238,11 +256,45 @@ export class FakeAdapter {
     if (this.foregroundUnknown) return unknown('no foreground');
     if (!this.#front(client)) return known(false);
     for (let i = 0; i < presses; i++) {
-      this.clientTaps.push({ client, keys: [...keys], picker: this.#openNow(client) });
-      this.#pickerTap(client, keys.join('+'));
+      const composer = client === 'claude' ? (!this.composer.claude ? 'unfocused' : this.claudeDraft === '' ? 'focused-empty' : 'focused-draft') : undefined;
+      this.clientTaps.push({ client, keys: [...keys], picker: this.#openNow(client), ...(composer ? { composer } : {}) });
+      const chord = keys.join('+');
+      // An open menu or slider takes the key; otherwise a Right arrow into Claude's composer accepts its ghost text.
+      if (!this.#pickerTap(client, chord) && client === 'claude' && chord === 'Right') this.#suggestionApply(this.suggestions.right());
     }
     return known(true);
   }
+
+  #suggestionApply(result) {
+    this.suggestionEvents.push(...result.events);
+    return result.value;
+  }
+
+  /** Claude's suggestion band and composer, as the Windows adapter reports them: counts and booleans only (#907). */
+  async suggestionState(client) {
+    const pending = this.#enter('suggestionState', [client]);
+    if (pending) return pending;
+    if (client !== 'claude') return unknown('invalid-client');
+    if (this.suggestionUnknown) return unknown('band unreadable');
+    if (!this.#front('claude')) return unknown('claude-not-foreground');
+    return known(this.suggestions.state());
+  }
+
+  #suggestionAction(name, args, act) {
+    const pending = this.#enter(name, args);
+    if (pending) return pending;
+    if (args[0] !== 'claude') return Promise.resolve(unknown('invalid-client'));
+    if (!this.#front('claude')) return Promise.resolve(unknown('claude-not-foreground'));
+    try {
+      return Promise.resolve(known(this.#suggestionApply(act())));
+    } catch (error) {
+      if (error instanceof PickerRefusal) return Promise.resolve(unknown(error.message));
+      throw error;
+    }
+  }
+
+  focusSuggestion(client, index, count) { return this.#suggestionAction('focusSuggestion', [client, index, count], () => this.suggestions.focus(index, count)); }
+  invokeSuggestion(client, index, count) { return this.#suggestionAction('invokeSuggestion', [client, index, count], () => this.suggestions.invoke(index, count)); }
 
   async pickerState(client) {
     const pending = this.#enter('pickerState', [client]);
@@ -279,6 +331,7 @@ export class FakeAdapter {
     if (!this.#front(client)) return unknown(`${client}-not-foreground`);
     this.pickers.dismiss(client);
     this.composer[client] = !(client === 'codex' && this.cards.codex);
+    if (client === 'claude') this.suggestions.blur();
     return known(this.composer[client]);
   }
 

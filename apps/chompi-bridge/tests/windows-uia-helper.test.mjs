@@ -153,15 +153,18 @@ test('requests after close are refused without spawning', async () => {
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
 const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'WindowFocus', 'MenuEntries', 'SettingButtons', 'ButtonExpanded', 'PrefixedButton', 'CodexPickerButton', 'CodexPickerName', 'SettingButton', 'QualifiedMenu', 'EntryIndex', 'EffortSlider', 'SliderRange', 'PickerAnnouncement', 'PickerClient', 'PickerState'];
+const SUGGESTION_FUNCTIONS = ['ClaudeComposer', 'ComposerEmpty', 'BandSuggestions', 'SuggestionBand', 'SuggestionState', 'SuggestionRequest', 'FocusSuggestion', 'InvokeSuggestion'];
 const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
-test('the shipped helper script changes UI state only inside the card operations and the setting actions, one kind of change each', () => {
+test('the shipped helper script changes UI state only inside the card operations, the setting actions and the two suggestion actions, one kind of change each', () => {
   // #821 narrowed the old "never focuses or invokes" rule to the two card operations; #906 adds the seven setting
-  // actions on the model and effort controls. Everything else stays read-only, and nothing in the helper types.
+  // actions on the model and effort controls, and #907 the two on Claude's next-step suggestions. Everything else stays
+  // read-only, and nothing in the helper types.
   const script = readFileSync(helperScriptPath(), 'utf8');
   const actions = {
     FocusCardButton: /\.SetFocus\(\)/g, InvokeCardButton: /\.Invoke\(\)/g, ExpandSetting: /\.Expand\(\)/g, CollapseSetting: /\.Collapse\(\)/g,
     InvokeSelectModel: /\.Invoke\(\)/g, InvokeCurrentOption: /\.Invoke\(\)/g, FocusMenuEntry: /\.SetFocus\(\)/g, SelectMenuOption: /\.Select\(\)/g, SetSliderValue: /\.SetValue\(/g, FocusComposer: /\.SetFocus\(\)/g,
+    FocusSuggestion: /\.SetFocus\(\)/g, InvokeSuggestion: /\.Invoke\(\)/g,
   };
   let rest = script;
   for (const [name, own] of Object.entries(actions)) {
@@ -451,4 +454,50 @@ test('Codex\'s picker button is identified by its name among all expandable butt
   assert.match(body, /if \(\$pickers\.Count -eq 0\) \{ return \$null \}/);
   assert.equal(/Count -eq 1 -and/.test(body), false, 'no lone-button shortcut');
   assert.match(functionBody(script, 'CodexPickerName'), /\[string\]::Equals\(\$name, \$CodexPickerName, \$Ordinal\)/);
+});
+
+test('the next-step band is read and acted on only in its qualified shape, returns counts and booleans only, and invokes only a focused suggestion into an empty composer (#907)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  for (const op of ['suggestionState', 'focusSuggestion', 'invokeSuggestion']) {
+    const name = op[0].toUpperCase() + op.slice(1);
+    assert.match(script, new RegExp(`'${op}' \\{ \\$value = ${name} \\$request \\}`), `${op} is dispatched`);
+    assert.match(functionBody(script, name), /^\s+\$window = TargetWindow \$request$/m, `${name} refuses a window that is not the requested process`);
+  }
+  for (const name of SUGGESTION_FUNCTIONS) {
+    const body = functionBody(script, name);
+    assert.ok(body, `${name} is a top-level function`);
+    assert.equal(/Current\.Name\s*\}|Cached\.Name\s*\}|label\s*=|Name\s*=/.test(body), false, `${name} returns no name`);
+    for (const forbidden of [/TextPattern/, /DocumentRange/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /\.Collapse\(/, /SetValue/]) assert.equal(forbidden.test(body), false, `${name} must not use ${forbidden}`);
+  }
+  // Claude only: Codex next steps are #908's.
+  for (const name of ['SuggestionState', 'SuggestionRequest']) assert.match(functionBody(script, name), /\(PickerClient \$request\) -ne 'claude'\) \{ Fail 'invalid-client' \}/);
+  // The band: a Group beside one of the composer's ancestors, at most 8 levels up, holding "next:", "dismiss" and 1-8 suggestions.
+  assert.match(script, /^\$BandLabel = 'next:'$/m);
+  assert.match(script, /^\$BandDismiss = 'dismiss'$/m);
+  assert.match(script, /^\$MaxSuggestions = 8$/m);
+  const band = functionBody(script, 'SuggestionBand');
+  assert.match(band, /\$depth -lt \$MaxComposerAncestors/, 'a bounded walk up from the composer');
+  assert.match(band, /Fail 'suggestion-band-ambiguous'/);
+  const shape = functionBody(script, 'BandSuggestions');
+  for (const property of ['IsEnabledProperty', 'IsKeyboardFocusableProperty', 'IsInvokePatternAvailableProperty']) assert.match(shape, new RegExp(`\\$AE::${property}`), property);
+  assert.match(shape, /Fail 'suggestion-band-unqualified'/);
+  assert.match(shape, /\$Scope::Children/, 'only the band\'s own children');
+  // The composer's Value is only compared with the empty forms: '', one "\n" or one "\r\n".
+  const empty = functionBody(script, 'ComposerEmpty');
+  assert.match(empty, /\$value\.Length -eq 0 -or \[string\]::Equals\(\$value, "`n", \$Ordinal\) -or \[string\]::Equals\(\$value, "`r`n", \$Ordinal\)/);
+  const rest = SUGGESTION_FUNCTIONS.filter(name => name !== 'ComposerEmpty').map(name => functionBody(script, name)).join('\n');
+  assert.equal(/ValuePattern|\.Value\b/.test(rest), false, 'only ComposerEmpty reads the composer\'s Value');
+  // Fresh-read checks before each action.
+  const request = functionBody(script, 'SuggestionRequest');
+  assert.match(request, /Fail 'invalid-suggestion-index'/);
+  assert.match(request, /if \(\$null -eq \$band\) \{ Fail 'band-absent' \}/);
+  assert.match(request, /\$band\.buttons\.Count -ne \[int\]\$count\) \{ Fail 'band-changed' \}/);
+  const invoke = functionBody(script, 'InvokeSuggestion');
+  const compare = invoke.indexOf('[System.Windows.Automation.Automation]::Compare($band.buttons[$index], $focused)');
+  const emptyCheck = invoke.indexOf('ComposerEmpty $band.composer');
+  assert.ok(compare > 0 && compare < invoke.indexOf('.Invoke()'), 'only the suggestion holding keyboard focus is invoked');
+  assert.ok(emptyCheck > 0 && emptyCheck < invoke.indexOf('.Invoke()'), 'only into an empty composer');
+  assert.match(invoke, /return @\{ invoked = \$false \}/);
+  const focus = functionBody(script, 'FocusSuggestion');
+  assert.ok(focus.indexOf('Settle {') > focus.indexOf('.SetFocus()'), 'focus is read back after the one SetFocus');
 });

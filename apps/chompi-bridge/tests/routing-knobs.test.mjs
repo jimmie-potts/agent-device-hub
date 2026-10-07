@@ -1,5 +1,6 @@
 // Knob 1 sets the model and knob 2 the effort of the Codex or Claude task in front (#906), keystroke-free where the
-// client allows it.
+// client allows it. Knob 3 picks Claude's suggested next step (#907): it highlights a suggestion and fills the draft,
+// or accepts Claude's ghost text with one Right arrow, and never sends.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -18,7 +19,12 @@ const STEP = PROFILE.model?.stepCounts ?? 6;
 const CLICK_STILL_MS = PROFILE.model?.clickStillMs ?? 250;
 const MENU_TIMEOUT_MS = PROFILE.timing.menuTimeoutMs ?? 5000;
 const VERIFY_MS = PROFILE.timing.verifyTimeoutMs;
-const MODEL_LED = 26, EFFORT_LED = 27;
+const MODEL_LED = 26, EFFORT_LED = 27, NEXT_LED = 28;
+const NEXT_TURN = 42, NEXT_CLICK = 30;
+const NEXT_STEP = PROFILE.nextSteps?.stepCounts ?? 6;
+const NEXT_STILL_MS = PROFILE.nextSteps?.clickStillMs ?? 250;
+/** Synthetic suggestion labels; the bridge never reads or logs them. */
+const SUGGESTIONS = ['Synthetic next step A', 'Synthetic next step B', 'Synthetic next step C'];
 const CHORDS = { codexEffortIncrease: ['LeftControl', 'LeftAlt', 'Equal'], codexEffortDecrease: ['LeftControl', 'LeftAlt', 'Minus'] };
 const WITH_CHORDS = validateProfile({ ...base, shortcuts: { ...base.shortcuts, ...CHORDS } });
 const TERMINAL = { packageIdentity: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe', processName: 'WindowsTerminal.exe' };
@@ -66,14 +72,22 @@ function front(ctx, client) {
 
 /**
  * No knob flow typed a stray key (F1, F4): never Enter; Escape only into Codex's open picker, at most once per close;
- * Right and Left only into it; a chord only into Codex with nothing open. Send's own Enter is checked by its tests.
+ * Right and Left only into it; a chord only into Codex with nothing open. Knob 3 (#907) sends only one Right arrow into
+ * Claude's focused, empty composer with nothing open, at most once per ghost-text click. Send's own Enter is checked by
+ * its tests.
  */
 function noStrayKeys(ctx, { sendEnters = 0 } = {}) {
   assert.equal(ctx.adapter.enters, sendEnters, 'Enter only from Send');
   const closes = ctx.logged('knob-menu', { action: 'closed', method: 'escape' }).length;
+  const ghostClicks = ctx.logged('next-step', { route: 'ghost' }).length;
+  assert.ok(ctx.adapter.clientTaps.filter(tap => tap.client === 'claude').length <= ghostClicks, 'at most one Right arrow per ghost-text click');
   for (const tap of ctx.adapter.clientTaps) {
     const chord = tap.keys.join('+');
     assert.ok(!tap.keys.includes('Enter'), 'a knob flow never sends Enter');
+    if (tap.client === 'claude') {
+      assert.deepEqual([chord, tap.picker, tap.composer], ['Right', null, 'focused-empty'], 'the only key into Claude is knob 3\'s Right arrow into its focused, empty composer');
+      continue;
+    }
     if (chord === 'Escape' || chord === 'Right' || chord === 'Left') assert.deepEqual([tap.client, tap.picker], ['codex', 'picker-main'], `${chord} went only into Codex's open picker`);
     else assert.deepEqual([tap.client, tap.picker, CHORDS.codexEffortIncrease.join('+') === chord || CHORDS.codexEffortDecrease.join('+') === chord], ['codex', null, true], `${chord} is an owner chord into Codex with nothing open`);
   }
@@ -491,6 +505,220 @@ test('an older profile that maps knob 1\'s turn as the scroll wheel keeps it, an
   front(ctx, 'claude');
   await ctx.turn(MODEL_TURN, STEP);
   assert.deepEqual(ctx.actions('expandSetting'), []);
+  assert.equal(ctx.adapter.scrolled.length, 1, 'the turn scrolls as before');
+  noStrayKeys(ctx);
+});
+
+// Knob 3: Claude's next steps (#907)
+
+/** Claude in front, its composer focused and empty, with the next-steps band showing three synthetic suggestions. */
+function band(ctx, labels = SUGGESTIONS, ghost = labels[0] ?? null) {
+  front(ctx, 'claude');
+  ctx.adapter.claudeDraft = '';
+  ctx.adapter.suggestions.show(labels, ghost);
+}
+
+test('Knob 3: each detent moves focus one suggestion, the first on the first and stopping at the ends; a still click fills the draft and returns focus to the composer, and Play sends it', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  assert.deepEqual(ctx.actions('focusSuggestion').map(c => c.slice(1)), [['claude', 0, 3]], 'the first detent focuses the first suggestion');
+  assert.equal(ctx.adapter.suggestions.describe().focused, 0);
+  assert.deepEqual(ctx.logged('knob-menu', { knob: 'next', action: 'opened' }).map(l => [l.client, l.count]), [['claude', 3]]);
+  assert.deepEqual(ctx.led(NEXT_LED), PROFILE.colors.active, 'knob 3 shows the active color while a suggestion is highlighted');
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await ctx.turn(NEXT_TURN, 2 * NEXT_STEP);
+  assert.equal(ctx.adapter.suggestions.describe().focused, 2, 'the last suggestion is the end; "dismiss" is never a stop');
+  assert.equal(ctx.logged('suggestion-step').at(-1).clamped, true);
+  await ctx.turn(NEXT_TURN, -NEXT_STEP);
+  assert.equal(ctx.adapter.suggestions.describe().focused, 1);
+  assert.deepEqual(ctx.logged('suggestion-step').map(l => [l.index, l.count]), [[1, 3], [2, 3], [2, 3], [1, 3]]);
+  await advance(ctx.clock, NEXT_STILL_MS + 50);
+  await ctx.click(NEXT_CLICK);
+  assert.deepEqual(ctx.actions('invokeSuggestion').map(c => c.slice(1)), [['claude', 1, 3]]);
+  assert.equal(ctx.adapter.claudeDraft, SUGGESTIONS[1], 'the suggestion is in the composer as a draft');
+  assert.equal(ctx.adapter.composer.claude, true, 'the composer has focus again, so Play sends');
+  assert.deepEqual(ctx.logged('next-step').map(l => [l.client, l.route, l.outcome, l.index, l.count]), [['claude', 'suggestion', 'filled', 1, 3]]);
+  assert.deepEqual(ctx.led(NEXT_LED), PROFILE.colors.applied);
+  assert.deepEqual(ctx.adapter.clientTaps, [], 'no key at all');
+  for (const line of ctx.logs) assert.ok(!SUGGESTIONS.some(label => JSON.stringify(line).includes(label)), 'no suggestion text is logged');
+  noStrayKeys(ctx);
+  await advance(ctx.clock, PROFILE.timing.sendRepeatWindowMs + 100);
+  await ctx.click(PLAY);
+  assert.equal(ctx.logged('sent', { client: 'claude' }).length, 1, 'Play sends the draft');
+  noStrayKeys(ctx, { sendEnters: 1 });
+});
+
+test('Knob 3: with nothing highlighted, a click accepts Claude\'s ghost text with one Right arrow into its focused, empty composer', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  await ctx.click(NEXT_CLICK);
+  assert.deepEqual(ctx.adapter.clientTaps.map(tap => [tap.client, tap.keys.join('+'), tap.composer]), [['claude', 'Right', 'focused-empty']]);
+  assert.equal(ctx.adapter.claudeDraft, SUGGESTIONS[0], 'the ghost text is now the draft');
+  assert.deepEqual(ctx.logged('next-step').map(l => [l.route, l.outcome]), [['ghost', 'filled']]);
+  assert.deepEqual(ctx.led(NEXT_LED), PROFILE.colors.applied);
+  assert.deepEqual(ctx.actions('invokeSuggestion'), []);
+  noStrayKeys(ctx);
+});
+
+test('Knob 3: a ghost-text click with no ghost text showing sends its one harmless Right arrow and reads unverified', async t => {
+  const ctx = await setup(t);
+  front(ctx, 'claude');
+  await ctx.click(NEXT_CLICK);
+  await advance(ctx.clock, VERIFY_MS + 200);
+  assert.deepEqual(ctx.adapter.tapped('claude'), ['Right']);
+  assert.equal(ctx.adapter.claudeDraft, '', 'the composer stays empty');
+  assert.deepEqual(ctx.logged('next-step').map(l => [l.route, l.outcome, l.reason]), [['ghost', 'unverified', 'composer-empty']]);
+  assert.deepEqual(ctx.led(NEXT_LED), PROFILE.colors.unknown);
+  noStrayKeys(ctx);
+});
+
+test('Knob 3 refuses with a red flash and types nothing for Codex, another app, a card, a draft, no band, an unfocused composer, an open menu, Record or an unknown read', async t => {
+  const ctx = await setup(t);
+  const check = async (reason, arrange, { turn = true, click = true } = {}) => {
+    arrange();
+    for (const [enabled, act] of [[turn, () => ctx.turn(NEXT_TURN, NEXT_STEP)], [click, async () => { await advance(ctx.clock, NEXT_STILL_MS + 50); await ctx.click(NEXT_CLICK); }]]) {
+      if (!enabled) continue;
+      await act();
+      assert.equal(ctx.logged('knob-refused').at(-1)?.reason, reason, reason);
+      assert.equal(ctx.logged('knob-refused').at(-1)?.knob, 'next');
+      assert.deepEqual(ctx.led(NEXT_LED), PROFILE.colors.error, `${reason}: knob 3 flashes the error color`);
+    }
+  };
+  await check('codex-no-next-steps', () => { band(ctx); front(ctx, 'codex'); });
+  await check('not-agent-client', () => { ctx.adapter.foreground = TERMINAL; });
+  await check('card-open', () => { band(ctx); ctx.adapter.openCard('claude', 3); });
+  await check('draft-present', () => { ctx.adapter.closeCard('claude'); band(ctx); ctx.adapter.claudeDraft = 'synthetic draft'; });
+  await check('no-suggestions', () => { ctx.adapter.claudeDraft = ''; ctx.adapter.suggestions.hide(); }, { click: false });
+  await check('composer-unfocused', () => { band(ctx); ctx.adapter.composer.claude = false; }, { turn: false });
+  await check('menu-open', () => { band(ctx); ctx.adapter.pickers.expand('claude', 'claude-model'); });
+  await check('suggestions-unknown', () => { ctx.adapter.pickers.dismiss('claude'); band(ctx); ctx.adapter.suggestionUnknown = true; });
+  ctx.adapter.suggestionUnknown = false;
+  band(ctx);
+  ctx.press(RECORD);
+  await advance(ctx.clock, 100);
+  await check('dictating', () => {});
+  ctx.release(RECORD);
+  assert.deepEqual(ctx.adapter.clientTaps, [], 'nothing was typed');
+  assert.deepEqual([ctx.actions('focusSuggestion').length, ctx.actions('invokeSuggestion').length], [0, 0]);
+  assert.equal(ctx.adapter.claudeDraft, '');
+  noStrayKeys(ctx);
+});
+
+test('Knob 3: a click while the knob moves, or after focus left the highlighted suggestion, fills nothing; focus returns to the composer', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.turnNow(NEXT_TURN, NEXT_STEP);
+  await advance(ctx.clock, 100);
+  await ctx.click(NEXT_CLICK);
+  assert.equal(ctx.logged('knob-refused').at(-1).reason, 'knob-moving');
+  await advance(ctx.clock, NEXT_STILL_MS + 50);
+  ctx.adapter.suggestions.focus(0, 3);
+  await ctx.click(NEXT_CLICK);
+  assert.equal(ctx.logged('knob-refused').at(-1).reason, 'focus-moved');
+  assert.deepEqual(ctx.actions('invokeSuggestion'), []);
+  assert.equal(ctx.adapter.claudeDraft, '');
+  assert.equal(ctx.adapter.composer.claude, true, 'the composer has focus again');
+  assert.equal(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).method, 'focus-composer');
+  noStrayKeys(ctx);
+});
+
+test('Knob 3: a band that changes or goes away while a suggestion is highlighted ends the flow with composer focus, invoking nothing', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.adapter.suggestions.show(SUGGESTIONS.slice(0, 2));
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  assert.equal(ctx.logged('knob-refused').at(-1).reason, 'band-changed');
+  assert.equal(ctx.adapter.composer.claude, true);
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.adapter.suggestions.hide();
+  await advance(ctx.clock, NEXT_STILL_MS + 50);
+  await ctx.click(NEXT_CLICK);
+  assert.equal(ctx.logged('knob-refused').at(-1).reason, 'band-gone');
+  assert.deepEqual(ctx.actions('invokeSuggestion'), []);
+  noStrayKeys(ctx);
+});
+
+test('Knob 3: a highlight left alone drops after the timeout and the composer gets focus; with another app in front nothing is touched', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await advance(ctx.clock, MENU_TIMEOUT_MS + 600);
+  assert.deepEqual(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).map(l => [l.reason, l.method, l.verified]), [['timeout', 'focus-composer', true]]);
+  assert.equal(ctx.adapter.composer.claude, true);
+  assert.equal(ctx.adapter.suggestions.describe().focused, null, 'the highlight is gone');
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.adapter.foreground = TERMINAL;
+  await advance(ctx.clock, MENU_TIMEOUT_MS + 600);
+  assert.deepEqual(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).verified, false, 'Claude is not in front: its composer cannot get focus');
+  assert.equal(ctx.adapter.suggestions.describe().focused, 0, 'nothing changed in Claude');
+  noStrayKeys(ctx);
+});
+
+test('Knob 3: another control, Record, a profile reload and a controller loss each drop the highlight and focus the composer first', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  ctx.adapter.claudeDraft = '';
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await ctx.click(PLAY);
+  await advance(ctx.clock, 200);
+  const order = ctx.adapter.calls.filter(c => c[0] === 'focusComposer' || (c[0] === 'sendKeys' && c[1].keys.includes('Enter'))).map(c => c[0]);
+  assert.deepEqual(order, ['focusComposer', 'sendKeys'], 'the highlight drops to the composer before Send');
+  assert.equal(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).reason, 'other-control');
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await ctx.turn(MODEL_TURN, STEP);
+  assert.equal(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).reason, 'other-control', 'knob 1 closes knob 3\'s flow first');
+  assert.equal(ctx.adapter.pickers.describe('claude').open, 'model-menu');
+  await ctx.click(MODEL_CLICK);
+  await advance(ctx.clock, MENU_TIMEOUT_MS + 600);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.router.setProfile(validateProfile({ ...base, profileVersion: 2 }));
+  await advance(ctx.clock, 600);
+  assert.equal(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).reason, 'profile-reload');
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  ctx.router.handleBridgeEvent({ type: 'disconnected', at: ctx.clock.now(), epoch: 7 });
+  await advance(ctx.clock, 600);
+  assert.equal(ctx.logged('knob-menu', { knob: 'next', action: 'closed' }).at(-1).reason, 'disconnected');
+  assert.equal(ctx.adapter.composer.claude, true);
+  assert.equal(ctx.adapter.claudeDraft, '', 'nothing was filled');
+  noStrayKeys(ctx, { sendEnters: 1 });
+});
+
+test('Knob 3 with every read lagging one change behind still invokes once, and a ghost click sends one Right arrow', async t => {
+  const ctx = await setup(t);
+  band(ctx);
+  ctx.adapter.suggestions.lag = true;
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await advance(ctx.clock, 300);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await advance(ctx.clock, NEXT_STILL_MS + 300);
+  await ctx.click(NEXT_CLICK);
+  await advance(ctx.clock, VERIFY_MS + 300);
+  assert.equal(ctx.actions('invokeSuggestion').length, 1, 'one invoke, though the first read after it lagged');
+  assert.equal(ctx.adapter.claudeDraft, SUGGESTIONS[1]);
+  assert.deepEqual(ctx.logged('next-step').map(l => [l.route, l.outcome]), [['suggestion', 'filled']]);
+  ctx.adapter.claudeDraft = '';
+  band(ctx);
+  ctx.adapter.suggestions.lag = true;
+  await advance(ctx.clock, PROFILE.timing.errorFlashMs);
+  await ctx.click(NEXT_CLICK);
+  await advance(ctx.clock, VERIFY_MS + 300);
+  assert.deepEqual(ctx.adapter.tapped('claude'), ['Right'], 'one Right arrow');
+  assert.equal(ctx.adapter.claudeDraft, SUGGESTIONS[0]);
+  noStrayKeys(ctx);
+});
+
+test('an older profile that maps knob 3\'s turn as the scroll wheel keeps it, and knob 3 picks nothing', async t => {
+  const profile = validateProfile({ ...base, controls: { ...base.controls, scroll: 42 } });
+  assert.equal(profile.nextSteps, null);
+  const ctx = await setup(t, { profile });
+  band(ctx);
+  await ctx.turn(NEXT_TURN, NEXT_STEP);
+  await ctx.click(NEXT_CLICK);
+  assert.deepEqual([ctx.actions('suggestionState').length, ctx.adapter.clientTaps.length], [0, 0]);
   assert.equal(ctx.adapter.scrolled.length, 1, 'the turn scrolls as before');
   noStrayKeys(ctx);
 });

@@ -143,5 +143,14 @@ test('knob 1 and knob 2 show their open control, a confirmed or unconfirmed chan
   assert.deepEqual([lit[26], lit[27]], [profile.colors.active, profile.colors.applied]);
   const flashed = frame({ model: 'unverified', effort: 'error' });
   assert.deepEqual([flashed[26], flashed[27]], [profile.colors.unknown, profile.colors.error]);
-  assert.deepEqual(flashed[28], [0, 0, 0], 'knob 3 stays dark');
+  assert.deepEqual(flashed[28], [0, 0, 0], 'knob 3 is dark without a next-step light');
+});
+
+test('knob 3\'s LED (28) shows a highlighted suggestion, a filled draft, an unconfirmed fill and a refusal (#907)', async () => {
+  const { KNOB_LEDS } = await import('../dist/routing/lights.js');
+  assert.deepEqual(KNOB_LEDS, { model: 26, effort: 27, next: 28 });
+  const frame = knobs => renderFrame({ profile, slots: blank(), recording: false, knobs, pulseOn: true });
+  assert.deepEqual(frame({})[28], [0, 0, 0]);
+  assert.deepEqual([frame({ next: 'open' })[28], frame({ next: 'applied' })[28], frame({ next: 'unverified' })[28], frame({ next: 'error' })[28]],
+    [profile.colors.active, profile.colors.applied, profile.colors.unknown, profile.colors.error]);
 });
