@@ -400,6 +400,32 @@ it('maintenance that falls due on a full disk leaves the core running, refusing 
   assert.ok(logs.some(record => record.event_name === 'operation.completed' && record.attributes['bunny.operation'] === 'storage'), 'the condition ended');
 });
 
+it('a restart whose start-up maintenance falls on a full disk starts the core anyway, refusing intake until it has room', async context => {
+  let full = false;
+  const disk: CorePart = {derive: () => { if (full) throw Object.assign(new Error('database or disk is full'), {errcode: 13}); }};
+  const dir = await stateDir(context);
+  const clock = manualClock();
+  const first = fixture('hook');
+  const {runtime: before, logs: earlier} = await run(context, {modules: [createCoreModule(), first], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  await publish(contextOf(first).sdk, sessionStarted, START);
+  await waitFor(() => received(earlier, 'accepted').length === 1, 5000, 'the stored session');
+  await before.stop();
+
+  // A day later the stored session is due to expire as the owner opens, and the disk is full.
+  clock.advance(86_400_001);
+  full = true;
+  const hook = fixture('hook');
+  const {runtime, logs} = await run(context, {modules: [createCoreModule({parts: [disk]}), hook], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running', 'no failure exit, so no restart loop');
+  await publish(contextOf(hook).sdk, sessionStarted, clock.now(), {identity: OTHER});
+  await waitFor(() => received(logs, 'rejected').length === 1, 5000, 'the refusal');
+  assert.equal(received(logs, 'rejected')[0]?.attributes['bunny.code'], 'capacity');
+  full = false;
+  clock.advance(1000);
+  await publish(contextOf(hook).sdk, sessionStarted, clock.now(), {identity: OTHER});
+  await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the observation once there is room');
+});
+
 it('a second core waiting for the lease never gets it while the first opens its owner again after a failed commit', async context => {
   const dir = await stateDir(context);
   let database: DatabaseSync | undefined;
