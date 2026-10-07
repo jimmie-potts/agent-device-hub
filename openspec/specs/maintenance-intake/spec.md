@@ -57,7 +57,7 @@ A refusal SHALL return a `blocked` response that keeps its 1.x `schemaVersion`, 
 - **THEN** intake refuses new mutations or performs read-only reconciliation as appropriate
 
 #### Scenario: Refusal carries the registry error body
-- **WHEN** intake refuses an invocation that lacks its configured grant or is past its deadline
+- **WHEN** intake refuses an invocation that arrives without its configured grant or after its deadline
 - **THEN** the `blocked` response keeps its 1.x fields and its `error` carries `forbidden` or `expired`, not retryable, with the reason as `detail`
 
 #### Scenario: Operator configuration fails to load

@@ -1929,7 +1929,7 @@ The package check installs the packed archive into an isolated consumer under
 `TMPDIR`, outside every checkout, that supplies its own Playwright. It verifies
 every file hash, checks that no other `@jimmie-potts` package resolves there,
 runs the packaged suite and repeats any skip reason. The error body's registry
-check must skip there with its printed reason. Neither check touches installed services,
+check prints its skip reason there. Neither check touches installed services,
 personal state or devices, and neither contacts Windows: the tests set
 `APP_VERIFY_WINDOWS_CHECK=off`.
 

@@ -63,7 +63,8 @@ refusal to its registry code. Refusals that adapters and wrappers print
 themselves keep their 1.x shape until
 [#839](https://github.com/jimmie-potts/agent-device-hub/issues/839): the
 CHOMPI adapter's `start-only-scenario`, the Hub composition's own usage,
-failure and internal lines, and `scripts/verify.mjs`'s missing-build result.
+failure and internal lines, the missing-build results of `scripts/verify.mjs`
+and `scripts/verify-chompi.mjs`, and `scripts/verify-host.mjs`'s own refusals.
 No operation prints a token, a private path outside the receipt's two declared
 roots, or personal data. For lifecycle operations, exit status 0 means the
 outcome was verified, not merely requested; 1 is a failed outcome, 2 a usage

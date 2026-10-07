@@ -24,6 +24,6 @@ None.
 
 - **Code:** `packages/app-verify` (`src/error-body.ts`, the CLI and `stop`), `apps/maintenance` (`src/error-body.ts`, the CLI and intake), both packages' tests, `scripts/package-app-verify.mjs` and `scripts/package-maintenance.mjs`.
 - **Docs:** both READMEs, `docs/app-verification.md` and `docs/development.md`.
-- **Unchanged:** the app-verify public exports, both packages' dependencies, the lockfile and the intake bundle.
+- **Unchanged:** the app-verify public exports, both packages' dependencies, the lockfile and how the intake is bundled.
 - **Out of scope until #839:** refusals that adapters and wrappers print themselves, maintenance's other entry points, and failed outcomes.
 - **Delivery:** source-only. app-verify is development tooling, and the installed intake is replaced at the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).

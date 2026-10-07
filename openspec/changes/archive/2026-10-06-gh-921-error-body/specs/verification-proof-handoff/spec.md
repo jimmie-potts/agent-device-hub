@@ -2,7 +2,7 @@
 
 ### Requirement: Core refusals carry the shared error body
 
-Every refusal line that the shared verification core prints SHALL keep its 1.x string `error` and `detail` and add `errorBody`, the shared registry error body. The body SHALL carry the registry code mapped from the 1.x refusal, that code's registry `retryable` flag, and `<error>: <detail>` as `detail`, at most 1024 characters. A `stop` that reports `receipt-locked` with its cleanup SHALL carry the body too, and `restart` SHALL pass that line on. Failed outcomes, receipts, exit codes and refusals that adapters and wrappers print themselves SHALL keep their 1.x shape until 1.x retires. The core SHALL take no runtime dependency to build the body.
+Every refusal line that the shared verification core prints SHALL keep its 1.x string `error` and `detail` and add `errorBody`, the shared registry error body. The body SHALL carry the registry code mapped from the 1.x refusal, that code's registry `retryable` flag, and `<error>: <detail>` as `detail`, at most 1024 characters. A `stop` that reports `receipt-locked` with its cleanup SHALL carry the body too, and `restart` SHALL pass that line on. Failed outcomes, receipts, exit codes and refusals that adapters and wrappers print themselves are outside this requirement until 1.x retires. The core SHALL take no runtime dependency to build the body.
 
 #### Scenario: Usage refusal
 - **WHEN** a caller names an operation the core does not have
