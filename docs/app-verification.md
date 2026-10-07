@@ -8,9 +8,11 @@ expires. Hub is the first caller
 ([#494](https://github.com/jimmie-potts/agent-device-hub/issues/494)); the
 Nanoleaf wall ([codex-nanoleaf#193](https://github.com/jimmie-potts/codex-nanoleaf/issues/193))
 and Pixoo ([divoom-app-upgrade#118](https://github.com/jimmie-potts/divoom-app-upgrade/issues/118))
-adapters implement the same operations for their applications, as does the CHOMPI bridge
+adapters implement the same operations for their applications, as do the CHOMPI bridge
 ([#853](https://github.com/jimmie-potts/agent-device-hub/issues/853),
-[`apps/chompi-bridge/verify`](../apps/chompi-bridge/verify/README.md), `npm run -s verify:chompi --`).
+[`apps/chompi-bridge/verify`](../apps/chompi-bridge/verify/README.md), `npm run -s verify:chompi --`)
+and the new runtime ([#920](https://github.com/jimmie-potts/agent-device-hub/issues/920),
+[`apps/runtime/verify`](../apps/runtime/verify/README.md), `npm run -s verify:runtime --`).
 [ADR 0009](decisions/0009-app-verification-runs.md) records the lasting
 decisions and their alternatives. The initiative and its accepted scope are in
 [#488](https://github.com/jimmie-potts/agent-device-hub/issues/488).
@@ -419,6 +421,7 @@ owns the page it would appear on.
 | Nanoleaf wall | Wall server, map page, private SQLite state, allocation and Prism rendering | Worker stand-in (`scripts/demo.py` `prepare`), synthetic projects and tasks, fixture layouts | The demo's `request=no_device` trap raises on any light request; the adapter proves an attempted request fails |
 | Pixoo | Fastify server, web UI, library, playlists, player | Simulator transport, synthetic media in a private `PIXOO_DATA_DIR` | `/api/health` reports simulator mode and no device connectivity; ambient `PIXOO_MODE=device` does not leak into the run |
 | CHOMPI bridge | Bridge CLI (`run --simulate --desktop sim`) with its routing core, slot store, lights, profile watcher and feed client; the run's control page | `ChompiSimulator` (HID protocol v1), `SimulatedDesktop` behind OS adapter interface version 6, `SyntheticHub` feed (snapshot 1.3 and change stream) with a run-generated token; synthetic tasks and text | `no-hid-device`, `no-desktop-calls` and `own-feed-only`: simulator transport only with node-hid refused, simulated desktop only with koffi refused, and only the run's own origin and lock; tests start a run across each boundary and show its check fails |
+| Runtime | The runtime through its own entry (`runMain`) with `--simulate`, `--edge` and the run's state directory, its SDK edge, and the supervisor's harness API | The fixture modules (the stand-in core, lamp and chime), `SimulatedLamps` and `SimulatedChime` reached over the runtime child's IPC channel, and the scenario's remote parts with run-generated grants | `simulated-transports`, `no-outbound-connections` and `private-state`: the runtime says it ran with `--simulate`, a guard refuses every outbound TCP connection before it is made, and its state directory and home are the run's own; tests start a run across each boundary and show its check fails |
 
 ## Caller walkthrough
 

@@ -284,7 +284,7 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
       'npm run test:nanoleaf:built'],
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:dashboard', 'npm run test:dashboard:browser', 'npm run test:observability:browser'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser'],
+    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:hub:verify:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
