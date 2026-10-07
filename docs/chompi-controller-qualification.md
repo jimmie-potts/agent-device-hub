@@ -562,7 +562,8 @@ owner's Codex effort chords for checks 4 and 6.
 4. **Codex model.** With a Codex task in front, turn knob 1. The picker and model list open on the current model.
    - A still click applies the focused model, the picker closes with a single Escape, and the bridge logs `model`
      `applied` with `picker-name`.
-   - Turn knob 1 again and leave the list: the current model is selected again, the picker closes, and nothing changes.
+   - Turn knob 1 again and leave the list: the current model is invoked, which returns to the picker (observed
+     2026-10-07), the picker closes with one Escape, and nothing changes.
    - Pick "Default" once and record what the bridge logs (`unverified` is expected).
 5. **Codex effort with chords.** Turn knob 2.
    - Each detent changes the picker button's level with the picker never opening, and the bridge logs `effort`

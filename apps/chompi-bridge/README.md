@@ -127,9 +127,10 @@ Version 5 (#906) adds the model and effort operations, keystroke-free wherever t
   Claude's `Model:` and `Effort:` buttons (text after the prefix and expanded state) or Codex's picker button (its
   `<model> <effort>` name and state); and Codex's picker announcement (`<model> <level>, <n> of <count>.`, parsed).
   Any other menu is never read.
-- Seven UI Automation actions on those controls only: `expandSetting` and `collapseSetting` (Claude; Codex's picker
+- Eight UI Automation actions on those controls only: `expandSetting` and `collapseSetting` (Claude; Codex's picker
   does not close on `Collapse`), `invokeSelectModel` (Codex's "Select model"), `focusMenuEntry` (`SetFocus`, read back),
-  `selectMenuOption` (`SelectionItem.Select`, only on the option holding focus), `setSliderValue` (`RangeValue.SetValue`,
+  `selectMenuOption` (`SelectionItem.Select`, only on the option holding focus), `invokeCurrentOption` (Codex: `Invoke`
+  on the model list's current option, which returns to the picker unchanged), `setSliderValue` (`RangeValue.SetValue`,
   one step from the value read, within its range) and `focusComposer`. Each re-reads its target just before acting and
   refuses on any difference: a missing or duplicated control, a changed entry count, another state.
 - `tapInClient(client, keys, presses)` taps one chord 1-10 times only while that client's window is in front, read
@@ -200,8 +201,9 @@ session records by name and key only, and Codex's own thread names from `session
   `Select effort` picker and, while the picker button is expanded, the one other `Menu` whose own entries are all
   model `RadioButton`s. Entries are `RadioButton` (option), `MenuItem` (action) and `CheckBox` (toggle), at most 64.
   Claude's buttons are found by their `Model: ` and `Effort: ` prefixes (two with one prefix is `unknown`); Codex's
-  picker button is the one `ExpandCollapse` button near its composer. Every label is trimmed to at most 128 characters
-  and may not hold control characters. The seven setting actions are the only other helper operations, besides the
+  picker button is the one `ExpandCollapse` button near its composer named `Select effort` or `<model> <effort>` with
+  a known effort label at the end, so its attachments and permissions buttons are never taken for it. Every label is trimmed to at most 128 characters
+  and may not hold control characters. The eight setting actions are the only other helper operations, besides the
   two card operations, that change UI state; see [UIA-NOTES.md](src/windows/UIA-NOTES.md#model-and-effort-controls).
 
 The built code reads the helper script from `src/windows/` (`dist/windows` resolves `../../src/windows/`), so an
@@ -412,7 +414,8 @@ client allows it; model lists and level names come from each client and are neve
   `effort` too. A model without an Effort button, such as Haiku 4.5, is `unsupported`.
 - **Codex model (knob 1).** The first detent expands the picker button (named `<model> <effort>` while collapsed and
   `Select effort` while expanded), invokes the picker's "Select model" entry and focuses the current model in the
-  list. Further detents move focus one option. A still click calls `Select` on the option holding focus; Codex returns
+  list. Further detents move focus one option. A still click calls `Select` on the option holding focus (`Invoke` when
+  it is already the current model, because `Select` on it does nothing); Codex returns
   to its picker, which stays open, and the bridge closes it (below). The pick is `applied` when the closed button's
   name starts with the picked model, `mismatch` when it names another option, and `unverified` when it names none
   (such as after "Default") or the picker did not close.
@@ -428,8 +431,9 @@ client allows it; model lists and level names come from each client and are neve
   setting knob, a profile reload or a controller loss. Input that arrives meanwhile waits in order, so two flows never
   act at once.
   - Claude: `Collapse` on the button, only when a read shows it expanded, then the composer gets focus.
-  - Codex does not close on `Collapse`. A model list left without a pick first gets `Select` on its current model,
-    which returns to the picker unchanged; Escape is never sent from the list. Then exactly one Escape, only when a
+  - Codex does not close on `Collapse`. A model list left without a pick first gets `Invoke` on its current model,
+    which returns to the picker unchanged (observed 2026-10-07; `Select` on it does nothing); Escape is never sent from
+    the list. Then exactly one Escape, only when a
     fresh read shows the `Select effort` picker holding focus, and a bounded wait for the picker button to read
     collapsed. A picker still open after that wait is logged as closed and unverified; it never gets a second Escape.
   - A control the owner already closed gets nothing.
@@ -635,7 +639,7 @@ The suite runs every protocol fixture vector, the connection rules above against
 clock, a simulator roundtrip, the lock across processes, the node-hid adapter against a stand-in module, the CLI,
 and the routing core: profile validation and reload, the feed client against a fake Hub, slots, lights, every row of
 the no-misrouting matrix against a scripted fake adapter, press-time Send, Record, big-wheel card answers, the model and
-effort knobs (`routing-knobs.test.mjs`: each step, the confirmed-menu Enter and Escape, readback outcomes, refusals,
+effort knobs (`routing-knobs.test.mjs`: each step, the single confirmed Escape and the no-Enter assertion, readback outcomes, refusals,
 fallbacks and the close before other controls), and an end-to-end routing run through the simulator. It also holds the simulated desktop and the fake adapter to one
 adapter contract, reads the synthetic Hub feed with the real feed client, checks that `--desktop sim` is the only
 way the CLI loads `src/sim`, and tests the scenario runner. `test:chompi-bridge:scenarios` runs the catalog (Tier 1).

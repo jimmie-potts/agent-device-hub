@@ -1097,7 +1097,7 @@ Claude data or contact a Hub. `windows-adapter.test.mjs` checks how the
 Windows adapter reads the helper's approval-card counts and card-button
 replies for each client, and `windows-uia-helper.test.mjs` checks the helper
 operations' scope statically, including that only the two card operations and
-the seven setting actions change UI state, each with one kind of change after a
+the eight setting actions change UI state, each with one kind of change after a
 fresh read, and that the picker read is read-only and returns only the qualified
 controls' model and effort labels. Live focus, dictation placement, card answers, model
 and effort menus and lights on the device belong to the installed trials (#743,

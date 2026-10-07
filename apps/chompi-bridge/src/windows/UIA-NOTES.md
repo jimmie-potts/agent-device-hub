@@ -283,11 +283,15 @@ The owner watched while the coordinator used patterns.
   - Collapse does not close the picker, but one Escape into it does.
   - Power supports `Invoke` only, with no `RangeValue`.
   - The owner's `Ctrl+Alt+=` changed the button's name to the next level.
+- **Leaving the model list** (observed 2026-10-07, S906-4 on
+  [#915](https://github.com/jimmie-potts/agent-device-hub/pull/915)): `Select()` on the current model (`IsSelected`)
+  does nothing; the list stays open. `Invoke()` on it returns to the `Select effort`
+  picker unchanged, and the picker then reports no keyboard focus, so the close moves focus into it before its one Escape.
 - **Owner decision:** Codex effort uses the owner's chords, confirmed from the picker button's name. The picker's Power entry is only the fallback when no chords are configured.
 
 ### Operations
 
-The helper reads with `pickerState` and acts through seven setting operations. None of them types; the adapter's
+The helper reads with `pickerState` and acts through eight setting operations. None of them types; the adapter's
 `tapInClient` sends the few keys the flows still need. Every operation runs against the client's own foreground window
 and process (`TargetWindow`).
 
@@ -297,9 +301,12 @@ and process (`TargetWindow`).
     entries are all `RadioButton`s (the model list);
   - Claude's `Model: ` and `Effort: ` `Button`s with `ExpandCollapse`, read from one cached `FindAll` (two with one
     prefix is `composer-setting-count`);
-  - Codex's picker button: among the `ExpandCollapse` `Button`s under the nearest of up to 8 ancestors of its one
-    `ProseMirror` composer that holds any, the one named `Select effort`, else the only one (several is
-    `codex-picker-button-ambiguous`);
+  - Codex's picker button (F5 on #915): among all the `ExpandCollapse` `Button`s under the outermost of up to 8
+    ancestors of its one `ProseMirror` composer, the one named `Select effort` (expanded) or `<model> <effort>`
+    (collapsed), whose name ends, after at least one word, with a known effort label (Minimal, Low, Medium, High, Extra
+    High, Light, Standard, Extended, Max or Ultra, any case). The composer area also holds "Add files and more" and
+    "Change permissions", which are never taken for it. None is no button, and several is
+    `codex-picker-button-ambiguous`. The labels only find this button; levels are never listed from them;
   - Claude's one `Slider` named `Effort`, with its `RangeValue` value, range and `SmallChange`;
   - the one `StatusBar` inside Codex's picker.
   
@@ -311,7 +318,8 @@ and process (`TargetWindow`).
   - `expandSetting` acts only on a `Collapsed` button;
   - `collapseSetting` acts only on an `Expanded` Claude button, and refuses Codex (`collapse-unsupported`);
   - `invokeSelectModel` acts only while the `Select effort` menu is open with exactly one "Select model" entry;
-  - `focusMenuEntry` and `selectMenuOption` need the named qualified menu with the caller's entry count.
+  - `focusMenuEntry`, `selectMenuOption` and `invokeCurrentOption` need the named qualified menu with the caller's entry
+    count. `invokeCurrentOption` acts only on the Codex model list's selected option, to leave the list unchanged.
     `selectMenuOption` also needs an option that equals the focused element (`Automation.Compare`), like
     `invokeCardButton`, and answers `false` otherwise;
   - `setSliderValue` needs the slider to read the caller's value, a step of exactly `SmallChange` and a target within
@@ -328,7 +336,8 @@ action, and is about one helper round trip: typically tens of milliseconds, at m
 - **Codex's closing Escape:** the bridge sends it only after a fresh read shows the `Select effort` picker holding
   focus, through `tapInClient`, which re-reads the foreground right before `SendInput`. If the owner closes the
   picker or moves focus inside that window, the Escape reaches whatever has focus in Codex. That is usually the
-  composer, where Escape sends nothing. It never answers a card: the knobs refuse while a card is open.
+  composer, where Escape sends nothing. Whether that Escape interrupts a running Codex turn is not qualified, so it
+  could. It never answers a card: the knobs refuse while a card is open.
 - **The owner's chords:** sent only with Codex in front, no card and the picker closed, checked just before. A card
   that opens inside that window would receive the chord.
 - **Right and Left on Power (no chords):** sent only while a fresh read shows Power focused. If focus moves inside
@@ -360,7 +369,7 @@ The knobs send no Enter, and none of these keys can send a prompt.
 - **The picker read and the setting actions against the live clients.** The qualification used the coordinator's
   own pattern calls, not the helper's operations. Still to observe with the helper (#745's installed checks):
   - each menu and the slider are descendants of the client's window rather than a separate popup;
-  - Codex has exactly one `ExpandCollapse` button near its composer (the picker button);
+  - exactly one `ExpandCollapse` button near Codex's composer has the picker's name (the selector found by name);
   - `RangeValue.SmallChange` and `SetValue` behave as qualified;
   - the picker announcement is the `StatusBar`'s name or its first `Text` child;
   - Claude's composer takes focus from `SetFocus` after a Collapse or a pick.

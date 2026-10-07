@@ -28,11 +28,11 @@ The interface is unreleased, so it stays at version 5 with a revised contract.
   - Claude's slider range;
   - Codex's announcement.
   
-  No other menu is read, so task or project names from another menu cannot cross. Labels are model and effort labels only, at most 128 characters without control characters. Codex's picker button is the one ExpandCollapse button under the nearest ancestor of its composer that holds any. Several are refused: that selector is the main point left for live qualification.
-- **Seven setting actions, each checked by a fresh read (F1, F2).**
+  No other menu is read, so task or project names from another menu cannot cross. Labels are model and effort labels only, at most 128 characters without control characters. Codex's picker button is identified by name among all ExpandCollapse buttons under the outermost of up to 8 ancestors of its composer, because that area also holds other expandable buttons ("Add files and more", "Change permissions"). It is the one named `Select effort` (expanded) or `<model> <effort>` ending with a known effort label (collapsed). Several are refused (F5 on #915). The labels are used only to find this button, never to rank or list levels.
+- **Eight setting actions, each checked by a fresh read (F1, F2).**
   - `expandSetting` acts only on a collapsed qualified button. `collapseSetting` acts only on an expanded Claude button and refuses Codex.
   - `invokeSelectModel` acts only on the open picker's one "Select model".
-  - `focusMenuEntry` and `selectMenuOption` act only on the named qualified menu with the caller's entry count. `selectMenuOption` also needs the option to be the focused element, as `invokeCardButton` does.
+  - `focusMenuEntry` and `selectMenuOption` act only on the named qualified menu with the caller's entry count. `selectMenuOption` also needs the option to be the focused element, as `invokeCardButton` does. `invokeCurrentOption` acts only on the Codex model list's selected option.
   - `setSliderValue` acts only when the slider reads the caller's value and the target is one SmallChange away within the range.
   - `focusComposer` needs exactly one composer.
   
@@ -53,7 +53,7 @@ The interface is unreleased, so it stays at version 5 with a revised contract.
   - Without chords, Expand, focus Power by UI Automation, then Right or Left only after a fresh read shows Power focused, reading the level count from the announcement each time.
 - **Closing.**
   - Claude: `Collapse` only when a read shows the button expanded, then composer focus.
-  - Codex: a model list left without a pick gets `Select` on its current model first, which returns to the picker unchanged; Escape is never sent from the list, because that is unqualified. Then exactly one Escape, only when a fresh read shows the picker holding focus. If it is open without focus, focus is first moved into it by UI Automation.
+  - Codex: a model list left without a pick gets `Invoke` on its current model first, which returns to the picker unchanged. On Codex 26.930.3930.0 (observed 2026-10-07, S906-4), `Select` on the current model does nothing and `Invoke` returns to the picker, which then reports no keyboard focus. That is why the single-Escape rule first moves focus into the picker. Escape is never sent from the list, because that is unqualified. A knob 1 pick of the model already in use also uses `Invoke`. Then exactly one Escape, only when a fresh read shows the picker holding focus. If it is open without focus, focus is first moved into it by UI Automation.
   - After the Escape comes a bounded wait for the button to read collapsed. An unchanged state means "closed, unverified", never a second Escape.
 - **No Enter.** No knob flow presses Enter. A shared test assertion (`noStrayKeys`) checks every knob test:
   - no Enter, except Send's own;
@@ -65,7 +65,7 @@ The interface is unreleased, so it stays at version 5 with a revised contract.
 
 Each window lies between a confirming read and the key, and is about one helper round trip: typically tens of milliseconds, at most the 2 s adapter call timeout. `tapInClient` re-reads the foreground right before `SendInput`, so a key never reaches another app.
 
-- **Codex's closing Escape.** If the owner closes the picker or moves focus within the window, the Escape reaches whatever has focus in Codex, usually the composer, where Escape sends nothing. A card cannot be the target, because the knobs refuse while a card is open, unless one opens inside the window.
+- **Codex's closing Escape.** If the owner closes the picker or moves focus within the window, the Escape reaches whatever has focus in Codex, usually the composer, where Escape sends nothing. Whether an Escape in the composer interrupts a running Codex turn is not qualified, so the residual is that this Escape could stop a running turn. A card cannot be the target, because the knobs refuse while a card is open, unless one opens inside the window.
 - **The owner's chords.** A card or picker that opens within the window would receive the chord.
 - **Right and Left on Power (no chords).** If focus moves within the window, the arrow reaches the newly focused element in Codex.
 - **UI Automation actions.** In the helper, the gap between the fresh read and the pattern call is a few milliseconds, and the call acts on the checked element itself.
@@ -99,7 +99,7 @@ Each checks that no prompt is sent and which keys each client received.
 ## Risks and residuals
 
 - **The helper's operations have not run against the live clients.** The qualification used the coordinator's own pattern calls. Still to observe:
-  - Codex's picker-button selector;
+  - Codex's picker-button selector (identified by name since F5);
   - menus and the slider inside the window's tree;
   - the slider's SmallChange;
   - the announcement's element;

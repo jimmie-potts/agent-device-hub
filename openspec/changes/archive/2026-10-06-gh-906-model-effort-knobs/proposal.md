@@ -26,7 +26,7 @@ recorded the clients' UI Automation patterns, and the owner decided Codex effort
   - Each change logs `applied`, `mismatch`, `unverified`, `unsupported` or `at-limit`, and the knob's LED shows it.
 - **Closing:**
   - Claude: `Collapse`, then composer focus.
-  - Codex: `Collapse` does not close it. A model list left without a pick first gets `Select` on its current model,
+  - Codex: `Collapse` does not close it. A model list left without a pick first gets `Invoke` on its current model (observed 2026-10-07),
     then exactly one Escape goes into the confirmed-focused picker, followed by a bounded wait for its button to read
     collapsed. There is never a second Escape.
   - Any other control, a profile reload or a controller loss closes an open control first; one flow acts at a time.
@@ -43,7 +43,7 @@ recorded the clients' UI Automation patterns, and the owner decided Codex effort
   - `timing.menuTimeoutMs` (default 5000) and `colors.applied`;
   - key names gain `Equal` and `Minus`.
 - **OS adapter:**
-  - Interface version 5 (unreleased) adds `pickerState` (qualified shapes only), the seven setting actions,
+  - Interface version 5 (unreleased) adds `pickerState` (qualified shapes only), the eight setting actions,
     `tapInClient` (Left, Right and Escape) and `claudeSettings`.
   - These are implemented in the Windows adapter and helper, the unsupported adapter, the simulated desktop and the
     test fake.

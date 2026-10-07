@@ -4,7 +4,7 @@
 
 ## 2. Implementation
 
-- [x] 2.1 Add `pickerState`, the seven setting actions, `tapInClient` and `claudeSettings` as OS adapter interface version 5 to the Windows adapter, the UI Automation helper, the unsupported adapter and the simulated desktop, with `Equal`, `Minus`, `Left`, `Right` and `Escape` in the keyboard, and cover them read-only in the native check (evidence: `windows-keyboard.test.mjs`, `windows-adapter.test.mjs`, `windows-uia-helper.test.mjs`, `windows-client-files.test.mjs`, `os-adapter.test.mjs`, `adapter-contract.test.mjs`, `tests/native.mjs`).
+- [x] 2.1 Add `pickerState`, the eight setting actions, `tapInClient` and `claudeSettings` as OS adapter interface version 5 to the Windows adapter, the UI Automation helper, the unsupported adapter and the simulated desktop, with `Equal`, `Minus`, `Left`, `Right` and `Escape` in the keyboard, and cover them read-only in the native check (evidence: `windows-keyboard.test.mjs`, `windows-adapter.test.mjs`, `windows-uia-helper.test.mjs`, `windows-client-files.test.mjs`, `os-adapter.test.mjs`, `adapter-contract.test.mjs`, `tests/native.mjs`).
 - [x] 2.2 Add the optional `model`, `effort`, Codex effort chords, `timing.menuTimeoutMs` and `colors.applied` profile fields with reserved-control checks and older-profile defaults (evidence: `routing-profile.test.mjs`).
 - [x] 2.3 Route knob 1 and knob 2: the Claude and Codex flows, readback outcomes, Codex chords first with the Power fallback, refusals, the timeout, the close before other controls, release on loss and the knob lights (evidence: `routing-knobs.test.mjs`, `routing-lights.test.mjs`).
 
@@ -19,6 +19,7 @@
 - [x] 4.2 F1, F4: model lagging UI Automation reads in the shared picker model, gate actions on reads that wait for their condition, send Codex's closing Escape once, and assert that no knob flow sends a stray key (evidence: the lagged-readback test and `noStrayKeys` in `routing-knobs.test.mjs`, the `knob-lagging-reads` scenario).
 - [x] 4.3 F2, F3: re-read every UI Automation target before acting, read only the qualified menus, and document the remaining windows with their size (evidence: the helper static tests, UIA-NOTES "Residual windows", this design).
 - [x] 4.4 A1: stop Claude effort at the slider's range ends without queuing detents (evidence: the at-limit test and the `claude-effort-knob` scenario).
+- [x] 4.5 Review fix round 2: identify Codex's picker button by name among all expandable composer buttons (F5), assert no stray key in every knob test (F6), refuse Enter in every `tapInClient` (F7), leave the model list with `Invoke` on the current model, as observed live on 2026-10-07 (S906-4, `invokeCurrentOption`), and complete the Escape residual (evidence: the F5 helper static test, `noStrayKeys` in `routing-knobs.test.mjs`, the keyboard and contract tests, UIA-NOTES "Not established").
 
 ## 5. Documentation and validation
 
