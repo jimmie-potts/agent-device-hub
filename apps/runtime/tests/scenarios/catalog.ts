@@ -90,16 +90,18 @@ export type GatewayAnswer = {status: number; headers: Readonly<Record<string, st
 /**
  * Each part's grant at the edge, as a run seeds it and the in-memory harness configures it (Hub #835): the old Hub's
  * scopes and device grants. The hook may only publish lifecycle observations; the reader may only read, and reads the
- * sign and the playback record its grant names; the operator and the panel read and command their devices and the
- * core's operator commands. A device a grant does not name, such as the sign or the speakers for the panel, is left out
- * of what that part reads, and its commands are forbidden, as the old Hub's were. The operator's grant also names
- * `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the lamp refuses it.
+ * sign, the playback record and the LIFX bulbs its grant names; the operator and the panel read and command their
+ * devices and the core's operator commands. A device a grant does not name, such as the sign, the speakers or the bulbs
+ * for the panel, is left out of what that part reads, and its commands are forbidden, as the old Hub's were. The
+ * operator's grant also names `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the
+ * lamp refuses it.
  */
+const BULBS = LIFX_SIMULATED_SECTION.bulbs.map(bulb => bulb.id);
 export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]; devices: readonly string[]}>> = {
   hook: {scopes: ['ingest'], devices: []},
-  operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1', SIMULATED_SECTION.id]},
+  operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1', SIMULATED_SECTION.id, ...BULBS]},
   panel: {scopes: ['read', 'control'], devices: ['lamp-1']},
-  reader: {scopes: ['read'], devices: ['sign-1', SIMULATED_SECTION.id]},
+  reader: {scopes: ['read'], devices: ['sign-1', SIMULATED_SECTION.id, ...BULBS]},
 };
 /**
  * The synthetic prefix of every part's token in a harness: no record, message, health entry, answer or proof may carry
@@ -810,6 +812,9 @@ const speakerPlayback: Scenario = {
     expect('the core and the playback module are running', h => running(h, ['core', 'playback'])),
     expect('the reader\'s copy shows the speakers available with nothing playing over AirPlay', h => playbackShows(h, 'available inactive "" []'), 5000),
     // As the old Hub did, a part whose grant does not name the speakers may neither command nor read them (Hub #835).
+    expect('the operator\'s playback command for another speaker on its key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', {key: playbackCommand('pause').key,
+        draft: {...playbackCommand('pause').draft, subject: 'kitchen'}}, 'req-pb-misrouted', 'msg-pb-misrouted')))), 400, 'invalid-message')),
     expect('the panel, whose grant does not name the speakers, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel',
       `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/panel', playbackCommand('pause'), 'req-pb-panel', 'msg-pb-panel')))), 403, 'forbidden')),
     expect('nor read their record', async h => {
@@ -912,6 +917,19 @@ const lifxBulbs: Scenario = {
       return (ready && beam !== undefined && Object.values(beam.capabilities).every(capability => !capability.supported)) ||
         `pendant-1 ${String(pendant?.availability)}, beam ${show(beam?.capabilities)}`;
     }),
+    // As the old Hub did, a part whose grant does not name the bulbs may neither command nor read them, and a command
+    // whose subject names another bulb than its key's is refused before the module has it (Hub #835).
+    expect('the panel, whose grant does not name the bulbs, may not command pendant-1', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/panel', lifxMode('work'), 'req-lifx-panel', 'msg-lifx-panel')))), 403, 'forbidden')),
+    expect('nor read the bulbs\' device records, which the reader reads', async h => {
+      const panel = keep(h, await h.gateway({as: 'panel', method: 'GET', path: '/api/v2/families/device'}));
+      const reader = keep(h, await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/families/device'}));
+      const ids = (answer: GatewayAnswer): string => show(bodyOf<{records?: {id: string}[]}>(answer)?.records?.map(record => record.id).sort());
+      return (panel.status === 200 && ids(panel) === show([]) && ids(reader) === show(['beam', 'pendant-1'])) || `panel ${ids(panel)}, reader ${ids(reader)}`;
+    }),
+    expect('the operator\'s command for the Beam on pendant-1\'s key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', {key: lifxMode('work').key, draft: {...lifxMode('work').draft, subject: 'beam'}}, 'req-lifx-misrouted',
+        'msg-lifx-misrouted')))), 400, 'invalid-message')),
     act('the operator sets pendant-1 to work as req-work', h => sendOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
     expect('history holds req-work succeeded, and the reader shows pendant-1 in work', h =>
       recorded(h, 'req-work', 'succeeded', 'transmitted') === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :

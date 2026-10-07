@@ -70,8 +70,15 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   {method: 'POST', path: '/api/controllers/v1/{device}/integration/cancel', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/catalog/*', status: 'replaced', replacement: 'the Pixoo module\'s pages and content by reference', owner: '#843'},
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/renditions/*', status: 'replaced', replacement: 'the Pixoo module\'s content by reference', owner: '#843'},
-  {method: 'GET', path: '/api/controllers/v1/{device}/lighting/snapshot', status: 'replaced', replacement: `${SDK}: sync the LIFX module's families`, owner: '#928'},
-  {method: 'POST', path: '/api/controllers/v1/{device}/lighting/commands', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
+  {
+    method: 'GET', path: '/api/controllers/v1/{device}/lighting/snapshot', status: 'replaced',
+    replacement: `GET /api/v2/families/device or ${SDK}: sync device and lifx-light, served by the LIFX module (lifx-module)`, owner: '#928',
+  },
+  {
+    method: 'POST', path: '/api/controllers/v1/{device}/lighting/commands', status: 'replaced',
+    replacement: `${SDK}: request bunny.cmd.<power-set, brightness-set, device-mode-set, lifx-color-set or lifx-temperature-set>.<bulb>, which the LIFX module (lifx-module) answers for a caller its grant names; HTTP action routes come with #782's dispatcher`,
+    owner: '#928',
+  },
   {method: 'ANY', path: '/__app-verify/proof/*', status: 'dropped', replacement: 'disposable runs serve their own proof (npm run -s verify:runtime)'},
 ];
 

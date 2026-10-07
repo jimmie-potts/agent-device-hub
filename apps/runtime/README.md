@@ -317,7 +317,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 
 | Route | Scope | Answers |
 | --- | --- | --- |
-| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core or module state family the caller may see, not those of a device its grant does not name, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`, and an owner's refusal its code without its detail. |
+| `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core, device or module state family the caller may see, not those of a device its grant does not name, from the gateway's copy, which it syncs on the first read and keeps following (at most 32 families). Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no owner serves `unavailable`, and an owner's refusal its code without its detail. |
 | `GET /api/v2/snapshot?families=<a>,<b>` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept, narrowed as a family read is. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
 | `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, and its pages, MCP tools and whether it shows settings when the caller may use them. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
@@ -926,7 +926,8 @@ The catalog holds:
   record turns stale with its song kept and a command is refused `unavailable`,
   with one degradation and one recovery logged; and a command the Move never
   answers, `uncertain` in history and the inbox and never sent again. A part
-  whose grant does not name the speakers may neither command nor read them. Time
+  whose grant does not name the speakers may neither command nor read them, and
+  a command for another speaker on their key is `invalid-message`. Time
   is real in a disposable run, so the step to `unavailable` at 30 s is left to
   the module's own tests;
 - the LIFX module (#928) with a simulated pendant and Beam: the pendant follows the
@@ -934,7 +935,9 @@ The catalog holds:
   it, Free never paints it, a color command reaches it, and once it is switched
   off at the wall it shows unavailable and a command to it ends uncertain in the
   inbox; the Beam has no controls and gets no packet, and no address leaves the
-  module;
+  module. A part whose grant does not name the bulbs may neither command nor
+  read them, and a command for the Beam on the pendant's key is
+  `invalid-message`;
 - the [Tidbyt module](../../modules/tidbyt/README.md) (#930) on a simulated
   cloud: an idle start writes nothing; the status tile follows the core's
   sessions, and a burst of changes inside the 15-second gate makes one later

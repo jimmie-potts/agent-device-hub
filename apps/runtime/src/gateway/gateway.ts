@@ -5,6 +5,7 @@
 // route it asked for (retired.ts), for the retirement story's check (#839).
 import {randomUUID} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
+import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
@@ -642,9 +643,9 @@ function familyOf(dataschema: string): string | undefined {
   return FAMILY.test(family) ? family : undefined;
 }
 
-/** The state families `/api/v2` may read: the core's and those of the modules' own schemas. */
+/** The state families `/api/v2` may read: the core's, the device families every device module answers, and those of the modules' own schemas. */
 export function readableFamilies(schemas: Readonly<Record<string, object>>): ReadonlySet<string> {
-  const families = new Set(coreFamilies.filter(family => family.kind === 'state').map(family => family.family));
+  const families = new Set([...coreFamilies, ...deviceFamilies].filter(family => family.kind === 'state').map(family => family.family));
   for (const dataschema of Object.keys(schemas)) {
     const family = familyOf(dataschema);
     if (family !== undefined) families.add(family);
