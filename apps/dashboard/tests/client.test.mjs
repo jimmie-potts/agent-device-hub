@@ -72,6 +72,38 @@ try {
   globalThis.fetch=async(url)=>{order.push(url);if(url.endsWith('/slow'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
   try {const api=new Api('a'.repeat(43));const slow=api.request('/api/controllers/v1/one/slow');const write=api.request('/api/controllers/v1/one/commands',{});await api.request('/api/controllers/v1/two/snapshot');assert.deepEqual(order,['/api/controllers/v1/one/slow','/api/controllers/v1/two/snapshot']);release(Response.json({revision:1}));await slow;await write;assert.equal(order.at(-1),'/api/controllers/v1/one/commands');}finally{globalThis.fetch=original;}
  });
+ test('a read cancelled in flight keeps its device until the hub answers, so the next read is not refused',async()=>{
+  // The hub holds its one controller slot until the controller answers, whether or not the browser still waits (Hub #946).
+  const original=globalThis.fetch;const sent=[];let release;
+  globalThis.fetch=async(url,options)=>{sent.push({url,signal:options.signal});if(url.endsWith('/first'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
+  try {
+   const api=new Api('a'.repeat(43)),stop=new AbortController(),dropped=new AbortController();
+   const first=api.request('/api/controllers/v1/one/first',undefined,stop.signal),second=api.request('/api/controllers/v1/one/second'),third=api.request('/api/controllers/v1/one/third',undefined,dropped.signal);
+   stop.abort();dropped.abort();
+   await assert.rejects(first,error=>error.code==='request-cancelled');await assert.rejects(third,error=>error.code==='request-cancelled');
+   await new Promise(resolve=>setTimeout(resolve,10));
+   assert.deepEqual(sent.map(call=>call.url),['/api/controllers/v1/one/first'],'the next read waits for the device, and a read cancelled while waiting is never sent');
+   assert.equal(sent[0].signal.aborted,false,'the read in flight is not cancelled');
+   release(Response.json({ok:true}));
+   assert.deepEqual(await second,{ok:true});
+   assert.deepEqual(sent.map(call=>call.url),['/api/controllers/v1/one/first','/api/controllers/v1/one/second']);
+  } finally {globalThis.fetch=original;}
+ });
+ test('waiting reads never refuse another read; commands go first and at most four wait',async()=>{
+  const original=globalThis.fetch;const sent=[];let release;
+  globalThis.fetch=async(url)=>{sent.push(url);if(url.endsWith('/hold'))return new Promise(resolve=>{release=resolve;});return Response.json({ok:true});};
+  try {
+   const api=new Api('a'.repeat(43)),device='/api/controllers/v1/one';
+   const hold=api.request(`${device}/hold`);
+   const reads=Array.from({length:8},(_,i)=>api.request(`${device}/read-${i}`));
+   const commands=Array.from({length:4},(_,i)=>api.request(`${device}/commands`,{n:i}));
+   await assert.rejects(api.request(`${device}/commands`,{n:4}),error=>error.code==='capacity'&&error.status===429);
+   const poll=api.request(`${device}/poll`);
+   release(Response.json({ok:true}));
+   await Promise.all([hold,...reads,...commands,poll]);
+   assert.deepEqual(sent,[`${device}/hold`,...Array(4).fill(`${device}/commands`),...reads.map((_,i)=>`${device}/read-${i}`),`${device}/poll`]);
+  } finally {globalThis.fetch=original;}
+ });
  test('general controls name the missing capability, scope or mode and preserve declared power',()=>{
   const capabilities={power:{supported:true},brightness:{supported:true,minimum:0,maximum:100},media:{supported:true,actions:['pause'],playlistIds:['p1'],renditionIds:[]},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};
   const snapshot={capabilities};

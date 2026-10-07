@@ -2167,6 +2167,10 @@ PNG generator live in `apps/hub/tests/pixoo-catalog-fixture.mjs`.
 existing Dashboard CI job. It checks a 20-frame variable-delay animation,
 full-color pixels, reduced motion, ordered/unnamed playlists, pagination, catalog
 revision refresh, hidden-widget cancellation, accessibility and mobile overflow.
+It also pages away from a slow preview read still in flight (Hub #946): the next
+page of media must wait for the controller's answer, because the hub holds its one
+slot until then, instead of being refused with `capacity`. `client.test.mjs` covers
+the same queue rules without a browser.
 The shared dashboard fixture changed, so run `npm run test:hub:verify` too.
 `DASHBOARD_RECEIPTS` selects a disk-backed screenshot and receipt directory.
 

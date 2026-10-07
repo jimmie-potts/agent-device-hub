@@ -107,17 +107,25 @@ export class ApiError extends Error {constructor(public code:string,public statu
 export class Api {
  private mutations=new Map<string,number>();
  private queues=new Map<string,{running:boolean;pending:{write:boolean;start:()=>void}[]}>();
+ /**
+  * One request at a time per device, because the hub gives each controller one slot and answers a read that finds it busy with capacity.
+  * Reads wait their turn, bounded by the five second wait and by the sources that issue them, which each await one read at a time; a page full of
+  * waiting reads never refuses the status poll. Only commands are counted: at most four wait, and the oldest command goes first.
+  * A caller that cancels a read in flight is released at once, but the read keeps the device until the hub answers, because the hub holds its slot
+  * until the controller does. Starting the next read earlier would have the hub refuse it.
+  */
  private schedule<T>(key:string,write:boolean,job:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
   let queue=this.queues.get(key);if(!queue){queue={running:false,pending:[]};this.queues.set(key,queue);}
   const selected=queue;
-  if(selected.pending.length>=4)return Promise.reject(new ApiError('capacity',429));
+  if(write&&selected.pending.filter(item=>item.write).length>=4)return Promise.reject(new ApiError('capacity',429));
   return new Promise<T>((resolve,reject)=>{
    let started=false;
-   const remove=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);const i=selected.pending.indexOf(entry);if(i>=0)selected.pending.splice(i,1);};
-   const cancel=()=>{if(!started){remove();reject(new ApiError('request-cancelled'));}};
+   const remove=()=>{clearTimeout(timer);const i=selected.pending.indexOf(entry);if(i>=0)selected.pending.splice(i,1);};
+   // A command in flight is cancelled through its fetch, which settles it as uncertain.
+   const cancel=()=>{if(started&&write)return;remove();reject(new ApiError('request-cancelled'));};
    const next=()=>{selected.running=false;const index=selected.pending.findIndex(item=>item.write);const item=selected.pending.splice(index<0?0:index,1)[0];if(item)item.start();else this.queues.delete(key);};
-   const entry={write,start:()=>{started=true;remove();selected.running=true;void job().then(resolve,reject).finally(next);}};
-   const timer=setTimeout(()=>{if(!started){remove();reject(new ApiError('capacity',429));}},5000);
+   const entry={write,start:()=>{started=true;remove();selected.running=true;void job().then(resolve,reject).finally(()=>{signal?.removeEventListener('abort',cancel);next();});}};
+   const timer=setTimeout(()=>{if(!started){remove();signal?.removeEventListener('abort',cancel);reject(new ApiError('capacity',429));}},5000);
    if(signal?.aborted){cancel();return;}signal?.addEventListener('abort',cancel,{once:true});
    if(selected.running)selected.pending.push(entry);else entry.start();
   });
@@ -127,7 +135,7 @@ export class Api {
  request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T> {
   const device=/^\/api\/controllers\/v1\/([^/]+)\//.exec(path)?.[1];
   // Playback has its own channel, so a playback command never supersedes an in-flight monitor read.
-  return device?this.schedule(device,body!==undefined,()=>this.perform<T>(path,body,signal,device),signal):this.perform<T>(path,body,signal,path.startsWith('/api/playback/')?'playback':'monitor');
+  return device?this.schedule(device,body!==undefined,()=>this.perform<T>(path,body,body===undefined?undefined:signal,device),signal):this.perform<T>(path,body,signal,path.startsWith('/api/playback/')?'playback':'monitor');
  }
  private async perform<T>(path:string,body:unknown,signal:AbortSignal|undefined,channel:string):Promise<T> {
   if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);const generation=this.mutations.get(channel)??0;
@@ -146,7 +154,7 @@ export class Api {
   if(!device)return Promise.reject(new ApiError('invalid-request',400));
   return this.schedule(device,false,async()=>{
    try {
-    const response=await fetch(path,{redirect:'error',cache:'no-store',headers:{authorization:`Bearer ${this.token}`,...(cached?{'if-none-match':cached.etag}:{})},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
+    const response=await fetch(path,{redirect:'error',cache:'no-store',headers:{authorization:`Bearer ${this.token}`,...(cached?{'if-none-match':cached.etag}:{})},signal:AbortSignal.timeout(5000)});
     if(response.status===304){if(!cached||response.headers.get('etag')!==cached.etag)throw new ApiError('invalid-preview');return cached;}
     if(!response.ok){const value=await response.json();throw new ApiError(value.error?.code??'unavailable',response.status);}
     const etag=response.headers.get('etag');if(response.headers.get('content-type')!=='image/png'||!etag)throw new ApiError('invalid-preview');
