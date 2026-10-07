@@ -20,7 +20,7 @@
 ## 4. Documentation and qualification
 
 - [x] 4.1 Update the runtime and adapter READMEs, the diagnostic contract's adoption section and the runtime verification checks in `docs/development.md`.
-- [ ] 4.2 Run build, typecheck, lint, the observability, SDK, event, runtime, scenario and verify checks, the workflow checks and OpenSpec validation.
-- [ ] 4.3 Show that named tests fail under each negative control: a record from another request in the answer, a missing span reported as present, an over-limit query that hides its cap, `tok_SYNTHETIC950` in the output, a crashed runtime shown as clean, a span line the contract refuses shown, and a file that follows a link.
-- [ ] 4.4 Run one request end to end through a real lifecycle run, as an Acceptance reviewer would, and stop it.
-- [ ] 4.5 Synchronize the affected specification and archive the change.
+- [x] 4.2 Run build, typecheck, lint, the observability, SDK, event, runtime, scenario and verify checks, the workflow checks and OpenSpec validation.
+- [x] 4.3 Show that named tests fail under each negative control: a record from another request in the answer, a missing span reported as present, an over-limit query that hides its cap, `tok_SYNTHETIC950` in the output, a crashed runtime shown as clean, a span line the contract refuses shown, a file that follows a link or is not private, spans let go but not counted, a stopped runtime's last lines not drained, a cut line glued to the next runtime's span, the flag ignored, and a refusal that echoes its input.
+- [x] 4.4 Run one request end to end through a real lifecycle run, as an Acceptance reviewer would, and stop it.
+- [x] 4.5 Synchronize the affected specification and archive the change.
