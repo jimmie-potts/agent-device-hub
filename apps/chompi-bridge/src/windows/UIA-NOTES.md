@@ -387,13 +387,23 @@ counts, indexes and booleans only. Names are compared inside the helper only to 
   Its focus is `HasKeyboardFocus`. It is **empty** when its `ValuePattern` Value is `""`, `"\n"` or `"\r\n"`: no
   text, or only one trailing line break. Claude's empty composer read as one `\n` (length 1) in the qualification, and
   ghost text never shows in the Value.
-- **The band.** Walking up from the composer through at most 8 ancestors (the same bound as Codex's picker button),
-  at each level the helper reads the parent's direct `Group` children (more than 64 ends the walk with no band) and
-  takes the first level holding a `Group`, other than the composer's own ancestor, that directly holds exactly one
-  `Text` named `next:` and exactly one `Button` named `dismiss` (names trimmed, ordinal). Its other direct `Button`
-  children, in tree order, are the suggestions: 1-8 of them, each enabled, keyboard-focusable and invokable, or the
-  read fails (`suggestion-band-unqualified`). Two such groups at one level is `suggestion-band-ambiguous`; none at any
-  level is no band (count 0). The read reports the level it found the band at, which the native check records.
+- **Where the band sits (observed 2026-10-07).** On Claude `2.19675.0.0`, with the band showing, the composer `Edit`
+  ("Prompt") is the child of its group at depth 15 under a common ancestor at depth 14. The band's group, which
+  directly holds the `Text` "next:", the suggestion buttons and "dismiss" (depth 18), sits two `Group`s below the
+  common ancestor's other child: depth 15 (class `min-h-0 min-w-0 text-body text-primary ...`), 16 (class
+  `pointer-events-auto isolate -mx-1 min-h-...`), 17 (no class). The first locator, which checked only the direct
+  children of groups beside the composer's ancestors, read no band there (native check, fix round 1 on
+  [#943](https://github.com/jimmie-potts/agent-device-hub/pull/943)).
+- **The band.** The helper takes the chain of the composer's 8 nearest ancestors (the same bound as Codex's picker
+  button) and reads the window's `Text` elements named `next:` (more than 32 is `suggestion-band-ambiguous`). For each,
+  its parent `Group` is a candidate when it hangs under one of those ancestors at most 3 `Group`s below the ancestor's
+  child that is not the composer's own branch (`BandLevel`; the observed band is 2 below), and it directly holds
+  exactly one `Text` named `next:` and exactly one `Button` named `dismiss` (names trimmed, ordinal). Its other direct
+  `Button` children, in tree order, are the suggestions: 1-8 of them, each enabled, keyboard-focusable and invokable,
+  or the read fails (`suggestion-band-unqualified`). The candidate under the nearest ancestor is the band; two there is
+  `suggestion-band-ambiguous`, and none is no band (count 0). The read reports that ancestor's level (1 for the
+  observed layout), which the native check records. `src/sim/band-tree.ts` is the same rule over a synthetic tree in
+  the observed layout, which the simulated desktop and the test fake use; a static test holds the bounds equal.
 - **`suggestionState`** returns `{ suggestions, focused, level, composerFocused, composerEmpty }`; `focused` is the
   suggestion equal to `AutomationElement.FocusedElement`, or -1.
 - **`focusSuggestion(index, count)`** refuses an invalid index (`invalid-suggestion-index`), no band (`band-absent`)
@@ -435,12 +445,13 @@ helper.
   - Claude's composer takes focus from `SetFocus` after a Collapse or a pick.
   
   Any of these failing makes a knob refuse or report `unverified`, rather than act.
-- **The next-step band with the helper (#907).** The qualification read the band with the coordinator's own snapshots
-  and focused a suggestion by hand, not through the helper. Still to observe in #745's installed checks:
-  - the level above the composer at which the helper's walk finds the band (the native check records it read-only);
+- **The next-step band with the helper (#907).** The band's nesting is observed (above), and the native check on
+  2026-10-07 read an empty composer as empty. The qualification focused a suggestion by hand, not through the helper.
+  Still to observe in #745's installed checks:
+  - the revised locator's read of the showing band (the native check's `claudeSuggestions`, level 1 expected);
   - that `Invoke` on a suggestion writes it into the composer as a draft, as pressing it does (the mod's
     `$.prompt.fill`), and where focus is afterwards;
-  - that the composer's Value reads exactly one `\n` when empty and the draft afterwards.
+  - that the composer's Value reads the draft afterwards.
 
   Any of these failing makes knob 3 refuse or report `unverified`, never send.
 - **Whether ghost text is showing.** The bridge cannot see ghost text, so a ghost click reads `unverified`

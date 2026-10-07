@@ -472,9 +472,9 @@ client allows it; model lists and level names come from each client and are neve
 
 Small knob 3 (`ENC_2`: turn 42, click 30, LED 28) picks Claude's suggested next step (owner decision on #744,
 2026-10-06; #907). Claude Desktop's `next-steps` mod shows up to three suggested prompts as buttons above the composer
-after a turn. The #907 qualification (Claude Desktop 2.19675.0.0) recorded the band as a `Group` beside the composer's
-group holding a `Text` "next:", one `Button` per suggestion and a `Button` "dismiss"; the buttons take keyboard focus,
-and Claude draws its own focus ring.
+after a turn. The #907 qualification (Claude Desktop 2.19675.0.0) recorded the band as a `Group` holding a `Text` "next:", one
+`Button` per suggestion and a `Button` "dismiss", two `Group`s below the branch beside the composer's group (observed
+2026-10-07); the buttons take keyboard focus, and Claude draws its own focus ring.
 
 - **Turn.** With Claude qualified and in front, no card and no model or effort control open, a band showing and the
   composer empty, the first detent moves keyboard focus to the first suggestion (`SetFocus`, read back) and knob 3's
@@ -502,6 +502,9 @@ and Claude draws its own focus ring.
   the knob 1 and 2 flows close (another control, Record, a profile reload or a controller loss); input waits in order,
   so two flows never act at once. Dropping it gives the composer focus (`focusComposer`), so Play sends, even when the
   owner moved focus elsewhere in Claude meanwhile.
+- **No digit fallback.** The issue's fallback of typing 1-3 into the empty composer, which the mod documents, is
+  dropped: the qualification showed the suggestion buttons take keyboard focus, and the owner-accepted rule is invoke,
+  else one Right arrow (S907-1 on #943). The bridge types no digits.
 - **Keys and text.** Knob 3 never presses Enter and never sends. Its only key is the one Right arrow into Claude's
   focused, empty composer; the remaining window between the confirming read and that arrow is in
   [UIA-NOTES.md](src/windows/UIA-NOTES.md#residual-windows). Logs carry indexes and counts, never suggestion text.
@@ -655,7 +658,7 @@ without the controller, the Windows desktop or the installed Hub:
   task, composers with focus and text, approval and question cards with stops and focus, Claude `lastFocusedAt`,
   Codex thread names, synthetic dictation on the chord's release, a synthetic system volume and mute that the volume
   keys change, each client's model and effort controls (`src/sim/pickers.ts`, #906), Claude's next-step band and
-  ghost text (`src/sim/suggestions.ts`, #907), and a key and press log. `tests/adapter-contract.test.mjs` holds it and
+  ghost text (`src/sim/suggestions.ts`, #907, found through the helper's locator rule in `src/sim/band-tree.ts`), and a key and press log. `tests/adapter-contract.test.mjs` holds it and
   the router tests' fake adapter to the same adapter behavior; the fake uses the same picker and suggestion models,
   each with a mode in which reads lag one change behind.
 - `src/sim/hub.ts` is a synthetic Hub feed: the sessions snapshot (1.3 and 1.2) and change stream in the Hub's

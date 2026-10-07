@@ -19,3 +19,9 @@
 - [x] 4.2 Run build, typecheck, lint, the bridge suites, the contracts suite, OpenSpec validation and the workflow checks; record results in the PR.
 - [x] 4.3 Synchronize the specs and archive this change (evidence: the synced specs match the deltas).
 - [x] 4.4 Hand installation, the physical checks and the live qualification of the helper's band read, `Invoke` and the empty-composer value to #745 (evidence: the qualification report's installed checks for #907; receipts go on #745, not in this change).
+
+## 5. Review fix round 1 (#943)
+
+- [x] 5.1 Find the band as the native check observed it on 2026-10-07, two `Group`s below the branch beside the composer's group, keeping the direct-sibling shape and every bound and refusal; share the rule with the simulation through `src/sim/band-tree.ts` (evidence: the locator test and static tests in `windows-uia-helper.test.mjs`, the nesting cases in `adapter-contract.test.mjs`; a negative control with a sibling-only bound fails them).
+- [x] 5.2 S907-1: record that the issue's digit-key fallback is dropped (evidence: design.md Non-Goals, the bridge README).
+- [x] 5.3 S907-2: document the observed band level in UIA-NOTES and remove it from "Not established" (evidence: UIA-NOTES "Next-step suggestions").

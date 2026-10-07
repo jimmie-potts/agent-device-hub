@@ -13,7 +13,11 @@ The 2026-10-06 qualification on [#907](https://github.com/jimmie-potts/agent-dev
 
 **Goals:** knob 3 highlights and fills Claude's suggestions and accepts its ghost text, keystroke-free except the one Right arrow; it never sends; it refuses everything outside the qualified state; suggestion text never leaves the helper.
 
-**Non-Goals:** Codex next steps (#908, now on the visual-layer epic); showing suggestion text on PROMPTI or a screen (#747, #748); a mod that reports whether ghost text is showing, which needs the owner's approval to change their Claude setup; the mod's documented digit fallback, which the qualification made unnecessary because the buttons take focus.
+**Non-Goals:**
+- Codex next steps (#908, now on the visual-layer epic).
+- Showing suggestion text on PROMPTI or a screen (#747, #748).
+- A mod that reports whether ghost text is showing, which needs the owner's approval to change their Claude setup.
+- The issue's digit-key fallback (typing 1-3 into the empty composer, which the mod documents) is dropped (S907-1 on #943). The qualification showed the suggestion buttons take keyboard focus, and the owner-accepted click rule is: invoke the highlighted suggestion, else one Right arrow for the ghost text. The bridge types no digits.
 
 ## Decisions
 
@@ -21,7 +25,9 @@ The 2026-10-06 qualification on [#907](https://github.com/jimmie-potts/agent-dev
 
 Version 5 shipped with #906 (PR #915), so the band operations bump the interface to 6.
 
-- **`suggestionState('claude')`** returns `{ count, focused, composer: { focused, empty } }`. The helper finds Claude's one `ProseMirror` composer, then walks up from it through at most 8 ancestors (the bound #906 uses for Codex's picker button). At each level it reads the parent's direct `Group` children, at most 64, and takes the first level holding a group, other than the composer's own ancestor, that directly holds exactly one `Text` `next:` and exactly one `Button` `dismiss`. The other direct buttons, in tree order, are the suggestions: 1-8, each enabled, keyboard-focusable and invokable, or the read fails (`suggestion-band-unqualified`). Two candidates at one level fail (`suggestion-band-ambiguous`). The qualification's "directly above the composer's group" is read as a sibling of one of the composer's ancestors, because the exact level was not recorded; the reply's `level` lets the native check record it.
+- **`suggestionState('claude')`** returns `{ count, focused, composer: { focused, empty } }`. The helper finds Claude's one `ProseMirror` composer and the chain of its 8 nearest ancestors. It reads the window's `Text` elements named `next:` (more than 32 fail) and, for each, takes the parent `Group` when it hangs under one of those ancestors at most 3 `Group`s below the ancestor's child that is not the composer's own branch, and directly holds exactly one `Text` `next:` and exactly one `Button` `dismiss`. The other direct buttons, in tree order, are the suggestions: 1-8, each enabled, keyboard-focusable and invokable, or the read fails (`suggestion-band-unqualified`). The band at the lowest ancestor counts; two there fail (`suggestion-band-ambiguous`).
+  - **Fix round 1 on #943.** The first version checked only the direct children of groups beside the composer's ancestors. The native check on 2026-10-07 read no band while one showed: on Claude 2.19675.0.0 the band's group sits two `Group`s below the branch beside the composer's group (common ancestor at depth 14; band branch 15 -> 16 -> 17; composer group at 15). The locator now starts from the `next:` texts and allows up to 3 levels below that branch, which keeps the direct-sibling shape too.
+  - **Shared reference.** `src/sim/band-tree.ts` implements the same rule over a synthetic tree in the live layout, with the same bounds (a static test holds the constants equal). The simulated desktop and the test fake find the band through it, so a locator that missed the observed nesting fails the contract and scenario tests.
 - **Names and values stay in the helper.** Names are compared only to find `next:` and `dismiss`; suggestion labels are never returned. The composer's `ValuePattern` Value is compared only with `""`, `"\n"` and `"\r\n"`.
 - **Empty composer:** no text, or only one trailing line break, because Claude's empty composer read as one `\n` (length 1). Whitespace the owner typed is a draft.
 - **`focusSuggestion(index, count)`** and **`invokeSuggestion(index, count)`** re-find the band and refuse when it is gone (`band-absent`), has another count (`band-changed`) or the index is invalid. Focus is read back every 25 ms for at most 400 ms. `invokeSuggestion` checks, in the same helper call and just before `Invoke`, that the suggestion is the focused element and the composer is empty, and answers `false` otherwise.
@@ -44,7 +50,7 @@ Version 5 shipped with #906 (PR #915), so the band operations bump the interface
 
 ## Risks / Trade-offs
 
-- **The band's tree level is inferred** from "directly above the composer's group". If the band sits outside the walk, knob 3 turns refuse with `no-suggestions` and the ghost click still works; the native check records the level, and #745's installed checks confirm it.
+- **The band's nesting is observed once** (2026-10-07, two `Group`s below the branch beside the composer's group). A client update that moves it beyond the bound makes knob 3 turns refuse with `no-suggestions`; the ghost click still works, and the native check's `level` shows where the band was found.
 - **`Invoke` filling the composer** matches pressing the button (the mod's `$.prompt.fill`), but the helper's `Invoke` was not run live. A failure reads `unverified`, never sends.
 - **Ghost presence is unknown**, so a ghost click with no ghost text shows the `unknown` color, not an error. A presence mod is a later owner choice.
 - **Two refusals overlap** for the ghost case and a band read failure: an unqualified or ambiguous band makes the whole read unknown, so the ghost click refuses too (`suggestions-unknown`). This fails closed.
