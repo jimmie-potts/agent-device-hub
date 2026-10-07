@@ -34,3 +34,15 @@
 - [x] 5.2 Run build, typecheck, lint, the observability Node, Python, query, package and browser checks, the SDK, event, runtime, scenario, verify, maintenance, Hub and Pixoo checks, the workflow checks and OpenSpec validation.
 - [x] 5.3 Show that named tests fail under each negative control: a boundary that records twice, a record at the wrong level, a lost span parent, cross-talk between concurrent requests, a throwing sink that changes a result, `tok_SYNTHETIC123` in a record, a replayed outcome recorded again, a per-poll warning and tracing with no local span sink.
 - [x] 5.4 Synchronize the affected specifications and archive the change.
+
+## 6. Review fix round (PR #959)
+
+- [x] 6.1 Set every decision's level from one table by registry code for the bus, its owners, sync and the edge, and assert `too-large`, `forbidden` and `internal` (`diagnostics.test.ts`, `remote.test.ts`).
+- [x] 6.2 Carry the command's routing key, request ID, message ID and trace in an edge failure after dispatch (`remote.test.ts`, runtime `diagnostics.test.ts`).
+- [x] 6.3 Record a span only under a name its metadata's profile registers, in the host adapter, its projection and the Python helper (`host.test.mjs`, `test_host.py`, `test_profile.py`).
+- [x] 6.4 Run sync and edge calls with a throwing `onDiagnostic` at the bus, the edge and the remote client (`diagnostics.test.ts`, `remote.test.ts`).
+- [x] 6.5 Count the spans the runtime evicts from memory and test the bound (`tracing.test.ts`).
+- [x] 6.6 Record a repeated edge refusal once, then one summary a minute by route, code and source (`remote.test.ts`).
+- [x] 6.7 Register `runtime.tracing.failed` in profile 1.3 and write it once when tracing cannot start (`tracing.test.ts`, fixtures).
+- [x] 6.8 Leave out a device ID the contract's pattern refuses and keep the record (`availability.test.ts`, runtime `diagnostics.test.ts`).
+- [x] 6.9 Show that named tests fail under each fix's negative control, and rerun the full gate.
