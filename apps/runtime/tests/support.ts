@@ -10,9 +10,30 @@ import {parseRecord} from '@jimmie-potts/bunny-observability';
 import type {BunnyModule, CommandDraft, Draft, ModuleContext, Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, startRuntime, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth, type RuntimeOptions} from '../src/index.js';
 
-/** node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. */
+/**
+ * Checks a test registers to run once everything else has stopped and closed. node:test skips the after hooks that
+ * follow one that throws, so a check that fails in an early hook would leave a later hook's remote part reconnecting.
+ */
+const lastChecks = new WeakMap<TestContext, (() => void)[]>();
+
+/**
+ * node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. Checks added
+ * with `checkLast` run in the test's last after hook, once the body's own hooks have run.
+ */
 export function it(name: string, body: (context: TestContext) => void | Promise<void>): void {
-  void test(name, {timeout: 20_000}, body);
+  void test(name, {timeout: 20_000}, async context => {
+    const checks: (() => void)[] = [];
+    lastChecks.set(context, checks);
+    await body(context);
+    context.after(() => { for (const check of checks) check(); });
+  });
+}
+
+/** Runs `check` after every other after hook of an `it` test, or in an after hook of its own in any other test. */
+function checkLast(context: TestContext, check: () => void): void {
+  const checks = lastChecks.get(context);
+  if (checks === undefined) context.after(check);
+  else checks.push(check);
 }
 
 /** A new private state directory outside any checkout, removed after the test. */
@@ -74,8 +95,8 @@ export async function run(
 ): Promise<{runtime: Runtime; logs: LogRecord[]}> {
   const logs: LogRecord[] = [];
   const runtime = await startRuntime({port: 0, stateDir: await stateDir(context), log: record => { logs.push(record); }, ...options});
-  context.after(async () => {
-    await runtime.stop();
+  context.after(() => runtime.stop());
+  checkLast(context, () => {
     assertContractRecords(logs);
     if (options.log === undefined) assertNoLostRecords(logs, expected.dropped);
   });
