@@ -30,8 +30,9 @@ export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
 /** How long a read waits for a family's first sync, and a command for its reply. */
 const SYNC_TIMEOUT_MS = 5000;
 const COMMAND_TIMEOUT_MS = 5000;
-/** At most this many families have a kept copy at once. */
+/** At most this many kept copies at once, one per family and owner. */
 const MAX_COPIES = 32;
+const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 /** A refusal that repeats with the same route, code and caller is logged once, then once a minute with its count. */
 const REFUSAL_WINDOW_MS = 60_000;
 /** The largest JSON body a gateway route reads. */
@@ -350,69 +351,83 @@ export class Gateway {
   }
 
   /**
-   * Refuses, before any sync, a family no owner serves, which a retry will not change (`not-found`), and families of
-   * more than one owner, which one sync cannot cover (`invalid-request`). Each refusal is fixed text.
+   * The owners that serve each named family now, as the bus knows them. A family no owner serves is refused before any
+   * sync, since a retry will not change it (`not-found`, fixed text).
    */
-  #served(families: readonly string[]): void {
+  #owners(families: readonly string[]): string[][] {
     const owners = families.map(family => this.#options.bus.syncOwners(family));
     if (owners.some(found => found.length === 0)) throw refuse('not-found', 'no module in this runtime serves a named family');
-    if (new Set(owners.flat()).size > 1) throw refuse('invalid-request', 'one snapshot reads the families of one owner; name families that one module serves');
-  }
-
-  /** The records of one family that the caller may see, from the gateway's kept copy of it, synced on the first read. */
-  async #family(family: string, principal: Principal): Promise<Answer> {
-    if (!FAMILY.test(family) || family.length > 64) throw refuse('invalid-request', 'a family name is lowercase letters and digits with single hyphens');
-    if (!this.#options.families.has(family)) throw refuse('not-found', 'no such family');
-    this.#served([family]);
-    const copy = await this.#copy(family);
-    return json(200, {schema: 'family-read/2.0', family, records: copy.states().filter(this.#visible(principal)).map(state => state.data)});
+    return owners;
   }
 
   /**
-   * The kept copy of a family, synced once and then following its owner; a copy whose sync fails is dropped. A family
-   * has one owner until Hub #967 lets several modules serve one, such as `device`; this then keeps a copy for each owner
-   * among the hosted modules, never a remote part, and the read combines them.
+   * The records of one family that the caller may see. Several owners may serve a family, as every device module serves
+   * `device` for its own devices (Hub #967): the read combines each owner's kept copy, in the order the owners started,
+   * so a reader such as the dashboard gets every device in one answer.
    */
-  #copy(family: string): Promise<SyncedCopy<Record<string, unknown>>> {
-    const kept = this.#copies.get(family);
+  async #family(family: string, principal: Principal): Promise<Answer> {
+    if (!FAMILY.test(family) || family.length > 64) throw refuse('invalid-request', 'a family name is lowercase letters and digits with single hyphens');
+    if (!this.#options.families.has(family)) throw refuse('not-found', 'no such family');
+    const [owners = []] = this.#owners([family]);
+    const copies = await Promise.all(owners.map(owner => this.#copy(family, owner)));
+    const visible = this.#visible(principal);
+    return json(200, {schema: 'family-read/2.0', family, records: copies.flatMap(copy => copy.states().filter(visible).map(state => state.data))});
+  }
+
+  /**
+   * The kept copy of a family from one owner, synced once and then following that owner alone; a copy whose sync fails
+   * is dropped, and the next read syncs again from the owners there are then.
+   */
+  #copy(family: string, owner: string): Promise<SyncedCopy<Record<string, unknown>>> {
+    const key = `${family}\n${owner}`;
+    const kept = this.#copies.get(key);
     if (kept !== undefined) return kept;
     if (this.#copies.size >= MAX_COPIES) return Promise.reject(refuse('capacity', 'the gateway keeps as many copies as it can'));
     const own = this.#own;
     if (own === undefined) return Promise.reject(refuse('unavailable', 'the gateway has not started'));
     const syncing = own.sync<Record<string, unknown>>([family], change => {
-      if (change.type === 'failed') this.#copies.delete(family);
-    }, {timeoutMs: SYNC_TIMEOUT_MS}).then(result => {
+      if (change.type === 'failed') this.#copies.delete(key);
+    }, {timeoutMs: SYNC_TIMEOUT_MS, owner}).then(result => {
       if (result.status === 'synced') return result.copy;
-      this.#copies.delete(family);
+      this.#copies.delete(key);
       // The owner's own detail is not served: it may say anything, a secret included. Its code stands.
       throw syncRefusal(result.error.error.code);
     }, (error: unknown) => {
-      this.#copies.delete(family);
+      this.#copies.delete(key);
       throw error;
     });
-    this.#copies.set(family, syncing);
+    this.#copies.set(key, syncing);
     return syncing;
   }
 
   /**
    * The snapshot read API (ADR 0012, "Portability"): one owner's current state of the named families, at its revision,
-   * as one sync answers it, with no copy kept. It is the gateway's one-off sync: the second implementation of the
+   * as one sync answers it, with no copy kept. `owner=<source>` names the owner, as for `device`, which several serve. It is the gateway's one-off sync: the second implementation of the
    * snapshot read API that the ADR asks for, here for a caller of this one process, which leaves out the records of
    * devices its grant does not name.
    */
   async #snapshot(url: URL, principal: Principal): Promise<Answer> {
     const keys = [...url.searchParams.keys()];
     const listed = url.searchParams.get('families');
-    if (keys.length !== 1 || listed === null) throw refuse('invalid-request', 'name the families as families=<a>,<b>');
+    const named = url.searchParams.get('owner');
+    if (listed === null || keys.some(key => key !== 'families' && key !== 'owner') || new Set(keys).size !== keys.length) {
+      throw refuse('invalid-request', 'name the families as families=<a>,<b>, and optionally their owner as owner=<source>');
+    }
+    if (named !== null && (named.length > 256 || !SOURCE.test(named))) throw refuse('invalid-request', 'owner is a participant source, such as bunny/modules/<name>');
     const families = listed.split(',');
     if (families.length > 32 || families.some(family => !FAMILY.test(family) || family.length > 64) || new Set(families).size !== families.length) {
       throw refuse('invalid-request', 'the families are distinct family names, at most 32');
     }
     if (families.some(family => !this.#options.families.has(family))) throw refuse('not-found', 'a named family does not exist');
-    this.#served(families);
+    const owners = this.#owners(families);
+    // One snapshot is one owner's state at its revision: the named owner, or the one owner of every named family.
+    if (named !== null && owners.some(found => !found.includes(named))) throw refuse('not-found', 'the named owner does not serve every named family');
+    if (named === null && new Set(owners.flat()).size > 1) {
+      throw refuse('invalid-request', 'one snapshot reads one owner\'s families: name families that one module serves, or name it as owner=<source>');
+    }
     const own = this.#own;
     if (own === undefined) throw refuse('unavailable', 'the gateway has not started');
-    const result = await own.sync<Record<string, unknown>>(families, () => {}, {timeoutMs: SYNC_TIMEOUT_MS});
+    const result = await own.sync<Record<string, unknown>>(families, () => {}, {timeoutMs: SYNC_TIMEOUT_MS, ...(named === null ? {} : {owner: named})});
     if (result.status === 'rejected') throw syncRefusal(result.error.error.code);
     const visible = this.#visible(principal);
     // A record belongs to the family its schema names, at whatever version.

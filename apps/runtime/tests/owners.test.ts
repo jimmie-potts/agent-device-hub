@@ -4,14 +4,12 @@
 // and gets only that owner's records. A sync that names no owner is refused with `invalid-request`.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {chmod, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {connectRemote, type BunnyModule, type Snapshot, type SyncedCopy} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
+import type {LogRecord} from '../src/index.js';
 import {sourceOf} from '../src/host.js';
 import {DEVICE_FAMILY, deviceRecord, deviceState} from './fixtures/device.js';
-import {entry, fixture, it, run, stateDir, waitFor} from './support.js';
+import {edgeConfig, entry, fixture, it, run, stateDir, waitFor, type EdgePart} from './support.js';
 
 /** A device module that serves its own devices' records, as every device module serves `device`. */
 const deviceModule = (name: string, devices: readonly string[]): BunnyModule => fixture(name, async ({sdk}) => {
@@ -25,10 +23,8 @@ const syncRecords = (logs: readonly LogRecord[], requestId: string): string[] =>
 
 it('two modules that both serve device run, and a module and a remote part sync each by name and get only its devices', async context => {
   const dir = await stateDir(context);
-  const reader = {source: 'bunny/parts/reader', token: randomBytes(32).toString('base64url')};
-  const grants = join(dir, EDGE_GRANTS_FILE);
-  await writeFile(grants, JSON.stringify({schema: 'edge-grants/1.0', grants: [reader]}), {mode: 0o600});
-  await chmod(grants, 0o600);
+  const reader: EdgePart = {source: 'bunny/parts/reader', token: randomBytes(32).toString('base64url'), scopes: ['read']};
+  const {config} = await edgeConfig(context, [reader]);
 
   // A display copies `device` from each device module it knows, by the module's source.
   const copies = new Map<string, SyncedCopy<DeviceRecord>>();
@@ -40,7 +36,7 @@ it('two modules that both serve device run, and a module and a remote part sync 
     }
   });
   const {runtime, logs} = await run(context, {
-    modules: [deviceModule('bulbs', ['bulb-1', 'bulb-2']), deviceModule('panels', ['panel-1']), display], stateDir: dir, edge: {schemas: {}},
+    modules: [deviceModule('bulbs', ['bulb-1', 'bulb-2']), deviceModule('panels', ['panel-1']), display], stateDir: dir, configFile: config, edge: {schemas: {}},
   });
 
   const report = runtime.health();

@@ -16,6 +16,7 @@ import {
   tokenDigest, type LogRecord, type Runtime,
 } from '../src/index.js';
 import {createCoreModule} from './fixtures/core.js';
+import {SimulatedLamps, createLampModule} from './fixtures/lamp.js';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from './fixtures/sign.js';
 import {contextOf, edgeConfig, entry, fixture, it, manualClock, run, stateDir, waitFor, type EdgePart} from './support.js';
 
@@ -692,7 +693,8 @@ it('MCP is off unless the edge section turns it on, and a browser session on /mc
 it('a family no module serves is not-found, and a snapshot across two owners is invalid-request, each with text that says why', async context => {
   const reader = READER(['sign-1']);
   const g = await gateway(context, [reader]);
-  for (const path of ['/api/v2/families/device', '/api/v2/snapshot?families=device']) {
+  // Nothing in this runtime serves playback: no playback module runs.
+  for (const path of ['/api/v2/families/playback', '/api/v2/snapshot?families=playback']) {
     const nobody = await g.ask(g.url, path, {token: reader.token});
     assert.deepEqual([nobody.status, codeOf(nobody), (nobody.body as {error: {retryable: boolean}}).error.retryable], [404, 'not-found', false], path);
     assert.match((nobody.body as {error: {detail: string}}).error.detail, /no module in this runtime serves/, path);
@@ -701,6 +703,38 @@ it('a family no module serves is not-found, and a snapshot across two owners is 
   assert.deepEqual([mixed.status, codeOf(mixed)], [400, 'invalid-request']);
   assert.match((mixed.body as {error: {detail: string}}).error.detail, /families that one module serves/);
   assert.equal((await g.ask(g.url, '/api/v2/snapshot?families=sign', {token: reader.token})).status, 200);
+});
+
+it('a family that two modules serve reads as one answer of each owner\'s records, narrowed by grant, and a snapshot of it names its owner', async context => {
+  const both: EdgePart = {id: 'both', source: 'bunny/parts/both', token: token(), scopes: ['read'], devices: ['lamp-1', 'sign-1']};
+  const lampOnly = READER(['lamp-1']);
+  const modules = [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), createSignModule({transport: new SimulatedSigns({online: true})})];
+  const g = await gateway(context, [both, lampOnly], {modules});
+  const ids = (answer: Answer, path: (body: never) => {id: string}[] | undefined): string[] => (path(answer.body as never) ?? []).map(record => record.id).sort();
+  const devices = (body: {records?: {id: string}[]}) => body.records;
+  // The lamp and the sign both serve device, each for its own device; one read combines them.
+  assert.deepEqual(ids(await g.ask(g.url, '/api/v2/families/device', {token: both.token}), devices), ['lamp-1', 'sign-1']);
+  assert.deepEqual(ids(await g.ask(g.url, '/api/v2/families/device', {token: lampOnly.token}), devices), ['lamp-1'], 'the sign is not this reader\'s');
+  // A snapshot is one owner's state at its revision: device needs its owner named.
+  const unnamed = await g.ask(g.url, '/api/v2/snapshot?families=device', {token: both.token});
+  assert.deepEqual([unnamed.status, codeOf(unnamed)], [400, 'invalid-request']);
+  assert.match((unnamed.body as {error: {detail: string}}).error.detail, /owner=<source>/);
+  const snapshot = (part: EdgePart, query: string): Promise<Answer> => g.ask(g.url, `/api/v2/snapshot?${query}`, {token: part.token});
+  const of = (family: string) => (body: {records?: Record<string, {id: string}[]>}) => body.records?.[family];
+  assert.deepEqual(ids(await snapshot(both, 'families=device&owner=bunny/modules/lamp'), of('device')), ['lamp-1']);
+  assert.deepEqual(ids(await snapshot(lampOnly, 'families=device&owner=bunny/modules/sign'), of('device')), [], 'narrowed as the family read is');
+  const signs = await snapshot(both, 'families=device,sign&owner=bunny/modules/sign');
+  assert.deepEqual([ids(signs, of('device')), ids(signs, of('sign'))], [['sign-1'], ['sign-1']]);
+  for (const [query, status, code] of [
+    ['families=device&owner=bunny/modules/chime', 404, 'not-found'], ['families=session&owner=bunny/modules/lamp', 404, 'not-found'],
+    ['families=device&owner=Bunny/Lamp', 400, 'invalid-request'], ['families=device&owner=bunny/modules/lamp&owner=bunny/modules/sign', 400, 'invalid-request'],
+  ] as const) {
+    const refused = await snapshot(both, query);
+    assert.deepEqual([refused.status, codeOf(refused)], [status, code], query);
+    assert.equal(refused.text.includes('chime') || refused.text.includes('Bunny/Lamp'), false, 'no refusal quotes the owner it was given');
+  }
+  await g.runtime.stop();
+  assertNoToken(g);
 });
 
 it('the gateway\'s refusals never quote what the caller sent, and its JSON answers forbid sniffing', async context => {
