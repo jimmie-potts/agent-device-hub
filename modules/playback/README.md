@@ -159,7 +159,7 @@ The record never says which speaker is presented.
 `playback-control` ([#918](https://github.com/jimmie-potts/agent-device-hub/issues/918))
 on `bunny.cmd.playback-control.<id>`, type `org.bunny.playback.control.requested`,
 with `{requestId, action, expectedRevision?}`. `controlPlayback(id, action)`
-builds one. The module answers in this order, and every refusal reaches no
+builds one. The module checks a command in this order. No refusal reaches a
 speaker:
 
 | Answer | When |
@@ -188,12 +188,12 @@ hears it, then sends it within a 1.5 s deadline:
 | HT-A9 JSON-RPC error, or Move SOAP fault | `failed`, evidence `none`, `invalid-state` |
 | No answer by the deadline, or any other answer | `uncertain`, evidence `none`, `uncertain-result` |
 
-The outcome, `org.bunny.playback.control.completed` on
-`bunny.event.playback-control.<id>`, commits with the command's result in the
+The outcome is `org.bunny.playback.control.completed` on
+`bunny.event.playback-control.<id>`. It commits with the command's result in the
 module's database and goes out through its
-[outbox](../../packages/sdk/README.md#outbox), then the module replies
-`accepted`. A failed or uncertain command is never sent again, by the module or
-by a repeated `requestId`. If the runtime stopped between storing the intent and
+[outbox](../../packages/sdk/README.md#outbox). Then the module replies
+`accepted`. Neither the module nor a repeated `requestId` sends a failed or
+uncertain command again. If the runtime stopped between storing the intent and
 the outcome, the next start reports that command `uncertain` ("the module
 restarted before the speaker answered") and never sends it.
 
