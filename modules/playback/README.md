@@ -221,9 +221,14 @@ module replies after the speaker's call and the outcome's commit, not before.
 It handles one command at a time through the SDK's responder queue, so the next
 command is admitted only once the speaker has answered or the call's 1.5 s
 deadline has passed. The admission also waits, at most another 1.5 s, for the
-read that follows the command ahead. So a reply comes within about 3 s, inside
-a requester's usual 5 s deadline. A requester with a shorter deadline gets
-`uncertain-result` from the SDK, and the outcome still follows.
+read that follows the command ahead. So a command that finds the module idle
+gets its reply within about 3 s, inside a requester's usual 5 s deadline. A
+command queued behind one whose speaker does not answer waits up to about 3 s
+more, so its reply can take about 6 s. A requester whose deadline passes first
+gets `uncertain-result` from the SDK, and the outcome still follows. A command
+whose deadline passed while it waited for the read ahead is never sent: the
+module records it, and its outcome is `failed` with evidence `none` and
+`expired`, the definitive answer after the SDK's `uncertain-result`.
 
 The module handles one command at a time: the SDK queues a second command until
 the first has its outcome. It is then admitted against the speaker presented at

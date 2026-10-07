@@ -54,7 +54,9 @@ starts fresh). The issue stays aligned; the adjustments below are routine and wi
 - **The reply comes after the call and the outcome, an exception to "Replies answer a command immediately".** The
   responder handles one command at a time, so the next command is admitted only after the speaker answered or the
   1.5 s deadline passed, and its admission waits at most another 1.5 s for the read after the command ahead. A reply
-  therefore comes within about 3 s, inside a requester's usual 5 s deadline, and a requester that hears `accepted` can
+  therefore comes within about 3 s when the module is idle, and within about 6 s behind a command whose speaker does
+  not answer. A command whose deadline passes while it waits is never sent; its outcome is `failed`, `none`, `expired`
+  (review fix round 2, PR #966). A requester that hears `accepted` can
   already find the outcome. Alternative rejected: replying first and calling the speaker afterwards, which would need a
   busy refusal or a second queue of the module's own to keep one command at a time (review fix, PR #966).
 - **A database refusal never escapes the module.** A refused intent refuses the command with `capacity` before any

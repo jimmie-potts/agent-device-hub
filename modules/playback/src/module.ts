@@ -295,6 +295,23 @@ BunnyModule<PlaybackConfig> {
           }
           await settled();
           if (signal.aborted) return errorBody('unavailable', {detail: 'the playback module is stopping'});
+          // The SDK answered the requester `uncertain-result` if the deadline passed while the command waited for the read
+          // ahead. Nothing is sent then: the command is recorded as failed, and its outcome is the definitive answer.
+          const expiresAtMs = Date.parse(command.expiresat ?? '');
+          if (Number.isFinite(expiresAtMs) && clock.now() >= expiresAtMs) {
+            try {
+              await outbox.transaction(() => { admit.run(command.source, requestId, body); });
+              storageWorked();
+            } catch (error) {
+              storageFailed(error, {'bunny.request.id': requestId}, command);
+              return errorBody('capacity', {detail: 'the playback module could not record the command'});
+            }
+            await saveOutcome(command, requestId, {
+              requestId, result: 'failed', evidence: 'none',
+              error: errorBody('expired', {detail: 'the command\'s deadline passed before it reached the speaker'}).error,
+            });
+            return {status: 'accepted'};
+          }
           if (expectedRevision !== undefined && expectedRevision !== record.revision) {
             return errorBody('revision-conflict', {detail: 'the playback record has moved on; read it again'});
           }

@@ -11,7 +11,7 @@ import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {DatabaseSync} from 'node:sqlite';
 import {
-  InProcessBus, type CommandDraft, type Draft, type Handler, type Participant, type RequestOptions, type RequestResult, type Responder, type Scheduler,
+  InProcessBus, type BusOptions, type CommandDraft, type Draft, type Handler, type Participant, type RequestOptions, type RequestResult, type Responder, type Scheduler,
   type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord} from '@jimmie-potts/sdk/testing';
@@ -203,12 +203,16 @@ export type Hosted = {
   logs: () => HarnessRecord[];
   /** Moves the manual clock in steps of at most `stepMs`, letting each step's reads settle. */
   advance: (ms: number, stepMs?: number) => Promise<void>;
-  send: (action: PlaybackAction, requestId: string, expectedRevision?: number) => Promise<RequestResult>;
+  /** Sends a command as the operator, with a deadline on the manual clock, 60 s by default. */
+  send: (action: PlaybackAction, requestId: string, expectedRevision?: number, timeoutMs?: number) => Promise<RequestResult>;
   /** Starts a new instance of the module on the same database, after `stop`. */
   start: () => Promise<void>;
   restart: () => Promise<void>;
   stop: () => Promise<void>;
-  /** Every published message that breaks profile 2.0, and every failure of a module instance's handler, timer or stop. */
+  /**
+   * Every published message that breaks profile 2.0, every error a handler or responder of the module threw, and every
+   * failure of a module instance's timer or stop.
+   */
   problems: () => string[];
   stateDir: string;
 };
@@ -293,11 +297,21 @@ export class HeldBus extends InProcessBus {
   }
 }
 
-type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {section?: unknown; transport?: SpeakerTransport; bus?: InProcessBus};
+type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {
+  section?: unknown; transport?: SpeakerTransport;
+  /** Builds the bus from the options the host gives it, such as a `HeldBus`. */
+  bus?: (options: BusOptions) => InProcessBus;
+};
 
 export async function host(context: TestContext, speakers: SimulatedSpeakers, options: HostOptions = {}): Promise<Hosted> {
-  const {section = SECTION, bus = new InProcessBus(), ...moduleOptions} = options;
+  const {section = SECTION, bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), ...moduleOptions} = options;
   const clock = manualClock();
+  const thrown: unknown[] = [];
+  // The bus stamps `expiresat` and runs request deadlines on the module's manual clock, as the runtime's does.
+  const bus = buildBus({
+    now: clock.now, scheduler: clock.scheduler,
+    onError: (error, {source}) => { if (source === 'bunny/modules/playback') thrown.push(error); },
+  });
   const stateDir = await mkdtemp(join(tmpdir(), 'playback-module-'));
   const requester = bus.connect('bunny/parts/operator');
   const watcher = bus.connect('bunny/parts/watcher');
@@ -326,9 +340,9 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
         await flush();
       }
     },
-    send: (action, requestId, expectedRevision) => {
+    send: (action, requestId, expectedRevision, timeoutMs = 60_000) => {
       const {key, draft} = controlPlayback(ID, action, expectedRevision);
-      return requester.request(key, draft, {timeoutMs: 60_000, requestId});
+      return requester.request(key, draft, {timeoutMs, requestId});
     },
     start: async () => {
       hosted.harness = build();
@@ -346,7 +360,7 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
         const result = validator.validate(message);
         return result.ok ? [] : [`${message.type}: ${result.error.code} ${result.error.detail ?? ''}`];
       });
-      return [...invalid, ...hosted.instances.flatMap(instance => instance.failures.map(String))];
+      return [...invalid, ...thrown.map(error => `a handler threw ${String(error)}`), ...hosted.instances.flatMap(instance => instance.failures.map(String))];
     },
   };
   context.after(async () => {

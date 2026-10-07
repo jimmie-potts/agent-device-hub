@@ -11,7 +11,7 @@ import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness, moduleConformance} from '@jimmie-potts/sdk/testing';
 import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule} from '../src/module.js';
 import {SimulatedSpeakers} from '../src/simulated.js';
-import {httpSpeakers} from '../src/transport.js';
+import {httpSpeakers, type SpeakerTransport} from '../src/transport.js';
 import {
   HeldBus, ID, SECTION, airplay, fakeSonos, fakeSony, flush, hooked, host, lockDatabase, playingInfo, reportsUnavailable, storedCommands, test, type Hosted,
 } from './support.js';
@@ -202,8 +202,10 @@ test('the module stores a command\'s intent before the speaker hears it', async 
 
 test('the reply comes once the outcome is committed and published, so a requester that hears accepted finds the outcome', async context => {
   const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
-  const bus = new HeldBus();
-  const hosted = await host(context, speakers, {bus});
+  let held: HeldBus | undefined;
+  const hosted = await host(context, speakers, {bus: options => held = new HeldBus(options)});
+  const bus = held;
+  if (bus === undefined) throw new Error('the host built no bus');
   bus.hold();
   let answered: string | undefined;
   const pending = hosted.send('next', 'r-held').then(result => { answered = answer(result); });
@@ -240,6 +242,64 @@ test('stopping during a speaker call ends the call at once, keeps its outcome un
     requestId: 'r-stop', result: 'uncertain', evidence: 'none', error: {code: 'uncertain-result', retryable: false, detail: 'the speaker did not answer the action'},
   }, 'and goes out at the next start at the latest');
   assert.deepEqual(speakers.state().sony.commands, ['pause'], 'it was sent once');
+  clean(hosted);
+});
+
+test('a queued command whose deadline passes while it waits for the read ahead is not sent, and gets a definitive outcome', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  // After the HT-A9 answers a command, its reads never answer, so the next admission waits for the read ahead to time out.
+  let silentReads = false;
+  const silence = (signal: AbortSignal): Promise<never> => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => { reject(new Error('the speaker did not answer')); }, {once: true});
+  });
+  const transport: SpeakerTransport = {
+    sony: async (endpoint, method, version, signal) => {
+      if (method === 'getPlayingContentInfo') return silentReads ? silence(signal) : speakers.sony(endpoint, method, version, signal);
+      const reply = await speakers.sony(endpoint, method, version, signal);
+      silentReads = true;
+      return reply;
+    },
+    sonos: (endpoint, action, args, signal) => speakers.sonos(endpoint, action, args, signal),
+  };
+  const hosted = await host(context, speakers, {transport});
+  const first = hosted.send('next', 'e-1');
+  const second = hosted.send('previous', 'e-2', undefined, 1000);
+  await hosted.advance(2000);
+  assert.deepEqual([answer(await first), answer(await second)], ['accepted', 'uncertain-result'], 'the SDK answered e-2 at its deadline');
+  assert.deepEqual(speakers.state().sony.commands, ['next'], 'e-2 reached no speaker after its deadline');
+  assert.deepEqual(outcome(hosted, 'e-2'), [{
+    requestId: 'e-2', result: 'failed', evidence: 'none',
+    error: {code: 'expired', retryable: false, detail: 'the command\'s deadline passed before it reached the speaker'},
+  }], 'a definitive outcome follows the uncertain answer');
+  assert.deepEqual(storedCommands(hosted.stateDir), ['e-1 succeeded', 'e-2 failed']);
+  silentReads = false;
+  await hosted.advance(2000);
+  assert.equal(answer(await hosted.send('previous', 'e-2', undefined, 1000)), 'accepted', 'the same request again sends nothing');
+  assert.deepEqual(speakers.state().sony.commands, ['next']);
+  clean(hosted);
+});
+
+test('an outcome the database refuses while the module stops is reported uncertain at the next start, and never sent again', async context => {
+  const speakers = new SimulatedSpeakers({sony: playing('Sony song')});
+  let release: (() => void) | undefined;
+  let stateDir = '';
+  const hosted = await host(context, speakers, {transport: hooked(speakers, () => { release ??= lockDatabase(stateDir); })});
+  stateDir = hosted.stateDir;
+  speakers.nextCommand('sony', 'hang');
+  void hosted.send('pause', 'r-locked');
+  await hosted.advance(500);
+  // The stop ends the call while the database still refuses: the outcome cannot commit, and no retry may be scheduled.
+  await hosted.stop();
+  assert.deepEqual(hosted.problems(), [], 'no handler, timer or stop of the module failed');
+  assert.equal(hosted.harness.pendingTimers(), 0, 'no retry is left behind');
+  assert.deepEqual(storedCommands(stateDir), ['r-locked pending'], 'the intent stays without an outcome');
+  release?.();
+  await hosted.start();
+  assert.deepEqual(outcome(hosted, 'r-locked'), [{
+    requestId: 'r-locked', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false, detail: 'the module restarted before the speaker answered'},
+  }], 'the next start reports it uncertain, once');
+  assert.deepEqual(speakers.state().sony.commands, ['pause'], 'and nothing is sent again');
   clean(hosted);
 });
 

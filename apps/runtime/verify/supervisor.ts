@@ -438,7 +438,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       return answer(response, 200, follow(evidence(), query.selector, query.limits));
     }
     case 'POST /simulate':
-      if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no simulated devices'));
+      if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run\'s devices are simulated inside the modules and cannot be driven from the harness'));
       await simulate(await body(request) as SimulateRequest);
       return answer(response, 200, {status: 'applied'});
     case 'POST /arm-crash':

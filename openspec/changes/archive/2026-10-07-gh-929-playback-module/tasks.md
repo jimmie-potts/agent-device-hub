@@ -26,3 +26,4 @@
 - [x] 4.5 Configure the shipped modules from each factory's `simulatedSection` (`{config, secrets?}`, the contract PR #968's review settled), through one helper, `tests/fixtures/simulated.ts`: the maintenance journal test, a process test of every shipped module under `--simulate`, and the `shipped` run; the catalog reads the playback module's section.
 - [x] 4.6 State the reply's exception to ADR 0012 in the README and the spec, and correct the `shipped` run's wording.
 - [x] 4.7 Show each fix's mutant fails its named tests, and rerun the gate.
+- [x] 4.8 Send nothing for a queued command whose deadline passed while it waited for the read ahead, and report it `failed` with `expired`, red first; test the outcome the database refuses while the module stops (`module.test.ts`).
