@@ -1,7 +1,8 @@
 # CHOMPI bridge UI Automation helper, protocol 1. Windows PowerShell 5.1, started by uia-helper.ts.
 # It never sends input or clicks. Only FocusCardButton and InvokeCardButton change UI state on a card, each on one
-# button of the open card (#821), and only the eight setting actions (#906) on the model and effort controls; every
-# other operation is read-only.
+# button of the open card (#821), only the eight setting actions (#906) on the model and effort controls, and only
+# FocusSuggestion and InvokeSuggestion (#907) on one suggestion of Claude's next-step band; every other operation is
+# read-only.
 # One JSON request per stdin line; one JSON reply per stdout line. Replies carry only booleans, counts, indexes,
 # package versions and fixed reason codes, never names, values or other text read from a window. The one exception is
 # PickerState (#906): it returns only model and effort labels, the names of the qualified model and effort controls and
@@ -676,6 +677,140 @@ function FocusComposer($request) {
   return @{ focused = (Settle { [bool]$composers[0].GetCurrentPropertyValue($AE::HasKeyboardFocusProperty) }) }
 }
 
+# Claude's next-step suggestions (#907). The band is a Group beside the composer's group holding a Text "next:", one
+# Button per suggestion and a Button "dismiss". Names are compared here only to find the band and its "dismiss" button,
+# and the composer's Value only with the empty forms; replies carry counts, indexes and booleans, never a suggestion's
+# text, which is model output.
+$BandLabel = 'next:'
+$BandDismiss = 'dismiss'
+$MaxSuggestions = 8
+# A band holds the label, the suggestions and "dismiss"; a group with more Text and Button children is not the band.
+$MaxBandChildren = 16
+# A level of the walk up from the composer with more Group children than this is not searched further.
+$MaxBandGroups = 64
+
+# Claude's one composer: the Edit carrying the ProseMirror class token. None or several is an error.
+function ClaudeComposer($window) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ClassNameProperty)
+  $cache.Push()
+  try { $edits = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit))) } finally { $cache.Pop() }
+  $composers = @($edits | Where-Object { HasToken $_.Cached.ClassName $ComposerToken })
+  if ($composers.Count -ne 1) { Fail 'composer-count' }
+  return $composers[0]
+}
+
+# Whether the composer is empty: its Value is '' or only one trailing line break. Claude's empty composer reads as one
+# "`n" (2026-10-06), and its ghost text never shows in the Value. The Value is compared, never returned.
+function ComposerEmpty($composer) {
+  $pattern = $null
+  if (-not $composer.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { Fail 'composer-value-unavailable' }
+  $value = [string]$pattern.Current.Value
+  return ($value.Length -eq 0 -or [string]::Equals($value, "`n", $Ordinal) -or [string]::Equals($value, "`r`n", $Ordinal))
+}
+
+# The suggestion buttons of $group in tree order, when it directly holds exactly one Text named "next:" and exactly one
+# Button named "dismiss"; $null for any other group. A band whose other Buttons are not 1-8 enabled, keyboard-focusable
+# and invokable buttons is an error, not a missing band.
+function BandSuggestions($group) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Add($AE::ControlTypeProperty)
+  $cache.Add($AE::IsEnabledProperty)
+  $cache.Add($AE::IsKeyboardFocusableProperty)
+  $cache.Add($AE::IsInvokePatternAvailableProperty)
+  $cache.Push()
+  try { $children = $group.FindAll($Scope::Children, $TextOrButton) } finally { $cache.Pop() }
+  if ($children.Count -gt $MaxBandChildren) { return $null }
+  $labels = 0; $dismiss = 0
+  $buttons = New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
+  foreach ($child in $children) {
+    $text = ([string]$child.Cached.Name).Trim()
+    if ($child.Cached.ControlType.Id -eq $TextId) { if ([string]::Equals($text, $BandLabel, $Ordinal)) { $labels++ } }
+    elseif ([string]::Equals($text, $BandDismiss, $Ordinal)) { $dismiss++ }
+    else { $buttons.Add($child) }
+  }
+  if ($labels -ne 1 -or $dismiss -ne 1) { return $null }
+  if ($buttons.Count -lt 1 -or $buttons.Count -gt $MaxSuggestions) { Fail 'suggestion-band-unqualified' }
+  foreach ($b in $buttons) {
+    if (-not ([bool]$b.GetCachedPropertyValue($AE::IsEnabledProperty) -and [bool]$b.GetCachedPropertyValue($AE::IsKeyboardFocusableProperty) -and
+      [bool]$b.GetCachedPropertyValue($AE::IsInvokePatternAvailableProperty))) { Fail 'suggestion-band-unqualified' }
+  }
+  return ,$buttons
+}
+
+# The band, as @{ buttons; level }: walking up from the composer through at most 8 ancestors, the first level whose
+# parent directly holds a Group of the band's shape beside the composer's ancestor; several there is an error, none at
+# any level is no band ($null).
+function SuggestionBand($composer, $window) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $node = $composer
+  for ($depth = 0; $depth -lt $MaxComposerAncestors; $depth++) {
+    if ([System.Windows.Automation.Automation]::Compare($node, $window)) { break }
+    $parent = $walker.GetParent($node)
+    if ($null -eq $parent) { break }
+    $groups = $parent.FindAll($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Group)))
+    if ($groups.Count -gt $MaxBandGroups) { break }
+    $found = New-Object System.Collections.ArrayList
+    foreach ($group in $groups) {
+      if ([System.Windows.Automation.Automation]::Compare($group, $node)) { continue }
+      $buttons = BandSuggestions $group
+      if ($null -ne $buttons) { [void]$found.Add(@{ buttons = $buttons; level = $depth }) }
+    }
+    if ($found.Count -gt 1) { Fail 'suggestion-band-ambiguous' }
+    if ($found.Count -eq 1) { return $found[0] }
+    $node = $parent
+  }
+  return $null
+}
+
+# The band's suggestion count (0 without a band), the focused suggestion (-1 for none), the level it was found at and
+# the composer's focus and emptiness.
+function SuggestionState($request) {
+  $window = TargetWindow $request
+  if ((PickerClient $request) -ne 'claude') { Fail 'invalid-client' }
+  $composer = ClaudeComposer $window
+  $band = SuggestionBand $composer $window
+  $value = [ordered]@{ suggestions = 0; focused = -1; level = -1; composerFocused = [bool]$composer.GetCurrentPropertyValue($AE::HasKeyboardFocusProperty); composerEmpty = (ComposerEmpty $composer) }
+  if ($null -ne $band) { $value.suggestions = $band.buttons.Count; $value.focused = FocusedIndex $band.buttons; $value.level = $band.level }
+  return $value
+}
+
+# The band and composer named by the request, when the band still has the request's number of suggestions and the
+# index is valid.
+function SuggestionRequest($request, $window) {
+  $index = $request.index; $count = $request.count
+  if (-not (($index -is [int] -or $index -is [long]) -and ($count -is [int] -or $count -is [long]) -and $index -ge 0 -and $index -lt $count -and $count -le $MaxSuggestions)) { Fail 'invalid-suggestion-index' }
+  if ((PickerClient $request) -ne 'claude') { Fail 'invalid-client' }
+  $composer = ClaudeComposer $window
+  $band = SuggestionBand $composer $window
+  if ($null -eq $band) { Fail 'band-absent' }
+  if ($band.buttons.Count -ne [int]$count) { Fail 'band-changed' }
+  return @{ composer = $composer; buttons = $band.buttons }
+}
+
+function FocusSuggestion($request) {
+  $window = TargetWindow $request
+  $band = SuggestionRequest $request $window
+  $index = [int]$request.index
+  $band.buttons[$index].SetFocus()
+  [void](Settle { (FocusedIndex $band.buttons) -eq $index })
+  return @{ focused = (FocusedIndex $band.buttons) }
+}
+
+# Invokes the suggestion only while it holds keyboard focus and the composer is empty: the next-steps mod then writes it
+# into the composer as a draft. It never sends.
+function InvokeSuggestion($request) {
+  $window = TargetWindow $request
+  $band = SuggestionRequest $request $window
+  $index = [int]$request.index
+  $focused = $AE::FocusedElement
+  if ($null -eq $focused -or -not [System.Windows.Automation.Automation]::Compare($band.buttons[$index], $focused)) { return @{ invoked = $false } }
+  if (-not (ComposerEmpty $band.composer)) { return @{ invoked = $false } }
+  $band.buttons[$index].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  return @{ invoked = $true }
+}
+
 function ClientVersions {
   $result = [ordered]@{}
   foreach ($client in $Packages.Keys) {
@@ -713,6 +848,9 @@ while ($true) {
       'invokeCurrentOption' { $value = InvokeCurrentOption $request }
       'setSliderValue' { $value = SetSliderValue $request }
       'focusComposer' { $value = FocusComposer $request }
+      'suggestionState' { $value = SuggestionState $request }
+      'focusSuggestion' { $value = FocusSuggestion $request }
+      'invokeSuggestion' { $value = InvokeSuggestion $request }
       'clientVersions' { $value = ClientVersions }
       default { Fail 'unknown-op' }
     }

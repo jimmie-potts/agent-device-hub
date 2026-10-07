@@ -5,10 +5,11 @@ import {
 } from '../os-adapter.js';
 import { KEY_NAMES } from '../routing/profile.js';
 import { CLAUDE_PACKAGE_FAMILY, CODEX_PACKAGE_FAMILY } from '../windows/constants.js';
-import { PickerRefusal, SimPickers, type PickerResult, type PickerSeed } from './pickers.js';
+import { PickerRefusal, SimPickers, type PickerEvent, type PickerResult, type PickerSeed } from './pickers.js';
+import { SimSuggestions } from './suggestions.js';
 
 /**
- * A simulated Codex and Claude desktop behind OS adapter interface version 5, for disposable verification runs and the
+ * A simulated Codex and Claude desktop behind OS adapter interface version 6, for disposable verification runs and the
  * shared scenario catalog (#853). `chompi-bridge run --desktop sim` selects it; nothing loads it otherwise. It models
  * what the router observes and causes, as the qualified clients behave (README "Safety rules", UIA-NOTES.md):
  *
@@ -24,7 +25,10 @@ import { PickerRefusal, SimPickers, type PickerResult, type PickerSeed } from '.
  * - each client has the model and effort controls of `SimPickers` (#906), driven by UI Automation actions and keys: an
  *   open menu or slider takes the keys, so an Enter there picks a model instead of sending, and Claude's
  *   `LeftControl`+`LeftAlt`+`Minus` splits the pane. `pickers.lag` makes each read after a change return the state from
- *   before it once, as a lagging UI Automation view would.
+ *   before it once, as a lagging UI Automation view would;
+ * - Claude has the next-step band and ghost text of `SimSuggestions` (#907): invoking a focused suggestion fills the
+ *   empty composer, a Right arrow into its focused, empty composer accepts the ghost text, and sending a message hides
+ *   both. `suggestions.lag` lags its reads the same way.
  *
  * Everything is synthetic: titles and text come from the run's seed or its operator, never from a real desktop. This
  * proves routing behavior, not Windows client fidelity (UI Automation trees, real focus timing, Wispr).
@@ -71,6 +75,7 @@ export type DesktopLogEntry =
   | { at: number; seq: number; kind: 'dictation'; client: Client | null; text: string }
   | { at: number; seq: number; kind: 'volume'; key: VolumeKey; presses: number; volume: number; muted: boolean }
   | { at: number; seq: number; kind: 'picker'; client: Client; action: string; label?: string; position?: number; count?: number }
+  | { at: number; seq: number; kind: 'suggestion'; client: 'claude'; action: string; position?: number; count?: number }
   | { at: number; seq: number; kind: 'operator'; action: string };
 
 type LogInput = DesktopLogEntry extends infer T ? T extends unknown ? Omit<T, 'at' | 'seq'> : never : never;
@@ -88,10 +93,13 @@ export interface DesktopSnapshot {
   versions: Record<Client, string | null>;
   windows: {
     codex: { selected: string | null; threads: CodexThread[]; composer: SimComposer; card: SimCard | null; picker: PickerView };
-    claude: { selected: string | null; sessions: ClaudeSession[]; composer: SimComposer; card: SimCard | null; picker: PickerView };
+    claude: { selected: string | null; sessions: ClaudeSession[]; composer: SimComposer; card: SimCard | null; picker: PickerView; suggestions: SuggestionView };
     other: { title: string };
   };
 }
+
+/** Claude's next-step band (#907): its synthetic suggestions, the one holding keyboard focus and the ghost text, if any. */
+export interface SuggestionView { labels: string[]; focused: number | null; ghost: string | null }
 
 /** A client's model, effort level (null where the model has none), the open menu or slider, if any, and its focused entry. */
 export interface PickerView { model: string; effort: string | null; open: string | null; focus: string | null }
@@ -126,6 +134,13 @@ export class SimulatedDesktop {
   #listeners = new Set<() => void>();
   /** Both clients' model and effort controls; Claude's values follow the session it shows. */
   readonly pickers = new SimPickers(() => this.#selected.claude ?? '');
+  /** Claude's next-step band and ghost text, over its composer (#907). */
+  readonly suggestions = new SimSuggestions({
+    focused: () => this.#composer.claude.focused,
+    setFocused: focused => { this.#composer.claude.focused = focused; },
+    text: () => this.#composer.claude.text,
+    setText: text => { this.#composer.claude.text = text.slice(0, MAX_TEXT); },
+  });
 
   constructor(options: SimulatedDesktopOptions = {}) { this.clock = options.clock ?? systemClock; }
 
@@ -181,9 +196,22 @@ export class SimulatedDesktop {
     this.#record({ kind: 'operator', action: 'seed-pickers' });
   }
 
+  /** Shows Claude's next-step band with synthetic suggestions and its ghost text, by default the first (#907). */
+  showSuggestions(labels: readonly string[], ghost?: string | null): void {
+    this.#suggestionEvents(this.suggestions.show(labels, ghost));
+    this.#record({ kind: 'operator', action: 'show-suggestions' });
+  }
+
+  /** Hides Claude's next-step band and ghost text, as its "dismiss" button does. */
+  hideSuggestions(): void {
+    this.#suggestionEvents(this.suggestions.hide());
+    this.#record({ kind: 'operator', action: 'hide-suggestions' });
+  }
+
   focusComposer(client: Client, focused: boolean): void {
     // A click into the composer closes an open model menu, effort slider or picker, as the mouse would.
     if (focused) this.pickers.dismiss(client);
+    if (focused && client === 'claude') this.suggestions.blur();
     this.#composer[client].focused = focused && !(client === 'codex' && this.#cards.codex);
     this.#record({ kind: 'operator', action: `composer-${focused ? 'focus' : 'blur'}:${client}` });
   }
@@ -193,6 +221,7 @@ export class SimulatedDesktop {
     const composer = this.#composer[client];
     composer.text = (composer.text + text).slice(0, MAX_TEXT);
     this.pickers.dismiss(client);
+    if (client === 'claude') this.suggestions.blur();
     composer.focused = !(client === 'codex' && this.#cards.codex);
     this.#record({ kind: 'operator', action: `type:${client}` });
   }
@@ -232,7 +261,7 @@ export class SimulatedDesktop {
         codex: { selected: this.#selected.codex, threads: [...this.#threads.values()].map(t => ({ ...t })), composer: composer('codex'), card: card('codex'), picker: this.pickers.describe('codex') },
         claude: {
           selected: this.#selected.claude, sessions: [...this.#sessions.values()].map(s => ({ ...s })), composer: composer('claude'), card: card('claude'),
-          picker: this.pickers.describe('claude'),
+          picker: this.pickers.describe('claude'), suggestions: this.suggestions.describe(),
         },
         other: { title: SIM_WINDOWS.other.title },
       },
@@ -332,14 +361,37 @@ export class SimulatedDesktop {
     }
   }
 
+  /**
+   * @internal A UI Automation action on Claude's next-step band (#907), only while Claude is in front; a refusal answers
+   * unknown, as the adapter does, and Codex has no band.
+   */
+  suggestionAction<T>(client: Client, act: () => PickerResult<T>): Observation<T> {
+    if (client !== 'claude') return unknown('invalid-client');
+    if (!this.clientInFront('claude')) return unknown('claude-not-foreground');
+    try {
+      const result = act();
+      this.#suggestionEvents(result.events);
+      if (result.events.length === 0) this.#changed();
+      return known(result.value);
+    } catch (error) {
+      if (error instanceof PickerRefusal) return unknown(error.message);
+      throw error;
+    }
+  }
+
   /** @internal The bridge gives the client's composer keyboard focus, which closes an open menu or slider (#906). */
   focusComposerFromBridge(client: Client): Observation<boolean> {
     if (!isClient(client) || !this.clientInFront(client)) return unknown(`${String(client)}-not-foreground`);
     if (client === 'codex' && this.#cards.codex) return unknown('codex-composer-absent');
     this.pickers.dismiss(client);
+    if (client === 'claude') this.suggestions.blur();
     this.#composer[client].focused = true;
     this.#record({ kind: 'picker', client, action: 'focus-composer' });
     return known(true);
+  }
+
+  #suggestionEvents(events: readonly PickerEvent[]): void {
+    for (const { action, position, count } of events) this.#record({ kind: 'suggestion', client: 'claude', action, ...(position ? { position } : {}), ...(count ? { count } : {}) });
   }
 
   #applyPicker<T>(client: Client, result: PickerResult<T>): T {
@@ -428,6 +480,8 @@ export class SimulatedDesktop {
       const tap = this.#applyPicker(front, this.pickers.tap(front, chord, { composerFocused: this.#composer[front].focused, card: this.#cards[front] !== null }));
       if (tap) return;
     }
+    // A Right arrow into Claude's focused, empty composer accepts its ghost text (#907).
+    if (front === 'claude' && chord === 'Right') return this.#suggestionEvents(this.suggestions.right().events);
     if (chord === CODEX_COMPOSER_SHORTCUT && front === 'codex' && !this.#cards.codex) this.#composer.codex.focused = true;
     if (chord !== 'Enter' || !isClient(front)) return;
     const composer = this.#composer[front];
@@ -438,6 +492,8 @@ export class SimulatedDesktop {
       if (composer.submitted.length > 50) composer.submitted.shift();
       composer.text = '';
       this.#record({ kind: 'submit', client: front, text });
+      // A sent message starts a turn: the next-steps mod hides its band, and the ghost text goes (#907).
+      if (front === 'claude') this.#suggestionEvents(this.suggestions.hide());
       return;
     }
     // A keyboard Enter on a focused card stop presses it; the router must never send one there.
@@ -472,7 +528,7 @@ export class SimulatedDesktop {
   }
 }
 
-/** The router's view of a simulated desktop: OS adapter interface version 5, branded `simulated`. */
+/** The router's view of a simulated desktop: OS adapter interface version 6, branded `simulated`. */
 export interface SimulatedOsAdapter extends OsAdapter {
   readonly simulated: true;
   readonly desktop: SimulatedDesktop;
@@ -569,6 +625,20 @@ export function createSimulatedOsAdapter(desktop: SimulatedDesktop): SimulatedOs
     },
     setSliderValue: (client, from, to) => { enter('setSliderValue'); return Promise.resolve(desktop.pickerAction<number | null>(client, () => desktop.pickers.setSlider(client, from, to))); },
     focusComposer: client => { enter('focusComposer'); return Promise.resolve(desktop.focusComposerFromBridge(client)); },
+    suggestionState: client => {
+      enter('suggestionState');
+      if (client !== 'claude') return Promise.resolve(unknown('invalid-client'));
+      if (!desktop.clientInFront('claude')) return Promise.resolve(unknown('claude-not-foreground'));
+      return Promise.resolve(known(desktop.suggestions.state()));
+    },
+    focusSuggestion: (client, index, count) => {
+      enter('focusSuggestion');
+      return Promise.resolve(desktop.suggestionAction(client, () => desktop.suggestions.focus(index, count)));
+    },
+    invokeSuggestion: (client, index, count) => {
+      enter('invokeSuggestion');
+      return Promise.resolve(desktop.suggestionAction(client, () => desktop.suggestions.invoke(index, count)));
+    },
     claudeSettings: localId => {
       enter('claudeSettings');
       return Promise.resolve(known(desktop.claudeRecords([localId]).length ? desktop.pickers.claudeSettings(localId) : null));
