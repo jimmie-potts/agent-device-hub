@@ -110,8 +110,8 @@ Every cloud call SHALL go through one queue, one call at a time, in order, behin
 - **THEN** no further request goes out under the authentication hold and one record names it; under the rate limit the next push waits 30 s
 
 #### Scenario: A second writer
-- **WHEN** a second instance of the module starts on the same state directory while the first holds the lease
-- **THEN** the second logs the refused lease, reaches no cloud and reports the Tidbyt `unavailable`
+- **WHEN** a second instance of the module starts on the same state directory while the first runs and holds the lease
+- **THEN** the second's start is refused with `SQLITE_BUSY` at the module's database, which the first keeps to itself, so it takes no lease and reaches no cloud, and a second take of the cloud device's lease is refused as busy
 
 ### Requirement: Start, restart, stop and rendering
 
@@ -154,7 +154,7 @@ The module SHALL serve `device` through sync and publish the Tidbyt's `device/2.
 - **THEN** no new device revision is published, every capability is unsupported, a power command is refused `unsupported-capability`, and a reader that names `bunny/modules/tidbyt` syncs the one record
 
 #### Scenario: A database that refuses commits
-- **WHEN** another connection holds the module's database while a push changes the record
+- **WHEN** the module's database refuses its writes while a push changes the record
 - **THEN** one `operation.failed` names `storage`, no record is published that did not commit, a reader's sync gets the record last committed, and once the database works the record is published and one `operation.completed` follows
 
 #### Scenario: A fault of the module's own

@@ -45,6 +45,8 @@ None.
   restart leaves the core running.
 - `runtime-playback`: the database-refusal scenarios name a database that refuses writes, since the module keeps its
   file to itself and no other writer can hold it.
+- `runtime-tidbyt` and `nanoleaf-module`: the same for their store-failure scenarios, and a second Tidbyt instance on
+  the same state directory is refused at the module's database, before its lease.
 
 ## Impact
 
@@ -54,13 +56,14 @@ None.
   tables `full`, and an observation or sync that finds the store unopened opens the owner first or is refused.
 - **Tests:** the SDK's outbox tests with a crash fixture that kills a module process with SIGKILL; the runtime's
   context and core store tests, a store test world that opens its file as the runtime does, and a real-ENOSPC test of
-  the core's start on a small tmpfs in a user namespace; the LIFX and playback module tests, which now read their
-  module's rows through its own connection and leave WAL for a full-disk VACUUM; and the in-memory scenario harness,
-  whose simulated crash now closes the crashed runtime's module databases at once, as a process's end would.
+  the core's start on a small tmpfs in a user namespace; the LIFX, playback, Tidbyt, Pixoo and Nanoleaf module tests,
+  which now read their module's rows through its own connection and leave WAL for a full-disk VACUUM; and the in-memory
+  scenario harness, whose simulated crash now closes the crashed runtime's module databases at once, as a process's end
+  would.
 - **Docs:** the SDK and runtime READMEs and `docs/development.md`.
-- **Shared users:** the LIFX and playback modules on main, and the Nanoleaf and Pixoo modules in review, use the outbox
-  and the kit through the SDK; a test of theirs that opens the module's file while the module runs must use
-  `moduleDatabase()`. Their own commits are theirs to batch.
+- **Shared users:** the LIFX, playback, Tidbyt, Pixoo and Nanoleaf modules use the outbox and the kit through the
+  SDK; a test of theirs that opens the module's file while the module runs uses `moduleDatabase()`. Their own commits
+  are theirs to batch.
 - **Unchanged:** `packages/sdk/src/module.ts`, agent-state, released 1.x contracts and the message formats.
 - **Delivery:** source-only. The change has no observable behavior for an Acceptance review: nothing a person or a
   device notices changes. Its effects are commit timing, the module databases' `-wal` files and the core's start on a

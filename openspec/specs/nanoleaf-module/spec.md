@@ -150,7 +150,7 @@ The module SHALL run one supervised worker per configured device on the runtime'
 - **THEN** both are answered at once, the event loop never stalls for 250 ms while the request is held, the edit succeeds while the request is still held, and the lag check stays active
 
 #### Scenario: A store failure
-- **WHEN** another connection holds the module's store so the worker's pass and its failure record both fail, and then lets go
+- **WHEN** the module's store refuses its writes so the worker's pass and its failure record both fail, and then takes them again
 - **THEN** the device is `degraded` and its wall view `failing` while no worker runs, the worker starts again on its own, a new session takes a Line, and the failed pass and the stopped worker are each logged once, then each recovery once; a store that refuses the module's reads while it publishes is logged once, never fails the module, and the record is published within a second of the store reading again, before the next poll
 
 #### Scenario: Commands while no worker can run

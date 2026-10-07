@@ -413,11 +413,10 @@ void describe('a finished turn', () => {
  * keeps the library's schema as it was; `restore` repairs it.
  */
 function corruptManifests(world: World): {restore: () => void} {
-  const rewrite = (manifests: (id: string) => string): void => {
-    const database = new DatabaseSync(world.databaseFile);
+  const rewrite = (manifests: (id: string) => string): void => world.withDatabase(database => {
+    const trigger = String((database.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get('immutable_rendition') as {sql: unknown}).sql);
+    database.exec('BEGIN');
     try {
-      const trigger = String((database.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get('immutable_rendition') as {sql: unknown}).sql);
-      database.exec('BEGIN');
       database.exec('DROP TRIGGER immutable_rendition');
       for (const row of database.prepare('SELECT id FROM renditions').all()) {
         database.prepare('UPDATE renditions SET manifest_json = ? WHERE id = ?').run(manifests(String(row.id)), String(row.id));
@@ -425,16 +424,11 @@ function corruptManifests(world: World): {restore: () => void} {
       database.exec(trigger);
       database.exec('COMMIT');
     } finally {
-      database.close();
+      if (database.isTransaction) database.exec('ROLLBACK');
     }
-  };
-  const database = new DatabaseSync(world.databaseFile);
-  let saved: Map<string, string>;
-  try {
-    saved = new Map(database.prepare('SELECT id, manifest_json FROM renditions').all().map(row => [String(row.id), String(row.manifest_json)]));
-  } finally {
-    database.close();
-  }
+  });
+  const saved = world.withDatabase(database =>
+    new Map(database.prepare('SELECT id, manifest_json FROM renditions').all().map(row => [String(row.id), String(row.manifest_json)])));
   rewrite(() => '{');
   return {restore: () => { rewrite(id => saved.get(id) ?? '{'); }};
 }
@@ -507,7 +501,9 @@ void describe('commands and the catalog', () => {
       await world.start();
       await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
       // A synthetic storage failure: the module's next outcome cannot be stored, so its transaction rolls back.
-      const database = new DatabaseSync(world.databaseFile);
+      // The module keeps its file to itself (Hub #972), so the trigger goes in through its own connection.
+      const database = world.harness.moduleDatabase();
+      assert.ok(database);
       try {
         database.exec('CREATE TRIGGER fail_outcome BEFORE INSERT ON bunny_outbox WHEN NEW.kind = \'outcome\' BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END');
         const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 42}, {requestId: 'rolled-back'}));
@@ -525,8 +521,7 @@ void describe('commands and the catalog', () => {
         const last = live?.lastTransmission;
         assert.equal(last?.status === 'known' ? last.requestId : undefined, undefined, 'the rolled-back command is not the last transmission');
       } finally {
-        database.exec('DROP TRIGGER IF EXISTS fail_outcome');
-        database.close();
+        if (database.isOpen) database.exec('DROP TRIGGER IF EXISTS fail_outcome');
       }
       // The command was accepted and never reported, so the next start reports it uncertain, once.
       await world.restart();

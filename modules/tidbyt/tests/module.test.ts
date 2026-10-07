@@ -2,7 +2,6 @@
 // under bursts, the refresh, removal, an unavailable or lost copy, failed, uncertain and held writes, a cloud that does
 // not answer at start, rendering in a worker and its end at stop, a restart, the device record and its diagnostics.
 import assert from 'node:assert/strict';
-import {DatabaseSync} from 'node:sqlite';
 import {join} from 'node:path';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -10,6 +9,7 @@ import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
 import {picture} from '../src/picture.js';
 import {statusFrame, statusView} from '../src/status.js';
+import {acquireLease} from '../src/lease.js';
 import {createTidbytModule} from '../src/module.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simulated.js';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -302,23 +302,34 @@ test('an authentication refusal inside a run of other failures is still logged, 
   assert.equal(callSpans.length, 2, 'one device call span per request that went out');
 });
 
+/**
+ * Makes the running module's own connection refuse every write, as a failing disk would, until the returned function
+ * gives it back. The module keeps its file to itself (Hub #972), so no other connection can lock it.
+ */
+function refuseWrites(h: Hosted): () => void {
+  const db = h.harness.moduleDatabase();
+  if (db === undefined) throw new Error('the module has no open database');
+  db.exec('PRAGMA query_only = ON');
+  return () => {
+    if (db.isOpen) db.exec('PRAGMA query_only = OFF');
+  };
+}
+
 test('a sync answers the last committed record, never one the database refused', async context => {
   const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
   await until(() => pushes(h) === 1 && h.device().availability === 'available', 'the first push');
   const committed = h.device();
-  const lock = new DatabaseSync(join(h.stateDir, 'tidbyt.sqlite'));
-  lock.exec('BEGIN IMMEDIATE');
+  const release = refuseWrites(h);
   await core(h).set(asking());
   await h.advance(15 * SECOND);
-  await until(() => pushes(h) === 2, 'the push while the database is locked');
+  await until(() => pushes(h) === 2, 'the push while the database refuses writes');
   await until(() => records(h, 'operation.failed').length === 1, 'the refused commit');
   const reader = h.bus.connect('bunny/parts/reader');
   context.after(() => reader.close());
   const synced = await reader.sync(['device'], () => {}, {timeoutMs: 5000, owner: 'bunny/modules/tidbyt'});
   assert.equal(synced.status, 'synced');
   if (synced.status === 'synced') assert.deepEqual(synced.copy.states().map(state => state.data), [committed], 'the sync serves what committed');
-  lock.exec('ROLLBACK');
-  lock.close();
+  release();
 });
 
 test('nothing is written before the first sync settles: a slow core holds the status tile', async context => {
@@ -592,7 +603,7 @@ test('neither the API key nor the cloud device ID appears in any message, record
   assert.ok(!text.includes(SIMULATED_DEVICE), 'no cloud device ID');
 });
 
-test('a second writer for the same cloud device is refused its lease, writes nothing and reports the Tidbyt unavailable', async context => {
+test('a second writer for the same cloud device cannot open the module\'s database or take its lease, and writes nothing', async context => {
   const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
   await until(() => pushes(h) === 1, 'the first writer\'s push');
   const cloud = new SimulatedCloud();
@@ -600,26 +611,26 @@ test('a second writer for the same cloud device is refused its lease, writes not
     bus: new InProcessBus(), stateDir: h.stateDir, section: SECTION, secrets: {token: SIMULATED_API_KEY},
   });
   context.after(() => second.stop());
-  await second.start();
+  // The first keeps the module's database to itself (Hub #972), so the second's start is refused before its lease.
+  await assert.rejects(second.start(), (error: unknown) => error instanceof Error && 'errcode' in error && error.errcode === 5, 'SQLITE_BUSY');
   await quiet();
-  assert.deepEqual(second.logs.filter(entry => entry.event === 'operation.failed').map(entry => [entry.level, entry.fields['bunny.reason']]), [['warn', 'busy']]);
   assert.deepEqual(cloud.state().calls, [], 'the second writer reached no cloud');
+  // The lease behind it still holds: a second take of the cloud device's lease is refused while the first runs.
+  assert.deepEqual(acquireLease(join(h.stateDir, 'tidbyt', 'leases'), SIMULATED_DEVICE), {status: 'refused', reason: 'busy'});
 });
 
 test('a database that refuses commits is logged once per run, and the device record is published once it works again', async context => {
   const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
   await until(() => pushes(h) === 1 && h.device().availability === 'available', 'the first push');
   const revision = h.device().revision;
-  const lock = new DatabaseSync(join(h.stateDir, 'tidbyt.sqlite'));
-  lock.exec('BEGIN IMMEDIATE');
+  const release = refuseWrites(h);
   await core(h).set(asking());
   await h.advance(15 * SECOND);
-  await until(() => pushes(h) === 2, 'the push while the database is locked');
+  await until(() => pushes(h) === 2, 'the push while the database refuses writes');
   await until(() => records(h, 'operation.failed').length === 1, 'the refused commit');
-  assert.deepEqual(records(h, 'operation.failed'), ['warn storage unavailable']);
+  assert.deepEqual(records(h, 'operation.failed'), ['error storage internal'], 'a database that refuses writes is an internal fault');
   assert.equal(h.device().revision, revision, 'nothing was published that did not commit');
-  lock.exec('ROLLBACK');
-  lock.close();
+  release();
   await h.advance(30 * SECOND, SECOND);
   await until(() => h.device().revision > revision, 'the record once the database works');
   assert.deepEqual(records(h, 'operation.completed').filter(entry => entry.includes('storage')), ['info storage']);

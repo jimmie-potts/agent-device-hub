@@ -100,7 +100,12 @@ subscriber other than the core may act on a resent occurrence.
   leaves WAL for its VACUUM. The playback tests made commits fail by holding the database's write lock from a second
   connection, which exclusive locking rules out; they now set `query_only` on the module's own connection, which
   SQLite refuses as a read-only database, and the module logs that as `internal` at ERROR rather than `unavailable` at
-  WARN. The `runtime-playback` scenarios name a database that refuses writes instead of another writer. The in-memory
+  WARN. The `runtime-playback` scenarios name a database that refuses writes instead of another writer. The Tidbyt,
+  Pixoo and Nanoleaf tests that came with #973, #971 and #968 do the same: they read through the module's own
+  connection, and refuse writes with `query_only` or, where reads must fail too, with an authorizer that denies every
+  statement. The `runtime-tidbyt` and `nanoleaf-module` scenarios that named another connection now name a database
+  that refuses writes; a second Tidbyt instance on the same state directory is now refused at the module's database,
+  before its lease, which a test still checks directly. The in-memory
   scenario harness restarts a crashed runtime in the same process; its crash now closes that runtime's module
   databases at once, as a process's end releases them, so the next generation can open them.
 - **No `journal_size_limit`.** With one connection, every automatic checkpoint completes, so the log stays within the
@@ -190,5 +195,5 @@ measured here: the Pixoo module is not on main yet.
   plus one post-cutover reading, with row storage and yielding deferred behind its trigger. It covers each core commit
   rewriting agent-state's whole payload, which drives the checkpoint rate above, and the core draining an intake
   backlog without yielding.
-- **Modules in review.** A Nanoleaf or Pixoo test that opens its module's file while the module runs must use
-  `moduleDatabase()`, and a full-disk VACUUM must leave WAL first.
+- **New modules.** A module test that opens its module's file while the module runs must use `moduleDatabase()`,
+  and a full-disk VACUUM must leave WAL first. The Tidbyt, Pixoo and Nanoleaf tests follow this since the rebase.
