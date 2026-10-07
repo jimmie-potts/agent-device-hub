@@ -1,15 +1,15 @@
-// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> <pixoo mode>
+// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> <pixoo state>
 // -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
 // whose simulated transport reaches the supervisor's simulated device over the IPC channel; the arguments name the run's
 // configuration file when its seed has one (Hub #919). With any module, a harness module reports every message the bus
 // publishes. The supervisor's controls arm a crash between the lamp's commit and
 // its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
 // stream at the edge, which `runMain` hands over once it serves. The simulated Pixoo (Hub #843) lives here, beside the
-// module that reaches it: the child reports what the Pixoo shows, and the supervisor sets how it answers, starting each
-// runtime with the mode the last one had.
+// module that reaches it: the child reports what the Pixoo shows, and the supervisor sets how it answers and starts each
+// runtime with the mode and the panel the last one had, as a real Pixoo keeps its picture across a runtime restart.
 import http from 'node:http';
 import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
-import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode} from '@jimmie-potts/pixoo';
+import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
@@ -218,11 +218,21 @@ const chime: ChimeTransport = {
   },
 };
 
-const [list = '-', fault = 'none', pixooMode = 'online', separator, ...runtimeArgs] = process.argv.slice(2);
+const [list = '-', fault = 'none', panel = '', separator, ...runtimeArgs] = process.argv.slice(2);
 const MODES: readonly string[] = ['online', 'offline', 'silent'] satisfies SimulatedMode[];
-if (separator !== '--' || !MODES.includes(pixooMode)) throw new Error('usage: child.js <modules|-> <fault|none> <pixoo mode> -- <runtime arguments>');
-/** The simulated Pixoo, in the mode the supervisor last set. */
-const pixoo = new SimulatedPixoo({mode: pixooMode as SimulatedMode});
+/** The Pixoo the last runtime left, as the supervisor hands it over: base64url JSON of its state, mode included. */
+const left = ((): SimulatedPixooState | undefined => {
+  try {
+    const value = JSON.parse(Buffer.from(panel, 'base64url').toString('utf8')) as Partial<SimulatedPixooState> | null;
+    return value !== null && typeof value === 'object' && MODES.includes(String(value.mode)) ? value as SimulatedPixooState : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+if (separator !== '--' || left === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <pixoo state> -- <runtime arguments>');
+/** The simulated Pixoo, in the mode the supervisor last set and showing what the last runtime's Pixoo showed. */
+const {mode: pixooMode, ...pixooPanel} = left;
+const pixoo = new SimulatedPixoo({mode: pixooMode, panel: pixooPanel});
 pixoo.onChange(state => { send({type: 'pixoo.state', state}); });
 
 const fixture = (name: string, simulate: () => BunnyModule, schemas?: Readonly<Record<string, object>>): ModuleFactory => ({

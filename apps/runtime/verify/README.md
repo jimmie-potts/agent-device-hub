@@ -24,7 +24,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. A simulation that names an unknown device, action or field is refused with 400 and changes nothing. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,

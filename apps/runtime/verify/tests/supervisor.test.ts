@@ -148,6 +148,30 @@ void test('the harness drops a part\'s stream at the edge, and the same remote p
   assert.equal((await post(run, 'disconnect', {source: 'bunny/modules/lamp'})).status, 400, 'only a part\'s source can be dropped');
 });
 
+void test('the harness refuses a simulation it does not know with 400, and the Pixoo\'s panel outlives a restart', {timeout: 90_000}, async context => {
+  const run = await startRun(context, await base(context), 'pixoo-offline');
+  for (const body of [{device: 'pixoo', action: 'sideways'}, {device: 'pixoo'}, {device: 'toaster', action: 'online'}, {device: 'lamp', action: 'online'}, []]) {
+    assert.equal((await post(run, 'simulate', body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');
+  // The operator sets the Pixoo's brightness, as a person would; the simulated panel shows it.
+  const grants = await readGrants(run.dataDir);
+  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
+  context.after(() => operator.close());
+  const result = await operator.request('bunny.cmd.brightness-set.pixoo-1', {
+    type: 'org.bunny.brightness.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/brightness-set/2.0', data: {percent: 30},
+  }, {timeoutMs: 5000});
+  assert.equal(result.status, 'accepted');
+  await until(async () => (await state(run)).devices.pixoo.brightness === 30, 'the panel at 30 percent');
+  const before = (await state(run)).devices.pixoo;
+  assert.equal((await post(run, 'restart')).status, 200);
+  await until(async () => (await state(run)).generation === 2, 'the restarted runtime');
+  const after = (await state(run)).devices.pixoo;
+  assert.deepEqual([after.brightness, after.writes, after.shown], [before.brightness, before.writes, before.shown], 'the panel kept what it showed');
+  assert.equal((await post(run, 'simulate', {device: 'pixoo', action: 'offline'})).status, 200);
+  assert.equal((await state(run)).devices.pixoo.mode, 'offline');
+});
+
 void test('a burst limit allows its count within a window, and allows again once the window has passed', () => {
   let now = 0;
   const limit = new BurstLimit(3, 60_000, () => now);

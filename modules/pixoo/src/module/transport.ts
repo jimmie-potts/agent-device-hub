@@ -46,7 +46,7 @@ export function httpPixooTransport(): PixooTransport {
 
 /** How the simulated Pixoo answers: at once (`online`), with a refusal to connect (`offline`), or never (`silent`). */
 export type SimulatedMode = 'online' | 'offline' | 'silent';
-/** What the simulated Pixoo shows, as plain data, so a disposable run can report it. */
+/** What the simulated Pixoo shows, as plain data, so a disposable run can report it and hand it to the next runtime. */
 export type SimulatedPixooState = {
   mode: SimulatedMode;
   /** What it answered: uploads, display writes and probes. */
@@ -73,8 +73,10 @@ export class SimulatedPixoo implements PixooTransport {
   readonly #listeners = new Set<(state: SimulatedPixooState) => void>();
   readonly #adapters = new Set<FakeDeviceAdapter>();
 
-  constructor({mode = 'online'}: {mode?: SimulatedMode} = {}) {
+  /** `panel` is what an earlier simulated Pixoo showed, so a disposable run's new runtime finds the panel as it was. */
+  constructor({mode = 'online', panel}: {mode?: SimulatedMode; panel?: Omit<SimulatedPixooState, 'mode'>} = {}) {
     this.#mode = mode;
+    if (panel !== undefined) this.#state = structuredClone(panel);
   }
 
   open({clock}: OpenOptions): Promise<OpenedDevice> {
