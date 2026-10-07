@@ -13,7 +13,7 @@
 //
 // A module opens only local resources in start and reaches its device later, so the kit also starts a module whose
 // device never answers and fails it when that start does not finish, or when it never reports the device unavailable.
-// No message, record or reply may carry one of the module's secrets (Hub #919).
+// No message, command, sync request, record, reply or synced state may carry one of the module's secrets (Hub #919).
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -258,7 +258,7 @@ class World {
     };
     const places: [string, readonly unknown[]][] = [
       ['a published message', this.seen], ['a sync request', this.syncRequests], ['an answer the kit got', this.answers],
-      ['a log record', this.#hosted.flatMap(harness => harness.logs)],
+      ['a command or sync the module sent', this.#hosted.flatMap(harness => harness.sent)], ['a log record', this.#hosted.flatMap(harness => harness.logs)],
     ];
     return places.filter(([, values]) => values.some(carries)).map(([place]) => `${place} carries a secret`);
   }

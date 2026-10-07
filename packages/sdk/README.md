@@ -322,6 +322,8 @@ export const sign: BunnyModule<SignConfig> = {
     },
   },
   async start({sdk, log, database, config, secrets, files, scheduler}) {
+    // `configure` is optional in the type, so `config` may be undefined; the runtime starts this module only with it.
+    if (config === undefined) throw new Error('the sign started without its configuration');
     database().exec('CREATE TABLE IF NOT EXISTS scenes (id TEXT PRIMARY KEY)');
     const token = await secrets.read('token');
     const layouts = files();
@@ -351,7 +353,10 @@ export const sign: BunnyModule<SignConfig> = {
   own section of its [configuration file](../../apps/runtime/README.md#configuration),
   a JSON object, and never with another module's. It returns
   `{config, devices?}` or a refusal from `errorBody`. It must be synchronous,
-  read no file and reach no device. `config` becomes the context's `config`.
+  read no file and reach no device. A refusal's detail is fixed text that
+  repeats no value from the section, since health shows it. `config` becomes the
+  context's `config`, typed `Config | undefined` because `configure` is optional:
+  a module that declares one checks for undefined once, in `start`.
   `devices` lists the routing IDs of the devices the module controls, and the
   runtime refuses a module that names a device another module already named. A
   module that declares `configure` needs a section; one without it takes no
@@ -418,26 +423,37 @@ working, so `stop()` can still log.
 
 `secrets.read(name)` reads the file that the module's section names `name` in
 its `secrets` member, anew on each call, and resolves with its UTF-8 text
-without trailing line breaks. A module never reads a file its section does not
-name, so it never reads another module's secret. The file must be private, as
-the configuration file is: a regular file with one link and mode 600, owned by
-the runtime's user, at most 64 KiB, reached through no link and outside every
-Git checkout and Windows mount. The runtime checks each named file before it
-starts the module, and refuses the module when one fails. `read` rejects with
-an `SdkError`:
+without trailing line breaks. A secret file holds one token, which the module
+uses whole. A module never reads a file its section does not name, so it never
+reads another module's secret. The file must be private, as the configuration
+file is: a regular file with one link and no permissions for group or others,
+owned and readable by the runtime's user, at most 64 KiB, reached through no
+link and outside every Git checkout and Windows mount. The runtime checks each
+named file before it starts the module, and refuses the module when one fails.
+`read` rejects with an `SdkError`:
 
 | Code | When |
 | --- | --- |
 | `not-found` | The section names no such secret, or the file is missing. |
-| `forbidden` | The file is not private: a link in its path, another mode, a second link, another owner, not a regular file, inside a Git checkout or on a Windows mount. |
+| `forbidden` | The file is not private: a link in its path, a permission for group or others, a second link, another owner, no read permission for the runtime's user, not a regular file, inside a Git checkout or on a Windows mount. |
 | `invalid-request` | The file is larger than 64 KiB or is not UTF-8 text. |
 | `invalid-state` | The module's stop has begun. |
 
 No detail quotes the file. A secret never goes into a message, a log field, an
 error body or health. The runtime drops, and counts, any log record whose
-attribute holds a secret a module read, and the module test kit fails a module
-whose message, log record or reply holds one of its secrets. A very short
-secret makes the runtime drop every record that contains it.
+attribute holds a secret a module read, as text or as a number's digits, and
+its `runtime.failed` record leaves such an attribute out. The module test kit
+fails a module whose message, command, sync request, log record, reply or synced
+state holds one of its secrets. A very short secret makes the runtime drop every
+record that contains it.
+
+These are boundaries of the module API, not a sandbox. A module's code runs in
+the runtime's process, as the runtime's user, so the context never hands it
+another module's section or secret, but nothing stops its own code from opening
+a file directly. The operator chooses where the configuration and secret files
+live; the runtime checks the files and the links along their paths, not the
+modes of their directories, and it confirms the opened file through
+`/proc/self/fd`.
 
 ### Worker calls
 
@@ -448,16 +464,19 @@ resolves with that reply, and the worker is terminated. Tidbyt and Pixoo render
 their frames this way, off the event loop. The deadline, an integer from 1 to
 `MAX_TIMEOUT_MS`, runs on the runtime's scheduler. A module has at most
 `MAX_WORKER_CALLS` (4) calls running. A failed call rejects with an `SdkError`
-and terminates its worker:
+and terminates its worker. A call refused before its worker starts had no
+effect. Once the worker has the request, every ending but its reply is
+`uncertain-result`, because the worker may have done part of its work: in
+ADR 0012, a rejection proves no effect, and cancellation is not undo.
 
 | Code | When |
 | --- | --- |
-| `uncertain-result` | The deadline passed. The worker had the request, so it may have done part of its work. |
-| `cancelled` | The module stopped, or `signal` aborted. |
-| `internal` | The worker threw, its reply could not be read, or it ended without a reply. What it threw stays in memory as the error's cause. |
-| `capacity` | The module already has `MAX_WORKER_CALLS` calls running. |
-| `invalid-request` | The deadline is not an integer from 1 to `MAX_TIMEOUT_MS`. |
-| `invalid-state` | The module's stop has begun. |
+| `invalid-state` | Before the worker starts: the module's stop has begun. |
+| `invalid-request` | Before the worker starts: the deadline is not an integer from 1 to `MAX_TIMEOUT_MS`. |
+| `cancelled` | Before the worker starts: `signal` had already aborted. |
+| `capacity` | Before the worker starts: the module already has `MAX_WORKER_CALLS` calls running. |
+| `internal` | Before the worker starts: it could not start, as for a file that is not a `file:` URL. |
+| `uncertain-result` | After the worker started: the deadline passed, the module stopped, `signal` aborted, the worker threw, its reply could not be read, or it ended without a reply. What it threw stays in memory as the error's cause. |
 
 A failed call never fails the module; the module turns it into an outcome.
 `WorkerCalls` is the implementation the runtime and the kit's harness share.
@@ -607,9 +626,9 @@ the stand-in acknowledgment and `spec.schemas` registered. Every record the
 module logs must be one the runtime writes whole as a
 [diagnostic-contract](../../docs/observability-contract.md) record (#903): an
 event the catalog registers for the `bunny.module` scope, and only registered
-attributes with values of their registered types. No message, log record,
-reply or synced state may carry one of `spec.secrets`, and a failure names
-where one appeared, never the secret. No handler, timer or worker of the module
+attributes with values of their registered types. No message, command or sync
+request the module sends, log record, reply or synced state may carry one of
+`spec.secrets`, and a failure names where one appeared, never the secret. No handler, timer or worker of the module
 may fail, and its stop may not throw or outlast its deadline.
 
 `checkModuleRecord(name, record)` is that record check on its own. It returns
@@ -644,7 +663,9 @@ context, and its database. A timer, socket or handle the module opened another
 way is beyond it.
 
 `ModuleHarness` is what the checks host a module with, as the runtime would:
-- its own participant on a given bus, which the module gets without `close`;
+- its own participant on a given bus, which the module gets without `close`,
+  and whose commands and syncs it keeps in `sent`, since no subscriber sees
+  them;
 - its `section`, checked with `checkConfiguration` before start, which throws
   the refusal's `SdkError` and never starts a module the runtime would refuse;
 - a context whose SQLite file and private folder, `<name>/`, live in a given

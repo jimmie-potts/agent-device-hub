@@ -17,6 +17,8 @@ const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name
 const power = {enum: ['on', 'off']};
 const BEACON_SCHEMA = `${BASE}kit-beacon/2.0`;
 const PING_SCHEMA = `${BASE}kit-beacon-ping/2.0`;
+/** A peer's command, which nothing in the kit answers or registers. */
+const PEER_PING_SCHEMA = `${BASE}kit-peer-ping/2.0`;
 const schemas = {
   [BULB_SCHEMA]: {type: 'object', additionalProperties: false, required: ['id', 'revision', 'power'], properties: {id: block('id'), revision: block('revision'), power}},
   [SWITCH_SCHEMA]: {type: 'object', additionalProperties: false, required: ['requestId', 'power'], properties: {requestId: block('requestId'), power}},
@@ -245,8 +247,11 @@ class Lantern {
   }
 }
 
-/** What a broken beacon gets wrong: it waits on its device in start, or puts its secret in a record, a message or a reply. */
-type BeaconFault = {waitInStart?: boolean; leak?: 'log' | 'message' | 'reply'};
+/**
+ * What a broken beacon gets wrong: it waits on its device in start, or puts its secret in a record, a published state, a
+ * reply, a command it sends, or only in the states it serves through sync.
+ */
+type BeaconFault = {waitInStart?: boolean; leak?: 'log' | 'message' | 'reply' | 'command' | 'sync'};
 type Beacon = {id: string; revision: number; availability: 'unknown' | 'available' | 'unavailable'; label?: string};
 
 /**
@@ -265,14 +270,21 @@ function beacon(device: Lantern, fault: BeaconFault = {}): BunnyModule<{address:
       },
     },
     async start({sdk, config, secrets, files, scheduler, log}) {
+      if (config === undefined) throw new Error('the beacon started without its configuration');
       const token = await secrets.read('token');
       await writeFile(join(files(), 'layout.json'), JSON.stringify({address: config.address}), {mode: 0o600});
-      const beacon: Beacon = {id: 'beacon-1', revision: 0, availability: 'unknown', ...(fault.leak === 'message' ? {label: token} : {})};
-      const state = (): StateDraft<Beacon> => ({type: 'org.bunny.kit-beacon.updated', subject: beacon.id, dataschema: BEACON_SCHEMA, data: {...beacon}});
-      await sdk.serveSync(['kit-beacon'], () => ({revision: beacon.revision, states: [state()]}));
+      const beacon: Beacon = {id: 'beacon-1', revision: 0, availability: 'unknown'};
+      const state = (label?: string): StateDraft<Beacon> =>
+        ({type: 'org.bunny.kit-beacon.updated', subject: beacon.id, dataschema: BEACON_SCHEMA, data: {...beacon, ...(label === undefined ? {} : {label})}});
+      // A sync leak is in the served states only: nothing the module publishes carries it.
+      await sdk.serveSync(['kit-beacon'], () => ({revision: beacon.revision, states: [state(fault.leak === 'sync' ? token : undefined)]}));
       await sdk.respond('bunny.cmd.kit-beacon.*', () => errorBody('invalid-state', {detail: fault.leak === 'reply' ? `the beacon holds ${token}` : 'the beacon takes no commands'}));
       if (fault.leak === 'log') log.info('operation.completed', {'bunny.message.id': token});
-      if (fault.leak === 'message') await sdk.publish('bunny.state.kit-beacon.beacon-1', {kind: 'state', ...state()});
+      if (fault.leak === 'message') await sdk.publish('bunny.state.kit-beacon.beacon-1', {kind: 'state', ...state(token)});
+      if (fault.leak === 'command') {
+        // Nobody answers the peer's key, so only the command itself carries the token.
+        await sdk.request('bunny.cmd.kit-peer.peer-1', {type: 'org.bunny.kit-peer.ping.requested', subject: 'peer-1', dataschema: PEER_PING_SCHEMA, data: {token}}, {timeoutMs: 100});
+      }
       const reach = async (): Promise<void> => {
         const controller = new AbortController();
         const cancel = scheduler.after(100, () => { controller.abort(); });
@@ -324,15 +336,18 @@ it('the kit catches a configuration the module refuses or lacks: the module neve
   assert.deepEqual(await failing({...beaconSpec(), config: undefined}), every, 'a module with configure needs a section');
 });
 
-it('the kit catches a module that puts a secret it read in a log record, a message or a reply, and never quotes it', async () => {
-  assert.deepEqual(await failing(beaconSpec({leak: 'log'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
-  assert.deepEqual(await failing(beaconSpec({leak: 'message'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
+it('the kit catches a module that puts a secret it read in a log record, a message, a reply, a command it sends or a synced state, and never quotes it', async () => {
+  const starting = [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
+  assert.deepEqual(await failing(beaconSpec({leak: 'log'})), starting);
+  assert.deepEqual(await failing(beaconSpec({leak: 'message'})), starting);
+  assert.deepEqual(await failing(beaconSpec({leak: 'command'})), starting, 'a command the module sends, which no responder answers');
   assert.deepEqual(await failing(beaconSpec({leak: 'reply'})), [CHECKS.refuses]);
+  assert.deepEqual(await failing(beaconSpec({leak: 'sync'})), [CHECKS.serves], 'a state only the sync it serves carries');
   const reasons: string[] = [];
-  for (const leak of ['log', 'message', 'reply'] as const) {
+  for (const leak of ['log', 'message', 'command', 'reply', 'sync'] as const) {
     for (const check of conformanceChecks(beaconSpec({leak}))) await check.run().catch((error: unknown) => { reasons.push(String(error instanceof Error ? error.message : error)); });
   }
-  assert.equal(reasons.length, 9);
+  assert.equal(reasons.length, 14);
   assert.ok(reasons.every(reason => reason.includes('carries a secret') && !reason.includes(SECRET)), 'each names where the secret appeared, never the secret');
 });
 

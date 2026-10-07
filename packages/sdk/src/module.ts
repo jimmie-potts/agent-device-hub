@@ -60,6 +60,16 @@ export type Configured<Config> = {
   readonly devices?: readonly string[];
 };
 
+/**
+ * Checks the module's section of the runtime's configuration file, a JSON object, and returns the module's
+ * configuration, or a refusal from `errorBody` whose code and detail health shows. It runs before `start`, once per
+ * start of the runtime, and must be synchronous: it reads no file and reaches no device. A module that declares it
+ * needs a section. The section's `secrets` member, which the runtime checks first, names the module's secret files;
+ * `configure` sees their names and paths, never their contents. A refusal's detail is fixed text: it never repeats a
+ * value from the section, which health would show.
+ */
+export type Configure<Config> = (section: unknown) => Configured<Config> | ErrorBody;
+
 export type ModuleManifest<Config = unknown> = {
   /**
    * Lowercase letters and digits with single hyphens, at most 64 characters. It names the module's source
@@ -69,15 +79,8 @@ export type ModuleManifest<Config = unknown> = {
   readonly name: string;
   /** The module API version the module was written for, such as `1.1`. */
   readonly apiVersion: string;
-  /**
-   * Checks the module's section of the runtime's configuration file, a JSON object, and returns the module's
-   * configuration, or a refusal from `errorBody` whose code and detail health shows. It runs before `start`, once per
-   * start of the runtime, and must be synchronous: it reads no file and reaches no device. A module that declares it
-   * needs a section; without it, the module takes no configuration and its `config` is undefined. The section's
-   * `secrets` member, which the runtime checks first, names the module's secret files; `configure` sees their names
-   * and paths, never their contents.
-   */
-  readonly configure?: (section: unknown) => Configured<Config> | ErrorBody;
+  /** See `Configure`. Without it, the module takes no configuration and its `config` is undefined. */
+  readonly configure?: Configure<Config>;
 };
 
 /** The outcome of `checkConfiguration`: what the module's context gets, or why the module is refused. */
@@ -231,11 +234,14 @@ export interface Workers {
   /**
    * Runs one bounded request in a new worker thread from a module file, such as rendering a frame: the worker gets
    * `request` as its `workerData` and answers with one `parentPort.postMessage(reply)`, and the call resolves with that
-   * reply. The worker is then terminated, as it is when the call ends any other way: the call rejects with an
-   * `SdkError` carrying `uncertain-result` when the deadline passes, since the worker had the request; `cancelled` when
-   * the module stops or `signal` aborts; `internal` when the worker throws, or ends without a reply; `capacity` when the
-   * module already has `MAX_WORKER_CALLS` calls running; `invalid-request` for a malformed deadline; and `invalid-state`
-   * once the module's stop has begun. A failed call never fails the module: the module turns it into an outcome.
+   * reply. The worker is then terminated, as it is when the call ends any other way. Before the worker starts, the call
+   * is refused, with no effect: `invalid-state` once the module's stop has begun, `invalid-request` for a malformed
+   * deadline, `cancelled` when `signal` has already aborted, `capacity` when the module already has `MAX_WORKER_CALLS`
+   * calls running, and `internal` when the worker cannot start. Once the worker has the request, every other ending
+   * rejects with `uncertain-result`, because it may have done part of its work: the deadline passing, the module
+   * stopping, `signal` aborting, the worker throwing, its reply being unreadable, or it ending without a reply. What
+   * the worker threw stays in memory as the error's cause. A failed call never fails the module: the module turns it
+   * into an outcome.
    */
   call<Reply = unknown>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply>;
 }
@@ -244,12 +250,12 @@ export interface Workers {
 export interface Secrets {
   /**
    * Reads the secret file that the module's section names `name`, anew on each call, and resolves with its UTF-8 text
-   * without trailing line breaks. The file must be private, as the configuration file is: a regular file with one link
-   * and mode 600, owned by the runtime's user, at most 64 KiB, reached through no link and outside every Git checkout
-   * and Windows mount. It rejects with an `SdkError`: `not-found` for a name the section does not name or a missing
-   * file, `forbidden` for a file that is not private, `invalid-request` for one that is too large or not UTF-8 text,
-   * and `invalid-state` once the module's stop has begun. Never put what it returns in a message, a log field, an
-   * error body or health.
+   * without trailing line breaks. A secret file holds one token, used whole. The file must be private, as the
+   * configuration file is: a regular file with one link and no permissions for group or others, owned and readable by
+   * the runtime's user, at most 64 KiB, reached through no link and outside every Git checkout and Windows mount. It
+   * rejects with an `SdkError`: `not-found` for a name the section does not name or a missing file, `forbidden` for a
+   * file that is not private, `invalid-request` for one that is too large or not UTF-8 text, and `invalid-state` once
+   * the module's stop has begun. Never put what it returns in a message, a log field, an error body or health.
    */
   read(name: string): Promise<string>;
 }
@@ -276,9 +282,10 @@ export type ModuleContext<Config = unknown> = {
   readonly database: () => DatabaseSync;
   /**
    * The configuration the manifest's `configure` returned from the module's own section, or undefined for a module
-   * without `configure`. A module never sees another module's section.
+   * without `configure`. The type says so because the manifest's `configure` is optional: a module that declares one
+   * checks for undefined once, in `start`. A module never sees another module's section.
    */
-  readonly config: Config;
+  readonly config: Config | undefined;
   /** The module's own secret files. */
   readonly secrets: Secrets;
   /**

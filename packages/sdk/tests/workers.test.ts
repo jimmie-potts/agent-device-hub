@@ -1,6 +1,7 @@
 // A module's bounded worker calls (Hub #919): one request and one reply in a new worker thread, with a deadline on the
-// runtime's scheduler, cancelled when the module stops. A failed call rejects with a registry code and never carries
-// what the worker threw.
+// runtime's scheduler, ended when the module stops. A call refused before its worker starts had no effect; once the
+// worker has the request, every ending but its reply is `uncertain-result` (ADR 0012). A failed call never carries what
+// the worker threw.
 import assert from 'node:assert/strict';
 import type {Worker} from 'node:worker_threads';
 import {MAX_TIMEOUT_MS, MAX_WORKER_CALLS, SdkError, WorkerCalls} from '../src/index.js';
@@ -51,37 +52,43 @@ it('a worker call that outlasts its deadline rejects as uncertain at the deadlin
   await until(() => running() === 0, 'the worker to be terminated');
 });
 
-it('stopping the module cancels its worker calls and terminates their workers', async () => {
+it('stopping the module ends its worker calls as uncertain, since each worker had its request, and terminates their workers', async () => {
   const {calls: workers, module, clock, running} = calls();
   const call = workers.call(WORKER, {act: 'silent'}, {timeoutMs: 60_000});
   await until(() => running() === 1, 'the worker to start');
   module.abort();
-  await assert.rejects(call, code('cancelled'));
+  await assert.rejects(call, code('uncertain-result'));
   await until(() => running() === 0, 'the worker to be terminated');
   assert.equal(clock.pending(), 0, 'its deadline is cancelled');
   await assert.rejects(workers.call(WORKER, {act: 'answer'}, {timeoutMs: 1000}), code('invalid-state'), 'a stopped module starts no call');
   assert.equal(running(), 0);
 });
 
-it('a call whose own signal aborts is cancelled, and its worker is terminated', async () => {
-  const {calls: workers, running} = calls();
+it('a call whose own signal aborts after its worker started is uncertain, and one aborted before is cancelled with no worker', async () => {
+  const {calls: workers, workers: started, running} = calls();
   const controller = new AbortController();
   const call = workers.call(WORKER, {act: 'silent'}, {timeoutMs: 60_000, signal: controller.signal});
   await until(() => running() === 1, 'the worker to start');
   controller.abort();
-  await assert.rejects(call, code('cancelled'));
+  await assert.rejects(call, code('uncertain-result'), 'cancellation is not undo: the worker had the request');
   await until(() => running() === 0, 'the worker to be terminated');
   const aborted = AbortSignal.abort();
   await assert.rejects(workers.call(WORKER, {act: 'answer'}, {timeoutMs: 1000, signal: aborted}), code('cancelled'), 'an aborted signal starts no worker');
+  assert.equal(started.length, 1, 'no second worker started');
 });
 
-it('a worker that throws or ends without a reply fails only its call, as internal', async () => {
-  const {calls: workers, running} = calls();
+it('a worker that throws, whose reply cannot be read, or that ends without a reply leaves only its call uncertain', async () => {
+  const {calls: workers, workers: started, running} = calls();
   const thrown = await workers.call(WORKER, {act: 'throw'}, {timeoutMs: 5000}).catch((error: unknown) => error);
-  assert.ok(code('internal')(thrown));
+  assert.ok(code('uncertain-result')(thrown));
   assert.ok(thrown instanceof SdkError && thrown.cause instanceof Error, 'what the worker threw stays in memory as the cause');
-  await assert.rejects(workers.call(WORKER, {act: 'end'}, {timeoutMs: 5000}), code('internal'));
-  await until(() => running() === 0, 'both workers to end');
+  await assert.rejects(workers.call(WORKER, {act: 'end'}, {timeoutMs: 5000}), code('uncertain-result'));
+  // Node reports a reply it cannot deserialize as `messageerror` on the worker; the call hears it as the worker would send it.
+  const unreadable = workers.call(WORKER, {act: 'silent'}, {timeoutMs: 60_000});
+  await until(() => running() === 1, 'the worker to start');
+  started.at(-1)?.emit('messageerror', new Error('the reply could not be deserialized'));
+  await assert.rejects(unreadable, code('uncertain-result'));
+  await until(() => running() === 0, 'every worker to end');
 });
 
 it('a module has at most MAX_WORKER_CALLS calls running, and a malformed deadline is refused', async () => {
@@ -92,6 +99,13 @@ it('a module has at most MAX_WORKER_CALLS calls running, and a malformed deadlin
     await assert.rejects(workers.call(WORKER, {act: 'answer'}, {timeoutMs}), code('invalid-request'), String(timeoutMs));
   }
   module.abort();
-  for (const call of held) await assert.rejects(call, code('cancelled'));
+  for (const call of held) await assert.rejects(call, code('uncertain-result'));
   await until(() => running() === 0, 'every worker to be terminated');
+});
+
+it('a worker that cannot start is refused as internal, with no worker and no effect', async () => {
+  const {calls: workers, workers: started} = calls();
+  // A worker's file must be a file: URL; any other is refused before a thread exists.
+  await assert.rejects(workers.call(new URL('https://bunny.invalid/worker.js'), {act: 'answer'}, {timeoutMs: 1000}), code('internal'));
+  assert.equal(started.length, 0);
 });

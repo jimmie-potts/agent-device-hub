@@ -10,7 +10,8 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {InProcessBus} from '../in-process.js';
 import {checkConfiguration, type BunnyModule, type LogFields, type Logger, type ModuleContext, type WorkerCallOptions} from '../module.js';
 import {
-  SdkError, type Cancel, type Clock, type Handler, type Participant, type Responder, type Scheduler, type Sdk, type SubscribeOptions, type TraceContext,
+  SdkError, type Cancel, type Clock, type CommandDraft, type Handler, type Participant, type Responder, type Scheduler, type Sdk, type SubscribeOptions,
+  type TraceContext,
 } from '../sdk.js';
 import type {SyncHandler, SyncOptions} from '../sync.js';
 import {noSpans, startSpan, type SpanRecorder} from '../spans.js';
@@ -57,11 +58,15 @@ const missingSecret = (detail: string): SdkError => new SdkError(errorBody('not-
 /** The runtime's stop deadline for a module's participant close and for its `stop`. */
 export const DEFAULT_STOP_TIMEOUT_MS = 5000;
 
+/** What a module sent that no subscriber sees: a command it requested, or the families it asked to sync. */
+export type HarnessSent = {call: 'request'; key: string; draft: CommandDraft<object>} | {call: 'sync'; families: readonly string[]};
+
 /**
  * The module's SDK calls, without `close`: as in the runtime, only the host closes a module's participant. `saw` hears
- * the trace context of each message the module receives.
+ * the trace context of each message the module receives. Each command and sync the module sends is also kept in
+ * `sent`, since no subscriber sees them.
  */
-const calls = (participant: Participant, saw: (context: TraceContext) => void): Sdk => ({
+const calls = (participant: Participant, saw: (context: TraceContext) => void, sent: HarnessSent[]): Sdk => ({
   source: participant.source,
   publish: (key, draft, options) => participant.publish(key, draft, options),
   publishMessage: (key, message) => participant.publishMessage(key, message),
@@ -69,15 +74,21 @@ const calls = (participant: Participant, saw: (context: TraceContext) => void): 
     saw(message);
     return handler(message);
   }, options),
-  request: (key, draft, options) => participant.request(key, draft, options),
+  request: (key, draft, options) => {
+    sent.push({call: 'request', key, draft});
+    return participant.request(key, draft, options);
+  },
   respond: <T extends object>(pattern: string, responder: Responder<T>) => participant.respond<T>(pattern, command => {
     saw(command);
     return responder(command);
   }),
-  sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => participant.sync<T>(families, change => {
-    if (change.type !== 'failed' && change.message !== undefined) saw(change.message);
-    return handler(change);
-  }, options),
+  sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
+    sent.push({call: 'sync', families: [...families]});
+    return participant.sync<T>(families, change => {
+      if (change.type !== 'failed' && change.message !== undefined) saw(change.message);
+      return handler(change);
+    }, options);
+  },
   serveSync: (families, provider) => participant.serveSync(families, request => {
     saw(request);
     return provider(request);
@@ -89,6 +100,8 @@ export class ModuleHarness {
   readonly logs: HarnessRecord[] = [];
   /** The trace contexts of the messages the module received: commands, deliveries, synced states and sync requests. */
   readonly received: TraceContext[] = [];
+  /** The commands and syncs the module sent, which no subscriber sees, so the kit can check them too. */
+  readonly sent: HarnessSent[] = [];
   /**
    * Errors from the module's timer callbacks and workers, which the runtime would fail the module for, and a `stop`
    * that threw or a close or `stop` that outlasted its deadline, which the runtime logs as a warning.
@@ -190,7 +203,7 @@ export class ModuleHarness {
     const named = {'bunny.module': this.name};
     const workerCalls = new WorkerCalls({scheduler, signal: this.#controller.signal, track: worker => { this.#track(worker); }});
     return {
-      sdk: calls(participant, context => { this.received.push({traceparent: context.traceparent}); }),
+      sdk: calls(participant, context => { this.received.push({traceparent: context.traceparent}); }, this.sent),
       log,
       trace: {
         span: parent => childOf(parent),
