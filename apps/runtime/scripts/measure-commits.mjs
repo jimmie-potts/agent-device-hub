@@ -12,10 +12,16 @@
 //   each outcome; `--commands` commands.
 // Run `npm run build` first, with TMPDIR outside every Git checkout; each run uses a temporary state directory there.
 // The probe wraps node:sqlite's `exec`, `prepare` and statement calls in its own process only. A commit is a `COMMIT`
-// that ends a transaction, or a write outside a transaction that changed a row (SQLite's autocommit); a synced commit is
-// one that waits for the disk: any commit in rollback journal mode, and one at `synchronous = FULL` or above in WAL mode.
-// The blocked time is every SQLite call's duration on a module database. The event-loop delay is `monitorEventLoopDelay` at 1 ms resolution
-// over the measured window. Output is one JSON line per run, then a summary.
+// that ends a transaction, or a write outside a transaction that changed a row (SQLite's autocommit), including one with
+// `RETURNING` read through `get` or `all`; a synced commit is
+// one that waits for the disk: any commit in rollback journal mode, one at `synchronous = FULL` or above in WAL mode, and
+// one that ran a WAL checkpoint, which syncs the log and the file. A commit ran a checkpoint when the database file's
+// modification time changed during it: in WAL mode only a checkpoint writes the file. Commit times are reported for synced
+// and unsynced commits apart, and checkpoints with their own times. The blocked time is every SQLite call's duration on a
+// module database, and nothing else: serializing or cloning a payload outside SQLite is not in it. The event-loop delay
+// is `monitorEventLoopDelay` at 1 ms resolution over the measured window, which opens once the monitor's timer has run, so
+// a stall at its start is caught. Output is one JSON line per run, then a summary.
+import {statSync} from 'node:fs';
 import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {cpus, release, tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
@@ -57,23 +63,41 @@ const nameOf = database => {
   }
 };
 const pragmas = new WeakMap();
-/** Whether a commit on this connection now waits for the disk, read before the call so its time is not counted. */
+/** The database file's modification time, which in WAL mode only a checkpoint changes. */
+const modified = database => {
+  try {
+    return statSync(database.location(), {bigint: true}).mtimeNs;
+  } catch {
+    return undefined;
+  }
+};
+/**
+ * How a commit on this connection would sync, read before the call so its time is not counted: `synced` when it waits
+ * for the disk at its level, and in WAL mode the file's modification time, to tell a checkpoint after the call.
+ */
 function syncing(database) {
   let read = pragmas.get(database);
   if (read === undefined) {
     read = {mode: prepare.call(database, 'PRAGMA journal_mode'), level: prepare.call(database, 'PRAGMA synchronous')};
     pragmas.set(database, read);
   }
-  return get.call(read.mode).journal_mode !== 'wal' || get.call(read.level).synchronous >= 2;
+  const wal = get.call(read.mode).journal_mode === 'wal';
+  return {synced: !wal || get.call(read.level).synchronous >= 2, modified: wal ? modified(database) : undefined};
 }
-function note(name, ms, committed, synced) {
-  const entry = window.databases[name] ??= {commits: 0, synced: 0, commitMs: [], sqliteMs: 0};
+function note(name, ms, committed, sync, database) {
+  const entry = window.databases[name] ??= {commits: 0, synced: 0, checkpoints: 0, syncedMs: [], unsyncedMs: [], checkpointMs: [], sqliteMs: 0};
   entry.sqliteMs += ms;
-  if (committed) {
-    entry.commits += 1;
-    if (synced) entry.synced += 1;
-    entry.commitMs.push(ms);
+  if (!committed) return;
+  const checkpoint = sync.modified !== undefined && modified(database) !== sync.modified;
+  entry.commits += 1;
+  if (checkpoint) {
+    entry.checkpoints += 1;
+    entry.checkpointMs.push(ms);
   }
+  if (sync.synced || checkpoint) {
+    entry.synced += 1;
+    entry.syncedMs.push(ms);
+  } else entry.unsyncedMs.push(ms);
 }
 const exec = DatabaseSync.prototype.exec;
 const prepare = DatabaseSync.prototype.prepare;
@@ -82,45 +106,61 @@ DatabaseSync.prototype.exec = function (sql) {
   const name = window === undefined ? undefined : nameOf(this);
   if (name === undefined) return exec.call(this, sql);
   const before = this.isTransaction;
-  const synced = syncing(this);
+  // Only a statement that may commit needs its sync level; reading it is not counted.
+  const sync = before || WRITE.test(sql) ? syncing(this) : {synced: false, modified: undefined};
   const began = performance.now();
   try {
     return exec.call(this, sql);
   } finally {
+    const ms = performance.now() - began;
     const after = this.isOpen && this.isTransaction;
     const ended = before && !after && /\b(COMMIT|END)\b/i.test(sql);
-    note(name, performance.now() - began, ended || (!before && !after && WRITE.test(sql)), synced);
+    note(name, ms, ended || (!before && !after && WRITE.test(sql)), sync, this);
   }
 };
 DatabaseSync.prototype.prepare = function (sql) {
   const statement = prepare.call(this, sql);
-  owners.set(statement, this);
+  owners.set(statement, {database: this, write: WRITE.test(sql)});
   return statement;
 };
 for (const method of ['run', 'get', 'all']) {
   const original = StatementSync.prototype[method];
   StatementSync.prototype[method] = function (...args) {
-    const database = owners.get(this);
+    const {database, write} = owners.get(this) ?? {};
     const name = window === undefined || database === undefined ? undefined : nameOf(database);
     if (name === undefined) return original.apply(this, args);
     const before = database.isTransaction;
-    const synced = !before && method === 'run' && syncing(database);
+    const sync = !before && write ? syncing(database) : {synced: false, modified: undefined};
     const began = performance.now();
     let result;
     try {
       result = original.apply(this, args);
       return result;
     } finally {
-      note(name, performance.now() - began, method === 'run' && !before && Number(result?.changes ?? 0) > 0, synced);
+      const ms = performance.now() - began;
+      // A write outside a transaction commits when it changed a row: `run` says how many, and a write with `RETURNING`,
+      // read through `get` or `all`, returns one row for each.
+      const changed = method === 'run' ? Number(result?.changes ?? 0) > 0 : Array.isArray(result) ? result.length > 0 : result !== undefined;
+      note(name, ms, write && !before && changed, sync, database);
     }
   };
 }
 
-/** Starts a measured window: commits, SQLite time and the event-loop delay until `end`. */
-function measure() {
-  window = {databases: {}};
+const times = list => {
+  const sorted = [...list].sort((a, b) => a - b);
+  return {count: sorted.length, p50: round(percentile(sorted, 50)), p90: round(percentile(sorted, 90)), max: round(sorted.at(-1) ?? 0)};
+};
+const wait = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+
+/**
+ * Starts a measured window: commits, SQLite time and the event-loop delay until `end`. The window opens once the delay
+ * monitor's timer has run, so a stall that starts with the work is caught.
+ */
+async function measure() {
   const delay = monitorEventLoopDelay({resolution: 1});
   delay.enable();
+  await wait(20);
+  window = {databases: {}};
   const began = performance.now();
   return () => {
     delay.disable();
@@ -128,21 +168,23 @@ function measure() {
     window = undefined;
     const elapsedMs = performance.now() - began;
     const all = Object.values(databases);
-    const commitMs = all.flatMap(entry => entry.commitMs).sort((a, b) => a - b);
-    const commits = all.reduce((sum, entry) => sum + entry.commits, 0);
-    const synced = all.reduce((sum, entry) => sum + entry.synced, 0);
-    const sqliteMs = all.reduce((sum, entry) => sum + entry.sqliteMs, 0);
+    const sum = pick => all.reduce((total, entry) => total + pick(entry), 0);
+    const commits = sum(entry => entry.commits), synced = sum(entry => entry.synced), checkpoints = sum(entry => entry.checkpoints);
+    const sqliteMs = sum(entry => entry.sqliteMs);
     return {
-      elapsedMs: round(elapsedMs), commits, synced, commitsPerMinute: round(commits / elapsedMs * 60_000), syncedPerMinute: round(synced / elapsedMs * 60_000),
-      commitMs: {p50: round(percentile(commitMs, 50)), p90: round(percentile(commitMs, 90)), max: round(commitMs.at(-1) ?? 0), total: round(commitMs.reduce((a, b) => a + b, 0))},
+      elapsedMs: round(elapsedMs), commits, synced, checkpoints, commitsPerMinute: round(commits / elapsedMs * 60_000),
+      syncedPerMinute: round(synced / elapsedMs * 60_000), checkpointsPerMinute: round(checkpoints / elapsedMs * 60_000),
+      commitMs: {synced: times(all.flatMap(entry => entry.syncedMs)), unsynced: times(all.flatMap(entry => entry.unsyncedMs))},
+      checkpointMs: times(all.flatMap(entry => entry.checkpointMs)),
       blockedMs: round(sqliteMs), blockedMsPerMinute: round(sqliteMs / elapsedMs * 60_000),
       eventLoopDelayMs: {p50: round(delay.percentile(50) / 1e6), p99: round(delay.percentile(99) / 1e6), max: round(delay.max / 1e6)},
-      byDatabase: Object.fromEntries(Object.entries(databases).map(([name, entry]) => [name, {commits: entry.commits, synced: entry.synced, blockedMs: round(entry.sqliteMs)}])),
+      byDatabase: Object.fromEntries(Object.entries(databases).map(([name, entry]) => [name, {
+        commits: entry.commits, synced: entry.synced, checkpoints: entry.checkpoints, blockedMs: round(entry.sqliteMs),
+      }])),
     };
   };
 }
 
-const wait = ms => new Promise(resolve => { setTimeout(resolve, ms); });
 async function stateDirectory() {
   const dir = await mkdtemp(join(await realpath(tmpdir()), 'bunny-commits-'));
   return {dir, state: join(dir, 'state'), remove: () => rm(dir, {recursive: true, force: true})};
@@ -184,7 +226,7 @@ async function intake() {
   }});
   try {
     await wait(500);
-    const end = measure();
+    const end = await measure();
     const total = Math.round(seconds * rate);
     const began = performance.now();
     for (let n = 0; n < total; n += 1) {
@@ -216,7 +258,7 @@ async function lifx() {
       if (message.kind === 'outcome') outcomes.get(message.data.requestId)?.(message);
     });
     await wait(1000);
-    const end = measure();
+    const end = await measure();
     const replyMs = [], outcomeMs = [];
     const results = {};
     for (let n = 0; n < commands; n += 1) {
@@ -264,7 +306,7 @@ async function outbox() {
       acknowledged.get(message.data.requestId)?.();
     });
     const write = database.prepare('INSERT INTO lamp VALUES (\'lamp-1\', ?, ?) ON CONFLICT (id) DO UPDATE SET power = excluded.power, pending = excluded.pending');
-    const end = measure();
+    const end = await measure();
     let revision = 0;
     for (let n = 0; n < commands; n += 1) {
       const requestId = `req-commits-${n}`;
@@ -313,7 +355,9 @@ for (const name of scenarios) {
   const [per, synced, blocked] = [`commitsPer${unit}`, `syncedPer${unit}`, `blockedMsPer${unit}`];
   summary[name] = {runs, [per]: span(result => result[per]), [synced]: span(result => result[synced]), [blocked]: span(result => result[blocked]),
     commitsPerMinute: span(result => result.commitsPerMinute), syncedPerMinute: span(result => result.syncedPerMinute),
-    blockedMsPerMinute: span(result => result.blockedMsPerMinute), commitMsP50: span(result => result.commitMs.p50), commitMsP90: span(result => result.commitMs.p90),
-    eventLoopDelayP99Ms: span(result => result.eventLoopDelayMs.p99)};
+    blockedMsPerMinute: span(result => result.blockedMsPerMinute), syncedCommitMsP50: span(result => result.commitMs.synced.p50),
+    syncedCommitMsP90: span(result => result.commitMs.synced.p90), unsyncedCommitMsP50: span(result => result.commitMs.unsynced.p50),
+    checkpointsPerMinute: span(result => result.checkpointsPerMinute), checkpointMsMax: span(result => result.checkpointMs.max),
+    eventLoopDelayP99Ms: span(result => result.eventLoopDelayMs.p99), eventLoopDelayMaxMs: span(result => result.eventLoopDelayMs.max)};
 }
 process.stdout.write(`${JSON.stringify({summary, host: {node: process.version, kernel: release(), cpu: cpus()[0]?.model, cpus: cpus().length}})}\n`);
