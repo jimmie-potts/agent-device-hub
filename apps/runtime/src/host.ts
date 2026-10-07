@@ -146,6 +146,7 @@ function keepNodeOptions(options: WorkerOptions | undefined): WorkerOptions | un
   const env = options?.env;
   if (inherited === undefined || inherited === '' || typeof env !== 'object') return options;
   const own = env.NODE_OPTIONS;
+  if (own !== undefined && own.includes(inherited)) return options;
   return {...options, env: {...env, NODE_OPTIONS: own === undefined || own === '' ? inherited : `${inherited} ${own}`}};
 }
 

@@ -190,6 +190,8 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   const valid = JSON.stringify({schema: CONFIG_SCHEMA, modules: {}});
   const good = await privateFile(join(root, 'good.json'), valid);
   await symlink(good, join(root, 'linked.json'));
+  const holder = await stateDir(context);
+  await symlink(root, join(holder, 'via'));
   await privateFile(join(root, 'shared.json'), valid, 0o644);
   await privateFile(join(root, 'big.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {pad: 'x'.repeat(1_048_576)}}));
   await mkdir(join(root, 'checkout', '.git'), {recursive: true});
@@ -204,6 +206,7 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     ['/mnt/bunny-runtime-test/config.json', 'config-mount'],
     [join(root, 'missing.json'), 'config-missing'],
     [join(root, 'linked.json'), 'config-link'],
+    [join(holder, 'via', 'good.json'), 'config-link'],
     [join(root, 'shared.json'), 'config-not-private'],
     [join(root, 'big.json'), 'config-too-large'],
     [join(root, 'checkout', 'config.json'), 'config-checkout'],
@@ -243,6 +246,13 @@ it('a module\'s private folder sits beside its database, is mode 700, keeps its 
   const linked = fixture('linked');
   await run(context, {modules: [linked], stateDir: dir});
   assert.throws(() => contextOf(linked).files(), runtimeCode('module-folder-not-private'));
+  const throughLink = await stateDir(context);
+  const target = await stateDir(context);
+  await symlink(target, join(throughLink, 'modules'));
+  const nested = fixture('nested');
+  await run(context, {modules: [nested], stateDir: throughLink});
+  assert.throws(() => contextOf(nested).files(), runtimeCode('module-folder-not-private'));
+  await assert.rejects(lstat(join(target, 'nested')), 'nothing is created through a linked modules directory');
   await chmod(join(dir, 'modules', 'keeper'), 0o755);
   const again = fixture('keeper');
   await run(context, {modules: [again], stateDir: dir});
@@ -277,14 +287,14 @@ it('a worker a module starts with its own environment keeps the process\'s NODE_
   context.after(() => { if (before === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = before; });
   const seen: unknown[] = [];
   const starter = fixture('starter', ({workers}) => {
-    for (const env of [{ONLY: 'mine'}, {NODE_OPTIONS: '--no-warnings'}]) {
+    for (const env of [{ONLY: 'mine'}, {NODE_OPTIONS: '--no-warnings'}, {NODE_OPTIONS: '--no-deprecation'}]) {
       const worker = workers.start(new URL('env-worker.js', WORKERS), {env});
       worker.once('message', (message: unknown) => { seen.push(message); });
     }
   });
   await run(context, {modules: [starter]});
-  await waitFor(() => seen.length === 2, 5000, 'both workers to answer');
-  assert.deepEqual(new Set(seen), new Set(['--no-deprecation', '--no-deprecation --no-warnings']));
+  await waitFor(() => seen.length === 3, 5000, 'every worker to answer');
+  assert.deepEqual(seen.sort(), ['--no-deprecation', '--no-deprecation', '--no-deprecation --no-warnings'], 'kept once, before the module\'s own');
 });
 
 it('no log record, health body or error body carries a secret, and a record that would is dropped', async context => {

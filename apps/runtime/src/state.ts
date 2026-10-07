@@ -110,13 +110,21 @@ export function openModuleDatabase(stateDir: string, name: string): DatabaseSync
 export function openModuleFolder(stateDir: string, name: string): string {
   const parent = join(stateDir, 'modules');
   const folder = join(parent, name);
-  mkdirSync(folder, {recursive: true, mode: 0o700});
-  for (const dir of [parent, folder]) {
+  const check = (dir: string): void => {
     const info = lstatSync(dir);
     if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
       throw new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner (mode 700), not a link`);
     }
+  };
+  // Each level is checked before anything is created inside it, so nothing is ever created through a link.
+  mkdirSync(parent, {recursive: true, mode: 0o700});
+  check(parent);
+  try {
+    mkdirSync(folder, {mode: 0o700});
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
   }
+  check(folder);
   return folder;
 }
 

@@ -324,10 +324,16 @@ it('the kit catches a configuration the module refuses or lacks: the module neve
   assert.deepEqual(await failing({...beaconSpec(), config: undefined}), every, 'a module with configure needs a section');
 });
 
-it('the kit catches a module that puts a secret it read in a log record, a message or a reply', async () => {
+it('the kit catches a module that puts a secret it read in a log record, a message or a reply, and never quotes it', async () => {
   assert.deepEqual(await failing(beaconSpec({leak: 'log'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
   assert.deepEqual(await failing(beaconSpec({leak: 'message'})), [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses]);
   assert.deepEqual(await failing(beaconSpec({leak: 'reply'})), [CHECKS.refuses]);
+  const reasons: string[] = [];
+  for (const leak of ['log', 'message', 'reply'] as const) {
+    for (const check of conformanceChecks(beaconSpec({leak}))) await check.run().catch((error: unknown) => { reasons.push(String(error instanceof Error ? error.message : error)); });
+  }
+  assert.equal(reasons.length, 9);
+  assert.ok(reasons.every(reason => reason.includes('carries a secret') && !reason.includes(SECRET)), 'each names where the secret appeared, never the secret');
 });
 
 it('the harness gives a module only the secrets its section names, from memory, and a private folder', async context => {

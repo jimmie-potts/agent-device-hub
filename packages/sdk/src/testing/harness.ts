@@ -1,6 +1,7 @@
-// Hosts one module for a test, as the runtime would (ADR 0012, "Runtime and transport"): its own participant on a
-// given bus, a context, and a stop that releases everything in the runtime's order. A module's tests cannot import the
-// runtime, so the kit hosts modules with this.
+// Hosts one module for a test, as the runtime would (ADR 0012, "Runtime and transport"): its section checked as the
+// runtime checks it, its own participant on a given bus, a context with its configuration, its secrets from memory, a
+// private folder and the runtime's worker calls, and a stop that releases everything in the runtime's order. A module's
+// tests cannot import the runtime, so the kit hosts modules with this.
 import {mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';

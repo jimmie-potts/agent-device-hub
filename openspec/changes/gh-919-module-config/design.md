@@ -1,0 +1,49 @@
+## Context
+
+[Hub #919](https://github.com/jimmie-potts/agent-device-hub/issues/919) gives each runtime module its own settings, secrets, private folder and a bounded worker call, before the first device module. Sources read at pickup on 2026-10-07, main `9f3d60f`: the issue and its hand-offs from #918 (device IDs are routing IDs and unique across modules), #920 (factory shape, tier 2 runs, workers and the network guard, launch-file order) and #948 with PR #955's review (policy A wording and the kit's `ErrorCode`); [ADR 0012](../../../docs/decisions/0012-bunny-event-platform.md) "Failure isolation" and "Errors, effects and outcomes" as amended on 2026-10-07; [ADR 0011](../../../docs/decisions/0011-private-personal-data-retention.md); #880's "Private runtime state"; the SDK's module API and kit (#882); the runtime host, launcher and verification runs (#920). The issue stays aligned; the adjustments below are routine and within its accepted scope.
+
+## Goals / Non-Goals
+
+**Goals:**
+- One private configuration file, with each module given only its own section, secrets and folder.
+- A module with a missing or invalid section refused alone, with a registry code in health.
+- No secret in messages, logs, health, error bodies or proof, with an executable scan.
+- A bounded worker call, cancelled at stop.
+- Policy A as an executable kit check.
+
+**Non-Goals:**
+- Changing configuration without a restart, settings pages, a secret store beyond private files, and automatic module restart (the issue's cuts).
+- The configuration file's edge section (#835) and the installer that writes the file (#935).
+- A shipped device module; the shipped list stays empty.
+
+## Decisions
+
+- **`configure` lives on the manifest, synchronous, returning `{config, devices?}` or an error body.** The issue names the manifest. Keeping it synchronous and side-effect free makes admission deterministic and keeps device and file access in `start`. A discriminated `{config}` wrapper avoids confusing a configuration that has an `error` member with a refusal. Alternative rejected: a factory that takes the configuration (#920's hand-off). The factory would need the configuration before `configure` could check it; instead the settings reach the module through its context, and a real transport reads `context.config` and `context.secrets` when it reaches its device. `ModuleFactory` keeps its thunks.
+- **A module that declares `configure` needs a section.** A uniform `not-found` refusal reads better in health than each module's own wording for "no section", and a module with only optional settings gets `{}` from the installer. Without a file, such a module is refused the same way.
+- **The section's `secrets` member names secret files.** It maps names to absolute paths, which `configure` sees; contents never pass through `configure`. A module without `configure` may still name secrets. The runtime checks every named file at admission, so an unsafe file refuses the module before it starts, and checks it again on every read, through an open without following links and a check of the opened file.
+- **Admission order decides device ownership.** Modules are admitted in list order; a module naming a device an earlier module named is refused (`invalid-request`), as duplicate module names already are. IDs must be routing IDs, so a device's command keys stay valid.
+- **The file is strict at the top, lenient per module.** Unknown top-level members are refused (`config-invalid`), so a typo such as `module` fails loudly; #835 adds `edge`. A section for a module the runtime does not host is ignored, so a rollback to a version without that module still starts. Sections are looked up as the file's own members only.
+- **Configuration refusals use the `manifest` phase.** The observability catalog (profile 1.2, released 1.2.0) has no configuration phase, and admission happens with the manifest before start, so `bunny.phase` `manifest` with the refusal's `bunny.code` is accurate; health carries the detail. A new phase would need a catalog release.
+- **The log writer drops records holding a secret a module read.** The runtime never logs the file or a secret; this guard catches a module bug that puts one in a registered attribute. Such a record is dropped whole and counted, as one the contract refuses. Alternative rejected: redacting the value in place, which would still write a record shaped by a secret.
+- **One worker per call.** Rendering is occasional, so a fresh worker per call is simpler than a pool and makes termination the cancellation. The deadline answers `uncertain-result`, because the worker had the request (ADR 0012); a module whose worker only computes may treat it as a plain failure. At most four calls run per module, which bounds memory on this host; a fifth is refused with retryable `capacity`. A failed call rejects only the call, so the module turns it into an outcome.
+- **`NODE_OPTIONS` survives a module's own `env`.** The host puts the process's `NODE_OPTIONS` before a worker's own, once, so a verification run's network guard loads in every worker a module starts (#920's hand-off). Worker calls inherit the environment.
+- **Module API 1.1.** The additions are a minor version: a module that uses them declares `1.1`, which a `1.0` runtime would refuse, and `1.0` modules still run.
+- **Policy A's kit check.** The kit starts an instance whose device never answers and fails the module when its start does not finish within 1000 ms, or when it never reports the device `unavailable`. A never-answering device makes a start that awaits it hang, so the check needs no knowledge of the transport.
+- **The kit scans for secrets.** Every check fails when a published message, sync request, reply, synced state or log record carries one of `spec.secrets`, naming where and never the secret.
+- **Tier 2 through the catalog.** Two catalog scenarios carry a seed `config`. Each adapter writes the private configuration file and a synthetic token file, as the installer would, so the same definitions run in memory and in disposable runs, and the verify steps test scans every step's proof and runtime records for the token.
+
+### Boundaries and outcomes
+
+- **Entry points and hand-offs:** `--config` and `RuntimeOptions.configFile` into the runtime; each module's section into its `configure`; `secrets.read`, `files()` and `workers.call` from the context. Hand-offs: #835 adds the file's edge section; #949 adds span recording to `Tracing` and `host.ts`; the device stories use `configure`, `devices`, secrets, `files()`, worker calls and `offline` in their kit specs; #935 writes the file.
+- **Refusals and outcomes:** an untrusted file refuses the runtime's start; a bad section refuses one module, which never starts and has no effect; a secret read or worker call rejects only that call. A worker call past its deadline is `uncertain-result`, since the worker had the request. Nothing here sends a command, so no `expired` arises.
+- **Codes and retry policy:** registry codes only, as listed in the specifications; only `capacity` is retryable. Nothing retries a call automatically. The fixture sign's reconnection is one loop with capped backoff (500 ms doubling to 4 s) and a 1 s deadline per attempt, logged once per change.
+- **Diagnostic records and trace continuity:** `runtime.module.refused` with `bunny.code` and `bunny.phase` `manifest`, plus the error's type for a `configure` that threw; `runtime.failed` with a `config-*` code; a dropped record counted in `runtime.stopped`. No record holds a section's values, a secret or a refusal's detail. Admission runs before any message, so there is no trace to continue.
+- **Fault cases:** each untrusted-file shape (link, linked directory, group or other permission, second link, oversize, checkout, `/mnt`, directory, missing, not JSON, wrong schema, extra member); secret files changed after admission; duplicate devices; a throwing `configure`; a secret logged by a module; a worker that throws, never answers, ends silently or outlives its module; a linked `modules` directory.
+
+## Risks / Trade-offs
+
+- A very short secret makes the log writer drop every record containing it. That fails safe: diagnostics are lost, never the secret.
+- The offline check cannot see a start that waits on its device with a timeout shorter than 1000 ms. It catches the common case of awaiting the device, and module reviews cover the rest.
+- Secrets are read anew on every call, so a rotated file takes effect without a restart, at the cost of a file read per call.
+- Configuration changes need a restart (the issue's accepted cut).
+- A fresh worker per call costs a thread start each time; a module that calls often would want a pool, which can be added behind the same call.
