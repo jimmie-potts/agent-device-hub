@@ -83,6 +83,24 @@ No model choice or Execution recommendation is required to file an issue.
 5. Meaningful deferrals, each with its consequence or manual alternative and
    its owning issue or revisit trigger.
 
+Work that crosses a component boundary, in ordinary work as well as under
+`plan-work` or `deliver-work`, names these in the issue, plan or brief:
+
+- its entry points and hand-offs;
+- its success, refusal and uncertain outcomes, and the effects each may leave;
+- its codes and retry policy;
+- its diagnostic records and trace continuity;
+- its fault cases.
+
+The rules are in ADR 0012's
+[Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
+and [Observability](decisions/0012-bunny-event-platform.md#observability), and
+in the [diagnostic contract](observability-contract.md). For each item, name
+the rule it follows or the exception it needs and why; do not copy the rule.
+The Work item template asks for this in its "Boundaries and outcomes" prompt,
+under "Behavior and protections to preserve". A story that crosses no boundary
+writes N/A and the reason.
+
 Prefer existing components and explicit manual steps where practical. Avoid
 speculative platform support, abstraction layers, automatic rollback systems and
 broad outage matrices. Always protect supported behavior: one authoritative
@@ -323,6 +341,18 @@ permission to replace an owner.
    suite lets survive; reviewers mark which P3s these are. Record a disposition
    for every other P3. Reassess changed candidates. Self-review cannot
    authorize merge.
+   For a change that crosses a component boundary, the reviewer brief names the
+   boundaries the diff crosses. Each axis checks the change against ADR 0012's
+   [Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
+   and [Observability](decisions/0012-bunny-event-platform.md#observability)
+   and reports only its own questions:
+   - **Standards:** privacy and safe errors on every outward surface, record
+     levels, and test integrity (the negative controls of step 1 and no
+     weakened assertion).
+   - **Specification:** outcome and effect semantics, coverage of the issue's
+     fault cases, and whether each exception to a rule is honest, stated and
+     justified.
+
    Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
    `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
    owns the issue, the OpenSpec specs and the contract documents. A later delta

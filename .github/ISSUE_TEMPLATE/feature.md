@@ -39,7 +39,8 @@ native parents or blockers. Preserve existing Guide metadata during migration.
 
 ## Behavior and protections to preserve
 
-<!-- If affected: preserve one state owner, one writer per device, manual control and private data. -->
+<!-- If affected: preserve one state owner, one writer per device, manual control and private data.
+Boundaries and outcomes (work that crosses a component boundary): name its entry points and hand-offs; its success, refusal and uncertain outcomes and the effects each may leave; its codes and retry policy; its diagnostic records and trace continuity; and its fault cases. Link ADR 0012 and the diagnostic contract; do not copy their rules. Otherwise write N/A and why. -->
 
 ## Observable acceptance and planned evidence
 

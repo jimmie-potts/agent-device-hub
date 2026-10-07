@@ -11,7 +11,10 @@ or physical scope.
 ## Validation
 
 Record commands/results, actual specification inventory, and any unavailable
-evidence. Do not equate CI with client or physical acceptance.
+evidence. Do not equate CI with client or physical acceptance. For a change that
+crosses a component boundary, also record its contract and version changes, its
+negative controls, and a privacy check that no raw error text or secret reaches
+any outward surface, such as an error body, log, history, proof or this PR.
 
 ## Fixed comparison and reviews
 
