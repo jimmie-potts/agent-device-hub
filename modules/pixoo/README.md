@@ -164,14 +164,14 @@ Otherwise it stores its record of the work in the transaction that publishes
 the device's new pending count, replies `accepted`, runs the work and reports
 the outcome through its outbox. The outcome commits with the device's new
 pending count, last outcome and last transmission. A change while a command
-runs waits up to 1 s for that commit, so a device command commits twice: 20
-`brightness-set` commands made 100 commits, 5 each, where they made 120
-before. Three of the five are the SDK outbox marking each published row, one
-row at a time. What the module serves and its last transmission change only
-once a transaction commits, so after a rollback a new copy syncs what live
-followers last heard. The outbox's `outcome.published` record (INFO, or WARN
-for `failed` or `uncertain`) is an outcome's only log record. The rules for an
-outcome:
+runs waits up to 1 s for that commit. A device command therefore makes five
+commits: two of the module's own, its acceptance and its outcome, and three of
+the SDK outbox, which marks each published row one row at a time. 20
+`brightness-set` commands made 100 commits, where they made 120 before. What
+the module serves and its last transmission change only once a transaction
+commits, so after a rollback a new copy syncs what live followers last heard.
+The outbox's `outcome.published` record (INFO, or WARN for `failed` or
+`uncertain`) is an outcome's only log record. The rules for an outcome:
 - **Transmitted.** A device write is `succeeded` with `transmitted` once the
   Pixoo answers: the answer is a transport acknowledgment, never an
   observation. A start, show, resume, next, previous or restart completes with
@@ -187,8 +187,11 @@ outcome:
   a device that did not answer, `cancelled` for one that a newer command
   superseded.
 - **Observed.** A change to state the module owns (pause, stop, clear,
-  settings, playlists, media, a dismissal) is `succeeded` with `observed`: its
-  committed state, published in the same transaction, is the evidence.
+  settings, playlists, media) is `succeeded` with `observed`: its committed
+  state, published in the same transaction, is the evidence. A dismissal is
+  `observed` on the core's commit instead: the core commits the acknowledgment
+  before it accepts, and the session's state at its new revision is the
+  evidence.
 - **Held back by Now Playing.** While a song plays and Media wants a `whole`
   takeover, a start, show, resume or restart pauses for the card at once,
   rather than at the next tick. When that pause cancels the command's upload,
@@ -243,7 +246,10 @@ start stays passive, as the Pixoo service's simulator did.
   peaked near 80 MiB). A GIF's logical screen may declare at most 4096 x 4096
   pixels, since composition keeps RGBA copies of that canvas: at the bound the
   child peaked near 200 MiB, and a 43-byte GIF declaring 7000 x 7000, which
-  peaked at 441 MiB before, is now refused from its header.
+  peaked at 441 MiB before, is now refused from its header. This bound is a
+  behavior change from the Pixoo service, which accepted a GIF up to 50
+  megapixels: a library GIF original with a larger canvas still plays its
+  stored renditions, but can no longer be rendered again.
 - **Rendering.** Monitor dashboards and Now Playing cards render in worker
   calls. A failed render keeps the last picture, is tried again at the next
   cadence, and logs one warning per run of failures. The dashboard renders only
