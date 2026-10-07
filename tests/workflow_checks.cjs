@@ -319,7 +319,7 @@ test('CI runs six GitHub-hosted Linux jobs and retains every suite once', () => 
     // The core job runs every Node and Python suite once; it takes about 8.5 minutes. The dashboard job took
     // 523 s on GitHub-hosted runners (#870). App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
-    // took 11-15 minutes, as the runtime verify suite grew with each module, and twice timed out at 15.
+    // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite.
     assert.equal(job['timeout-minutes'], id === 'app-verify' ? 25 : ['core', 'dashboard'].includes(id) ? 15 : 10);
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
