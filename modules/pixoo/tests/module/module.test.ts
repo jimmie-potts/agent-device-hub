@@ -478,8 +478,10 @@ void describe('commands and the catalog', () => {
         for (let index = 0; index < 257; index += 1) {
           const created = await library.createPlaylist(`List ${String(index)}`);
           await library.replaceItems(created.id, created.revision, [{renditionId: rendition.id}]);
-          last = created.id;
         }
+        // The catalog lists playlists in the library's order, by creation time and then ID, and several share a
+        // millisecond here, so the one beyond the 256 listed is the library's last, not the last created.
+        last = (await library.listPlaylists()).at(-1)?.id ?? '';
       });
       await world.start();
       // At once after the start, before the catalog has been read, and again once the device record lists 256 playlists.
