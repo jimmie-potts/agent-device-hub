@@ -123,8 +123,9 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners; the job took 7 to 9.6 minutes.
+    timeout-minutes: 25
+    # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners. By 2026-10-07 the job took
+    # 11 to 15 minutes as the runtime verify suite grew with each module (to about 217 s), and timed out at 15 in that suite.
     # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
     # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
     env:
