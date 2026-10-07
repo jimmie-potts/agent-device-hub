@@ -215,6 +215,13 @@ const guideTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
   pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
 };
+// Hub #862: hosted runners sometimes stall in apt downloads during a browser install's --with-deps until the job's
+// limit. scripts/install-browser.sh retries the install; its step limit sits above three attempts and their cleanups.
+const browserInstall = command => `bash scripts/install-browser.sh ${command}`;
+const browserInstallMinutes = 20;
+const playwrightInstall = browserInstall('npx playwright install --with-deps chromium');
+const guideBrowserInstall = 'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\n'
+  + browserInstall('node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium') + '\n';
 // Hub #861: the heavy Checks workflow also skips Markdown-only changes.
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
@@ -283,7 +290,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built', 'npm run test:dashboard'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
+    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
       'npm run test:dashboard:smoke', 'npm run test:observability:browser'],
   };
   const names = {
@@ -318,8 +325,12 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     // The core job runs every kept Node and Python suite once; it took about 12 minutes on 2026-10-07 before the old
     // system's checks left CI (#827). App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
-    // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite.
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 25 : id === 'core' ? 15 : 10);
+    // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
+    // leave room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
+    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 30 : id === 'core' ? 15 : 10);
+    const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
+    assert.deepEqual(installs, id === 'app-verify' ? [{ name: 'Install Chromium with its system dependencies',
+      'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
@@ -449,13 +460,105 @@ test('the standalone wrapper runs its payload only after a successful build', (t
   assert.equal(fs.existsSync(path.join(directory, 'payload-ran')), false);
 });
 
+// Hub #862: a fake installer that behaves like Playwright's --with-deps on a hosted runner. It starts apt-get through
+// sudo in a session of its own, so the attempt's timeout stops the installer but not apt-get, which keeps holding apt's
+// lock; a later apt-get fails at once on that lock. Each attempt's plan letter makes apt-get hang (h), fail (f) or
+// succeed (s). The fake sudo's pkill and the fake pgrep see only this run's fake apt-get processes, so overlapping test
+// runs never stop each other's, and a run as root never signals the host's apt-get.
+function fakeRunner(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-install-'));
+  const bin = path.join(directory, 'bin');
+  fs.mkdirSync(bin);
+  // Only positive process IDs: process.kill(0) would signal this test's own process group.
+  const pids = () => (fs.existsSync(path.join(directory, 'pids')) ? fs.readFileSync(path.join(directory, 'pids'), 'utf8') : '')
+    .split('\n').map(Number).filter(pid => Number.isInteger(pid) && pid > 0);
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  t.after(() => {
+    for (const pid of pids().filter(alive)) process.kill(pid);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  assert.equal(spawnSync('mkfifo', [path.join(directory, 'fifo')]).status, 0);
+  const each = action => ['for pid in $(cat "$FAKE/pids" 2>/dev/null); do',
+    `  [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = apt-get ] && ${action}`, 'done'];
+  const files = {
+    // `sudo pkill -x apt-get` stops only this run's fake apt-get; every other command runs unchanged.
+    sudo: ['if [ "$*" = "pkill -x apt-get" ]; then', ...each('kill "$pid"'), '  exit 0', 'fi', 'exec "$@"'],
+    // `pgrep -x "apt-get|dpkg"` succeeds while one of this run's fake apt-get processes is alive.
+    pgrep: ['[ "$*" = "-x apt-get|dpkg" ] || { echo "unexpected pgrep $*" >&2; exit 2; }', ...each('exit 0'), 'exit 1'],
+    tee: ['echo "$1" > "$FAKE/apt-conf-path"', 'cat > "$FAKE/apt-conf"'],
+    dpkg: ['echo "$*" >> "$FAKE/dpkg"'],
+    npx: ['n=$(( $(cat "$FAKE/count" 2>/dev/null || echo 0) + 1 ))', 'echo "$n" > "$FAKE/count"',
+      'setsid "$FAKE/bin/apt-get" "${PLAN:n-1:1}" &', 'wait $! || exit', 'echo "installed $*"'],
+    'apt-get': ['echo "$$" >> "$FAKE/pids"', 'exec 9>"$FAKE/lock"',
+      'flock -n 9 || { echo "E: Could not get lock $FAKE/lock"; exit 100; }',
+      // On the runner a hung apt-get keeps writing to the step's log. Here it drops its output, because spawnSync waits
+      // for the pipes to close.
+      'case "$1" in h) exec >/dev/null 2>&1; read -t 30 <> "$FAKE/fifo"; exit 100;; f) exit 100;; esac'],
+  };
+  for (const [name, lines] of Object.entries(files)) fs.writeFileSync(path.join(bin, name), ['#!/bin/bash', ...lines, ''].join('\n'), { mode: 0o755 });
+  // The script runs only where GITHUB_ACTIONS is "true"; these runs opt in unless a case says otherwise (null unsets it).
+  const run = (script, plan, githubActions = 'true') => {
+    const started = Date.now();
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: directory, PLAN: plan, GITHUB_ACTIONS: githubActions };
+    if (githubActions === null) delete env.GITHUB_ACTIONS;
+    const result = spawnSync('bash', ['-c', script, 'install', 'npx', 'playwright', 'install', '--with-deps', 'chromium'], {
+      env, encoding: 'utf8', timeout: 30000,
+    });
+    assert.ifError(result.error);
+    const read = name => fs.existsSync(path.join(directory, name)) ? fs.readFileSync(path.join(directory, name), 'utf8') : '';
+    return { ...result, seconds: (Date.now() - started) / 1000, attempts: Number(read('count')), dpkg: read('dpkg'),
+      aptConf: read('apt-conf'), aptConfPath: read('apt-conf-path').trim(), left: pids().filter(alive) };
+  };
+  return { run };
+}
+
+test('a browser install whose apt-get outlives a timed-out attempt recovers on the next attempt', (t) => {
+  const script = fs.readFileSync(path.join(root, 'scripts/install-browser.sh'), 'utf8');
+  // Run the real script with each attempt limited to 1 s and the lock wait to 2 s.
+  const fast = script.replace('attempt_seconds=300 lock_wait_seconds=60', 'attempt_seconds=1 lock_wait_seconds=2');
+  assert.notEqual(fast, script);
+  // The #987 loop, shortened the same way, fails on this runner: apt-get keeps the lock and every retry fails on it.
+  const old = 'for attempt in 1 2 3; do\n  if timeout --kill-after=10 1 "$@"; then exit 0; fi\n  sleep 0\ndone\nexit 1\n';
+  const stuck = fakeRunner(t).run(old, 'hs');
+  assert.equal(stuck.status, 1);
+  assert.equal(stuck.attempts, 3);
+  assert.equal((stuck.stdout.match(/Could not get lock/g) ?? []).length, 2);
+
+  for (const [plan, status, attempts] of [['s', 0, 1], ['hs', 0, 2], ['fhs', 0, 3], ['fff', 1, 3]]) {
+    const result = fakeRunner(t).run(fast, plan);
+    assert.equal(result.status, status, `${plan}: ${result.stdout}${result.stderr}`);
+    assert.equal(result.attempts, attempts, plan);
+    assert.equal(result.stdout.includes('Could not get lock'), false, `${plan}: a retry never meets a held lock`);
+    assert.equal(result.stderr.includes('unexpected pgrep'), false, `${plan}: ${result.stderr}`);
+    assert.equal(result.stdout.includes('installed playwright install --with-deps chromium'), status === 0, plan);
+    assert.equal((result.stdout.match(/::warning::Browser install attempt \d of 3/g) ?? []).length, status ? 3 : attempts - 1, plan);
+    // After each failed attempt: stop the leftover apt-get, then finish any interrupted dpkg run.
+    assert.equal(result.dpkg, '--configure -a\n'.repeat(status ? 3 : attempts - 1), plan);
+    assert.deepEqual(result.left, [], `${plan}: no apt-get outlives the step`);
+    assert.equal(result.aptConfPath, '/etc/apt/apt.conf.d/80-browser-install');
+    assert.equal(result.aptConf, 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n');
+    assert.ok(result.seconds < 15, `${plan}: took ${result.seconds} s`);
+  }
+
+  // Outside GitHub Actions the script refuses before it touches apt's configuration or any apt-get.
+  for (const githubActions of [null, 'false', '']) {
+    const refused = fakeRunner(t).run(fast, 's', githubActions);
+    assert.equal(refused.status, 2, String(githubActions));
+    assert.match(refused.stderr, /runs only on a GitHub Actions runner/);
+    assert.equal(refused.attempts, 0);
+    assert.equal(refused.aptConf, '');
+    assert.equal(refused.dpkg, '');
+  }
+});
+
 // Keep guide build, browser and retained review evidence under regression coverage.
 test('guide CI retains its validation and review artifacts', () => {
   const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide.yml'), 'utf8'));
   assert.deepEqual(workflow.jobs, { guide:
      { name: 'Work guide build and browser checks',
        'runs-on': 'ubuntu-latest',
-       'timeout-minutes': 10,
+       // The job takes 3 to 9 minutes; 25 leave room for two stalled browser-install attempts (#862).
+       'timeout-minutes': 25,
        steps:
         [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
           { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
@@ -466,9 +569,7 @@ test('guide CI retains its validation and review artifacts', () => {
           { run: 'python3 docs/work-guide/work/test_maintenance.py' },
           { name: 'Check system design documents',
             run: 'python3 docs/system-design/check.py' },
-          { name: 'Prepare the pinned browser checker',
-            run:
-             'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Prepare the pinned browser checker', 'timeout-minutes': browserInstallMinutes, run: guideBrowserInstall },
           { name: 'Check epic browser adapters and generated fixtures',
             run: 'npm ci\nnode --test docs/work-guide/browser/tests/*.test.mjs\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs\nnode docs/work-guide/browser/build.mjs --check\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs\n' },
           { name: 'Check the guide and capture review evidence',

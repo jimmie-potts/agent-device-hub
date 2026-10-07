@@ -95,9 +95,10 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 30
     # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners. By 2026-10-07 the job took
     # 11 to 15 minutes as the runtime verify suite grew with each module (to about 217 s), and timed out at 15 in that suite.
+    # The limit leaves room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
     # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
     # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
     env:
@@ -110,7 +111,12 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Hosted runners sometimes stall in apt downloads during --with-deps until the job's limit (#862). The script gives
+      # each attempt 300 s, above the slowest successful install so far (293 s, on #987's own run), and retries a stalled
+      # or failed attempt twice. An install that runs past 300 s costs a retry, which resumes from apt's cache, not a failure.
+      - name: Install Chromium with its system dependencies
+        timeout-minutes: 20
+        run: bash scripts/install-browser.sh npx playwright install --with-deps chromium
       - run: npm run build
       # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests always run.
       - run: npm run test:app-verify:built
