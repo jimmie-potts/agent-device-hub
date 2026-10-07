@@ -18,6 +18,7 @@ import {parseArgs} from 'node:util';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
+import {SimulatedPixoo, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
@@ -65,6 +66,8 @@ const cloud = new SimulatedCloud();
 const cloudCalls = new Map<string, AbortController>();
 /** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const exchanges = new Map<string, AbortController>();
+/** What the child's simulated Pixoo shows, as it last reported, and the mode each new runtime's Pixoo starts in (Hub #843). */
+let pixoo: SimulatedPixooState = new SimulatedPixoo().state();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 /** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -216,6 +219,9 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
     case 'published':
       published.push({generation: number, message: message.message});
       return;
+    case 'pixoo.state':
+      if (number === generation) pixoo = message.state;
+      return;
     case 'applied':
     case 'flushed':
       waiting.get(message.id)?.();
@@ -228,7 +234,9 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
 function spawnRuntime(): Promise<string> {
   generation += 1;
   const number = generation;
-  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', '--', ...runtimeArgs()] : runtimeArgs();
+  // The new runtime's simulated Pixoo starts with the mode and the panel the last one had.
+  const panel = Buffer.from(JSON.stringify(pixoo)).toString('base64url');
+  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', panel, '--', ...runtimeArgs()] : runtimeArgs();
   const child = fork(fixtures ? CHILD : MAIN, args, {
     execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
@@ -420,8 +428,36 @@ async function body(request: IncomingMessage): Promise<unknown> {
   return text === '' ? {} : JSON.parse(text);
 }
 
+/** The actions the harness accepts for each device: every action a `SimulateRequest` names, as `Unlisted` checks. */
+const ACTIONS = {
+  lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline'],
+  playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
+  tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'],
+} as const satisfies {readonly [D in SimulateRequest['device']]: readonly Extract<SimulateRequest, {device: D}>['action'][]};
+/** An action a `SimulateRequest` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
+type Unlisted = {[D in SimulateRequest['device']]: Exclude<Extract<SimulateRequest, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[SimulateRequest['device']];
+export const EVERY_ACTION_LISTED: [Unlisted] extends [never] ? true : never = true;
+const SPEAKERS: readonly string[] = ['sony', 'sonos'];
+/** The simulation a request names, or undefined when its device, action or other field is unknown, so a typo changes nothing. */
+function simulationOf(value: unknown): SimulateRequest | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const {device, action, speaker, title, address, ...rest} = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0 || typeof device !== 'string' || !Object.hasOwn(ACTIONS, device) || typeof action !== 'string') return undefined;
+  if (!(ACTIONS[device as SimulateRequest['device']] as readonly string[]).includes(action)) return undefined;
+  if (device === 'playback') {
+    if (typeof speaker !== 'string' || !SPEAKERS.includes(speaker) || address !== undefined) return undefined;
+    if (title !== undefined && (typeof title !== 'string' || title.length > 200)) return undefined;
+  } else if (speaker !== undefined || title !== undefined) return undefined;
+  if (device === 'lifx' ? typeof address !== 'string' || address.length > 64 : address !== undefined) return undefined;
+  return value as SimulateRequest;
+}
+
 async function simulate(request: SimulateRequest): Promise<boolean> {
   switch (request.device) {
+    case 'pixoo':
+      await ask(id => ({type: 'simulate', id, simulation: request}));
+      pixoo = {...pixoo, mode: request.action};
+      return true;
     case 'chime':
       await control('chime-fault');
       return true;
@@ -471,7 +507,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state()},
+        generation, devices: {
+          lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state(), pixoo,
+        },
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);
@@ -490,10 +528,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       await flush();
       return answer(response, 200, follow(evidence(), query.selector, query.limits));
     }
-    case 'POST /simulate':
+    case 'POST /simulate': {
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run\'s devices are simulated inside the modules and cannot be driven from the harness'));
-      await simulate(await body(request) as SimulateRequest);
+      const simulation = simulationOf(await body(request));
+      if (simulation === undefined) return answer(response, 400, refusal('invalid-request', 'the simulation names an unknown device, action or field'));
+      await simulate(simulation);
       return answer(response, 200, {status: 'applied'});
+    }
     case 'POST /arm-crash':
     case 'POST /lose-acknowledgment':
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no fixture modules'));

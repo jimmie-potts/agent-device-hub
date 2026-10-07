@@ -398,8 +398,9 @@ const builtPayloads = {
   'test:app-verify:package': 'node scripts/package-app-verify.mjs --test',
   'test:hub:verify': 'node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs',
   'test:chompi-bridge': 'node --test apps/chompi-bridge/tests/*.test.mjs',
-  // Pixoo's moved tests keep their Vitest runner and resolve built packages from modules/pixoo (Hub #25).
-  'test:pixoo': 'cd modules/pixoo && vitest run --config tests/vitest.config.ts',
+  // Pixoo's moved tests keep their Vitest runner and run from the module's compiled tests (Hub #25, #843); its module
+  // tests run with node:test from the same build.
+  'test:pixoo': 'cd modules/pixoo && vitest run --config vitest.config.mjs && node --test dist/tests/module/*.test.js',
 };
 
 test('built variants retain every original test payload and standalone build', () => {

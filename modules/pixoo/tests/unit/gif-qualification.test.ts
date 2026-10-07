@@ -1,6 +1,6 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {parseGifQualificationArgs,runGifQualification,gifQualificationCases} from '../../packages/device/src/gif-qualification.js';
-import {FakeDeviceAdapter} from '../../packages/device/src/fake.js';
+import {parseGifQualificationArgs,runGifQualification,gifQualificationCases} from '../../src/device/gif-qualification.js';
+import {FakeDeviceAdapter} from '../../src/device/fake.js';
 afterEach(()=>vi.useRealTimers());
 it('defaults to offline preview even with a configured target',()=>{
  expect(parseGifQualificationArgs([],{PIXOO_DEVICE_IP:'192.168.1.2'})).toEqual({mode:'fake'});
@@ -12,10 +12,10 @@ it('runs only the five fixed stages, with complete frames and unchanged delays',
  const pending=runGifQualification(device);await vi.runAllTimersAsync();const report=await pending;
  expect(report.status).toBe('complete');expect(report.uploads.map(u=>u.id)).toEqual(['A','B','C','D','E']);
  expect(report.uploads.map(u=>u.delaysMs)).toEqual([Array(20).fill(500),Array(20).fill(100),[200,800],[800,200],[500,500]]);
- expect(device.operations.map(o=>o.kind)).toEqual(['probe',...Array(5).fill('uploadAnimation')]);
+ expect(device.operations.map(o=>o.kind)).toEqual(['probe',...Array<string>(5).fill('uploadAnimation')]);
  expect(device.effects.filter(e=>e.kind==='frame')).toHaveLength(46);
  expect(report.elapsedMs).toBeGreaterThanOrEqual(70000);expect(report.elapsedMs).toBeLessThan(71000);
- expect(gifQualificationCases()[0]!.animation.frames).toHaveLength(20);
+ expect(gifQualificationCases()[0]?.animation.frames).toHaveLength(20);
 });
 it('stops the sequence on failed upload without recovery writes',async()=>{
  vi.useFakeTimers();const device=new FakeDeviceAdapter();device.failNextUpload();
@@ -30,9 +30,9 @@ it('cancels a hold without submitting the next stage',async()=>{
 });
 
 it('bounds an in-flight upload at fifteen seconds and does not send later stages',async()=>{
- vi.useFakeTimers();const {HttpDeviceAdapter}=await import('../../packages/device/src/http-adapter.js');
- const {GIF_EXPERIMENT_PROFILE}=await import('../../packages/device/src/gif-qualification.js');
- const {DeviceRequestError}=await import('../../packages/device/src/http-transport.js');
+ vi.useFakeTimers();const {HttpDeviceAdapter}=await import('../../src/device/http-adapter.js');
+ const {GIF_EXPERIMENT_PROFILE}=await import('../../src/device/gif-qualification.js');
+ const {DeviceRequestError}=await import('../../src/device/http-transport.js');
  const commands:string[]=[];
  const device=new HttpDeviceAdapter({ip:'192.168.1.2',profile:GIF_EXPERIMENT_PROFILE},async(body,signal)=>{
   commands.push(String(body.Command));if(body.Command==='Draw/SendHttpGif')return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DeviceRequestError('cancelled')),{once:true}));
@@ -43,8 +43,8 @@ it('bounds an in-flight upload at fifteen seconds and does not send later stages
  expect(commands).toEqual(['Channel/GetIndex','Channel/GetAllConf','Draw/GetHttpGifId','Draw/SendHttpGif']);await device.close();
 });
 it('requires known powered-on state and does not change controls',async()=>{
- const {HttpDeviceAdapter}=await import('../../packages/device/src/http-adapter.js');
- const {GIF_EXPERIMENT_PROFILE}=await import('../../packages/device/src/gif-qualification.js');
- const commands:string[]=[];const device=new HttpDeviceAdapter({ip:'192.168.1.2',profile:GIF_EXPERIMENT_PROFILE},async body=>{commands.push(String(body.Command));return {error_code:0,SelectIndex:1,Brightness:30,LightSwitch:0};});
+ const {HttpDeviceAdapter}=await import('../../src/device/http-adapter.js');
+ const {GIF_EXPERIMENT_PROFILE}=await import('../../src/device/gif-qualification.js');
+ const commands:string[]=[];const device=new HttpDeviceAdapter({ip:'192.168.1.2',profile:GIF_EXPERIMENT_PROFILE},body=>{commands.push(String(body.Command));return Promise.resolve({error_code:0,SelectIndex:1,Brightness:30,LightSwitch:0});});
  expect(await runGifQualification(device)).toMatchObject({status:'failed',uploads:[]});expect(commands).toHaveLength(2);await device.close();
 });

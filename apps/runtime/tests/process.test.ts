@@ -74,8 +74,11 @@ it('the shipped runtime runs every shipped module with --simulate and each facto
   const {body} = await health(runtime.url);
   assert.deepEqual(body.modules.map(module => [module.name, module.state]), shippedModules.map(({name}) => [name, 'running']));
   assert.equal(body.status, 'ok');
+  // The device modules all serve the shared device family, each for its own devices (#967): none is refused it.
+  assert.deepEqual(body.modules.filter(module => module.serves?.includes('device') === true).map(module => module.name), ['lifx', 'tidbyt', 'pixoo']);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+  assert.deepEqual(runtime.records().filter(record => record.severity_number >= 17).map(record => record.event_name), [], 'no error record');
 });
 
 it('the entry point refuses missing or malformed arguments', async context => {

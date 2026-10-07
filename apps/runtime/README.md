@@ -8,8 +8,9 @@ clients, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
 and, after it, the device modules: the
 [playback module](../../modules/playback/README.md) (#929), the
-[LIFX module](../../modules/lifx/README.md) (#928) and the
-[Tidbyt module](../../modules/tidbyt/README.md) (#930) so far. Module stories
+[LIFX module](../../modules/lifx/README.md) (#928), the
+[Tidbyt module](../../modules/tidbyt/README.md) (#930) and the
+[Pixoo module](../../modules/pixoo/README.md) (#843) so far. Module stories
 add theirs after the core, and the runtime also runs with no module at all.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
@@ -26,13 +27,13 @@ and secrets come from one private [configuration file](#configuration).
 A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
-reads no secret, such as the playback and LIFX modules, omits `secrets`; the Tidbyt module names `token`, its API
-key's file. One helper,
+reads no secret, such as the playback, LIFX and Pixoo modules, omits `secrets`; the Tidbyt module names
+`token`, its API key's file. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
-runtime's process tests and the maintenance journal test configure the shipped
-modules with it.
+runtime's process tests, the maintenance journal test and the memory script's
+`simulated` variant configure the shipped modules with it.
 
 ## Agent-session core
 
@@ -790,7 +791,9 @@ outside the runtime can read the spans, and a crash keeps those it had finished
 `node apps/runtime/scripts/measure-memory.mjs` measures the shipped runtime with
 no configuration file, so the core alone, with each device module refused, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
 runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
-`--variant no-lag-check` to measure it without the watchdog thread. It needs a
+`--variant no-lag-check` to measure it without the watchdog thread, or
+`--variant simulated` to measure it with every shipped module running on its
+simulated devices, configured with its factory's simulated section. It needs a
 build and a TMPDIR outside every Git checkout.
 
 `node apps/runtime/scripts/measure-edge-memory.mjs` measures the edge under a
@@ -979,7 +982,17 @@ The catalog holds:
   `POST /api/v2/commands/approval-recover`, after a stale revision is refused;
 - a module's page, the preview it loads by reference, its settings and its MCP
   tool served from its manifest, with the page refused without a session and
-  the settings refused to the hook, which may not read.
+  the settings refused to the hook, which may not read;
+- the Pixoo (#843), with its simulated Pixoo and the playback module (#929),
+  whose record Now Playing follows, so none of the Pixoo's syncs is refused:
+  - Monitor following the core's sessions (`pixoo-monitor`);
+  - a media command accepted, then completed once the media reached the device
+    (`pixoo-media`);
+  - a Now Playing card from the playback module's presented speaker, popping up
+    over Monitor without dimming, then holding a whole takeover of Media for
+    more than 30 s while the song plays on unchanged (`pixoo-now-playing`);
+  - a start while the device is offline, with one degradation and one recovery
+    (`pixoo-offline`).
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

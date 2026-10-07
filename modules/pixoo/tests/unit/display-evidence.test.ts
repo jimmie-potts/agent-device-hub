@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
-import {Player} from '@pixoo/playback';
-import {FakeDeviceAdapter,type OperationResult,type ProbeResult} from '@pixoo/device';
+import {Player} from '../../src/playback/index.js';
+import {FakeDeviceAdapter,type OperationResult,type ProbeResult} from '../../src/device/index.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 async function flush(clock:ManualClock){for(let n=0;n<80;n++){await Promise.resolve();clock.advance(0);}}

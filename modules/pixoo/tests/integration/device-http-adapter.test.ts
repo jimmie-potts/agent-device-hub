@@ -1,7 +1,8 @@
 import { afterEach, expect, it } from 'vitest';
-import { HttpDeviceAdapter, SPIKE_PROFILE } from '../../packages/device/src/http-adapter.js';
-import { sendJson } from '../../packages/device/src/http-transport.js';
+import { HttpDeviceAdapter, SPIKE_PROFILE } from '../../src/device/http-adapter.js';
+import { sendJson } from '../../src/device/http-transport.js';
 import { deviceServer } from '../helpers/http-device-server.js';
+import { present } from '../helpers/present.js';
 import { rgbFrame } from '../helpers/rgb-fixtures.js';
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(close => close())); });
@@ -14,7 +15,7 @@ it('sends one ID query and ordered complete frames before a queued control', asy
   const frames = [rgbFrame(1, 500), rgbFrame(2, 500)];
   const original = frames.map(frame => Buffer.from(frame.rgb).toString('base64'));
   const upload = device.uploadAnimation({ frames }, { generation: 0 });
-  frames[0]!.rgb.fill(255);
+  present(frames[0]).rgb.fill(255);
   const control = device.setBrightness(40, { generation: 0 });
   expect((await upload).ok).toBe(true); expect((await control).ok).toBe(true);
   expect(server.requests).toEqual([
@@ -93,16 +94,16 @@ it.each([
   { frames: [rgbFrame(1, 99)] }, { frames: [rgbFrame(1, 1001)] },
 ])('rejects animation outside the provisional profile without transport: %j', async animation => {
   const calls: unknown[] = [];
-  const device = new HttpDeviceAdapter({ ip: '192.168.1.2', profile: SPIKE_PROFILE }, async body => { calls.push(body); return { error_code: 0 }; });
+  const device = new HttpDeviceAdapter({ ip: '192.168.1.2', profile: SPIKE_PROFILE }, body => { calls.push(body); return Promise.resolve({ error_code: 0 }); });
   expect(await device.uploadAnimation(animation, { generation: 0 })).toMatchObject({ ok: false, code: 'invalid-input', priorEffects: 'none' });
   expect(calls).toEqual([]);
 });
 
 it('reads only known probe fields, without inventing model/firmware or leaking extra fields', async () => {
   const commands: unknown[] = [];
-  const device = new HttpDeviceAdapter({ ip: '192.168.1.2', profile: SPIKE_PROFILE }, async body => {
+  const device = new HttpDeviceAdapter({ ip: '192.168.1.2', profile: SPIKE_PROFILE }, body => {
     commands.push(body.Command);
-    return body.Command === 'Channel/GetIndex' ? { error_code: 0, SelectIndex: 3 } : { error_code: 0, Brightness: 50, LightSwitch: 1, secret: 'private device data' };
+    return Promise.resolve(body.Command === 'Channel/GetIndex' ? { error_code: 0, SelectIndex: 3 } : { error_code: 0, Brightness: 50, LightSwitch: 1, secret: 'private device data' });
   });
   const result = await device.probe({ generation: 0 });
   expect(result).toMatchObject({ ok: true, value: { mode: 'device', available: true, connected: true, channel: 3, brightness: 50, screenOn: true } });

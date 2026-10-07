@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { migrate, MIGRATIONS, APPLICATION_ID } from '../../packages/library/src/migrations.js';
+import { migrate, MIGRATIONS, APPLICATION_ID } from '../../src/library/migrations.js';
 const roots:string[]=[];
 const databases:DatabaseSync[]=[];
 afterEach(async()=>{for(const db of databases) db.close();databases.length=0;for(const root of roots) await rm(root,{recursive:true,force:true});roots.length=0;});
@@ -16,7 +16,7 @@ it('creates the current schema and upgrades a populated catalog without rewritin
   db.prepare('INSERT INTO assets VALUES (?,?,?,?,?)').run('legacy','hash','legacy.gif','{}','earlier');
   const before=db.prepare('SELECT * FROM assets').all();
   migrate(db);
-  expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
+  expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
   expect(db.prepare('SELECT * FROM assets').all()).toEqual(before);
   expect(db.prepare('SELECT * FROM playlists').all()).toEqual([]);
   migrate(db);
@@ -29,11 +29,11 @@ it('rolls back the failing migration and retains earlier data and version',async
   const db=await database();migrate(db,MIGRATIONS.slice(0,1));
   db.prepare('INSERT INTO assets VALUES (?,?,?,?,?)').run('asset','hash','kept.gif','{}','earlier');
   expect(()=>migrate(db,[MIGRATIONS[0],{version:2,sql:'CREATE TABLE partial(id); DELETE FROM assets; INVALID SQL;'}])).toThrow('migration failed');
-  expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(1);
+  expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(1);
   expect(db.prepare('SELECT id FROM assets').all()).toEqual([{id:'asset'}]);
   expect(db.prepare("SELECT name FROM sqlite_master WHERE name='partial'").all()).toEqual([]);
   migrate(db);
-  expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
+  expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
 });
 it('rejects foreign, newer, changed-checksum and inconsistent catalogs without resetting them',async()=>{
   for(const preparation of [

@@ -12,10 +12,11 @@ const unused = {
   argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_',
   ignoreRestSiblings: true,
 };
-// New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it.
+// New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it; the
+// Pixoo snapshot joined with its module (Hub #843), so nothing is staged now.
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
 export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
-export const staged = ['modules/pixoo/**'];
+export const staged = [];
 // Tests, their fixtures and helpers read an error to report a failure and spell out the bodies they expect, so the
 // safe-error rules (Hub #953) skip them. The strict rules still apply.
 const tests = ['**/tests/**', '**/*.test.{ts,tsx,js,mjs}'];
@@ -28,8 +29,8 @@ const noInlineConfig = {noInlineConfig: true};
 // Workspace packages a module may import (owner decision, 2026-10-05).
 const modulePackages = ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'];
 // Every workspace package's scope. The boundary rule treats other scopes as third-party, so a module importing
-// any other package in these scopes is refused; @pixoo/ is the staged Pixoo snapshot's scope (Hub #25, until #843).
-export const workspaceScopes = ['@jimmie-potts/', '@pixoo/'];
+// any other package in these scopes is refused.
+export const workspaceScopes = ['@jimmie-potts/'];
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',

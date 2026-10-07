@@ -1,7 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {startHostedFiles} from '../../packages/device/src/hosted-files.js';
-import {HttpDeviceAdapter} from '../../packages/device/src/http-adapter.js';
-import {encodeHostedGif} from '../../packages/media/src/hosted-gif.js';
+import {startHostedFiles} from '../../src/device/hosted-files.js';
+import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
+import {encodeHostedGif} from '../../src/media/hosted-gif.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {outsideInstalledPorts} from '../helpers/loopback.js';
 const cleanup:(()=>Promise<void>)[]=[];
@@ -30,7 +30,7 @@ it('retires an unfetched file and never exposes a replacement under the old URL'
 });
 it('keeps one writer through fetch and returns estimated readiness without retry',async()=>{
  const files=await host(),clock=new ManualClock(),commands:string[]=[];let url='';
- const device=new HttpDeviceAdapter({ip:'192.168.50.20',profile,clock,hosted:{files,encode:a=>encodeHostedGif(a.frames)}},async body=>{commands.push(String(body.Command));url=String(body.FileName);return {error_code:0};});cleanup.push(()=>device.close());
+ const device=new HttpDeviceAdapter({ip:'192.168.50.20',profile,clock,hosted:{files,encode:a=>encodeHostedGif(a.frames)}},body=>{commands.push(String(body.Command));url=String(body.FileName);return Promise.resolve({error_code:0});});cleanup.push(()=>device.close());
  const upload=device.uploadAnimation({frames},{generation:0}),brightness=device.setBrightness(30,{generation:0});
  await Promise.resolve();expect(commands).toEqual(['Device/PlayTFGif']);
  await (await fetch(url)).arrayBuffer();
@@ -39,7 +39,7 @@ it('keeps one writer through fetch and returns estimated readiness without retry
 });
 it.each(['cancelled','stale-generation','timeout'] as const)('retires an unfetched command on %s with possible effects and no replay',async code=>{
  const files=await host(),clock=new ManualClock(),commands:string[]=[],abort=new AbortController();let url='';
- const device=new HttpDeviceAdapter({ip:'192.168.50.20',profile,clock,hosted:{files,encode:a=>encodeHostedGif(a.frames)}},async body=>{commands.push(String(body.Command));url=String(body.FileName);return {error_code:0};});cleanup.push(()=>device.close());
+ const device=new HttpDeviceAdapter({ip:'192.168.50.20',profile,clock,hosted:{files,encode:a=>encodeHostedGif(a.frames)}},body=>{commands.push(String(body.Command));url=String(body.FileName);return Promise.resolve({error_code:0});});cleanup.push(()=>device.close());
  const upload=device.uploadAnimation({frames},{generation:0,signal:abort.signal,timeoutMs:200});await Promise.resolve();
  if(code==='cancelled')abort.abort();else if(code==='stale-generation')device.invalidateGeneration();else clock.advance(200);
  expect(await upload).toMatchObject({ok:false,code,priorEffects:'possible'});

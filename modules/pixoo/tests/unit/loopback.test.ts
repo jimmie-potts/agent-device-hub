@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {afterEach,describe,expect,it} from 'vitest';
 import {launch,type LaunchedProcess} from '../helpers/launch.js';
 import {listenLoopback} from '../helpers/loopback.js';
+import {present} from '../helpers/present.js';
 
 const cleanup:(()=>Promise<void>)[]=[];
 afterEach(async()=>{for(const close of cleanup.splice(0).reverse())await close();});
@@ -14,7 +15,7 @@ describe('test listeners',()=>{
  it('never keep an installed port the kernel hands out, such as 41231',async()=>{
   const handed=[41231,41230,45123],closed:number[]=[];let current=0;
   const server=Object.assign(new EventEmitter(),{
-   listen(_port:number,_host:string,ready:()=>void){current=handed.shift()!;ready();return server;},
+   listen(_port:number,_host:string,ready:()=>void){current=present(handed.shift(),'a handed port');ready();return server;},
    address:()=>({port:current,address:'127.0.0.1',family:'IPv4'}),
    close(done:()=>void){closed.push(current);done();return server;},
   });
@@ -47,9 +48,9 @@ describe('the launch helper',()=>{
   const entries=(await readFile(join(state,'log'),'utf8')).trim().split('\n').map(line=>JSON.parse(line) as {pid:number;port?:number;terminated?:true});
   // A real listener handed an installed port would add another stopped launch before the last entry.
   const [first,firstStop,second,secondStop]=entries,last=entries.at(-1);
-  expect(first).toMatchObject({port:41231});expect(firstStop).toEqual({pid:first!.pid,terminated:true});
-  expect(second).toMatchObject({port:41230});expect(secondStop).toEqual({pid:second!.pid,terminated:true});
-  expect(running(first!.pid)).toBe(false);expect(running(second!.pid)).toBe(false);
+  expect(first).toMatchObject({port:41231});expect(firstStop).toEqual({pid:present(first).pid,terminated:true});
+  expect(second).toMatchObject({port:41230});expect(secondStop).toEqual({pid:present(second).pid,terminated:true});
+  expect(running(present(first).pid)).toBe(false);expect(running(present(second).pid)).toBe(false);
   expect(last).toEqual({pid:launched.child.pid,port:launched.port});
   expect([41230,41231]).not.toContain(launched.port);
   expect(launched.url).toBe(`http://127.0.0.1:${launched.port}`);

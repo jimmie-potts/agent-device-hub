@@ -6,19 +6,21 @@ import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
-import { Library } from '../../packages/library/src/index.js';
+import { Library, type Playlist } from '../../src/library/index.js';
 import { gifFixture } from '../helpers/media-fixtures.js';
 const roots:string[]=[]; const libraries:Library[]=[];
 afterEach(async()=>{for(const library of libraries) await library.close(); libraries.length=0; for(const root of roots) await rm(root,{recursive:true,force:true}); roots.length=0;});
 async function setup() {const directory=await mkdtemp(join(tmpdir(),'pixoo-library-'));roots.push(directory); const library=await Library.open({directory});libraries.push(library);return {directory,library};}
-async function* upload() {yield gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50},{width:1,height:1,pixels:[2],delay:50}]);}
+async function* upload() {yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50},{width:1,height:1,pixels:[2],delay:50}]));}
+/** The item at an index; a missing item fails the test. */
+const item=(playlist:Playlist,index:number)=>playlist.items[index]??expect.unreachable(`no item ${index}`);
 it('persists immutable media and stable playlist items across reopen',async()=>{
   const {directory,library}=await setup();
   const imported=await library.importMedia(upload(),'sample.gif');
   const playlist=await library.createPlaylist('Evening');
   const updated=await library.replaceItems(playlist.id,playlist.revision,[{renditionId:imported.rendition.id},{renditionId:imported.rendition.id,playback:{mode:'duration',durationMs:1000}}]);
-  expect(updated.items[0]!.playback).toEqual({mode:'plays',totalPlays:3});
-  expect(updated.items[0]!.id).not.toBe(updated.items[1]!.id);
+  expect(item(updated,0).playback).toEqual({mode:'plays',totalPlays:3});
+  expect(item(updated,0).id).not.toBe(item(updated,1).id);
   await library.close();
   const reopened=await Library.open({directory});libraries.push(reopened);
   expect(await reopened.getPlaylist(playlist.id)).toEqual(updated);
@@ -44,8 +46,8 @@ it('keeps item identities and policies through reorder, edits and duplication',a
   expect(copy.items.map(i=>i.renditionId)).toEqual(playlist.items.map(i=>i.renditionId));
   expect(copy.items.map(i=>i.playback)).toEqual(playlist.items.map(i=>i.playback));
   expect(copy.items.every(i=>!playlist.items.some(old=>i.id===old.id))).toBe(true);
-  await expect(library.reorderItems(playlist.id,6,[playlist.items[0]!.id,playlist.items[0]!.id])).rejects.toMatchObject({code:'invalid-input'});
-  await expect(library.replaceItems(playlist.id,6,[copy.items[0]!])).rejects.toMatchObject({code:'invalid-input'});
+  await expect(library.reorderItems(playlist.id,6,[item(playlist,0).id,item(playlist,0).id])).rejects.toMatchObject({code:'invalid-input'});
+  await expect(library.replaceItems(playlist.id,6,[item(copy,0)])).rejects.toMatchObject({code:'invalid-input'});
   expect(await library.getPlaylist(playlist.id)).toEqual(playlist);
   await library.deletePlaylist(copy.id,1);
   expect(await library.listPlaylists()).toEqual([playlist]);
@@ -55,7 +57,7 @@ it('rejects stale and competing writes without partial metadata changes',async()
   const {library}=await setup();
   const p=await library.createPlaylist('Initial');
   const results=await Promise.allSettled([library.renamePlaylist(p.id,1,'First'),library.renamePlaylist(p.id,1,'Second')]);
-  expect(results[0]!.status).toBe('fulfilled');
+  expect(results[0].status).toBe('fulfilled');
   expect(results[1]).toMatchObject({status:'rejected',reason:{code:'revision-conflict',details:{actualRevision:2,expectedRevision:1}}});
   for(const operation of [()=>library.deletePlaylist(p.id,1),()=>library.duplicatePlaylist(p.id,1,'Copy'),()=>library.setPlaylistOptions(p.id,1,{repeat:false}),()=>library.replaceItems(p.id,1,[]),()=>library.reorderItems(p.id,1,[])])
     await expect(operation()).rejects.toMatchObject({code:'revision-conflict'});
@@ -68,7 +70,7 @@ it('validates policies atomically and treats a single-frame GIF as a still',asyn
   const animated=await library.importMedia(upload(),'animated.gif');
   let p=await library.createPlaylist('Policies');
   p=await library.replaceItems(p.id,p.revision,[{renditionId:still.rendition.id}]);
-  expect(p.items[0]!.playback).toEqual({mode:'duration',durationMs:30000});
+  expect(item(p,0).playback).toEqual({mode:'duration',durationMs:30000});
   for(const value of [0,-1,0.5,Infinity,NaN,Number.MAX_SAFE_INTEGER+1]) {
     await expect(library.replaceItems(p.id,p.revision,[{renditionId:still.rendition.id,playback:{mode:'duration',durationMs:value}}])).rejects.toMatchObject({code:'invalid-input'});
     await expect(library.replaceItems(p.id,p.revision,[{renditionId:animated.rendition.id,playback:{mode:'plays',totalPlays:value}}])).rejects.toMatchObject({code:'invalid-input'});
@@ -90,7 +92,7 @@ it('preserves originals and old renditions when transforms change',async()=>{
   expect(second.asset).toEqual(first.asset);
   expect(second.rendition.id).not.toBe(first.rendition.id);
   expect(await library.getRendition(first.rendition.id)).toEqual(first.rendition);
-  expect((await library.getPlaylist(p.id)).items[0]!.renditionId).toBe(first.rendition.id);
+  expect(item(await library.getPlaylist(p.id),0).renditionId).toBe(first.rendition.id);
   expect(await readFile(join(directory,'media','originals',first.asset.contentHash))).toEqual(original);
   expect(await library.readFrame(first.rendition.id,0,'rgb')).toHaveLength(64*64*3);
   expect(await library.listAssets()).toHaveLength(1);
@@ -152,11 +154,11 @@ it('allows one owner, cleans failed partials and recovers only owned staging dir
   expect((await readdir(join(directory,'media','staging'))).sort()).toEqual(['request-ZYX987','user-directory']);
 });
 
-async function* bytes(value:Buffer) {yield value;}
+async function* bytes(value:Buffer) {yield Promise.resolve(value);}
 
 it('releases ownership after abrupt process exit and retains committed metadata',async()=>{
   const {directory,library}=await setup();await library.close();
-  const entry=pathToFileURL(resolve('packages/library/dist/index.js')).href;
+  const entry=pathToFileURL(resolve('dist/src/library/index.js')).href;
   const child=spawn(process.execPath,['--expose-gc','--input-type=module','-e',`
     import {Library} from ${JSON.stringify(entry)};
     const library=await Library.open({directory:${JSON.stringify(directory)}});

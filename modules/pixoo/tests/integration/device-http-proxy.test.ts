@@ -4,7 +4,7 @@ import { afterEach, expect, it } from 'vitest';
 import { deviceServer } from '../helpers/http-device-server.js';
 
 const exec = promisify(execFile);
-const transportUrl = new URL('../../packages/device/dist/http-transport.js', import.meta.url).href;
+const transportUrl = new URL('../../src/device/http-transport.js', import.meta.url).href;
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(close => close())); });
 

@@ -1,15 +1,16 @@
 import {expect,it} from 'vitest';
-import {Player} from '@pixoo/playback';
-import {FakeDeviceAdapter} from '../../packages/device/src/index.js';
-import {MonitorPresentation} from '../../packages/presentation/src/monitor-presentation.js';
-import {renderNowPlaying,type NowPlayingView} from '../../packages/presentation/src/now-playing.js';
-import type {PlaybackSourceStatus} from '../../packages/presentation/src/sources.js';
+import {present} from '../helpers/present.js';
+import {Player} from '../../src/playback/index.js';
+import {FakeDeviceAdapter} from '../../src/device/index.js';
+import {MonitorPresentation} from '../../src/presentation/monitor-presentation.js';
+import {renderNowPlaying,type NowPlayingView} from '../../src/presentation/now-playing.js';
+import type {PlaybackSourceStatus} from '../../src/presentation/sources.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
-import {syntheticDashboardViews} from '../../packages/presentation/src/dashboard-examples.js';
+import {syntheticDashboardViews} from '../../src/presentation/dashboard-examples.js';
 
 type Media='off'|'popup'|'whole';
-const views=syntheticDashboardViews(),attentionView=views[0]!.view,quietView=views[3]!.view;
+const views=syntheticDashboardViews(),attentionView=present(views[0]).view,quietView=present(views[3]).view;
 const playing=(title='HARVEST MOON',patch:Partial<Extract<NowPlayingView,{card:true}>>={}):PlaybackSourceStatus=>({source:'current',view:{card:true,status:'playing',title,artist:'NEIL YOUNG',stale:false,...patch}});
 const nothing:PlaybackSourceStatus={source:'current',view:{card:false}};
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
@@ -18,10 +19,10 @@ async function setup(media:Media='off'){
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
  store.playlist.repeat=true;
  const saved:unknown[]=[];
- const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),nowPlaying:{version:1,media},saveNowPlaying:async value=>{saved.push(value);}});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),nowPlaying:{version:1,media},saveNowPlaying:value=>{saved.push(value);return Promise.resolve();}});
  const frames=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
  const card=(status:PlaybackSourceStatus)=>Array.from(renderNowPlaying(status.view));
- const dashboard=()=>monitor.rendition().rendition!.frames.at(-1)!;
+ const dashboard=()=>present(present(monitor.rendition().rendition).frames.at(-1));
  /** Advance in 100 ms ticks, as the backend's render timer does. */
  const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
  /** Let the fake device's scheduled work complete while a player operation settles. */
@@ -191,4 +192,25 @@ it('uploads a repeated identical card once, and a changed card once more',async(
   const paused=playing('HARVEST MOON',{status:'paused'});s.monitor.submitPlayback(paused);await s.run(1000);s.monitor.submitPlayback(paused);await s.run(1000);
   expect(s.frames().filter(frame=>JSON.stringify(frame)===JSON.stringify(s.card(paused))).length).toBe(1);
  }finally{await s.close();}
+});
+it('keeps the previous card on the display while a changed card renders, never flashing the dashboard',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock});
+ const pending:{view:Extract<NowPlayingView,{card:true}>;resolve:(rgb:Uint8Array)=>void}[]=[];
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),renderCard:view=>new Promise<Uint8Array>(resolve=>{pending.push({view,resolve});})});
+ const frames=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
+ const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
+ const answer=()=>{for(const job of pending.splice(0))job.resolve(renderNowPlaying(job.view));};
+ try{
+  monitor.submit(quietView);await flush(clock);await monitor.configure({operation:'mode',mode:'monitor'});await run(1100);
+  const dashboard=frames().at(-1);
+  monitor.submitPlayback(playing());await run(200);answer();await run(1000);
+  const first=Array.from(renderNowPlaying(playing().view));expect(frames().at(-1)).toEqual(first);
+  // The song changes: its card renders slowly, and the display keeps the first card until it is ready.
+  const before=frames().length;
+  monitor.submitPlayback(playing('OLD KING'));await run(1500);
+  expect(frames().slice(before).some(frame=>JSON.stringify(frame)===JSON.stringify(dashboard))).toBe(false);
+  expect(monitor.nowPlayingStatus().showing).toBe('card');
+  answer();await run(1100);
+  expect(frames().at(-1)).toEqual(Array.from(renderNowPlaying(playing('OLD KING').view)));
+ }finally{await monitor.close();await player.close();}
 });

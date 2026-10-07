@@ -1,5 +1,0 @@
-{
-  "name":"@pixoo/playback", "version":"0.0.0", "private":true, "type":"module",
-  "exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}},
-  "dependencies":{"@pixoo/device":"0.0.0","@pixoo/library":"0.0.0","@pixoo/media":"0.0.0"}
-}

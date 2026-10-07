@@ -1,4 +1,4 @@
-import type { RgbFrame } from '../../packages/device/src/index.js';
+import type { RgbFrame } from '../../src/device/index.js';
 
 /** Synthetic pixels identify row, column and frame independently. No external artwork. */
 export function rgbFrame(frame: number, delayMs = 40): RgbFrame {

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { parseSpikeArgs, runSpike } from '../../packages/device/src/spike.js';
-import { FakeDeviceAdapter } from '../../packages/device/src/fake.js';
+import { parseSpikeArgs, runSpike } from '../../src/device/spike.js';
+import { FakeDeviceAdapter } from '../../src/device/fake.js';
 
 it.each(['static', 'gif', 'transitions', 'controls', 'reset'])('requires display opt-in for %s before creating a device', stage => {
   expect(() => parseSpikeArgs([stage], { PIXOO_DEVICE_IP: '192.168.1.2' })).toThrow('allow-display-change');
@@ -23,8 +23,8 @@ it('requires confirmation of earlier visual stages before ten transitions', () =
 it('runs exactly ten alternating transitions and stops on the first failure', async () => {
   const device = new FakeDeviceAdapter();
   const delays: number[] = [];
-  const report = await runSpike('transitions', device, async ms => { delays.push(ms); });
-  expect(report.operations.map(entry => entry.operation)).toEqual(Array.from({ length: 10 }, (_, index) => index % 2 ? 'two-frame-gif' : 'static-pattern'));
+  const report = await runSpike('transitions', device, ms => { delays.push(ms); return Promise.resolve(); });
+  expect(report.operations.map(entry => entry.operation)).toEqual(Array.from({ length: 10 }, (_, index) => index % 2 !== 0 ? 'two-frame-gif' : 'static-pattern'));
   expect(device.effects.filter(effect => effect.kind === 'frame')).toHaveLength(15);
   expect(delays).toEqual(Array(9).fill(3000));
   device.setOnline(false);

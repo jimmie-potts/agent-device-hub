@@ -25,8 +25,8 @@ const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json')
 
 /**
  * The served candidate: the built runtime, its verification run and fixtures, the SDK, the profile, the agent-state
- * owner the core runs with its lifecycle contracts (#831), and the shipped device modules (the playback module, #929), in
- * a stable order.
+ * owner the core runs with its lifecycle contracts (#831), and the shipped device modules (the playback module, #929,
+ * LIFX, #928, and the Pixoo, #843), in a stable order.
  */
 export function artifactFiles(at = root): string[] {
   const built = (dir: string, keep: (file: string) => boolean = () => true): string[] => {
@@ -42,6 +42,8 @@ export function artifactFiles(at = root): string[] {
     ...built('packages/mcp/dist'), ...built('packages/contracts/dist'),
     ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'), ...built('modules/playback/dist/src'), ...built('modules/lifx/dist/src'),
     ...built('modules/tidbyt/dist/src'),
+    // The Pixoo module, with its render worker and media child process, which the runtime loads by file.
+    ...built('modules/pixoo/dist/src'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -56,14 +58,14 @@ export const BUILD_SOURCES = [
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
-  ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**', ':(glob)modules/tidbyt/src/**',
+  ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**', ':(glob)modules/tidbyt/src/**', ':(glob)modules/pixoo/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
-  'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js', 'modules/tidbyt/dist/src/index.js',
+  'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js', 'modules/tidbyt/dist/src/index.js', 'modules/pixoo/dist/src/index.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */

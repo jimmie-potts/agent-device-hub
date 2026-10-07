@@ -83,7 +83,9 @@ follows the strict profile for new code.
   `observed` or `none`. `none` means there is no evidence that anything reached
   the device, as after a failure before sending or a lost answer. A succeeded
   outcome always has `transmitted` or `observed` evidence, and a failed one
-  carries an error.
+  carries an error. For an effect on state the owner keeps itself, such as a
+  setting or a playlist, the owner's committed state, published with the
+  outcome, is the observation, so the outcome is `observed`.
 - `schemas/v2/errors.json`: the error code registry. Each code says whether a
   retry can help. The error block in `blocks.schema.json` lists the same codes
   and flags, so a received error body with another code or flag is refused; a

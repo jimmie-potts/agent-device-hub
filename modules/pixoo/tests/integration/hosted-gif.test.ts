@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
 import {parseGIF,decompressFrames} from 'gifuct-js';
-import * as media from '../../packages/media/src/index.js';
+import * as media from '../../src/media/index.js';
 
 it('encodes every effective pixel and repeated frame with only a global palette',()=>{
  const frames=Array.from({length:100},(_,i)=>{
@@ -16,7 +16,7 @@ it('encodes every effective pixel and repeated frame with only a global palette'
  for(const [i,frame] of decoded.entries()){
   expect(frame.delay).toBe(50);expect(frame.disposalType).toBe(1);expect(frame.transparentIndex).toBeUndefined();
   const rgb=Buffer.alloc(12288);for(let p=0;p<4096;p++)rgb.set(frame.patch.subarray(p*4,p*4+3),p*3);
-  expect(rgb).toEqual(frames[i]!.rgb);
+  expect(rgb).toEqual(frames[i]?.rgb);
  }
  for(const frame of parsed.frames)if('image' in frame)expect(frame.image.descriptor.lct.exists).toBe(false);
  expect(bytes.length).toBeLessThan(200000);

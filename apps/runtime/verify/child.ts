@@ -1,12 +1,15 @@
-// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> -- <runtime
-// arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
+// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> <pixoo state>
+// -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
 // whose simulated transport reaches the supervisor's simulated device over the IPC channel; the arguments name the run's
 // configuration file when its seed has one (Hub #919). With any module, a harness module reports every message the bus
 // publishes. The supervisor's controls arm a crash between the lamp's commit and
 // its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
-// stream at the edge, which `runMain` hands over once it serves.
+// stream at the edge, which `runMain` hands over once it serves. The simulated Pixoo (Hub #843) lives here, beside the
+// module that reaches it: the child reports what the Pixoo shows, and the supervisor sets how it answers and starts each
+// runtime with the mode and the panel the last one had, as a real Pixoo keeps its picture across a runtime restart.
 import http from 'node:http';
 import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
+import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
@@ -84,6 +87,10 @@ process.on('message', (value: unknown) => {
       return;
     case 'control':
       flags[message.control] = true;
+      send({type: 'applied', id: message.id});
+      return;
+    case 'simulate':
+      pixoo.set(message.simulation.action);
       send({type: 'applied', id: message.id});
       return;
     case 'disconnect':
@@ -211,6 +218,23 @@ const chime: ChimeTransport = {
   },
 };
 
+const [list = '-', fault = 'none', panel = '', separator, ...runtimeArgs] = process.argv.slice(2);
+const MODES: readonly string[] = ['online', 'offline', 'silent'] satisfies SimulatedMode[];
+/** The Pixoo the last runtime left, as the supervisor hands it over: base64url JSON of its state, mode included. */
+const left = ((): SimulatedPixooState | undefined => {
+  try {
+    const value = JSON.parse(Buffer.from(panel, 'base64url').toString('utf8')) as Partial<SimulatedPixooState> | null;
+    return value !== null && typeof value === 'object' && MODES.includes(String(value.mode)) ? value as SimulatedPixooState : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+if (separator !== '--' || left === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <pixoo state> -- <runtime arguments>');
+/** The simulated Pixoo, in the mode the supervisor last set and showing what the last runtime's Pixoo showed. */
+const {mode: pixooMode, ...pixooPanel} = left;
+const pixoo = new SimulatedPixoo({mode: pixooMode, panel: pixooPanel});
+pixoo.onChange(state => { send({type: 'pixoo.state', state}); });
+
 const fixture = (name: string, simulate: () => BunnyModule, schemas?: Readonly<Record<string, object>>): ModuleFactory => ({
   name, simulate, ...(schemas === undefined ? {} : {schemas}),
   create: () => { throw new Error(`the fixture ${name} has no real device; run it with --simulate`); },
@@ -240,6 +264,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   lifx: fixture('lifx', () => createLifxModule({transport: bulbs, acknowledgments: followStandInAcks}), lifxSchemas),
   // The shipped Tidbyt module with the supervisor's simulated cloud (Hub #930).
   tidbyt: fixture('tidbyt', () => createTidbytModule({transport: cloud})),
+  // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
+  pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo, acknowledgments: followStandInAcks}), pixooOwnSchemas),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({
@@ -256,8 +282,6 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   })),
 };
 
-const [list = '-', fault = 'none', separator, ...runtimeArgs] = process.argv.slice(2);
-if (separator !== '--') throw new Error('usage: child.js <modules|-> <fault|none> -- <runtime arguments>');
 const names = [...(list === '-' ? [] : list.split(',')), ...(fault === 'installed-port' ? ['prober'] : [])];
 const factories = names.map(name => {
   const factory = FACTORIES[name];
@@ -266,4 +290,4 @@ const factories = names.map(name => {
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge still knows the
 // fixture families the scenario's parts use, as the in-memory harness's does.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: {...lampSchemas, ...signSchemas}, onEdge: served => { edge = served; }});
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: {...lampSchemas, ...signSchemas, ...pixooOwnSchemas}, onEdge: served => { edge = served; }});

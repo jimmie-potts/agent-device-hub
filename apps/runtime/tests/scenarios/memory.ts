@@ -11,6 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
+import {SimulatedPixoo, createPixooModule} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
 import {connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
 import {SimulatedCloud, createTidbytModule} from '@jimmie-potts/tidbyt';
@@ -105,6 +106,7 @@ class Memory implements MemoryHarness {
   readonly #lifx = new SimulatedLifx();
   /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
   readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
+  readonly #pixoo = new SimulatedPixoo();
   readonly #parts: ReadonlyMap<Role, Part>;
   readonly #tokens = partTokens();
   readonly #client: GatewayClient;
@@ -199,7 +201,10 @@ class Memory implements MemoryHarness {
   }
 
   devices(): DeviceStates {
-    return {lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state()};
+    return {
+      lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state(),
+      pixoo: this.#pixoo.state(),
+    };
   }
 
   simulate(simulation: Simulation): void {
@@ -213,6 +218,9 @@ class Memory implements MemoryHarness {
         return;
       case 'playback':
         simulatePlayback(this.#speakers, simulation);
+        return;
+      case 'pixoo':
+        this.#pixoo.set(simulation.action);
         return;
       case 'lifx':
         if (simulation.action === 'online') this.#lifx.online(simulation.address);
@@ -409,6 +417,9 @@ class Memory implements MemoryHarness {
       case 'tidbyt':
         // A render's worker answers in real time while virtual time runs ahead, so renders get a deadline no step reaches.
         return createTidbytModule({transport: this.#cloud.fetch, renderTimeoutMs: 3_600_000});
+      case 'pixoo':
+        // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
+        return createPixooModule({transport: this.#pixoo, acknowledgments: followStandInAcks});
     }
   }
 

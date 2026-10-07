@@ -1,4 +1,21 @@
 {
+  "name": "@jimmie-potts/pixoo",
+  "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "description": "The Pixoo runtime module: library, media, playback, Monitor and Now Playing on the B.U.N.N.Y. runtime (ADR 0012)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "gifenc": "1.0.3",
+    "gifuct-js": "2.1.2",
+    "sharp": "0.35.4",
+    "zod": "4.5.4"
+  }
 }

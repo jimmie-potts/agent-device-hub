@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// Measures the shipped runtime's memory for #123: the core and no device module (#831). Each run starts a runtime on port 0 with a temporary state
-// directory, samples it at fixed times after its ready line and stops it with SIGTERM.
-//   node apps/runtime/scripts/measure-memory.mjs [--variant shipped|no-lag-check] [--at 5,15,30,60] [--runs 3]
-// `shipped` runs the entry point, `apps/runtime/dist/src/main.js`; `no-lag-check` runs the runtime without its watchdog
-// thread, to show that thread's cost. Run `npm run build` first, with TMPDIR outside every Git checkout. Each sample
+// Measures the shipped runtime's memory for #123. Each run starts a runtime on port 0 with a temporary state directory,
+// samples it at fixed times after its ready line and stops it with SIGTERM.
+//   node apps/runtime/scripts/measure-memory.mjs [--variant shipped|no-lag-check|simulated] [--at 5,15,30,60] [--runs 3]
+// `shipped` runs the entry point, `apps/runtime/dist/src/main.js`, without a configuration file, so the core runs and each
+// device module that takes a configuration is refused; `no-lag-check` runs that runtime without its watchdog thread, to
+// show that thread's cost; `simulated` runs the entry point with `--simulate` and a private configuration file that gives
+// each such module its factory's simulated section, so every shipped module runs on its simulated devices, idle. Run
+// `npm run build` first, with TMPDIR outside every Git checkout. Each sample
 // reads VmRSS (resident now), VmHWM (the resident peak so far) and Threads from /proc/<pid>/status, and the health
 // endpoint's `memory`, which is `process.memoryUsage()` inside the runtime. Output is one JSON line per run, then a summary.
 import {spawn} from 'node:child_process';
@@ -20,12 +23,14 @@ const {values} = parseArgs({options: {
 }});
 const times = values.at.split(',').map(Number);
 const runs = Number(values.runs);
-if (!['shipped', 'no-lag-check'].includes(values.variant) || times.some(at => !(at > 0)) || !(runs >= 1)) {
-  process.stderr.write('usage: measure-memory.mjs [--variant shipped|no-lag-check] [--at 5,15,30,60] [--runs 3]\n');
+if (!['shipped', 'no-lag-check', 'simulated'].includes(values.variant) || times.some(at => !(at > 0)) || !(runs >= 1)) {
+  process.stderr.write('usage: measure-memory.mjs [--variant shipped|no-lag-check|simulated] [--at 5,15,30,60] [--runs 3]\n');
   process.exit(2);
 }
 const MAIN = fileURLToPath(new URL('../dist/src/main.js', import.meta.url));
 const INDEX = new URL('../dist/src/index.js', import.meta.url).href;
+/** The runtime tests' one helper for simulated sections, which the build compiles with the tests. */
+const SIMULATED = new URL('../dist/tests/fixtures/simulated.js', import.meta.url).href;
 const BARE = `const {buildModules, shippedModules, startRuntime} = await import(${JSON.stringify(INDEX)});
 const runtime = await startRuntime({modules: buildModules(shippedModules, false), port: 0, stateDir: process.argv[1], log: () => {}});
 process.on('SIGTERM', () => { void runtime.stop().then(() => process.exit(0)); });
@@ -40,10 +45,20 @@ async function status(pid) {
   return {vmRssMiB: round(field('VmRSS') / 1024), vmHwmMiB: round(field('VmHWM') / 1024), threads: field('Threads')};
 }
 
+/**
+ * A private configuration file that gives each shipped module that takes a configuration its factory's simulated
+ * section, with its secret files holding only the synthetic token.
+ */
+async function configuration(dir) {
+  const [{shippedModules}, {writeSimulatedConfiguration}] = await Promise.all([import(INDEX), import(SIMULATED)]);
+  return writeSimulatedConfiguration(dir, shippedModules);
+}
+
 async function measure() {
   const dir = await mkdtemp(join(await realpath(tmpdir()), 'bunny-measure-'));
   const state = join(dir, 'state');
-  const args = values.variant === 'shipped' ? [MAIN, '--port', '0', '--state-dir', state] : ['--input-type=module', '-e', BARE, state];
+  const simulated = values.variant === 'simulated' ? ['--simulate', '--config', await configuration(join(dir, 'config'))] : [];
+  const args = values.variant === 'no-lag-check' ? ['--input-type=module', '-e', BARE, state] : [MAIN, '--port', '0', '--state-dir', state, ...simulated];
   const child = spawn(process.execPath, args, {stdio: ['ignore', 'pipe', 'ignore']});
   try {
     const [line] = await once(createInterface({input: child.stdout}), 'line');

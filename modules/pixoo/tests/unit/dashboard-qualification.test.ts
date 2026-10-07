@@ -1,7 +1,8 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {parseDashboardArgs, runDashboard} from '../../packages/device/src/dashboard-qualification.js';
-import {FakeDeviceAdapter} from '../../packages/device/src/fake.js';
-import {dashboardCases} from '../../packages/device/src/dashboard-fixtures.js';
+import {parseDashboardArgs, runDashboard} from '../../src/device/dashboard-qualification.js';
+import {FakeDeviceAdapter} from '../../src/device/fake.js';
+import {dashboardCases} from '../../src/device/dashboard-fixtures.js';
+import {present} from '../helpers/present.js';
 
 afterEach(() => vi.useRealTimers());
 it('defaults to fake even when a physical target is present in the environment', () => {
@@ -12,13 +13,14 @@ it('replaces all pixels when the session disappears, supplies a next page and pu
   const cases=dashboardCases();
   expect(cases.every(item=>item.rgb.length===12288)).toBe(true);
   expect(cases.some(item=>item.id==='next-page')).toBe(true);
-  const card=cases.find(item=>item.id==='attention-pulse')!;
-  const cleared=cases.find(item=>item.id==='session-cleared')!.rgb;
+  const card=present(cases.find(item=>item.id==='attention-pulse'),'the attention-pulse case');
+  const cleared=present(cases.find(item=>item.id==='session-cleared'),'the session-cleared case').rgb;
   expect(card.rgb.slice(0,50*64*3).some(value=>value!==0)).toBe(true);
   expect(cleared.slice(0,50*64*3).every(value=>value===0)).toBe(true);
   expect(cases.filter(item=>item.pulse).map(item=>item.id)).toEqual(['attention-pulse','return-page-1']);
+  const pulse=present(card.pulse,'the pulse frame');
   for(let i=0;i<4096;i++){
-    const x=i%64,y=Math.floor(i/64),same=card.rgb.slice(i*3,i*3+3).join()===card.pulse!.slice(i*3,i*3+3).join();
+    const x=i%64,y=Math.floor(i/64),same=card.rgb.slice(i*3,i*3+3).join()===pulse.slice(i*3,i*3+3).join();
     if(!same)expect((x>=1&&x<=20&&y>=1&&y<=20)||(x>=24&&x<=62&&y>=12&&y<=20)).toBe(true);
   }
   const device=new FakeDeviceAdapter();
@@ -76,13 +78,13 @@ it('bounds in-flight operations by the run deadline and stops at twenty uploads'
 it('cancels a cadence wait without another upload and snapshots caller buffers', async () => {
   vi.useFakeTimers();
   const device=new FakeDeviceAdapter({latencyMs:10}),controller=new AbortController();
-  const events=dashboardCases(),original=events[0]!.rgb[0];
+  const events=dashboardCases(),original=present(events[0]).rgb[0];
   const pending=runDashboard(device,events,{cadenceMs:3000,durationMs:15000},controller.signal);
-  events[0]!.rgb.fill(255);
+  present(events[0]).rgb.fill(255);
   await vi.advanceTimersByTimeAsync(100);
   controller.abort();await vi.runAllTimersAsync();
   expect(await pending).toMatchObject({status:'cancelled'});
   expect(device.operations).toHaveLength(1);
-  expect(device.effects[0]).toMatchObject({frame:{rgb:expect.any(Uint8Array)}});
-  const effect=device.effects[0]!;if(effect.kind==='frame')expect(effect.frame.rgb[0]).toBe(original);
+  expect(device.effects[0]).toMatchObject({frame:{rgb:expect.any(Uint8Array) as unknown}});
+  const effect=present(device.effects[0]);if(effect.kind==='frame')expect(effect.frame.rgb[0]).toBe(original);
 });

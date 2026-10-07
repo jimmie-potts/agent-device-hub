@@ -21,9 +21,10 @@ const severity = (config, rule) => {
 };
 const on = (config, rule) => [2, 'error'].includes(severity(config, rule));
 
-test('the strict rules cover new code and skip old and staged code', async () => {
+test('the strict rules cover new code and skip old code', async () => {
   const eslint = new ESLint({cwd: root});
-  for (const file of ['apps/runtime/src/a.ts', 'packages/sdk/src/a.ts', 'modules/example/src/a.ts']) {
+  // The Pixoo module left staging when its module story converted it (Hub #843).
+  for (const file of ['apps/runtime/src/a.ts', 'packages/sdk/src/a.ts', 'modules/example/src/a.ts', 'modules/pixoo/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
     for (const rule of strictRules) assert.ok(on(config, rule), `${file}: ${rule}`);
     assert.equal(config.linterOptions.noInlineConfig, true, `${file}: inline config`);
@@ -31,7 +32,7 @@ test('the strict rules cover new code and skip old and staged code', async () =>
   const moduleScript = await eslint.calculateConfigForFile(join(root, 'modules/example/src/a.mjs'));
   assert.ok(on(moduleScript, 'bunny/module-boundary'));
   assert.equal(moduleScript.linterOptions.noInlineConfig, true);
-  for (const file of ['apps/hub/src/a.ts', 'modules/pixoo/src/a.ts']) {
+  for (const file of ['apps/hub/src/a.ts']) {
     const config = await eslint.calculateConfigForFile(join(root, file));
     for (const rule of [...strictRules, 'bunny/module-boundary', ...safeErrorRules]) assert.ok(!severity(config, rule), `${file}: ${rule} stays off`);
     assert.notEqual(config.linterOptions.noInlineConfig, true, `${file}: inline config stays on`);
@@ -152,7 +153,7 @@ test('the strict rules keep their intended options', async () => {
   const boundary = (await new ESLint({cwd: root}).calculateConfigForFile(join(root, 'modules/example/src/a.ts'))).rules['bunny/module-boundary'][1];
   assert.equal(boundary.root, root);
   assert.deepEqual(boundary.allowedPackages, ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts']);
-  assert.deepEqual(boundary.workspaceScopes, ['@jimmie-potts/', '@pixoo/']);
+  assert.deepEqual(boundary.workspaceScopes, ['@jimmie-potts/']);
   const base = JSON.parse(readFileSync(join(root, 'tsconfig.strict.json'), 'utf8')).compilerOptions;
   for (const option of ['noUncheckedIndexedAccess', 'exactOptionalPropertyTypes', 'noImplicitOverride', 'noImplicitReturns', 'noFallthroughCasesInSwitch']) {
     assert.equal(base[option], true, option);
@@ -216,7 +217,7 @@ RuleTester.describe = describe;
 RuleTester.it = it;
 const tester = new RuleTester({languageOptions: {ecmaVersion: 'latest', sourceType: 'module'}});
 const inModule = join(process.cwd(), 'modules/example/src/a.mjs');
-const options = [{allowedPackages: ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'], workspaceScopes: ['@jimmie-potts/', '@pixoo/']}];
+const options = [{allowedPackages: ['@jimmie-potts/sdk', '@jimmie-potts/event-contracts'], workspaceScopes: ['@jimmie-potts/', '@example/']}];
 
 tester.run('module-boundary', bunny.rules['module-boundary'], {
   valid: [
@@ -231,8 +232,8 @@ tester.run('module-boundary', bunny.rules['module-boundary'], {
   invalid: [
     {code: "import {x} from '../../other/src/y.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
     {code: "import {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
-    // A staged snapshot's packages are workspace packages too, not third-party ones.
-    {code: "import {Device} from '@pixoo/core';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
+    // Every listed scope's packages are workspace packages, not third-party ones.
+    {code: "import {Device} from '@example/core';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: "export * from '../../../apps/hub/src/a.mjs';", filename: inModule, options, errors: [{messageId: 'outside'}]},
     {code: "await import('@jimmie-potts/hub');", filename: inModule, options, errors: [{messageId: 'workspace'}]},
     {code: "export {store} from '@jimmie-potts/agent-state';", filename: inModule, options, errors: [{messageId: 'workspace'}]},
@@ -322,8 +323,8 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     "class LocalError extends Error {} try { run(); } catch (error) { if (error instanceof LocalError) write(error.message); }",
     "import {A, B} from './errors.js'; try { run(); } catch (error) { if (!(error instanceof A) && !(error instanceof B)) throw error; write(error.message); }",
     "import {ValueError} from '@jimmie-potts/nanoleaf'; try { run(); } catch (error) { if (!(error instanceof ValueError)) throw error; write(error.message); }",
-    {code: "import {ValueError} from '@pixoo/core'; try { run(); } catch (error) { if (!(error instanceof ValueError)) throw error; write(error.message); }",
-      options: [{workspaceScopes: ['@jimmie-potts/', '@pixoo/']}]},
+    {code: "import {ValueError} from '@example/core'; try { run(); } catch (error) { if (!(error instanceof ValueError)) throw error; write(error.message); }",
+      options: [{workspaceScopes: ['@jimmie-potts/', '@example/']}]},
     // Values that are not exceptions.
     "const reply = {message: 'hello'}; write(reply.message); write(`${reply}`);",
     'function title(input) { return input.message + String(input); }',
